@@ -46,6 +46,7 @@ from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
 from axolotl.utils.schemas.training import HyperparametersConfig
 from axolotl.utils.schemas.trl import TRLConfig
+from axolotl.utils.schemas.vllm import VllmConfig
 
 LOG = logging.getLogger(__name__)
 
@@ -85,6 +86,9 @@ class AxolotlInputConfig(
     rl: RLType | None = None
     trl: TRLConfig | None = Field(
         default_factory=lambda: TRLConfig(),  # pylint: disable=unnecessary-lambda
+    )
+    vllm: VllmConfig | None = Field(
+        default_factory=lambda: VllmConfig(),  # pylint: disable=unnecessary-lambda
     )
     reward_model: bool | None = None
     process_reward_model: bool | None = None
@@ -188,6 +192,7 @@ class AxolotlInputConfig(
     sample_packing: bool | None = None
     sample_packing_group_size: int | None = 100_000
     sample_packing_bin_size: int | None = 200
+    sample_packing_sequentially: bool | None = None
     eval_sample_packing: bool | None = None
     pad_to_sequence_len: bool | None = None
     curriculum_sampling: bool | None = None
@@ -1147,6 +1152,17 @@ class AxolotlInputConfig(
 
         return value
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_muon_deepspeed_fsdp(cls, data):
+        if data.get("optimizer") == "muon" and (
+            data.get("deepspeed") or data.get("fsdp") or data.get("fsdp_config")
+        ):
+            raise ValueError(
+                "Muon optimizer is currently incompatible with DeepSpeed and FSDP"
+            )
+        return data
+
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """wrapper to valdiate gpu capabilities with the configured options"""
@@ -1302,3 +1318,12 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             if data["beta"] != data["trl"]["beta"]:
                 raise ValueError("beta and trl.beta must match or one must be removed")
         return data
+
+    @model_validator(mode="after")
+    def check_min_torch_version(self):
+        if self.env_capabilities and self.env_capabilities.torch_version:
+            torch_version = self.env_capabilities.torch_version
+            if version.parse(torch_version) < version.parse("2.5.1"):
+                LOG.warning(
+                    f"torch=={torch_version} may not be supported in future versions. Please consider upgrading to torch>=2.5.1."
+                )

@@ -112,6 +112,7 @@ class DataCollatorForSeq2Seq:
             self.local_world_size = dist.get_world_size(group=sp_group)
 
     def __call__(self, features, return_tensors=None):
+        has_attn_mask = "attention_mask" in features[0].keys()
         labels = None
         if return_tensors is None:
             return_tensors = self.return_tensors
@@ -164,6 +165,8 @@ class DataCollatorForSeq2Seq:
             pad_to_multiple_of=self.pad_to_multiple_of,
             return_tensors=return_tensors,
         )
+        if not has_attn_mask:
+            del features["attention_mask"]
 
         # prepare decoder_input_ids
         if (

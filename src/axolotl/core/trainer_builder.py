@@ -524,9 +524,15 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             and self.cfg.eval_steps
             and self.cfg.save_steps % self.cfg.eval_steps == 0
         ) or False
+
+        # handle ddp
+        ddp_find_unused_parameters = None
+        if self.cfg.ddp:
+            ddp_find_unused_parameters = bool(self.cfg.ddp_find_unused_parameters)
         training_arguments_kwargs["ddp_find_unused_parameters"] = (
-            False if self.cfg.ddp else None
+            ddp_find_unused_parameters
         )
+
         training_arguments_kwargs["group_by_length"] = self.cfg.group_by_length
         training_arguments_kwargs["curriculum_sampling"] = self.cfg.curriculum_sampling
         report_to = []

@@ -238,10 +238,10 @@ simpo_gamma: 0.5  # Target reward margin for the SimPO loss
 # grpo
 trl:
   use_vllm: # Optional[bool]. Whether to use VLLM for RL training.
-  vllm_device: # Optional[str]. Device to use for VLLM.
-  vllm_gpu_memory_utilization: # Optional[float]. GPU memory utilization for VLLM.
-  vllm_max_model_len: # Optional[int]. Maximum length of the model for VLLM.
-  vllm_dtype: # Optional[str]. Data type for VLLM.
+  vllm_server_host: # Optional[str]. Host of the vLLM server to connect to.
+  vllm_server_port: # Optional[int]. Port of the vLLM server to connect to.
+  vllm_server_timeout: # Optional[int]. Total timeout (in seconds) to wait for the vLLM server to respond.
+  vllm_guided_decoding_regex: # Optional[str]. Regex for vLLM guided decoding.
 
   beta: # Optional[float]. Beta parameter for the RL training. Same as `rl_beta`. Use
   max_completion_length: # Optional[int]. Maximum length of the completion for RL training.
@@ -320,8 +320,12 @@ total_num_tokens:
 sample_packing_group_size: 100000
 # The number of samples which can be packed into one sequence. Increase if using a large sequence_len with many short samples.
 sample_packing_bin_size: 200
+sample_pack_sequentially: # Optional[bool]. Whether to pack samples sequentially.
+
 # whether to concatenate samples during pretraining
 pretraining_sample_concatenation:
+
+curriculum_sampling: # Optional[bool]. Whether to use sequential sampling for curriculum learning
 
 # Use batch flattening for speedups when not using sample_packing
 batch_flattening:
@@ -354,7 +358,27 @@ lora_target_modules:
 #  - down_proj
 #  - up_proj
 lora_target_linear: # If true, will target all linear modules
-peft_layers_to_transform: # The layer indices to transform, otherwise, apply to all layers
+
+# List[int] | int. # The layer indices to transform, otherwise, apply to all layers
+# https://huggingface.co/docs/peft/v0.15.0/en/package_reference/lora#peft.LoraConfig.layers_to_transform
+peft_layers_to_transform:
+
+# Optional[bool]. Whether to use DoRA.
+# https://huggingface.co/docs/peft/v0.15.0/en/developer_guides/lora#weight-decomposed-low-rank-adaptation-dora
+peft_use_dora:
+
+# Optional[bool]. Whether to use RSLoRA.
+# https://huggingface.co/docs/peft/v0.15.0/en/developer_guides/lora#rank-stabilized-lora
+peft_use_rslora:
+
+# Optional[list[tuple[int, int]]]. List of layer indices to replicate.
+# https://huggingface.co/docs/peft/v0.15.0/en/developer_guides/lora#memory-efficient-layer-replication-with-lora
+peft_layer_replication:
+
+# bool | Literal["gaussian", "eva", "olora", "pissa", "pissa_niter_[number of iters]", "corda", "loftq"]
+# How to initialize LoRA weights. Default to True which is MS original implementation.
+# https://huggingface.co/docs/peft/v0.15.0/en/developer_guides/lora#initialization
+peft_init_lora_weights:
 
 # If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens.
 # For LLaMA and Mistral, you need to save `embed_tokens` and `lm_head`. It may vary for other models.
@@ -587,26 +611,31 @@ max_grad_norm:
 # currently only supported on Llama and Mistral
 neftune_noise_alpha:
 
-# Whether to bettertransformers
+# Optional[bool]. Whether to bettertransformers
 flash_optimum:
-# Whether to use xformers attention patch https://github.com/facebookresearch/xformers:
+
+# Note: Only one of the following attention patches can be used at a time.
+# For example, if you set `xformers_attention` to `true`, do not set `flash_attention` to `true`.
+
+# Optional[bool]. Whether to use xformers attention patch https://github.com/facebookresearch/xformers:
 xformers_attention:
-# Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention:
+# Optional[bool]. Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention:
 flash_attention:
-flash_attn_cross_entropy:  # Whether to use flash-attention cross entropy implementation - advanced use only
-flash_attn_rms_norm:  # Whether to use flash-attention rms norm implementation - advanced use only
-flash_attn_fuse_qkv: # Whether to fuse QKV into a single operation
-flash_attn_fuse_mlp: # Whether to fuse part of the MLP into a single operation
-# Whether to use scaled-dot-product attention
+flash_attn_cross_entropy:  # Optional[bool]. Whether to use flash-attention cross entropy implementation - advanced use only
+flash_attn_rms_norm:  # Optional[bool]. Whether to use flash-attention rms norm implementation - advanced use only
+flash_attn_fuse_qkv: # Optional[bool]. Whether to fuse QKV into a single operation
+flash_attn_fuse_mlp: # Optional[bool]. Whether to fuse part of the MLP into a single operation
+# Optional[bool]. Whether to use scaled-dot-product attention
 # https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
 sdp_attention:
-# Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf
+# Optional[bool]. Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf
 s2_attention:
+
 # Optional[bool]. Whether to use low_cpu_mem_usage
 low_cpu_mem_usage:
-# Resume from a specific checkpoint dir
+# Optional[str]. Resume from a specific checkpoint dir
 resume_from_checkpoint:
-# If resume_from_checkpoint isn't set and you simply want it to start where it left off.
+# Optional[bool]. If resume_from_checkpoint isn't set and you simply want it to start where it left off.
 # Be careful with this being turned on between different models.
 auto_resume_from_checkpoints: false
 

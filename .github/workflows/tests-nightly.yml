@@ -33,6 +33,15 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v4
 
+      - name: Restore HF cache
+        id: hf-cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            /home/runner/.cache/huggingface/hub/datasets--*
+            /home/runner/.cache/huggingface/hub/models--*
+          key: ${{ runner.os }}-hf-hub-cache-v2
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -46,7 +55,7 @@ jobs:
 
       - name: Install PyTorch
         run: |
-          pip3 install torch==${{ matrix.pytorch_version }} --index-url https://download.pytorch.org/whl/cpu
+          pip3 install torch==${{ matrix.pytorch_version }}
 
       - name: Update requirements.txt
         run: |
@@ -58,8 +67,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip3 install --upgrade pip
-          pip3 install --upgrade packaging==23.2
+          pip3 show torch
           pip3 install --no-build-isolation -U -e .
           python scripts/unsloth_install.py | sh
           python scripts/cutcrossentropy_install.py | sh
@@ -73,10 +81,15 @@ jobs:
         run: |
           axolotl --help
 
+      - name: Pre-Download dataset fixture
+        run: |
+          huggingface-cli download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
+
       - name: Run tests
         run: |
-          pytest -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ tests/
-          pytest tests/patched/
+          pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/
+          pytest -v tests/patched/
+          pytest -v tests/cli/
 
       - name: cleanup pip cache
         run: |

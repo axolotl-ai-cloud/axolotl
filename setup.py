@@ -10,7 +10,7 @@ from pathlib import Path
 from setuptools import find_packages, setup
 
 
-def parse_requirements():
+def parse_requirements(extras_require_map):
     _install_requires = []
     _dependency_links = []
     with open("./requirements.txt", encoding="utf-8") as requirements_file:
@@ -67,6 +67,7 @@ def parse_requirements():
             if (major, minor) >= (2, 6):
                 _install_requires.pop(_install_requires.index(xformers_version))
                 _install_requires.append("xformers==0.0.29.post2")
+                extras_require_map["vllm"] = ["vllm==0.8.1"]
             elif (major, minor) >= (2, 5):
                 _install_requires.pop(_install_requires.index(xformers_version))
                 if patch == 0:
@@ -86,7 +87,7 @@ def parse_requirements():
 
     except PackageNotFoundError:
         pass
-    return _install_requires, _dependency_links
+    return _install_requires, _dependency_links, extras_require_map
 
 
 def get_package_version():
@@ -103,7 +104,50 @@ def get_package_version():
     return version_
 
 
-install_requires, dependency_links = parse_requirements()
+extras_require = {
+    "flash-attn": ["flash-attn==2.7.4.post1"],
+    "ring-flash-attn": [
+        "flash-attn==2.7.4.post1",
+        "ring-flash-attn>=0.1.4",
+        "yunchang==0.6.0",
+    ],
+    "deepspeed": [
+        "deepspeed==0.15.4",
+        "deepspeed-kernels",
+    ],
+    "mamba-ssm": [
+        "mamba-ssm==1.2.0.post1",
+        "causal_conv1d",
+    ],
+    "auto-gptq": [
+        "auto-gptq==0.5.1",
+    ],
+    "mlflow": [
+        "mlflow",
+    ],
+    "galore": [
+        "galore_torch",
+    ],
+    "apollo": [
+        "apollo-torch",
+    ],
+    "optimizers": [
+        "galore_torch",
+        "apollo-torch",
+        "lomo-optim==0.1.1",
+        "torch-optimi==0.2.1",
+    ],
+    "ray": [
+        "ray[train]",
+    ],
+    "vllm": [
+        "vllm==0.7.2",
+    ],
+}
+
+install_requires, dependency_links, extras_require_build = parse_requirements(
+    extras_require
+)
 
 setup(
     version=get_package_version(),
@@ -116,40 +160,5 @@ setup(
             "axolotl=axolotl.cli.main:main",
         ],
     },
-    extras_require={
-        "flash-attn": ["flash-attn==2.7.4.post1"],
-        "ring-flash-attn": ["ring-flash-attn>=0.1.4", "yunchang==0.6.0"],
-        "deepspeed": [
-            "deepspeed==0.16.4",
-            "deepspeed-kernels",
-        ],
-        "mamba-ssm": [
-            "mamba-ssm==1.2.0.post1",
-            "causal_conv1d",
-        ],
-        "auto-gptq": [
-            "auto-gptq==0.5.1",
-        ],
-        "mlflow": [
-            "mlflow",
-        ],
-        "galore": [
-            "galore_torch",
-        ],
-        "apollo": [
-            "apollo-torch",
-        ],
-        "optimizers": [
-            "galore_torch",
-            "apollo-torch",
-            "lomo-optim==0.1.1",
-            "torch-optimi==0.2.1",
-        ],
-        "ray": [
-            "ray[train]",
-        ],
-        "vllm": [
-            "vllm==0.7.2",
-        ],
-    },
+    extras_require=extras_require_build,
 )

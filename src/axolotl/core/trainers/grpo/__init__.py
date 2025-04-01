@@ -40,17 +40,14 @@ class GRPOStrategy:
 
         if trl.use_vllm:
             grpo_args_kwargs["use_vllm"] = trl.use_vllm
-            grpo_args_kwargs["vllm_device"] = (
-                trl.vllm_device if trl.vllm_device else "auto"
-            )
-
-            if trl.vllm_gpu_memory_utilization:
-                grpo_args_kwargs["vllm_gpu_memory_utilization"] = (
-                    trl.vllm_gpu_memory_utilization
+            grpo_args_kwargs["vllm_server_host"] = trl.vllm_server_host
+            grpo_args_kwargs["vllm_server_port"] = trl.vllm_server_port
+            if trl.vllm_server_timeout:
+                grpo_args_kwargs["vllm_server_timeout"] = trl.vllm_server_timeout
+            if trl.vllm_guided_decoding_regex:
+                grpo_args_kwargs["vllm_guided_decoding_regex"] = (
+                    trl.vllm_guided_decoding_regex
                 )
-
-            if trl.vllm_max_model_len:
-                grpo_args_kwargs["vllm_max_model_len"] = trl.vllm_max_model_len
 
         if trl.num_generations:
             grpo_args_kwargs["num_generations"] = trl.num_generations
@@ -69,6 +66,25 @@ class GRPOStrategy:
 
         if trl.reward_weights:
             grpo_args_kwargs["reward_weights"] = trl.reward_weights
+
+        if trl.scale_rewards is not None:
+            grpo_args_kwargs["scale_rewards"] = trl.scale_rewards
+
+        if trl.temperature is not None:
+            grpo_args_kwargs["temperature"] = trl.temperature
+        if trl.top_p is not None:
+            grpo_args_kwargs["top_p"] = trl.top_p
+        if trl.top_k is not None:
+            grpo_args_kwargs["top_k"] = trl.top_k
+        if trl.min_p is not None:
+            grpo_args_kwargs["min_p"] = trl.min_p
+        if trl.repetition_penalty is not None:
+            grpo_args_kwargs["repetition_penalty"] = trl.repetition_penalty
+
+        if trl.num_iterations is not None:
+            grpo_args_kwargs["num_iterations"] = trl.num_iterations
+        if trl.epsilon is not None:
+            grpo_args_kwargs["epsilon"] = trl.epsilon
 
         return grpo_args_kwargs
 

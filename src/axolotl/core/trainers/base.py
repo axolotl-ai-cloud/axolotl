@@ -8,12 +8,11 @@ import logging
 import os
 from collections import defaultdict
 from functools import wraps
-from typing import Any, Literal
+from typing import Literal
 
 import datasets
 import torch
 from datasets import Dataset
-from torch import nn
 from torch.utils.data import (
     BatchSampler,
     DataLoader,
@@ -28,6 +27,7 @@ from typing_extensions import override
 
 from axolotl.core.trainers.mixins import (
     OptimizerMixin,
+    RngLoaderMixin,
     SchedulerMixin,
     SequenceParallelMixin,
 )
@@ -40,7 +40,9 @@ from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 LOG = logging.getLogger(__name__)
 
 
-class AxolotlTrainer(SchedulerMixin, OptimizerMixin, SequenceParallelMixin, Trainer):
+class AxolotlTrainer(
+    SchedulerMixin, OptimizerMixin, RngLoaderMixin, SequenceParallelMixin, Trainer
+):
     """Extend the base Trainer for axolotl helpers"""
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
@@ -112,6 +114,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, SequenceParallelMixin, Trai
             packing_efficiency_estimate=self.args.sample_packing_efficiency,
             batch_max_len=batch_max_len,
             batch_size=batch_size,
+            sequential=self.args.sample_packing_sequentially,
             drop_last=True,
         )
 
@@ -589,27 +592,3 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, SequenceParallelMixin, Trai
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
         return super()._save_checkpoint(model, trial, **kwargs)
-
-    def training_step(
-        self,
-        model: nn.Module,
-        inputs: dict[str, torch.Tensor | Any],
-        num_items_in_batch: int | None = None,
-    ) -> torch.Tensor:
-        """
-        Perform a training step on a batch of inputs. Overrides the
-        `transformers.trainer.Trainer` method to handle sequence parallelism if
-        enabled.
-
-        Args:
-            model: Model to perform training step for.
-            inputs: Dictionary mapping.
-        """
-        # Set up sequence parallelism for this step if enabled
-        if self.args.sequence_parallel_degree > 1:
-            self._update_ring_flash_attn_params(inputs)
-
-        # Proceed with normal training step
-        loss = super().training_step(model, inputs, num_items_in_batch)
-
-        return loss

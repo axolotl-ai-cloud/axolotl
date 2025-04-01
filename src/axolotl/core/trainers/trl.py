@@ -13,6 +13,7 @@ from trl import (
     RewardTrainer,
 )
 
+from axolotl.core.trainers.mixins import RngLoaderMixin
 from axolotl.core.trainers.mixins.scheduler import SchedulerMixin
 
 
@@ -74,7 +75,7 @@ class TRLPPOTrainer(PPOTrainer):
             )
 
 
-class AxolotlORPOTrainer(SchedulerMixin, ORPOTrainer):
+class AxolotlORPOTrainer(RngLoaderMixin, SchedulerMixin, ORPOTrainer):
     """
     Extend the base ORPOTrainer for axolotl helpers
     """
@@ -154,7 +155,7 @@ class AxolotlORPOTrainer(SchedulerMixin, ORPOTrainer):
         return loss, metrics
 
 
-class AxolotlKTOTrainer(SchedulerMixin, KTOTrainer):
+class AxolotlKTOTrainer(RngLoaderMixin, SchedulerMixin, KTOTrainer):
     """
     Extend the base KTOTrainer for axolotl helpers
     """
@@ -162,7 +163,7 @@ class AxolotlKTOTrainer(SchedulerMixin, KTOTrainer):
     tag_names = ["axolotl", "kto"]
 
 
-class AxolotlCPOTrainer(SchedulerMixin, CPOTrainer):
+class AxolotlCPOTrainer(RngLoaderMixin, SchedulerMixin, CPOTrainer):
     """
     Extend the base CPOTrainer for axolotl helpers
     """
@@ -244,7 +245,7 @@ class AxolotlCPOTrainer(SchedulerMixin, CPOTrainer):
         return loss, metrics
 
 
-class AxolotlRewardTrainer(SchedulerMixin, RewardTrainer):
+class AxolotlRewardTrainer(RngLoaderMixin, SchedulerMixin, RewardTrainer):
     """
     Extend the base RewardTrainer for axolotl helpers
     """
@@ -252,7 +253,7 @@ class AxolotlRewardTrainer(SchedulerMixin, RewardTrainer):
     tag_names = ["axolotl", "reward"]
 
 
-class AxolotlPRMTrainer(SchedulerMixin, PRMTrainer):
+class AxolotlPRMTrainer(RngLoaderMixin, SchedulerMixin, PRMTrainer):
     """
     Extend the base trl.PRMTrainer for axolotl helpers
     """

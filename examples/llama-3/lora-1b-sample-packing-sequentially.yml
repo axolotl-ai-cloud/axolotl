@@ -1,40 +1,42 @@
-base_model: google/gemma-3-1b-it
+base_model: meta-llama/Llama-3.2-1B
 # optionally might have model_type or tokenizer_type
-model_type: AutoModelForCausalLM
+model_type: LlamaForCausalLM
 tokenizer_type: AutoTokenizer
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
-# gemma3 doesn't seem to play nice with ddp
-ddp_find_unused_parameters: true
-
-load_in_8bit: false
-load_in_4bit: true
+load_in_8bit: true
+load_in_4bit: false
 strict: false
 
-# huggingface repo
-chat_template: gemma3
 datasets:
-  - path: cgato/SlimOrcaDedupCleaned
-    type: chat_template
-    field_messages: conversations
-    message_property_mappings:
-      role: from
-      content: value
-
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+dataset_prepared_path:
 val_set_size: 0.0
-output_dir: ./outputs/out
+output_dir: ./outputs/lora-out
 
-adapter: qlora
+test_value: true
+
+sequence_len: 4096
+sample_packing: true
+sample_packing_sequentially: true
+curriculum_sampling: true
+eval_sample_packing: false
+pad_to_sequence_len: true
+
+adapter: lora
+lora_model_dir:
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
 lora_target_linear: true
-
-sequence_len: 2048
-sample_packing: true
-eval_sample_packing: false
-pad_to_sequence_len: true
+lora_fan_in_fan_out:
+lora_modules_to_save:
+  - embed_tokens
+  - lm_head
 
 wandb_project:
 wandb_entity:
@@ -42,9 +44,8 @@ wandb_watch:
 wandb_name:
 wandb_log_model:
 
-
 gradient_accumulation_steps: 4
-micro_batch_size: 1
+micro_batch_size: 2
 num_epochs: 4
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
@@ -54,20 +55,19 @@ train_on_inputs: false
 group_by_length: false
 bf16: auto
 fp16:
-tf32: true
+tf32: false
 
 gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: false
 early_stopping_patience:
 resume_from_checkpoint:
 local_rank:
 logging_steps: 1
 xformers_attention:
 flash_attention: true
+s2_attention:
 
-warmup_ratio: 0.1
-evals_per_epoch:
+warmup_steps: 10
+evals_per_epoch: 4
 eval_table_size:
 eval_max_new_tokens: 128
 saves_per_epoch: 1
@@ -77,3 +77,4 @@ weight_decay: 0.0
 fsdp:
 fsdp_config:
 special_tokens:
+  pad_token: <|end_of_text|>

@@ -7,6 +7,7 @@ import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 from datasets import Dataset
+from torch import nn
 from torch.utils.data import DistributedSampler, Sampler
 
 from axolotl.monkeypatch.attention.ring_attn import get_ring_attn_group
@@ -129,3 +130,53 @@ class SequenceParallelMixin:
         )
 
         update_ring_flash_attn_params(cu_seqlens, self.ring_attn_group)
+
+    def training_step(
+        self,
+        model: nn.Module,
+        inputs: dict[str, torch.Tensor | Any],
+        num_items_in_batch: int | None = None,
+    ) -> torch.Tensor:
+        """
+        Perform a training step on a batch of inputs. Overrides the
+        `transformers.trainer.Trainer` method to handle sequence parallelism if
+        enabled.
+
+        Args:
+            model: Model to perform training step for.
+            inputs: Dictionary mapping.
+        """
+        # Set up sequence parallelism for this step if enabled
+        if self.args.sequence_parallel_degree > 1:
+            self._update_ring_flash_attn_params(inputs)
+
+        # Proceed with normal training step
+        return super().training_step(model, inputs, num_items_in_batch)  # type: ignore
+
+    def prediction_step(
+        self,
+        model: nn.Module,
+        inputs: dict[str, torch.Tensor | Any],
+        prediction_loss_only: bool,
+        ignore_keys: list[str] | None = None,
+    ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+        """
+        Perform a prediction step on a batch of inputs. Overrides the
+        `transformers.trainer.Trainer` method to handle sequence parallelism if
+        enabled.
+
+        Args:
+            model: Model to perform prediction step for.
+            inputs: Dictionary mapping of inputs.
+            prediction_loss_only: Whether to return only the loss.
+            ignore_keys: Keys to ignore in the inputs.
+
+        Returns:
+            Tuple of (loss, logits, labels).
+        """
+        # Set up sequence parallelism for this prediction step if enabled
+        if self.args.sequence_parallel_degree > 1:
+            self._update_ring_flash_attn_params(inputs)
+
+        # Proceed with normal prediction step
+        return super().prediction_step(model, inputs, prediction_loss_only, ignore_keys)  # type: ignore

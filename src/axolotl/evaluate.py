@@ -15,6 +15,7 @@ from axolotl.logging_config import configure_logging
 from axolotl.train import TrainDatasetMeta
 from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.models import load_model, load_processor, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
 
@@ -158,5 +159,7 @@ def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> Dict[str, f
 
     del model
     del tokenizer
+
+    cleanup_distributed()
 
     return all_metrics

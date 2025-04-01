@@ -2,108 +2,68 @@
 Axolotl GRPO trainer
 """
 
-from accelerate.utils import is_peft_model
-from accelerate.utils.other import is_compiled_module
-from transformers import PreTrainedModel
-from trl import GRPOConfig, GRPOTrainer
-from trl.models import unwrap_model_for_generation
+from contextlib import nullcontext
 
-from axolotl.core.trainers.base import SchedulerMixin
+from accelerate.utils import is_deepspeed_available, is_peft_model
+from trl import GRPOTrainer
+from trl.extras.profiling import profiling_decorator
+
+from axolotl.core.trainers.mixins import RngLoaderMixin, SchedulerMixin
+
+if is_deepspeed_available():
+    import deepspeed
 
 
-# mypy: ignore-errors
-class AxolotlGRPOTrainer(SchedulerMixin, GRPOTrainer):
+class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
     """
     Extend the base GRPOTrainer for axolotl helpers
     """
 
     _tag_names = ["trl", "grpo", "axolotl"]
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        # pylint: disable=access-member-before-definition
-        # Enable gradient checkpointing if requested
-        if kwargs["args"].gradient_checkpointing:
-            # Ensure use_cache is disabled
-            if hasattr(self.model, "config"):
-                self.model.config.use_cache = False
-
-            # Enable gradient checkpointing on the base model for PEFT
-            if is_peft_model(self.model) and hasattr(
-                self.model.base_model, "gradient_checkpointing_enable"
-            ):
-                self.model.base_model.gradient_checkpointing_enable()
-            # Enable gradient checkpointing for non-PEFT models
-            elif hasattr(self.model, "gradient_checkpointing_enable"):
-                self.model.gradient_checkpointing_enable()
-            self.model = self._enable_gradient_checkpointing(self.model, kwargs["args"])
-        # pylint: enable=access-member-before-definition
-
-    def _enable_gradient_checkpointing(
-        self, model: PreTrainedModel, args: GRPOConfig
-    ) -> PreTrainedModel:
-        """Enables gradient checkpointing for the model."""
-        # pylint: disable=unused-argument,redefined-builtin
-        gradient_checkpointing_kwargs = args.gradient_checkpointing_kwargs or {}
-        use_reentrant = (
-            "use_reentrant" not in gradient_checkpointing_kwargs
-            or gradient_checkpointing_kwargs["use_reentrant"]
+    @profiling_decorator
+    def _move_model_to_vllm(self):
+        # For DeepSpeed ZeRO-3, we need to gather all parameters before operations
+        deepspeed_plugin = self.accelerator.state.deepspeed_plugin
+        zero_stage_3 = deepspeed_plugin is not None and deepspeed_plugin.zero_stage == 3
+        gather_if_zero3 = (
+            deepspeed.zero.GatheredParameters if zero_stage_3 else nullcontext
         )
 
-        if use_reentrant:
-            if hasattr(model, "enable_input_require_grads"):
-                model.enable_input_require_grads()
-            else:
+        if is_peft_model(self.model):
+            # With PEFT and DeepSpeed ZeRO Stage 3, we must gather the full model at once before merging, as merging
+            # adapters in a sharded manner is not supported.
+            with gather_if_zero3(list(self.model.parameters())):
+                self.model.merge_adapter()
 
-                def make_inputs_require_grad(module, input, output):
-                    output.requires_grad_(True)
+                # Update vLLM weights while parameters are gathered
+                for name, param in self.model.named_parameters():
+                    # When using PEFT, we need to recover the original parameter name and discard some parameters
+                    name = (
+                        name.removeprefix("base_model.model.")
+                        .removeprefix("base_model.model.")
+                        .replace(".base_layer", "")
+                    )
+                    if self.model.prefix in name:
+                        continue
+                    # When module to save, remove its prefix and discard the original module
+                    if "original_module" in name:
+                        continue
+                    name = name.replace("modules_to_save.default.", "")
 
-                model.get_input_embeddings().register_forward_hook(
-                    make_inputs_require_grad
-                )
+                    if self.accelerator.is_main_process:
+                        self.vllm_client.update_named_param(name, param.data)
 
-        return model
-        # pylint: enable=unused-argument,redefined-builtin
+                # Unmerge adapters while parameters are still gathered
+                self.model.unmerge_adapter()
+                # Parameters will automatically be repartitioned when exiting the context
+        else:
+            # For non-PEFT models, simply gather and update each parameter individually.
+            for name, param in self.model.named_parameters():
+                with gather_if_zero3([param]):
+                    if self.accelerator.is_main_process:
+                        self.vllm_client.update_named_param(name, param.data)
 
-    def _move_model_to_vllm(self):
-        with unwrap_model_for_generation(
-            self.model,
-            self.accelerator,
-            gather_deepspeed3_params=self.args.ds3_gather_for_generation,
-        ) as unwrapped_model:
-            if is_compiled_module(unwrapped_model):
-                unwrapped_model = (
-                    unwrapped_model._orig_mod  # pylint: disable=protected-access
-                )
-            if is_peft_model(unwrapped_model):
-                unwrapped_model.merge_adapter()
-                state_dict = unwrapped_model.state_dict()
-                # Remove base_model and base_layer prefixes
-                state_dict = {
-                    k.removeprefix("base_model.model.")
-                    .removeprefix("base_model.model.")
-                    .replace(".base_layer", ""): v
-                    for k, v in state_dict.items()
-                }
-                # Remove values with adapter prefix (example: "_lora")
-                state_dict = {
-                    k: v
-                    for k, v in state_dict.items()
-                    if unwrapped_model.prefix not in k
-                }
-                # When module to save, remove its prefix and discard the original module
-                state_dict = {
-                    k.replace("modules_to_save.default.", ""): v
-                    for k, v in state_dict.items()
-                    if "original_module" not in k
-                }
-            else:
-                state_dict = unwrapped_model.state_dict()
-            if self.accelerator.is_main_process:
-                llm_model = (
-                    self.llm.llm_engine.model_executor.driver_worker.model_runner.model
-                )
-                llm_model.load_weights(state_dict.items())
-            if is_peft_model(unwrapped_model):
-                unwrapped_model.unmerge_adapter()
+        # Reset cache on main process
+        if self.accelerator.is_main_process:
+            self.vllm_client.reset_prefix_cache()

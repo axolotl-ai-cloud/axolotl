@@ -170,7 +170,7 @@ axolotl merge-sharded-fsdp-weights config.yml
 
 ### evaluate
 
-Evaluates a model's performance using metrics specified in the config.
+Evaluates a model's performance (loss etc) on the train and eval datasets.
 
 ```bash
 # Basic evaluation
@@ -196,6 +196,8 @@ lm_eval_tasks:
 lm_eval_batch_size: # Batch size for evaluation
 output_dir: # Directory to save evaluation results
 ```
+
+See [LM Eval Harness](https://github.com/EleutherAI/lm-evaluation-harness) for more details.
 
 ## Legacy CLI Usage
 
@@ -235,7 +237,7 @@ Create a cloud config YAML with your Modal settings:
 ```yaml
 # cloud_config.yml
 provider: modal
-gpu: a100  # Supported: l40s, a100-40gb, a100-80gb, a10g, h100, t4, l4
+gpu: a100       # Supported: l40s, a100-40gb, a100-80gb, a10g, h100, t4, l4
 gpu_count: 1    # Number of GPUs to use
 timeout: 86400  # Maximum runtime in seconds (24 hours)
 branch: main    # Git branch to use (optional)
@@ -248,7 +250,7 @@ volumes:        # Persistent storage volumes
   - name: axolotl-artifacts
     mount: /workspace/artifacts
 
-env:            # Environment variables
+secrets:        # Secrets to inject
   - WANDB_API_KEY
   - HF_TOKEN
 ```
@@ -274,15 +276,27 @@ axolotl lm-eval config.yml --cloud cloud_config.yml
 ### Cloud Configuration Options
 
 ```yaml
-provider: # compute provider, currently only `modal` is supported
-gpu: # GPU type to use
-gpu_count: # Number of GPUs (default: 1)
-memory: # RAM in GB (default: 128)
-timeout: # Maximum runtime in seconds
+provider:    # compute provider, currently only `modal` is supported
+gpu:         # GPU type to use
+gpu_count:   # Number of GPUs (default: 1)
+memory:      # RAM in GB (default: 128)
+timeout:     # Maximum runtime in seconds
 timeout_preprocess: # Preprocessing timeout
-branch: # Git branch to use
-docker_tag: # Custom Docker image tag
-volumes: # List of persistent storage volumes
-env: # Environment variables to pass
-secrets: # Secrets to inject
+branch:      # Git branch to use
+docker_tag:  # Custom Docker image tag
+volumes:     # List of persistent storage volumes
+
+# Environment variables to pass. Can be specified in two ways:
+# 1. As a string: Will load the value from the host computer's environment variables
+# 2. As a key-value pair: Will use the specified value directly
+# Example:
+# env:
+#   - CUSTOM_VAR  # Loads from host's $CUSTOM_VAR
+#   - {CUSTOM_VAR: "value"}  # Uses "value" directly
+env:
+
+# Secrets to inject. Same input format as `env` but for sensitive data.
+secrets:
+  # - HF_TOKEN
+  # - WANDB_API_KEY
 ```

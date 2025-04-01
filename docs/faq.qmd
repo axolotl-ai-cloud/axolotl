@@ -35,11 +35,21 @@ description: Frequently asked questions
 
 **Q: How to call Axolotl via custom python scripts?**
 
-> A: Yes, since Axolotl is just Python, please see `src/axolotl/cli/main.py` on how each command is called.
+> A: Since Axolotl is just Python, please see `src/axolotl/cli/main.py` on how each command is called.
 
 **Q: How to know the value to use for `fsdp_transformer_layer_cls_to_wrap`?**
 
 > A: This is the class name of the transformer layer to wrap with FSDP. For example, for `LlamaForCausalLM`, the value is `LlamaDecoderLayer`. To find this for a specific model, check the model's `PreTrainedModel` definition and look for `_no_split_modules` variable in the `modeling_<model_name>.py` file within `transformers` library.
+
+**Q: ValueError: Asking to pad but the tokenizer does not have a padding token. Please select a token to use as pad_token**
+
+> A: This is because the tokenizer does not have a padding token. Please add a padding token to the tokenizer via:
+
+> ```yaml
+> special_tokens:
+>   # str. If you're not sure, set to same as `eos_token`.
+>   pad_token: "..."
+> ```
 
 ### Chat templates
 
