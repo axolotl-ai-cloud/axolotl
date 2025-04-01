@@ -10,9 +10,10 @@ import tempfile
 import time
 from pathlib import Path
 
+import datasets
 import pytest
 import requests
-from datasets import Dataset, load_dataset
+from datasets import load_dataset
 from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer
 
@@ -371,7 +372,15 @@ def dataset_tatsu_lab_alpaca(
     download_ds_fixture_bundle: Path,
 ):  # pylint: disable=redefined-outer-name
     ds_path = download_ds_fixture_bundle / "tatsu-lab__alpaca"
-    return Dataset.load_from_disk(ds_path)["train"]
+    return datasets.load_from_disk(ds_path)["train"]
+
+
+@pytest.fixture
+def dataset_winglian_tiny_shakespeare(
+    download_ds_fixture_bundle: Path,
+):  # pylint: disable=redefined-outer-name
+    ds_path = download_ds_fixture_bundle / "winglian__tiny-shakespeare"
+    return datasets.load_from_disk(ds_path)
 
 
 @pytest.fixture
@@ -379,7 +388,7 @@ def dataset_mhenrichsen_alpaca_2k_test(
     download_ds_fixture_bundle: Path,
 ):  # pylint: disable=redefined-outer-name
     ds_path = download_ds_fixture_bundle / "mhenrichsen__alpaca_2k_test"
-    return Dataset.load_from_disk(ds_path)["train"]
+    return datasets.load_from_disk(ds_path)["train"]
 
 
 @pytest.fixture
@@ -387,7 +396,7 @@ def dataset_fozziethebeat_alpaca_messages_2k_dpo_test(
     download_ds_fixture_bundle: Path,
 ):  # pylint: disable=redefined-outer-name
     ds_path = download_ds_fixture_bundle / "fozziethebeat__alpaca_messages_2k_dpo_test"
-    return Dataset.load_from_disk(ds_path)["train"]
+    return datasets.load_from_disk(ds_path)["train"]
 
 
 @pytest.fixture
@@ -398,7 +407,7 @@ def dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff(
         download_ds_fixture_bundle
         / "fozziethebeat__alpaca_messages_2k_dpo_test__rev_ea82cff"
     )
-    return Dataset.load_from_disk(ds_path)["train"]
+    return datasets.load_from_disk(ds_path)["train"]
 
 
 # # pylint: disable=redefined-outer-name,unused-argument
