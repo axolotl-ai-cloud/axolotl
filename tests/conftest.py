@@ -419,6 +419,14 @@ def cleanup_monkeypatches():
 
 
 @pytest.fixture
+def dataset_winglian_tiny_shakespeare(
+    download_ds_fixture_bundle: Path,
+):  # pylint: disable=redefined-outer-name
+    ds_path = download_ds_fixture_bundle / "winglian__tiny-shakespeare"
+    return datasets.load_from_disk(ds_path)
+
+
+@pytest.fixture
 def dataset_tatsu_lab_alpaca(
     download_ds_fixture_bundle: Path,
 ):  # pylint: disable=redefined-outer-name
