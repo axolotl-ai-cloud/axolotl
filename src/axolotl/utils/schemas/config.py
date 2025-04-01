@@ -950,6 +950,7 @@ class AxolotlInputConfig(
             and "8bit" in data.get("optimizer", "")
             and data.get("fsdp_config")
             and data["fsdp_config"].get("fsdp_offload_params")
+            and str(data["fsdp_config"].get("fsdp_version")) != "2"
         ):
             raise ValueError(
                 f"FSDP Offload not compatible with {data.get('optimizer')}"
