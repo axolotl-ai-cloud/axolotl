@@ -170,7 +170,7 @@ axolotl merge-sharded-fsdp-weights config.yml
 
 ### evaluate
 
-Evaluates a model's performance on the train and eval datasets.
+Evaluates a model's performance (loss etc) on the train and eval datasets.
 
 ```bash
 # Basic evaluation
