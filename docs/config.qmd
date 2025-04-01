@@ -686,9 +686,10 @@ ddp_broadcast_buffers:
 # E.g., if 4 GPUs are available, set this value to 2 to split each sequence into two equal-sized
 # subsequences, or set to 4 to split into four equal-sized subsequences.
 # See https://axolotl-ai-cloud.github.io/axolotl/docs/sequence_parallelism.html for more details.
-sequence_parallel_degree:
-# Optional; strides across the key dimension. Larger values use more memory but should make training faster.
-# Must evenly divide the number of KV heads in your model.
+sequence_parallel_degree: 4  # Set to the number of GPUs to split sequences across
+flash_attention: true  # SP requires flash attention
+micro_batch_size: 1  # SP requires this is set to 1
+# (optional) strides across the key dimension; larger values use more memory but should make training a bit faster
 heads_k_stride: 1
 
 # Path to torch distx for optim 'adamw_anyprecision'
