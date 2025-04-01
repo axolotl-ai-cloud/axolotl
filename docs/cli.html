@@ -602,7 +602,7 @@ the CLI commands, their usage, and common examples.</p>
 </section>
 <section id="evaluate" class="level3">
 <h3 class="anchored" data-anchor-id="evaluate">evaluate</h3>
-<p>Evaluates a model’s performance using metrics specified in the config.</p>
+<p>Evaluates a model’s performance (loss etc) on the train and eval datasets.</p>
 <div class="sourceCode" id="cb12"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Basic evaluation</span></span>
 <span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> evaluate config.yml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
@@ -618,6 +618,7 @@ the CLI commands, their usage, and common examples.</p>
 <span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> hellaswag</span></span>
 <span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="fu">lm_eval_batch_size</span><span class="kw">:</span><span class="co"> # Batch size for evaluation</span></span>
 <span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="co"> # Directory to save evaluation results</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>See <a href="https://github.com/EleutherAI/lm-evaluation-harness">LM Eval Harness</a> for more details.</p>
 </section>
 </section>
 <section id="legacy-cli-usage" class="level2">
@@ -660,7 +661,7 @@ cloud YAML file alongside your regular Axolotl config.</p>
 <p>Create a cloud config YAML with your Modal settings:</p>
 <div class="sourceCode" id="cb16"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="co"># cloud_config.yml</span></span>
 <span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> modal</span></span>
-<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="fu">gpu</span><span class="kw">:</span><span class="at"> a100</span><span class="co">  # Supported: l40s, a100-40gb, a100-80gb, a10g, h100, t4, l4</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="fu">gpu</span><span class="kw">:</span><span class="at"> a100</span><span class="co">       # Supported: l40s, a100-40gb, a100-80gb, a10g, h100, t4, l4</span></span>
 <span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a><span class="fu">gpu_count</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">    # Number of GPUs to use</span></span>
 <span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a><span class="fu">timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">86400</span><span class="co">  # Maximum runtime in seconds (24 hours)</span></span>
 <span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a><span class="fu">branch</span><span class="kw">:</span><span class="at"> main</span><span class="co">    # Git branch to use (optional)</span></span>
@@ -673,7 +674,7 @@ cloud YAML file alongside your regular Axolotl config.</p>
 <span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> axolotl-artifacts</span></span>
 <span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mount</span><span class="kw">:</span><span class="at"> /workspace/artifacts</span></span>
 <span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a><span class="fu">env</span><span class="kw">:</span><span class="co">            # Environment variables</span></span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a><span class="fu">secrets</span><span class="kw">:</span><span class="co">        # Secrets to inject</span></span>
 <span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> WANDB_API_KEY</span></span>
 <span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> HF_TOKEN</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
@@ -694,17 +695,29 @@ cloud YAML file alongside your regular Axolotl config.</p>
 </section>
 <section id="cloud-configuration-options" class="level3">
 <h3 class="anchored" data-anchor-id="cloud-configuration-options">Cloud Configuration Options</h3>
-<div class="sourceCode" id="cb18"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="co"> # compute provider, currently only `modal` is supported</span></span>
-<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="fu">gpu</span><span class="kw">:</span><span class="co"> # GPU type to use</span></span>
-<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a><span class="fu">gpu_count</span><span class="kw">:</span><span class="co"> # Number of GPUs (default: 1)</span></span>
-<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="fu">memory</span><span class="kw">:</span><span class="co"> # RAM in GB (default: 128)</span></span>
-<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a><span class="fu">timeout</span><span class="kw">:</span><span class="co"> # Maximum runtime in seconds</span></span>
+<div class="sourceCode" id="cb18"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="co">    # compute provider, currently only `modal` is supported</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="fu">gpu</span><span class="kw">:</span><span class="co">         # GPU type to use</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a><span class="fu">gpu_count</span><span class="kw">:</span><span class="co">   # Number of GPUs (default: 1)</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="fu">memory</span><span class="kw">:</span><span class="co">      # RAM in GB (default: 128)</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a><span class="fu">timeout</span><span class="kw">:</span><span class="co">     # Maximum runtime in seconds</span></span>
 <span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a><span class="fu">timeout_preprocess</span><span class="kw">:</span><span class="co"> # Preprocessing timeout</span></span>
-<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a><span class="fu">branch</span><span class="kw">:</span><span class="co"> # Git branch to use</span></span>
-<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a><span class="fu">docker_tag</span><span class="kw">:</span><span class="co"> # Custom Docker image tag</span></span>
-<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a><span class="fu">volumes</span><span class="kw">:</span><span class="co"> # List of persistent storage volumes</span></span>
-<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a><span class="fu">env</span><span class="kw">:</span><span class="co"> # Environment variables to pass</span></span>
-<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a><span class="fu">secrets</span><span class="kw">:</span><span class="co"> # Secrets to inject</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a><span class="fu">branch</span><span class="kw">:</span><span class="co">      # Git branch to use</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a><span class="fu">docker_tag</span><span class="kw">:</span><span class="co">  # Custom Docker image tag</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a><span class="fu">volumes</span><span class="kw">:</span><span class="co">     # List of persistent storage volumes</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a><span class="co"># Environment variables to pass. Can be specified in two ways:</span></span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a><span class="co"># 1. As a string: Will load the value from the host computer's environment variables</span></span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a><span class="co"># 2. As a key-value pair: Will use the specified value directly</span></span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a><span class="co"># Example:</span></span>
+<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a><span class="co"># env:</span></span>
+<span id="cb18-16"><a href="#cb18-16" aria-hidden="true" tabindex="-1"></a><span class="co">#   - CUSTOM_VAR  # Loads from host's $CUSTOM_VAR</span></span>
+<span id="cb18-17"><a href="#cb18-17" aria-hidden="true" tabindex="-1"></a><span class="co">#   - {CUSTOM_VAR: "value"}  # Uses "value" directly</span></span>
+<span id="cb18-18"><a href="#cb18-18" aria-hidden="true" tabindex="-1"></a><span class="fu">env</span><span class="kw">:</span></span>
+<span id="cb18-19"><a href="#cb18-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-20"><a href="#cb18-20" aria-hidden="true" tabindex="-1"></a><span class="co"># Secrets to inject. Same input format as `env` but for sensitive data.</span></span>
+<span id="cb18-21"><a href="#cb18-21" aria-hidden="true" tabindex="-1"></a><span class="fu">secrets</span><span class="kw">:</span></span>
+<span id="cb18-22"><a href="#cb18-22" aria-hidden="true" tabindex="-1"></a><span class="co">  # - HF_TOKEN</span></span>
+<span id="cb18-23"><a href="#cb18-23" aria-hidden="true" tabindex="-1"></a><span class="co">  # - WANDB_API_KEY</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 </section>
