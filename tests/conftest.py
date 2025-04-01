@@ -13,8 +13,8 @@ from pathlib import Path
 import datasets
 import pytest
 import requests
-from datasets import load_dataset
 from huggingface_hub import snapshot_download
+from tokenizers import AddedToken
 from transformers import AutoTokenizer
 
 from tests.hf_offline_utils import disable_hf_offline, enable_hf_offline
@@ -118,12 +118,12 @@ def download_argilla_distilabel_intel_orca_dpo_dataset():
     )
 
 
-@pytest.fixture(scope="session", autouse=True)
-def download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset():
-    # download the dataset
-    snapshot_download_w_retry(
-        "argilla/ultrafeedback-binarized-preferences-cleaned", repo_type="dataset"
-    )
+# @pytest.fixture(scope="session", autouse=True)
+# def download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset():
+#     # download the dataset
+#     snapshot_download_w_retry(
+#         "argilla/ultrafeedback-binarized-preferences-cleaned", repo_type="dataset"
+#     )
 
 
 # @pytest.fixture(scope="session", autouse=True)
@@ -139,22 +139,22 @@ def download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset():
 #     )
 
 
-@pytest.fixture(scope="session")
-@disable_hf_offline
-def dataset_fozzie_alpaca_dpo_dataset(
-    download_fozzie_alpaca_dpo_dataset,
-):  # pylint: disable=unused-argument,redefined-outer-name
-    return load_dataset("fozziethebeat/alpaca_messages_2k_dpo_test", split="train")
-
-
-@pytest.fixture(scope="session")
-@disable_hf_offline
-def dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff(
-    download_fozzie_alpaca_dpo_dataset,
-):  # pylint: disable=unused-argument,redefined-outer-name
-    return load_dataset(
-        "fozziethebeat/alpaca_messages_2k_dpo_test", split="train", revision="ea82cff"
-    )
+# @pytest.fixture(scope="session")
+# @disable_hf_offline
+# def dataset_fozzie_alpaca_dpo_dataset(
+#     download_fozzie_alpaca_dpo_dataset,
+# ):  # pylint: disable=unused-argument,redefined-outer-name
+#     return load_dataset("fozziethebeat/alpaca_messages_2k_dpo_test", split="train")
+#
+#
+# @pytest.fixture(scope="session")
+# @disable_hf_offline
+# def dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff(
+#     download_fozzie_alpaca_dpo_dataset,
+# ):  # pylint: disable=unused-argument,redefined-outer-name
+#     return load_dataset(
+#         "fozziethebeat/alpaca_messages_2k_dpo_test", split="train", revision="ea82cff"
+#     )
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -281,7 +281,7 @@ def download_mlx_mistral_7b_model_fixture():
     )
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture
 def download_llama2_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
@@ -291,7 +291,7 @@ def download_llama2_model_fixture():
     )
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture
 @enable_hf_offline
 def tokenizer_huggyllama(
     download_huggyllama_model_fixture,
@@ -300,6 +300,57 @@ def tokenizer_huggyllama(
     tokenizer.pad_token = "</s>"
 
     return tokenizer
+
+
+@pytest.fixture
+@enable_hf_offline
+def tokenizer_huggyllama_w_special_tokens(
+    tokenizer_huggyllama,
+):  # pylint: disable=redefined-outer-name
+    tokenizer_huggyllama.add_special_tokens(
+        {
+            "bos_token": "<s>",
+            "eos_token": "</s>",
+            "unk_token": "<unk>",
+        }
+    )
+
+    return tokenizer_huggyllama
+
+
+@pytest.fixture
+@enable_hf_offline
+def tokenizer_llama2_7b(
+    download_llama2_model_fixture,
+):  # pylint: disable=unused-argument,redefined-outer-name
+    tokenizer = AutoTokenizer.from_pretrained("NousResearch/Llama-2-7b-hf")
+
+    return tokenizer
+
+
+@pytest.fixture
+@enable_hf_offline
+def tokenizer_mistral_7b_instruct(
+    download_mlx_mistral_7b_model_fixture,
+):  # pylint: disable=unused-argument,redefined-outer-name
+    return AutoTokenizer.from_pretrained("casperhansen/mistral-7b-instruct-v0.1-awq")
+
+
+@pytest.fixture
+def tokenizer_mistral_7b_instruct_chatml(tokenizer_mistral_7b_instruct):
+    tokenizer_mistral_7b_instruct.add_special_tokens(
+        {
+            "eos_token": AddedToken(
+                "<|im_end|>", rstrip=False, lstrip=False, normalized=False
+            )
+        }
+    )
+    tokenizer_mistral_7b_instruct.add_tokens(
+        [
+            AddedToken("<|im_start|>", rstrip=False, lstrip=False, normalized=False),
+        ]
+    )
+    return tokenizer_mistral_7b_instruct
 
 
 @pytest.fixture
@@ -376,18 +427,21 @@ def dataset_tatsu_lab_alpaca(
 
 
 @pytest.fixture
-def dataset_winglian_tiny_shakespeare(
-    download_ds_fixture_bundle: Path,
-):  # pylint: disable=redefined-outer-name
-    ds_path = download_ds_fixture_bundle / "winglian__tiny-shakespeare"
-    return datasets.load_from_disk(ds_path)
-
-
-@pytest.fixture
 def dataset_mhenrichsen_alpaca_2k_test(
     download_ds_fixture_bundle: Path,
 ):  # pylint: disable=redefined-outer-name
     ds_path = download_ds_fixture_bundle / "mhenrichsen__alpaca_2k_test"
+    return datasets.load_from_disk(ds_path)["train"]
+
+
+@pytest.fixture
+def dataset_argilla_ultrafeedback_binarized_preferences_cleaned(
+    download_ds_fixture_bundle: Path,
+):  # pylint: disable=redefined-outer-name
+    ds_path = (
+        download_ds_fixture_bundle
+        / "argilla__ultrafeedback-binarized-preferences-cleaned"
+    )
     return datasets.load_from_disk(ds_path)["train"]
 
 
