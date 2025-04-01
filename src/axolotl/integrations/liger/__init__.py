@@ -27,6 +27,7 @@ from axolotl.integrations.base import BasePlugin
 
 from ...utils.distributed import zero_only
 from .args import LigerArgs  # pylint: disable=unused-import. # noqa: F401
+from .utils import patch_with_compile_disable
 
 LOG = logging.getLogger("axolotl.integrations.liger")
 
@@ -40,6 +41,17 @@ class LigerPlugin(BasePlugin):
         return "axolotl.integrations.liger.LigerArgs"
 
     def pre_model_load(self, cfg):
+        if cfg.torch_compile:
+            import liger_kernel.ops.fused_linear_cross_entropy
+
+            patch_with_compile_disable(
+                liger_kernel.ops.fused_linear_cross_entropy,
+                "fused_linear_cross_entropy_forward",
+            )
+            patch_with_compile_disable(
+                liger_kernel.ops.fused_linear_cross_entropy,
+                "fused_linear_cross_entropy_backward",
+            )
         from liger_kernel.transformers.cross_entropy import LigerCrossEntropyLoss
         from liger_kernel.transformers.functional import liger_cross_entropy
         from liger_kernel.transformers.geglu import LigerGEGLUMLP
