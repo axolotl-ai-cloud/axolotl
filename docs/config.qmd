@@ -320,8 +320,12 @@ total_num_tokens:
 sample_packing_group_size: 100000
 # The number of samples which can be packed into one sequence. Increase if using a large sequence_len with many short samples.
 sample_packing_bin_size: 200
+sample_pack_sequentially: # Optional[bool]. Whether to pack samples sequentially.
+
 # whether to concatenate samples during pretraining
 pretraining_sample_concatenation:
+
+curriculum_sampling: # Optional[bool]. Whether to use sequential sampling for curriculum learning
 
 # Use batch flattening for speedups when not using sample_packing
 batch_flattening:

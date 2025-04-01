@@ -12,7 +12,9 @@ from torch.utils.data import BatchSampler, Sampler, SequentialSampler
 
 from axolotl.utils.distributed import reduce_and_broadcast
 
-LOG = logging.getLogger("axolotl.utils.samplers.multipack")
+LOG = logging.getLogger(__name__)
+
+LOG.setLevel(logging.INFO)
 
 
 @numba.njit
@@ -202,7 +204,6 @@ class MultipackBatchSampler(BatchSampler):
         lengths_cumsum = np.cumsum(lengths)
 
         if self.sequential:
-            LOG.debug("using sequential sample packing algorithm")
             batches, total_used, total_slots = allocate_sequentially(
                 lengths=lengths,
                 rank=0,
@@ -210,7 +211,6 @@ class MultipackBatchSampler(BatchSampler):
                 n=1,
             )
         else:
-            LOG.debug("using non-sequential sample packing algorithm")
             batches, total_used, total_slots = allocate(
                 lengths=lengths,
                 lengths_cumsum=lengths_cumsum,
