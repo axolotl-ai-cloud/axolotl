@@ -126,17 +126,17 @@ def download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset():
     )
 
 
-@pytest.fixture(scope="session", autouse=True)
-def download_fozzie_alpaca_dpo_dataset():
-    # download the dataset
-    snapshot_download_w_retry(
-        "fozziethebeat/alpaca_messages_2k_dpo_test", repo_type="dataset"
-    )
-    snapshot_download_w_retry(
-        "fozziethebeat/alpaca_messages_2k_dpo_test",
-        repo_type="dataset",
-        revision="ea82cff",
-    )
+# @pytest.fixture(scope="session", autouse=True)
+# def download_fozzie_alpaca_dpo_dataset():
+#     # download the dataset
+#     snapshot_download_w_retry(
+#         "fozziethebeat/alpaca_messages_2k_dpo_test", repo_type="dataset"
+#     )
+#     snapshot_download_w_retry(
+#         "fozziethebeat/alpaca_messages_2k_dpo_test",
+#         repo_type="dataset",
+#         revision="ea82cff",
+#     )
 
 
 @pytest.fixture(scope="session")

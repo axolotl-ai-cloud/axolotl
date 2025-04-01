@@ -60,7 +60,7 @@ class TestBatchedSamplerPacking:
         )
         ds_cfg = DictDefault(
             {
-                "field": "Text",
+                "field": "text",
             }
         )
         completion_strategy = load(tokenizer, cfg, ds_cfg)

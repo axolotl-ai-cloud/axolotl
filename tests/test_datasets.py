@@ -339,9 +339,7 @@ class TestDatasetPreparation:
         )
 
         # pylint: disable=duplicate-code
-        with patch(
-            "axolotl.utils.data.shared.load_dataset_w_config"
-        ) as mock_load_dataset:
+        with patch("axolotl.utils.data.rl.load_dataset_w_config") as mock_load_dataset:
             # Set up the mock to return different values on successive calls
             mock_load_dataset.return_value = (
                 dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff
