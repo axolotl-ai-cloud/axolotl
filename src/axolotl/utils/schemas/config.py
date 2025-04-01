@@ -1135,6 +1135,17 @@ class AxolotlInputConfig(
 
         return value
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_muon_deepspeed_fsdp(cls, data):
+        if data.get("optimizer") == "muon" and (
+            data.get("deepspeed") or data.get("fsdp") or data.get("fsdp_config")
+        ):
+            raise ValueError(
+                "Muon optimizer is currently incompatible with DeepSpeed and FSDP"
+            )
+        return data
+
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """wrapper to valdiate gpu capabilities with the configured options"""
