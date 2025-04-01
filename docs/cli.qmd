@@ -170,7 +170,7 @@ axolotl merge-sharded-fsdp-weights config.yml
 
 ### evaluate
 
-Evaluates a model's performance using metrics specified in the config.
+Evaluates a model's performance on the train and eval datasets.
 
 ```bash
 # Basic evaluation
@@ -196,6 +196,8 @@ lm_eval_tasks:
 lm_eval_batch_size: # Batch size for evaluation
 output_dir: # Directory to save evaluation results
 ```
+
+See [LM Eval Harness](https://github.com/EleutherAI/lm-evaluation-harness) for more details.
 
 ## Legacy CLI Usage
 
