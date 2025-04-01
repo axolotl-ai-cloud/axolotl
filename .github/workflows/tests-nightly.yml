@@ -33,6 +33,15 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v4
 
+      - name: Restore HF cache
+        id: hf-cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            /home/runner/.cache/huggingface/hub/datasets--*
+            /home/runner/.cache/huggingface/hub/models--*
+          key: ${{ runner.os }}-hf-hub-cache-v2
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -71,6 +80,10 @@ jobs:
       - name: Ensure axolotl CLI was installed
         run: |
           axolotl --help
+
+      - name: Pre-Download dataset fixture
+        run: |
+          huggingface-cli download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
 
       - name: Run tests
         run: |
