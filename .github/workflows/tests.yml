@@ -96,6 +96,10 @@ jobs:
         run: |
           axolotl --help
 
+      - name: Pre-Download dataset fixture
+        run: |
+          huggingface-cli download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
+
       - name: Run tests
         run: |
           pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/

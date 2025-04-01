@@ -8,13 +8,13 @@ from accelerate.utils import is_deepspeed_available, is_peft_model
 from trl import GRPOTrainer
 from trl.extras.profiling import profiling_decorator
 
-from axolotl.core.trainers.base import SchedulerMixin
+from axolotl.core.trainers.mixins import RngLoaderMixin, SchedulerMixin
 
 if is_deepspeed_available():
     import deepspeed
 
 
-class AxolotlGRPOTrainer(SchedulerMixin, GRPOTrainer):
+class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
     """
     Extend the base GRPOTrainer for axolotl helpers
     """

@@ -238,21 +238,22 @@ class TestDeduplicateRLDataset:
 
     @enable_hf_offline
     def test_load_with_deduplication(
-        self, cfg, dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff, tokenizer_huggyllama
+        self,
+        cfg,
+        dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
+        tokenizer_huggyllama,
     ):
         """Verify that loading with deduplication removes duplicates."""
 
         # pylint: disable=duplicate-code
         with (
-            patch(
-                "axolotl.utils.data.shared.load_dataset_w_config"
-            ) as mock_load_dataset,
+            patch("axolotl.utils.data.rl.load_dataset_w_config") as mock_load_dataset,
             patch("axolotl.utils.models.load_tokenizer") as mock_load_tokenizer,
         ):
             # Set up the mock to return different values on successive calls
             mock_load_dataset.side_effect = [
-                dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff,
-                dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff,
+                dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
+                dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
             ]
             mock_load_tokenizer.return_value = tokenizer_huggyllama
 
@@ -263,19 +264,20 @@ class TestDeduplicateRLDataset:
 
     @enable_hf_offline
     def test_load_without_deduplication(
-        self, cfg, dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff, tokenizer_huggyllama
+        self,
+        cfg,
+        dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
+        tokenizer_huggyllama,
     ):
         # pylint: disable=duplicate-code
         with (
-            patch(
-                "axolotl.utils.data.shared.load_dataset_w_config"
-            ) as mock_load_dataset,
+            patch("axolotl.utils.data.rl.load_dataset_w_config") as mock_load_dataset,
             patch("axolotl.utils.models.load_tokenizer") as mock_load_tokenizer,
         ):
             # Set up the mock to return different values on successive calls
             mock_load_dataset.side_effect = [
-                dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff,
-                dataset_fozzie_alpaca_dpo_dataset_rev_ea82cff,
+                dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
+                dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
             ]
             mock_load_tokenizer.return_value = tokenizer_huggyllama
 
