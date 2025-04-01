@@ -42,6 +42,7 @@ class LigerPlugin(BasePlugin):
 
     def pre_model_load(self, cfg):
         if cfg.torch_compile:
+            # torch compile will unnecessarily attempt to optimize the triton kernel unless explicitly disabled
             import liger_kernel.ops.fused_linear_cross_entropy
 
             patch_with_compile_disable(
