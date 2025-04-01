@@ -13,7 +13,7 @@ from transformers import Trainer
 from transformers.utils import is_sagemaker_mp_enabled
 from trl import DPOTrainer
 
-from axolotl.core.trainers.mixins import RngLoaderMixin, SchedulerMixin
+from axolotl.core.trainers.mixins import TrainerMixins
 from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
     sanitize_kwargs_for_tagging,
@@ -23,7 +23,7 @@ if is_sagemaker_mp_enabled():
     import smdistributed.modelparallel.torch as smp
 
 
-class AxolotlDPOTrainer(RngLoaderMixin, SchedulerMixin, DPOTrainer):
+class AxolotlDPOTrainer(TrainerMixins, DPOTrainer):
     """
     Extend the base DPOTrainer for axolotl helpers
     """

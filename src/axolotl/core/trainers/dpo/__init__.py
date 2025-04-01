@@ -1,14 +1,10 @@
-"""
-DPO Specific Strategy for training
-"""
+"""DPO Specific Strategy for training"""
 
 from axolotl.core.trainers.dpo.trainer import AxolotlDPOTrainer
 
 
 class DPOStrategy:
-    """
-    Strategy for DPO training
-    """
+    """Strategy for DPO training"""
 
     @classmethod
     def get_trainer_class(cls):

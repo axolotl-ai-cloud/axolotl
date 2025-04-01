@@ -25,12 +25,7 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, seed_worker
 from trl.trainer.utils import pad_to_length
 from typing_extensions import override
 
-from axolotl.core.trainers.mixins import (
-    OptimizerMixin,
-    RngLoaderMixin,
-    SchedulerMixin,
-    SequenceParallelMixin,
-)
+from axolotl.core.trainers.mixins import TrainerMixins
 from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
     sanitize_kwargs_for_tagging,
@@ -40,9 +35,7 @@ from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 LOG = logging.getLogger(__name__)
 
 
-class AxolotlTrainer(
-    SchedulerMixin, OptimizerMixin, RngLoaderMixin, SequenceParallelMixin, Trainer
-):
+class AxolotlTrainer(TrainerMixins, Trainer):
     """Extend the base Trainer for axolotl helpers"""
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]

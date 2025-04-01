@@ -21,9 +21,7 @@ LOG = logging.getLogger(__name__)
 
 
 class RngLoaderMixin(Trainer):
-    """
-    mixin for method override to load RNG states from a checkpoint
-    """
+    """Mixin for method override to load RNG states from a checkpoint"""
 
     def _load_rng_state(self, checkpoint):
         # Load RNG states from `checkpoint`

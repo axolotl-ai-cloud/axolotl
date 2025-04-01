@@ -1,6 +1,4 @@
-"""
-Axolotl GRPO trainer
-"""
+"""Axolotl GRPO trainer"""
 
 from contextlib import nullcontext
 
@@ -8,16 +6,14 @@ from accelerate.utils import is_deepspeed_available, is_peft_model
 from trl import GRPOTrainer
 from trl.extras.profiling import profiling_decorator
 
-from axolotl.core.trainers.mixins import RngLoaderMixin, SchedulerMixin
+from axolotl.core.trainers.mixins import TrainerMixins
 
 if is_deepspeed_available():
     import deepspeed
 
 
-class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
-    """
-    Extend the base GRPOTrainer for axolotl helpers
-    """
+class AxolotlGRPOTrainer(TrainerMixins, GRPOTrainer):
+    """Extend the base GRPOTrainer for axolotl helpers"""
 
     _tag_names = ["trl", "grpo", "axolotl"]
 
