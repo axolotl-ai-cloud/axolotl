@@ -2,7 +2,6 @@
 
 import json
 import logging
-import unittest
 from pathlib import Path
 
 from axolotl.prompt_strategies.alpaca_chat import NoSystemPrompter
@@ -57,7 +56,7 @@ test_data = {
 }
 
 
-class TestPromptTokenizationStrategies(unittest.TestCase):
+class TestPromptTokenizationStrategies:
     """
     Test class for prompt tokenization strategies.
     """
@@ -104,7 +103,7 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
         assert example["labels"][world_idx - 1] == -100
 
 
-class InstructionWSystemPromptTokenizingStrategyTest(unittest.TestCase):
+class TestInstructionWSystemPromptTokenizingStrategy:
     """
     Test class for prompt tokenization strategies with sys prompt from the dataset
     """
@@ -245,7 +244,3 @@ class OrpoTokenizationTest:
 
         assert res["prompt_attention_mask"][0] == 1
         assert res["prompt_attention_mask"][-1] == 0
-
-
-if __name__ == "__main__":
-    unittest.main()
