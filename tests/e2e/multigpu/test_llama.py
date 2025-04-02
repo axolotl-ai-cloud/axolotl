@@ -852,6 +852,7 @@ class TestMultiGPULlama:
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
                 "use_tensorboard": True,
+                "save_strategy": "no",
             }
         )
         if is_torch_bf16_gpu_available():
