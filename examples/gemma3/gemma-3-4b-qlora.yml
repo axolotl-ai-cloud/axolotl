@@ -1,21 +1,18 @@
 base_model: google/gemma-3-4b-it
-processor_type: AutoProcessor
 strict: false
-
-# these 3 lines are needed for now to handle vision chat templates w images
-skip_prepare_dataset: true
-remove_unused_columns: false
-sample_packing: false
 
 # gemma3 doesn't seem to play nice with ddp
 ddp_find_unused_parameters: true
 
 chat_template: gemma3
 datasets:
-  - path: HuggingFaceH4/llava-instruct-mix-vsft
+  - path: cgato/SlimOrcaDedupCleaned
     type: chat_template
-    split: train[:1%]
-    field_messages: messages
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.01
 output_dir: ./outputs/out
@@ -24,7 +21,8 @@ adapter: lora
 lora_model_dir:
 
 sequence_len: 2048
-pad_to_sequence_len: false
+sample_packing: true
+pad_to_sequence_len: true
 
 lora_r: 32
 lora_alpha: 16
