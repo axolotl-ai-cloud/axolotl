@@ -614,6 +614,13 @@ class ModelLoader:
                 heads_k_stride=self.cfg.heads_k_stride,
             )
 
+        if self.cfg.model_config_type == "gemma3":
+            from axolotl.monkeypatch.gemma3 import (
+                patch_gemma3conditionalgeneration_forward,
+            )
+
+            patch_gemma3conditionalgeneration_forward()
+
     def patch_attention(self) -> None:
         if hasattr(self.model_config, "model_type"):
             if self.model_config.model_type == "mllama" and self.cfg.flash_attention:
