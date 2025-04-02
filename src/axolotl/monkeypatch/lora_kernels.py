@@ -253,7 +253,11 @@ def apply_lora_kernel_patches(
 
     # Choose activation based on model type
     activation = None
-    text_config = model.config.get_text_config()
+    text_config = (
+        model.config.get_text_config()
+        if hasattr(model.config, "get_text_config")
+        else model.config
+    )
     if hasattr(text_config, "hidden_act"):
         activation = text_config.hidden_act
     elif hasattr(text_config, "hidden_activation"):
