@@ -1290,3 +1290,5 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 LOG.warning(
                     f"torch=={torch_version} may not be supported in future versions. Please consider upgrading to torch>=2.5.1."
                 )
+
+        return self
