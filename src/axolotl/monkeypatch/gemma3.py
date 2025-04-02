@@ -99,7 +99,7 @@ def new_forward(
 
     is_training = token_type_ids is not None and labels is not None
 
-    # Replace image id woth PAD if the image token if OOV, to avoid index-errors
+    # Replace image id with PAD if the image token is OOV, to avoid index-errors
     if input_ids is not None and self.config.image_token_index >= self.vocab_size:
         special_image_mask = input_ids == self.config.image_token_index
         llm_input_ids = input_ids.clone()
