@@ -13,10 +13,6 @@ from huggingface_hub import snapshot_download
 from transformers.testing_utils import get_torch_dist_unique_port
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.cli.args import TrainerCliArgs
-from axolotl.common.datasets import load_datasets
-from axolotl.train import train
-from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
 from tests.e2e.utils import check_tensorboard, require_torch_2_6_0
@@ -863,12 +859,22 @@ class TestMultiGPULlama:
         else:
             cfg.fp16 = True
 
-        cfg = validate_config(cfg)
-        normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        # write cfg to yaml file
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
+            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
 
-        train(cfg=cfg, dataset_meta=dataset_meta)
+        execute_subprocess_async(
+            [
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
+                "--num-processes",
+                "2",
+                "--main-process-port",
+                f"{get_torch_dist_unique_port()}",
+            ]
+        )
 
         check_tensorboard(
             temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
