@@ -1,5 +1,7 @@
 """Monkeypatch for gemma3 conditional generation forward to fix loss exploding"""
 
+# pylint: disable=duplicate-code
+
 from typing import Optional, Tuple, Union
 
 import torch
