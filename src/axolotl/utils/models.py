@@ -535,6 +535,15 @@ class ModelLoader:
         self.auto_model_loader = AutoModelForCausalLM  # pylint: disable=invalid-name
 
     def apply_patches(self) -> None:
+        # patch gemma3 conditional generation forward before loading plugins
+        # as it could be overridden by plugins
+        if self.cfg.model_config_type == "gemma3":
+            from axolotl.monkeypatch.gemma3 import (
+                patch_gemma3conditionalgeneration_forward,
+            )
+
+            patch_gemma3conditionalgeneration_forward()
+
         # load any patches from plugins
         from axolotl.integrations.base import PluginManager
 
