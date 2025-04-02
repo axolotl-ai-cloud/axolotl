@@ -17,6 +17,7 @@ We currently support several common model architectures, including (but not limi
 - `qwen2`
 - `gemma`
 - `gemma2`
+- `gemma3`
 
 <details>
 
