@@ -253,17 +253,11 @@ def apply_lora_kernel_patches(
 
     # Choose activation based on model type
     activation = None
-    if hasattr(model.config, "hidden_act"):
-        activation = model.config.hidden_act
-    elif hasattr(model.config, "hidden_activation"):
-        activation = model.config.hidden_activation
-    # check for text config if model is a vision model
-    elif hasattr(model.config, "get_text_config"):
-        text_config = model.config.get_text_config()
-        if hasattr(text_config, "hidden_act"):
-            activation = text_config.hidden_act
-        elif hasattr(text_config, "hidden_activation"):
-            activation = text_config.hidden_activation
+    text_config = model.config.get_text_config()
+    if hasattr(text_config, "hidden_act"):
+        activation = text_config.hidden_act
+    elif hasattr(text_config, "hidden_activation"):
+        activation = text_config.hidden_activation
 
     # map activation to supported activation
     if "gelu" in activation:
@@ -274,11 +268,11 @@ def apply_lora_kernel_patches(
         raise NotImplementedError(f"Activation {activation} is not supported")
 
     layers = []
-    if hasattr(model, "model"):
-        layers = model.model.model.layers
-    # for multimodal models
-    elif hasattr(model, "language_model"):
+    # check for multimodal models first
+    if hasattr(model, "language_model"):
         layers = model.language_model.model.layers
+    elif hasattr(model, "model"):
+        layers = model.model.model.layers
     else:
         raise NotImplementedError(
             f"Model type {model.config.model_type} is not supported yet. Please create an Issue."
