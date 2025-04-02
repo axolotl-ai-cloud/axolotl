@@ -148,7 +148,7 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
 
     if is_compressed_tensors_config:
         if model_config.quantization_config.get("config_groups"):
-            LOG.warn(
+            LOG.warning(
                 "Found `config_groups` in a compressed-tensors config. "
                 "QAT integration with llmcompressor is not tested."
             )
