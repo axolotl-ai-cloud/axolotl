@@ -1,11 +1,5 @@
 base_model: google/gemma-3-4b-it
-processor_type: AutoProcessor
 strict: false
-
-# these 3 lines are needed for now to handle vision chat templates w images
-skip_prepare_dataset: true
-remove_unused_columns: false
-sample_packing: false
 
 # gemma3 doesn't seem to play nice with ddp
 ddp_find_unused_parameters: true
@@ -24,7 +18,8 @@ adapter: lora
 lora_model_dir:
 
 sequence_len: 2048
-pad_to_sequence_len: false
+sample_packing: true
+pad_to_sequence_len: true
 
 lora_r: 32
 lora_alpha: 16
