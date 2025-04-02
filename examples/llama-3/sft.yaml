@@ -1,4 +1,4 @@
-base_model: "nm-testing/llama2.c-stories42M-gsm8k-sparse-only-uncompressed" 
+base_model: "nm-testing/llama2.c-stories42M-gsm8k-sparse-only-uncompressed"
 # TODO: change to
 # base_model: neuralmagic/Sparse-Llama-3.1-8B-2of4
 
@@ -68,7 +68,7 @@ llmcompressor:
         ConstantPruningModifier:
           targets: [
             're:.*q_proj.weight',
-            're:.*k_proj.weight', 
+            're:.*k_proj.weight',
             're:.*v_proj.weight',
             're:.*o_proj.weight',
             're:.*gate_proj.weight',
