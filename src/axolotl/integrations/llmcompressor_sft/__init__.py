@@ -5,19 +5,19 @@ by maintaining masks for zero weights during training.
 
 import logging
 from functools import wraps
-from typing import Callable, TypeVar, ParamSpec, Any
+from typing import Any, Callable, ParamSpec, TypeVar
 
-from transformers.trainer import Trainer
-from transformers.trainer_callback import TrainerCallback, TrainerState, TrainerControl
-from transformers.training_args import TrainingArguments
-
-from ..base import BasePlugin
 from llmcompressor import active_session
 from llmcompressor.core import callbacks as session_callbacks
 from llmcompressor.recipe import Recipe
+from transformers.trainer import Trainer
+from transformers.trainer_callback import TrainerCallback, TrainerControl, TrainerState
+from transformers.training_args import TrainingArguments
+
+from ..base import BasePlugin
 
 P = ParamSpec("P")  # Params for generic function signatures
-R = TypeVar("R")    # Return type for generic function signatures
+R = TypeVar("R")  # Return type for generic function signatures
 
 LOG = logging.getLogger("axolotl.integrations.llmcompressor_sft")
 
@@ -39,11 +39,17 @@ class SFTCallbackHandler(TrainerCallback):
         """
         super().__init__()
         self.trainer = trainer
-        self.recipe = Recipe.model_validate(recipe) if not isinstance(recipe, Recipe) else recipe
+        self.recipe = (
+            Recipe.model_validate(recipe) if not isinstance(recipe, Recipe) else recipe
+        )
         self.trainer.compute_loss = compute_loss_wrapper(self.trainer.compute_loss)
 
     def on_train_begin(
-        self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
     ) -> None:
         """
         Called at the beginning of training. Initializes the compression session.
@@ -63,7 +69,11 @@ class SFTCallbackHandler(TrainerCallback):
         )
 
     def on_step_begin(
-        self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
     ) -> None:
         """
         Called at the beginning of a training step. Triggers batch_start callback.
@@ -72,7 +82,11 @@ class SFTCallbackHandler(TrainerCallback):
         session_callbacks.batch_start()
 
     def on_step_end(
-        self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
     ) -> None:
         """
         Called at the end of a training step. Triggers optimizer and batch_end callbacks.
@@ -83,7 +97,11 @@ class SFTCallbackHandler(TrainerCallback):
         session_callbacks.batch_end()
 
     def on_train_end(
-        self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
     ) -> None:
         """
         Called at the end of training. Finalizes the compression session.
