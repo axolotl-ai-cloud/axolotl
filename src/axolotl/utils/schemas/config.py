@@ -1224,16 +1224,11 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         ):
             capabilities = data.get("capabilities")
             is_fsdp = data.get("fsdp") is not None
-            is_deepspeed = data.get("deepspeed") is not None
 
             if capabilities and capabilities.get("n_gpu", 0) > 1:
                 if is_fsdp:
                     raise ValueError(
                         "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with FSDP."
-                    )
-                if is_deepspeed:
-                    raise ValueError(
-                        "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with DeepSpeed."
                     )
         return data
 
