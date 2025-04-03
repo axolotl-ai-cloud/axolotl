@@ -10,6 +10,7 @@ MOE_ARCH_BLOCK = {
         "JetMoeMoE",
     ],
     "mixtral": "MixtralSparseMoeBlock",
+    "phimoe": "PhiMoESparseMoeBlock",
     "qwen2_moe": "Qwen2MoeSparseMoeBlock",
     "deepseek_v2": "DeepseekV2MoE",
 }
