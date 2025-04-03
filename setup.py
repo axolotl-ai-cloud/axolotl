@@ -150,7 +150,7 @@ extras_require = {
         "vllm==0.7.2",
     ],
     "llmcompressor": [
-        "llm-compressor==0.4.1",
+        "llm-compressor==0.5.0",
     ],
 }
 
