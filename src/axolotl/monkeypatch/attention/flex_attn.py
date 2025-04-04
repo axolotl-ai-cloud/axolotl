@@ -5,7 +5,7 @@ import transformers
 
 
 def patch_flex():
-    is_torch_2_6 = torch.__version__ == "2.6.0"
+    is_torch_2_6 = torch.__version__.startswith("2.6")
     is_transformers_below_4_51 = transformers.__version__ < "4.51.0"
 
     if is_torch_2_6 and is_transformers_below_4_51:
