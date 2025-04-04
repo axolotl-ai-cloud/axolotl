@@ -2,14 +2,25 @@
 
 import torch
 import transformers
-from packaging import version
+
+
+def is_transformers_version_less_than_or_equal_4_50():
+    version_parts = transformers.__version__.split(".")
+
+    # Check if the version is less than or equal to 4.50
+    if int(version_parts[0]) < 4:
+        return True
+    if int(version_parts[0]) == 4:
+        if int(version_parts[1]) < 50:
+            return True
+        if int(version_parts[1]) == 50 and int(version_parts[2]) <= 99:
+            return True
+    return False
 
 
 def patch_flex():
     is_torch_2_6 = torch.__version__.startswith("2.6")
-    is_transformers_4_50_or_below = version.parse(
-        transformers.__version__
-    ) <= version.parse("4.50.0")
+    is_transformers_4_50_or_below = is_transformers_version_less_than_or_equal_4_50()
 
     if is_torch_2_6 and is_transformers_4_50_or_below:
         from torch.nn.attention.flex_attention import flex_attention
