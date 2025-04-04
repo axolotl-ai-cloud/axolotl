@@ -73,7 +73,6 @@ gradient_checkpointing: true
 resume_from_checkpoint:
 logging_steps: 1
 flash_attention: false
-s2_attention:
 
 warmup_steps: 10
 evals_per_epoch: 4

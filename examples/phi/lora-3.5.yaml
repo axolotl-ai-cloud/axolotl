@@ -59,7 +59,6 @@ tf32: false
 gradient_checkpointing: true
 resume_from_checkpoint:
 logging_steps: 1
-s2_attention:
 
 warmup_steps: 10
 evals_per_epoch: 4
