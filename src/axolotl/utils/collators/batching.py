@@ -211,8 +211,8 @@ class DataCollatorForSeq2Seq:
                 batch[key] = batch[key][:, start_idx:end_idx]
 
                 # Special handling for position_ids
-                if key == "position_ids" and self.local_rank > 0:
-                    batch[key] = adjust_position_ids_for_slice(batch[key], start_idx)
+                # if key == "position_ids" and self.local_rank > 0:
+                #     batch[key] = adjust_position_ids_for_slice(batch[key], start_idx)
 
         return batch
 

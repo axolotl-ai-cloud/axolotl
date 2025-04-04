@@ -1155,6 +1155,12 @@ class AxolotlInputConfig(
                 raise ValueError(
                     "flash_attention: true must be set with sequence_parallel_degree > 1"
                 )
+            
+            if not info.data["micro_batch_size"] == 1:
+                raise ValueError(
+                    "micro_batch_size must be set to 1 "
+                    "due to a `ring-flash-attn` requirement"
+                )
 
             try:
                 import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
