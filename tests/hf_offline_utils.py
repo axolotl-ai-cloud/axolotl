@@ -3,6 +3,7 @@ test utils for helpers and decorators
 """
 
 import os
+from contextlib import contextmanager
 from functools import wraps
 
 from huggingface_hub.utils import reset_sessions
@@ -83,3 +84,23 @@ def disable_hf_offline(test_func):
                 reload_modules(False)
 
     return wrapper
+
+
+@contextmanager
+def hf_offline_context(hf_hub_offline):
+    """
+    Context manager that sets HF_HUB_OFFLINE environment variable to the given value.
+    :param hf_hub_offline: The new value for HF_HUB_OFFLINE.
+    :return: A context manager.
+    """
+    original_hf_offline = os.getenv("HF_HUB_OFFLINE")
+    os.environ["HF_HUB_OFFLINE"] = str(hf_hub_offline)
+    reload_modules(True)
+    yield
+    # Restore the original value of HF_HUB_OFFLINE environment variable
+    if original_hf_offline is not None:
+        os.environ["HF_HUB_OFFLINE"] = original_hf_offline
+        reload_modules(bool(original_hf_offline))
+    else:
+        del os.environ["HF_HUB_OFFLINE"]
+        reload_modules(False)
