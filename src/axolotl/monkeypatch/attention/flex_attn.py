@@ -2,12 +2,16 @@
 
 import torch
 import transformers
+from packaging import version
 
 
 def patch_flex():
     is_torch_2_6 = torch.__version__.startswith("2.6")
+    is_transformers_4_50_or_below = version.parse(
+        transformers.__version__
+    ) <= version.parse("4.50.0")
 
-    if is_torch_2_6:
+    if is_torch_2_6 and is_transformers_4_50_or_below:
         from torch.nn.attention.flex_attention import flex_attention
 
         class WrappedFlexAttention:
