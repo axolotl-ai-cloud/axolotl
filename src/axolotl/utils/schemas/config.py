@@ -1279,9 +1279,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
                 torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
 
-            if version.parse(torch_version) < version.parse("2.5.1"):
+            if version.parse(torch_version) < version.parse("2.6.0"):
                 raise ValueError(
-                    "Flex attention is not supported on torch version < 2.5.1"
+                    "Flex attention is not supported on torch version < 2.6.0"
                 )
         return data
 

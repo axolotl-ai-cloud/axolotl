@@ -885,9 +885,6 @@ class ModelLoader:
             from axolotl.monkeypatch.attention.flex_attn import patch_flex
 
             patch_flex()
-            # Multigpu training with flex on torch 2.5 will need torch_compile=True so it doesn't throw error
-            if torch.__version__.startswith("2.5") and torch.cuda.device_count() > 1:
-                self.cfg.torch_compile = True
 
         elif self.cfg.flash_attention:
             if not self.cfg.sample_packing and self.cfg.s2_attention:
