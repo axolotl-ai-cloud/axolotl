@@ -48,10 +48,20 @@ axolotl train config.yml --deepspeed deepspeed_configs/zero1.json
 We provide default configurations for:
 
 - ZeRO Stage 1 (`zero1.json`)
+- ZeRO Stage 1 with torch compile (`zero1_torch_compile.json`)
 - ZeRO Stage 2 (`zero2.json`)
 - ZeRO Stage 3 (`zero3.json`)
+- ZeRO Stage 3 with bf16 (`zero3_bf16.json`)
+- ZeRO Stage 3 with bf16 and CPU offload params(`zero3_bf16_cpuoffload_params.json`)
+- ZeRO Stage 3 with bf16 and CPU offload params and optimizer (`zero3_bf16_cpuoffload_all.json`)
 
-Choose based on your memory requirements and performance needs.
+::: {.callout-tip}
+
+Choose the configuration that offloads the least amount of memory while still being able to fit on VRAM for best performance.
+
+Start from Stage 1 -> Stage 2 -> Stage 3.
+
+:::
 
 ## FSDP {#sec-fsdp}
 
