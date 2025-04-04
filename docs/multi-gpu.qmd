@@ -51,6 +51,12 @@ We provide default configurations for:
 - ZeRO Stage 2 (`zero2.json`)
 - ZeRO Stage 3 (`zero3.json`)
 
+::: {.callout-tip}
+
+If using ZeRO Stage 3 and bf16, please use `zero3_bf16.json`.
+
+:::
+
 Choose based on your memory requirements and performance needs.
 
 ## FSDP {#sec-fsdp}
