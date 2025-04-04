@@ -231,6 +231,7 @@ website:
             - docs/reward_modelling.qmd
             - docs/lr_groups.qmd
             - docs/lora_optims.qmd
+            - docs/dataset_loading.qmd
 
         - section: "Core Concepts"
           contents:

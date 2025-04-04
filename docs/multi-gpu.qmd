@@ -57,7 +57,7 @@ We provide default configurations for:
 
 ::: {.callout-tip}
 
-Choose the configuration that offloads the least amount of memory while still being able to fit on VRAM for best performance.
+Choose the configuration that offloads the least amount to memory while still being able to fit on VRAM for best performance.
 
 Start from Stage 1 -> Stage 2 -> Stage 3.
 
