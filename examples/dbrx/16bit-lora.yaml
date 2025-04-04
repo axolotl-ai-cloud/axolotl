@@ -3,9 +3,6 @@ base_model: LnL-AI/dbrx-base-converted-v2
 # hub_model_id: username/custom_model_name
 
 trust_remote_code: true
-
-load_in_8bit: false
-load_in_4bit: false
 strict: false
 
 datasets:
@@ -48,26 +45,20 @@ optimizer: paged_adamw_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
-train_on_inputs: false
-group_by_length: false
 bf16: auto
-fp16:
 tf32: false
 
 gradient_checkpointing: false  # don't use with fsdp_activation_checkpointing
 gradient_checkpointing_kwargs:
   use_reentrant: false
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
-xformers_attention:
 flash_attention: true
 
 warmup_steps: 10
 evals_per_epoch:
 saves_per_epoch: 1
-debug:
+
 weight_decay: 0.0
 fsdp:
   - full_shard

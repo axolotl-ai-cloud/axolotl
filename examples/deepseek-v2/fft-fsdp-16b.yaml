@@ -2,9 +2,6 @@ base_model: deepseek-ai/DeepSeek-V2-Lite
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 trust_remote_code: true
-
-load_in_8bit: false
-load_in_4bit: false
 strict: false
 
 datasets:
@@ -31,27 +28,19 @@ optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 2e-5
 
-train_on_inputs: false
-group_by_length: false
 bf16: auto
-fp16:
 tf32: false
 
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
-early_stopping_patience:
 resume_from_checkpoint:
 logging_steps: 1
-xformers_attention:
 flash_attention: true
 
 warmup_steps: 100
 evals_per_epoch: 2
-eval_table_size:
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0.0
 special_tokens:
 fsdp:

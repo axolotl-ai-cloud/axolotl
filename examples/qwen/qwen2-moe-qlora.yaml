@@ -25,7 +25,6 @@ lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
 lora_target_linear: true
-lora_fan_in_fan_out:
 
 wandb_project:
 wandb_entity:
@@ -40,28 +39,18 @@ optimizer: paged_adamw_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
-train_on_inputs: false
-group_by_length: false
 bf16: auto
-fp16:
 tf32: true
 
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
-xformers_attention:
 flash_attention: true
 
 warmup_steps: 10
 evals_per_epoch: 4
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0.0
-fsdp:
-fsdp_config:
 special_tokens:

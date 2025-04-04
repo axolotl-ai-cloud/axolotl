@@ -7,9 +7,6 @@ tokenizer_type: AutoTokenizer
 
 # required by falcon custom model code: https://huggingface.co/tiiuae/falcon-7b/tree/main
 trust_remote_code: true
-
-load_in_8bit: false
-load_in_4bit: false
 gptq: false
 strict: false
 push_dataset_to_hub:
@@ -25,9 +22,7 @@ max_packed_sequence_len:
 lora_r: 64
 lora_alpha: 32
 lora_dropout: 0.0
-lora_target_modules:
 lora_target_linear: true
-lora_fan_in_fan_out:
 wandb_project:
 wandb_entity:
 wandb_watch:
@@ -41,15 +36,10 @@ optimizer: adamw_bnb_8bit
 torchdistx_path:
 lr_scheduler: cosine
 learning_rate: 0.00003
-train_on_inputs: false
-group_by_length: false
 bf16: auto
-fp16:
 tf32: true
 gradient_checkpointing: true
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
 xformers_attention: true
 flash_attention:
@@ -58,11 +48,7 @@ gptq_model_v1:
 warmup_steps: 40
 evals_per_epoch: 4
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0.0
-fsdp:
-fsdp_config:
 special_tokens:
   pad_token: "<|endoftext|>"
   bos_token: "<|endoftext|>"

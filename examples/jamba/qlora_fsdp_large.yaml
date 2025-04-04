@@ -39,8 +39,6 @@ optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 0.00001
 
-train_on_inputs: false
-group_by_length: false
 bf16: true
 tf32: true
 

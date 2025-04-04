@@ -29,7 +29,6 @@ lora_target_modules:
   - v_proj
   - k_proj
   - o_proj
-lora_fan_in_fan_out:
 wandb_project:
 wandb_entity:
 wandb_watch:
@@ -43,17 +42,12 @@ optimizer: adamw_bnb_8bit
 torchdistx_path:
 lr_scheduler: cosine
 learning_rate: 0.0002
-train_on_inputs: false
-group_by_length: false
 bf16: false
 fp16: true
 tf32: false
 gradient_checkpointing: true
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
-xformers_attention:
 flash_attention: true
 gptq_groupsize:
 s2_attention:
@@ -61,11 +55,7 @@ gptq_model_v1:
 warmup_steps: 20
 evals_per_epoch: 4
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0.1
-fsdp:
-fsdp_config:
 special_tokens:
   bos_token: "<s>"
   eos_token: "</s>"
