@@ -1,7 +1,7 @@
 base_model: neuralmagic/Sparse-Llama-3.1-8B-2of4
 
 plugins:
-  - axolotl.integrations.llmcompressor_sft.SFTPlugin
+  - axolotl.integrations.llm_compressor.LLMCompressorPlugin
 
 load_in_8bit: false
 load_in_4bit: false
