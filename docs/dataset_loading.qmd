@@ -1,6 +1,6 @@
 ---
 title: Dataset Loading
-description: Loading different datasets
+description: Understanding how to load datasets from different sources
 back-to-top-navigation: true
 toc: true
 toc-depth: 5
@@ -8,7 +8,7 @@ toc-depth: 5
 
 ## Overview
 
-Datasets can be loaded in a number of different ways depending on the format of the data and where it is stored.
+Datasets can be loaded in a number of different ways depending on the how it is saved (the extension of the file) and where it is stored.
 
 ## Loading Datasets
 
@@ -107,7 +107,7 @@ datasets:
   - path: /path/to/your/directory
 ```
 
-#### Loading specific files in directory
+##### Loading specific files in directory
 
 Provide `data_files` with a list of files to load.
 
@@ -270,3 +270,7 @@ datasets:
 ```
 
 This must be publically accessible.
+
+## Next steps
+
+Now that you know how to load datasets, you can learn more on how to load your specific dataset format into your target output format [dataset formats docs](dataset-formats).
