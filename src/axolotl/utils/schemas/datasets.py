@@ -39,7 +39,6 @@ class SFTDataset(BaseModel):
     input_format: str | None = None
     name: str | None = None
     ds_type: str | None = None
-    train_on_split: str | None = None
     field: str | None = None
     field_human: str | None = None
     field_model: str | None = None
