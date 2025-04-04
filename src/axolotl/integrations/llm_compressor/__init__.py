@@ -19,10 +19,10 @@ from ..base import BasePlugin
 P = ParamSpec("P")  # Params for generic function signatures
 R = TypeVar("R")  # Return type for generic function signatures
 
-LOG = logging.getLogger("axolotl.integrations.llmcompressor_sft")
+LOG = logging.getLogger("axolotl.integrations.llm_compressor")
 
 
-class SFTCallbackHandler(TrainerCallback):
+class LLMCompressorCallbackHandler(TrainerCallback):
     """
     Trainer callback for Sparse Finetuning.
     Maintains sparsity patterns during training by applying masks after optimization steps,
@@ -111,7 +111,7 @@ class SFTCallbackHandler(TrainerCallback):
         session.finalize()
 
 
-class SFTPlugin(BasePlugin):
+class LLMCompressorPlugin(BasePlugin):
     """
     Sparse Finetuning plugin for Axolotl integration.
     """
@@ -123,7 +123,7 @@ class SFTPlugin(BasePlugin):
         Returns:
             str: Dotted path to the LLMCompressorArgs class.
         """
-        return "axolotl.integrations.llmcompressor_sft.args.LLMCompressorArgs"
+        return "axolotl.integrations.llm_compressor.args.LLMCompressorArgs"
 
     def add_callbacks_post_trainer(self, cfg: Any, trainer: Trainer) -> list:
         """
@@ -137,7 +137,7 @@ class SFTPlugin(BasePlugin):
             list: List containing the configured callback instances.
         """
         LOG.info("Adding Sparse Finetuning callback to the trainer")
-        callback = SFTCallbackHandler(
+        callback = LLMCompressorCallbackHandler(
             trainer=trainer,
             recipe=cfg.llmcompressor.recipe,
         )

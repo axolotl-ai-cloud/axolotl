@@ -8,12 +8,17 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
 
 
-class SFTArgs(BaseModel):
+class CompressionArgs(BaseModel):
     """Sparse Finetuning config for LLMCompressor."""
 
     # Typing for recipe is set to Any due to:
     # https://github.com/vllm-project/llm-compressor/issues/1319
-    recipe: Annotated[Any, Field(description="The recipe containing the compression algorithms and hyperparameters to apply.")]
+    recipe: Annotated[
+        Any,
+        Field(
+            description="The recipe containing the compression algorithms and hyperparameters to apply."
+        ),
+    ]
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -24,7 +29,12 @@ class SFTArgs(BaseModel):
 class LLMCompressorArgs(BaseModel):
     """LLMCompressor configuration BaseModel."""
 
-    llmcompressor: Annotated[SFTArgs, Field(description="Arguments enabling compression pathways through the LLM Compressor plugins")]
+    llmcompressor: Annotated[
+        CompressionArgs,
+        Field(
+            description="Arguments enabling compression pathways through the LLM Compressor plugins"
+        ),
+    ]
 
     model_config = ConfigDict(
         validate_assignment=True,
