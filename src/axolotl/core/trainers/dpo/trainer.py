@@ -1,10 +1,7 @@
-"""
-DPO trainer for axolotl
-"""
+"""DPO trainer for axolotl"""
 
-import gc
 from functools import wraps
-from typing import Any, Dict, Union
+from typing import Any
 
 import torch
 from peft.optimizers import create_loraplus_optimizer
@@ -13,6 +10,7 @@ from transformers import Trainer
 from transformers.utils import is_sagemaker_mp_enabled
 from trl import DPOTrainer
 
+from axolotl.core.trainers.handlers import SequenceParallelHandler
 from axolotl.core.trainers.mixins import TrainerMixins
 from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
@@ -24,17 +22,17 @@ if is_sagemaker_mp_enabled():
 
 
 class AxolotlDPOTrainer(TrainerMixins, DPOTrainer):
-    """
-    Extend the base DPOTrainer for axolotl helpers
-    """
+    """Extend the base DPOTrainer for axolotl helpers"""
 
     tag_names = ["axolotl", "dpo"]
 
     def __init__(self, *args, dataset_tags=None, **kwargs):
         super().__init__(*args, **kwargs)
+        
         self.dataset_tags = dataset_tags
         self.optimizer = None
         self.model_accepts_loss_kwargs = False
+        self.sequence_parallel_handler = SequenceParallelHandler(args=self.args)
 
     def create_optimizer(self):
         # pylint: disable=duplicate-code
@@ -88,7 +86,7 @@ class AxolotlDPOTrainer(TrainerMixins, DPOTrainer):
         max_prompt_length,
         max_completion_length,
         add_special_tokens,
-    ) -> Dict:
+    ) -> dict:
         res = DPOTrainer.tokenize_row(
             features,
             processing_class,
@@ -117,10 +115,9 @@ class AxolotlDPOTrainer(TrainerMixins, DPOTrainer):
     def training_step(
         self,
         model: nn.Module,
-        inputs: Dict[str, Union[torch.Tensor, Any]],
+        inputs: dict[str, torch.Tensor | Any | None],
         num_items_in_batch=None,
     ) -> torch.Tensor:
-        loss: torch.Tensor = super().training_step(model, inputs, num_items_in_batch)
-        gc.collect()
-        torch.cuda.empty_cache()
-        return loss
+        self.sequence_parallel_handler.prepare_for_training_step(self, inputs)
+
+        return super().training_step(model, inputs, num_items_in_batch)

@@ -1351,9 +1351,7 @@ def load_model(
     reference_model: bool = False,
     **kwargs,  # pylint: disable=unused-argument
 ) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
-    """
-    Load a model for a given configuration and tokenizer.
-    """
+    """Load a model for a given configuration and tokenizer."""
     model_loader = ModelLoader(
         cfg,
         tokenizer,
@@ -1362,12 +1360,16 @@ def load_model(
         reference_model=reference_model,
         **kwargs,
     )
+
     return model_loader.load_model()
 
 
-def load_adapter(model, cfg, adapter, inference=False):
-    # type: (PreTrainedModel, DictDefault, Optional[str], bool) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
-
+def load_adapter(
+    model: PreTrainedModel,
+    cfg: DictDefault,
+    adapter: str | None,
+    inference: bool = False,
+) -> tuple[PreTrainedModel, PeftConfig | None]:
     if adapter is None:
         return model, None
     if hasattr(model, "enable_input_require_grads"):
@@ -1380,8 +1382,9 @@ def load_adapter(model, cfg, adapter, inference=False):
     raise NotImplementedError(f"{adapter} peft adapter not available")
 
 
-def load_llama_adapter(model, cfg):
-    # type: (PreTrainedModel, DictDefault) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
+def load_llama_adapter(
+    model: PreTrainedModel, cfg: DictDefault
+) -> tuple[PreTrainedModel, PeftConfig | None]:
     from peft import AdaptionPromptConfig, get_peft_model
 
     peft_config = AdaptionPromptConfig(
@@ -1405,7 +1408,7 @@ def load_llama_adapter(model, cfg):
     return model, peft_config
 
 
-def find_all_linear_names(model):
+def find_all_linear_names(model: PreTrainedModel):
     cls = (bnb.nn.Linear4bit, bnb.nn.Linear8bitLt, torch.nn.Linear)
     lora_module_names = set()
     for name, module in model.named_modules():

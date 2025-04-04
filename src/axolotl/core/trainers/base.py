@@ -8,10 +8,11 @@ import logging
 import os
 from collections import defaultdict
 from functools import wraps
-from typing import Literal
+from typing import Any, Literal
 
 import datasets
 import torch
+import torch.nn as nn
 from datasets import Dataset
 from torch.utils.data import (
     BatchSampler,
@@ -25,6 +26,7 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, seed_worker
 from trl.trainer.utils import pad_to_length
 from typing_extensions import override
 
+from axolotl.core.trainers.handlers import SequenceParallelHandler
 from axolotl.core.trainers.mixins import TrainerMixins
 from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
@@ -61,9 +63,7 @@ class AxolotlTrainer(TrainerMixins, Trainer):
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
 
-        # Initialize sequence parallelism if enabled
-        if self.args.sequence_parallel_degree > 1:
-            self._setup_sequence_parallel()
+        self.sequence_parallel_handler = SequenceParallelHandler(self.args)
 
     def _wrap_model(self, model, training=True, dataloader=None):
         if self.args.torch_compile:
@@ -124,7 +124,7 @@ class AxolotlTrainer(TrainerMixins, Trainer):
 
         # Determine the base sampler first
         if self.args.sequence_parallel_degree > 1:
-            base_sampler = self._sp_get_train_sampler(self.train_dataset)
+            base_sampler = self.sequence_parallel_handler._get_train_sampler(self.train_dataset)
         elif self.args.curriculum_sampling:
             base_sampler = SequentialSampler(self.train_dataset)
         elif use_sample_packing:
@@ -160,7 +160,7 @@ class AxolotlTrainer(TrainerMixins, Trainer):
 
         # Determine the base sampler
         if self.args.sequence_parallel_degree > 1:
-            base_sampler = self._sp_get_eval_sampler(eval_dataset)
+            base_sampler = self.sequence_parallel_handler._get_eval_sampler(eval_dataset)
         elif use_multipack:
             base_sampler = SequentialSampler(eval_dataset)
         else:
@@ -232,7 +232,10 @@ class AxolotlTrainer(TrainerMixins, Trainer):
             return dataloader
 
         # Otherwise prepare with accelerator
-        return self.accelerator.prepare_data_loader(dataloader)
+        dataloader = self.accelerator.prepare_data_loader(dataloader)
+
+        return dataloader
+    
 
     def get_train_dataloader(self) -> DataLoader:
         """Get dataloader for training"""
@@ -341,7 +344,57 @@ class AxolotlTrainer(TrainerMixins, Trainer):
             dataloader_params["drop_last"] = self.args.dataloader_drop_last
 
         return DataLoader(bench_dataset, **dataloader_params)
-        # return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
+
+    def training_step(
+        self,
+        model: nn.Module,
+        inputs: dict[str, torch.Tensor | Any],
+        num_items_in_batch: int | None = None,
+    ) -> torch.Tensor:
+        """
+        Perform a training step on a batch of inputs. Overrides the
+        `transformers.trainer.Trainer` method to handle sequence parallelism if
+        enabled.
+
+        Args:
+            model: Model to perform training step for.
+            inputs: Dictionary mapping of inputs.
+            num_items_in_batch: The number of items in the batch.
+        """
+        # Set up sequence parallelism for this step if enabled
+        if self.args.sequence_parallel_degree > 1:
+            self.sequence_parallel_handler._update_ring_flash_attn_params(inputs)
+
+        # Proceed with normal training step
+        return super().training_step(model, inputs, num_items_in_batch)  # type: ignore
+
+    def prediction_step(
+        self,
+        model: nn.Module,
+        inputs: dict[str, torch.Tensor | Any],
+        prediction_loss_only: bool,
+        ignore_keys: list[str] | None = None,
+    ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+        """
+        Perform a prediction step on a batch of inputs. Overrides the
+        `transformers.trainer.Trainer` method to handle sequence parallelism if
+        enabled.
+
+        Args:
+            model: Model to perform prediction step for.
+            inputs: Dictionary mapping of inputs.
+            prediction_loss_only: Whether to return only the loss.
+            ignore_keys: Keys to ignore in the inputs.
+
+        Returns:
+            Tuple of (loss, logits, labels).
+        """
+        # Set up sequence parallelism for this prediction step if enabled
+        if self.args.sequence_parallel_degree > 1:
+            self.sequence_parallel_handler._update_ring_flash_attn_params(inputs)
+
+        # Proceed with normal prediction step
+        return super().prediction_step(model, inputs, prediction_loss_only, ignore_keys)  # type: ignore
 
     @override
     def compute_loss(

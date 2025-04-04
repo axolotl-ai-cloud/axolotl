@@ -1043,6 +1043,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.rpo_alpha is not None:
             training_args_kwargs["rpo_alpha"] = self.cfg.rpo_alpha
 
+        training_args_kwargs["sequence_parallel_degree"] = (
+            self.cfg.sequence_parallel_degree
+        )
+
         training_args_cls = None
         blocklist_args_kwargs = []
         if self.cfg.rl == "simpo":
@@ -1161,6 +1165,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs["dataset_tags"] = [
                 d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
             ]
+
         dpo_trainer = trainer_cls(
             *trainer_cls_args,
             args=training_args,
@@ -1178,21 +1183,3 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             dpo_trainer.add_callback(callback)
 
         return dpo_trainer
-
-
-class HFPPOTrainerBuilder(TrainerBuilderBase):
-    """
-    HF Factory class for PPO Trainer
-    """
-
-    def get_callbacks(self):
-        callbacks = super().get_callbacks()
-        return callbacks
-
-    def get_post_trainer_create_callbacks(self, trainer):
-        callbacks = super().get_post_trainer_create_callbacks(trainer=trainer)
-        return callbacks
-
-    def build(self, total_num_steps):
-        # build PPOConfig
-        pass
