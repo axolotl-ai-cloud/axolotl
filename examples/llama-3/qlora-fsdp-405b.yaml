@@ -24,7 +24,6 @@ pad_to_sequence_len: true
 lora_r: 16
 lora_alpha: 16
 lora_dropout: 0.05
-lora_target_modules:
 lora_target_linear: true
 
 gradient_accumulation_steps: 4
@@ -34,8 +33,6 @@ optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 0.00001
 
-train_on_inputs: false
-group_by_length: false
 bf16: true
 tf32: true
 

@@ -14,10 +14,15 @@ import datasets
 import pytest
 import requests
 from huggingface_hub import snapshot_download
+from huggingface_hub.errors import LocalEntryNotFoundError
 from tokenizers import AddedToken
 from transformers import AutoTokenizer
 
-from tests.hf_offline_utils import disable_hf_offline, enable_hf_offline
+from tests.hf_offline_utils import (
+    disable_hf_offline,
+    enable_hf_offline,
+    hf_offline_context,
+)
 
 
 def retry_on_request_exceptions(max_retries=3, delay=1):
@@ -47,6 +52,16 @@ def retry_on_request_exceptions(max_retries=3, delay=1):
 @retry_on_request_exceptions(max_retries=3, delay=5)
 @disable_hf_offline
 def snapshot_download_w_retry(*args, **kwargs):
+    """
+    download a model or dataset from HF Hub, retrying in requests failures. We also try to fetch it from the local
+    cache first using hf_hub_offline to avoid hitting HF Hub API rate limits. If it doesn't exist in the cache,
+    disable hf_hub_offline and actually fetch from the hub
+    """
+    with hf_offline_context(True):
+        try:
+            return snapshot_download(*args, **kwargs)
+        except LocalEntryNotFoundError:
+            pass
     return snapshot_download(*args, **kwargs)
 
 

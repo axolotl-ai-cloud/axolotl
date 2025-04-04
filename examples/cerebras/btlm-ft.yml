@@ -8,9 +8,6 @@ tokenizer_type: GPT2Tokenizer
 trust_remote_code: true
 tokenizer_use_fast: true
 tokenizer_legacy: true
-
-load_in_8bit: false
-load_in_4bit: false
 strict: false
 push_dataset_to_hub:
 hf_use_auth_token: true
@@ -34,7 +31,6 @@ lora_alpha:
 lora_dropout:
 lora_target_modules:
 lora_target_linear:
-lora_fan_in_fan_out:
 
 wandb_project:
 wandb_entity:
@@ -58,16 +54,12 @@ learning_rate: 0.000085
 train_on_inputs: true
 group_by_length: false
 bf16: auto
-fp16:
 tf32: true
 
 gradient_checkpointing: false
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
 
-xformers_attention:
 flash_attention: true
 sdp_attention:
 flash_optimum:
@@ -80,8 +72,6 @@ evals_per_epoch: 4
 saves_per_epoch: 1
 save_total_limit:
 
-debug:
-deepspeed:
 weight_decay: 0.1
 special_tokens:
   pad_token: "<|endoftext|>"
