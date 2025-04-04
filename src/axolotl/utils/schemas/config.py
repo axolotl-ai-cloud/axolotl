@@ -1271,7 +1271,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @classmethod
     def check_flex_torch_version(cls, data):
         if (data.get("flex_attention") is not None) and (
-            data.get("flex_attention") is True
+            data.get("flex_attention")
         ):
             env_capabilities = data.get("env_capabilities", {})
             torch_version = env_capabilities.get("torch_version")
