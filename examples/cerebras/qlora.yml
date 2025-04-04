@@ -22,7 +22,6 @@ lora_target_modules:
   - c_attn
   - c_proj
 lora_target_linear:
-lora_fan_in_fan_out:
 wandb_project:
 wandb_entity:
 wandb_watch:
@@ -36,15 +35,10 @@ optimizer: paged_adamw_8bit
 torchdistx_path:
 lr_scheduler: cosine
 learning_rate: 0.0002
-train_on_inputs: false
-group_by_length: false
 bf16: auto
-fp16:
 tf32: true
 gradient_checkpointing: true
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
 xformers_attention: true
 flash_attention:
@@ -53,10 +47,6 @@ gptq_model_v1:
 warmup_steps: 10
 evals_per_epoch: 4
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0.1
-fsdp:
-fsdp_config:
 special_tokens:
   pad_token: "<|endoftext|>"

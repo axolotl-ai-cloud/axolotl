@@ -41,14 +41,11 @@ optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
-train_on_inputs: false
-group_by_length: false
 bf16: true
 fp16:
 tf32: true
 
 gradient_checkpointing: true
-local_rank:
 logging_steps: 1
 flash_attention: false # PixtralVisionModel does not support Flash Attention 2.0 yet
 eager_attention:
@@ -56,10 +53,6 @@ eager_attention:
 warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0.0
-fsdp:
-fsdp_config:
 special_tokens:
   pad_token: <pad>

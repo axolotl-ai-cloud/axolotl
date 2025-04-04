@@ -25,9 +25,7 @@ pad_to_sequence_len: true
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
-lora_target_modules:
 lora_target_linear: true
-lora_fan_in_fan_out:
 
 wandb_project:
 wandb_entity:
@@ -42,30 +40,20 @@ optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 2e-5
 
-train_on_inputs: false
-group_by_length: false
 bf16: auto
 fp16: false
 tf32: false
 
 gradient_checkpointing: true
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
-xformers_attention:
 flash_attention: true
 
 warmup_steps: 20
 evals_per_epoch: 4
 eval_steps:
-eval_table_size:
 saves_per_epoch: 4
 save_steps:
 save_total_limit: 2
-debug:
-deepspeed:
 weight_decay:
-fsdp:
-fsdp_config:
 special_tokens:

@@ -7,9 +7,6 @@ tokenizer_type: AutoTokenizer
 # hub_model_id: username/custom_model_name
 
 chat_template: phi_3
-
-load_in_8bit: false
-load_in_4bit: false
 strict: false
 
 datasets:
@@ -30,7 +27,6 @@ lora_r: 64
 lora_alpha: 32
 lora_dropout: 0.05
 lora_target_linear: true
-lora_fan_in_fan_out:
 
 gradient_accumulation_steps: 1
 micro_batch_size: 2
@@ -42,8 +38,6 @@ max_grad_norm: 1.0
 lr_scheduler: cosine
 learning_rate: 5.0e-6
 
-train_on_inputs: false
-group_by_length: false
 bf16: auto
 
 gradient_checkpointing: true
@@ -55,9 +49,9 @@ flash_attention: true
 
 eval_steps: 1000
 save_steps: 5000
-eval_table_size: 2
 eval_batch_size: 2
 eval_sample_packing: false
+eval_table_size: 2
 eval_max_new_tokens: 32
 eval_causal_lm_metrics: ["perplexity"]
 do_causal_lm_eval: true

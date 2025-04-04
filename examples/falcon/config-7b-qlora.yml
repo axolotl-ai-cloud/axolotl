@@ -38,9 +38,7 @@ lora_alpha: 16
 # 0.05 for 33B and 65B models
 lora_dropout: 0.05
 # add LoRA modules on all linear layers of the base model
-lora_target_modules:
 lora_target_linear: true
-lora_fan_in_fan_out:
 
 wandb_project:
 wandb_entity:
@@ -67,10 +65,7 @@ lr_scheduler: cosine
 # - 2e-4 for 7b & 13b
 # - 1e-4 for 33b & 64b
 learning_rate: 0.0002
-train_on_inputs: false
-group_by_length: false
 bf16: auto
-fp16:
 tf32: true
 gradient_checkpointing: true
 # stop training after this many evaluation losses have increased in a row
@@ -78,7 +73,6 @@ gradient_checkpointing: true
 early_stopping_patience: 3
 resume_from_checkpoint:
 auto_resume_from_checkpoints: true
-local_rank:
 logging_steps: 1
 xformers_attention: true
 flash_attention:
@@ -87,11 +81,7 @@ gptq_model_v1:
 warmup_steps: 10
 evals_per_epoch: 4
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0.000001
-fsdp:
-fsdp_config:
 special_tokens:
   pad_token: "<|endoftext|>"
   bos_token: "<|endoftext|>"

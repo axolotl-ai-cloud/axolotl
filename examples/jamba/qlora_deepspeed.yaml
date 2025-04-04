@@ -39,26 +39,20 @@ optimizer: paged_adamw_8bit
 lr_scheduler: cosine
 learning_rate: 0.00001
 
-train_on_inputs: false
-group_by_length: false
 bf16: auto
-fp16:
 tf32: false
 
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
-xformers_attention:
 flash_attention: true
 
 warmup_steps: 10
 evals_per_epoch:
 saves_per_epoch: 1
-debug:
+
 deepspeed: deepspeed_configs/zero2.json
 weight_decay: 0.0
 special_tokens:

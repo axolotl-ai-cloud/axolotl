@@ -10,7 +10,6 @@ load_in_4bit: true
 strict: false
 sequence_len: 1024
 bf16: auto
-fp16:
 tf32: false
 flash_attention: true
 special_tokens:
@@ -30,8 +29,6 @@ num_epochs: 1
 # Evaluation
 val_set_size: 0.1
 evals_per_epoch: 5
-eval_table_size:
-eval_max_new_tokens: 128
 eval_sample_packing: false
 eval_batch_size: 1
 
@@ -43,7 +40,6 @@ lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
 lora_target_linear: true
-lora_fan_in_fan_out:
 lora_target_modules:
 
 # Sampling
@@ -64,15 +60,6 @@ lr_scheduler: cosine
 learning_rate: 0.0002
 
 # Misc
-train_on_inputs: false
-group_by_length: false
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
-xformers_attention:
-debug:
-deepspeed:
 weight_decay: 0
-fsdp:
-fsdp_config:

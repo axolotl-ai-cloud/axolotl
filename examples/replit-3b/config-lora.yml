@@ -20,7 +20,6 @@ lora_target_modules:
   - Wqkv
   - mlp_up
   - mlp_down
-lora_fan_in_fan_out:
 wandb_project: lora-replit
 wandb_entity:
 wandb_watch:
@@ -34,25 +33,16 @@ optimizer:
 torchdistx_path:
 lr_scheduler:
 learning_rate: 0.00001
-train_on_inputs: false
-group_by_length: false
 bf16: auto
 tf32: true
 gradient_checkpointing:
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
-xformers_attention:
 flash_attention:
 gptq_groupsize:
 gptq_model_v1:
 warmup_steps: 20
 evals_per_epoch: 4
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0
-fsdp:
-fsdp_config:
 #special_tokens:

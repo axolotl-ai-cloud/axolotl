@@ -5,9 +5,6 @@ tokenizer_type: AutoTokenizer
 tokenizer_config: EleutherAI/gpt-neox-20b
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
-
-load_in_8bit: false
-load_in_4bit: false
 strict: false
 
 datasets:
@@ -38,27 +35,17 @@ train_on_inputs: false
 group_by_length: true
 
 bf16: auto
-fp16:
 tf32: true
 
 gradient_checkpointing: false
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
-xformers_attention:
 flash_attention:
 
 warmup_steps: 10
 evals_per_epoch: 4
-eval_table_size:
-eval_max_new_tokens: 128
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0.0
-fsdp:
-fsdp_config:
 special_tokens:
 tokens:
 save_safetensors: False
