@@ -34,7 +34,7 @@ def patch_flex():
                 """
                 Initialize or update the singleton instance.
                 """
-                if self._is_flex_compiled is False:
+                if not self._is_flex_compiled:
                     self._compiled_flex_attention = torch.compile(
                         flex_attention, dynamic=False, mode="max-autotune-no-cudagraphs"
                     )
