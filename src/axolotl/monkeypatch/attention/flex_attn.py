@@ -33,7 +33,10 @@ def patch_flex():
                 """
                 if not self._is_flex_compiled:
                     self._compiled_flex_attention = torch.compile(
-                        flex_attention, dynamic=False, mode="max-autotune-no-cudagraphs"
+                        flex_attention,
+                        dynamic=False,
+                        mode="max-autotune-no-cudagraphs",
+                        fullgraph=True,
                     )
                     self._is_flex_compiled = True
 
