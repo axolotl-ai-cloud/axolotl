@@ -2,6 +2,8 @@ base_model: google/gemma-3-4b-it
 processor_type: AutoProcessor
 strict: false
 
+load_in_4bit: true
+
 # these 3 lines are needed for now to handle vision chat templates w images
 skip_prepare_dataset: true
 remove_unused_columns: false
@@ -20,7 +22,7 @@ dataset_prepared_path: last_run_prepared
 val_set_size: 0.01
 output_dir: ./outputs/out
 
-adapter: lora
+adapter: qlora
 lora_model_dir:
 
 sequence_len: 2048

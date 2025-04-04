@@ -74,8 +74,10 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
         load_in_8bit=False,
         load_in_4bit=False,
         flash_attention=False,
+        sequence_parallel_degree=None,
         deepspeed=None,
         fsdp=None,
+        fsdp_config=None,
         **kwargs,
     )
 
@@ -85,13 +87,6 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
         raise ValueError(
             f"Target directory for merge: `{parsed_cfg.lora_model_dir}` does not exist."
         )
-
-    parsed_cfg.load_in_4bit = False
-    parsed_cfg.load_in_8bit = False
-    parsed_cfg.flash_attention = False
-    parsed_cfg.deepspeed = None
-    parsed_cfg.fsdp = None
-    parsed_cfg.fsdp_config = None
 
     do_merge_lora(cfg=parsed_cfg)
 
