@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
-from huggingface_hub import snapshot_download
+from huggingface_hub import hf_hub_download, snapshot_download
 from huggingface_hub.errors import (
     HFValidationError,
     RepositoryNotFoundError,
@@ -251,7 +251,35 @@ def load_dataset_w_config(
             trust_remote_code=config_dataset.trust_remote_code,
             **load_ds_kwargs,
         )
-
+    elif config_dataset.data_files:
+        fp: str | list[str] | None = None
+        if isinstance(config_dataset.data_files, str):
+            fp = hf_hub_download(
+                repo_id=config_dataset.path,
+                repo_type="dataset",
+                filename=config_dataset.data_files,
+                revision=config_dataset.revision,
+            )
+        elif isinstance(config_dataset.data_files, list):
+            fp = []
+            for file in config_dataset.data_files:
+                fp.append(
+                    hf_hub_download(
+                        repo_id=config_dataset.path,
+                        repo_type="dataset",
+                        filename=file,
+                        revision=config_dataset.revision,
+                    )
+                )
+        else:
+            raise ValueError("data_files must be either a string or list of strings")
+        ds = load_dataset(
+            "json",
+            name=config_dataset.name,
+            data_files=fp,
+            streaming=streaming,
+            **load_ds_kwargs,
+        )
     if not ds:
         raise ValueError("unhandled dataset load")
 
