@@ -283,6 +283,13 @@ def modify_tokenizer_files(
                         raise ValueError(
                             f"Token ID {token_id} not found in added_tokens"
                         )
+            if "model" in tokenizer_data and "vocab" in tokenizer_data["model"]:
+                for token_id, new_value in token_id_mappings.items():
+                    for entry_val, entry_id in tokenizer_data["model"]["vocab"].items():
+                        if entry_id == token_id:
+                            del tokenizer_data["model"]["vocab"][entry_val]
+                            tokenizer_data["model"]["vocab"][new_value] = token_id
+                            break
 
             # Write the updated tokenizer data back
             with open(tokenizer_path, "w", encoding="utf-8") as f:
