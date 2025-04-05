@@ -109,7 +109,7 @@ datasets:
     preprocess_shards: # Optional[int] process dataset in N sequential chunks for memory efficiency (exclusive with `shards`)
 
     name: # Optional[str] name of dataset configuration to load
-    train_on_split: train # Optional[str] name of dataset split to load from
+    split: train # Optional[str] name of dataset split to load from
     revision: # Optional[str] The specific revision of the dataset to use when loading from the Hugging Face Hub. This can be a commit hash, tag, or branch name. If not specified, the latest version will be used. This parameter is ignored for local datasets.
     trust_remote_code: # Optional[bool] Trust remote code for untrusted source
 
