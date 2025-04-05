@@ -13,6 +13,7 @@ from axolotl.monkeypatch.utils import get_unpad_data
 SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "mllama_text_model",
     "llama",
+    "llama4",
     "mistral",
     "mixtral",
     "qwen2",
