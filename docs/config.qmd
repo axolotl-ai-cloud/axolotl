@@ -165,7 +165,9 @@ datasets:
       content: value
       # ...
 
-    # Optional[Dict[str, List]]. Roles mapping in the messages. The default is:
+    # Optional[Dict[str, List]]. Roles mapping in the messages.
+    # The format is {target_role: [source_roles]}. All source roles will be mapped to the target role.
+    # The default is:
     roles:
       user: ["human", "user"]
       assistant: ["gpt", "assistant"]
