@@ -95,7 +95,7 @@ def hf_offline_context(hf_hub_offline):
     """
     original_hf_offline = os.getenv("HF_HUB_OFFLINE")
     os.environ["HF_HUB_OFFLINE"] = str(hf_hub_offline)
-    reload_modules(True)
+    reload_modules(bool(hf_hub_offline))
     yield
     # Restore the original value of HF_HUB_OFFLINE environment variable
     if original_hf_offline is not None:
