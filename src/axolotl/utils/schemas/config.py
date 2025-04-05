@@ -27,7 +27,7 @@ from axolotl.utils.schemas.datasets import (
     StepwiseSupervisedDataset,
 )
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
-from axolotl.utils.schemas.enums import ChatTemplate, RLType
+from axolotl.utils.schemas.enums import AttentionBackend, ChatTemplate, RLType
 from axolotl.utils.schemas.integrations import (
     CometConfig,
     GradioConfig,
@@ -220,6 +220,10 @@ class AxolotlInputConfig(
         },
     )
 
+    attention: AttentionBackend = Field(
+        default=AttentionBackend.flash,
+        json_schema_extra={"description": "attention backend to use"},
+    )
     xformers_attention: bool | None = None
     sdp_attention: bool | None = None
     s2_attention: bool | None = None
@@ -410,6 +414,76 @@ class AxolotlInputConfig(
                 + "Please download the model from HuggingFace Hub manually for correct branch, "
                 + "point to its path, and remove revision_of_model from the config."
             )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_attn(cls, data):  # pylint: disable=too-many-return-statements
+        # cases where both are set and already match
+        if data.get("attention") == AttentionBackend.eager and data.get(
+            "eager_attention"
+        ):
+            return data
+        if data.get("attention") == AttentionBackend.flash and data.get(
+            "flash_attention"
+        ):
+            return data
+        if data.get("attention") == AttentionBackend.s2 and data.get("s2_attention"):
+            return data
+        if data.get("attention") == AttentionBackend.sdpa and data.get("sdp_attention"):
+            return data
+        if data.get("attention") == AttentionBackend.xformers and data.get(
+            "xformers_attention"
+        ):
+            return data
+
+        # cases where attention is set and the specific *_attention is not set
+        if not (
+            data.get("flash_attention")
+            or data.get("eager_attention")
+            or data.get("s2_attention")
+            or data.get("sdp_attention")
+            or data.get("xformers_attention")
+        ):
+            if data.get("attention") == AttentionBackend.eager:
+                data["eager_attention"] = True
+            elif data.get("attention") == AttentionBackend.flash:
+                data["flash_attention"] = True
+            elif data.get("attention") == AttentionBackend.s2:
+                data["s2_attention"] = True
+            elif data.get("attention") == AttentionBackend.sdpa:
+                data["sdp_attention"] = True
+            elif data.get("attention") == AttentionBackend.xformers:
+                data["xformers_attention"] = True
+            return data
+
+        # attention should always be set since that's a requirement, defaults to flash
+        if (
+            data.get("eager_attention")
+            and not data.get("attention") == AttentionBackend.eager
+        ):
+            raise ValueError("attention mismatch with eager_attention already set")
+        if (
+            data.get("flash_attention")
+            and not data.get("attention") == AttentionBackend.flash
+        ):
+            raise ValueError("attention mismatch with flash_attention already set")
+        if (
+            data.get("s2_attention")
+            and not data.get("attention") == AttentionBackend.s2
+        ):
+            raise ValueError("attention mismatch with s2_attention already set")
+        if (
+            data.get("sdp_attention")
+            and not data.get("attention") == AttentionBackend.sdpa
+        ):
+            raise ValueError("attention mismatch with sdp_attention already set")
+        if (
+            data.get("xformers_attention")
+            and not data.get("attention") == AttentionBackend.xformers
+        ):
+            raise ValueError("attention mismatch with xformers_attention already set")
+
         return data
 
     @model_validator(mode="before")

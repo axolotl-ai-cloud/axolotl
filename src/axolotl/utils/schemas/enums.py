@@ -52,3 +52,14 @@ class CustomSupportedOptimizers(str, Enum):
     ao_adamw_fp8 = "ao_adamw_fp8"  # pylint: disable=invalid-name
     adopt_adamw = "adopt_adamw"  # pylint: disable=invalid-name
     muon = "muon"  # pylint: disable=invalid-name
+
+
+class AttentionBackend(str, Enum):
+    """Attention backend types"""
+
+    eager = "eager"  # pylint: disable=invalid-name
+    flash = "flash"  # pylint: disable=invalid-name
+    flex = "flex"  # pylint: disable=invalid-name
+    s2 = "s2"  # pylint: disable=invalid-name
+    sdpa = "sdpa"  # pylint: disable=invalid-name
+    xformers = "xformers"  # pylint: disable=invalid-name

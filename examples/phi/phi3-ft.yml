@@ -45,7 +45,8 @@ gradient_checkpointing_kwargs:
   use_reentrant: True
 early_stopping_patience: 3
 logging_steps: 1
-flash_attention: true
+attention: flash
+
 
 eval_steps: 1000
 save_steps: 5000
