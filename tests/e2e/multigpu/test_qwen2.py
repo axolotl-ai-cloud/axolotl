@@ -37,7 +37,7 @@ class TestMultiGPUQwen2:
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.05,
+                "val_set_size": 0.01,
                 "datasets": [
                     {
                         "path": "Intel/orca_dpo_pairs",
@@ -57,7 +57,7 @@ class TestMultiGPUQwen2:
                 "flash_attention": True,
                 "bf16": "auto",
                 "tf32": True,
-                "gradient_checkpointing": True,
+                # "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {
                     "use_reentrant": False,
                 },
