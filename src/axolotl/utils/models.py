@@ -578,7 +578,7 @@ class ModelLoader:
 
         if (
             self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
-            and self.cfg.flash_attention
+            and (self.cfg.flash_attention or self.cfg.flex_attention)
             and self.cfg.sample_packing
         ):
             if "auto_map" in self.model_config:
@@ -884,7 +884,16 @@ class ModelLoader:
         """
         sample packing uses custom FA2 patch
         """
-        if self.cfg.flash_attention:
+        if self.cfg.flex_attention:
+            self.model_kwargs["attn_implementation"] = "flex_attention"
+            self.model_config._attn_implementation = (  # pylint: disable=protected-access
+                "flex_attention"
+            )
+            from axolotl.monkeypatch.attention.flex_attn import patch_flex
+
+            patch_flex()
+
+        elif self.cfg.flash_attention:
             if not self.cfg.sample_packing and self.cfg.s2_attention:
                 pass
             self.model_kwargs["attn_implementation"] = "flash_attention_2"
@@ -1281,7 +1290,10 @@ class ModelLoader:
         should_convert = (
             # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
             # convert them back to fp16/bf16 for flash-attn compatibility.
-            ((needs_fa2_dtype or self.cfg.flash_attention) and not qlora_fsdp)
+            (
+                (needs_fa2_dtype or self.cfg.flash_attention or self.cfg.flex_attention)
+                and not qlora_fsdp
+            )
             or self.cfg.cut_cross_entropy  # Cut cross entropy requires embedding layers to be in fp16/bf16 for backward pass
         )
 
