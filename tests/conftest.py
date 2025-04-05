@@ -19,7 +19,6 @@ from tokenizers import AddedToken
 from transformers import AutoTokenizer
 
 from tests.hf_offline_utils import (
-    disable_hf_offline,
     enable_hf_offline,
     hf_offline_context,
 )
@@ -50,7 +49,6 @@ def retry_on_request_exceptions(max_retries=3, delay=1):
 
 
 @retry_on_request_exceptions(max_retries=3, delay=5)
-@disable_hf_offline
 def snapshot_download_w_retry(*args, **kwargs):
     """
     download a model or dataset from HF Hub, retrying in requests failures. We also try to fetch it from the local
@@ -62,7 +60,8 @@ def snapshot_download_w_retry(*args, **kwargs):
             return snapshot_download(*args, **kwargs)
         except LocalEntryNotFoundError:
             pass
-    return snapshot_download(*args, **kwargs)
+    with hf_offline_context(False):
+        return snapshot_download(*args, **kwargs)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -260,6 +259,16 @@ def download_mistral_7b_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
         "casperhansen/mistral-7b-instruct-v0.1-awq",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_gemma3_4b_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "mlx-community/gemma-3-4b-it-8bit",
         repo_type="model",
         allow_patterns=["*token*", "config.json"],
     )

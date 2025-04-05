@@ -110,6 +110,34 @@ class TestTokenizers:
         assert tokenizer.encode("RANDOM_OVERRIDE_2", add_special_tokens=False) == [
             128042
         ]
+        assert (
+            tokenizer.decode([128041, 128042]) == "RANDOM_OVERRIDE_1RANDOM_OVERRIDE_2"
+        )
+
+    @enable_hf_offline
+    def test_added_tokens_overrides_gemma3(self, temp_dir):
+        cfg = DictDefault(
+            {
+                # use with tokenizer that has reserved_tokens in added_tokens
+                "tokenizer_config": "mlx-community/gemma-3-4b-it-8bit",
+                "added_tokens_overrides": {
+                    256001: "RANDOM_OVERRIDE_1",
+                    256002: "RANDOM_OVERRIDE_2",
+                },
+                "output_dir": temp_dir,
+            }
+        )
+
+        tokenizer = load_tokenizer(cfg)
+        assert tokenizer.encode("RANDOM_OVERRIDE_1", add_special_tokens=False) == [
+            256001
+        ]
+        assert tokenizer.encode("RANDOM_OVERRIDE_2", add_special_tokens=False) == [
+            256002
+        ]
+        assert (
+            tokenizer.decode([256001, 256002]) == "RANDOM_OVERRIDE_1RANDOM_OVERRIDE_2"
+        )
 
     @enable_hf_offline
     def test_added_tokens_overrides_with_toolargeid(self, temp_dir):
