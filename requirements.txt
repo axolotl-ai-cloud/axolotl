@@ -22,7 +22,7 @@ trl==0.16.0
 optimum==1.16.2
 hf_transfer
 sentencepiece
-gradio==3.50.2
+gradio==5.23.3
 
 modal==0.70.5
 pydantic==2.10.6
@@ -59,8 +59,8 @@ langdetect==1.0.9
 immutabledict==4.2.0
 antlr4-python3-runtime==4.13.2
 
-torchao==0.7.0
-schedulefree==1.3.0
+torchao==0.9.0
+schedulefree==1.4.1
 
 axolotl-contribs-lgpl==0.0.6
 axolotl-contribs-mit==0.0.3
