@@ -600,6 +600,9 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
         )
 
+    @pytest.mark.skip(
+        reason="ds-zero3 broken in main until transformers#37281 resolved"
+    )
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
         [1, 2],
@@ -867,7 +870,7 @@ class TestMultiGPULlama:
                 "sample_packing": True,
                 "bf16": True,
                 "save_safetensors": True,
-                "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero3_bf16.json"),
+                "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero1.json"),
                 "use_tensorboard": True,
             }
         )
