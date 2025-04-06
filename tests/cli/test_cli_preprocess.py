@@ -2,7 +2,7 @@
 
 import shutil
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -26,12 +26,15 @@ def test_preprocess_config_not_found(cli_runner):
 def test_preprocess_basic(cli_runner, config_path):
     """Test basic preprocessing with minimal config"""
     with patch("axolotl.cli.preprocess.do_cli") as mock_do_cli:
-        result = cli_runner.invoke(cli, ["preprocess", str(config_path)])
-        assert result.exit_code == 0
+        with patch("axolotl.cli.train.load_datasets") as mock_load_datasets:
+            mock_load_datasets.return_value = MagicMock()
 
-        mock_do_cli.assert_called_once()
-        assert mock_do_cli.call_args.kwargs["config"] == str(config_path)
-        assert mock_do_cli.call_args.kwargs["download"] is True
+            result = cli_runner.invoke(cli, ["preprocess", str(config_path)])
+            assert result.exit_code == 0
+
+            mock_do_cli.assert_called_once()
+            assert mock_do_cli.call_args.kwargs["config"] == str(config_path)
+            assert mock_do_cli.call_args.kwargs["download"] is True
 
 
 def test_preprocess_without_download(cli_runner, config_path):
@@ -54,19 +57,22 @@ def test_preprocess_custom_path(cli_runner, tmp_path, valid_test_config):
     config_path.write_text(valid_test_config)
 
     with patch("axolotl.cli.preprocess.do_cli") as mock_do_cli:
-        result = cli_runner.invoke(
-            cli,
-            [
-                "preprocess",
-                str(config_path),
-                "--dataset-prepared-path",
-                str(custom_path.absolute()),
-            ],
-        )
-        assert result.exit_code == 0
+        with patch("axolotl.cli.train.load_datasets") as mock_load_datasets:
+            mock_load_datasets.return_value = MagicMock()
 
-        mock_do_cli.assert_called_once()
-        assert mock_do_cli.call_args.kwargs["config"] == str(config_path)
-        assert mock_do_cli.call_args.kwargs["dataset_prepared_path"] == str(
-            custom_path.absolute()
-        )
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "preprocess",
+                    str(config_path),
+                    "--dataset-prepared-path",
+                    str(custom_path.absolute()),
+                ],
+            )
+            assert result.exit_code == 0
+
+            mock_do_cli.assert_called_once()
+            assert mock_do_cli.call_args.kwargs["config"] == str(config_path)
+            assert mock_do_cli.call_args.kwargs["dataset_prepared_path"] == str(
+                custom_path.absolute()
+            )
