@@ -538,7 +538,7 @@ def setup_deepspeed_env(cfg, stage=None):
 
 def setup_fsdp_envs(cfg):
     os.environ["ACCELERATE_USE_FSDP"] = "true"
-    if str(cfg.fsdp_version) == "2":
+    if str(cfg.fsdp_config.fsdp_version) == "2":
         os.environ["FSDP_VERSION"] = "2"
     if cfg.fsdp_config.fsdp_activation_checkpointing:
         os.environ["FSDP_ACTIVATION_CHECKPOINTING"] = "true"
