@@ -8,6 +8,7 @@ import transformers
 
 
 def patch_flex_wrapper():
+    # TODO remove this patch when transformers#37285 is merged and in a release
     is_torch_2_6 = torch.__version__.startswith("2.6")
     is_transformers_below_4_51 = transformers.__version__ < "4.51.0"
 
