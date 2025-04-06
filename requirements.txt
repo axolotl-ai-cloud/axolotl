@@ -12,7 +12,7 @@ liger-kernel==0.5.5
 packaging==23.2
 
 peft==0.15.0
-transformers @ git+https://github.com/winglian/transformers.git@revert-deepspeed-z3-regressions
+transformers @ git+https://github.com/huggingface/transformers.git@yet-another-deepspeed
 tokenizers>=0.21.1
 accelerate==1.6.0
 datasets==3.5.0
