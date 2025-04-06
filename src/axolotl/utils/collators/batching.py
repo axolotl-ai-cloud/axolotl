@@ -12,10 +12,7 @@ import torch.distributed as dist
 from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
 
-from axolotl.monkeypatch.attention.ring_attn import (
-    calculate_packed_seq_lens,
-    update_ring_attn_params,
-)
+from axolotl.monkeypatch.attention.ring_attn import update_ring_attn_params
 
 
 @dataclass
@@ -166,13 +163,12 @@ class DataCollatorForSeq2Seq:
         end = start + slice_size
 
         # Update params for ring attention calculation
-        packed_seq_lens = calculate_packed_seq_lens(batch["position_ids"])
-        update_ring_attn_params(packed_seq_lens, total_seq_len)
+        update_ring_attn_params(batch=batch)
 
+        # Slice batch for sequence parallel processing
         keys_to_slice = ["input_ids", "attention_mask", "labels", "position_ids"]
         for key in keys_to_slice:
             if key in batch:
-                # Slice batch for local sequence parallel processing
                 batch[key] = batch[key][:, start:end]
 
         return batch
