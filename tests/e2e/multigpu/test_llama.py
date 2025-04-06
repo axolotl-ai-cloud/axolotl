@@ -486,7 +486,7 @@ class TestMultiGPULlama:
                 "gradient_checkpointing": True,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_8bit",
+                "optimizer": "adamw_torch_8bit",
                 "lr_scheduler": "cosine",
                 "fsdp": [
                     "auto_wrap",
@@ -529,7 +529,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss is too high"
         )
 
     def test_fsdp_qlora_prequant_packed(self, temp_dir):
