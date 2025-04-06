@@ -950,10 +950,23 @@ class AxolotlInputConfig(
             and "8bit" in data.get("optimizer", "")
             and data.get("fsdp_config")
             and data["fsdp_config"].get("fsdp_offload_params")
+            and str(data["fsdp_config"].get("fsdp_version")) != "2"
         ):
             raise ValueError(
                 f"FSDP Offload not compatible with {data.get('optimizer')}"
             )
+        if (
+            data.get("fsdp")
+            and "8bit" in data.get("optimizer", "")
+            and data.get("fsdp_config")
+            and str(data["fsdp_config"].get("fsdp_version")) == "2"
+        ):
+            if data.get("optimizer", "") in ["adamw_8bit", "adamw_bnb_8bit"]:
+                # CUDA ops errors with bnb 8bit optimizer + FSDP2
+                raise ValueError(
+                    f"FSDP2 not compatible with {data.get('optimizer')}, use `adamw_torch_8bit` instead"
+                )
+
         return data
 
     @model_validator(mode="before")

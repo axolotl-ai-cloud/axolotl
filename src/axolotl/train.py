@@ -217,7 +217,7 @@ def save_trained_model(
 
     # Handle FSDP state dict type
     state_dict_type = "FULL_STATE_DICT"
-    if trainer.is_fsdp_enabled:
+    if trainer.is_fsdp_enabled and str(cfg.fsdp_config.fsdp_version) != "2":
         if cfg.fsdp_final_state_dict_type:
             state_dict_type = cfg.fsdp_final_state_dict_type
         trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)

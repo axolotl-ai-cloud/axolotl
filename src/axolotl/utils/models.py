@@ -889,9 +889,13 @@ class ModelLoader:
             self.model_config._attn_implementation = (  # pylint: disable=protected-access
                 "flex_attention"
             )
-            from axolotl.monkeypatch.attention.flex_attn import patch_flex
+            from axolotl.monkeypatch.attention.flex_attn import (
+                patch_flex_make_mask,
+                patch_flex_wrapper,
+            )
 
-            patch_flex()
+            patch_flex_wrapper()
+            patch_flex_make_mask()
 
         elif self.cfg.flash_attention:
             if not self.cfg.sample_packing and self.cfg.s2_attention:
