@@ -49,7 +49,8 @@ python-dotenv==1.0.1
 # remote filesystems
 s3fs>=2024.5.0
 gcsfs>=2024.5.0
-# adlfs
+adlfs>=2024.5.0
+ocifs==1.3.2
 
 zstandard==0.22.0
 fastcore

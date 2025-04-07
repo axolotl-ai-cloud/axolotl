@@ -1,0 +1,276 @@
+---
+title: Dataset Loading
+description: Understanding how to load datasets from different sources
+back-to-top-navigation: true
+toc: true
+toc-depth: 5
+---
+
+## Overview
+
+Datasets can be loaded in a number of different ways depending on the how it is saved (the extension of the file) and where it is stored.
+
+## Loading Datasets
+
+We use the `datasets` library to load datasets and a mix of `load_dataset` and `load_from_disk` to load them.
+
+You may recognize the similar named configs between `load_dataset` and the `datasets` section of the config file.
+
+```yaml
+datasets:
+  - path:
+    name:
+    data_files:
+    split:
+    revision:
+    trust_remote_code:
+```
+
+::: {.callout-tip}
+
+Do not feel overwhelmed by the number of options here. A lot of them are optional. In fact, the most common config to use would be `path` and sometimes `data_files`.
+
+:::
+
+This matches the API of [`datasets.load_dataset`](https://github.com/huggingface/datasets/blob/0b5998ac62f08e358f8dcc17ec6e2f2a5e9450b6/src/datasets/load.py#L1838-L1858), so if you're familiar with that, you will feel right at home.
+
+For HuggingFace's guide to load different dataset types, see [here](https://huggingface.co/docs/datasets/loading).
+
+For full details on the config, see [config.qmd](config.qmd).
+
+::: {.callout-note}
+
+You can set multiple datasets in the config file by more than one entry under `datasets`.
+
+```yaml
+datasets:
+  - path: /path/to/your/dataset
+  - path: /path/to/your/other/dataset
+```
+
+:::
+
+### Local dataset
+
+#### Files
+
+Usually, to load a JSON file, you would do something like this:
+
+```python
+from datasets import load_dataset
+
+dataset = load_dataset("json", data_files="data.json")
+```
+
+Which translates to the following config:
+
+```yaml
+datasets:
+  - path: json
+    data_files: /path/to/your/file.jsonl
+```
+
+However, to make things easier, we have added a few shortcuts for loading local dataset files.
+
+You can just point the `path` to the file or directory along with the `ds_type` to load the dataset. The below example shows for a JSON file:
+
+```yaml
+datasets:
+  - path: /path/to/your/file.jsonl
+    ds_type: json
+```
+
+This works for CSV, JSON, Parquet, and Arrow files.
+
+::: {.callout-tip}
+
+If `path` points to a file and `ds_type` is not specified, we will automatically infer the dataset type from the file extension, so you could omit `ds_type` if you'd like.
+
+:::
+
+#### Directory
+
+If you're loading a directory, you can point the `path` to the directory.
+
+Then, you have two options:
+
+##### Loading entire directory
+
+You do not need any additional configs.
+
+We will attempt to load in the following order:
+- datasets saved with `datasets.save_to_disk`
+- loading entire directory of files (such as with parquet/arrow files)
+
+```yaml
+datasets:
+  - path: /path/to/your/directory
+```
+
+##### Loading specific files in directory
+
+Provide `data_files` with a list of files to load.
+
+```yaml
+datasets:
+    # single file
+  - path: /path/to/your/directory
+    ds_type: csv
+    data_files: file1.csv
+
+    # multiple files
+  - path: /path/to/your/directory
+    ds_type: json
+    data_files:
+      - file1.jsonl
+      - file2.jsonl
+
+    # multiple files for parquet
+  - path: /path/to/your/directory
+    ds_type: parquet
+    data_files:
+      - file1.parquet
+      - file2.parquet
+
+```
+
+### HuggingFace Hub
+
+The method you use to load the dataset depends on how the dataset was created, whether a folder was uploaded directly or a HuggingFace Dataset was pushed.
+
+::: {.callout-note}
+
+If you're using a private dataset, you will need to enable the `hf_use_auth_token` flag in the root-level of the config file.
+
+:::
+
+#### Folder uploaded
+
+This would mean that the dataset is a single file or file(s) uploaded to the Hub.
+
+```yaml
+datasets:
+  - path: org/dataset-name
+    data_files:
+      - file1.jsonl
+      - file2.jsonl
+```
+
+#### HuggingFace Dataset
+
+This means that the dataset is created as a HuggingFace Dataset and pushed to the Hub via `datasets.push_to_hub`.
+
+```yaml
+datasets:
+  - path: org/dataset-name
+```
+
+::: {.callout-note}
+
+There are some other configs which may be required like `name`, `split`, `revision`, `trust_remote_code`, etc depending on the dataset.
+
+:::
+
+### Remote Filesystems
+
+Via the `storage_options` config under `load_dataset`, you can load datasets from remote filesystems like S3, GCS, Azure, and OCI.
+
+::: {.callout-warning}
+
+This is currently experimental. Please let us know if you run into any issues!
+
+:::
+
+The only difference between the providers is that you need to prepend the path with the respective protocols.
+
+```yaml
+datasets:
+    # Single file
+  - path: s3://bucket-name/path/to/your/file.jsonl
+
+    # Directory
+  - path: s3://bucket-name/path/to/your/directory
+```
+
+For directory, we load via `load_from_disk`.
+
+#### S3
+
+Prepend the path with `s3://`.
+
+The credentials are pulled in the following order:
+
+- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` environment variables
+- from the `~/.aws/credentials` file
+- for nodes on EC2, the IAM metadata provider
+
+::: {.callout-note}
+
+We assume you have credentials setup and not using anonymous access. If you want to use anonymous access, let us know! We may have to open a config option for this.
+
+:::
+
+Other environment variables that can be set can be found in [boto3 docs](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#using-environment-variables)
+
+#### GCS
+
+Prepend the path with `gs://` or `gcs://`.
+
+The credentials are loaded in the following order:
+
+- gcloud credentials
+- for nodes on GCP, the google metadata service
+- anonymous access
+
+#### Azure
+
+##### Gen 1
+
+Prepend the path with `adl://`.
+
+Ensure you have the following environment variables set:
+
+- `AZURE_STORAGE_TENANT_ID`
+- `AZURE_STORAGE_CLIENT_ID`
+- `AZURE_STORAGE_CLIENT_SECRET`
+
+##### Gen 2
+
+Prepend the path with `abfs://` or `az://`.
+
+Ensure you have the following environment variables set:
+
+- `AZURE_STORAGE_ACCOUNT_NAME`
+- `AZURE_STORAGE_ACCOUNT_KEY`
+
+Other environment variables that can be set can be found in [adlfs docs](https://github.com/fsspec/adlfs?tab=readme-ov-file#setting-credentials)
+
+#### OCI
+
+Prepend the path with `oci://`.
+
+It would attempt to read in the following order:
+
+- `OCIFS_IAM_TYPE`, `OCIFS_CONFIG_LOCATION`, and `OCIFS_CONFIG_PROFILE` environment variables
+- when on OCI resource, resource principal
+
+Other environment variables:
+
+- `OCI_REGION_METADATA`
+
+Please see the [ocifs docs](https://ocifs.readthedocs.io/en/latest/getting-connected.html#Using-Environment-Variables).
+
+### HTTPS
+
+The path should start with `https://`.
+
+```yaml
+datasets:
+  - path: https://path/to/your/dataset/file.jsonl
+```
+
+This must be publically accessible.
+
+## Next steps
+
+Now that you know how to load datasets, you can learn more on how to load your specific dataset format into your target output format [dataset formats docs](dataset-formats).
