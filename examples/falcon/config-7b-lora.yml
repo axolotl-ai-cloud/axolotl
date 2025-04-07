@@ -44,8 +44,7 @@ tf32: true
 gradient_checkpointing: true
 resume_from_checkpoint:
 logging_steps: 1
-xformers_attention: true
-flash_attention:
+attention: xformers
 gptq_groupsize:
 gptq_model_v1:
 warmup_steps: 40

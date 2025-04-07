@@ -11,7 +11,8 @@ strict: false
 sequence_len: 1024
 bf16: auto
 tf32: false
-flash_attention: true
+attention: flash
+
 special_tokens:
   bos_token: "<|startoftext|>"
   eos_token: "<|endoftext|>"

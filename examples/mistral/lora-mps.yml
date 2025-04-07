@@ -54,8 +54,7 @@ tf32: true
 gradient_checkpointing: true
 resume_from_checkpoint:
 logging_steps: 1
-flash_attention: false
-sdp_attention: true
+attention: sdpa
 
 loss_watchdog_threshold: 5.0
 loss_watchdog_patience: 3

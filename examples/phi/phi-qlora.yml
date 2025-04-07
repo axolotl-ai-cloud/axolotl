@@ -52,7 +52,8 @@ gradient_checkpointing_kwargs:
   use_reentrant: True
 resume_from_checkpoint:
 logging_steps: 1
-flash_attention: true
+attention: flash
+
 
 warmup_steps: 100
 evals_per_epoch: 4

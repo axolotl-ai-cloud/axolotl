@@ -54,7 +54,8 @@ tf32: true
 gradient_checkpointing: true
 resume_from_checkpoint:
 logging_steps: 1
-flash_attention: true
+attention: flash
+
 
 warmup_ratio: 0.1
 evals_per_epoch:

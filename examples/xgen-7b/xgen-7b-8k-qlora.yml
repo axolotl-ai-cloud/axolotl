@@ -72,8 +72,7 @@ early_stopping_patience: 3
 resume_from_checkpoint:
 auto_resume_from_checkpoints: true
 logging_steps: 1
-xformers_attention: true
-flash_attention:
+attention: xformers
 gptq_groupsize:
 gptq_model_v1:
 warmup_steps: 10
