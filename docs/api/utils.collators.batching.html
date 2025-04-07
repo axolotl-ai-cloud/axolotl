@@ -453,10 +453,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#axolotl.utils.collators.batching.PretrainingBatchSamplerDataCollatorForSeq2Seq" id="toc-axolotl.utils.collators.batching.PretrainingBatchSamplerDataCollatorForSeq2Seq" class="nav-link" data-scroll-target="#axolotl.utils.collators.batching.PretrainingBatchSamplerDataCollatorForSeq2Seq">PretrainingBatchSamplerDataCollatorForSeq2Seq</a></li>
   <li><a href="#axolotl.utils.collators.batching.V2BatchSamplerDataCollatorForSeq2Seq" id="toc-axolotl.utils.collators.batching.V2BatchSamplerDataCollatorForSeq2Seq" class="nav-link" data-scroll-target="#axolotl.utils.collators.batching.V2BatchSamplerDataCollatorForSeq2Seq">V2BatchSamplerDataCollatorForSeq2Seq</a></li>
   </ul></li>
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.utils.collators.batching.adjust_position_ids_for_slice" id="toc-axolotl.utils.collators.batching.adjust_position_ids_for_slice" class="nav-link" data-scroll-target="#axolotl.utils.collators.batching.adjust_position_ids_for_slice">adjust_position_ids_for_slice</a></li>
-  </ul></li>
   </ul></li>
   </ul>
 </nav>
@@ -696,30 +692,6 @@ includes logic for handling sequence parallelism collation.</p>
 <span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>    sequence_parallel_degree<span class="op">=</span><span class="dv">1</span>,</span>
 <span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Collator for multipack specific to the using the BatchSampler</p>
-</section>
-</section>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.utils.collators.batching.adjust_position_ids_for_slice">adjust_position_ids_for_slice</a></td>
-<td>Adjust position IDs for a sliced sequence to maintain proper relative positions.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.utils.collators.batching.adjust_position_ids_for_slice" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.collators.batching.adjust_position_ids_for_slice">adjust_position_ids_for_slice</h3>
-<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.collators.batching.adjust_position_ids_for_slice(position_ids, start_idx)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Adjust position IDs for a sliced sequence to maintain proper relative positions.
-This handles the case where position IDs might not be contiguous due to sample
-packing.</p>
 
 
 </section>
