@@ -245,6 +245,8 @@ class AxolotlInputConfig(
     lora_qkv_kernel: bool | None = None
     lora_o_kernel: bool | None = None
 
+    llama4_linearized_experts: bool | None = None
+
     deepspeed: str | dict[str, Any] | None = None
     fsdp: list[str] | None = None
     fsdp_config: dict[str, Any] | None = None
