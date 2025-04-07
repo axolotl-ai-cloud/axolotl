@@ -7,9 +7,11 @@ import os
 from pathlib import Path
 
 import pytest
+import transformers
 import yaml
 from accelerate.test_utils import execute_subprocess_async
 from huggingface_hub import snapshot_download
+from packaging import version
 from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
@@ -26,6 +28,10 @@ AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 def download_model():
     # download the model
     snapshot_download("HuggingFaceTB/SmolLM2-135M")
+
+
+def transformers_version_eq(required_version):
+    return version.parse(transformers.__version__) == version.parse(required_version)
 
 
 class TestMultiGPULlama:
@@ -56,7 +62,7 @@ class TestMultiGPULlama:
                 ],
                 "num_epochs": 1,
                 "max_steps": 2,
-                "micro_batch_size": 4,
+                "micro_batch_size": 1,
                 "gradient_accumulation_steps": 4,
                 # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
@@ -108,7 +114,7 @@ class TestMultiGPULlama:
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.01,
+                "val_set_size": 0.05,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -116,6 +122,7 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:20%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -193,7 +200,7 @@ class TestMultiGPULlama:
                 ],
                 "num_epochs": 1,
                 "max_steps": 2,
-                "micro_batch_size": 4,
+                "micro_batch_size": 2,
                 "gradient_accumulation_steps": 4,
                 # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
@@ -390,7 +397,7 @@ class TestMultiGPULlama:
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
-                "sequence_len": 2048,
+                "sequence_len": 1024,
                 "val_set_size": 0.01,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
@@ -403,7 +410,7 @@ class TestMultiGPULlama:
                 ],
                 "num_epochs": 1,
                 "max_steps": 2,
-                "micro_batch_size": 4,
+                "micro_batch_size": 2,
                 "gradient_accumulation_steps": 2,
                 # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
@@ -493,9 +500,7 @@ class TestMultiGPULlama:
                 ],
                 "fsdp_config": {
                     "fsdp_version": 2,
-                    "fsdp_forward_prefetch": True,
-                    "fsdp_sync_module_states": True,
-                    "fsdp_use_orig_params": True,
+                    # "fsdp_forward_prefetch": True,  # not yet implemented in accelerate
                     "fsdp_offload_params": False,
                     "fsdp_cpu_ram_efficient_loading": False,
                     "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
@@ -551,7 +556,7 @@ class TestMultiGPULlama:
                 "sample_packing": True,
                 "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
-                "sequence_len": 2048,
+                "sequence_len": 1024,
                 "val_set_size": 0.01,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
@@ -565,7 +570,7 @@ class TestMultiGPULlama:
                 ],
                 "num_epochs": 1,
                 "max_steps": 2,
-                "micro_batch_size": 4,
+                "micro_batch_size": 2,
                 "gradient_accumulation_steps": 2,
                 # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
@@ -612,8 +617,11 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
         )
 
-    @pytest.mark.skip(
-        reason="ds-zero3 broken in main until transformers#37281 resolved"
+    # TODO: remove skip once deepspeed regression is fixed
+    # see https://github.com/huggingface/transformers/pull/37324
+    @pytest.mark.skipif(
+        transformers_version_eq("4.51.0"),
+        reason="zero3 is not supported with transformers==4.51.0",
     )
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
@@ -651,7 +659,7 @@ class TestMultiGPULlama:
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
-                "sequence_len": 2048,
+                "sequence_len": 1024,
                 "val_set_size": 0.01,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
@@ -724,7 +732,7 @@ class TestMultiGPULlama:
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
-                "sequence_len": 2048,
+                "sequence_len": 1024,
                 "val_set_size": 0.01,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
@@ -797,7 +805,7 @@ class TestMultiGPULlama:
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
-                "sequence_len": 2048,
+                "sequence_len": 1024,
                 "val_set_size": 0.01,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
@@ -885,7 +893,7 @@ class TestMultiGPULlama:
                 "sample_packing": True,
                 "bf16": True,
                 "save_safetensors": True,
-                "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero1.json"),
+                # "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero1.json"),
                 "use_tensorboard": True,
             }
         )

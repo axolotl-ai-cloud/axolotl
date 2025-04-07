@@ -169,6 +169,7 @@ class AxolotlInputConfig(
 
     bf16: Literal["auto"] | bool | None = "auto"
     fp16: bool | None = None
+    fp8: bool | None = None
     bfloat16: bool | None = None  # for non-AMP cases
     float16: bool | None = None  # for non-AMP cases
     tf32: bool | None = None
@@ -464,9 +465,10 @@ class AxolotlInputConfig(
             data.get("sample_packing")
             and not data.get("flash_attention")
             and not data.get("sdp_attention")
+            and not data.get("flex_attention")
         ):
             LOG.warning(
-                "sample_packing without flash_attention or sdp_attention does not handle cross-attention."
+                "sample_packing without flash, sdp or flex attention does not handle cross sample decontamination."
             )
 
         return data

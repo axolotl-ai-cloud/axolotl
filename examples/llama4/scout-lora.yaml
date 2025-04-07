@@ -1,0 +1,75 @@
+base_model: meta-llama/Llama-4-Scout-17B-16E
+model_type: Llama4ForConditionalGeneration
+  # Automatically upload checkpoint and final model to HF
+  # hub_model_id: username/custom_model_name
+
+strict: false
+
+  # torch_compile: true
+
+adapter: lora
+lora_r: 32
+lora_alpha: 64
+lora_target_modules:
+  - self_attn.q_proj
+  - self_attn.k_proj
+  - self_attn.v_proj
+  - self_attn.o_proj
+lora_modules_to_save:
+  - lm_head
+  - embed_tokens
+
+chat_template: llama4
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:20%]
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.0
+output_dir: ./outputs/out
+
+sequence_len: 4096
+sample_packing: true
+pad_to_sequence_len: true
+
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_8bit
+lr_scheduler: cosine
+learning_rate: 2e-5
+
+bf16: true
+tf32: true
+
+# gradient_checkpointing: true
+# gradient_checkpointing_kwargs:
+#   use_reentrant: false
+logging_steps: 1
+flash_attention: true
+
+warmup_steps: 100
+evals_per_epoch: 2
+saves_per_epoch: 1
+weight_decay: 0.0
+fsdp:
+  - auto_wrap
+  - full_shard
+fsdp_config:
+  fsdp_version: 2
+  fsdp_offload_params: false
+  fsdp_cpu_ram_efficient_loading: true
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_transformer_layer_cls_to_wrap: Llama4TextDecoderLayer
+  fsdp_state_dict_type: SHARDED_STATE_DICT
+  fsdp_sharding_strategy: FULL_SHARD
+  fsdp_reshard_after_forward: true
+  fsdp_activation_checkpointing: true
+special_tokens:
+  pad_token: <|finetune_right_pad_id|>
+  eos_token: <|eot|>

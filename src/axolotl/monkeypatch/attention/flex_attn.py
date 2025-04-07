@@ -162,7 +162,6 @@ def patch_flex_make_mask():
     for n in tuple(sys.modules):
         if ".modeling_" in n and "llama4" not in n:
             if hasattr(sys.modules[n], "make_flex_block_causal_mask"):
-                print(n)
                 sys.modules[n].make_flex_block_causal_mask = (
                     patched_make_flex_block_causal_mask
                 )

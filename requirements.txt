@@ -6,18 +6,19 @@ triton>=3.0.0
 mamba-ssm==1.2.0.post1
 xformers>=0.0.23.post1
 autoawq==0.2.7.post3
-liger-kernel==0.5.5
+liger-kernel==0.5.6
 # END section
 
 packaging==23.2
 
-peft==0.15.0
+peft==0.15.1
 transformers==4.51.0
 tokenizers>=0.21.1
 accelerate==1.6.0
 datasets==3.5.0
 deepspeed>=0.15.4
 trl==0.16.1
+hf_xet==1.0.0
 
 optimum==1.16.2
 hf_transfer

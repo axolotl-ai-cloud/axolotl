@@ -562,6 +562,19 @@ class AxolotlTrainer(
 
         return res
 
+    def additional_accelerator_args(
+        self, fp8=None, **kwargs
+    ):  # pylint: disable=unused-argument
+        ret_kwargs = {}
+        if fp8:
+            from accelerate.utils import AORecipeKwargs
+
+            ret_kwargs["mixed_precision"] = "fp8"
+            ret_kwargs["kwargs_handlers"] = [AORecipeKwargs()]
+            os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
+
+        return ret_kwargs
+
     def log(self, logs: dict[str, float], start_time: float | None = None) -> None:
         """
         Log `logs` on the various objects watching training, including stored metrics.

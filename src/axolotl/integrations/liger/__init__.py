@@ -173,5 +173,17 @@ class LigerPlugin(BasePlugin):
                 raise NotImplementedError(
                     "Fused linear cross entropy is not yet supported for Gemma3."
                 )
+        elif cfg.model_config_type == "llama4":
+            from axolotl.integrations.liger.models.llama4 import (
+                apply_liger_kernel_to_llama4,
+            )
+
+            apply_liger_kernel_to_llama4(
+                cross_entropy=cfg.liger_cross_entropy,
+                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
+                glu_activation=cfg.liger_glu_activation,
+                rms_norm=cfg.liger_rms_norm,
+                layer_norm=cfg.liger_layer_norm,
+            )
         elif cfg.model_config_type in ["deepseek_v3"]:
             raise ValueError(f"Unsupported model config type: {cfg.model_config_type}")
