@@ -500,9 +500,7 @@ class TestMultiGPULlama:
                 ],
                 "fsdp_config": {
                     "fsdp_version": 2,
-                    "fsdp_forward_prefetch": True,
-                    "fsdp_sync_module_states": True,
-                    "fsdp_use_orig_params": True,
+                    # "fsdp_forward_prefetch": True,  # not yet implemented in accelerate
                     "fsdp_offload_params": False,
                     "fsdp_cpu_ram_efficient_loading": False,
                     "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",

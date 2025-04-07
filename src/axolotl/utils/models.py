@@ -557,6 +557,13 @@ class ModelLoader:
         plugin_manager = PluginManager.get_instance()
         plugin_manager.pre_model_load(self.cfg)
 
+        # monkey patch to allow additional Accelerator init kwargs
+        from axolotl.monkeypatch.trainer_accelerator_args import (
+            patch_create_accelerate_code_for_fp8,
+        )
+
+        patch_create_accelerate_code_for_fp8()
+
         if self.cfg.adapter:
             from axolotl.monkeypatch.transformers_fa_utils import (
                 patch_fa_peft_integration,
@@ -988,10 +995,11 @@ class ModelLoader:
             )
             skip_move_to_device = True
         elif (
-            self.model_config.model_type == "llama"
+            self.model_config.model_type in ["llama", "llama4"]
             and not self.cfg.trust_remote_code
             and not self.cfg.gptq
         ):
+            # TODO do we need to open this up for all models?
             if self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
                 skip_move_to_device = True
                 if "device_map" in self.model_kwargs:

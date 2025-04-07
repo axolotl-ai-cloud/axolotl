@@ -582,7 +582,9 @@ def prepare_optim_env(cfg):
 
     setup_torch_compile_env(cfg)
 
-    if (cfg.bf16 == "auto" and is_torch_bf16_gpu_available()) or cfg.bf16 is True:
+    if cfg.fp8:
+        os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
+    elif (cfg.bf16 == "auto" and is_torch_bf16_gpu_available()) or cfg.bf16 is True:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "bf16"
     elif cfg.fp16:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "fp16"
