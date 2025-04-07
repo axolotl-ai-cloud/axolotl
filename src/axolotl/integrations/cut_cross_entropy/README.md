@@ -32,6 +32,7 @@ cut_cross_entropy: true
 ## Supported Models
 
 - llama
+- llama4_text
 - llama4
 - mllama
 - phi3

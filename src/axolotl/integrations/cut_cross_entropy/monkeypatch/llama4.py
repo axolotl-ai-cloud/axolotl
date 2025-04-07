@@ -356,6 +356,31 @@ def cce_forward_multimodal(
     )
 
 
+def patch_llama4_text(
+    maybe_model: TransformersModelT | str | transformers.PretrainedConfig,
+    patch_options: PatchOptions,
+) -> TransformersModelT | None:
+    global _PATCH_OPTS  # pylint: disable=global-statement
+    from transformers.models.llama4 import modeling_llama4
+
+    _PATCH_OPTS = patch_options
+
+    if isinstance(maybe_model, transformers.PreTrainedModel):
+        assert isinstance(
+            maybe_model, modeling_llama4.Llama4ForCausalLM
+        ), f"Expected a Llama4ForCausalLM model. Got {type(maybe_model)}."
+        maybe_model.forward = MethodType(cce_forward, maybe_model)
+
+        return maybe_model
+
+    setattr(
+        modeling_llama4.Llama4ForCausalLM,
+        "forward",
+        cce_forward,
+    )
+    return None
+
+
 def patch_llama4(
     maybe_model: TransformersModelT | str | transformers.PretrainedConfig,
     patch_options: PatchOptions,

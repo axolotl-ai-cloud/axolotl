@@ -20,7 +20,10 @@ from axolotl.integrations.cut_cross_entropy.monkeypatch.gemma3 import (
     patch_gemma3,
     patch_gemma3_text,
 )
-from axolotl.integrations.cut_cross_entropy.monkeypatch.llama4 import patch_llama4
+from axolotl.integrations.cut_cross_entropy.monkeypatch.llama4 import (
+    patch_llama4,
+    patch_llama4_text,
+)
 from axolotl.integrations.cut_cross_entropy.monkeypatch.mistral3 import (
     patch_mistral,
     patch_mistral3,
@@ -30,6 +33,7 @@ from axolotl.integrations.cut_cross_entropy.monkeypatch.mllama import patch_mlla
 CUT_CROSS_ENTROPY_MODEL_MAPPING = {
     "llama": patch_llama,
     "llama4": patch_llama4,
+    "llama4_text": patch_llama4_text,
     "mllama": patch_mllama,
     "phi3": patch_phi3,
     "gemma": patch_gemma,
