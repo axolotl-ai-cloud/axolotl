@@ -36,6 +36,7 @@ from transformers import (
     BitsAndBytesConfig,
     Gemma3ForConditionalGeneration,
     GPTQConfig,
+    Llama4ForConditionalGeneration,
     LlavaForConditionalGeneration,
     Mistral3ForConditionalGeneration,
     MllamaForConditionalGeneration,
@@ -76,6 +77,7 @@ LOG = logging.getLogger(__name__)
 
 MULTIMODAL_AUTO_MODEL_MAPPING = {
     "mllama": MllamaForConditionalGeneration,
+    "llama4": Llama4ForConditionalGeneration,
     "llava": LlavaForConditionalGeneration,
     "qwen2_vl": Qwen2VLForConditionalGeneration,
     "qwen2_5_vl": Qwen2_5_VLForConditionalGeneration,
