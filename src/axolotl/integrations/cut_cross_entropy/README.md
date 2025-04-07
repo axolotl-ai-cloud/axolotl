@@ -32,6 +32,8 @@ cut_cross_entropy: true
 ## Supported Models
 
 - llama
+- llama4
+- mllama
 - phi3
 - gemma
 - gemma2
