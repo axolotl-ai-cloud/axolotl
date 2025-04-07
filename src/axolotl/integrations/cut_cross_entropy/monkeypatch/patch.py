@@ -20,6 +20,7 @@ from axolotl.integrations.cut_cross_entropy.monkeypatch.gemma3 import (
     patch_gemma3,
     patch_gemma3_text,
 )
+from axolotl.integrations.cut_cross_entropy.monkeypatch.llama4 import patch_llama4
 from axolotl.integrations.cut_cross_entropy.monkeypatch.mistral3 import (
     patch_mistral,
     patch_mistral3,
@@ -28,6 +29,7 @@ from axolotl.integrations.cut_cross_entropy.monkeypatch.mllama import patch_mlla
 
 CUT_CROSS_ENTROPY_MODEL_MAPPING = {
     "llama": patch_llama,
+    "llama4": patch_llama4,
     "mllama": patch_mllama,
     "phi3": patch_phi3,
     "gemma": patch_gemma,
@@ -60,7 +62,14 @@ def cce_patch(
         raise ValueError(f"Unknown {impl=}")
 
     if isinstance(model_type_or_model, transformers.PreTrainedModel):
-        model_type = model_type_or_model.config.model_type
+        if hasattr(model_type_or_model, "config"):
+            model_type = getattr(
+                getattr(model_type_or_model, "config", None), "model_type", None
+            )
+        else:
+            raise ValueError(
+                "model_type_or_model is a PreTrainedModel but does not have a config attribute"
+            )
     elif isinstance(model_type_or_model, transformers.PretrainedConfig):
         model_type = model_type_or_model.model_type
     else:
