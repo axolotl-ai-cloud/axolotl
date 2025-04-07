@@ -1156,6 +1156,12 @@ class AxolotlInputConfig(
                     "flash_attention: true must be set with sequence_parallel_degree > 1"
                 )
 
+            if not info.data["micro_batch_size"] == 1:
+                raise ValueError(
+                    "micro_batch_size must be set to 1 "
+                    "due to a `ring-flash-attn` requirement"
+                )
+
             try:
                 import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
             except ImportError as exception:
@@ -1164,6 +1170,18 @@ class AxolotlInputConfig(
                     "Please install it with `pip install axolotl[ring-flash-attn] "
                     "or `pip install ring-flash-attn>=0.1.4`."
                 ) from exception
+
+            # TODO: monkeypatch / callback to average losses correctly across SP ranks
+            # / fix gradient scaling across SP ranks. Losses, grads should be scaled
+            # according to the proportion of non-padding tokens per rank.
+            LOG.warning(
+                "Sequence parallelism (SP) is enabled with "
+                f"sequence_parallel_degree={value}. Please note that logged losses may "
+                "differ slightly to the non-SP losses due to transformers Trainer "
+                "implementation details. Please see "
+                "https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
+                "for more details."
+            )
 
         return value
 
