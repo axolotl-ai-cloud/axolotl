@@ -40,6 +40,7 @@ def patch_flex_wrapper():
             if not self._is_flex_compiled:
                 self._compiled_flex_attention = torch.compile(
                     flex_attention,
+                    dynamic=False,
                     mode="max-autotune-no-cudagraphs",
                     fullgraph=True,
                 )
