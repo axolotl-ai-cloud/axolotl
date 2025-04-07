@@ -2,9 +2,12 @@
 monkeypatch for accelerate fsdp2 fix when modifying ordereddict during interation
 """
 
+import logging
 import sys
 
 import torch
+
+LOG = logging.getLogger(__name__)
 
 
 def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dict):
@@ -20,29 +23,29 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
     import torch.distributed as dist
     from torch.distributed.tensor import distribute_tensor
 
+    LOG.info("Broadcasting full state dict to all ranks...")
     sharded_sd = model.state_dict()
-    if accelerator.is_main_process:
-        # Create a list of items to iterate over before modifying the dictionary
-        items_to_process = list(zip(full_sd.items(), sharded_sd.values()))
-        for (param_name, full_param), sharded_param in items_to_process:
-            full_param = full_param.detach().cuda()
-            mesh = sharded_param.device_mesh
+    param_names = sorted(sharded_sd.keys())
+    for param_name in param_names:
+        mesh = sharded_sd[param_name].device_mesh
+        if accelerator.is_main_process:
+            # Use the corresponding tensor from full_sd (assuming the key exists in full_sd)
+            full_param = full_sd[param_name].detach().cuda()
             dist.broadcast(full_param, src=0, group=mesh.get_group())
             sharded_tensor = distribute_tensor(
-                full_param, mesh, sharded_param.placements
+                full_param, mesh, sharded_sd[param_name].placements
             )
             sharded_sd[param_name] = sharded_tensor
-    else:
-        # Create a list of items to iterate over before modifying the dictionary
-        items_to_process = list(sharded_sd.items())
-        for param_name, sharded_param in items_to_process:
+        else:
+            # Prepare a tensor of matching shape and dtype
             full_tensor = torch.empty(
-                sharded_param.size(), device="cuda", dtype=sharded_param.dtype
+                sharded_sd[param_name].size(),
+                device="cuda",
+                dtype=sharded_sd[param_name].dtype,
             )
-            mesh = sharded_param.device_mesh
             dist.broadcast(full_tensor, src=0, group=mesh.get_group())
             sharded_tensor = distribute_tensor(
-                full_tensor, mesh, sharded_param.placements
+                full_tensor, mesh, sharded_sd[param_name].placements
             )
             sharded_sd[param_name] = sharded_tensor
 
