@@ -17,8 +17,8 @@ ORIGINAL_TRAINER_CODE = """
 """
 
 PATCHED_TRAINER_CODE = """
-    if hasattr(self, "override_accelerator_args"):
-        additional_args = self.override_accelerator_args(**args)
+    if hasattr(self, "additional_accelerator_args"):
+        additional_args = self.additional_accelerator_args(fp8=True, **args)
         if additional_args:
             args.update(additional_args)
 

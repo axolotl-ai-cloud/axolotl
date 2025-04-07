@@ -169,6 +169,7 @@ class AxolotlInputConfig(
 
     bf16: Literal["auto"] | bool | None = "auto"
     fp16: bool | None = None
+    fp8: bool | None = None
     bfloat16: bool | None = None  # for non-AMP cases
     float16: bool | None = None  # for non-AMP cases
     tf32: bool | None = None

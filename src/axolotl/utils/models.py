@@ -558,11 +558,12 @@ class ModelLoader:
         plugin_manager.pre_model_load(self.cfg)
 
         # monkey patch to allow additional Accelerator init kwargs
-        from axolotl.monkeypatch.trainer_accelerator_args import (
-            patch_create_accelerate_code_for_fp8,
-        )
+        if self.cfg.fp8:
+            from axolotl.monkeypatch.trainer_accelerator_args import (
+                patch_create_accelerate_code_for_fp8,
+            )
 
-        patch_create_accelerate_code_for_fp8()
+            patch_create_accelerate_code_for_fp8()
 
         if self.cfg.adapter:
             from axolotl.monkeypatch.transformers_fa_utils import (

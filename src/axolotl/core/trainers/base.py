@@ -562,13 +562,16 @@ class AxolotlTrainer(
 
         return res
 
-    def override_accelerator_args(self, **kwargs):  # pylint: disable=unused-argument
+    def additional_accelerator_args(
+        self, fp8=None, **kwargs
+    ):  # pylint: disable=unused-argument
         ret_kwargs = {}
-        if os.environ.get("ACCELERATE_MIXED_PRECISION") == "fp8":
+        if fp8:
             from accelerate.utils import AORecipeKwargs
 
             ret_kwargs["mixed_precision"] = "fp8"
             ret_kwargs["kwargs_handlers"] = [AORecipeKwargs()]
+            os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
 
         return ret_kwargs
 

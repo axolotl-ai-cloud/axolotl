@@ -45,7 +45,7 @@ def lce_forward(
     Returns:
     """
 
-    print("=" * 30 + " lce_forward " + "=" * 30)
+    # pylint: disable=duplicate-code
     output_attentions = (
         output_attentions
         if output_attentions is not None
