@@ -268,6 +268,7 @@ def get_processing_strategy(
         )
     if chat_template_type in [
         "llama3_2_vision",
+        "llama4",
         "llava",
         "mistral_v7_tekken",
         "pixtral",
