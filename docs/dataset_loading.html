@@ -6,9 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="Multipack is a technique to pack multiple sequences into a single batch to increase training throughput.">
+<meta name="description" content="Understanding how to load datasets from different sources">
 
-<title>Multipack (Sample Packing) – Axolotl</title>
+<title>Dataset Loading – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -20,6 +20,40 @@ ul.task-list li input[type="checkbox"] {
   width: 0.8em;
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
 </style>
 
@@ -96,7 +130,7 @@ ul.task-list li input[type="checkbox"] {
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/batch_vs_grad.html">Core Concepts</a></li><li class="breadcrumb-item"><a href="../docs/multipack.html">Multipack (Sample Packing)</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/multimodal.html">How To Guides</a></li><li class="breadcrumb-item"><a href="../docs/dataset_loading.html">Dataset Loading</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -296,7 +330,7 @@ ul.task-list li input[type="checkbox"] {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_loading.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Dataset Loading</span></a>
   </div>
 </li>
@@ -325,7 +359,7 @@ ul.task-list li input[type="checkbox"] {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link active">
+  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multipack (Sample Packing)</span></a>
   </div>
 </li>
@@ -411,22 +445,51 @@ ul.task-list li input[type="checkbox"] {
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#visualization-of-multipack-with-flash-attention" id="toc-visualization-of-multipack-with-flash-attention" class="nav-link active" data-scroll-target="#visualization-of-multipack-with-flash-attention">Visualization of Multipack with Flash Attention</a></li>
-  <li><a href="#multipack-without-flash-attention" id="toc-multipack-without-flash-attention" class="nav-link" data-scroll-target="#multipack-without-flash-attention">Multipack without Flash Attention</a></li>
+  <li><a href="#overview" id="toc-overview" class="nav-link active" data-scroll-target="#overview">Overview</a></li>
+  <li><a href="#loading-datasets" id="toc-loading-datasets" class="nav-link" data-scroll-target="#loading-datasets">Loading Datasets</a>
+  <ul>
+  <li><a href="#local-dataset" id="toc-local-dataset" class="nav-link" data-scroll-target="#local-dataset">Local dataset</a>
+  <ul>
+  <li><a href="#files" id="toc-files" class="nav-link" data-scroll-target="#files">Files</a></li>
+  <li><a href="#directory" id="toc-directory" class="nav-link" data-scroll-target="#directory">Directory</a>
+  <ul class="collapse">
+  <li><a href="#loading-entire-directory" id="toc-loading-entire-directory" class="nav-link" data-scroll-target="#loading-entire-directory">Loading entire directory</a></li>
+  <li><a href="#loading-specific-files-in-directory" id="toc-loading-specific-files-in-directory" class="nav-link" data-scroll-target="#loading-specific-files-in-directory">Loading specific files in directory</a></li>
+  </ul></li>
+  </ul></li>
+  <li><a href="#huggingface-hub" id="toc-huggingface-hub" class="nav-link" data-scroll-target="#huggingface-hub">HuggingFace Hub</a>
+  <ul>
+  <li><a href="#folder-uploaded" id="toc-folder-uploaded" class="nav-link" data-scroll-target="#folder-uploaded">Folder uploaded</a></li>
+  <li><a href="#huggingface-dataset" id="toc-huggingface-dataset" class="nav-link" data-scroll-target="#huggingface-dataset">HuggingFace Dataset</a></li>
+  </ul></li>
+  <li><a href="#remote-filesystems" id="toc-remote-filesystems" class="nav-link" data-scroll-target="#remote-filesystems">Remote Filesystems</a>
+  <ul>
+  <li><a href="#s3" id="toc-s3" class="nav-link" data-scroll-target="#s3">S3</a></li>
+  <li><a href="#gcs" id="toc-gcs" class="nav-link" data-scroll-target="#gcs">GCS</a></li>
+  <li><a href="#azure" id="toc-azure" class="nav-link" data-scroll-target="#azure">Azure</a>
+  <ul class="collapse">
+  <li><a href="#gen-1" id="toc-gen-1" class="nav-link" data-scroll-target="#gen-1">Gen 1</a></li>
+  <li><a href="#gen-2" id="toc-gen-2" class="nav-link" data-scroll-target="#gen-2">Gen 2</a></li>
+  </ul></li>
+  <li><a href="#oci" id="toc-oci" class="nav-link" data-scroll-target="#oci">OCI</a></li>
+  </ul></li>
+  <li><a href="#https" id="toc-https" class="nav-link" data-scroll-target="#https">HTTPS</a></li>
+  </ul></li>
+  <li><a href="#next-steps" id="toc-next-steps" class="nav-link" data-scroll-target="#next-steps">Next steps</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/batch_vs_grad.html">Core Concepts</a></li><li class="breadcrumb-item"><a href="../docs/multipack.html">Multipack (Sample Packing)</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/multimodal.html">How To Guides</a></li><li class="breadcrumb-item"><a href="../docs/dataset_loading.html">Dataset Loading</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">Multipack (Sample Packing)</h1>
+<h1 class="title">Dataset Loading</h1>
 </div>
 
 <div>
   <div class="description">
-    Multipack is a technique to pack multiple sequences into a single batch to increase training throughput.
+    Understanding how to load datasets from different sources
   </div>
 </div>
 
@@ -443,63 +506,275 @@ ul.task-list li input[type="checkbox"] {
 </header>
 
 
-<section id="visualization-of-multipack-with-flash-attention" class="level2">
-<h2 class="anchored" data-anchor-id="visualization-of-multipack-with-flash-attention">Visualization of Multipack with Flash Attention</h2>
-<p>Because Flash Attention simply drops the attention mask, we do not need to
-construct a 4d attention mask. We only need to concatenate the sequences into
-a single batch and let flash attention know where each new sequence begins.</p>
-<p>4k context, bsz =4,
-each character represents 256 tokens
-X represents a padding token</p>
-<pre><code>   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
-[[ A A A A A A A A A A A ]
-   B B B B B B ]
-   C C C C C C C ]
-   D D D D ]]
-
-[[ E E E E E E E E ]
- [ F F F F ]
- [ G G G ]
- [ H H H H ]]
-
-[[ I I I ]
- [ J J J ]
- [ K K K K K]
- [ L L L ]]</code></pre>
-<p>after padding to longest input in each step</p>
-<pre><code>   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
-[[ A A A A A A A A A A A ]
-   B B B B B B X X X X X X ]
-   C C C C C C C X X X X ]
-   D D D D X X X X X X X ]]
-
-[[ E E E E E E E E ]
- [ F F F F X X X X ]
- [ G G G X X X X X ]
- [ H H H H X X X X ]]
-
-[[ I I I X X ]
- [ J J J X X ]
- [ K K K K K ]
- [ L L L X X ]]</code></pre>
-<p>w packing ( note it’s the same effective number of tokens per step, but a true bsz of 1)</p>
-<pre><code>   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
-[[ A A A A A A A A A A A B B B B B
-   B C C C C C C C D D D D E E E E
-   E E E E F F F F F G G G H H H H
-   I I I J J J J K K K K K L L L X ]]</code></pre>
-<p>cu_seqlens:
-[[ 0, 11, 17, 24, 28, 36, 41 44, 48, 51, 55, 60, 64]]</p>
+<section id="overview" class="level2">
+<h2 class="anchored" data-anchor-id="overview">Overview</h2>
+<p>Datasets can be loaded in a number of different ways depending on the how it is saved (the extension of the file) and where it is stored.</p>
 </section>
-<section id="multipack-without-flash-attention" class="level2">
-<h2 class="anchored" data-anchor-id="multipack-without-flash-attention">Multipack without Flash Attention</h2>
-<p>Multipack can still be achieved without Flash attention, but with lower packing
-efficiency as we are not able to join multiple batches into a single batch due to
-context length limits without flash attention. We can use either Pytorch’s Scaled
-Dot Product Attention implementation or native Pytorch attention implementation
-along with <a href="https://github.com/huggingface/transformers/pull/27539">4d attention masks</a>
-to pack sequences together and avoid cross attention.</p>
-<p><img src="./images/4d-mask.png" alt="axolotl" width="800"></p>
+<section id="loading-datasets" class="level2">
+<h2 class="anchored" data-anchor-id="loading-datasets">Loading Datasets</h2>
+<p>We use the <code>datasets</code> library to load datasets and a mix of <code>load_dataset</code> and <code>load_from_disk</code> to load them.</p>
+<p>You may recognize the similar named configs between <code>load_dataset</code> and the <code>datasets</code> section of the config file.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">data_files</span><span class="kw">:</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">revision</span><span class="kw">:</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">trust_remote_code</span><span class="kw">:</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Do not feel overwhelmed by the number of options here. A lot of them are optional. In fact, the most common config to use would be <code>path</code> and sometimes <code>data_files</code>.</p>
+</div>
+</div>
+<p>This matches the API of <a href="https://github.com/huggingface/datasets/blob/0b5998ac62f08e358f8dcc17ec6e2f2a5e9450b6/src/datasets/load.py#L1838-L1858"><code>datasets.load_dataset</code></a>, so if you’re familiar with that, you will feel right at home.</p>
+<p>For HuggingFace’s guide to load different dataset types, see <a href="https://huggingface.co/docs/datasets/loading">here</a>.</p>
+<p>For full details on the config, see <a href="../docs/config.html">config.qmd</a>.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>You can set multiple datasets in the config file by more than one entry under <code>datasets</code>.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /path/to/your/dataset</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /path/to/your/other/dataset</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</div>
+<section id="local-dataset" class="level3">
+<h3 class="anchored" data-anchor-id="local-dataset">Local dataset</h3>
+<section id="files" class="level4">
+<h4 class="anchored" data-anchor-id="files">Files</h4>
+<p>Usually, to load a JSON file, you would do something like this:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> datasets <span class="im">import</span> load_dataset</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>dataset <span class="op">=</span> load_dataset(<span class="st">"json"</span>, data_files<span class="op">=</span><span class="st">"data.json"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Which translates to the following config:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> json</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">data_files</span><span class="kw">:</span><span class="at"> /path/to/your/file.jsonl</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>However, to make things easier, we have added a few shortcuts for loading local dataset files.</p>
+<p>You can just point the <code>path</code> to the file or directory along with the <code>ds_type</code> to load the dataset. The below example shows for a JSON file:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /path/to/your/file.jsonl</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>This works for CSV, JSON, Parquet, and Arrow files.</p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>If <code>path</code> points to a file and <code>ds_type</code> is not specified, we will automatically infer the dataset type from the file extension, so you could omit <code>ds_type</code> if you’d like.</p>
+</div>
+</div>
+</section>
+<section id="directory" class="level4">
+<h4 class="anchored" data-anchor-id="directory">Directory</h4>
+<p>If you’re loading a directory, you can point the <code>path</code> to the directory.</p>
+<p>Then, you have two options:</p>
+<section id="loading-entire-directory" class="level5">
+<h5 class="anchored" data-anchor-id="loading-entire-directory">Loading entire directory</h5>
+<p>You do not need any additional configs.</p>
+<p>We will attempt to load in the following order:
+- datasets saved with <code>datasets.save_to_disk</code>
+- loading entire directory of files (such as with parquet/arrow files)</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /path/to/your/directory</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="loading-specific-files-in-directory" class="level5">
+<h5 class="anchored" data-anchor-id="loading-specific-files-in-directory">Loading specific files in directory</h5>
+<p>Provide <code>data_files</code> with a list of files to load.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="co">    # single file</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /path/to/your/directory</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> csv</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">data_files</span><span class="kw">:</span><span class="at"> file1.csv</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="co">    # multiple files</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /path/to/your/directory</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">data_files</span><span class="kw">:</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> file1.jsonl</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> file2.jsonl</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="co">    # multiple files for parquet</span></span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /path/to/your/directory</span></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> parquet</span></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">data_files</span><span class="kw">:</span></span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> file1.parquet</span></span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> file2.parquet</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+</section>
+</section>
+<section id="huggingface-hub" class="level3">
+<h3 class="anchored" data-anchor-id="huggingface-hub">HuggingFace Hub</h3>
+<p>The method you use to load the dataset depends on how the dataset was created, whether a folder was uploaded directly or a HuggingFace Dataset was pushed.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>If you’re using a private dataset, you will need to enable the <code>hf_use_auth_token</code> flag in the root-level of the config file.</p>
+</div>
+</div>
+<section id="folder-uploaded" class="level4">
+<h4 class="anchored" data-anchor-id="folder-uploaded">Folder uploaded</h4>
+<p>This would mean that the dataset is a single file or file(s) uploaded to the Hub.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> org/dataset-name</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">data_files</span><span class="kw">:</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> file1.jsonl</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> file2.jsonl</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="huggingface-dataset" class="level4">
+<h4 class="anchored" data-anchor-id="huggingface-dataset">HuggingFace Dataset</h4>
+<p>This means that the dataset is created as a HuggingFace Dataset and pushed to the Hub via <code>datasets.push_to_hub</code>.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> org/dataset-name</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>There are some other configs which may be required like <code>name</code>, <code>split</code>, <code>revision</code>, <code>trust_remote_code</code>, etc depending on the dataset.</p>
+</div>
+</div>
+</section>
+</section>
+<section id="remote-filesystems" class="level3">
+<h3 class="anchored" data-anchor-id="remote-filesystems">Remote Filesystems</h3>
+<p>Via the <code>storage_options</code> config under <code>load_dataset</code>, you can load datasets from remote filesystems like S3, GCS, Azure, and OCI.</p>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Warning
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>This is currently experimental. Please let us know if you run into any issues!</p>
+</div>
+</div>
+<p>The only difference between the providers is that you need to prepend the path with the respective protocols.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="co">    # Single file</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> s3://bucket-name/path/to/your/file.jsonl</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="co">    # Directory</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> s3://bucket-name/path/to/your/directory</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>For directory, we load via <code>load_from_disk</code>.</p>
+<section id="s3" class="level4">
+<h4 class="anchored" data-anchor-id="s3">S3</h4>
+<p>Prepend the path with <code>s3://</code>.</p>
+<p>The credentials are pulled in the following order:</p>
+<ul>
+<li><code>AWS_ACCESS_KEY_ID</code>, <code>AWS_SECRET_ACCESS_KEY</code>, and <code>AWS_SESSION_TOKEN</code> environment variables</li>
+<li>from the <code>~/.aws/credentials</code> file</li>
+<li>for nodes on EC2, the IAM metadata provider</li>
+</ul>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>We assume you have credentials setup and not using anonymous access. If you want to use anonymous access, let us know! We may have to open a config option for this.</p>
+</div>
+</div>
+<p>Other environment variables that can be set can be found in <a href="https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#using-environment-variables">boto3 docs</a></p>
+</section>
+<section id="gcs" class="level4">
+<h4 class="anchored" data-anchor-id="gcs">GCS</h4>
+<p>Prepend the path with <code>gs://</code> or <code>gcs://</code>.</p>
+<p>The credentials are loaded in the following order:</p>
+<ul>
+<li>gcloud credentials</li>
+<li>for nodes on GCP, the google metadata service</li>
+<li>anonymous access</li>
+</ul>
+</section>
+<section id="azure" class="level4">
+<h4 class="anchored" data-anchor-id="azure">Azure</h4>
+<section id="gen-1" class="level5">
+<h5 class="anchored" data-anchor-id="gen-1">Gen 1</h5>
+<p>Prepend the path with <code>adl://</code>.</p>
+<p>Ensure you have the following environment variables set:</p>
+<ul>
+<li><code>AZURE_STORAGE_TENANT_ID</code></li>
+<li><code>AZURE_STORAGE_CLIENT_ID</code></li>
+<li><code>AZURE_STORAGE_CLIENT_SECRET</code></li>
+</ul>
+</section>
+<section id="gen-2" class="level5">
+<h5 class="anchored" data-anchor-id="gen-2">Gen 2</h5>
+<p>Prepend the path with <code>abfs://</code> or <code>az://</code>.</p>
+<p>Ensure you have the following environment variables set:</p>
+<ul>
+<li><code>AZURE_STORAGE_ACCOUNT_NAME</code></li>
+<li><code>AZURE_STORAGE_ACCOUNT_KEY</code></li>
+</ul>
+<p>Other environment variables that can be set can be found in <a href="https://github.com/fsspec/adlfs?tab=readme-ov-file#setting-credentials">adlfs docs</a></p>
+</section>
+</section>
+<section id="oci" class="level4">
+<h4 class="anchored" data-anchor-id="oci">OCI</h4>
+<p>Prepend the path with <code>oci://</code>.</p>
+<p>It would attempt to read in the following order:</p>
+<ul>
+<li><code>OCIFS_IAM_TYPE</code>, <code>OCIFS_CONFIG_LOCATION</code>, and <code>OCIFS_CONFIG_PROFILE</code> environment variables</li>
+<li>when on OCI resource, resource principal</li>
+</ul>
+<p>Other environment variables:</p>
+<ul>
+<li><code>OCI_REGION_METADATA</code></li>
+</ul>
+<p>Please see the <a href="https://ocifs.readthedocs.io/en/latest/getting-connected.html#Using-Environment-Variables">ocifs docs</a>.</p>
+</section>
+</section>
+<section id="https" class="level3">
+<h3 class="anchored" data-anchor-id="https">HTTPS</h3>
+<p>The path should start with <code>https://</code>.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> https://path/to/your/dataset/file.jsonl</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>This must be publically accessible.</p>
+</section>
+</section>
+<section id="next-steps" class="level2">
+<h2 class="anchored" data-anchor-id="next-steps">Next steps</h2>
+<p>Now that you know how to load datasets, you can learn more on how to load your specific dataset format into your target output format <a href="dataset-formats">dataset formats docs</a>.</p>
 
 
 </section>

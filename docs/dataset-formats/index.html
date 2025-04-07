@@ -328,6 +328,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
 </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dataset Loading</span></a>
+  </div>
+</li>
       </ul>
   </li>
         <li class="sidebar-item sidebar-item-section">
@@ -507,6 +513,20 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>Axolotl is a training framework that aims to make the process convenient yet flexible to users by simply passing a config yaml file.</p>
 <p>As there are a lot of available options in Axolotl, this guide aims to provide an simplify the user experience to choosing the proper choice.</p>
 <p>Axolotl supports 3 kinds of training methods: pre-training, supervised fine-tuning, and preference-based post-training (e.g.&nbsp;DPO, ORPO, PRMs). Each method has their own dataset format which are described below.</p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>This guide will mainly use JSONL as an introduction. Please refer to the <a href="../../docs/dataset_loading.html">dataset loading docs</a> to understand how to load datasets from other sources.</p>
+<p>For <code>pretraining_dataset:</code> specifically, please refer to the <a href="#pre-training">Pre-training section</a>.</p>
+</div>
+</div>
 <section id="pre-training" class="level2">
 <h2 class="anchored" data-anchor-id="pre-training">Pre-training</h2>
 <p>When aiming to train on large corpora of text datasets, pre-training is your go-to choice. Due to the size of these datasets, downloading the entire-datasets before beginning training would be prohibitively time-consuming. Axolotl supports <a href="https://huggingface.co/docs/datasets/en/stream">streaming</a> to only load batches into memory at a time.</p>
