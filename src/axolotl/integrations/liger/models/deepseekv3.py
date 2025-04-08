@@ -7,7 +7,7 @@ DeepseekV3 model with LigerFusedLinearCrossEntropyLoss
 import sys
 from copy import deepcopy
 from functools import partial
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 
 import torch
 from liger_kernel.transformers.model.loss_utils import LigerForCausalLMLoss
@@ -233,6 +233,7 @@ def moe_forward(self, hidden_states):
     return topk_idx, topk_weight, aux_loss
 
 
+# from transformers main but using this requires patching private function _causal_mask etc
 def model_forward(
     self,
     input_ids: Optional[torch.LongTensor] = None,
@@ -406,8 +407,37 @@ def apply_liger_kernel_to_deepseekv3(
     # patch moe
     modeling_mod.MoEGate.forward = moe_forward
 
+    original_model_forward = modeling_mod.DeepseekV3Model.forward
+
+    def wrapped_model_forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[list[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        num_items_in_batch: Optional[int] = None,
+    ) -> Union[Tuple, BaseModelOutputWithPast]:
+        return original_model_forward(
+            input_ids,
+            attention_mask,
+            position_ids,
+            past_key_values,
+            inputs_embeds,
+            use_cache,
+            output_attentions,
+            output_hidden_states,
+            return_dict,
+            **kwargs,
+        )
+
     # patch model forward
-    modeling_mod.DeepseekV3Model.forward = model_forward
+    modeling_mod.DeepseekV3Model.forward = wrapped_model_forward
 
     if rms_norm:
         modeling_mod.DeepseekV3RMSNorm = LigerRMSNorm
