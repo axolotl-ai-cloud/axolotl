@@ -176,4 +176,4 @@ def apply_liger_kernel_to_deepseekv3(
         nn.functional.cross_entropy = liger_cross_entropy
 
     if fused_linear_cross_entropy:
-        modeling_deepseek_v3.DeepseekV3CausalLM.forward = lce_forward
+        modeling_deepseek_v3.DeepseekV3ForCausalLM.forward = lce_forward
