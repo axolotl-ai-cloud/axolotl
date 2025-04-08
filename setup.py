@@ -149,6 +149,9 @@ extras_require = {
     "vllm": [
         "vllm==0.7.2",
     ],
+    "llmcompressor": [
+        "llmcompressor~=0.5.0",
+    ],
 }
 
 install_requires, dependency_links, extras_require_build = parse_requirements(
