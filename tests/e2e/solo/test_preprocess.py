@@ -9,7 +9,7 @@ import unittest
 import transformers
 
 from axolotl.cli.args import PreprocessCliArgs
-from axolotl.cli.preprocess import do_preprocess
+from axolotl.common.datasets import load_preference_datasets
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
@@ -49,6 +49,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "strict": False,
                 "rl": "grpo",
                 "trl": {
                     "beta": 0.001,
@@ -59,10 +60,6 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                         "rewards.rand_reward_func"
                     ],  # format: '{file_name}.{fn_name}'
                     "reward_weights": [1.0],
-                },
-                "vllm": {
-                    "max_model_len": 800,
-                    "enable_prefix_caching": True,
                 },
                 "datasets": [
                     {
@@ -85,4 +82,4 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         parser = transformers.HfArgumentParser(PreprocessCliArgs)
         cli_args, _ = parser.parse_args_into_dataclasses(return_remaining_strings=True)
 
-        do_preprocess(cfg, cli_args)
+        load_preference_datasets(cfg=cfg, cli_args=cli_args)
