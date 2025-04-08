@@ -44,7 +44,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             )
 
     @with_temp_dir
-    def test_custom_rewards_fn_loading(self):
+    def test_custom_rewards_fn_preprocess(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
