@@ -1314,8 +1314,29 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
             if version.parse(torch_version) < version.parse("2.6.0"):
                 raise ValueError(
-                    "Flex attention is not supported on torch version < 2.6.0"
+                    "Flex attention is not supported on torch version < 2.6.0."
                 )
+            elif version.parse(torch_version) < version.parse("2.7.0"):
+                LOG.warning(
+                    f"You are currently using torch version {torch_version}. "
+                    "We recommend using the latest version of torch for flex attention. "
+                    "You may encounter unexpected issues with flex attention on older versions of torch. "
+                    "Please upgrade to the latest stable, or nightly version of torch. "
+                )
+
+            transformers_version = env_capabilities.get("transformers_version")
+            if transformers_version is None:
+                import transformers
+
+                transformers_version = str(transformers.__version__).split(
+                    "+", maxsplit=1
+                )[0]
+
+            if version.parse(transformers_version) < version.parse("4.45.1"):
+                LOG.warning(
+                    "Transformers version < 4.45.1 is not supported with flex attention. "
+                )
+
         return data
 
     @model_validator(mode="before")
