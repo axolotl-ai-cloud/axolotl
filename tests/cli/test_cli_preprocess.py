@@ -26,7 +26,7 @@ def test_preprocess_config_not_found(cli_runner):
 def test_preprocess_basic(cli_runner, config_path):
     """Test basic preprocessing with minimal config"""
     with patch("axolotl.cli.preprocess.do_cli") as mock_do_cli:
-        with patch("axolotl.cli.train.load_datasets") as mock_load_datasets:
+        with patch("axolotl.cli.preprocess.load_datasets") as mock_load_datasets:
             mock_load_datasets.return_value = MagicMock()
 
             result = cli_runner.invoke(cli, ["preprocess", str(config_path)])
@@ -57,7 +57,7 @@ def test_preprocess_custom_path(cli_runner, tmp_path, valid_test_config):
     config_path.write_text(valid_test_config)
 
     with patch("axolotl.cli.preprocess.do_cli") as mock_do_cli:
-        with patch("axolotl.cli.train.load_datasets") as mock_load_datasets:
+        with patch("axolotl.cli.preprocess.load_datasets") as mock_load_datasets:
             mock_load_datasets.return_value = MagicMock()
 
             result = cli_runner.invoke(
