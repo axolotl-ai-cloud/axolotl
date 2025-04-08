@@ -5,6 +5,7 @@ DeepseekV3 model with LigerFusedLinearCrossEntropyLoss
 # pylint: disable=duplicate-code
 
 import sys
+from copy import deepcopy
 from typing import Optional, Union
 
 import torch
@@ -279,8 +280,16 @@ def apply_liger_kernel_to_deepseekv3(
     if rms_norm:
         modeling_mod.DeepseekV3RMSNorm = LigerRMSNorm
     if glu_activation:
-        # TODO: check if this is correct
-        modeling_mod.DeepseekV3MLP = LigerSwiGLUMLP
+
+        def _liger_swiglu_mlp_wrapper(config, intermediate_size=None, **kwargs):
+            "Accepts intermediate_size to pass to LigerSwiGLUMLP"
+            # clone config to avoid modifying the original
+            config = deepcopy(config)
+            if intermediate_size:
+                setattr(config, "intermediate_size", intermediate_size)
+            return LigerSwiGLUMLP(config, **kwargs)
+
+        modeling_mod.DeepseekV3MLP = _liger_swiglu_mlp_wrapper
     if layer_norm:
         modeling_mod.nn.LayerNorm = LigerLayerNorm
 
