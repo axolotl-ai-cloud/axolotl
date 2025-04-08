@@ -68,6 +68,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                         "type": "rewards.oai_gsm8k_transform",
                     },
                 ],
+                "output_dir": temp_dir,
             }
         )
 
