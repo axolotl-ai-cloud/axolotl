@@ -33,10 +33,6 @@ lora_modules_to_save:
   - lm_head
   - embed_tokens
 
-# lora_mlp_kernel: true
-# lora_qkv_kernel: true
-# lora_o_kernel: true
-
 chat_template: llama4
 datasets:
   - path: mlabonne/FineTome-100k
@@ -55,8 +51,8 @@ sequence_len: 4096
 sample_packing: true
 pad_to_sequence_len: true
 
-wandb_project: llama-4-scout-lora
-wandb_entity: axolotl-ai
+wandb_project:
+wandb_entity:
 wandb_watch:
 wandb_name:
 wandb_log_model:
