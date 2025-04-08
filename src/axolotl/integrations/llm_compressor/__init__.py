@@ -14,7 +14,7 @@ from transformers.trainer import Trainer
 from transformers.trainer_callback import TrainerCallback, TrainerControl, TrainerState
 from transformers.training_args import TrainingArguments
 
-from ..base import BasePlugin
+from axolotl.integrations.base import BasePlugin
 
 P = ParamSpec("P")  # Params for generic function signatures
 R = TypeVar("R")  # Return type for generic function signatures
