@@ -166,6 +166,7 @@ def apply_liger_kernel_to_deepseekv3(
     if rms_norm:
         modeling_deepseek_v3.DeepseekV3RMSNorm = LigerRMSNorm
     if glu_activation:
+        # TODO: check if this is correct
         modeling_deepseek_v3.DeepseekV3MLP = LigerSwiGLUMLP
     if layer_norm:
         modeling_deepseek_v3.nn.LayerNorm = LigerLayerNorm
