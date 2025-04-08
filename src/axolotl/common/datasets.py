@@ -130,7 +130,7 @@ def load_preference_datasets(
 
     if cli_args.debug or cfg.debug:
         if cfg.rl == "grpo":
-            LOG.info("skip check_dataset_labels during debug for grpo")
+            pass
         else:
             LOG.info("check_dataset_labels...")
 

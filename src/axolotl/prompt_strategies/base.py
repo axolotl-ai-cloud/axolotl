@@ -9,7 +9,15 @@ import sys
 LOG = logging.getLogger("axolotl")
 
 
-def import_from_path(module_name, file_path):
+def import_from_path(module_name: str, file_path: str):
+    """
+    Import a module from a file path.
+    Args:
+        module_name (str): Name of the module.
+        file_path (str): Path to the file.
+    Feturns:
+        module: The imported module.
+    """
     spec = importlib.util.spec_from_file_location(module_name, file_path)
     if spec is None:
         raise ImportError(f"Could not create module spec for: {file_path}")
