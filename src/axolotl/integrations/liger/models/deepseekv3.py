@@ -8,7 +8,7 @@ from typing import Optional, Union
 
 import torch
 from liger_kernel.transformers.model.loss_utils import LigerForCausalLMLoss
-from transformers.cache_utils import Cache, Unpack
+from transformers.cache_utils import Cache
 from transformers.modeling_outputs import (
     BaseModelOutputWithPast,
     CausalLMOutputWithPast,
@@ -16,6 +16,7 @@ from transformers.modeling_outputs import (
 from transformers.models.deepseek_v3.modeling_deepseek_v3 import (
     KwargsForCausalLM,
 )
+from transformers.processing_utils import Unpack
 
 
 def lce_forward(
