@@ -187,18 +187,20 @@ class LigerPlugin(BasePlugin):
             )
         # Not fully tested. No suitable small MoE model to test
         # with train-ready modeling source
-        # elif cfg.model_config_type == "deepseek_v3":
-        #     from axolotl.integrations.liger.models.deepseekv3 import (
-        #         apply_liger_kernel_to_deepseekv3,
-        #     )
+        elif cfg.model_config_type == "deepseek_v3":
+            from axolotl.integrations.liger.models.deepseekv3 import (
+                apply_liger_kernel_to_deepseekv3,
+            )
 
-        #     apply_liger_kernel_to_deepseekv3(
-        #         cross_entropy=cfg.liger_cross_entropy,
-        #         fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
-        #         rms_norm=cfg.liger_rms_norm,
-        #         glu_activation=cfg.liger_glu_activation,
-        #         layer_norm=cfg.liger_layer_norm,
-        #     )
+            apply_liger_kernel_to_deepseekv3(
+                base_model=cfg.base_model,
+                trust_remote_code=cfg.trust_remote_code,
+                cross_entropy=cfg.liger_cross_entropy,
+                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
+                rms_norm=cfg.liger_rms_norm,
+                glu_activation=cfg.liger_glu_activation,
+                layer_norm=cfg.liger_layer_norm,
+            )
         else:
             logging.warning(
                 f"Unsupported model config type: {cfg.model_config_type}. Liger not applied."

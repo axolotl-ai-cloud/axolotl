@@ -4,10 +4,12 @@ DeepseekV3 model with LigerFusedLinearCrossEntropyLoss
 
 # pylint: disable=duplicate-code
 
+import sys
 from typing import Optional, Union
 
 import torch
 from liger_kernel.transformers.model.loss_utils import LigerForCausalLMLoss
+from torch.nn import functional as F
 from transformers.cache_utils import Cache
 from transformers.modeling_outputs import (
     BaseModelOutputWithPast,
@@ -129,7 +131,107 @@ def lce_forward(
     )
 
 
+# adapted from https://github.com/ScienceOne-AI/DeepSeek-671B-SFT-Guide/blob/ccf17c581b9c42eca007aae793e164b66a0fbaab/model/DeepSeek-V3-BF16/modeling_deepseek.py#L424
+def moe_forward(self, hidden_states):
+    bsz, seq_len, h = hidden_states.shape
+    # compute gating score
+    hidden_states = hidden_states.view(-1, h)
+    logits = F.linear(
+        hidden_states.type(torch.float32), self.weight.type(torch.float32), None
+    )
+    if self.scoring_func == "sigmoid":
+        scores = logits.sigmoid()
+    elif self.scoring_func == "softmax":
+        scores = logits.softmax(dim=-1, dtype=torch.float32)
+    else:
+        raise NotImplementedError(
+            f"insupportable scoring function for MoE gating: {self.scoring_func}"
+        )
+
+    # select top-k experts
+    if self.topk_method == "noaux_tc":
+        # assert not self.training
+        scores_for_choice = scores.view(
+            bsz * seq_len, -1
+        ) + self.e_score_correction_bias.unsqueeze(0)
+        group_scores = (
+            scores_for_choice.view(bsz * seq_len, self.n_group, -1)
+            .topk(2, dim=-1)[0]
+            .sum(dim=-1)
+        )  # [n, n_group]
+        group_idx = torch.topk(group_scores, k=self.topk_group, dim=-1, sorted=False)[
+            1
+        ]  # [n, top_k_group]
+        group_mask = torch.zeros_like(group_scores)  # [n, n_group]
+        group_mask.scatter_(1, group_idx, 1)  # [n, n_group]
+        score_mask = (
+            group_mask.unsqueeze(-1)
+            .expand(bsz * seq_len, self.n_group, self.n_routed_experts // self.n_group)
+            .reshape(bsz * seq_len, -1)
+        )  # [n, e]
+        tmp_scores = scores_for_choice.masked_fill(~score_mask.bool(), 0.0)  # [n, e]
+        _, topk_idx = torch.topk(tmp_scores, k=self.top_k, dim=-1, sorted=False)
+        topk_weight = scores.gather(1, topk_idx)
+    elif self.topk_method == "greedy":
+        topk_weight, topk_idx = torch.topk(scores, k=self.top_k, dim=-1, sorted=False)
+    elif self.topk_method == "group_limited_greedy":
+        group_scores = (
+            scores.view(bsz * seq_len, self.n_group, -1).max(dim=-1).values
+        )  # [n, n_group]
+        group_idx = torch.topk(group_scores, k=self.topk_group, dim=-1, sorted=False)[
+            1
+        ]  # [n, top_k_group]
+        group_mask = torch.zeros_like(group_scores)  # [n, n_group]
+        group_mask.scatter_(1, group_idx, 1)  # [n, n_group]
+        score_mask = (
+            group_mask.unsqueeze(-1)
+            .expand(bsz * seq_len, self.n_group, self.n_routed_experts // self.n_group)
+            .reshape(bsz * seq_len, -1)
+        )  # [n, e]
+        tmp_scores = scores.masked_fill(~score_mask.bool(), 0.0)  # [n, e]
+        topk_weight, topk_idx = torch.topk(
+            tmp_scores, k=self.top_k, dim=-1, sorted=False
+        )
+
+    # norm gate to sum 1
+    if self.top_k > 1 and self.norm_topk_prob:
+        denominator = topk_weight.sum(dim=-1, keepdim=True) + 1e-20
+        topk_weight = topk_weight / denominator
+    else:
+        topk_weight = topk_weight * self.routed_scaling_factor
+    # expert-level computation auxiliary loss
+    if self.training and self.alpha > 0.0:
+        scores_for_aux = scores
+        aux_topk = self.top_k
+        # always compute aux loss based on the naive greedy topk method
+        topk_idx_for_aux_loss = topk_idx.view(bsz, -1)
+        if self.seq_aux:
+            scores_for_seq_aux = scores_for_aux.view(bsz, seq_len, -1)
+            ce = torch.zeros(bsz, self.n_routed_experts, device=hidden_states.device)
+            ce.scatter_add_(
+                1,
+                topk_idx_for_aux_loss,
+                torch.ones(bsz, seq_len * aux_topk, device=hidden_states.device),
+            ).div_(seq_len * aux_topk / self.n_routed_experts)
+            aux_loss = (ce * scores_for_seq_aux.mean(dim=1)).sum(
+                dim=1
+            ).mean() * self.alpha
+        else:
+            mask_ce = F.one_hot(
+                topk_idx_for_aux_loss.view(-1), num_classes=self.n_routed_experts
+            )
+            ce = mask_ce.float().mean(0)
+            pi = scores_for_aux.mean(0)
+            fi = ce * self.n_routed_experts
+            aux_loss = (pi * fi).sum() * self.alpha
+    else:
+        aux_loss = None
+    return topk_idx, topk_weight, aux_loss
+
+
 def apply_liger_kernel_to_deepseekv3(
+    base_model: str,
+    trust_remote_code: bool = False,
     cross_entropy: bool = False,
     fused_linear_cross_entropy: bool = False,
     rms_norm: bool = False,
@@ -157,19 +259,30 @@ def apply_liger_kernel_to_deepseekv3(
         cross_entropy and fused_linear_cross_entropy
     ), "cross_entropy and fused_linear_cross_entropy cannot both be True."
 
+    # from transformers.models.deepseek_v3 import modeling_deepseek_v3
+    from accelerate import init_empty_weights
     from liger_kernel.transformers.functional import liger_cross_entropy
     from liger_kernel.transformers.layer_norm import LigerLayerNorm
     from liger_kernel.transformers.rms_norm import LigerRMSNorm
     from liger_kernel.transformers.swiglu import LigerSwiGLUMLP
-    from transformers.models.deepseek_v3 import modeling_deepseek_v3
+    from transformers import AutoModelForCausalLM
+
+    with init_empty_weights():
+        model = AutoModelForCausalLM.from_pretrained(
+            base_model, trust_remote_code=trust_remote_code or False
+        )
+        modeling_mod = sys.modules[model.__class__.__module__]
+
+    # patch moe
+    modeling_mod.MoEGate.forward = moe_forward
 
     if rms_norm:
-        modeling_deepseek_v3.DeepseekV3RMSNorm = LigerRMSNorm
+        modeling_mod.DeepseekV3RMSNorm = LigerRMSNorm
     if glu_activation:
         # TODO: check if this is correct
-        modeling_deepseek_v3.DeepseekV3MLP = LigerSwiGLUMLP
+        modeling_mod.DeepseekV3MLP = LigerSwiGLUMLP
     if layer_norm:
-        modeling_deepseek_v3.nn.LayerNorm = LigerLayerNorm
+        modeling_mod.nn.LayerNorm = LigerLayerNorm
 
     if cross_entropy:
         from transformers.loss.loss_utils import nn
@@ -177,4 +290,4 @@ def apply_liger_kernel_to_deepseekv3(
         nn.functional.cross_entropy = liger_cross_entropy
 
     if fused_linear_cross_entropy:
-        modeling_deepseek_v3.DeepseekV3ForCausalLM.forward = lce_forward
+        modeling_mod.DeepseekV3ForCausalLM.forward = lce_forward
