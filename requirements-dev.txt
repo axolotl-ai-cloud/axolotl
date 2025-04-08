@@ -4,3 +4,5 @@ mypy
 types-requests
 quartodoc
 jupyter
+blobfile
+tiktoken

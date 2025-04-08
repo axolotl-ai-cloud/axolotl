@@ -245,6 +245,8 @@ class AxolotlInputConfig(
     lora_qkv_kernel: bool | None = None
     lora_o_kernel: bool | None = None
 
+    llama4_linearized_experts: bool | None = None
+
     deepspeed: str | dict[str, Any] | None = None
     fsdp: list[str] | None = None
     fsdp_config: dict[str, Any] | None = None
@@ -1316,7 +1318,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 raise ValueError(
                     "Flex attention is not supported on torch version < 2.6.0."
                 )
-            elif version.parse(torch_version) < version.parse("2.7.0"):
+            if version.parse(torch_version) < version.parse("2.7.0"):
                 LOG.warning(
                     f"You are currently using torch version {torch_version}. "
                     "We recommend using the latest version of torch for flex attention. "

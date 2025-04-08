@@ -544,8 +544,20 @@ class ModelLoader:
         self.auto_model_loader = AutoModelForCausalLM  # pylint: disable=invalid-name
 
     def apply_patches(self) -> None:
+        if self.cfg.fsdp_config and str(self.cfg.fsdp_config.fsdp_version) == "2":
+            from axolotl.monkeypatch.accelerate.fsdp2 import patch_accelerate_fsdp_utils
+
+            patch_accelerate_fsdp_utils()
         # patch gemma3 conditional generation forward before loading plugins
         # as it could be overridden by plugins
+        if self.cfg.model_config_type == "llama4":
+            if self.cfg.llama4_linearized_experts:
+                from axolotl.monkeypatch.models.llama4.modeling import (
+                    patch_llama4_linearized_modeling,
+                )
+
+                patch_llama4_linearized_modeling()
+
         if self.cfg.model_config_type == "gemma3":
             from axolotl.monkeypatch.gemma3 import (
                 patch_gemma3conditionalgeneration_forward,
