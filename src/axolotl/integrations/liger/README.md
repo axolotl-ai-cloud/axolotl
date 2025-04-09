@@ -29,6 +29,7 @@ liger_fused_linear_cross_entropy: true
 - granite
 - jamba
 - llama
+- llama4 (partial support, no support for FLCE yet)
 - mistral
 - mixtral
 - mllama
