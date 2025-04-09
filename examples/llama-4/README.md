@@ -3,7 +3,7 @@
 ## Available Examples
 
 ### Llama 4 Scout 17Bx16Experts (109B)
-- [Multi-Modal/Vision QLoRA w/ FSDP1](./scout-vision-qlora.yaml)
+- [Multi-Modal/Vision QLoRA w/ FSDP1](./scout-vision-qlora-fsdp.yaml)
 - [Text Single GPU (H100) QLoRA](./scout-qlora-single-h100.yaml)
 - [Text Multi GPU QLoRA w/ FSDP1](./scout-qlora-fsdp1.yaml)
 
