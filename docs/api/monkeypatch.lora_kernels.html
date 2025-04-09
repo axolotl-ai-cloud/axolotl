@@ -446,6 +446,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <ul>
   <li><a href="#axolotl.monkeypatch.lora_kernels" id="toc-axolotl.monkeypatch.lora_kernels" class="nav-link active" data-scroll-target="#axolotl.monkeypatch.lora_kernels">monkeypatch.lora_kernels</a>
   <ul class="collapse">
+  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.monkeypatch.lora_kernels.FakeMLP" id="toc-axolotl.monkeypatch.lora_kernels.FakeMLP" class="nav-link" data-scroll-target="#axolotl.monkeypatch.lora_kernels.FakeMLP">FakeMLP</a></li>
+  </ul></li>
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
   <li><a href="#axolotl.monkeypatch.lora_kernels.apply_lora_kernel_patches" id="toc-axolotl.monkeypatch.lora_kernels.apply_lora_kernel_patches" class="nav-link" data-scroll-target="#axolotl.monkeypatch.lora_kernels.apply_lora_kernel_patches">apply_lora_kernel_patches</a></li>
@@ -468,6 +472,28 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h1>monkeypatch.lora_kernels</h1>
 <p><code>monkeypatch.lora_kernels</code></p>
 <p>Module for patching custom LoRA Triton kernels and <code>torch.autograd</code> functions.</p>
+<section id="classes" class="level2">
+<h2 class="anchored" data-anchor-id="classes">Classes</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.monkeypatch.lora_kernels.FakeMLP">FakeMLP</a></td>
+<td>placeholder MLP for triton patching</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.monkeypatch.lora_kernels.FakeMLP" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.lora_kernels.FakeMLP">FakeMLP</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.lora_kernels.FakeMLP(<span class="va">self</span>, gate_proj, up_proj, down_proj)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>placeholder MLP for triton patching</p>
+</section>
+</section>
 <section id="functions" class="level2">
 <h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
@@ -502,7 +528,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </table>
 <section id="axolotl.monkeypatch.lora_kernels.apply_lora_kernel_patches" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.lora_kernels.apply_lora_kernel_patches">apply_lora_kernel_patches</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.lora_kernels.apply_lora_kernel_patches(model, cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.lora_kernels.apply_lora_kernel_patches(model, cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Applies optimized Triton kernel patches to a PEFT model.</p>
 <p>Patches a PEFT model with optimized implementations for MLP and attention
 computations. The optimizations include custom Triton kernels for activation
@@ -606,7 +632,7 @@ function will skip patching if these conditions aren’t met.</p>
 </section>
 <section id="axolotl.monkeypatch.lora_kernels.get_attention_cls_from_config" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.lora_kernels.get_attention_cls_from_config">get_attention_cls_from_config</h3>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.lora_kernels.get_attention_cls_from_config(cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.lora_kernels.get_attention_cls_from_config(cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Get the appropriate attention class by inspecting the model config.
 Uses dynamic import to support any model architecture that follows
 the standard transformers naming convention.</p>
@@ -693,7 +719,7 @@ the standard transformers naming convention.</p>
 </section>
 <section id="axolotl.monkeypatch.lora_kernels.original_apply_o" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.lora_kernels.original_apply_o">original_apply_o</h3>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.lora_kernels.original_apply_o(<span class="va">self</span>, hidden_states)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.lora_kernels.original_apply_o(<span class="va">self</span>, hidden_states)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Original implementation of output projection without optimizations.</p>
 <section id="parameters-2" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-2">Parameters</h4>
@@ -750,7 +776,7 @@ the standard transformers naming convention.</p>
 </section>
 <section id="axolotl.monkeypatch.lora_kernels.original_apply_qkv" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.lora_kernels.original_apply_qkv">original_apply_qkv</h3>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.lora_kernels.original_apply_qkv(<span class="va">self</span>, hidden_states)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.lora_kernels.original_apply_qkv(<span class="va">self</span>, hidden_states)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Original implementation of QKV projection without optimizations.</p>
 <section id="parameters-3" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-3">Parameters</h4>
@@ -812,7 +838,7 @@ the standard transformers naming convention.</p>
 </section>
 <section id="axolotl.monkeypatch.lora_kernels.patch_self_attn_lora" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.lora_kernels.patch_self_attn_lora">patch_self_attn_lora</h3>
-<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.lora_kernels.patch_self_attn_lora(cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.lora_kernels.patch_self_attn_lora(cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Given an <code>axolotl</code> config, this method patches the inferred attention class forward
 pass with optimized LoRA implementations.</p>
 <p>It modifies the attention class to use optimized QKV and output projections. The
