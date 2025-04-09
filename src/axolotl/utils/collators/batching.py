@@ -163,7 +163,9 @@ class DataCollatorForSeq2Seq:
         end = start + slice_size
 
         # Update params for ring attention calculation
-        update_ring_attn_params(batch=batch)
+        update_ring_attn_params(
+            input_ids=batch["input_ids"], position_ids=batch.get("position_ids")
+        )
 
         # Slice batch for sequence parallel processing
         keys_to_slice = ["input_ids", "attention_mask", "labels", "position_ids"]

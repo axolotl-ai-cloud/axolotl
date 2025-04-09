@@ -102,19 +102,17 @@ def register_ring_attn(sequence_parallel_degree: int, heads_k_stride: int | None
     )
 
 
-def update_ring_attn_params(batch: dict[str, torch.Tensor]):
+def update_ring_attn_params(input_ids: torch.Tensor, position_ids: torch.Tensor | None = None):
     """
     Calculate the cumulative sequence lengths for the current forward pass and pass the
     value to the substituted `ring_flash_attn`.
 
     Args:
-        batch: A dictionary with a batch of data. May or may not contain `position_ids`
-            data; if not, we compute it.
+        input_ids: Tensor with input IDs.
+        position_ids: Optionally, a tensor with position IDs.
     """
     from ring_flash_attn import update_ring_flash_attn_params
 
-    input_ids = batch["input_ids"]
-    position_ids = batch.get("position_ids")
     if position_ids is None:
         seq_len = input_ids.shape[1]
         position_ids = torch.arange(
