@@ -151,11 +151,12 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
             "Please make sure to point to a GPTQ model."
         )
 
-    if not cfg.gptq and quant_config_exists and not cfg.load_in_4bit:
-        raise ValueError(
-            "model_config.quantization_config is set but `gptq` flag is not. "
-            "Please use the `gptq` flag to train quantized model or point to a non-quantized model."
-        )
+    # if quant_config_exists, transformers will use the quant_config to load the model
+    # if not cfg.gptq and quant_config_exists and not cfg.load_in_4bit:
+    #     raise ValueError(
+    #         "model_config.quantization_config is set but `gptq` flag is not. "
+    #         "Please use the `gptq` flag to train quantized model or point to a non-quantized model."
+    #     )
 
     lora_modules_to_save = get_linear_embedding_layers(model_config.model_type)
     if (

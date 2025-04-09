@@ -32,7 +32,13 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
 
     LOG.info("Running merge of LoRA with base model...")
     model = model.merge_and_unload(progressbar=True)
-    model.to(dtype=cfg.torch_dtype)
+    try:
+        model.to(dtype=cfg.torch_dtype)
+    except ValueError as e:
+        LOG.warning("Failed to convert model to dtype %s", cfg.torch_dtype)
+        LOG.warning("Ignore this if the base_model is pre-quantized.")
+        LOG.warning("Error raised: %s", e)
+
     model.generation_config.do_sample = True
 
     if cfg.local_rank == 0:
