@@ -12,10 +12,12 @@ LOG = logging.getLogger("axolotl")
 def import_from_path(module_name: str, file_path: str):
     """
     Import a module from a file path.
+
     Args:
-        module_name (str): Name of the module.
-        file_path (str): Path to the file.
-    Feturns:
+        module_name: Name of the module.
+        file_path: Path to the file.
+
+    Returns:
         module: The imported module.
     """
     spec = importlib.util.spec_from_file_location(module_name, file_path)
