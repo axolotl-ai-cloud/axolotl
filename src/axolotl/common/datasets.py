@@ -129,9 +129,7 @@ def load_preference_datasets(
         total_num_steps = None
 
     if cli_args.debug or cfg.debug:
-        if cfg.rl == "grpo":
-            pass
-        else:
+        if not cfg.rl == "grpo":
             LOG.info("check_dataset_labels...")
 
             tokenizer = load_tokenizer(cfg)
