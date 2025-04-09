@@ -185,5 +185,7 @@ class LigerPlugin(BasePlugin):
                 rms_norm=cfg.liger_rms_norm,
                 layer_norm=cfg.liger_layer_norm,
             )
-        elif cfg.model_config_type in ["deepseek_v3"]:
-            raise ValueError(f"Unsupported model config type: {cfg.model_config_type}")
+        else:
+            logging.warning(
+                f"Unsupported model config type: {cfg.model_config_type}. Liger not applied."
+            )
