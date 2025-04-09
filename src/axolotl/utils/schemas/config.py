@@ -1335,7 +1335,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )[0]
 
             if version.parse(transformers_version) < version.parse("4.45.1"):
-                LOG.warning(
+                raise ValueError(
                     "Transformers version < 4.45.1 is not supported with flex attention. "
                 )
 
