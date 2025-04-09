@@ -457,10 +457,7 @@ datasets:
     type: alpaca
 ```
 
-Axolotl supports many kinds of instruction dataset. All of them can be found here (https://axolotl-ai-cloud.github.io/axolotl/docs/dataset-formats/inst_tune.html) with their respective type and sample row format.
-
-
-Reference: [Instruction Dataset Documentation](inst_tune.qmd).
+Axolotl supports many kinds of instruction dataset. All of them can be found in the [Instruction Dataset Documentation](inst_tune.qmd) with their respective type and sample row format.
 
 #### Custom Instruct Prompt Format
 

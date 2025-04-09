@@ -90,7 +90,7 @@ lora_on_cpu: true
 
 # List[str]. Add plugins to extend the pipeline.
 # See `src/axolotl/integrations` for the available plugins or doc below for more details.
-# https://axolotl-ai-cloud.github.io/axolotl/docs/custom_integrations.html
+# https://docs.axolotl.ai/docs/custom_integrations.html
 plugins:
   # - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
 
@@ -394,7 +394,7 @@ lora_fan_in_fan_out: false
 
 # Apply custom LoRA autograd functions and activation function Triton kernels for
 # speed and memory savings
-# See: https://axolotl-ai-cloud.github.io/axolotl/docs/lora_optims.html
+# See: https://docs.axolotl.ai/docs/lora_optims.html
 lora_mlp_kernel: true
 lora_qkv_kernel: true
 lora_o_kernel: true
@@ -688,7 +688,7 @@ ddp_broadcast_buffers:
 # Use in long context training to prevent OOM when sequences cannot fit into a single GPU's VRAM.
 # E.g., if 4 GPUs are available, set this value to 2 to split each sequence into two equal-sized
 # subsequences, or set to 4 to split into four equal-sized subsequences.
-# See https://axolotl-ai-cloud.github.io/axolotl/docs/sequence_parallelism.html for more details.
+# See https://docs.axolotl.ai/docs/sequence_parallelism.html for more details.
 sequence_parallel_degree:
 # Optional; strides across the key dimension. Larger values use more memory but should make training faster.
 # Must evenly divide the number of KV heads in your model.
