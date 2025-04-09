@@ -1048,6 +1048,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.rpo_alpha is not None:
             training_args_kwargs["rpo_alpha"] = self.cfg.rpo_alpha
 
+        training_args_kwargs["sequence_parallel_degree"] = (
+            self.cfg.sequence_parallel_degree
+        )
+
         training_args_cls = None
         blocklist_args_kwargs = []
         if self.cfg.rl == "simpo":
