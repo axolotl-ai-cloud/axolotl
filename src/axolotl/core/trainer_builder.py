@@ -1076,6 +1076,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.use_wandb:
             training_args_kwargs["run_name"] = self.cfg.wandb_name
 
+        training_args_kwargs["sequence_parallel_degree"] = (
+            self.cfg.sequence_parallel_degree
+        )
+
         training_args_cls = None
         blocklist_args_kwargs = []
         if self.cfg.rl == "simpo":
