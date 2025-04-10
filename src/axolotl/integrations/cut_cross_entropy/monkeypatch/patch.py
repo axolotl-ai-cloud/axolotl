@@ -36,13 +36,16 @@ from axolotl.integrations.cut_cross_entropy.monkeypatch.mistral3 import (
 from axolotl.integrations.cut_cross_entropy.monkeypatch.mllama import patch_mllama
 from axolotl.integrations.cut_cross_entropy.monkeypatch.qwen2 import (
     patch_qwen2,
-    patch_qwen3,
 )
 from axolotl.integrations.cut_cross_entropy.monkeypatch.qwen2_5_vl import (
     patch_qwen2_5_vl,
 )
 from axolotl.integrations.cut_cross_entropy.monkeypatch.qwen2_vl import (
     patch_qwen2_vl,
+)
+from axolotl.integrations.cut_cross_entropy.monkeypatch.qwen3 import patch_qwen3
+from axolotl.integrations.cut_cross_entropy.monkeypatch.qwen3_moe import (
+    patch_qwen3_moe,
 )
 
 CUT_CROSS_ENTROPY_MODEL_MAPPING = {
@@ -61,6 +64,7 @@ CUT_CROSS_ENTROPY_MODEL_MAPPING = {
     "qwen2_vl": patch_qwen2_vl,
     "qwen2_5_vl": patch_qwen2_5_vl,
     "qwen3": patch_qwen3,
+    "qwen3_moe": patch_qwen3_moe,
     "cohere": patch_cohere,
     "cohere2": patch_cohere2,
     "glm": patch_glm,
