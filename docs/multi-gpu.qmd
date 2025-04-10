@@ -36,6 +36,9 @@ deepspeed: deepspeed_configs/zero1.json
 ### Usage {#sec-deepspeed-usage}
 
 ```{.bash}
+# Fetch deepspeed configs (if not already present)
+axolotl fetch deepspeed_configs
+
 # Passing arg via config
 axolotl train config.yml
 
