@@ -586,6 +586,15 @@ class ModelLoader:
         if self.cfg.flash_attention:
             self.patch_attention()
 
+        if self.cfg.flex_attention:
+            from axolotl.monkeypatch.attention.flex_attn import (
+                patch_flex_make_mask,
+                patch_flex_wrapper,
+            )
+
+            patch_flex_wrapper()
+            patch_flex_make_mask()
+
         if self.cfg.sample_packing and self.cfg.s2_attention:
             raise ValueError(
                 "Received `sample_packing=true` and `s2_attention=true`; however, \
@@ -905,13 +914,6 @@ class ModelLoader:
             self.model_config._attn_implementation = (  # pylint: disable=protected-access
                 "flex_attention"
             )
-            from axolotl.monkeypatch.attention.flex_attn import (
-                patch_flex_make_mask,
-                patch_flex_wrapper,
-            )
-
-            patch_flex_wrapper()
-            patch_flex_make_mask()
 
         elif self.cfg.flash_attention:
             if not self.cfg.sample_packing and self.cfg.s2_attention:

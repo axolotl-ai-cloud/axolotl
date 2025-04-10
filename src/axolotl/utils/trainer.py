@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+from axolotl.monkeypatch.trainer_eval_guard import patch_evaluation_loop_for_fsdp2
 from axolotl.utils.distributed import reduce_and_broadcast
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
@@ -628,6 +629,12 @@ def setup_trainer(
         A trainer instance (either `HFRLTrainer` or `HFCausalTrainer`) configured based
             on the provided parameters.
     """
+    if (
+        cfg.torch_compile
+        and cfg.fsdp_config
+        and str(cfg.fsdp_config.fsdp_version) == "2"
+    ):
+        patch_evaluation_loop_for_fsdp2()
     if cfg.rl:
         trainer_builder = HFRLTrainerBuilder(cfg, model, tokenizer, processor)
         trainer_builder.model_ref = model_ref
