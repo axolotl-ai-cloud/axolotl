@@ -530,7 +530,7 @@ trl:
 ```
 
 ```bash
-CUDA_VISIBLE_DEVICES=2,3 axolotl vllm_serve grpo.yaml
+CUDA_VISIBLE_DEVICES=2,3 axolotl vllm-serve grpo.yaml
 ```
 
 Your `vLLM` instance will now attempt to spin up, and it's time to kick off training utilizing our remaining two GPUs. In another terminal, execute:
