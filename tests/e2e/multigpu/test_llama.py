@@ -466,11 +466,15 @@ class TestMultiGPULlama:
         ["flash", "flex"],
     )
     @pytest.mark.parametrize(
+        "attention_backend",
+        [True, False],
+    )
+    @pytest.mark.parametrize(
         "fsdp_reshard_after_forward",
         [True, False],
     )
     def test_fsdp2_packed(
-        self, temp_dir, attention_backend, fsdp_reshard_after_forward
+        self, temp_dir, attention_backend, torch_compile, fsdp_reshard_after_forward
     ):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
@@ -499,6 +503,7 @@ class TestMultiGPULlama:
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_8bit",
                 "lr_scheduler": "cosine",
+                "torch_compile": torch_compile,
                 "fsdp": [
                     "auto_wrap",
                 ],
