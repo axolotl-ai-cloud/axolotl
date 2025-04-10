@@ -1,9 +1,17 @@
 base_model: axolotl-quants/Llama-4-Scout-17B-16E-Linearized-bnb-nf4-bf16
 model_type: Llama4ForConditionalGeneration
+processor_type: Llama4Processor
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
 strict: false
+
+# these 3 lines are needed for now to handle vision chat templates w images
+skip_prepare_dataset: true
+remove_unused_columns: false
+sample_packing: false
+
+sequence_len: 4096
 
 plugins:
   - axolotl.integrations.liger.LigerPlugin
@@ -12,7 +20,7 @@ liger_glu_activation: true
 liger_rms_norm: true
 liger_layer_norm: true
 
-llama4_linearized_experts: true
+llama4_linearized_experts: true  # use Axolotl's customized model
 load_in_4bit: true
 adapter: qlora
 lora_r: 32
@@ -25,34 +33,29 @@ lora_target_modules:
   - shared_expert.gate_proj
   - shared_expert.up_proj
   - shared_expert.down_proj
+  - vision_adapter.mlp.fc1
+  - vision_adapter.mlp.fc2
   # - experts.gate_projs.[0-9]+$
   # - experts.up_projs.[0-9]+$
   # - experts.down_projs.[0-9]+$
 lora_modules_to_save:
-  # - lm_head
-  # - embed_tokens
+  - lm_head
+  - embed_tokens
 
 chat_template: llama4
 datasets:
-  - path: mlabonne/FineTome-100k
+  - path: HuggingFaceH4/llava-instruct-mix-vsft
     type: chat_template
-    split: train[:20%]
-    field_messages: conversations
-    message_property_mappings:
-      role: from
-      content: value
+    split: train[:1%]
+    field_messages: messages
 
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.0
 output_dir: ./outputs/out
 
-sequence_len: 4096
-sample_packing: true
-pad_to_sequence_len: true
-
 gradient_accumulation_steps: 1
-micro_batch_size: 2
-num_epochs: 3
+micro_batch_size: 1
+num_epochs: 1
 optimizer: adamw_torch_4bit
 lr_scheduler: cosine
 learning_rate: 1e-4
@@ -61,7 +64,7 @@ bf16: true
 tf32: true
 
 logging_steps: 1
-flex_attention: true
+flash_attention: true
 
 warmup_steps: 10
 evals_per_epoch: 1
