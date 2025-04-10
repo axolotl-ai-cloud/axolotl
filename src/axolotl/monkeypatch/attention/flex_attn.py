@@ -59,9 +59,9 @@ def patch_flex_wrapper():
 
 def patch_flex_make_mask():
     is_torch_2_6 = torch.__version__.startswith("2.6")
-    is_transformers_eq_4_51 = transformers.__version__ == "4.51.0"
+    is_transformers_above_4_51_1 = transformers.__version__ > "4.51.1"
 
-    if not (is_torch_2_6 and is_transformers_eq_4_51):
+    if not is_torch_2_6 or is_transformers_above_4_51_1:
         return
 
     from torch.nn.attention.flex_attention import (
@@ -182,7 +182,7 @@ def patch_flex_make_mask():
         )
 
     for n in tuple(sys.modules):
-        if ".modeling_" in n and "llama4" not in n:
+        if ".modeling_" in n:
             if hasattr(sys.modules[n], "make_flex_block_causal_mask"):
                 sys.modules[n].make_flex_block_causal_mask = (
                     patched_make_flex_block_causal_mask
