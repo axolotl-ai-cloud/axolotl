@@ -38,6 +38,12 @@ from axolotl.integrations.cut_cross_entropy.monkeypatch.qwen2 import (
     patch_qwen2,
     patch_qwen3,
 )
+from axolotl.integrations.cut_cross_entropy.monkeypatch.qwen2_5_vl import (
+    patch_qwen2_5_vl,
+)
+from axolotl.integrations.cut_cross_entropy.monkeypatch.qwen2_vl import (
+    patch_qwen2_vl,
+)
 
 CUT_CROSS_ENTROPY_MODEL_MAPPING = {
     "llama": patch_llama,
@@ -52,6 +58,8 @@ CUT_CROSS_ENTROPY_MODEL_MAPPING = {
     "mistral": patch_mistral,
     "mistral3": patch_mistral3,
     "qwen2": patch_qwen2,
+    "qwen2_vl": patch_qwen2_vl,
+    "qwen2_5_vl": patch_qwen2_5_vl,
     "qwen3": patch_qwen3,
     "cohere": patch_cohere,
     "cohere2": patch_cohere2,
