@@ -235,7 +235,10 @@ def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2):
 
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
-    if cfg.model_config_type in ["mamba", "gemma3"]:
+    drop_attn_mask = cfg.model_config_type in ["mamba", "gemma3"]
+    if cfg.model_config_type in ["llama4"] and cfg.flex_attention:
+        drop_attn_mask = True
+    if drop_attn_mask:
         LOG.info("dropping attention_mask column")
         train_dataset = train_dataset.remove_columns("attention_mask")
         if eval_dataset:

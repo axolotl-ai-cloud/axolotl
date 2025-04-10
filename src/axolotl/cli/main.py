@@ -29,7 +29,6 @@ from axolotl.cli.utils import (
     filter_none_kwargs,
 )
 from axolotl.cli.vllm_serve import do_vllm_serve
-from axolotl.integrations.lm_eval.cli import lm_eval
 from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.schemas.config import AxolotlInputConfig
 
@@ -330,7 +329,13 @@ def vllm_serve(config: str, **cli_args: VllmServeCliArgs):
     do_vllm_serve(config, cli_args)
 
 
-cli.add_command(lm_eval)
+@cli.command()
+@click.argument("model", type=click.Path(exists=True, path_type=str))
+@click.argument("output", type=click.Path(exists=False, path_type=str))
+def delinearize_llama4(model: str, output: str) -> None:
+    from axolotl.cli.delinearize_llama4 import do_cli as do_delinearize_llama4
+
+    do_delinearize_llama4(model, output)
 
 
 def main():
