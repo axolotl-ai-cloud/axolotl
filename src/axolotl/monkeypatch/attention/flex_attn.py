@@ -55,6 +55,11 @@ def patch_flex_wrapper():
             return self._compiled_flex_attention
 
     transformers.integrations.flex_attention.WrappedFlexAttention = WrappedFlexAttention
+    setattr(
+        sys.modules["transformers.integrations.flex_attention"],
+        "WrappedFlexAttention",
+        WrappedFlexAttention,
+    )
 
 
 def patch_flex_make_mask():
@@ -186,6 +191,11 @@ def patch_flex_make_mask():
             if hasattr(sys.modules[n], "make_flex_block_causal_mask"):
                 sys.modules[n].make_flex_block_causal_mask = (
                     patched_make_flex_block_causal_mask
+                )
+                setattr(
+                    sys.modules[n],
+                    "make_flex_block_causal_mask",
+                    patched_make_flex_block_causal_mask,
                 )
 
     transformers.integrations.flex_attention.make_flex_block_causal_mask = (
