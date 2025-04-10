@@ -1,1 +1,1 @@
-Sitemap: https://axolotl-ai-cloud.github.io/axolotl/sitemap.xml
+Sitemap: https://docs.axolotl.ai/sitemap.xml
