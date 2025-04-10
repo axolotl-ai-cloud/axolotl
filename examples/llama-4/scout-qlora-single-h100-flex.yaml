@@ -3,8 +3,6 @@ model_type: Llama4ForConditionalGeneration
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
-strict: false
-
 plugins:
   - axolotl.integrations.liger.LigerPlugin
 
@@ -12,7 +10,7 @@ liger_glu_activation: true
 liger_rms_norm: true
 liger_layer_norm: true
 
-llama4_linearized_experts: true
+llama4_linearized_experts: true  # needed with custom linearized experts model
 load_in_4bit: true
 adapter: qlora
 lora_r: 32
@@ -25,12 +23,16 @@ lora_target_modules:
   - shared_expert.gate_proj
   - shared_expert.up_proj
   - shared_expert.down_proj
-  # - experts.gate_projs.[0-9]+$
+  # - experts.gate_projs.[0-9]+$  # optionally train the moe experts
   # - experts.up_projs.[0-9]+$
   # - experts.down_projs.[0-9]+$
 lora_modules_to_save:
-  # - lm_head
+  # - lm_head  # needed if modifying vocabulary
   # - embed_tokens
+
+lora_mlp_kernel: true
+lora_qkv_kernel: true
+lora_o_kernel: true
 
 chat_template: llama4
 datasets:
@@ -46,13 +48,13 @@ dataset_prepared_path: last_run_prepared
 val_set_size: 0.0
 output_dir: ./outputs/out
 
-sequence_len: 4096
-sample_packing: true
-pad_to_sequence_len: true
+sequence_len: 4096  # up to 8k will work on a single H100
+sample_packing: false  # llama-4 flex attention packing isn't working yet
+pad_to_sequence_len: false
 
 gradient_accumulation_steps: 1
-micro_batch_size: 2
-num_epochs: 3
+micro_batch_size: 1
+num_epochs: 1
 optimizer: adamw_torch_4bit
 lr_scheduler: cosine
 learning_rate: 1e-4
@@ -60,26 +62,19 @@ learning_rate: 1e-4
 bf16: true
 tf32: true
 
-logging_steps: 1
 flex_attention: true
+torch_compile: true
 
-warmup_steps: 10
+gradient_checkpointing: offload
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+
+logging_steps: 1
+warmup_steps: 20
 evals_per_epoch: 1
 saves_per_epoch: 1
+
 weight_decay: 0.0
-fsdp:
-  - auto_wrap
-  - full_shard
-fsdp_config:
-  fsdp_version: 2
-  fsdp_offload_params: false
-  fsdp_cpu_ram_efficient_loading: true
-  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  fsdp_transformer_layer_cls_to_wrap: Llama4TextDecoderLayer
-  fsdp_state_dict_type: SHARDED_STATE_DICT
-  fsdp_sharding_strategy: FULL_SHARD
-  fsdp_reshard_after_forward: true
-  fsdp_activation_checkpointing: true
 special_tokens:
   pad_token: <|finetune_right_pad_id|>
   eos_token: <|eot|>
