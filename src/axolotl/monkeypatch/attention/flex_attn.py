@@ -10,9 +10,9 @@ import transformers
 def patch_flex_wrapper():
     # TODO remove this patch when transformers#37285 is merged and in a release
     is_torch_2_6 = torch.__version__.startswith("2.6")
-    is_transformers_below_4_51 = transformers.__version__ < "4.51.0"
+    is_transformers_above_4_51_1 = transformers.__version__ > "4.51.1"
 
-    if not (is_torch_2_6 and is_transformers_below_4_51):
+    if not is_torch_2_6 or is_transformers_above_4_51_1:
         return
 
     from torch.nn.attention.flex_attention import flex_attention
@@ -33,17 +33,22 @@ def patch_flex_wrapper():
             return cls._instance
 
         @torch.compiler.disable(recursive=False)
-        def __init__(self):
+        def __init__(self, training):
             """
             Initialize or update the singleton instance.
             """
-            if not self._is_flex_compiled:
-                self._compiled_flex_attention = torch.compile(
-                    flex_attention,
-                    dynamic=False,
-                    mode="max-autotune-no-cudagraphs",
-                    fullgraph=True,
-                )
+            self.training = None
+            if not self._is_flex_compiled or training != self.training:
+                # In PyTorch 2.6.0, there's a known issue with flex attention compilation which may
+                # cause errors. The suggested fix is to compile with "max-autotune-no-cudagraphs"
+                # see https://github.com/pytorch/pytorch/issues/146260 for training
+                self.training = training
+                if training:
+                    self._compiled_flex_attention = torch.compile(
+                        flex_attention, dynamic=False, mode="max-autotune-no-cudagraphs"
+                    )
+                else:
+                    self._compiled_flex_attention = torch.compile(flex_attention)
                 self._is_flex_compiled = True
 
         def __call__(self):

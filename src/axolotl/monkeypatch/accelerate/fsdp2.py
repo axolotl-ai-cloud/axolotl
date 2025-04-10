@@ -49,7 +49,7 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
             )
             sharded_sd[param_name] = sharded_tensor
 
-    model.load_state_dict(sharded_sd)
+    model.load_state_dict(sharded_sd, assign=True)
 
 
 def patch_accelerate_fsdp_utils():
