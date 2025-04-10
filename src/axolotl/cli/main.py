@@ -29,6 +29,7 @@ from axolotl.cli.utils import (
     filter_none_kwargs,
 )
 from axolotl.cli.vllm_serve import do_vllm_serve
+from axolotl.integrations.lm_eval.cli import lm_eval
 from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.schemas.config import AxolotlInputConfig
 
@@ -336,6 +337,9 @@ def delinearize_llama4(model: str, output: str) -> None:
     from axolotl.cli.delinearize_llama4 import do_cli as do_delinearize_llama4
 
     do_delinearize_llama4(model, output)
+
+
+cli.add_command(lm_eval)
 
 
 def main():
