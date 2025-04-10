@@ -52,7 +52,7 @@ logging_steps: 1
 flash_attention: true
 
 warmup_steps: 10
-evals_per_epoch: 4
+evals_per_epoch: 1
 saves_per_epoch: 1
 weight_decay: 0.0
 special_tokens:
