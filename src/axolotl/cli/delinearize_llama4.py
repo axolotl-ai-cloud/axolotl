@@ -1,5 +1,5 @@
 """
-CLI tool to deliineqrize quantized/Linearized Llama-4 models.
+CLI tool to delinearize quantized/Linearized Llama-4 models.
 """
 
 import os
