@@ -17,8 +17,14 @@ os.environ["WANDB_DISABLED"] = "true"
 class TestSequenceParallelism:
     """Test case for training with sequence parallelism enabled"""
 
-    def test_sequence_parallel_training(self, temp_dir):
-        # pylint: disable=duplicate-code
+    def _run_sequence_parallel_test(
+        self,
+        temp_dir,
+        sample_packing=True,
+        micro_batch_size=1,
+        pad_to_sequence_len=True,
+    ):
+        """Helper method to run sequence parallel tests with different configurations"""
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -27,9 +33,9 @@ class TestSequenceParallelism:
                 "strict": False,
                 "sequence_len": 2048,
                 "adapter": "qlora",
-                "sample_packing": True,
-                "eval_sample_packing": True,
-                "pad_to_sequence_len": True,
+                "sample_packing": sample_packing,
+                "eval_sample_packing": sample_packing,
+                "pad_to_sequence_len": pad_to_sequence_len,
                 "lora_r": 8,
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
@@ -45,7 +51,7 @@ class TestSequenceParallelism:
                 ],
                 "num_epochs": 1,
                 "max_steps": 8,
-                "micro_batch_size": 1,
+                "micro_batch_size": micro_batch_size,
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
@@ -85,4 +91,25 @@ class TestSequenceParallelism:
 
         check_tensorboard(
             temp_dir + "/runs", "train/train_loss", 2.6, "Train Loss is too high"
+        )
+
+    def test_sequence_parallel_training_varlen(self, temp_dir):
+        """Test sequence parallel training with variable length (sample packing enabled)"""
+        self._run_sequence_parallel_test(
+            temp_dir, sample_packing=True, micro_batch_size=1, pad_to_sequence_len=True
+        )
+
+    def test_sequence_parallel_training_batch(self, temp_dir):
+        """Test sequence parallel training with fixed batch size (sample packing disabled)"""
+        self._run_sequence_parallel_test(
+            temp_dir, sample_packing=False, micro_batch_size=2, pad_to_sequence_len=True
+        )
+
+    def test_sequence_parallel_training_batch_no_pad2seqlen(self, temp_dir):
+        """Test sequence parallel training with fixed batch size (sample packing disabled)"""
+        self._run_sequence_parallel_test(
+            temp_dir,
+            sample_packing=False,
+            micro_batch_size=2,
+            pad_to_sequence_len=False,
         )
