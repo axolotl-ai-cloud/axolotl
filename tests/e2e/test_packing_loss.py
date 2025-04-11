@@ -46,7 +46,7 @@ class TestPackedLlama(unittest.TestCase):
                 ],
                 "num_epochs": 1,
                 "micro_batch_size": 2,
-                "gradient_accumulation_steps": 4,
+                "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
