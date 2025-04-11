@@ -7,7 +7,7 @@ Our implementation closely follows the structure of that module, but we've minif
 somewhat to support only the latest versions of transformers.
 """
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access,cyclic-import
 
 import os
 from typing import Callable
@@ -16,25 +16,38 @@ import torch
 import torch.distributed as dist
 import transformers
 import transformers.modeling_flash_attention_utils
-from ring_flash_attn import ring_flash_attn_func
+from ring_flash_attn import (
+    ring_flash_attn_func,
+    stripe_flash_attn_func,
+    zigzag_ring_flash_attn_func,
+)
 from ring_flash_attn.adapters.hf_adapter import check_params
 from transformers.modeling_flash_attention_utils import (
     _flash_supports_window_size,
     is_flash_attn_greater_or_equal,
 )
+from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
-try:
-    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
-except ImportError:
-    ALL_ATTENTION_FUNCTIONS = None
+from axolotl.monkeypatch.attention.ring_attn.patch import RingAttnFunc
+
+RING_ATTN_FUNC_MAPPING = {
+    RingAttnFunc.BATCH_RING: ring_flash_attn_func,
+    RingAttnFunc.BATCH_ZIGZAG: zigzag_ring_flash_attn_func,
+    RingAttnFunc.BATCH_STRIPE: stripe_flash_attn_func,
+}
 
 
-def create_ring_flash_attention_forward(process_group: dist.ProcessGroup) -> Callable:
+def create_flash_attn_forward(
+    process_group: dist.ProcessGroup, ring_attn_func: Callable
+) -> Callable:
     """
-    Create a ring flash attention forward function compatible with HuggingFace's interface.
+    Create a ring flash attention forward function compatible with HuggingFace's
+    interface.
 
     Args:
         process_group: A PyTorch distributed process group.
+        ring_attn_func: Function from `ring_flash_attention` to replace HF flash
+            attention with.
 
     Returns:
         A function that implements the ring flash attention forward pass with the
@@ -117,7 +130,7 @@ def create_ring_flash_attention_forward(process_group: dist.ProcessGroup) -> Cal
                 )
 
         # Call ring flash attention function
-        attn_output = ring_flash_attn_func(
+        attn_output = RING_ATTN_FUNC_MAPPING[ring_attn_func](
             query_states,
             key_states,
             value_states,
@@ -136,20 +149,25 @@ def create_ring_flash_attention_forward(process_group: dist.ProcessGroup) -> Cal
     return _flash_attention_forward
 
 
-# pylint: disable=unused-argument
-def substitute_hf_flash_attn(process_group: dist.ProcessGroup):
+def substitute_hf_flash_attn(
+    process_group: dist.ProcessGroup, ring_attn_func: RingAttnFunc
+):
     """
     Substitute HuggingFace's flash attention implementation with ring-based implementation.
 
     Args:
         process_group: PyTorch distributed process group for communication.
+        ring_attn_func: Function from `ring_flash_attention` to replace HF flash
+            attention with.
     """
     try:
         # Substitute flash attention
         old_flash_attention_forward = (
             transformers.modeling_flash_attention_utils._flash_attention_forward
         )
-        new_flash_attention_forward = create_ring_flash_attention_forward(process_group)
+        new_flash_attention_forward = create_flash_attn_forward(
+            process_group=process_group, ring_attn_func=ring_attn_func
+        )
 
         if check_params(old_flash_attention_forward, new_flash_attention_forward):
             transformers.modeling_flash_attention_utils._flash_attention_forward = (

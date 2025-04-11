@@ -50,15 +50,15 @@ class RingAttnFunc(Enum):
     # VARLEN_ZIGZAG = "varlen_zigzag"
     VARLEN_LLAMA3 = "varlen_llama3"
     BATCH_RING = "batch_ring"
-    # BATCH_ZIGZAG = "batch_zigzag"
-    # BATCH_STRIPE = "batch_stripe"
+    BATCH_ZIGZAG = "batch_zigzag"
+    BATCH_STRIPE = "batch_stripe"
 
 
 def register_ring_attn(
     sequence_parallel_degree: int,
     heads_k_stride: int | None,
     sample_packing: bool,
-    ring_attn_func: RingAttnFunc | None,
+    ring_attn_func: str | None,
 ):
     """
     Create ring attention group and substitute flash attn with ring flash attn.
@@ -76,12 +76,20 @@ def register_ring_attn(
         LOG.info("Ring attention already registered, exiting early...")
         return
 
-    # Default ring attention impl selection
-    if ring_attn_func is None:
-        if sample_packing:
-            ring_attn_func = RingAttnFunc.VARLEN_LLAMA3
+    if ring_attn_func is not None:
+        # Set the ring attention function if passed in config
+        valid_funcs = [enum.value for enum in RingAttnFunc]
+        if ring_attn_func in valid_funcs:
+            ring_attn_func = RingAttnFunc(ring_attn_func)
         else:
-            ring_attn_func = RingAttnFunc.BATCH_RING
+            raise ValueError(
+                f"ring_attn_func: {ring_attn_func} must be one of {valid_funcs}"
+            )
+    else:
+        # Default ring attention function selection
+        ring_attn_func = (
+            RingAttnFunc.VARLEN_LLAMA3 if sample_packing else RingAttnFunc.BATCH_RING
+        )
 
     LOG.info(
         "Enabling ring attention sequence parallelism: "
@@ -130,12 +138,19 @@ def register_ring_attn(
             process_group=get_ring_attn_group(), heads_k_stride=heads_k_stride or 1
         )
     # TODO(djsaunde): handle other ring attn funcs in this branch
-    elif ring_attn_func is RingAttnFunc.BATCH_RING:
-        from axolotl.monkeypatch.attention.ring_attn.adapters.batch_ring import (
+    elif ring_attn_func in [
+        RingAttnFunc.BATCH_RING,
+        RingAttnFunc.BATCH_ZIGZAG,
+        RingAttnFunc.BATCH_STRIPE,
+    ]:
+        from axolotl.monkeypatch.attention.ring_attn.adapters.batch import (
             substitute_hf_flash_attn,
         )
 
-        substitute_hf_flash_attn(process_group=get_ring_attn_group())
+        substitute_hf_flash_attn(
+            process_group=get_ring_attn_group(),
+            ring_attn_func=ring_attn_func,
+        )
 
 
 def update_ring_attn_params(input_ids: torch.Tensor, position_ids: torch.Tensor | None):
