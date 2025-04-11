@@ -1,7 +1,6 @@
 base_model: NousResearch/Llama-3.2-1B
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
-strict: false
 
 datasets:
   - path: teknium/GPT4-LLM-Cleaned

@@ -1,6 +1,5 @@
 base_model: llava-hf/llava-1.5-7b-hf
 processor_type: AutoProcessor
-strict: false
 
 # these 3 lines are needed for now to handle vision chat templates w images
 skip_prepare_dataset: true

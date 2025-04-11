@@ -4,7 +4,6 @@ base_model: meta-llama/Llama-3.2-1B
 
 load_in_8bit: false
 load_in_4bit: true
-strict: false
 
 rl: kto
 rl_beta: 0.5

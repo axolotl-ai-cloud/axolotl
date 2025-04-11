@@ -8,7 +8,6 @@ tokenizer_type: GPT2Tokenizer
 trust_remote_code: true
 tokenizer_use_fast: true
 tokenizer_legacy: true
-strict: false
 push_dataset_to_hub:
 hf_use_auth_token: true
 datasets:

@@ -4,7 +4,6 @@ base_model: EleutherAI/gpt-j-6b
 
 load_in_8bit: false
 load_in_4bit: true
-strict: false
 push_dataset_to_hub:
 datasets:
   - path: teknium/GPT4-LLM-Cleaned

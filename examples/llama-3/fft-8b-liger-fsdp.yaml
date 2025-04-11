@@ -9,7 +9,6 @@ liger_rms_norm: true
 liger_glu_activation: true
 liger_fused_linear_cross_entropy: true
 
-strict: false
 
 chat_template: llama3
 datasets:

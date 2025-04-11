@@ -1,6 +1,5 @@
 base_model: mistralai/Mistral-Small-3.1-24B-Instruct-2503
 processor_type: AutoProcessor
-strict: false
 
 load_in_8bit: true
 

@@ -5,7 +5,6 @@ tokenizer_type: AutoTokenizer
 # hub_model_id: username/custom_model_name
 
 load_in_4bit: true
-strict: false
 use_tensorboard: true
 chat_template: jamba
 datasets:

@@ -5,7 +5,6 @@ num_labels: 2
 tokenizer_type: AutoTokenizer
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
-strict: false
 
 process_reward_model: true
 chat_template:

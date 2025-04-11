@@ -7,7 +7,6 @@ tokenizer_type: AutoTokenizer
 
 load_in_8bit: false
 load_in_4bit: true
-strict: false
 
 datasets:
   - path: aaditya/alpaca_subset_1
