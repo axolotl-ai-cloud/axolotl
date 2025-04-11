@@ -14,7 +14,7 @@ from cut_cross_entropy.transformers.utils import (
     apply_lce,
 )
 from torch.nn import CrossEntropyLoss
-from transformers.models.qwen2_vl.modeling_qwen2_vl import (
+from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
     Qwen2_5_VLCausalLMOutputWithPast,
 )
 
