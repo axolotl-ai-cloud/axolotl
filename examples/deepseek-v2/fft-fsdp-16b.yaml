@@ -2,7 +2,6 @@ base_model: deepseek-ai/DeepSeek-V2-Lite
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 trust_remote_code: true
-strict: false
 
 datasets:
   - path: tatsu-lab/alpaca

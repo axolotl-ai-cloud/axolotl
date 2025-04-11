@@ -7,7 +7,6 @@ tokenizer_type: LlamaTokenizer
 
 load_in_8bit: true
 load_in_4bit: false
-strict: false
 push_dataset_to_hub:
 datasets:
   - path: teknium/GPT4-LLM-Cleaned

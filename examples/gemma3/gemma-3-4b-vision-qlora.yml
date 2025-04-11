@@ -1,6 +1,5 @@
 base_model: google/gemma-3-4b-it
 processor_type: AutoProcessor
-strict: false
 
 load_in_4bit: true
 

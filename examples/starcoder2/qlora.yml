@@ -4,7 +4,6 @@ base_model: bigcode/starcoder2-3b
 
 load_in_8bit: false
 load_in_4bit: true
-strict: false
 
 datasets:
   - path: mhenrichsen/alpaca_2k_test

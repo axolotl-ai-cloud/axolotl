@@ -6,7 +6,6 @@ trust_remote_code: true
 
 load_in_8bit: true
 load_in_4bit: false
-strict: false
 
 datasets:
   - path: tatsu-lab/alpaca

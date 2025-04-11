@@ -4,7 +4,6 @@ tokenizer_type: AutoTokenizer
 
 load_in_8bit: false
 load_in_4bit: true
-strict: false
 
 # huggingface repo
 chat_template: cohere

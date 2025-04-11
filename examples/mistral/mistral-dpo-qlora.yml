@@ -12,7 +12,6 @@ tokenizer_type: LlamaTokenizer
 
 load_in_8bit: false
 load_in_4bit: true
-strict: false
 
 chat_template: chatml
 rl: dpo
