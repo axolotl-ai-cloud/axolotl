@@ -556,7 +556,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-84"><a href="#cb1-84" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-85"><a href="#cb1-85" aria-hidden="true" tabindex="-1"></a><span class="co"># List[str]. Add plugins to extend the pipeline.</span></span>
 <span id="cb1-86"><a href="#cb1-86" aria-hidden="true" tabindex="-1"></a><span class="co"># See `src/axolotl/integrations` for the available plugins or doc below for more details.</span></span>
-<span id="cb1-87"><a href="#cb1-87" aria-hidden="true" tabindex="-1"></a><span class="co"># https://axolotl-ai-cloud.github.io/axolotl/docs/custom_integrations.html</span></span>
+<span id="cb1-87"><a href="#cb1-87" aria-hidden="true" tabindex="-1"></a><span class="co"># https://docs.axolotl.ai/docs/custom_integrations.html</span></span>
 <span id="cb1-88"><a href="#cb1-88" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
 <span id="cb1-89"><a href="#cb1-89" aria-hidden="true" tabindex="-1"></a><span class="co">  # - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin</span></span>
 <span id="cb1-90"><a href="#cb1-90" aria-hidden="true" tabindex="-1"></a></span>
@@ -860,7 +860,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-388"><a href="#cb1-388" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-389"><a href="#cb1-389" aria-hidden="true" tabindex="-1"></a><span class="co"># Apply custom LoRA autograd functions and activation function Triton kernels for</span></span>
 <span id="cb1-390"><a href="#cb1-390" aria-hidden="true" tabindex="-1"></a><span class="co"># speed and memory savings</span></span>
-<span id="cb1-391"><a href="#cb1-391" aria-hidden="true" tabindex="-1"></a><span class="co"># See: https://axolotl-ai-cloud.github.io/axolotl/docs/lora_optims.html</span></span>
+<span id="cb1-391"><a href="#cb1-391" aria-hidden="true" tabindex="-1"></a><span class="co"># See: https://docs.axolotl.ai/docs/lora_optims.html</span></span>
 <span id="cb1-392"><a href="#cb1-392" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_mlp_kernel</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb1-393"><a href="#cb1-393" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_qkv_kernel</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb1-394"><a href="#cb1-394" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_o_kernel</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
@@ -1154,7 +1154,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-682"><a href="#cb1-682" aria-hidden="true" tabindex="-1"></a><span class="co"># Use in long context training to prevent OOM when sequences cannot fit into a single GPU's VRAM.</span></span>
 <span id="cb1-683"><a href="#cb1-683" aria-hidden="true" tabindex="-1"></a><span class="co"># E.g., if 4 GPUs are available, set this value to 2 to split each sequence into two equal-sized</span></span>
 <span id="cb1-684"><a href="#cb1-684" aria-hidden="true" tabindex="-1"></a><span class="co"># subsequences, or set to 4 to split into four equal-sized subsequences.</span></span>
-<span id="cb1-685"><a href="#cb1-685" aria-hidden="true" tabindex="-1"></a><span class="co"># See https://axolotl-ai-cloud.github.io/axolotl/docs/sequence_parallelism.html for more details.</span></span>
+<span id="cb1-685"><a href="#cb1-685" aria-hidden="true" tabindex="-1"></a><span class="co"># See https://docs.axolotl.ai/docs/sequence_parallelism.html for more details.</span></span>
 <span id="cb1-686"><a href="#cb1-686" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_parallel_degree</span><span class="kw">:</span></span>
 <span id="cb1-687"><a href="#cb1-687" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; strides across the key dimension. Larger values use more memory but should make training faster.</span></span>
 <span id="cb1-688"><a href="#cb1-688" aria-hidden="true" tabindex="-1"></a><span class="co"># Must evenly divide the number of KV heads in your model.</span></span>
