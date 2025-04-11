@@ -32,6 +32,10 @@ def patch_flex_wrapper():
                 cls._instance = super().__new__(cls)
             return cls._instance
 
+        @classmethod
+        def del_singleton(cls):
+            del cls._instance
+
         @torch.compiler.disable(recursive=False)
         def __init__(self, training):
             """
@@ -60,6 +64,8 @@ def patch_flex_wrapper():
         "WrappedFlexAttention",
         WrappedFlexAttention,
     )
+    # cleanup any existing singleton instances
+    WrappedFlexAttention.del_singleton()
 
 
 def patch_flex_make_mask():
