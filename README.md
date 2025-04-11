@@ -63,7 +63,7 @@ axolotl fetch examples
 axolotl fetch deepspeed_configs  # OPTIONAL
 ```
 
-Other installation approaches are described [here](https://axolotl-ai-cloud.github.io/axolotl/docs/installation.html).
+Other installation approaches are described [here](https://docs.axolotl.ai/docs/installation.html).
 
 ### Your First Fine-tune
 
@@ -78,7 +78,7 @@ axolotl fetch examples --dest path/to/folder
 axolotl train examples/llama-3/lora-1b.yml
 ```
 
-That's it! Check out our [Getting Started Guide](https://axolotl-ai-cloud.github.io/axolotl/docs/getting-started.html) for a more detailed walkthrough.
+That's it! Check out our [Getting Started Guide](https://docs.axolotl.ai/docs/getting-started.html) for a more detailed walkthrough.
 
 ## ✨ Key Features
 
@@ -91,20 +91,20 @@ That's it! Check out our [Getting Started Guide](https://axolotl-ai-cloud.github
 
 ## 📚 Documentation
 
-- [Installation Options](https://axolotl-ai-cloud.github.io/axolotl/docs/installation.html) - Detailed setup instructions for different environments
-- [Configuration Guide](https://axolotl-ai-cloud.github.io/axolotl/docs/config.html) - Full configuration options and examples
-- [Dataset Guide](https://axolotl-ai-cloud.github.io/axolotl/docs/dataset-formats/) - Supported formats and how to use them
-- [Multi-GPU Training](https://axolotl-ai-cloud.github.io/axolotl/docs/multi-gpu.html)
-- [Multi-Node Training](https://axolotl-ai-cloud.github.io/axolotl/docs/multi-node.html)
-- [Multipacking](https://axolotl-ai-cloud.github.io/axolotl/docs/multipack.html)
-- [API Reference](https://axolotl-ai-cloud.github.io/axolotl/docs/api/) - Auto-generated code documentation
-- [FAQ](https://axolotl-ai-cloud.github.io/axolotl/docs/faq.html) - Frequently asked questions
+- [Installation Options](https://docs.axolotl.ai/docs/installation.html) - Detailed setup instructions for different environments
+- [Configuration Guide](https://docs.axolotl.ai/docs/config.html) - Full configuration options and examples
+- [Dataset Guide](https://docs.axolotl.ai/docs/dataset-formats/) - Supported formats and how to use them
+- [Multi-GPU Training](https://docs.axolotl.ai/docs/multi-gpu.html)
+- [Multi-Node Training](https://docs.axolotl.ai/docs/multi-node.html)
+- [Multipacking](https://docs.axolotl.ai/docs/multipack.html)
+- [API Reference](https://docs.axolotl.ai/docs/api/) - Auto-generated code documentation
+- [FAQ](https://docs.axolotl.ai/docs/faq.html) - Frequently asked questions
 
 ## 🤝 Getting Help
 
 - Join our [Discord community](https://discord.gg/HhrNrHJPRb) for support
 - Check out our [Examples](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/) directory
-- Read our [Debugging Guide](https://axolotl-ai-cloud.github.io/axolotl/docs/debugging.html)
+- Read our [Debugging Guide](https://docs.axolotl.ai/docs/debugging.html)
 - Need dedicated support? Please contact [✉️wing@axolotl.ai](mailto:wing@axolotl.ai) for options
 
 ## 🌟 Contributing
