@@ -58,6 +58,7 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -335,6 +336,7 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -406,6 +408,7 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -484,6 +487,7 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -565,7 +569,7 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
-                        "split": "train[:25%]",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -668,6 +672,7 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -741,6 +746,7 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -814,6 +820,7 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
