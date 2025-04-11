@@ -43,7 +43,7 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {},
                 "datasets": [
                     {
@@ -83,7 +83,7 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
                 "sample_packing": False,
                 "flash_attention": True,
                 "s2_attention": True,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {},
                 "datasets": [
                     {

@@ -27,7 +27,7 @@ class TestModelPatches(unittest.TestCase):
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 2048,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {},
                 "datasets": [
                     {
@@ -59,7 +59,7 @@ class TestModelPatches(unittest.TestCase):
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 2048,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {},
                 "datasets": [
                     {
