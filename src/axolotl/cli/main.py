@@ -330,6 +330,15 @@ def vllm_serve(config: str, **cli_args: VllmServeCliArgs):
     do_vllm_serve(config, cli_args)
 
 
+@cli.command()
+@click.argument("model", type=click.Path(exists=True, path_type=str))
+@click.argument("output", type=click.Path(exists=False, path_type=str))
+def delinearize_llama4(model: str, output: str) -> None:
+    from axolotl.cli.delinearize_llama4 import do_cli as do_delinearize_llama4
+
+    do_delinearize_llama4(model, output)
+
+
 cli.add_command(lm_eval)
 
 

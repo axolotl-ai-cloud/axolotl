@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+from axolotl.monkeypatch.trainer_eval_guard import patch_evaluation_loop_for_fsdp2
 from axolotl.utils.distributed import reduce_and_broadcast
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
@@ -235,7 +236,8 @@ def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2):
 
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
-    if cfg.model_config_type in ["mamba", "gemma3"]:
+    drop_attn_mask = cfg.model_config_type in ["mamba", "gemma3"]
+    if drop_attn_mask:
         LOG.info("dropping attention_mask column")
         train_dataset = train_dataset.remove_columns("attention_mask")
         if eval_dataset:
@@ -625,6 +627,12 @@ def setup_trainer(
         A trainer instance (either `HFRLTrainer` or `HFCausalTrainer`) configured based
             on the provided parameters.
     """
+    if (
+        cfg.torch_compile
+        and cfg.fsdp_config
+        and str(cfg.fsdp_config.fsdp_version) == "2"
+    ):
+        patch_evaluation_loop_for_fsdp2()
     if cfg.rl:
         trainer_builder = HFRLTrainerBuilder(cfg, model, tokenizer, processor)
         trainer_builder.model_ref = model_ref
