@@ -10,19 +10,19 @@ from cut_cross_entropy.transformers.utils import (
     TransformersModelT,
 )
 
-_PATCH_OPTS: PatchOptions | None = None
-
 
 def patch_qwen3(
     maybe_model: TransformersModelT | str | transformers.PretrainedConfig,
     patch_options: PatchOptions,
 ) -> TransformersModelT | None:
-    global _PATCH_OPTS  # pylint: disable=global-statement
     from transformers.models.qwen3 import modeling_qwen3
 
-    from axolotl.integrations.cut_cross_entropy.monkeypatch.llama import cce_forward
+    # Set the _PATCH_OPTS in the llama patch file
+    import axolotl.integrations.cut_cross_entropy.monkeypatch.llama as llama_patch
 
-    _PATCH_OPTS = patch_options
+    llama_patch._PATCH_OPTS = patch_options  # pylint: disable=protected-access
+
+    from axolotl.integrations.cut_cross_entropy.monkeypatch.llama import cce_forward
 
     if isinstance(maybe_model, transformers.PreTrainedModel):
         assert isinstance(
