@@ -41,7 +41,7 @@ class TestFalcon(unittest.TestCase):
                     "word_embeddings",
                     "lm_head",
                 ],
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {
                     "bos_token": "<|endoftext|>",
                     "pad_token": "<|endoftext|>",
@@ -92,7 +92,7 @@ class TestFalcon(unittest.TestCase):
                     "word_embeddings",
                     "lm_head",
                 ],
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {
                     "bos_token": "<|endoftext|>",
                     "pad_token": "<|endoftext|>",
@@ -137,7 +137,7 @@ class TestFalcon(unittest.TestCase):
                 "base_model": "illuin/tiny-random-FalconForCausalLM",
                 "flash_attention": True,
                 "sequence_len": 1024,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {
                     "bos_token": "<|endoftext|>",
                     "pad_token": "<|endoftext|>",

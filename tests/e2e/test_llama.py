@@ -30,7 +30,7 @@ class TestLlama:
                 "tokenizer_type": "LlamaTokenizer",
                 "trust_remote_code": True,
                 "sequence_len": 512,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {
                     "unk_token": "<unk>",
                     "bos_token": "<s>",
