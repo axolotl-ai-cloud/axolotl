@@ -5,10 +5,12 @@ model_type: Llama4ForConditionalGeneration
 
 plugins:
   - axolotl.integrations.liger.LigerPlugin
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
 
 liger_glu_activation: true
 liger_rms_norm: true
 liger_layer_norm: true
+cut_cross_entropy: true
 
 llama4_linearized_experts: true  # needed with custom linearized experts model
 load_in_4bit: true
@@ -49,8 +51,8 @@ val_set_size: 0.0
 output_dir: ./outputs/out
 
 sequence_len: 4096  # up to 8k will work on a single H100
-sample_packing: false  # llama-4 flex attention packing isn't working yet
-pad_to_sequence_len: false
+sample_packing: true
+pad_to_sequence_len: true
 
 gradient_accumulation_steps: 1
 micro_batch_size: 1
