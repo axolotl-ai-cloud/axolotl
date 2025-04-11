@@ -673,7 +673,21 @@ class ModelLoader:
             patch_self_attn_lora(self.cfg)
 
         if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
-            from axolotl.monkeypatch.attention.ring_attn import register_ring_attn
+            from axolotl.monkeypatch.attention.ring_attn import (
+                RingAttnFunc,
+                register_ring_attn,
+            )
+
+            # Set the ring attention function if passed in config
+            ring_attn_func = None
+            if self.cfg.ring_attn_func:
+                valid_funcs = [enum.value for enum in RingAttnFunc]
+                if self.cfg.ring_attn_func in valid_funcs:
+                    ring_attn_func = RingAttnFunc(self.cfg.ring_attn_func)
+                else:
+                    LOG.warning(
+                        f"ring_attn_func: {self.cfg.ring_attn_func} must be one of {valid_funcs}"
+                    )
 
             # Initialize ring attn for sequence parallelism. This must be done after
             # model init but before the first forward pass, since it modifies flash
