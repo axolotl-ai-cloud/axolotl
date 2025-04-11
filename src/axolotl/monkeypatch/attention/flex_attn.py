@@ -1,5 +1,6 @@
 """Flex attention monkey patch"""
 
+import importlib
 import sys
 from typing import Optional, Tuple, Union
 
@@ -47,12 +48,9 @@ def patch_flex_wrapper():
                 # cause errors. The suggested fix is to compile with "max-autotune-no-cudagraphs"
                 # see https://github.com/pytorch/pytorch/issues/146260 for training
                 self.training = training
-                if training:
-                    self._compiled_flex_attention = torch.compile(
-                        flex_attention, dynamic=False, mode="max-autotune-no-cudagraphs"
-                    )
-                else:
-                    self._compiled_flex_attention = torch.compile(flex_attention)
+                self._compiled_flex_attention = torch.compile(
+                    flex_attention, dynamic=False, mode="max-autotune-no-cudagraphs"
+                )
                 self._is_flex_compiled = True
 
         def __call__(self):
@@ -66,6 +64,7 @@ def patch_flex_wrapper():
     )
     # cleanup any existing singleton instances
     WrappedFlexAttention.del_singleton()
+    importlib.reload(sys.modules["transformers.integrations.flex_attention"])
 
 
 def patch_flex_make_mask():

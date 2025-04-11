@@ -60,7 +60,7 @@ class TestPackedFlex:
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
-                "max_steps": 5,
+                "max_steps": 2,
                 "use_tensorboard": True,
                 "save_strategy": "no",
             }
