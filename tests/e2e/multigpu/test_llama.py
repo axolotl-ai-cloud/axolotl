@@ -400,7 +400,7 @@ class TestMultiGPULlama:
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 1024,
-                "val_set_size": 0.01,
+                "val_set_size": 0.05,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -664,7 +664,7 @@ class TestMultiGPULlama:
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 1024,
-                "val_set_size": 0.01,
+                "val_set_size": 0.05,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
