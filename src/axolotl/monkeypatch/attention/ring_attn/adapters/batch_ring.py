@@ -34,8 +34,7 @@ def create_ring_flash_attention_forward(process_group: dist.ProcessGroup) -> Cal
     Create a ring flash attention forward function compatible with HuggingFace's interface.
 
     Args:
-        process_group: A PyTorch distributed process group that defines the communication
-            topology for the ring attention pattern.
+        process_group: A PyTorch distributed process group.
 
     Returns:
         A function that implements the ring flash attention forward pass with the
