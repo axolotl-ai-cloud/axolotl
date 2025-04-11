@@ -6,6 +6,8 @@ package, specifically the `hf_adapter.substitute_hf_flash_attn` function to patc
 their sequence parallel version of Flash Attention 2.
 """
 
+from enum import Enum
+
 import torch
 import torch.distributed as dist
 from accelerate.logging import get_logger
@@ -15,6 +17,7 @@ from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
 
 configure_logging()
 LOG = get_logger(__name__)
+
 
 RING_ATTN_GROUP = None
 
@@ -40,7 +43,23 @@ def set_ring_attn_group(ring_attn_group: dist.ProcessGroup | None):
     RING_ATTN_GROUP = ring_attn_group
 
 
-def register_ring_attn(sequence_parallel_degree: int, heads_k_stride: int | None):
+class RingAttnFunc(Enum):
+    """Enum class for supported `ring-flash-attn` implementations"""
+
+    # VARLEN_RING = "varlen_ring"
+    # VARLEN_ZIGZAG = "varlen_zigzag"
+    VARLEN_LLAMA3 = "varlen_llama3"
+    BATCH_RING = "batch_ring"
+    # BATCH_ZIGZAG = "batch_zigzag"
+    # BATCH_STRIPE = "batch_stripe"
+
+
+def register_ring_attn(
+    sequence_parallel_degree: int,
+    heads_k_stride: int | None,
+    sample_packing: bool,
+    ring_attn_func: RingAttnFunc | None,
+):
     """
     Create ring attention group and substitute flash attn with ring flash attn.
 
@@ -48,14 +67,26 @@ def register_ring_attn(sequence_parallel_degree: int, heads_k_stride: int | None
         sequence_parallel_degree: Sequence parallelism factor.
         heads_k_stride: Sequence parallelism K head stride size. Passed
             through to `ring_flash_attn.substitute_hf_flash_attn`.
+        sample_packing: Whether or not sample packing is applied.
+        ring_attn_func: `ring_flash_attn` ring attention implemention. If sample
+            packing is enabled, it must be a `varlen` function; otherwise, it must be a
+            `batch` function.
     """
     if get_ring_attn_group() is not None:
         LOG.info("Ring attention already registered, exiting early...")
         return
 
+    # Default ring attention impl selection
+    if ring_attn_func is None:
+        if sample_packing:
+            ring_attn_func = RingAttnFunc.VARLEN_LLAMA3
+        else:
+            ring_attn_func = RingAttnFunc.BATCH_RING
+
     LOG.info(
         "Enabling ring attention sequence parallelism: "
-        f"each sequence will be processed across {sequence_parallel_degree} GPUs"
+        f"each sequence will be processed across {sequence_parallel_degree} GPUs "
+        f"using the {ring_attn_func.value} ring-flash-attn implementation"
     )
 
     world_size = dist.get_world_size()
@@ -92,29 +123,32 @@ def register_ring_attn(sequence_parallel_degree: int, heads_k_stride: int | None
     if rank == 0:
         LOG.info(f"Sequence parallel group assignments: {group_assignments}")
 
-    if heads_k_stride is None:
-        heads_k_stride = 1
+    if ring_attn_func is RingAttnFunc.VARLEN_LLAMA3:
+        from ring_flash_attn import substitute_hf_flash_attn
 
-    from ring_flash_attn import substitute_hf_flash_attn
+        substitute_hf_flash_attn(
+            process_group=get_ring_attn_group(), heads_k_stride=heads_k_stride or 1
+        )
+    # TODO(djsaunde): handle other ring attn funcs in this branch
+    elif ring_attn_func is RingAttnFunc.BATCH_RING:
+        from axolotl.monkeypatch.attention.ring_attn.adapters.batch_ring import (
+            substitute_hf_flash_attn,
+        )
 
-    substitute_hf_flash_attn(
-        process_group=get_ring_attn_group(), heads_k_stride=heads_k_stride
-    )
+        substitute_hf_flash_attn(process_group=get_ring_attn_group())
 
 
-def update_ring_attn_params(batch: dict[str, torch.Tensor]):
+def update_ring_attn_params(input_ids: torch.Tensor, position_ids: torch.Tensor | None):
     """
     Calculate the cumulative sequence lengths for the current forward pass and pass the
     value to the substituted `ring_flash_attn`.
 
     Args:
-        batch: A dictionary with a batch of data. May or may not contain `position_ids`
-            data; if not, we compute it.
+        input_ids: Tensor of input IDs.
+        position_ids: Optional tensor of position IDs (for sample packed data).
     """
     from ring_flash_attn import update_ring_flash_attn_params
 
-    input_ids = batch["input_ids"]
-    position_ids = batch.get("position_ids")
     if position_ids is None:
         seq_len = input_ids.shape[1]
         position_ids = torch.arange(

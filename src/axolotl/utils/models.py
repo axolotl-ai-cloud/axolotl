@@ -636,7 +636,21 @@ class ModelLoader:
             patch_self_attn_lora(self.cfg)
 
         if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
-            from axolotl.monkeypatch.attention.ring_attn import register_ring_attn
+            from axolotl.monkeypatch.attention.ring_attn import (
+                RingAttnFunc,
+                register_ring_attn,
+            )
+
+            # Set the ring attention function if passed in config
+            ring_attn_func = None
+            if self.cfg.ring_attn_func:
+                valid_funcs = [enum.value for enum in RingAttnFunc]
+                if self.cfg.ring_attn_func in valid_funcs:
+                    ring_attn_func = RingAttnFunc(self.cfg.ring_attn_func)
+                else:
+                    LOG.warning(
+                        f"ring_attn_func: {self.cfg.ring_attn_func} must be one of {valid_funcs}"
+                    )
 
             # Initialize ring attn for sequence parallelism. This must be done after
             # model init but before the first forward pass, since it modifies flash
@@ -644,6 +658,8 @@ class ModelLoader:
             register_ring_attn(
                 sequence_parallel_degree=self.cfg.sequence_parallel_degree,
                 heads_k_stride=self.cfg.heads_k_stride,
+                sample_packing=self.cfg.sample_packing,
+                ring_attn_func=ring_attn_func,
             )
 
     def patch_attention(self) -> None:
@@ -1115,7 +1131,7 @@ class ModelLoader:
 
         return skip_move_to_device
 
-    def ajust_model_config(self) -> None:
+    def adjust_model_config(self) -> None:
         if (
             hasattr(self.model, "config")
             and hasattr(self.model.config, "max_position_embeddings")
@@ -1275,7 +1291,7 @@ class ModelLoader:
         else:
             self.model.tie_weights()
 
-        self.ajust_model_config()
+        self.adjust_model_config()
 
         # log device memory usage
         if hasattr(self.model, "device") and self.model.device.type in (

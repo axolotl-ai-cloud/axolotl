@@ -73,7 +73,10 @@ class TestRingAttention:
         self, mock_world_size, mock_rank, mock_new_group, partial_state
     ):
         """Test that ring attention groups are created correctly."""
-        from axolotl.monkeypatch.attention.ring_attn import register_ring_attn
+        from axolotl.monkeypatch.attention.ring_attn import (
+            RingAttnFunc,
+            register_ring_attn,
+        )
 
         # Setup mocks
         mock_world_size.return_value = 8  # 8 GPUs total
@@ -82,7 +85,12 @@ class TestRingAttention:
         mock_new_group.return_value = mock_group
 
         # Call register_ring_attn with size 4
-        register_ring_attn(sequence_parallel_degree=4, heads_k_stride=1)
+        register_ring_attn(
+            sequence_parallel_degree=4,
+            heads_k_stride=1,
+            sample_packing=True,
+            ring_attn_func=RingAttnFunc.VARLEN_LLAMA3,
+        )
 
         # Verify the number of calls without examining the arguments
         assert mock_new_group.call_count == 2
