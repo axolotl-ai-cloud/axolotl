@@ -34,7 +34,7 @@ def patch_flex_wrapper():
 
         @classmethod
         def del_singleton(cls):
-            del cls._instance
+            cls._instance = None
 
         @torch.compiler.disable(recursive=False)
         def __init__(self, training):
