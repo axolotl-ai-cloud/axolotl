@@ -8,7 +8,6 @@ tokenizer_type: AutoTokenizer
 # required by falcon custom model code: https://huggingface.co/tiiuae/falcon-7b/tree/main
 trust_remote_code: true
 gptq: false
-strict: false
 push_dataset_to_hub:
 datasets:
   - path: teknium/GPT4-LLM-Cleaned

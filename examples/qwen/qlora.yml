@@ -9,7 +9,6 @@ trust_remote_code: true
 
 load_in_8bit: false
 load_in_4bit: true
-strict: false
 
 datasets:
   - path: mhenrichsen/alpaca_2k_test

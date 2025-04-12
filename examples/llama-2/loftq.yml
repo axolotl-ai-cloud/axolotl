@@ -4,7 +4,6 @@ model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
-strict: false
 
 datasets:
   - path: mhenrichsen/alpaca_2k_test

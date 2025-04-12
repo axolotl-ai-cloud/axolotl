@@ -7,7 +7,6 @@ tokenizer_type: AutoTokenizer
 # hub_model_id: username/custom_model_name
 
 chat_template: phi_3
-strict: false
 
 datasets:
   - path: garage-bAInd/Open-Platypus

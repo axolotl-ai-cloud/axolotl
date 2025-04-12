@@ -7,7 +7,6 @@ tokenizer_type: AutoTokenizer
 
 load_in_8bit: true
 load_in_4bit: false
-strict: false
 
 chat_template: llama3
 datasets:

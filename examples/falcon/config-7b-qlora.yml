@@ -15,7 +15,6 @@ load_in_8bit: false
 # enable 4bit for QLoRA
 load_in_4bit: true
 gptq: false
-strict: false
 push_dataset_to_hub:
 datasets:
   - path: QingyiSi/Alpaca-CoT

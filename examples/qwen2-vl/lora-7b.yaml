@@ -1,6 +1,5 @@
 base_model: Qwen/Qwen2-VL-7B-Instruct
 processor_type: AutoProcessor
-strict: false
 
 # these 3 lines are needed for now to handle vision chat templates w images
 skip_prepare_dataset: true
