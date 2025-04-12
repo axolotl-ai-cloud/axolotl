@@ -6,13 +6,11 @@ pytest -v -n2 \
   --ignore=/workspace/axolotl/tests/e2e/multigpu/solo/ \
   --ignore=/workspace/axolotl/tests/e2e/multigpu/patched/ \
   /workspace/axolotl/tests/e2e/multigpu/ \
-  --cov=axolotl \
-  --cov-report=xml:multigpu-coverage.xml
+  --cov=axolotl
 
 pytest -v  --durations=10 -n1 /workspace/axolotl/tests/e2e/multigpu/solo/ \
   --cov=axolotl \
-  --cov-append \
-  --cov-report=xml:multigpu-coverage.xml
+  --cov-append
 
 pytest -v  --durations=10 -n1 /workspace/axolotl/tests/e2e/multigpu/patched/ \
   --cov=axolotl \
