@@ -4,8 +4,6 @@ processor_type: Llama4Processor
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
-strict: false
-
 # these 3 lines are needed for now to handle vision chat templates w images
 skip_prepare_dataset: true
 remove_unused_columns: false
