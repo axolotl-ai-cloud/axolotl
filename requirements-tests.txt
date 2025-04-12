@@ -1,5 +1,7 @@
+codecov
 pytest
-pytest-xdist
+pytest-cov
 pytest-retry
 pytest-sugar
+pytest-xdist
 tbparse
