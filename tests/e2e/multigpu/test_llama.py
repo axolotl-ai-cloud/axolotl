@@ -58,12 +58,13 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
                 "max_steps": 2,
                 "micro_batch_size": 1,
-                "gradient_accumulation_steps": 4,
+                "gradient_accumulation_steps": 2,
                 # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
@@ -201,7 +202,7 @@ class TestMultiGPULlama:
                 "num_epochs": 1,
                 "max_steps": 2,
                 "micro_batch_size": 2,
-                "gradient_accumulation_steps": 4,
+                "gradient_accumulation_steps": 2,
                 # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
                 "warmup_steps": 0,
@@ -279,7 +280,7 @@ class TestMultiGPULlama:
                 "num_epochs": 1,
                 "max_steps": 2,
                 "micro_batch_size": 2,
-                "gradient_accumulation_steps": 4,
+                "gradient_accumulation_steps": 2,
                 # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
                 "warmup_steps": 0,
@@ -335,6 +336,7 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -398,7 +400,7 @@ class TestMultiGPULlama:
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 1024,
-                "val_set_size": 0.01,
+                "val_set_size": 0.05,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -406,6 +408,7 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -484,6 +487,7 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -565,7 +569,7 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
-                        "split": "train[:25%]",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -660,7 +664,7 @@ class TestMultiGPULlama:
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 1024,
-                "val_set_size": 0.01,
+                "val_set_size": 0.05,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -668,6 +672,7 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -741,6 +746,7 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -814,6 +820,7 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,

@@ -49,7 +49,7 @@ class TestMixtral(unittest.TestCase):
                     "q_proj",
                     "w2",
                 ],
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {},
                 "datasets": [
                     {
@@ -105,7 +105,7 @@ class TestMixtral(unittest.TestCase):
                     "q_proj",
                     "w2",
                 ],
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {},
                 "datasets": [
                     {
@@ -160,7 +160,7 @@ class TestMixtral(unittest.TestCase):
                     "q_proj",
                     "w2",
                 ],
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {},
                 "datasets": [
                     {
@@ -219,7 +219,7 @@ class TestMixtral(unittest.TestCase):
                     "q_proj",
                     "w2",
                 ],
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {},
                 "datasets": [
                     {
@@ -265,7 +265,7 @@ class TestMixtral(unittest.TestCase):
                 "tokenizer_config": "LoneStriker/Mixtral-8x7B-v0.1-HF",
                 "flash_attention": True,
                 "sequence_len": 1024,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {},
                 "datasets": [
                     {

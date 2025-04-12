@@ -25,7 +25,7 @@ def min_cfg(temp_dir):
         ],
         "cut_cross_entropy": True,
         "sequence_len": 1024,
-        "val_set_size": 0.1,
+        "val_set_size": 0.02,
         "special_tokens": {
             "pad_token": "<|endoftext|>",
         },
@@ -79,7 +79,7 @@ class TestCutCrossEntropyIntegration:
                 ],
                 "cut_cross_entropy": True,
                 "sequence_len": 1024,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
