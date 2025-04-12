@@ -23,3 +23,5 @@ if [ -f multigpu-coverage.xml ]; then
 else
   echo "Coverage file not found. Coverage report may have failed."
 fi
+
+# trivial change
