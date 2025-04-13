@@ -6,7 +6,7 @@ triton>=3.0.0
 mamba-ssm==1.2.0.post1
 xformers>=0.0.23.post1
 autoawq==0.2.7.post3
-liger-kernel==0.5.6
+liger-kernel==0.5.8
 # END section
 
 packaging==23.2
