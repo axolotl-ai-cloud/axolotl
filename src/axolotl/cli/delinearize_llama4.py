@@ -13,9 +13,10 @@ from dotenv import load_dotenv
 
 
 def iter_convert_patched_to_hf(model_state_dict, num_experts) -> Generator:
-    for key, value in model_state_dict.items():
+    keys = list(model_state_dict.keys())
+    for key in keys:
         if ".feed_forward.experts." not in key:
-            yield key, value
+            yield key, model_state_dict[key]
         if ".feed_forward.experts.gate_projs" in key:
             # gate gets fused with up so skip the yield on this and we'll fuse it when asking for the up
             continue
@@ -42,8 +43,10 @@ def iter_convert_patched_to_hf(model_state_dict, num_experts) -> Generator:
                     ]
                 )
                 gate_up_proj = torch.cat((gate_stacked, up_stacked), dim=-1)
+                del gate_stacked, up_stacked
                 yield key, gate_up_proj
             else:
+                del model_state_dict[key]
                 continue
         if ".feed_forward.experts.down_projs" in key:
             if ".feed_forward.experts.down_projs.0." in key:
@@ -61,6 +64,7 @@ def iter_convert_patched_to_hf(model_state_dict, num_experts) -> Generator:
                 )
                 yield key, down_stacked
             else:
+                del model_state_dict[key]
                 continue
 
 
@@ -84,6 +88,12 @@ def do_cli(model: Union[Path, str], output: Union[Path, str]) -> None:
     model_ = Llama4ForConditionalGeneration.from_pretrained(
         model, torch_dtype=torch.bfloat16
     )
+    device = model_.device.type
+    if device == "cuda":
+        print(
+            f"peak memory allocated: {torch.cuda.max_memory_allocated() / 1024**2} MB"
+        )
+        print(f"peak memory reserved: {torch.cuda.max_memory_reserved() / 1024**2} MB")
     model_config = model_.config
     config = model_.config.get_text_config()
 
@@ -110,12 +120,26 @@ def do_cli(model: Union[Path, str], output: Union[Path, str]) -> None:
     for key, value in iter_convert_patched_to_hf(state_dict, num_experts):
         converted_state_dict[key] = value
 
+    del state_dict
+    if device == "cuda":
+        torch.cuda.empty_cache()
+        print("State dict converted.")
+        print(
+            f"peak memory allocated: {torch.cuda.max_memory_allocated() / 1024**2} MB"
+        )
+        print(f"peak memory reserved: {torch.cuda.max_memory_reserved() / 1024**2} MB")
     # Ideally re-load the model import to load the converted state dict
     # Save the converted model
     with init_empty_weights():
         unpatch_llama4()
         model_ = Llama4ForConditionalGeneration(model_config)
 
+    if device == "cuda":
+        print("State dict loaded into model.")
+        print(
+            f"peak memory allocated: {torch.cuda.max_memory_allocated() / 1024**2} MB"
+        )
+        print(f"peak memory reserved: {torch.cuda.max_memory_reserved() / 1024**2} MB")
     model_.load_state_dict(converted_state_dict, strict=False, assign=True)
     print(f"Saving converted model to {output}...")
     model_.save_pretrained(output)
