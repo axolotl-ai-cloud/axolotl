@@ -21,7 +21,6 @@ It is designed to be performant, correct, and light-weight.
 import inspect
 import logging
 import sys
-from functools import partial
 
 from axolotl.integrations.base import BasePlugin
 
@@ -55,7 +54,6 @@ class LigerPlugin(BasePlugin):
             )
         from liger_kernel.transformers.cross_entropy import LigerCrossEntropyLoss
         from liger_kernel.transformers.functional import liger_cross_entropy
-        from liger_kernel.transformers.geglu import LigerGEGLUMLP
         from liger_kernel.transformers.layer_norm import LigerLayerNorm
         from liger_kernel.transformers.monkey_patch import MODEL_TYPE_TO_APPLY_LIGER_FN
         from liger_kernel.transformers.rms_norm import LigerRMSNorm
