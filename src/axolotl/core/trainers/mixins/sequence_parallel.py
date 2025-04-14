@@ -1,12 +1,16 @@
 """Module for Axolotl trainer sequence parallelism mixin"""
 
 import logging
+from contextlib import contextmanager
 
+import torch
 import torch.distributed as dist
 from datasets import Dataset
 from torch.utils.data import DistributedSampler, Sampler
 
-from axolotl.monkeypatch.attention.ring_attn import get_ring_attn_group
+from axolotl.monkeypatch.attention.ring_attn import (
+    get_ring_attn_group, update_ring_attn_params
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -87,3 +91,40 @@ class SequenceParallelMixin:
         return self._create_sequence_parallel_sampler(
             eval_dataset, shuffle=False, is_eval=True
         )
+
+
+class SequenceParallelismManager:
+    def __init__(self, local_rank, local_world_size):
+        self.local_rank = local_rank
+        self.local_world_size = local_world_size
+        
+    @contextmanager
+    def apply(self, batch):
+        """
+        Context manager that applies sequence parallelism slicing to a batch,
+        and restores the original batch afterward if needed.
+        
+        Args:
+            batch: Batch dictionary from parent collator.
+            
+        Yields:
+            Sliced batch dictionary for use in the model.
+        """
+        # Get local (start, end) for sequence parallelism slicing
+        total_seq_len = batch["input_ids"].size(1)
+        slice_size = total_seq_len // self.local_world_size
+        start = self.local_rank * slice_size
+        end = start + slice_size
+        
+        # Update params for varlen ring attention calculation
+        if batch.get("position_ids") is not None:
+            update_ring_attn_params(
+                input_ids=batch["input_ids"], position_ids=batch["position_ids"]
+            )
+
+        # Slice batch for sequence parallel processing
+        for key in batch:
+            if isinstance(batch[key], torch.Tensor) and batch[key].size(1) == total_seq_len:
+                batch[key] = batch[key][:, start:end]
+
+        yield batch
