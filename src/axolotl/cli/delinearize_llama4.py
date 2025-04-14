@@ -10,6 +10,7 @@ import fire
 import torch
 from accelerate import init_empty_weights
 from dotenv import load_dotenv
+from transformers import AutoProcessor
 
 
 def iter_convert_patched_to_hf(model_state_dict, num_experts) -> Generator:
@@ -88,6 +89,9 @@ def do_cli(model: Union[Path, str], output: Union[Path, str]) -> None:
     model_ = Llama4ForConditionalGeneration.from_pretrained(
         model, torch_dtype=torch.bfloat16
     )
+    processor = AutoProcessor.from_pretrained(model)
+    processor.save_pretrained(output)
+
     device = model_.device.type
     if device == "cuda":
         print(
