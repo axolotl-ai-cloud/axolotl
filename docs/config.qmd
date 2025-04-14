@@ -693,6 +693,9 @@ sequence_parallel_degree:
 # Optional; strides across the key dimension. Larger values use more memory but should make training faster.
 # Must evenly divide the number of KV heads in your model.
 heads_k_stride: 1
+# One of "varlen_llama3", "batch_ring", "batch_zigzag", "batch_stripe". Defaults to "varlen_llama3"
+# in the sample packing case, and "batch_ring" in the non-sample packing case.
+ring_attn_func:
 
 # Path to torch distx for optim 'adamw_anyprecision'
 torchdistx_path:
