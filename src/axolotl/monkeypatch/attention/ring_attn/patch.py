@@ -43,7 +43,7 @@ def set_ring_attn_group(ring_attn_group: dist.ProcessGroup | None):
     RING_ATTN_GROUP = ring_attn_group
 
 
-class RingAttnFunc(Enum):
+class RingAttnFunc(str, Enum):
     """Enum class for supported `ring-flash-attn` implementations"""
 
     # VARLEN_RING = "varlen_ring"
@@ -78,7 +78,7 @@ def register_ring_attn(
 
     if ring_attn_func is not None:
         # Set the ring attention function if passed in config
-        valid_funcs = [enum.value for enum in RingAttnFunc]
+        valid_funcs = list(RingAttnFunc)
         if ring_attn_func in valid_funcs:
             ring_attn_func = RingAttnFunc(ring_attn_func)
         else:
