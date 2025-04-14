@@ -253,9 +253,7 @@ def cce_forward_multimodal(
             "You cannot specify both pixel_values and inputs_embeds at the same time, and must specify either one"
         )
 
-    if inputs_embeds is None and input_ids:
-        if input_ids.device != self.get_input_embeddings().device:
-            self.get_input_embeddings().to(input_ids.device)
+    if inputs_embeds is None:
         inputs_embeds = self.get_input_embeddings()(input_ids)  # type: ignore
 
     if pixel_values is not None:
