@@ -157,7 +157,7 @@ class DataCollatorForSeq2Seq:
             Sliced batch dictionary.
         """
         # Get local (start, end) for sequence parallelism slicing
-        total_seq_len = batch["input_ids"].shape[1]
+        total_seq_len = batch["input_ids"].size(1)
         slice_size = total_seq_len // self.local_world_size
         start = self.local_rank * slice_size
         end = start + slice_size
