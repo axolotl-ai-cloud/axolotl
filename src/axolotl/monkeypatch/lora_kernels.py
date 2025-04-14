@@ -4,7 +4,7 @@ import importlib
 import inspect
 import logging
 import types
-from typing import Type
+from typing import Generator, Tuple, Type
 
 import torch
 from accelerate.logging import get_logger
@@ -200,6 +200,46 @@ def patch_self_attn_lora(cfg: DictDefault):
     )
 
 
+def find_self_attn_in_layer(
+    layer: nn.Module,
+) -> Generator[Tuple[nn.Module], None, None]:
+    # general case of most models
+    if hasattr(layer, "self_attn"):
+        if all(
+            hasattr(layer.self_attn, proj)
+            for proj in ["q_proj", "k_proj", "v_proj", "o_proj"]
+        ):
+            yield layer.self_attn
+
+
+def find_mlp_in_layer(
+    layer: nn.Module,
+) -> Generator[Tuple[nn.Module, nn.Module, nn.Module, nn.Module], None, None]:
+    # general case of most models
+    if hasattr(layer, "mlp"):
+        if all(
+            hasattr(layer.mlp, proj) for proj in ["gate_proj", "up_proj", "down_proj"]
+        ):
+            yield layer.mlp.gate_proj, layer.mlp.up_proj, layer.mlp.down_proj, layer.mlp
+    # llama4 linearized experts
+    if hasattr(layer, "feedforward") and hasattr(layer.feedforward, "shared_expert"):
+        mlp = layer.feedforward.shared_expert
+        yield mlp.gate_proj, mlp.up_proj, mlp.down_proj, mlp
+    if hasattr(layer, "feedforward") and hasattr(layer.feedforward, "experts"):
+        if all(
+            hasattr(layer.feedforward.experts, proj)
+            for proj in ["gate_projs", "up_projs", "down_projs"]
+        ):
+            for gate_proj, up_proj, down_proj in zip(
+                layer.feedforward.experts.gate_projs,
+                layer.feedforward.experts.up_projs,
+                layer.feedforward.experts.down_projs,
+            ):
+                yield gate_proj, up_proj, down_proj, FakeMLP(
+                    gate_proj, up_proj, down_proj
+                )
+
+
 def apply_lora_kernel_patches(
     model: PeftModelForCausalLM, cfg: DictDefault
 ) -> PeftModelForCausalLM:
@@ -286,74 +326,82 @@ def apply_lora_kernel_patches(
     for layer in layers:
         # Add QKV, O fallback implementations to start
         # These will be overwritten later (if some conditions apply)
-        layer.self_attn.apply_qkv = types.MethodType(
-            original_apply_qkv, layer.self_attn
-        )
-        layer.self_attn.apply_o = types.MethodType(original_apply_o, layer.self_attn)
+        for self_attn in find_self_attn_in_layer(layer):
+            self_attn.apply_qkv = types.MethodType(original_apply_qkv, self_attn)
+            self_attn.apply_o = types.MethodType(original_apply_o, self_attn)
 
-        if cfg.lora_mlp_kernel:
-            # MLP patching
-            gate_proj = layer.mlp.gate_proj
-            up_proj = layer.mlp.up_proj
-            down_proj = layer.mlp.down_proj
+            if cfg.lora_qkv_kernel:
+                # Query, key, value patching
+                layer_modules = [
+                    getattr(self_attn, linear_proj)
+                    for linear_proj in ["q_proj", "k_proj", "v_proj"]
+                ]
+                can_patch_qkv = all(
+                    hasattr(module, "lora_A")
+                    and getattr(module, "base_layer", module).bias is None
+                    and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
+                    for module in layer_modules
+                )
 
-            can_patch_mlp = all(
-                hasattr(proj, "lora_A")
-                and getattr(proj, "base_layer", proj).bias is None
-                and len(getattr(proj, "lora_magnitude_vector", []) or []) == 0
-                for proj in (gate_proj, up_proj, down_proj)
-            )
+                if can_patch_qkv:
+                    # Add optimized implementation
+                    self_attn.apply_qkv = types.MethodType(apply_lora_qkv, self_attn)
+                else:
+                    LOG.warning_once(
+                        "Cannot patch some attention QKV projections - requires LoRA adapters with no bias"
+                    )
+            if cfg.lora_o_kernel:
+                # Output patching
+                layer_modules = [
+                    getattr(self_attn, linear_proj) for linear_proj in ["o_proj"]
+                ]
+                can_patch_o = all(
+                    hasattr(module, "lora_A")
+                    and getattr(module, "base_layer", module).bias is None
+                    and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
+                    for module in layer_modules
+                )
 
-            if can_patch_mlp:
-                apply_fn = APPLY_FN_MAPPING[activation]
-                layer.mlp.forward = types.MethodType(apply_fn, layer.mlp)
-            else:
-                LOG.warning_once(
-                    "Cannot patch some MLP layers - requires LoRA adapters with no bias"
+                if can_patch_o:
+                    self_attn.apply_o = types.MethodType(apply_lora_o, self_attn)
+                else:
+                    LOG.warning_once(
+                        "Cannot patch some attention output projection - requires LoRA adapters with no bias"
+                    )
+        for gate_proj, up_proj, down_proj, mlp in find_mlp_in_layer(layer):
+            if cfg.lora_mlp_kernel:
+                # MLP patching
+                can_patch_mlp = all(
+                    hasattr(proj, "lora_A")
+                    and getattr(proj, "base_layer", proj).bias is None
+                    and len(getattr(proj, "lora_magnitude_vector", []) or []) == 0
+                    for proj in (gate_proj, up_proj, down_proj)
                 )
-        if cfg.lora_qkv_kernel:
-            # Query, key, value patching
-            layer_modules = [
-                getattr(layer.self_attn, linear_proj)
-                for linear_proj in ["q_proj", "k_proj", "v_proj"]
-            ]
-            can_patch_qkv = all(
-                hasattr(module, "lora_A")
-                and getattr(module, "base_layer", module).bias is None
-                and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
-                for module in layer_modules
-            )
 
-            if can_patch_qkv:
-                # Add optimized implementation
-                layer.self_attn.apply_qkv = types.MethodType(
-                    apply_lora_qkv, layer.self_attn
-                )
-            else:
-                LOG.warning_once(
-                    "Cannot patch some attention QKV projections - requires LoRA adapters with no bias"
-                )
-        if cfg.lora_o_kernel:
-            # Output patching
-            layer_modules = [
-                getattr(layer.self_attn, linear_proj) for linear_proj in ["o_proj"]
-            ]
-            can_patch_o = all(
-                hasattr(module, "lora_A")
-                and getattr(module, "base_layer", module).bias is None
-                and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
-                for module in layer_modules
-            )
-
-            if can_patch_o:
-                layer.self_attn.apply_o = types.MethodType(
-                    apply_lora_o, layer.self_attn
-                )
-            else:
-                LOG.warning_once(
-                    "Cannot patch some attention output projection - requires LoRA adapters with no bias"
-                )
+                if can_patch_mlp:
+                    apply_fn = APPLY_FN_MAPPING[activation]
+                    layer.mlp.forward = types.MethodType(apply_fn, mlp)
+                else:
+                    LOG.warning_once(
+                        "Cannot patch some MLP layers - requires LoRA adapters with no bias"
+                    )
 
     LOG.setLevel(original_level)
 
     return model
+
+
+class FakeMLP(nn.Module):
+    """
+    placeholder MLP for triton patching
+    """
+
+    gate_proj: nn.Linear
+    up_proj: nn.Linear
+    down_proj: nn.Linear
+
+    def __init__(self, gate_proj, up_proj, down_proj):
+        super().__init__()
+        self.gate_proj = gate_proj
+        self.up_proj = up_proj
+        self.down_proj = down_proj

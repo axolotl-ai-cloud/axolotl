@@ -35,7 +35,7 @@ class TestPhi(unittest.TestCase):
                 "sample_packing": False,
                 "load_in_8bit": False,
                 "adapter": None,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -85,7 +85,7 @@ class TestPhi(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },

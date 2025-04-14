@@ -90,7 +90,7 @@ lora_on_cpu: true
 
 # List[str]. Add plugins to extend the pipeline.
 # See `src/axolotl/integrations` for the available plugins or doc below for more details.
-# https://axolotl-ai-cloud.github.io/axolotl/docs/custom_integrations.html
+# https://docs.axolotl.ai/docs/custom_integrations.html
 plugins:
   # - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
 
@@ -109,7 +109,7 @@ datasets:
     preprocess_shards: # Optional[int] process dataset in N sequential chunks for memory efficiency (exclusive with `shards`)
 
     name: # Optional[str] name of dataset configuration to load
-    train_on_split: train # Optional[str] name of dataset split to load from
+    split: train # Optional[str] name of dataset split to load from
     revision: # Optional[str] The specific revision of the dataset to use when loading from the Hugging Face Hub. This can be a commit hash, tag, or branch name. If not specified, the latest version will be used. This parameter is ignored for local datasets.
     trust_remote_code: # Optional[bool] Trust remote code for untrusted source
 
@@ -165,7 +165,9 @@ datasets:
       content: value
       # ...
 
-    # Optional[Dict[str, List]]. Roles mapping in the messages. The default is:
+    # Optional[Dict[str, List]]. Roles mapping in the messages.
+    # The format is {target_role: [source_roles]}. All source roles will be mapped to the target role.
+    # The default is:
     roles:
       user: ["human", "user"]
       assistant: ["gpt", "assistant"]
@@ -392,7 +394,7 @@ lora_fan_in_fan_out: false
 
 # Apply custom LoRA autograd functions and activation function Triton kernels for
 # speed and memory savings
-# See: https://axolotl-ai-cloud.github.io/axolotl/docs/lora_optims.html
+# See: https://docs.axolotl.ai/docs/lora_optims.html
 lora_mlp_kernel: true
 lora_qkv_kernel: true
 lora_o_kernel: true
@@ -686,7 +688,7 @@ ddp_broadcast_buffers:
 # Use in long context training to prevent OOM when sequences cannot fit into a single GPU's VRAM.
 # E.g., if 4 GPUs are available, set this value to 2 to split each sequence into two equal-sized
 # subsequences, or set to 4 to split into four equal-sized subsequences.
-# See https://axolotl-ai-cloud.github.io/axolotl/docs/sequence_parallelism.html for more details.
+# See https://docs.axolotl.ai/docs/sequence_parallelism.html for more details.
 sequence_parallel_degree:
 # Optional; strides across the key dimension. Larger values use more memory but should make training faster.
 # Must evenly divide the number of KV heads in your model.

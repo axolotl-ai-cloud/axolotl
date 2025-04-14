@@ -1,5 +1,6 @@
 base_model: google/gemma-3-4b-it
-strict: false
+
+load_in_4bit: true
 
 # gemma3 doesn't seem to play nice with ddp
 ddp_find_unused_parameters: true
@@ -17,7 +18,7 @@ dataset_prepared_path: last_run_prepared
 val_set_size: 0.01
 output_dir: ./outputs/out
 
-adapter: lora
+adapter: qlora
 lora_model_dir:
 
 sequence_len: 2048
@@ -42,8 +43,6 @@ optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
-train_on_inputs: false
-group_by_length: false
 bf16: true
 fp16:
 tf32: true
@@ -51,7 +50,6 @@ tf32: true
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
-local_rank:
 logging_steps: 1
 flash_attention: true
 eager_attention:
@@ -59,8 +57,4 @@ eager_attention:
 warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0.0
-fsdp:
-fsdp_config:

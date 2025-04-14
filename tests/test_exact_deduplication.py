@@ -313,7 +313,7 @@ class TestDeduplicateNonRL(unittest.TestCase):
                     },
                 ],
                 "val_set_size": 0.0,
-                "gradient_accumulation_steps": 4,
+                "gradient_accumulation_steps": 2,
                 "batch_size": 10,
                 "micro_batch_size": 10,
                 "num_epochs": 1,

@@ -3,7 +3,6 @@ Data collators for axolotl to pad labels and position_ids for packed sequences. 
 includes logic for handling sequence parallelism collation.
 """
 
-import logging
 from dataclasses import dataclass
 from typing import Any, Optional, Union
 
@@ -13,46 +12,7 @@ import torch.distributed as dist
 from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
 
-logger = logging.getLogger(__name__)
-
-
-def adjust_position_ids_for_slice(
-    position_ids: torch.Tensor, start_idx: int
-) -> torch.Tensor:
-    """
-    Adjust position IDs for a sliced sequence to maintain proper relative positions.
-    This handles the case where position IDs might not be contiguous due to sample
-    packing.
-    """
-    # Convert to tensor if not already
-    # Find the boundaries between samples (where position_ids reset)
-    adjusted_pos_ids = position_ids.clone()
-
-    # Process each sequence in the batch
-    for i in range(position_ids.shape[0]):
-        seq = position_ids[i]
-
-        # Find sample boundaries
-        boundaries = []
-        for j in range(1, len(seq)):
-            if seq[j] < seq[j - 1]:
-                boundaries.append(j)
-
-        # No need to adjust if there are no boundaries or this is a single sample
-        if not boundaries:
-            adjusted_pos_ids[i] = seq - start_idx
-            continue
-
-        # Adjust each segment separately
-        prev_boundary = 0
-        for boundary in boundaries:
-            adjusted_pos_ids[i, prev_boundary:boundary] -= start_idx
-            prev_boundary = boundary
-
-        # Last segment
-        adjusted_pos_ids[i, prev_boundary:] -= start_idx
-
-    return adjusted_pos_ids
+from axolotl.monkeypatch.attention.ring_attn import update_ring_attn_params
 
 
 @dataclass
@@ -196,23 +156,20 @@ class DataCollatorForSeq2Seq:
         Returns:
             Sliced batch dictionary.
         """
-        keys_to_slice = ["input_ids", "attention_mask", "labels", "position_ids"]
+        # Get local (start, end) for sequence parallelism slicing
+        total_seq_len = batch["input_ids"].shape[1]
+        slice_size = total_seq_len // self.local_world_size
+        start = self.local_rank * slice_size
+        end = start + slice_size
 
+        # Update params for ring attention calculation
+        update_ring_attn_params(batch=batch)
+
+        # Slice batch for sequence parallel processing
+        keys_to_slice = ["input_ids", "attention_mask", "labels", "position_ids"]
         for key in keys_to_slice:
             if key in batch:
-                seq_len = batch[key].shape[1]
-                slice_size = seq_len // self.local_world_size
-                start_idx = self.local_rank * slice_size
-                end_idx = (
-                    start_idx + slice_size
-                    if self.local_rank < self.local_world_size - 1
-                    else seq_len
-                )
-                batch[key] = batch[key][:, start_idx:end_idx]
-
-                # Special handling for position_ids
-                if key == "position_ids" and self.local_rank > 0:
-                    batch[key] = adjust_position_ids_for_slice(batch[key], start_idx)
+                batch[key] = batch[key][:, start:end]
 
         return batch
 

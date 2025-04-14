@@ -27,6 +27,13 @@ jobs:
           - cuda: 124
             cuda_version: 12.4.1
             python_version: "3.11"
+            pytorch: 2.6.0
+            axolotl_extras: vllm
+            num_gpus: 2
+            nightly_build: "true"
+          - cuda: 124
+            cuda_version: 12.4.1
+            python_version: "3.11"
             pytorch: 2.4.1
             axolotl_extras:  # no vllm support for 2.4.1
             num_gpus: 2
@@ -35,13 +42,6 @@ jobs:
             cuda_version: 12.4.1
             python_version: "3.11"
             pytorch: 2.5.1
-            axolotl_extras: vllm
-            num_gpus: 2
-            nightly_build: "true"
-          - cuda: 124
-            cuda_version: 12.4.1
-            python_version: "3.11"
-            pytorch: 2.6.0
             axolotl_extras: vllm
             num_gpus: 2
             nightly_build: "true"

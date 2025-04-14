@@ -235,6 +235,9 @@ class AxolotlTrainer(
             self.accelerator.even_batches = False
 
         # Return unprepared dataloader if using sequence parallelism
+        # TODO(djsaunde): We might be able to use `accelerate`'s dataloader preparation
+        # if we use `dispatch_batches` and `slice_fn_for_dispatch` properly (i.e.,
+        # slice each batch along the sequence dimension).
         if self.args.sequence_parallel_degree > 1:
             return dataloader
 
@@ -561,6 +564,19 @@ class AxolotlTrainer(
                 self.accelerator.state.fsdp_plugin.limit_all_gathers = True
 
         return res
+
+    def additional_accelerator_args(
+        self, fp8=None, **kwargs
+    ):  # pylint: disable=unused-argument
+        ret_kwargs = {}
+        if fp8:
+            from accelerate.utils import AORecipeKwargs
+
+            ret_kwargs["mixed_precision"] = "fp8"
+            ret_kwargs["kwargs_handlers"] = [AORecipeKwargs()]
+            os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
+
+        return ret_kwargs
 
     def log(self, logs: dict[str, float], start_time: float | None = None) -> None:
         """

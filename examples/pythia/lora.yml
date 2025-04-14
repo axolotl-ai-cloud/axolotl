@@ -28,13 +28,9 @@ gradient_accumulation_steps: 1
 micro_batch_size: 4
 num_epochs: 4
 learning_rate: 0.00001
-train_on_inputs: false
-group_by_length: false
 bf16: auto
 tf32: true
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 weight_decay: 0.1
 evals_per_epoch: 4
 logging_steps: 1

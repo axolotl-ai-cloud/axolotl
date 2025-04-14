@@ -36,6 +36,7 @@ from transformers import (
     BitsAndBytesConfig,
     Gemma3ForConditionalGeneration,
     GPTQConfig,
+    Llama4ForConditionalGeneration,
     LlavaForConditionalGeneration,
     Mistral3ForConditionalGeneration,
     MllamaForConditionalGeneration,
@@ -76,6 +77,7 @@ LOG = logging.getLogger(__name__)
 
 MULTIMODAL_AUTO_MODEL_MAPPING = {
     "mllama": MllamaForConditionalGeneration,
+    "llama4": Llama4ForConditionalGeneration,
     "llava": LlavaForConditionalGeneration,
     "qwen2_vl": Qwen2VLForConditionalGeneration,
     "qwen2_5_vl": Qwen2_5_VLForConditionalGeneration,
@@ -163,12 +165,6 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
         raise ValueError(
             "model_config.quantization_config is not set or quant_method is not set to gptq. "
             "Please make sure to point to a GPTQ model."
-        )
-
-    if not cfg.gptq and quant_config_exists and not cfg.load_in_4bit:
-        raise ValueError(
-            "model_config.quantization_config is set but `gptq` flag is not. "
-            "Please use the `gptq` flag to train quantized model or point to a non-quantized model."
         )
 
     lora_modules_to_save = get_linear_embedding_layers(model_config.model_type)
@@ -299,6 +295,13 @@ def modify_tokenizer_files(
                         raise ValueError(
                             f"Token ID {token_id} not found in added_tokens"
                         )
+            if "model" in tokenizer_data and "vocab" in tokenizer_data["model"]:
+                for token_id, new_value in token_id_mappings.items():
+                    for entry_val, entry_id in tokenizer_data["model"]["vocab"].items():
+                        if entry_id == token_id:
+                            del tokenizer_data["model"]["vocab"][entry_val]
+                            tokenizer_data["model"]["vocab"][new_value] = token_id
+                            break
 
             # Write the updated tokenizer data back
             with open(tokenizer_path, "w", encoding="utf-8") as f:
@@ -551,8 +554,20 @@ class ModelLoader:
         self.auto_model_loader = AutoModelForCausalLM  # pylint: disable=invalid-name
 
     def apply_patches(self) -> None:
+        if self.cfg.fsdp_config and str(self.cfg.fsdp_config.fsdp_version) == "2":
+            from axolotl.monkeypatch.accelerate.fsdp2 import patch_accelerate_fsdp_utils
+
+            patch_accelerate_fsdp_utils()
         # patch gemma3 conditional generation forward before loading plugins
         # as it could be overridden by plugins
+        if self.cfg.model_config_type == "llama4":
+            if self.cfg.llama4_linearized_experts:
+                from axolotl.monkeypatch.models.llama4.modeling import (
+                    patch_llama4_linearized_modeling,
+                )
+
+                patch_llama4_linearized_modeling()
+
         if self.cfg.model_config_type == "gemma3":
             from axolotl.monkeypatch.gemma3 import (
                 patch_gemma3conditionalgeneration_forward,
@@ -565,6 +580,14 @@ class ModelLoader:
 
         plugin_manager = PluginManager.get_instance()
         plugin_manager.pre_model_load(self.cfg)
+
+        # monkey patch to allow additional Accelerator init kwargs
+        if self.cfg.fp8:
+            from axolotl.monkeypatch.trainer_accelerator_args import (
+                patch_create_accelerate_code_for_fp8,
+            )
+
+            patch_create_accelerate_code_for_fp8()
 
         if self.cfg.adapter:
             from axolotl.monkeypatch.transformers_fa_utils import (
@@ -587,7 +610,7 @@ class ModelLoader:
 
         if (
             self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
-            and self.cfg.flash_attention
+            and (self.cfg.flash_attention or self.cfg.flex_attention)
             and self.cfg.sample_packing
         ):
             if "auto_map" in self.model_config:
@@ -893,7 +916,20 @@ class ModelLoader:
         """
         sample packing uses custom FA2 patch
         """
-        if self.cfg.flash_attention:
+        if self.cfg.flex_attention:
+            self.model_kwargs["attn_implementation"] = "flex_attention"
+            self.model_config._attn_implementation = (  # pylint: disable=protected-access
+                "flex_attention"
+            )
+            from axolotl.monkeypatch.attention.flex_attn import (
+                patch_flex_make_mask,
+                patch_flex_wrapper,
+            )
+
+            patch_flex_wrapper()
+            patch_flex_make_mask()
+
+        elif self.cfg.flash_attention:
             if not self.cfg.sample_packing and self.cfg.s2_attention:
                 pass
             self.model_kwargs["attn_implementation"] = "flash_attention_2"
@@ -984,10 +1020,11 @@ class ModelLoader:
             )
             skip_move_to_device = True
         elif (
-            self.model_config.model_type == "llama"
+            self.model_config.model_type in ["llama", "llama4"]
             and not self.cfg.trust_remote_code
             and not self.cfg.gptq
         ):
+            # TODO do we need to open this up for all models?
             if self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
                 skip_move_to_device = True
                 if "device_map" in self.model_kwargs:
@@ -1290,7 +1327,10 @@ class ModelLoader:
         should_convert = (
             # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
             # convert them back to fp16/bf16 for flash-attn compatibility.
-            ((needs_fa2_dtype or self.cfg.flash_attention) and not qlora_fsdp)
+            (
+                (needs_fa2_dtype or self.cfg.flash_attention or self.cfg.flex_attention)
+                and not qlora_fsdp
+            )
             or self.cfg.cut_cross_entropy  # Cut cross entropy requires embedding layers to be in fp16/bf16 for backward pass
         )
 

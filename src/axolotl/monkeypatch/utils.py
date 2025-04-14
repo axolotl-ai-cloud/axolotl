@@ -96,7 +96,9 @@ def get_cu_seqlens(attn_mask):
     return torch.stack(results).to(dtype=torch.int32), torch.stack(max_seq_lens)
 
 
-def get_cu_seqlens_from_pos_ids(position_ids):
+def get_cu_seqlens_from_pos_ids(
+    position_ids: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """generate a cumulative sequence length mask for flash attention using pos ids"""
     if len(position_ids.shape) == 1:
         position_ids = position_ids.unsqueeze(0)

@@ -5,9 +5,6 @@ model_type: GPTNeoXForCausalLM
 tokenizer_type: AutoTokenizer
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
-
-load_in_8bit: false
-load_in_4bit: false
 gptq: false
 device_map: auto
 datasets:
@@ -22,7 +19,6 @@ max_packed_sequence_len: 2048
 lora_r: 64
 lora_alpha: 32
 lora_dropout: 0.0
-lora_target_modules:
 lora_target_linear: true
 lora_fan_in_fan_out: true  # pythia/GPTNeoX lora specific
 wandb_project:
@@ -37,16 +33,10 @@ num_epochs: 5
 learning_rate: 0.00003
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
-train_on_inputs: false
-group_by_length: false
 bf16: false
 fp16: false
 float16: true
 tf32: true
 flash_optimum: true
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 gradient_checkpointing: true
-fsdp:
-fsdp_config:

@@ -6,23 +6,24 @@ triton>=3.0.0
 mamba-ssm==1.2.0.post1
 xformers>=0.0.23.post1
 autoawq==0.2.7.post3
-liger-kernel==0.5.5
+liger-kernel==0.5.6
 # END section
 
 packaging==23.2
 
-peft==0.15.0
-transformers==4.50.3
+peft==0.15.1
+transformers==4.51.1
 tokenizers>=0.21.1
-accelerate==1.5.2
+accelerate==1.6.0
 datasets==3.5.0
-deepspeed==0.15.4
-trl==0.16.0
+deepspeed>=0.15.4
+trl==0.16.1
+hf_xet==1.0.0
 
 optimum==1.16.2
 hf_transfer
 sentencepiece
-gradio==3.50.2
+gradio==5.23.3
 
 modal==0.70.5
 pydantic==2.10.6
@@ -48,7 +49,8 @@ python-dotenv==1.0.1
 # remote filesystems
 s3fs>=2024.5.0
 gcsfs>=2024.5.0
-# adlfs
+adlfs>=2024.5.0
+ocifs==1.3.2
 
 zstandard==0.22.0
 fastcore
@@ -59,8 +61,8 @@ langdetect==1.0.9
 immutabledict==4.2.0
 antlr4-python3-runtime==4.13.2
 
-torchao==0.7.0
-schedulefree==1.3.0
+torchao==0.9.0
+schedulefree==1.4.1
 
 axolotl-contribs-lgpl==0.0.6
 axolotl-contribs-mit==0.0.3

@@ -14,7 +14,8 @@ requires-python = ">=3.10"
 axolotl = "axolotl.cli.main:main"
 
 [project.urls]
-Homepage = "https://axolotl-ai-cloud.github.io/axolotl/"
+Homepage = "https://axolotl.ai/"
+Documentation = "https://docs.axolotl.ai/"
 Repository = "https://github.com/axolotl-ai-cloud/axolotl.git"
 
 [tool.setuptools_scm]

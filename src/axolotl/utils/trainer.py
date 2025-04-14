@@ -538,6 +538,8 @@ def setup_deepspeed_env(cfg, stage=None):
 
 def setup_fsdp_envs(cfg):
     os.environ["ACCELERATE_USE_FSDP"] = "true"
+    if str(cfg.fsdp_config.fsdp_version) == "2":
+        os.environ["FSDP_VERSION"] = "2"
     if cfg.fsdp_config.fsdp_activation_checkpointing:
         os.environ["FSDP_ACTIVATION_CHECKPOINTING"] = "true"
     if cfg.fsdp_config.fsdp_offload_params:
@@ -555,6 +557,10 @@ def setup_fsdp_envs(cfg):
     if cfg.fsdp_config.fsdp_transformer_layer_cls_to_wrap:
         os.environ["FSDP_TRANSFORMER_CLS_TO_WRAP"] = (
             cfg.fsdp_config.fsdp_transformer_layer_cls_to_wrap
+        )
+    if cfg.fsdp_config.fsdp_reshard_after_forward is not None:
+        os.environ["FSDP_RESHARD_AFTER_FORWARD"] = (
+            "true" if cfg.fsdp_config.fsdp_reshard_after_forward else "false"
         )
 
 
@@ -576,7 +582,9 @@ def prepare_optim_env(cfg):
 
     setup_torch_compile_env(cfg)
 
-    if (cfg.bf16 == "auto" and is_torch_bf16_gpu_available()) or cfg.bf16 is True:
+    if cfg.fp8:
+        os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
+    elif (cfg.bf16 == "auto" and is_torch_bf16_gpu_available()) or cfg.bf16 is True:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "bf16"
     elif cfg.fp16:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "fp16"

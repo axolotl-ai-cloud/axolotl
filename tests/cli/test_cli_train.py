@@ -29,19 +29,21 @@ class TestTrainCommand(BaseCliTest):
 
         with patch("axolotl.cli.train.train") as mock_train:
             mock_train.return_value = (MagicMock(), MagicMock(), MagicMock())
+            with patch("axolotl.cli.train.load_datasets") as mock_load_datasets:
+                mock_load_datasets.return_value = MagicMock()
 
-            result = cli_runner.invoke(
-                cli,
-                [
-                    "train",
-                    str(config_path),
-                    "--no-accelerate",
-                ],
-                catch_exceptions=False,
-            )
+                result = cli_runner.invoke(
+                    cli,
+                    [
+                        "train",
+                        str(config_path),
+                        "--no-accelerate",
+                    ],
+                    catch_exceptions=False,
+                )
 
-            assert result.exit_code == 0
-            mock_train.assert_called_once()
+                assert result.exit_code == 0
+                mock_train.assert_called_once()
 
     def test_train_cli_overrides(self, cli_runner, tmp_path, valid_test_config):
         """Test CLI arguments properly override config values"""
@@ -49,23 +51,25 @@ class TestTrainCommand(BaseCliTest):
 
         with patch("axolotl.cli.train.train") as mock_train:
             mock_train.return_value = (MagicMock(), MagicMock(), MagicMock())
+            with patch("axolotl.cli.train.load_datasets") as mock_load_datasets:
+                mock_load_datasets.return_value = MagicMock()
 
-            result = cli_runner.invoke(
-                cli,
-                [
-                    "train",
-                    str(config_path),
-                    "--learning-rate",
-                    "1e-4",
-                    "--micro-batch-size",
-                    "2",
-                    "--no-accelerate",
-                ],
-                catch_exceptions=False,
-            )
+                result = cli_runner.invoke(
+                    cli,
+                    [
+                        "train",
+                        str(config_path),
+                        "--learning-rate",
+                        "1e-4",
+                        "--micro-batch-size",
+                        "2",
+                        "--no-accelerate",
+                    ],
+                    catch_exceptions=False,
+                )
 
-            assert result.exit_code == 0
-            mock_train.assert_called_once()
-            cfg = mock_train.call_args[1]["cfg"]
-            assert cfg["learning_rate"] == 1e-4
-            assert cfg["micro_batch_size"] == 2
+                assert result.exit_code == 0
+                mock_train.assert_called_once()
+                cfg = mock_train.call_args[1]["cfg"]
+                assert cfg["learning_rate"] == 1e-4
+                assert cfg["micro_batch_size"] == 2

@@ -39,7 +39,7 @@ class TestMistral(unittest.TestCase):
                 "lora_alpha": 64,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {
                     "unk_token": "<unk>",
                     "bos_token": "<s>",
@@ -80,7 +80,7 @@ class TestMistral(unittest.TestCase):
                 "base_model": "openaccess-ai-collective/tiny-mistral",
                 "flash_attention": True,
                 "sequence_len": 1024,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {
                     "unk_token": "<unk>",
                     "bos_token": "<s>",

@@ -27,6 +27,7 @@ from axolotl.integrations.base import BasePlugin
 
 from ...utils.distributed import zero_only
 from .args import LigerArgs  # pylint: disable=unused-import. # noqa: F401
+from .utils import patch_with_compile_disable
 
 LOG = logging.getLogger("axolotl.integrations.liger")
 
@@ -40,6 +41,18 @@ class LigerPlugin(BasePlugin):
         return "axolotl.integrations.liger.LigerArgs"
 
     def pre_model_load(self, cfg):
+        if cfg.torch_compile:
+            # torch compile will unnecessarily attempt to optimize the triton kernel unless explicitly disabled
+            import liger_kernel.ops.fused_linear_cross_entropy
+
+            patch_with_compile_disable(
+                liger_kernel.ops.fused_linear_cross_entropy,
+                "fused_linear_cross_entropy_forward",
+            )
+            patch_with_compile_disable(
+                liger_kernel.ops.fused_linear_cross_entropy,
+                "fused_linear_cross_entropy_backward",
+            )
         from liger_kernel.transformers.cross_entropy import LigerCrossEntropyLoss
         from liger_kernel.transformers.functional import liger_cross_entropy
         from liger_kernel.transformers.geglu import LigerGEGLUMLP
@@ -160,5 +173,19 @@ class LigerPlugin(BasePlugin):
                 raise NotImplementedError(
                     "Fused linear cross entropy is not yet supported for Gemma3."
                 )
-        elif cfg.model_config_type in ["deepseek_v3"]:
-            raise ValueError(f"Unsupported model config type: {cfg.model_config_type}")
+        elif cfg.model_config_type == "llama4":
+            from axolotl.integrations.liger.models.llama4 import (
+                apply_liger_kernel_to_llama4,
+            )
+
+            apply_liger_kernel_to_llama4(
+                cross_entropy=cfg.liger_cross_entropy,
+                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
+                glu_activation=cfg.liger_glu_activation,
+                rms_norm=cfg.liger_rms_norm,
+                layer_norm=cfg.liger_layer_norm,
+            )
+        else:
+            logging.warning(
+                f"Unsupported model config type: {cfg.model_config_type}. Liger not applied."
+            )

@@ -169,6 +169,7 @@ class AxolotlInputConfig(
 
     bf16: Literal["auto"] | bool | None = "auto"
     fp16: bool | None = None
+    fp8: bool | None = None
     bfloat16: bool | None = None  # for non-AMP cases
     float16: bool | None = None  # for non-AMP cases
     tf32: bool | None = None
@@ -223,6 +224,7 @@ class AxolotlInputConfig(
     xformers_attention: bool | None = None
     sdp_attention: bool | None = None
     s2_attention: bool | None = None
+    flex_attention: bool | None = None
     flash_attention: bool | None = None
     flash_attn_cross_entropy: bool | None = None
     flash_attn_rms_norm: bool | None = None
@@ -242,6 +244,8 @@ class AxolotlInputConfig(
     lora_mlp_kernel: bool | None = None
     lora_qkv_kernel: bool | None = None
     lora_o_kernel: bool | None = None
+
+    llama4_linearized_experts: bool | None = None
 
     deepspeed: str | dict[str, Any] | None = None
     fsdp: list[str] | None = None
@@ -357,6 +361,22 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
+    def check_attention_fields(cls, data):
+        fields = (
+            "xformers_attention",
+            "sdp_attention",
+            "s2_attention",
+            "flash_attention",
+            "flex_attention",
+        )
+        non_empty_count = sum(1 for field in fields if data.get(field))
+
+        if non_empty_count > 1:
+            raise ValueError(f"Only one of {', '.join(fields)} must be set")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_batch_size_fields(cls, data):
         fields = ("micro_batch_size", "gradient_accumulation_steps", "batch_size")
         non_empty_count = sum(1 for field in fields if data.get(field))
@@ -447,9 +467,10 @@ class AxolotlInputConfig(
             data.get("sample_packing")
             and not data.get("flash_attention")
             and not data.get("sdp_attention")
+            and not data.get("flex_attention")
         ):
             LOG.warning(
-                "sample_packing without flash_attention or sdp_attention does not handle cross-attention."
+                "sample_packing without flash, sdp or flex attention does not handle cross sample decontamination."
             )
 
         return data
@@ -933,10 +954,23 @@ class AxolotlInputConfig(
             and "8bit" in data.get("optimizer", "")
             and data.get("fsdp_config")
             and data["fsdp_config"].get("fsdp_offload_params")
+            and str(data["fsdp_config"].get("fsdp_version")) != "2"
         ):
             raise ValueError(
                 f"FSDP Offload not compatible with {data.get('optimizer')}"
             )
+        if (
+            data.get("fsdp")
+            and "8bit" in data.get("optimizer", "")
+            and data.get("fsdp_config")
+            and str(data["fsdp_config"].get("fsdp_version")) == "2"
+        ):
+            if data.get("optimizer", "") in ["adamw_8bit", "adamw_bnb_8bit"]:
+                # CUDA ops errors with bnb 8bit optimizer + FSDP2
+                raise ValueError(
+                    f"FSDP2 not compatible with {data.get('optimizer')}, use `adamw_torch_8bit` instead"
+                )
+
         return data
 
     @model_validator(mode="before")
@@ -1124,6 +1158,12 @@ class AxolotlInputConfig(
                     "flash_attention: true must be set with sequence_parallel_degree > 1"
                 )
 
+            if not info.data["micro_batch_size"] == 1:
+                raise ValueError(
+                    "micro_batch_size must be set to 1 "
+                    "due to a `ring-flash-attn` requirement"
+                )
+
             try:
                 import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
             except ImportError as exception:
@@ -1132,6 +1172,18 @@ class AxolotlInputConfig(
                     "Please install it with `pip install axolotl[ring-flash-attn] "
                     "or `pip install ring-flash-attn>=0.1.4`."
                 ) from exception
+
+            # TODO: monkeypatch / callback to average losses correctly across SP ranks
+            # / fix gradient scaling across SP ranks. Losses, grads should be scaled
+            # according to the proportion of non-padding tokens per rank.
+            LOG.warning(
+                "Sequence parallelism (SP) is enabled with "
+                f"sequence_parallel_degree={value}. Please note that logged losses may "
+                "differ slightly to the non-SP losses due to transformers Trainer "
+                "implementation details. Please see "
+                "https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
+                "for more details."
+            )
 
         return value
 
@@ -1224,16 +1276,11 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         ):
             capabilities = data.get("capabilities")
             is_fsdp = data.get("fsdp") is not None
-            is_deepspeed = data.get("deepspeed") is not None
 
             if capabilities and capabilities.get("n_gpu", 0) > 1:
                 if is_fsdp:
                     raise ValueError(
                         "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with FSDP."
-                    )
-                if is_deepspeed:
-                    raise ValueError(
-                        "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with DeepSpeed."
                     )
         return data
 
@@ -1252,6 +1299,24 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             if version.parse(torch_version) < version.parse("2.5.1"):
                 raise ValueError(
                     "ADOPT optimizer is incompatible with torch version < 2.5.1"
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_flex_torch_version(cls, data):
+        if (data.get("flex_attention") is not None) and (data.get("flex_attention")):
+            env_capabilities = data.get("env_capabilities", {})
+            torch_version = env_capabilities.get("torch_version")
+
+            if torch_version is None:
+                import torch
+
+                torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+
+            if version.parse(torch_version) < version.parse("2.6.0"):
+                raise ValueError(
+                    "Flex attention is not supported on torch version < 2.6.0"
                 )
         return data
 

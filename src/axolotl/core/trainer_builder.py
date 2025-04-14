@@ -891,7 +891,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             if "max_length" in kwargs:
                 kwargs.pop("max_length")
         elif use_batch_sampler_collator:
-            if self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES or (
+            if self.cfg.flex_attention:
+                collator = V2BatchSamplerDataCollatorForSeq2Seq
+            elif self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
+                collator = V2BatchSamplerDataCollatorForSeq2Seq
+            elif (
                 self.cfg.model_config_type in ["llama"]
                 and self.cfg.flash_attention is not True
             ):

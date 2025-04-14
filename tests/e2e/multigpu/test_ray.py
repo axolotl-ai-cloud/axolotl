@@ -31,7 +31,7 @@ class TestMultiGPURay:
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
-                "sequence_len": 2048,
+                "sequence_len": 1024,
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
@@ -45,6 +45,7 @@ class TestMultiGPURay:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -94,8 +95,8 @@ class TestMultiGPURay:
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
-                "sequence_len": 2048,
-                "val_set_size": 0.05,
+                "sequence_len": 1024,
+                "val_set_size": 0.01,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -103,6 +104,7 @@ class TestMultiGPURay:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
