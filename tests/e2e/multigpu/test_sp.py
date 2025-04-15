@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 
+import pytest
 import yaml
 from accelerate.test_utils import execute_subprocess_async
 from transformers.testing_utils import get_torch_dist_unique_port
@@ -93,24 +94,26 @@ class TestSequenceParallelism:
             temp_dir + "/runs", "train/train_loss", 2.6, "Train Loss is too high"
         )
 
-    def test_sequence_parallel_training_varlen(self, temp_dir):
-        """Test sequence parallel training with variable length (sample packing enabled)"""
+    @pytest.mark.parametrize(
+        "sample_packing, micro_batch_size, pad_to_sequence_len",
+        [
+            (True, 1, True),
+            (False, 2, True),
+            # (False, 2, False),  # not yet working
+        ],
+        ids=[
+            "sample_packing",
+            "no sample_packing, no pad_to_sequence_len",
+            # "no sample_packing, pad_to_sequence_len",  # not yet working
+        ],
+    )
+    def test_sequence_parallel_training(
+        self, temp_dir, sample_packing, micro_batch_size, pad_to_sequence_len
+    ):
+        """Test sequence parallel training with different configurations"""
         self._run_sequence_parallel_test(
-            temp_dir, sample_packing=True, micro_batch_size=1, pad_to_sequence_len=True
+            temp_dir,
+            sample_packing=sample_packing,
+            micro_batch_size=micro_batch_size,
+            pad_to_sequence_len=pad_to_sequence_len,
         )
-
-    def test_sequence_parallel_training_batch(self, temp_dir):
-        """Test sequence parallel training with fixed batch size (sample packing disabled)"""
-        self._run_sequence_parallel_test(
-            temp_dir, sample_packing=False, micro_batch_size=2, pad_to_sequence_len=True
-        )
-
-    # TODO(djsaunde): Get this to work. Currently, gradients go to inf / nan in this setting.
-    # def test_sequence_parallel_training_batch_no_pad2seqlen(self, temp_dir):
-    #     """Test sequence parallel training with fixed batch size (sample packing disabled)"""
-    #     self._run_sequence_parallel_test(
-    #         temp_dir,
-    #         sample_packing=False,
-    #         micro_batch_size=2,
-    #         pad_to_sequence_len=False,
-    #     )

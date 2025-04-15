@@ -58,7 +58,7 @@ def register_ring_attn(
     sequence_parallel_degree: int,
     heads_k_stride: int | None,
     sample_packing: bool,
-    ring_attn_func: str | None,
+    ring_attn_func: RingAttnFunc | None,
 ):
     """
     Create ring attention group and substitute flash attn with ring flash attn.
