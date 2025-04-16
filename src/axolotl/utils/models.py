@@ -542,6 +542,17 @@ class ModelLoader:
             from axolotl.monkeypatch.accelerate.fsdp2 import patch_accelerate_fsdp_utils
 
             patch_accelerate_fsdp_utils()
+
+        if self.cfg.flex_attention:
+            from axolotl.monkeypatch.attention.flex_attn import (
+                patch_flex_make_mask,
+                patch_flex_wrapper,
+            )
+
+            flex_attn_compile_kwargs = self.cfg.flex_attn_compile_kwargs or {}
+            patch_flex_wrapper(**flex_attn_compile_kwargs)
+            patch_flex_make_mask()
+
         # patch gemma3 conditional generation forward before loading plugins
         # as it could be overridden by plugins
         if self.cfg.model_config_type == "llama4":
@@ -905,13 +916,6 @@ class ModelLoader:
             self.model_config._attn_implementation = (  # pylint: disable=protected-access
                 "flex_attention"
             )
-            from axolotl.monkeypatch.attention.flex_attn import (
-                patch_flex_make_mask,
-                patch_flex_wrapper,
-            )
-
-            patch_flex_wrapper()
-            patch_flex_make_mask()
 
         elif self.cfg.flash_attention:
             if not self.cfg.sample_packing and self.cfg.s2_attention:

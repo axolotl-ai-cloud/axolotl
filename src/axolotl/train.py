@@ -81,6 +81,11 @@ def setup_model_and_tokenizer(
     # Apply freezing if specified
     if cfg.unfrozen_parameters:
         freeze_layers_except(model, cfg.unfrozen_parameters)
+        if any(
+            any(embed in param for embed in ["lm_head", "embed_tokens"])
+            for param in cfg.unfrozen_parameters
+        ):
+            model.enable_input_require_grads()
 
     return model, tokenizer, peft_config, processor
 

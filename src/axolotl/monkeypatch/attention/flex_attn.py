@@ -7,12 +7,11 @@ import torch
 import transformers
 
 
-def patch_flex_wrapper():
+def patch_flex_wrapper(**flex_attn_compile_kwargs):
     # TODO remove this patch when transformers#37285 is merged and in a release
     is_torch_2_6 = torch.__version__.startswith("2.6")
-    is_transformers_below_4_51 = transformers.__version__ < "4.51.0"
 
-    if not (is_torch_2_6 and is_transformers_below_4_51):
+    if not is_torch_2_6:
         return
 
     from torch.nn.attention.flex_attention import flex_attention
@@ -32,17 +31,24 @@ def patch_flex_wrapper():
                 cls._instance = super().__new__(cls)
             return cls._instance
 
+        @classmethod
+        def del_singleton(cls):
+            cls._instance = None
+
         @torch.compiler.disable(recursive=False)
-        def __init__(self):
+        def __init__(self, training):
             """
             Initialize or update the singleton instance.
             """
-            if not self._is_flex_compiled:
+            self.training = None
+            if not self._is_flex_compiled or training != self.training:
+                # In PyTorch 2.6.0, there's a known issue with flex attention compilation which may
+                # cause errors. The suggested fix is to compile with "max-autotune-no-cudagraphs"
+                # see https://github.com/pytorch/pytorch/issues/146260 for training
+                self.training = training
                 self._compiled_flex_attention = torch.compile(
                     flex_attention,
-                    dynamic=False,
-                    mode="max-autotune-no-cudagraphs",
-                    fullgraph=True,
+                    **flex_attn_compile_kwargs,
                 )
                 self._is_flex_compiled = True
 
@@ -50,15 +56,22 @@ def patch_flex_wrapper():
             return self._compiled_flex_attention
 
     transformers.integrations.flex_attention.WrappedFlexAttention = WrappedFlexAttention
+    setattr(
+        sys.modules["transformers.integrations.flex_attention"],
+        "WrappedFlexAttention",
+        WrappedFlexAttention,
+    )
 
 
 def patch_flex_make_mask():
     is_torch_2_6 = torch.__version__.startswith("2.6")
-    is_transformers_eq_4_51 = transformers.__version__ == "4.51.0"
 
-    if not (is_torch_2_6 and is_transformers_eq_4_51):
+    if not is_torch_2_6:
         return
 
+    from torch.nn.attention.flex_attention import (
+        _DEFAULT_SPARSE_BLOCK_SIZE as flex_default_block_size,
+    )
     from torch.nn.attention.flex_attention import (
         BlockMask,
     )
@@ -104,14 +117,16 @@ def patch_flex_make_mask():
         if not query_length:
             query_length = total_seq_len
         attention_mask_2d = torch.nn.functional.pad(
-            attention_mask_2d, value=0, pad=(0, key_length)
+            attention_mask_2d,
+            value=0,
+            pad=(0, abs(total_seq_len - max(key_length, flex_default_block_size))),
         )
         device = attention_mask_2d.device
         document_ids = attention_mask_2d.clone()
 
         if attention_chunk_size is not None:
             # we create an arange, then we just // by chunk size to get [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3]
-            document_ids = (document_ids.fill_(1).cumsum(-1) - 1) // (
+            chunk_idxs = (document_ids.clone().fill_(1).cumsum(-1) - 1) // (
                 attention_chunk_size
             )
 
@@ -138,6 +153,18 @@ def patch_flex_make_mask():
             final_mask = causal_mask & padding_mask & document_mask
             return final_mask
 
+        def chunk_causal_mask_mod(batch_idx, head_idx, q_idx, kv_idx):
+            """
+            Combines the chunk mask with the causal mask for chunked attention.
+            """
+            chunk_mask = chunk_idxs[batch_idx, q_idx] == chunk_idxs[batch_idx, kv_idx]
+            causal_doc_mask = causal_mask_mod(batch_idx, head_idx, q_idx, kv_idx)
+            return chunk_mask & causal_doc_mask
+
+        mask_mod_maybe_combined = (
+            causal_mask_mod if attention_chunk_size is None else chunk_causal_mask_mod
+        )
+
         if offsets is not None:
             q_offset = offsets[0]
             kv_offset = offsets[1]
@@ -145,10 +172,10 @@ def patch_flex_make_mask():
             def mask_mod(batch_idx, head_idx, q_idx, kv_idx):
                 offset_q = q_idx + q_offset
                 offset_kv = kv_idx + kv_offset
-                return causal_mask_mod(batch_idx, head_idx, offset_q, offset_kv)
+                return mask_mod_maybe_combined(batch_idx, head_idx, offset_q, offset_kv)
 
         else:
-            mask_mod = causal_mask_mod
+            mask_mod = mask_mod_maybe_combined
         return create_block_causal_mask_flex(
             mask_mod=mask_mod,
             B=batch_size,
@@ -160,10 +187,15 @@ def patch_flex_make_mask():
         )
 
     for n in tuple(sys.modules):
-        if ".modeling_" in n and "llama4" not in n:
+        if ".modeling_" in n:
             if hasattr(sys.modules[n], "make_flex_block_causal_mask"):
                 sys.modules[n].make_flex_block_causal_mask = (
                     patched_make_flex_block_causal_mask
+                )
+                setattr(
+                    sys.modules[n],
+                    "make_flex_block_causal_mask",
+                    patched_make_flex_block_causal_mask,
                 )
 
     transformers.integrations.flex_attention.make_flex_block_causal_mask = (

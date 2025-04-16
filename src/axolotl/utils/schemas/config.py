@@ -225,6 +225,7 @@ class AxolotlInputConfig(
     sdp_attention: bool | None = None
     s2_attention: bool | None = None
     flex_attention: bool | None = None
+    flex_attn_compile_kwargs: dict[str, Any] | None = None
     flash_attention: bool | None = None
     flash_attn_cross_entropy: bool | None = None
     flash_attn_rms_norm: bool | None = None
@@ -1276,11 +1277,14 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         ):
             capabilities = data.get("capabilities")
             is_fsdp = data.get("fsdp") is not None
-
-            if capabilities and capabilities.get("n_gpu", 0) > 1:
+            is_fsdp2 = (
+                data.get("fsdp_config") is not None
+                and str(data.get("fsdp_config").get("fsdp_version")) == "2"
+            )
+            if capabilities and capabilities.get("n_gpu", 0) > 1 and not is_fsdp2:
                 if is_fsdp:
                     raise ValueError(
-                        "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with FSDP."
+                        "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with FSDP1."
                     )
         return data
 

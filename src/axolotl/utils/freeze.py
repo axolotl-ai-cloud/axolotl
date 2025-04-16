@@ -2,13 +2,14 @@
 module to freeze/unfreeze parameters by name
 """
 
-import logging
 import re
 from typing import Callable, List, Tuple, Union
 
+from accelerate.logging import get_logger
+
 from axolotl.utils.distributed import is_main_process
 
-LOG = logging.getLogger("axolotl.utils.freeze")
+LOG = get_logger(__name__)
 
 
 def freeze_layers_except(model, regex_patterns):
@@ -184,7 +185,7 @@ class LayerNamePattern:
         """
         self.raw_pattern = pattern
         name_pattern, self.range = self._parse_pattern(pattern)
-        self.name_regex = re.compile(name_pattern.replace(".", "\\."))
+        self.name_regex = re.compile(re.sub(r"\.(?!\+)", "\\.", name_pattern))
 
     def match(self, name: str) -> bool:
         """

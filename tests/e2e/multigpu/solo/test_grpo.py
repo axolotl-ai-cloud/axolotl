@@ -177,6 +177,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             "NCCL_P2P_LEVEL": "LOC",
             **current_env,
             "CUDA_VISIBLE_DEVICES": "1",
+            "VLLM_USE_V1": "0",
         }
         vllm_process_id = start_vllm(
             cfg.base_model,
@@ -264,6 +265,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             "NCCL_P2P_LEVEL": "LOC",  # nccl can be brittle, assume P2P isn't reliable
             **current_env,
             "CUDA_VISIBLE_DEVICES": "1",
+            "VLLM_USE_V1": "0",
         }
         vllm_process_id = start_vllm(
             cfg.base_model,

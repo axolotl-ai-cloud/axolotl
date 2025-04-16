@@ -165,7 +165,7 @@ def cce_forward(
 )
 def cce_forward_multimodal(
     self,
-    input_ids: torch.LongTensor | None = None,
+    input_ids: torch.LongTensor | None = None,  # type: ignore
     pixel_values: torch.FloatTensor | None = None,
     attention_mask: Optional[torch.Tensor] = None,
     position_ids: Optional[torch.LongTensor] = None,
@@ -254,7 +254,7 @@ def cce_forward_multimodal(
         )
 
     if inputs_embeds is None:
-        inputs_embeds = self.get_input_embeddings()(input_ids)
+        inputs_embeds = self.get_input_embeddings()(input_ids)  # type: ignore
 
     if pixel_values is not None:
         image_features = self.get_image_features(
@@ -263,13 +263,13 @@ def cce_forward_multimodal(
             vision_feature_select_strategy=vision_feature_select_strategy,
             image_sizes=image_sizes,
         )
-        original_inputs_embeds_shape = inputs_embeds.shape
+        original_inputs_embeds_shape = inputs_embeds.shape  # type: ignore
 
         vision_flat = image_features.view(-1, image_features.size(-1))
         projected_vision_flat = self.multi_modal_projector(vision_flat)
 
         special_image_mask = (input_ids == self.config.image_token_index).unsqueeze(-1)
-        final_mask = special_image_mask.to(inputs_embeds.device)
+        final_mask = special_image_mask.to(inputs_embeds.device)  # type: ignore
         inputs_embeds = inputs_embeds.view(-1, inputs_embeds.size(-1))  # type: ignore
 
         final_mask_1d = final_mask[..., 0].reshape(-1)

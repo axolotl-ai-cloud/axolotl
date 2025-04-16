@@ -40,6 +40,7 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
         LOG.warning("Error raised: %s", e)
 
     model.generation_config.do_sample = True
+    model.config.use_cache = True
 
     if cfg.local_rank == 0:
         LOG.info(f"Saving merged model to: {str(Path(cfg.output_dir) / 'merged')}...")
