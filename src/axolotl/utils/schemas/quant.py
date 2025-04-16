@@ -26,6 +26,8 @@ class HQQConfig(BaseModel):
                 "If using HQQ, must set both `hqq_nbits` and `hqq_group_size`"
             )
 
+        return data
+
 
 def get_hqq_quant_config_kwargs(cfg):
 
