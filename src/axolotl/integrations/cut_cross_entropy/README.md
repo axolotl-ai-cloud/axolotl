@@ -12,11 +12,13 @@ See https://github.com/apple/ml-cross-entropy
 
 Run the following command to install `cut_cross_entropy[transformers]` if you don't have it already.
 
+- If you are in dev environment
 ```bash
-# if you are in dev environment
 python scripts/cutcrossentropy_install.py | sh
+```
 
-# if you are not in dev environment
+- If you are installing from pip
+```bash
 pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/apple/ml-cross-entropy.git@bad6f7b49c75fdec69471abb71b4cddd0f0c6438"
 ```
 
