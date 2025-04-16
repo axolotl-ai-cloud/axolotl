@@ -4,7 +4,7 @@ includes logic for handling sequence parallelism collation.
 """
 
 from dataclasses import dataclass
-from typing import Any, Optional, Union
+from typing import Any
 
 import numpy as np
 import torch
@@ -13,6 +13,7 @@ from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
 
 from axolotl.monkeypatch.attention.ring_attn import update_ring_attn_params
+from axolotl.monkeypatch.attention.ring_attn.patch import RingAttnFunc
 
 
 @dataclass
@@ -53,14 +54,15 @@ class DataCollatorForSeq2Seq:
     """
 
     tokenizer: PreTrainedTokenizerBase
-    model: Optional[Any] = None
-    padding: Union[bool, str, PaddingStrategy] = True
-    max_length: Optional[int] = None
-    pad_to_multiple_of: Optional[int] = None
+    model: Any | None = None
+    padding: bool | str | PaddingStrategy = True
+    max_length: int | None = None
+    pad_to_multiple_of: int | None = None
     label_pad_token_id: int = -100
     position_pad_token_id: int = 0
     return_tensors: str = "pt"
     sequence_parallel_degree: int = 1
+    ring_attn_func: RingAttnFunc | None = None
 
     def __post_init__(self):
         if self.sequence_parallel_degree > 1:
@@ -157,19 +159,41 @@ class DataCollatorForSeq2Seq:
             Sliced batch dictionary.
         """
         # Get local (start, end) for sequence parallelism slicing
-        total_seq_len = batch["input_ids"].shape[1]
-        slice_size = total_seq_len // self.local_world_size
-        start = self.local_rank * slice_size
-        end = start + slice_size
+        total_seq_len = batch["input_ids"].size(1)
 
-        # Update params for ring attention calculation
-        update_ring_attn_params(batch=batch)
+        # Update params for varlen ring attention calculation
+        if batch.get("position_ids") is not None:
+            update_ring_attn_params(position_ids=batch["position_ids"])
 
         # Slice batch for sequence parallel processing
-        keys_to_slice = ["input_ids", "attention_mask", "labels", "position_ids"]
-        for key in keys_to_slice:
-            if key in batch:
-                batch[key] = batch[key][:, start:end]
+        for key in batch:
+            if batch[key].size(1) == total_seq_len:
+                if self.ring_attn_func in [
+                    RingAttnFunc.VARLEN_LLAMA3,
+                    RingAttnFunc.BATCH_RING,
+                ]:
+                    batch[key] = (
+                        batch[key]
+                        .chunk(self.local_world_size, dim=1)[self.local_rank]
+                        .contiguous()
+                    )
+                elif self.ring_attn_func is RingAttnFunc.BATCH_ZIGZAG:
+                    chunks = batch[key].chunk(2 * self.local_world_size, dim=1)
+
+                    # Take rank's chunk and opposing chunk for zigzag pattern
+                    selected_chunks = [
+                        chunks[self.local_rank],
+                        chunks[2 * self.local_world_size - self.local_rank - 1],
+                    ]
+                    batch[key] = torch.cat(selected_chunks, dim=1).contiguous()
+                elif self.ring_attn_func is RingAttnFunc.BATCH_STRIPE:
+                    # TODO(djsaunde): This doesn't seem to work as expected
+                    # Split into striped data and stack
+                    tensor = torch.stack(
+                        batch[key].split(self.local_world_size, dim=1),
+                        dim=1,
+                    ).transpose(1, 2)
+                    batch[key] = tensor[:, self.local_rank].contiguous()
 
         return batch
 

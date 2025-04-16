@@ -259,6 +259,7 @@ class AxolotlInputConfig(
 
     sequence_parallel_degree: int | None = None
     heads_k_stride: int | None = None
+    ring_attn_func: str | None = None
 
     special_tokens: SpecialTokensConfig | None = None
     tokens: list[str] | None = None
@@ -1147,7 +1148,7 @@ class AxolotlInputConfig(
 
         return data
 
-    @field_validator("sequence_parallel_degree", mode="before")
+    @field_validator("sequence_parallel_degree", mode="after")
     @classmethod
     def check_sequence_parallel_degree(cls, value, info):
         if not value:
@@ -1159,9 +1160,12 @@ class AxolotlInputConfig(
                     "flash_attention: true must be set with sequence_parallel_degree > 1"
                 )
 
-            if not info.data["micro_batch_size"] == 1:
+            if (
+                info.data.get("sample_packing")
+                and not info.data["micro_batch_size"] == 1
+            ):
                 raise ValueError(
-                    "micro_batch_size must be set to 1 "
+                    "micro_batch_size must be set to 1 when sample_packing is enabled"
                     "due to a `ring-flash-attn` requirement"
                 )
 
@@ -1184,6 +1188,34 @@ class AxolotlInputConfig(
                 "implementation details. Please see "
                 "https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
                 "for more details."
+            )
+
+        return value
+
+    @field_validator("ring_attn_func", mode="after")
+    @classmethod
+    def check_ring_attn_func(cls, value, info):
+        if not info.data.get("sequence_parallel_degree", 1) > 1:
+            return value
+
+        from axolotl.monkeypatch.attention.ring_attn.patch import RingAttnFunc
+
+        if value is not None:
+            # Set the ring attention function if passed in config
+            valid_funcs = list(RingAttnFunc)
+            if value in valid_funcs:
+                value = RingAttnFunc(value)
+            else:
+                raise ValueError(
+                    f"ring_attn_func: {value} must be one of {valid_funcs}"
+                )
+        else:
+            # Default ring attention function selection
+            sample_packing = info.data.get("sample_packing")
+            value = (
+                RingAttnFunc.VARLEN_LLAMA3
+                if sample_packing
+                else RingAttnFunc.BATCH_RING
             )
 
         return value

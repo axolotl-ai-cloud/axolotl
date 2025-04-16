@@ -776,6 +776,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["sequence_parallel_degree"] = (
             self.cfg.sequence_parallel_degree
         )
+        training_arguments_kwargs["ring_attn_func"] = self.cfg.ring_attn_func
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
@@ -933,6 +934,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         kwargs["return_tensors"] = "pt"
         if issubclass(collator, DataCollatorForSeq2Seq):
             kwargs["sequence_parallel_degree"] = training_args.sequence_parallel_degree
+            kwargs["ring_attn_func"] = training_args.ring_attn_func
 
         return collator(
             *collator_args,

@@ -655,6 +655,7 @@ class ModelLoader:
             register_ring_attn(
                 sequence_parallel_degree=self.cfg.sequence_parallel_degree,
                 heads_k_stride=self.cfg.heads_k_stride,
+                ring_attn_func=self.cfg.ring_attn_func,
             )
 
     def patch_attention(self) -> None:
@@ -1119,7 +1120,7 @@ class ModelLoader:
 
         return skip_move_to_device
 
-    def ajust_model_config(self) -> None:
+    def adjust_model_config(self) -> None:
         if (
             hasattr(self.model, "config")
             and hasattr(self.model.config, "max_position_embeddings")
@@ -1279,7 +1280,7 @@ class ModelLoader:
         else:
             self.model.tie_weights()
 
-        self.ajust_model_config()
+        self.adjust_model_config()
 
         # log device memory usage
         if hasattr(self.model, "device") and self.model.device.type in (
