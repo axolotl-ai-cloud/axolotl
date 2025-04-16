@@ -44,6 +44,7 @@ from axolotl.utils.schemas.model import (
 )
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
+from axolotl.utils.schemas.quant import HQQConfig
 from axolotl.utils.schemas.training import HyperparametersConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.vllm import VllmConfig
@@ -59,6 +60,7 @@ class AxolotlInputConfig(
     ModelOutputConfig,
     LoraConfig,
     ReLoRAConfig,
+    HQQConfig,
     HyperparametersConfig,
     WandbConfig,
     MLFlowConfig,
@@ -375,6 +377,18 @@ class AxolotlInputConfig(
 
         if non_empty_count > 1:
             raise ValueError(f"Only one of {', '.join(fields)} must be set")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_hqq_config_redundancy(cls, data):
+        if (data.get("load_in_4bit") or data.get("load_in_8bit")) and data.get(
+            "hqq_nbits"
+        ):
+
+            raise ValueError(
+                "Can't simultaneously set `hqq` configurations and `load_in_4bit` / `load_in_8bit`"
+            )
         return data
 
     @model_validator(mode="before")
