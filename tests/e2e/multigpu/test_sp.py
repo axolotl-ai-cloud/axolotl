@@ -24,6 +24,7 @@ class TestSequenceParallelism:
         sample_packing=True,
         micro_batch_size=1,
         pad_to_sequence_len=True,
+        ring_attn_func=None,
     ):
         """Helper method to run sequence parallel tests with different configurations"""
         cfg = DictDefault(
@@ -68,6 +69,7 @@ class TestSequenceParallelism:
                 "weight_decay": 0.0,
                 "use_tensorboard": True,
                 "sequence_parallel_degree": 2,
+                "ring_attn_func": ring_attn_func,
             }
         )
 
@@ -95,20 +97,27 @@ class TestSequenceParallelism:
         )
 
     @pytest.mark.parametrize(
-        "sample_packing, micro_batch_size, pad_to_sequence_len",
+        "sample_packing, micro_batch_size, pad_to_sequence_len, ring_attn_func",
         [
-            (True, 1, True),
-            (False, 2, True),
+            (True, 1, True, None),  # defaults to varlen_llama3 ring_attn_func
+            (False, 2, True, None),  # defaults to batch_ring ring_attn_func
+            (False, 2, True, "batch_zigzag"),
             # (False, 2, False),  # not yet working
         ],
         ids=[
-            "sample_packing",
-            "no sample_packing, no pad_to_sequence_len",
+            "sample_packing, varlen_llama3 ring_attn_func",
+            "no sample_packing, no pad_to_sequence_len, batch_ring ring_attn_func",
+            "no sample_packing, no pad_to_sequence_len, batch_zigzag ring_attn_func",
             # "no sample_packing, pad_to_sequence_len",  # not yet working
         ],
     )
     def test_sequence_parallel_training(
-        self, temp_dir, sample_packing, micro_batch_size, pad_to_sequence_len
+        self,
+        temp_dir,
+        sample_packing,
+        micro_batch_size,
+        pad_to_sequence_len,
+        ring_attn_func,
     ):
         """Test sequence parallel training with different configurations"""
         self._run_sequence_parallel_test(
@@ -116,4 +125,5 @@ class TestSequenceParallelism:
             sample_packing=sample_packing,
             micro_batch_size=micro_batch_size,
             pad_to_sequence_len=pad_to_sequence_len,
+            ring_attn_func=ring_attn_func,
         )
