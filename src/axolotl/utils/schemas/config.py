@@ -18,7 +18,6 @@ from pydantic import (
 )
 from transformers.utils.import_utils import is_torch_npu_available
 
-from axolotl.monkeypatch.attention.ring_attn.patch import RingAttnFunc
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
     DPODataset,
@@ -259,7 +258,7 @@ class AxolotlInputConfig(
 
     sequence_parallel_degree: int | None = None
     heads_k_stride: int | None = None
-    ring_attn_func: RingAttnFunc | None = None
+    ring_attn_func: str | None = None
 
     special_tokens: SpecialTokensConfig | None = None
     tokens: list[str] | None = None
@@ -1195,6 +1194,8 @@ class AxolotlInputConfig(
     @field_validator("ring_attn_func", mode="before")
     @classmethod
     def check_ring_attn_func(cls, value, info):
+        from axolotl.monkeypatch.attention.ring_attn.patch import RingAttnFunc
+
         if value is not None:
             # Set the ring attention function if passed in config
             valid_funcs = list(RingAttnFunc)
