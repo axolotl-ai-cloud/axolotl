@@ -507,7 +507,10 @@ through a ring communication pattern.</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to a divisor (&gt; 1) of the number of GPUs available</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_parallel_degree</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span><span class="co">  # Split sequences across 4 GPUs</span></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; strides across the key dimension. Larger values use more memory but should make training faster.</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">heads_k_stride</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">heads_k_stride</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; one of "varlen_llama3", "batch_ring", "batch_zigzag", "batch_stripe". Defaults to</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co"># "varlen_llama3" when `sample_packing: true`, and "batch_ring" otherwise.</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">ring_attn_func</span><span class="kw">:</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>The <code>sequence_parallel_degree</code> should be a divisor of the total number of GPUs. For example:</p>
 <ul>
 <li>With 8 GPUs, valid values would be 2, 4, or 8</li>
