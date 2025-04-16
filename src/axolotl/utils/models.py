@@ -908,7 +908,7 @@ class ModelLoader:
             from axolotl.utils.schemas.quant import get_hqq_quant_config_kwargs
 
             self.model_kwargs["quantization_config"] = HqqConfig(
-                get_hqq_quant_config_kwargs(self.cfg)
+                **get_hqq_quant_config_kwargs(self.cfg)
             )
 
         # no longer needed per https://github.com/huggingface/transformers/pull/26610
