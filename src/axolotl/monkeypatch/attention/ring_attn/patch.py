@@ -74,8 +74,7 @@ def register_ring_attn(
 
     LOG.info(
         "Enabling ring attention sequence parallelism: "
-        f"each sequence will be processed across {sequence_parallel_degree} GPUs "
-        f"using the {ring_attn_func.value} ring-flash-attn implementation"
+        f"each sequence will be processed across {sequence_parallel_degree} GPUs"
     )
 
     rank = dist.get_rank()
