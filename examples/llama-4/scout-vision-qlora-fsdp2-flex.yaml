@@ -62,7 +62,10 @@ bf16: true
 tf32: true
 
 logging_steps: 1
-flash_attention: true
+flex_attention: true
+flex_attn_compile_kwargs:
+  dynamic: false
+  mode: max-autotune-no-cudagraphs
 
 warmup_steps: 10
 evals_per_epoch: 1

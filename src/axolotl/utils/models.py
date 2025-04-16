@@ -549,7 +549,8 @@ class ModelLoader:
                 patch_flex_wrapper,
             )
 
-            patch_flex_wrapper()
+            flex_attn_compile_kwargs = self.cfg.flex_attn_compile_kwargs or {}
+            patch_flex_wrapper(**flex_attn_compile_kwargs)
             patch_flex_make_mask()
 
         # patch gemma3 conditional generation forward before loading plugins

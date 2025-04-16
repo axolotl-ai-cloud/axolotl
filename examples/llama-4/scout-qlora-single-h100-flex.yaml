@@ -64,8 +64,11 @@ learning_rate: 1e-4
 bf16: true
 tf32: true
 
-flex_attention: true
 torch_compile: true
+flex_attention: true
+flex_attn_compile_kwargs:
+  dynamic: false
+  mode: max-autotune-no-cudagraphs
 
 gradient_checkpointing: offload
 gradient_checkpointing_kwargs:

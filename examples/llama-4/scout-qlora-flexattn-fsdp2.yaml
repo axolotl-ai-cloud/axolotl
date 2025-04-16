@@ -60,6 +60,9 @@ tf32: true
 
 logging_steps: 1
 flex_attention: true
+flex_attn_compile_kwargs:
+  dynamic: false
+  mode: max-autotune-no-cudagraphs
 
 warmup_steps: 10
 evals_per_epoch: 1

@@ -225,6 +225,7 @@ class AxolotlInputConfig(
     sdp_attention: bool | None = None
     s2_attention: bool | None = None
     flex_attention: bool | None = None
+    flex_attn_compile_kwargs: dict[str, Any] | None = None
     flash_attention: bool | None = None
     flash_attn_cross_entropy: bool | None = None
     flash_attn_rms_norm: bool | None = None

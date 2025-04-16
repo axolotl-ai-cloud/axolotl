@@ -1,6 +1,5 @@
 """Flex attention monkey patch"""
 
-import importlib
 import sys
 from typing import Optional, Tuple, Union
 
@@ -8,7 +7,7 @@ import torch
 import transformers
 
 
-def patch_flex_wrapper():
+def patch_flex_wrapper(**flex_attn_compile_kwargs):
     # TODO remove this patch when transformers#37285 is merged and in a release
     is_torch_2_6 = torch.__version__.startswith("2.6")
 
@@ -48,7 +47,8 @@ def patch_flex_wrapper():
                 # see https://github.com/pytorch/pytorch/issues/146260 for training
                 self.training = training
                 self._compiled_flex_attention = torch.compile(
-                    flex_attention, dynamic=False, mode="max-autotune-no-cudagraphs"
+                    flex_attention,
+                    **flex_attn_compile_kwargs,
                 )
                 self._is_flex_compiled = True
 
@@ -61,9 +61,6 @@ def patch_flex_wrapper():
         "WrappedFlexAttention",
         WrappedFlexAttention,
     )
-    # cleanup any existing singleton instances
-    WrappedFlexAttention.del_singleton()
-    importlib.reload(sys.modules["transformers.integrations.flex_attention"])
 
 
 def patch_flex_make_mask():
