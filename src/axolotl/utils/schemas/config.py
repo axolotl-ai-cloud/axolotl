@@ -1147,7 +1147,7 @@ class AxolotlInputConfig(
 
         return data
 
-    @field_validator("sequence_parallel_degree", mode="before")
+    @field_validator("sequence_parallel_degree", mode="after")
     @classmethod
     def check_sequence_parallel_degree(cls, value, info):
         if not value:
@@ -1191,9 +1191,12 @@ class AxolotlInputConfig(
 
         return value
 
-    @field_validator("ring_attn_func", mode="before")
+    @field_validator("ring_attn_func", mode="after")
     @classmethod
     def check_ring_attn_func(cls, value, info):
+        if not info.data.get("sequence_parallel_degree", 1) > 1:
+            return value
+
         from axolotl.monkeypatch.attention.ring_attn.patch import RingAttnFunc
 
         if value is not None:

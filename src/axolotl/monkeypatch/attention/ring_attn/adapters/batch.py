@@ -38,7 +38,7 @@ RING_ATTN_FUNC_MAPPING = {
 
 
 def create_flash_attn_forward(
-    process_group: dist.ProcessGroup, ring_attn_func: Callable
+    process_group: dist.ProcessGroup, ring_attn_func: RingAttnFunc
 ) -> Callable:
     """
     Create a ring flash attention forward function compatible with HuggingFace's

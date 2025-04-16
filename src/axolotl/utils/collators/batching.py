@@ -185,24 +185,15 @@ class DataCollatorForSeq2Seq:
                         chunks[self.local_rank],
                         chunks[2 * self.local_world_size - self.local_rank - 1],
                     ]
-
-                    # Concatenate the selected chunks
                     batch[key] = torch.cat(selected_chunks, dim=1).contiguous()
-                elif self.ring_attn_func is RingAttnFunc.BATCH_ZIGZAG:
-                    # Create the stripe pattern for the given rank
-                    # Rank 0 gets poitions 0, w, 2w, 3w, ...
-                    # Rank 1 gets positions 1, w+1, 2w+1, 3w+1, ...
-                    stripe_indices = torch.arange(
-                        self.local_rank,
-                        total_seq_len,
-                        self.local_world_size,
-                        device=batch[key].device,
-                    )
-
-                    # Select along the sequence dimension
-                    batch[key] = torch.index_select(
-                        batch[key], 1, stripe_indices
-                    ).contiguous()
+                elif self.ring_attn_func is RingAttnFunc.BATCH_STRIPE:
+                    # TODO(djsaunde): This doesn't seem to work as expected
+                    # Split into striped data and stack
+                    tensor = torch.stack(
+                        batch[key].split(self.local_world_size, dim=1),
+                        dim=1,
+                    ).transpose(1, 2)
+                    batch[key] = tensor[:, self.local_rank].contiguous()
 
         return batch
 
