@@ -57,7 +57,6 @@ class RingAttnFunc(str, Enum):
 def register_ring_attn(
     sequence_parallel_degree: int,
     heads_k_stride: int | None,
-    sample_packing: bool,
     ring_attn_func: RingAttnFunc | None,
 ):
     """
@@ -67,7 +66,6 @@ def register_ring_attn(
         sequence_parallel_degree: Sequence parallelism factor.
         heads_k_stride: Sequence parallelism K head stride size. Passed
             through to `ring_flash_attn.substitute_hf_flash_attn`.
-        sample_packing: Whether or not sample packing is applied.
         ring_attn_func: `ring_flash_attn` ring attention implemention. If sample
             packing is enabled, it must be a `varlen` function; otherwise, it must be a
             `batch` function.
@@ -76,28 +74,14 @@ def register_ring_attn(
         LOG.info("Ring attention already registered, exiting early...")
         return
 
-    if ring_attn_func is not None:
-        # Set the ring attention function if passed in config
-        valid_funcs = list(RingAttnFunc)
-        if ring_attn_func in valid_funcs:
-            ring_attn_func = RingAttnFunc(ring_attn_func)
-        else:
-            raise ValueError(
-                f"ring_attn_func: {ring_attn_func} must be one of {valid_funcs}"
-            )
-    else:
-        # Default ring attention function selection
-        ring_attn_func = (
-            RingAttnFunc.VARLEN_LLAMA3 if sample_packing else RingAttnFunc.BATCH_RING
-        )
-
     LOG.info(
         "Enabling ring attention sequence parallelism: "
-        f"each sequence will be processed across {sequence_parallel_degree} GPUs "
-        f"using the {ring_attn_func.value} ring-flash-attn implementation"
+        f"each sequence will be processed across {sequence_parallel_degree} GPUs"
     )
 
+    rank = dist.get_rank()
     world_size = dist.get_world_size()
+
     assert sequence_parallel_degree <= world_size, (
         f"sequence_parallel_degree ({sequence_parallel_degree}) "
         f"must be less than or equal to world_size ({world_size})"
@@ -107,10 +91,8 @@ def register_ring_attn(
         f"must evenly divide world_size ({world_size})"
     )
 
-    # Detailed logging of group formation
-    rank = dist.get_rank()
+    # Assign ranks to sequence parallel groups
     group_assignments = {}
-
     for i in range(world_size // sequence_parallel_degree):
         ring_attn_ranks = list(
             range(
@@ -137,7 +119,6 @@ def register_ring_attn(
         substitute_hf_flash_attn(
             process_group=get_ring_attn_group(), heads_k_stride=heads_k_stride or 1
         )
-    # TODO(djsaunde): handle other ring attn funcs in this branch
     elif ring_attn_func in [
         RingAttnFunc.BATCH_RING,
         RingAttnFunc.BATCH_ZIGZAG,
@@ -153,22 +134,15 @@ def register_ring_attn(
         )
 
 
-def update_ring_attn_params(input_ids: torch.Tensor, position_ids: torch.Tensor | None):
+def update_ring_attn_params(position_ids: torch.Tensor | None):
     """
     Calculate the cumulative sequence lengths for the current forward pass and pass the
     value to the substituted `ring_flash_attn`.
 
     Args:
-        input_ids: Tensor of input IDs.
         position_ids: Optional tensor of position IDs (for sample packed data).
     """
     from ring_flash_attn import update_ring_flash_attn_params
-
-    if position_ids is None:
-        seq_len = input_ids.shape[1]
-        position_ids = torch.arange(
-            0, seq_len, dtype=torch.long, device=input_ids.device
-        ).unsqueeze(0)
 
     cu_seqlens, _ = get_cu_seqlens_from_pos_ids(position_ids)
     cu_seqlens = cu_seqlens.squeeze().to(device=torch.cuda.current_device())

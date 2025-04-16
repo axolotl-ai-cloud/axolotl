@@ -776,6 +776,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["sequence_parallel_degree"] = (
             self.cfg.sequence_parallel_degree
         )
+        training_arguments_kwargs["ring_attn_func"] = self.cfg.ring_attn_func
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig

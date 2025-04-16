@@ -644,7 +644,6 @@ class ModelLoader:
             register_ring_attn(
                 sequence_parallel_degree=self.cfg.sequence_parallel_degree,
                 heads_k_stride=self.cfg.heads_k_stride,
-                sample_packing=self.cfg.sample_packing,
                 ring_attn_func=self.cfg.ring_attn_func,
             )
 

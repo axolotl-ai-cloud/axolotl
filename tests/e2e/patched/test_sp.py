@@ -88,8 +88,7 @@ class TestRingAttention:
         register_ring_attn(
             sequence_parallel_degree=4,
             heads_k_stride=1,
-            sample_packing=True,
-            ring_attn_func=RingAttnFunc.VARLEN_LLAMA3.value,
+            ring_attn_func=RingAttnFunc.VARLEN_LLAMA3,
         )
 
         # Verify the number of calls without examining the arguments

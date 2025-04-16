@@ -18,6 +18,7 @@ from pydantic import (
 )
 from transformers.utils.import_utils import is_torch_npu_available
 
+from axolotl.monkeypatch.attention.ring_attn.patch import RingAttnFunc
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
     DPODataset,
@@ -258,7 +259,7 @@ class AxolotlInputConfig(
 
     sequence_parallel_degree: int | None = None
     heads_k_stride: int | None = None
-    ring_attn_func: str | None = None
+    ring_attn_func: RingAttnFunc | None = None
 
     special_tokens: SpecialTokensConfig | None = None
     tokens: list[str] | None = None
@@ -1187,6 +1188,29 @@ class AxolotlInputConfig(
                 "implementation details. Please see "
                 "https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
                 "for more details."
+            )
+
+        return value
+
+    @field_validator("ring_attn_func", mode="before")
+    @classmethod
+    def check_ring_attn_func(cls, value, info):
+        if value is not None:
+            # Set the ring attention function if passed in config
+            valid_funcs = list(RingAttnFunc)
+            if value in valid_funcs:
+                value = RingAttnFunc(value)
+            else:
+                raise ValueError(
+                    f"ring_attn_func: {value} must be one of {valid_funcs}"
+                )
+        else:
+            # Default ring attention function selection
+            sample_packing = info.data.get("sample_packing")
+            value = (
+                RingAttnFunc.VARLEN_LLAMA3
+                if sample_packing
+                else RingAttnFunc.BATCH_RING
             )
 
         return value
