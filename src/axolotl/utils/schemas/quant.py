@@ -32,7 +32,7 @@ class HQQConfig(BaseModel):
 def get_hqq_quant_config_kwargs(cfg):
 
     # If no target module is specified, then target the whole model
-    if cfg.hqq_module_name is None:
+    if cfg.hqq_target_module is None:
         return {
             "nbits": cfg.hqq_nbits,
             "group_size": cfg.hqq_group_size,
