@@ -43,7 +43,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sequence_len": 2048,
                 "adapter": "lora",
                 "lora_r": 8,
@@ -105,7 +105,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sequence_len": 2048,
                 "sample_packing": True,
                 "eval_sample_packing": False,
@@ -166,7 +166,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sequence_len": 2048,
                 "sample_packing": False,
                 "eval_sample_packing": False,
@@ -244,7 +244,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sequence_len": 2048,
                 "sample_packing": False,
                 "eval_sample_packing": False,
@@ -326,7 +326,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sequence_len": 2048,
                 "val_set_size": 0.01,
                 "special_tokens": {
@@ -396,7 +396,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 1024,
@@ -475,7 +475,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 2048,
@@ -654,7 +654,7 @@ class TestMultiGPULlama:
             adapter = {}
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 1024,
@@ -728,7 +728,7 @@ class TestMultiGPULlama:
             adapter = {}
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 1024,
@@ -802,7 +802,7 @@ class TestMultiGPULlama:
             adapter = {}
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 1024,
@@ -860,7 +860,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "fix_untrained_tokens": True,
                 "sequence_len": 512,
                 "val_set_size": 0.0,
