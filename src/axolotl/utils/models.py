@@ -1198,7 +1198,7 @@ class ModelLoader:
         if (
             not skip_prepare_model_for_kbit_training
             and self.cfg.adapter in ["lora", "qlora"]
-            and (self.cfg.load_in_8bit or self.cfg.load_in_4bit)
+            and (self.cfg.load_in_8bit or self.cfg.load_in_4bit or self.cfg.hqq_nbits)
         ):
             LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
             self.model = prepare_model_for_kbit_training(
