@@ -18,8 +18,9 @@ from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
 from axolotl.utils.models import load_tokenizer
+from axolotl.utils.schemas.enums import RLType
 
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger(__name__)
 
 
 def _get_path(ds_hash, cfg):
@@ -80,7 +81,7 @@ def map_dataset(cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs):
 def drop_long_rl_seq(
     sample, rl, tokenizer, sequence_len  # pylint: disable=invalid-name
 ):
-    if rl in ("dpo", "ipo", "orpo", "simpo"):
+    if rl in (RLType.DPO, RLType.IPO, RLType.ORPO, RLType.SIMPO):
         if not (
             sample.get("prompt") and sample.get("chosen") and sample.get("rejected")
         ):
@@ -100,7 +101,7 @@ def drop_long_rl_seq(
             len_prompt + len_rejected
         ) <= sequence_len
 
-    if rl == "kto":
+    if rl is RLType.KTO:
         if not (sample.get("prompt") and sample.get("completion")):
             raise ValueError("Prompt and completion keys are required for KTO datasets")
 
@@ -114,7 +115,7 @@ def drop_long_rl_seq(
 
         return (len_prompt + len_completion) <= sequence_len
 
-    if rl == "grpo":
+    if rl is RLType.GRPO:
         return True
 
     raise ValueError("Unknown RL type")
@@ -137,9 +138,9 @@ def load_prepare_preference_datasets(cfg):
             if _type:
                 if isinstance(_type, DictDefault):
                     _type = "user_defined.default"
-                if _cfg.rl == "orpo":
+                if _cfg.rl is RLType.ORPO:
                     ds_transform_fn = load_orpo(_type, _cfg, dataset_idx=i)
-                elif _cfg.rl == "kto":
+                elif _cfg.rl is RLType.KTO:
                     ds_transform_fn = load_kto(_type, _cfg, dataset_idx=i)
                 else:
                     ds_transform_fn = load_dpo(_type, _cfg, dataset_idx=i)
@@ -150,7 +151,7 @@ def load_prepare_preference_datasets(cfg):
                 split_datasets[i] = map_dataset(
                     cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs
                 )
-            elif _cfg.rl == "kto":
+            elif _cfg.rl is RLType.KTO:
                 ds_transform_fn = load_kto(_type, _cfg, dataset_idx=i)
                 map_kwargs = {}
                 if isinstance(ds_transform_fn, tuple):
