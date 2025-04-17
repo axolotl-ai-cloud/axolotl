@@ -84,7 +84,7 @@ from axolotl.utils.collators import (
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.models import ensure_dtype
-from axolotl.utils.schemas.enums import CustomSupportedOptimizers
+from axolotl.utils.schemas.enums import CustomSupportedOptimizers, RLType
 
 try:
     import torch._dynamo  # pylint: disable=ungrouped-imports
@@ -1054,7 +1054,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         training_args_cls = None
         blocklist_args_kwargs = []
-        if self.cfg.rl == "simpo":
+        if self.cfg.rl is RLType.SIMPO:
             training_args_cls = AxolotlCPOConfig
             training_args_kwargs["loss_type"] = "simpo"
             training_args_kwargs["max_length"] = self.cfg.sequence_len
@@ -1062,13 +1062,13 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if self.cfg.cpo_alpha is not None:
                 training_args_kwargs["cpo_alpha"] = self.cfg.cpo_alpha
 
-        elif self.cfg.rl == "orpo":
+        elif self.cfg.rl is RLType.ORPO:
             training_args_cls = AxolotlORPOConfig
             training_args_kwargs["max_length"] = self.cfg.sequence_len
             if self.cfg.max_prompt_len:
                 training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
-        elif self.cfg.rl == "kto":
+        elif self.cfg.rl is RLType.KTO:
             training_args_cls = AxolotlKTOConfig
 
             training_args_kwargs["desirable_weight"] = (
@@ -1082,14 +1082,14 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if self.cfg.max_prompt_len:
                 training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
-        elif self.cfg.rl == "grpo":
+        elif self.cfg.rl is RLType.GRPO:
             training_args_cls = GRPOStrategy.get_training_args_class()
             training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()
 
         else:
             training_args_cls = AxolotlDPOConfig
-            if self.cfg.rl == "ipo":
+            if self.cfg.rl is RLType.IPO:
                 training_args_kwargs["loss_type"] = "ipo"
             training_args_kwargs["max_length"] = self.cfg.sequence_len
             training_args_kwargs["max_completion_length"] = None
@@ -1127,7 +1127,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
     def build(self, total_num_steps):
         training_args = self.build_training_arguments(total_num_steps)
         dpo_trainer_kwargs = {}
-        if self.cfg.rl == "ipo":
+        if self.cfg.rl is RLType.IPO:
             if self.cfg.dpo_label_smoothing:
                 dpo_trainer_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
         if self.eval_dataset:
@@ -1138,21 +1138,21 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             dpo_trainer_kwargs["precompute_ref_log_probs"] = (
                 self.cfg.precompute_ref_log_probs
             )
-        if self.cfg.rl == "grpo":
+        if self.cfg.rl is RLType.GRPO:
             trainer_cls = GRPOStrategy.get_trainer_class()
             trainer_cls_args = [self.model]
             trainer_cls_args.extend(GRPOStrategy.set_trainer_args(self.cfg))
             dpo_trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))
-        elif self.cfg.rl in ["dpo", "ipo"]:
+        elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             trainer_cls = DPOStrategy.get_trainer_class()
             trainer_cls_args = [self.model, self.model_ref]
-        elif self.cfg.rl == "orpo":
+        elif self.cfg.rl is RLType.ORPO:
             trainer_cls = AxolotlORPOTrainer
             trainer_cls_args = [self.model]
-        elif self.cfg.rl in ["kto"]:
+        elif self.cfg.rl is RLType.KTO:
             trainer_cls = AxolotlKTOTrainer
             trainer_cls_args = [self.model]
-        elif self.cfg.rl in ["simpo"]:
+        elif self.cfg.rl is RLType.SIMPO:
             trainer_cls = AxolotlCPOTrainer
             trainer_cls_args = [self.model]
         else:
@@ -1179,7 +1179,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         )
         if self.cfg.fsdp:
             ensure_dtype(dpo_trainer.model, dtype=self.cfg.torch_dtype)
-            if self.cfg.rl in ["dpo", "ipo"] and dpo_trainer.ref_model:
+            if self.cfg.rl in [RLType.DPO, RLType.IPO] and dpo_trainer.ref_model:
                 ensure_dtype(dpo_trainer.ref_model, dtype=self.cfg.torch_dtype)
 
         dpo_trainer = self.hook_post_create_trainer(dpo_trainer)

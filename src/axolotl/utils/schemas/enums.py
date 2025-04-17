@@ -6,12 +6,12 @@ from enum import Enum
 class RLType(str, Enum):
     """RL trainer type configuration subset"""
 
-    dpo = "dpo"  # pylint: disable=invalid-name
-    grpo = "grpo"  # pylint: disable=invalid-name
-    ipo = "ipo"  # pylint: disable=invalid-name
-    orpo = "orpo"  # pylint: disable=invalid-name
-    kto = "kto"  # pylint: disable=invalid-name
-    simpo = "simpo"  # pylint: disable=invalid-name
+    DPO = "dpo"  # pylint: disable=invalid-name
+    GRPO = "grpo"  # pylint: disable=invalid-name
+    IPO = "ipo"  # pylint: disable=invalid-name
+    ORPO = "orpo"  # pylint: disable=invalid-name
+    KTO = "kto"  # pylint: disable=invalid-name
+    SIMPO = "simpo"  # pylint: disable=invalid-name
 
 
 class ChatTemplate(str, Enum):
@@ -53,3 +53,14 @@ class CustomSupportedOptimizers(str, Enum):
     ao_adamw_fp8 = "ao_adamw_fp8"  # pylint: disable=invalid-name
     adopt_adamw = "adopt_adamw"  # pylint: disable=invalid-name
     muon = "muon"  # pylint: disable=invalid-name
+
+
+class RingAttnFunc(str, Enum):
+    """Enum class for supported `ring-flash-attn` implementations"""
+
+    # VARLEN_RING = "varlen_ring"
+    # VARLEN_ZIGZAG = "varlen_zigzag"
+    VARLEN_LLAMA3 = "varlen_llama3"
+    BATCH_RING = "batch_ring"
+    BATCH_ZIGZAG = "batch_zigzag"
+    BATCH_STRIPE = "batch_stripe"
