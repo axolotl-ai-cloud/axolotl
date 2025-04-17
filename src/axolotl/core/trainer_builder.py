@@ -1126,23 +1126,23 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
     def build(self, total_num_steps):
         training_args = self.build_training_arguments(total_num_steps)
-        dpo_trainer_kwargs = {}
+        trainer_kwargs = {}
         if self.cfg.rl is RLType.IPO:
             if self.cfg.dpo_label_smoothing:
-                dpo_trainer_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
+                trainer_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
         if self.eval_dataset:
-            dpo_trainer_kwargs["eval_dataset"] = self.eval_dataset
+            trainer_kwargs["eval_dataset"] = self.eval_dataset
         if self.cfg.adapter and self.peft_config:
-            dpo_trainer_kwargs["peft_config"] = self.peft_config
+            trainer_kwargs["peft_config"] = self.peft_config
         if self.cfg.precompute_ref_log_probs is not None:
-            dpo_trainer_kwargs["precompute_ref_log_probs"] = (
+            trainer_kwargs["precompute_ref_log_probs"] = (
                 self.cfg.precompute_ref_log_probs
             )
         if self.cfg.rl is RLType.GRPO:
             trainer_cls = GRPOStrategy.get_trainer_class()
             trainer_cls_args = [self.model]
             trainer_cls_args.extend(GRPOStrategy.set_trainer_args(self.cfg))
-            dpo_trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))
+            trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))
         elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             trainer_cls = DPOStrategy.get_trainer_class()
             trainer_cls_args = [self.model, self.model_ref]
@@ -1160,33 +1160,33 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         sig = inspect.signature(trainer_cls)
         if "tokenizer" in sig.parameters.keys():
-            dpo_trainer_kwargs["tokenizer"] = self.tokenizer
+            trainer_kwargs["tokenizer"] = self.tokenizer
         else:
-            dpo_trainer_kwargs["processing_class"] = self.tokenizer
+            trainer_kwargs["processing_class"] = self.tokenizer
 
         if self.cfg.datasets is not None and (
             trainer_cls is DPOStrategy.get_trainer_class()
         ):
-            dpo_trainer_kwargs["dataset_tags"] = [
+            trainer_kwargs["dataset_tags"] = [
                 d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
             ]
-        dpo_trainer = trainer_cls(
+        trainer = trainer_cls(
             *trainer_cls_args,
             args=training_args,
             train_dataset=self.train_dataset,
             callbacks=self.get_callbacks(),
-            **dpo_trainer_kwargs,
+            **trainer_kwargs,
         )
         if self.cfg.fsdp:
-            ensure_dtype(dpo_trainer.model, dtype=self.cfg.torch_dtype)
-            if self.cfg.rl in [RLType.DPO, RLType.IPO] and dpo_trainer.ref_model:
-                ensure_dtype(dpo_trainer.ref_model, dtype=self.cfg.torch_dtype)
+            ensure_dtype(trainer.model, dtype=self.cfg.torch_dtype)
+            if self.cfg.rl in [RLType.DPO, RLType.IPO] and trainer.ref_model:
+                ensure_dtype(trainer.ref_model, dtype=self.cfg.torch_dtype)
 
-        dpo_trainer = self.hook_post_create_trainer(dpo_trainer)
-        for callback in self.get_post_trainer_create_callbacks(dpo_trainer):
-            dpo_trainer.add_callback(callback)
+        trainer = self.hook_post_create_trainer(trainer)
+        for callback in self.get_post_trainer_create_callbacks(trainer):
+            trainer.add_callback(callback)
 
-        return dpo_trainer
+        return trainer
 
 
 class HFPPOTrainerBuilder(TrainerBuilderBase):
