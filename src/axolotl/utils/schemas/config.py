@@ -660,6 +660,7 @@ class AxolotlInputConfig(
             data.get("val_set_size") == 0
             and (data.get("eval_steps") or data.get("eval_strategy"))
             and not data.get("test_datasets")
+            and data.get("eval_strategy") != "no"
         ):
             raise ValueError(
                 "eval_steps and eval_strategy are not supported with val_set_size == 0"
