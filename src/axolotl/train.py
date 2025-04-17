@@ -288,6 +288,19 @@ def save_trained_model(
                 os.remove(os.path.join(cfg.output_dir, "model.safetensors"))
             except FileNotFoundError:
                 pass
+    elif hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
+        from axolotl.integrations.llm_compressor.utils import (
+            save_compressed_model,
+        )
+
+        save_compressed_model(
+            model=model,
+            output_dir=cfg.output_dir,
+            trainer=trainer,
+            safe_serialization=safe_serialization,
+            save_compressed=cfg.llmcompressor.save_compressed,
+        )
+
     elif cfg.local_rank == 0:
         if cfg.flash_optimum and BetterTransformer:
             model = BetterTransformer.reverse(model)
@@ -296,6 +309,7 @@ def save_trained_model(
             trainer.model.save_pretrained(
                 cfg.output_dir, safe_serialization=safe_serialization
             )
+
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
 
 
