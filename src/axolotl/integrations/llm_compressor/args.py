@@ -20,9 +20,13 @@ class CompressionArgs(BaseModel):
         ),
     ]
 
-    model_config = ConfigDict(
-        validate_assignment=True,
-    )
+    save_compressed: Annotated[
+        bool,
+        Field(
+            default=False,
+            description="Whether to save the compressed model after training.",
+        ),
+    ]
 
 
 class LLMCompressorArgs(BaseModel):

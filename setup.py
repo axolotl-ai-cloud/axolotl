@@ -149,8 +149,9 @@ extras_require = {
     "vllm": [
         "vllm==0.7.2",
     ],
+    # PENDING: https://github.com/vllm-project/llm-compressor/pull/1352
     "llmcompressor": [
-        "llmcompressor~=0.5.0",
+        "llmcompressor==0.5.1",
     ],
 }
 
