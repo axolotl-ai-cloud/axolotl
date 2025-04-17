@@ -35,6 +35,7 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
 from axolotl.utils.models import load_model, load_processor, load_tokenizer
+from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.trainer import setup_trainer
 
 try:
@@ -107,7 +108,7 @@ def setup_reference_model(
         Reference model if needed for RL training, `None` otherwise.
     """
     model_ref = None
-    if cfg.rl and cfg.rl != "orpo":
+    if cfg.rl and cfg.rl != RLType.ORPO:
         if cfg.adapter and not cfg.rl_adapter_ref_model:
             # use built-in trl autounwrap
             LOG.debug("Passing model_ref: None to RL trainer")

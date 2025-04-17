@@ -28,7 +28,7 @@ from axolotl.utils.schemas.datasets import (
     StepwiseSupervisedDataset,
 )
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
-from axolotl.utils.schemas.enums import ChatTemplate, RLType
+from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
 from axolotl.utils.schemas.integrations import (
     CometConfig,
     GradioConfig,
@@ -261,7 +261,7 @@ class AxolotlInputConfig(
 
     sequence_parallel_degree: int | None = None
     heads_k_stride: int | None = None
-    ring_attn_func: str | None = None
+    ring_attn_func: RingAttnFunc | None = None
 
     special_tokens: SpecialTokensConfig | None = None
     tokens: list[str] | None = None
@@ -784,7 +784,7 @@ class AxolotlInputConfig(
 
     @model_validator(mode="after")
     def check_simpo_warmup(self):
-        if self.rl == "simpo" and self.warmup_ratio:
+        if self.rl is RLType.SIMPO and self.warmup_ratio:
             raise ValueError(
                 "warmup_ratio is not supported with the simpo trainer. Please use `warmup_steps` instead"
             )
