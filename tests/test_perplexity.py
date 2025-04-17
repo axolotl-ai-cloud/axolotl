@@ -8,7 +8,7 @@ from transformers.models.auto.tokenization_auto import AutoTokenizer
 
 from axolotl.utils.callbacks.perplexity import Perplexity
 
-MODEL_NAME = "HuggingFaceTB/SmolLM2-135M"
+MODEL_NAME = "axolotl-ai-internal/llama-7m"
 
 
 @fixture()

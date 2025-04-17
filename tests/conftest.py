@@ -496,6 +496,12 @@ def dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff(
     return datasets.load_from_disk(ds_path)["train"]
 
 
+@pytest.fixture(scope="session", autouse=True)
+def download_tiny_llama_7m_model():
+    # download the model
+    return snapshot_download_w_retry("axolotl-ai-internal/llama-7m", repo_type="model")
+
+
 # # pylint: disable=redefined-outer-name,unused-argument
 # def test_load_fixtures(
 #     download_smollm2_135m_model,
