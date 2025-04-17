@@ -73,10 +73,8 @@ class TestRingAttention:
         self, mock_world_size, mock_rank, mock_new_group, partial_state
     ):
         """Test that ring attention groups are created correctly."""
-        from axolotl.monkeypatch.attention.ring_attn import (
-            RingAttnFunc,
-            register_ring_attn,
-        )
+        from axolotl.monkeypatch.attention.ring_attn import register_ring_attn
+        from axolotl.utils.schemas.enums import RingAttnFunc
 
         # Setup mocks
         mock_world_size.return_value = 8  # 8 GPUs total

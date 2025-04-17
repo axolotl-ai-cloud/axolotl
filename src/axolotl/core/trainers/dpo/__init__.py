@@ -3,6 +3,7 @@ DPO Specific Strategy for training
 """
 
 from axolotl.core.trainers.dpo.trainer import AxolotlDPOTrainer
+from axolotl.utils.schemas.enums import RLType
 
 
 class DPOStrategy:
@@ -23,7 +24,7 @@ class DPOStrategy:
     @classmethod
     def set_training_args_kwargs(cls, cfg):
         training_args_kwargs = {}
-        if cfg.rl == "ipo":
+        if cfg.rl is RLType.IPO:
             training_args_kwargs["loss_type"] = "ipo"
         training_args_kwargs["max_length"] = cfg.sequence_len
         training_args_kwargs["max_completion_length"] = None

@@ -13,7 +13,7 @@ from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
 
 from axolotl.monkeypatch.attention.ring_attn import update_ring_attn_params
-from axolotl.monkeypatch.attention.ring_attn.patch import RingAttnFunc
+from axolotl.utils.schemas.enums import RingAttnFunc
 
 
 @dataclass

@@ -14,6 +14,7 @@ from axolotl.utils.data import prepare_dataset
 from axolotl.utils.data.rl import load_prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_processor, load_tokenizer
+from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.tokenization import check_dataset_labels
 
 LOG = logging.getLogger(__name__)
@@ -125,7 +126,7 @@ def load_preference_datasets(
     total_num_steps: Optional[int] = int(
         math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
     )
-    if cfg.rl == "grpo":
+    if cfg.rl is RLType.GRPO:
         total_num_steps = None
 
     if cli_args.debug or cfg.debug:

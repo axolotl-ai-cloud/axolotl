@@ -28,7 +28,7 @@ from transformers.modeling_flash_attention_utils import (
 )
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
-from axolotl.monkeypatch.attention.ring_attn.patch import RingAttnFunc
+from axolotl.utils.schemas.enums import RingAttnFunc
 
 RING_ATTN_FUNC_MAPPING = {
     RingAttnFunc.BATCH_RING: ring_flash_attn_func,
