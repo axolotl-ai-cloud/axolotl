@@ -7,7 +7,7 @@ import logging
 from functools import wraps
 from typing import Any, Callable, ParamSpec, TypeVar
 
-from llmcompressor import active_session
+from llmcompressor import active_session, create_session
 from llmcompressor.core import callbacks as session_callbacks
 from llmcompressor.recipe import Recipe
 from transformers.trainer import Trainer
@@ -43,6 +43,7 @@ class LLMCompressorCallbackHandler(TrainerCallback):
             Recipe.model_validate(recipe) if not isinstance(recipe, Recipe) else recipe
         )
         self.trainer.compute_loss = compute_loss_wrapper(self.trainer.compute_loss)
+        create_session()
 
     def on_train_begin(
         self,
@@ -60,13 +61,14 @@ class LLMCompressorCallbackHandler(TrainerCallback):
             control (TrainerControl): Trainer control.
         """
         super().on_train_begin(args, state, control, **kwargs)
-        session = active_session()
-        session.initialize(
+        self.trainer.accelerator.wait_for_everyone()
+        active_session().initialize(
             model=self.trainer.model,
             optimizer=self.trainer.optimizer,
             start=state.epoch,
             recipe=self.recipe,
         )
+        self.trainer.accelerator.wait_for_everyone()
 
     def on_step_begin(
         self,
@@ -107,8 +109,7 @@ class LLMCompressorCallbackHandler(TrainerCallback):
         Called at the end of training. Finalizes the compression session.
         """
         super().on_train_end(args, state, control, **kwargs)
-        session = active_session()
-        session.finalize()
+        active_session().finalize()
 
 
 class LLMCompressorPlugin(BasePlugin):
@@ -158,7 +159,8 @@ def compute_loss_wrapper(compute_loss_func: Callable[P, R]) -> Callable[P, R]:
     @wraps(compute_loss_func)
     def compute_and_notify(*args: P.args, **kwargs: P.kwargs) -> R:
         loss = compute_loss_func(*args, **kwargs)
-        session_callbacks.loss_calculated(loss=loss)
+        if active_session().lifecycle.initialized_:
+            session_callbacks.loss_calculated(loss=loss)
         return loss
 
     return compute_and_notify

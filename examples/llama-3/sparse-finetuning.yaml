@@ -74,3 +74,4 @@ llmcompressor:
             're:.*down_proj.weight',
           ]
           start: 0
+  save_compressed: true
