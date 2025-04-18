@@ -36,11 +36,11 @@ class TestHQQ(unittest.TestCase):
                 "use_hqq": True,
                 "hqq_config": [
                     {
-                        "nbits": 4,
+                        "nbits": 8,
                         "group_size": 32,
                     }
                 ],
-                "lora_adapter": "qlora",
+                "adapter": "lora",
                 "lora_r": 16,
                 "lora_alpha": 32,
                 "lora_dropout": 0.05,
