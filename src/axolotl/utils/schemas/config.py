@@ -44,7 +44,7 @@ from axolotl.utils.schemas.model import (
 )
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
-from axolotl.utils.schemas.quant import HQQConfig
+from axolotl.utils.schemas.quant import QuantizationConfig
 from axolotl.utils.schemas.training import HyperparametersConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.vllm import VllmConfig
@@ -60,7 +60,7 @@ class AxolotlInputConfig(
     ModelOutputConfig,
     LoraConfig,
     ReLoRAConfig,
-    HQQConfig,
+    QuantizationConfig,
     HyperparametersConfig,
     WandbConfig,
     MLFlowConfig,
