@@ -511,6 +511,10 @@ def train(
         processor,
     ) = setup_model_and_trainer(cfg, dataset_meta)
 
+    plugin_manager = PluginManager.get_instance()
+    plugin_manager.post_model_load(cfg, model)
+    plugin_manager.post_lora_load(cfg, model)
+
     # Handle untrained tokens if configured
     safe_serialization = cfg.save_safetensors is True
     train_dataset = dataset_meta.train_dataset
