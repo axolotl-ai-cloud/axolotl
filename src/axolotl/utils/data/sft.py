@@ -3,6 +3,7 @@
 import functools
 import logging
 import os
+import tempfile
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
@@ -117,9 +118,27 @@ def prepare_dataset(cfg, tokenizer, processor=None, preprocess_iterable=None):
             cfg.pretraining_dataset[0]["type"] or "pretrain",
         )
 
-        iter_ds = load_dataset(
-            path, streaming=True, split=split, name=name, data_files=data_files
-        )
+        # when letting accelerator dispatch batches from the main process, we don't need to load the dataset from
+        # other ranks, we just need to present a fake dataset
+        if (
+            cfg.accelerator_config
+            and cfg.accelerator_config.dispatch_batches
+            and not is_local_main_process()
+        ):
+            with tempfile.NamedTemporaryFile(mode="w+", delete=False) as f:
+                f.write("text\n")
+                f.write("lorem ipsum dolor sit amet\n")
+                # rewind the file pointer to the beginning so we can read it again
+                f.seek(0)
+                iter_ds = load_dataset(
+                    "csv", data_files=f.name, split="train", streaming=True
+                )
+        else:
+            if is_local_main_process():
+                iter_ds = load_dataset(
+                    path, streaming=True, split=split, name=name, data_files=data_files
+                )
+
         if skip:
             LOG.info(f"Skipping {skip} samples from the dataset")
             iter_ds = iter_ds.skip(skip)
