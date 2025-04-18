@@ -383,7 +383,7 @@ class AxolotlInputConfig(
     @classmethod
     def check_hqq_config_redundancy(cls, data):
         if (data.get("load_in_4bit") or data.get("load_in_8bit")) and data.get(
-            "hqq_nbits"
+            "use_hqq"
         ):
 
             raise ValueError(
