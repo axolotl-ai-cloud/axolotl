@@ -84,5 +84,5 @@ class TestPretrainLlama:
             temp_dir + "/runs",
             "train/train_loss",
             loss_threshold,
-            "Train Loss is too high",
+            "Train Loss (%s) is too high",
         )

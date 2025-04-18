@@ -93,7 +93,7 @@ class TestSequenceParallelism:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.6, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.6, "Train loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(

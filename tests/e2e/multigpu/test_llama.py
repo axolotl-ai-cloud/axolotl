@@ -94,7 +94,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -159,7 +159,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train loss (%s) is too high"
         )
 
     def test_dpo_lora_ddp(self, temp_dir):
@@ -385,7 +385,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -457,7 +457,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train loss (%s) is too high"
         )
 
     @require_torch_2_6_0
@@ -538,7 +538,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.1, "Train loss (%s) is too high"
         )
 
     def test_fsdp_qlora_prequant_packed(self, temp_dir):
@@ -618,7 +618,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -702,7 +702,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -776,7 +776,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -850,7 +850,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train loss (%s) is too high"
         )
 
     @pytest.mark.skip(
@@ -917,5 +917,5 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 4.0, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 4.0, "Train loss (%s) is too high"
         )

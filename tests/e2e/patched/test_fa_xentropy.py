@@ -86,5 +86,5 @@ class TestFAXentropyLlama:
         check_model_output_exists(temp_dir, cfg)
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 1.5, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 1.5, "Train loss (%s) is too high"
         )

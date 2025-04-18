@@ -96,5 +96,5 @@ class TestMultiGPUGemma3:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 1.8, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 1.8, "Train loss (%s) is too high"
         )

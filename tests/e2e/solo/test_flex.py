@@ -69,5 +69,5 @@ class TestPackedFlex(unittest.TestCase):
         train(cfg=cfg, dataset_meta=dataset_meta)
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.0, "Train loss (%s) is too high"
         )
