@@ -93,7 +93,7 @@ class LoraConfig(BaseModel):
                 if self.gptq:
                     raise ValueError("Can't merge qlora if gptq")
 
-                if self.load_in_4bit:
+                if self.load_in_4bit and not self.use_hqq:
                     raise ValueError("Can't merge qlora if loaded in 4bit")
 
             else:
@@ -103,7 +103,7 @@ class LoraConfig(BaseModel):
                 if self.gptq:
                     raise ValueError("Can't load qlora if gptq")
 
-                if not self.load_in_4bit:
+                if not self.load_in_4bit and not self.use_hqq:
                     raise ValueError("Require cfg.load_in_4bit to be True for qlora")
         return self
 
