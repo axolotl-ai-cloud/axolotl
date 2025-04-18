@@ -904,7 +904,7 @@ class ModelLoader:
                 **bnb_config,
             )
 
-        elif self.cfg.hqq_nbits:
+        elif self.cfg.use_hqq:
             from axolotl.utils.schemas.quant import get_hqq_quant_config_kwargs
 
             self.model_kwargs["quantization_config"] = HqqConfig(
@@ -1044,6 +1044,9 @@ class ModelLoader:
                         config=self.model_config,
                     )
             else:
+                if self.cfg.use_hqq:
+                    # if using hqq, we need to set device_map to gpu otherwise the loading get stuck
+                    self.model_kwargs["device_map"] = "auto"
                 self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
                     config=self.model_config,
@@ -1198,7 +1201,7 @@ class ModelLoader:
         if (
             not skip_prepare_model_for_kbit_training
             and self.cfg.adapter in ["lora", "qlora"]
-            and (self.cfg.load_in_8bit or self.cfg.load_in_4bit or self.cfg.hqq_nbits)
+            and (self.cfg.load_in_8bit or self.cfg.load_in_4bit or self.cfg.use_hqq)
         ):
             LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
             self.model = prepare_model_for_kbit_training(
