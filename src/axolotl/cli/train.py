@@ -48,9 +48,12 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
     model, tokenizer, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
-    del model, tokenizer, trainer
 
     plugin_manager = PluginManager.get_instance()
+    plugin_manager.post_train(cfg, model)
+    
+    del model, tokenizer, trainer
+    
     plugin_manager.post_train_unload(cfg)
 
 
