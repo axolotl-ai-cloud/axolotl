@@ -25,7 +25,7 @@ liger_fused_linear_cross_entropy: true
 - deepseek_v2
 - gemma
 - gemma2
-- gemma3 (partial support, no support for FLCE yet)
+- gemma3
 - granite
 - jamba
 - llama
