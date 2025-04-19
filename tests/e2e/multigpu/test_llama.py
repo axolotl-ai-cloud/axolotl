@@ -43,7 +43,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sequence_len": 2048,
                 "adapter": "lora",
                 "lora_r": 8,
@@ -94,7 +94,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -105,7 +105,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sequence_len": 2048,
                 "sample_packing": True,
                 "eval_sample_packing": False,
@@ -159,14 +159,14 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train loss (%s) is too high"
         )
 
     def test_dpo_lora_ddp(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sequence_len": 2048,
                 "sample_packing": False,
                 "eval_sample_packing": False,
@@ -244,7 +244,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sequence_len": 2048,
                 "sample_packing": False,
                 "eval_sample_packing": False,
@@ -326,7 +326,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sequence_len": 2048,
                 "val_set_size": 0.01,
                 "special_tokens": {
@@ -385,7 +385,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -396,7 +396,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 1024,
@@ -457,7 +457,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train loss (%s) is too high"
         )
 
     @require_torch_2_6_0
@@ -475,7 +475,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 2048,
@@ -538,7 +538,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.1, "Train loss (%s) is too high"
         )
 
     def test_fsdp_qlora_prequant_packed(self, temp_dir):
@@ -618,7 +618,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -654,7 +654,7 @@ class TestMultiGPULlama:
             adapter = {}
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 1024,
@@ -702,7 +702,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -728,7 +728,7 @@ class TestMultiGPULlama:
             adapter = {}
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 1024,
@@ -776,7 +776,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -802,7 +802,7 @@ class TestMultiGPULlama:
             adapter = {}
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "sequence_len": 1024,
@@ -850,7 +850,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train loss (%s) is too high"
         )
 
     @pytest.mark.skip(
@@ -860,7 +860,7 @@ class TestMultiGPULlama:
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "base_model": "axolotl-ai-internal/llama-7m",
                 "fix_untrained_tokens": True,
                 "sequence_len": 512,
                 "val_set_size": 0.0,
@@ -917,5 +917,5 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 4.0, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 4.0, "Train loss (%s) is too high"
         )

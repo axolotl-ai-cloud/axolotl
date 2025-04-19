@@ -8,7 +8,7 @@ from transformers.models.auto.tokenization_auto import AutoTokenizer
 
 from axolotl.utils.callbacks.perplexity import Perplexity
 
-MODEL_NAME = "HuggingFaceTB/SmolLM2-135M"
+MODEL_NAME = "axolotl-ai-internal/llama-7m"
 
 
 @fixture()
@@ -36,7 +36,7 @@ One day, a little fish named Fin was swimming near the shore. He saw a big crab 
 """
     result = metric.compute(model, [sample_text])
     ppl = result["score"]
-    assert round(ppl, 2) == 7.41
+    assert round(ppl, 2) == 75.14
 
 
 def test_perplexity_short(model, metric):
@@ -44,4 +44,4 @@ def test_perplexity_short(model, metric):
     sample_text = "Once upon a time, there was a little car named Beep. Beep loved to go fast and play in the sun."
     result = metric.compute(model, [sample_text])
     ppl = result["score"]
-    assert round(ppl, 2) == 10.33
+    assert round(ppl, 2) == 70.54

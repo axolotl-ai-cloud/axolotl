@@ -90,7 +90,7 @@ class TestKnowledgeDistillation:
         train(cfg=cfg, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "model.safetensors").exists()
         check_tensorboard(
-            temp_dir + "/runs", "train/loss", 1.0, "Train Loss is too high"
+            temp_dir + "/runs", "train/loss", 1.0, "Train loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -121,5 +121,5 @@ class TestKnowledgeDistillation:
         train(cfg=cfg, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "adapter_model.safetensors").exists()
         check_tensorboard(
-            temp_dir + "/runs", "train/loss", 1.0, "Train Loss is too high"
+            temp_dir + "/runs", "train/loss", 1.0, "Train loss (%s) is too high"
         )
