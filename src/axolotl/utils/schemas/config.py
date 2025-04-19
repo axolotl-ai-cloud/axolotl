@@ -44,7 +44,6 @@ from axolotl.utils.schemas.model import (
 )
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
-from axolotl.utils.schemas.quant import QuantizationConfig
 from axolotl.utils.schemas.training import HyperparametersConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.vllm import VllmConfig
@@ -83,8 +82,6 @@ class AxolotlInputConfig(
     mean_resizing_embeddings: bool | None = False
     # optionally shrink the embeddings when the tokenizer vocab size is smaller
     shrink_embeddings: bool | None = None
-
-    quantization: QuantizationConfig | None = None
 
     rl: RLType | None = None
     trl: TRLConfig | None = Field(

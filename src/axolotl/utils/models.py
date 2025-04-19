@@ -887,8 +887,8 @@ class ModelLoader:
                 # but deepspeed needs this still in bfloat16
                 bnb_config["bnb_4bit_quant_storage"] = torch.float32
 
-            if self.cfg.bnb_config_kwargs:
-                bnb_config.update(self.cfg.bnb_config_kwargs)
+            if self.cfg.quantization.bnb_config_kwargs:
+                bnb_config.update(self.cfg.quantization.bnb_config_kwargs)
 
             self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
                 **bnb_config,
@@ -904,7 +904,7 @@ class ModelLoader:
                 **bnb_config,
             )
 
-        elif self.cfg.use_hqq:
+        elif self.cfg.hqq:
             from axolotl.utils.schemas.quant import get_hqq_quant_config_kwargs
 
             self.model_kwargs["quantization_config"] = HqqConfig(
@@ -1044,7 +1044,7 @@ class ModelLoader:
                         config=self.model_config,
                     )
             else:
-                if self.cfg.use_hqq:
+                if self.cfg.hqq:
                     # if using hqq, we need to set device_map to gpu otherwise the loading get stuck
                     self.model_kwargs["device_map"] = "auto"
                 self.model = self.auto_model_loader.from_pretrained(
@@ -1201,7 +1201,7 @@ class ModelLoader:
         if (
             not skip_prepare_model_for_kbit_training
             and self.cfg.adapter in ["lora", "qlora"]
-            and (self.cfg.load_in_8bit or self.cfg.load_in_4bit or self.cfg.use_hqq)
+            and (self.cfg.load_in_8bit or self.cfg.load_in_4bit or self.cfg.hqq)
         ):
             LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
             self.model = prepare_model_for_kbit_training(

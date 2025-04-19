@@ -236,6 +236,23 @@ def normalize_config(cfg):
 
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
+    if cfg.quantization:
+        if cfg.quantization.backend in ["bnb"]:
+            if cfg.quantization.bits == 8:
+                cfg.load_in_8bit = True
+            elif cfg.quantization.bits == 4:
+                cfg.load_in_4bit = True
+
+        elif cfg.quantization.backend == "gptq":
+            cfg.gptq = True
+        elif cfg.quantization.backend == "hqq":
+            cfg.hqq = True
+
+    if cfg.hqq and not cfg.quantization.hqq_config:
+        raise ValueError(
+            "If using HQQ, must set `hqq_config` to a list of HQQConfig objects"
+        )
+
 
 def normalize_cfg_datasets(cfg):
     """

@@ -1,8 +1,8 @@
 """Pydantic models for PEFT-related configuration"""
 
-from typing import Any
-
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from axolotl.utils.schemas.quant import QuantizationConfig
 
 
 class LoftQConfig(BaseModel):
@@ -23,8 +23,11 @@ class PeftConfig(BaseModel):
 class LoraConfig(BaseModel):
     """Peft / LoRA configuration subset"""
 
-    load_in_8bit: bool | None = Field(default=False)
-    load_in_4bit: bool | None = Field(default=False)
+    quantization: QuantizationConfig | None = None
+    load_in_4bit: bool | None = None  # for internal use
+    load_in_8bit: bool | None = None  # for internal use
+    hqq: bool | None = None  # for internal use
+    gptq: bool | None = None  # for internal use
 
     adapter: str | None = None
     lora_model_dir: str | None = None
@@ -50,8 +53,6 @@ class LoraConfig(BaseModel):
         },
     )
     lora_on_cpu: bool | None = None
-    gptq: bool | None = None
-    bnb_config_kwargs: dict[str, Any] | None = None
 
     loraplus_lr_ratio: float | None = Field(
         default=None,
@@ -74,11 +75,11 @@ class LoraConfig(BaseModel):
         if (
             not data.get("adapter")
             and not data.get("inference")
-            and (data.get("load_in_8bit") or data.get("load_in_4bit"))
+            and (data.get("quantization"))
         ):
             raise ValueError(
-                "load_in_8bit and load_in_4bit are not supported without setting an adapter for training."
-                "If you want to full finetune, please turn off load_in_8bit and load_in_4bit."
+                "Quantization is not supported without setting an adapter for training."
+                "If you want to full finetune, please turn off Quantization."
             )
         return data
 
@@ -87,24 +88,19 @@ class LoraConfig(BaseModel):
         if self.adapter == "qlora":
             if self.merge_lora:
                 # can't merge qlora if loaded in 8bit or 4bit
-                if self.load_in_8bit:
-                    raise ValueError("Can't merge qlora if loaded in 8bit")
+                if self.quantization:
+                    raise ValueError("Can't merge qlora if loaded in quantized model")
 
-                if self.gptq:
-                    raise ValueError("Can't merge qlora if gptq")
-
-                if self.load_in_4bit and not self.use_hqq:
-                    raise ValueError("Can't merge qlora if loaded in 4bit")
+                if self.quantization.backend == "gptq":
+                    raise ValueError("Can't merge qlora if using gptq")
 
             else:
-                if self.load_in_8bit:
-                    raise ValueError("Can't load qlora in 8bit")
+                if self.quantization.bits >= 4:
+                    raise ValueError("Can't load qlora in >4 bit")
 
-                if self.gptq:
-                    raise ValueError("Can't load qlora if gptq")
+                if self.quantization.backend == "gptq":
+                    raise ValueError("Can't load qlora if using gptq")
 
-                if not self.load_in_4bit and not self.use_hqq:
-                    raise ValueError("Require cfg.load_in_4bit to be True for qlora")
         return self
 
     @field_validator("loraplus_lr_embedding")
