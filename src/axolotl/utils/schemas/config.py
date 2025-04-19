@@ -60,7 +60,6 @@ class AxolotlInputConfig(
     ModelOutputConfig,
     LoraConfig,
     ReLoRAConfig,
-    QuantizationConfig,
     HyperparametersConfig,
     WandbConfig,
     MLFlowConfig,
@@ -84,6 +83,8 @@ class AxolotlInputConfig(
     mean_resizing_embeddings: bool | None = False
     # optionally shrink the embeddings when the tokenizer vocab size is smaller
     shrink_embeddings: bool | None = None
+
+    quantization: QuantizationConfig | None = None
 
     rl: RLType | None = None
     trl: TRLConfig | None = Field(
