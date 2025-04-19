@@ -379,18 +379,6 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
-    def check_hqq_config_redundancy(cls, data):
-        if (data.get("load_in_4bit") or data.get("load_in_8bit")) and data.get(
-            "use_hqq"
-        ):
-
-            raise ValueError(
-                "Can't simultaneously set `hqq` configurations and `load_in_4bit` / `load_in_8bit`"
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_batch_size_fields(cls, data):
         fields = ("micro_batch_size", "gradient_accumulation_steps", "batch_size")
         non_empty_count = sum(1 for field in fields if data.get(field))
