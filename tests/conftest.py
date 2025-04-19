@@ -194,6 +194,14 @@ def download_tiny_shakespeare_dataset():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def download_evolkit_kd_sample_dataset():
+    # download the dataset
+    snapshot_download_w_retry(
+        "axolotl-ai-co/evolkit-logprobs-pipeline-75k-v2-sample", repo_type="dataset"
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
 def download_deepseek_model_fixture():
     snapshot_download_w_retry("axolotl-ai-co/DeepSeek-V3-11M", repo_type="model")
 
@@ -203,6 +211,16 @@ def download_huggyllama_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
         "huggyllama/llama-7b",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_llama33_70b_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "axolotl-ai-co/Llama-3.3-70B-Instruct-tokenizer",
         repo_type="model",
         allow_patterns=["*token*", "config.json"],
     )
@@ -312,6 +330,14 @@ def download_llama2_model_fixture():
         "NousResearch/Llama-2-7b-hf",
         repo_type="model",
         allow_patterns=["*token*", "config.json"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_llama32_1b_model_fixture():
+    snapshot_download_w_retry(
+        "osllmai-community/Llama-3.2-1B",
+        repo_type="model",
     )
 
 
