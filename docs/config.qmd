@@ -63,6 +63,24 @@ bnb_config_kwargs:
   bnb_4bit_quant_type: nf4
   bnb_4bit_use_double_quant: true
 
+# Overrides quantization method to use HQQ instead of default bnb.
+# See: https://huggingface.co/docs/transformers/main/en//quantization/hqq
+#      https://github.com/mobiusml/hqq
+use_hqq: true
+hqq_config:
+  - nbits: 4
+    group_size: 64
+    target_modules:
+      - self_attn.k_proj
+      - self_attn.v_proj
+      - self_attn.o_proj
+  - nbits: 3
+    group_size: 32
+    target_modules:
+      - mlp.gate_proj
+      - mlp.up_proj
+      - mlp.down_proj
+
 
 # Whether you are training a 4-bit GPTQ quantized model
 gptq: true

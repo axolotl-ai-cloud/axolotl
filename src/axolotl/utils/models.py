@@ -36,6 +36,7 @@ from transformers import (
     BitsAndBytesConfig,
     Gemma3ForConditionalGeneration,
     GPTQConfig,
+    HqqConfig,
     Llama4ForConditionalGeneration,
     LlavaForConditionalGeneration,
     Mistral3ForConditionalGeneration,
@@ -853,22 +854,22 @@ class ModelLoader:
             self.cfg.adapter in ["qlora", "lora"]
             and hasattr(self.model_config, "quantization_config")
             and self.model_config.quantization_config["quant_method"]
-            in ["gptq", "awq", "bitsandbytes"]
+            in ["gptq", "awq", "bitsandbytes", "hqq"]
         ):
-            if self.model_config.quantization_config["quant_method"] == "gptq":
-                self.model_kwargs["quantization_config"] = GPTQConfig(
-                    **self.model_config.quantization_config
-                )
-            elif self.model_config.quantization_config["quant_method"] == "awq":
-                self.model_kwargs["quantization_config"] = AwqConfig(
-                    **self.model_config.quantization_config
-                )
-            elif (
-                self.model_config.quantization_config["quant_method"] == "bitsandbytes"
-            ):
-                self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
-                    **self.model_config.quantization_config
-                )
+            quant_config_class_dict = {
+                "gptq": GPTQConfig,
+                "awq": AwqConfig,
+                "bitsandbytes": BitsAndBytesConfig,
+                "hqq": HqqConfig,
+            }
+
+            quant_config_class = quant_config_class_dict[
+                self.model_config.quantization_config["quant_method"]
+            ]
+            self.model_kwargs["quantization_config"] = quant_config_class(
+                **self.model_config.quantization_config
+            )
+
         elif self.cfg.adapter == "qlora" and self.model_kwargs["load_in_4bit"]:
             bnb_config = {
                 "load_in_4bit": True,
@@ -901,6 +902,13 @@ class ModelLoader:
                 bnb_config["llm_int8_skip_modules"] = ["mamba"]
             self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
                 **bnb_config,
+            )
+
+        elif self.cfg.use_hqq:
+            from axolotl.utils.schemas.quant import get_hqq_quant_config_kwargs
+
+            self.model_kwargs["quantization_config"] = HqqConfig(
+                **get_hqq_quant_config_kwargs(self.cfg)
             )
 
         # no longer needed per https://github.com/huggingface/transformers/pull/26610
@@ -1036,6 +1044,9 @@ class ModelLoader:
                         config=self.model_config,
                     )
             else:
+                if self.cfg.use_hqq:
+                    # if using hqq, we need to set device_map to gpu otherwise the loading get stuck
+                    self.model_kwargs["device_map"] = "auto"
                 self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
                     config=self.model_config,
@@ -1190,7 +1201,7 @@ class ModelLoader:
         if (
             not skip_prepare_model_for_kbit_training
             and self.cfg.adapter in ["lora", "qlora"]
-            and (self.cfg.load_in_8bit or self.cfg.load_in_4bit)
+            and (self.cfg.load_in_8bit or self.cfg.load_in_4bit or self.cfg.use_hqq)
         ):
             LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
             self.model = prepare_model_for_kbit_training(
