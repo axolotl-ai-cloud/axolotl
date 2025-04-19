@@ -1,0 +1,577 @@
+# # This is the huggingface model that contains *.pt, *.safetensors, or *.bin files
+# # This can also be a relative path to a model on disk
+# base_model: ./llama-7b-hf
+# # You can specify an ignore pattern if the model repo contains more than 1 model type (*.pt, etc)
+# base_model_ignore_patterns:
+# # If the base_model repo on hf hub doesn't include configuration .json files,
+# # You can set that here, or leave this empty to default to base_model
+# base_model_config: ./llama-7b-hf
+# # You can specify to choose a specific model revision from huggingface hub
+# model_revision:
+# # Optional tokenizer configuration override in case you want to use a different tokenizer
+# # than the one defined in the base model
+# tokenizer_config:
+# # If you want to specify the type of model to load, AutoModelForCausalLM is a good choice too
+# model_type: AutoModelForCausalLM
+# # Corresponding tokenizer for the model AutoTokenizer is a good choice
+# tokenizer_type: AutoTokenizer
+# # Trust remote code for untrusted source
+# trust_remote_code:
+# # use_fast option for tokenizer loading from_pretrained, default to True
+# tokenizer_use_fast:
+# # Whether to use the legacy tokenizer setting, defaults to True
+# tokenizer_legacy:
+# # Resize the model embeddings when new tokens are added to multiples of 32
+# # This is reported to improve training speed on some models
+# resize_token_embeddings_to_32x:
+
+# # Used to identify which the model is based on
+# is_falcon_derived_model:
+# is_llama_derived_model:
+# # Please note that if you set this to true, `padding_side` will be set to "left" by default
+# is_mistral_derived_model:
+# is_qwen_derived_model:
+
+# # optional overrides to the base model configuration
+# model_config:
+#   # RoPE Scaling https://github.com/huggingface/transformers/pull/24653
+#   rope_scaling:
+#     type: # linear | dynamic
+#     factor: # float
+
+
+# # Whether you are training a 4-bit GPTQ quantized model
+# gptq: true
+# gptq_groupsize: 128 # group size
+# gptq_model_v1: false # v1 or v2
+
+# # This will attempt to quantize the model down to 8 bits and use adam 8 bit optimizer
+# load_in_8bit: true
+# # Use bitsandbytes 4 bit
+# load_in_4bit:
+
+# # Use CUDA bf16
+# bf16: true # bool or 'full' for `bf16_full_eval`. require >=ampere
+# # Use CUDA fp16
+# fp16: true
+# # Use CUDA tf32
+# tf32: true # require >=ampere
+
+# # No AMP (automatic mixed precision)
+# bfloat16: true # require >=ampere
+# float16: true
+
+# # A list of one or more datasets to finetune the model with
+# datasets:
+#   # HuggingFace dataset repo | s3://,gs:// path | "json" for local dataset, make sure to fill data_files
+#   - path: vicgalle/alpaca-gpt4
+#   # The type of prompt to use for training. [alpaca, sharegpt, gpteacher, oasst, reflection]
+#     type: alpaca # format | format:<prompt_style> (chat/instruct) | <prompt_strategies>.load_<load_fn>
+#     ds_type: # Optional[str] (json|arrow|parquet|text|csv) defines the datatype when path is a file
+#     data_files: # Optional[str] path to source data files
+#     shards: # Optional[int] number of shards to split data into
+#     name: # Optional[str] name of dataset configuration to load
+#     train_on_split: train # Optional[str] name of dataset split to load from
+
+#     # Optional[str] fastchat conversation type, only used with type: sharegpt
+#     conversation:  # Options (see Conversation 'name'): https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
+#     field_human: # Optional[str]. Human key to use for conversation.
+#     field_model: # Optional[str]. Assistant key to use for conversation.
+
+#   # Custom user prompt
+#   - path: repo
+#     type:
+#       # The below are defaults. only set what's needed.
+#       system_prompt: ""
+#       system_format: "{system}"
+#       field_system: system
+#       field_instruction: instruction
+#       field_input: input
+#       field_output: output
+
+#       # Customizable to be single line or multi-line
+#       # 'format' can include {input}
+#       format: |-
+#         User: {instruction} {input}
+#         Assistant:
+#       # 'no_input_format' cannot include {input}
+#       no_input_format: "{instruction} "
+
+#       # For `completion` datsets only, uses the provided field instead of `text` column
+#       field:
+
+# # Axolotl attempts to save the dataset as an arrow after packing the data together so
+# # subsequent training attempts load faster, relative path
+# dataset_prepared_path: data/last_run_prepared
+# # Push prepared dataset to hub
+# push_dataset_to_hub: # repo path
+# # The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()`
+# # if not set.
+# dataset_processes: # defaults to os.cpu_count() if not set
+# # push checkpoints to hub
+# hub_model_id: # repo path to push finetuned model
+# # how to push checkpoints to hub
+# # https://huggingface.co/docs/transformers/v4.31.0/en/main_classes/trainer#transformers.TrainingArguments.hub_strategy
+# hub_strategy:
+# # Whether to use hf `use_auth_token` for loading datasets. Useful for fetching private datasets
+# # Required to be true when used in combination with `push_dataset_to_hub`
+# hf_use_auth_token: # boolean
+# # How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc. 0 for no eval.
+# val_set_size: 0.04
+# # Num shards for whole dataset
+# dataset_shard_num:
+# # Index of shard to use for whole dataset
+# dataset_shard_idx:
+
+# # The maximum length of an input to train with, this should typically be less than 2048
+# # as most models have a token/context limit of 2048
+# sequence_len: 2048
+# # Pad inputs so each step uses constant sized buffers
+# # This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently
+# pad_to_sequence_len:
+# # Max sequence length to concatenate training samples together up to
+# # Inspired by StackLLaMA. see https://huggingface.co/blog/stackllama#supervised-fine-tuning
+# # FutureWarning: This will soon be DEPRECATED
+# max_packed_sequence_len: 1024
+# # Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'
+# sample_packing:
+# # Set to 'false' if getting errors during eval with sample_packing on.
+# eval_sample_packing:
+# # You can set these packing optimizations AFTER starting a training at least once.
+# # The trainer will provide recommended values for these values.
+# sample_packing_eff_est:
+# total_num_tokens:
+
+# # If you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model
+# adapter: lora
+# # If you already have a lora model trained that you want to load, put that here.
+# # This means after training, if you want to test the model, you should set this to the value of `lora_out_dir`.
+# lora_model_dir:
+
+# # LoRA hyperparameters
+# # For more details about the following options, see:
+# # https://www.anyscale.com/blog/fine-tuning-llms-lora-or-full-parameter-an-in-depth-analysis-with-llama-2
+# lora_r: 8
+# lora_alpha: 16
+# lora_dropout: 0.05
+# lora_target_modules:
+#   - q_proj
+#   - v_proj
+# #  - k_proj
+# #  - o_proj
+# #  - gate_proj
+# #  - down_proj
+# #  - up_proj
+# lora_target_linear: # If true, will target all linear layers
+
+# # If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens.
+# # For LLaMA and Mistral, you need to save `embed_tokens` and `lm_head`. It may vary for other models.
+# # `embed_tokens` converts tokens to embeddings, and `lm_head` converts embeddings to token probabilities.
+# # https://github.com/huggingface/peft/issues/334#issuecomment-1561727994
+# lora_modules_to_save:
+# #  - embed_tokens
+# #  - lm_head
+
+# # Once you complete training, the model will be saved to the following directory.
+# # If you merge the adapter to the base model, a subdirectory `merged` will be created under this directory.
+# # Make sure `lora_model_dir` points to this directory if you want to use the trained model.
+# lora_out_dir:
+# lora_fan_in_fan_out: false
+
+# # ReLoRA configuration
+# # Must use either 'lora' or 'qlora' adapter, and does not support fsdp or deepspeed
+# relora_steps: # Number of steps per ReLoRA restart
+# relora_warmup_steps: # Number of per-restart warmup steps
+# relora_cpu_offload: # True to perform lora weight merges on cpu during restarts, for modest gpu memory savings
+
+# # wandb configuration if you're using it
+# wandb_mode: # "offline" to save run metadata locally and not sync to the server, "disabled" to turn off wandb
+# wandb_project: # Your wandb project name
+# wandb_entity: # A wandb Team name if using a Team
+# wandb_watch:
+# wandb_run_id: # Set the name of your wandb run
+# wandb_log_model: # "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only at the end of training
+
+# # Where to save the full-finetuned model to
+# output_dir: ./completed-model
+
+# # Whether to use torch.compile and which backend to use
+# torch_compile:  # bool
+# torch_compile_backend:  # Optional[str]
+
+# # Training hyperparameters
+
+# # If greater than 1, backpropagation will be skipped and the gradients will be accumulated for the given number of steps.
+# gradient_accumulation_steps: 1
+# # The number of samples to include in each batch. This is the number of samples sent to each GPU.
+# micro_batch_size: 2
+# eval_batch_size:
+# num_epochs: 4
+# warmup_steps: 100  # cannot use with warmup_ratio
+# warmup_ratio: 0.05  # cannot use with warmup_steps
+# learning_rate: 0.00003
+# lr_quadratic_warmup:
+# logging_steps:
+# save_strategy: # Set to `no` to skip checkpoint saves
+# save_steps: # Leave empty to save at each epoch
+# eval_steps: # Leave empty to eval at each epoch, integers for every N steps. decimal for fraction of total steps
+# save_total_limit: # Checkpoints saved at a time
+# # Maximum number of iterations to train for. It precedes num_epochs which means that
+# # if both are set, num_epochs will not be guaranteed.
+# # e.g., when 1 epoch is 1000 steps => `num_epochs: 2` and `max_steps: 100` will train for 100 steps
+# max_steps:
+
+# eval_table_size: # Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
+# eval_table_max_new_tokens: # Total number of tokens generated for predictions sent to wandb. Default is 128
+
+# # Save model as safetensors (require safetensors package)
+# save_safetensors:
+
+# # Whether to mask out or include the human's prompt from the training labels
+# train_on_inputs: false
+# # Group similarly sized data to minimize padding.
+# # May be slower to start, as it must download and sort the entire dataset.
+# # Note that training loss may have an oscillating pattern with this enabled.
+# group_by_length: false
+
+# # Whether to use gradient checkpointing https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing
+# gradient_checkpointing: false
+
+# # Stop training after this many evaluation losses have increased in a row
+# # https://huggingface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppingCallback
+# early_stopping_patience: 3
+
+# # Specify a scheduler and kwargs to use with the optimizer
+# lr_scheduler: # 'one_cycle' | 'log_sweep' | empty for cosine
+# lr_scheduler_kwargs:
+
+# # For one_cycle optim
+# lr_div_factor: # Learning rate div factor
+
+# # For log_sweep optim
+# log_sweep_min_lr:
+# log_sweep_max_lr:
+
+# # Specify optimizer
+# # Valid values are driven by the Transformers OptimizerNames class, see:
+# # https://github.com/huggingface/transformers/blob/95b374952dc27d8511541d6f5a4e22c9ec11fb24/src/transformers/training_args.py#L134
+# #
+# # Note that not all optimizers may be available in your environment, ex: 'adamw_anyprecision' is part of
+# # torchdistx, 'adamw_bnb_8bit' is part of bnb.optim.Adam8bit, etc. When in doubt, it is recommended to start with the optimizer used
+# # in the examples/ for your model and fine-tuning use case.
+# #
+# # Valid values for 'optimizer' include:
+# # - adamw_hf
+# # - adamw_torch
+# # - adamw_torch_fused
+# # - adamw_torch_xla
+# # - adamw_apex_fused
+# # - adafactor
+# # - adamw_anyprecision
+# # - sgd
+# # - adagrad
+# # - adamw_bnb_8bit
+# # - lion_8bit
+# # - lion_32bit
+# # - paged_adamw_32bit
+# # - paged_adamw_8bit
+# # - paged_lion_32bit
+# # - paged_lion_8bit
+# optimizer:
+# # Specify weight decay
+# weight_decay:
+# # adamw hyperparams
+# adam_beta1:
+# adam_beta2:
+# adam_epsilon:
+# # Gradient clipping max norm
+# max_grad_norm:
+
+# # Augmentation techniques
+# # NEFT https://arxiv.org/abs/2310.05914, set this to a number (paper default is 5) to add noise to embeddings
+# # currently only supported on Llama and Mistral
+# noisy_embedding_alpha:
+
+# # Whether to bettertransformers
+# flash_optimum:
+# # Whether to use xformers attention patch https://github.com/facebookresearch/xformers:
+# xformers_attention:
+# # Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention:
+# flash_attention:
+# flash_attn_cross_entropy:  # Whether to use flash-attention cross entropy implementation - advanced use only
+# flash_attn_rms_norm:  # Whether to use flash-attention rms norm implementation - advanced use only
+# flash_attn_fuse_qkv: # Whether to fuse QKV into a single operation
+# flash_attn_fuse_mlp: # Whether to fuse part of the MLP into a single operation
+# # Whether to use scaled-dot-product attention
+# # https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
+# sdp_attention:
+# # Landmark attention (only llama)
+# landmark_attention:
+# # xpos RoPE see https://github.com/kaiokendev/cutoff-len-is-context-len/blob/main/util/xpos_rope_llama_monkey_patch.py
+# # LLaMA only
+# xpos_rope:
+
+# # Resume from a specific checkpoint dir
+# resume_from_checkpoint:
+# # If resume_from_checkpoint isn't set and you simply want it to start where it left off.
+# # Be careful with this being turned on between different models.
+# auto_resume_from_checkpoints: false
+
+# # Don't mess with this, it's here for accelerate and torchrun
+# local_rank:
+
+# # Add or change special tokens.
+# # If you add tokens here, you don't need to add them to the `tokens` list.
+# special_tokens:
+#   # bos_token: "<s>"
+#   # eos_token: "</s>"
+#   # unk_token: "<unk>"
+
+# # Add extra tokens.
+# tokens:
+
+# # FSDP
+# fsdp:
+# fsdp_config:
+
+# # Deepspeed config path. e.g., deepspeed/zero3.json
+# deepspeed:
+
+# # Advanced DDP Arguments
+# ddp_timeout:
+# ddp_bucket_cap_mb:
+# ddp_broadcast_buffers:
+
+# # Path to torch distx for optim 'adamw_anyprecision'
+# torchdistx_path:
+
+# # Set to HF dataset for type: 'completion' for streaming instead of pre-tokenize
+# pretraining_dataset:
+
+# # Debug mode
+# debug:
+
+# # Seed
+# seed:
+
+# # Allow overwrite yml config using from cli
+# strict:
+
+
+
+base_model: ${BASE_MODEL}
+base_model_ignore_patterns: ${BASE_MODEL_IGNORE_PATTERNS}
+base_model_config: ${BASE_MODEL_CONFIG}
+revision_of_model: ${REVISION_OF_MODEL}
+tokenizer_config: ${TOKENIZER_CONFIG}
+model_type: ${MODEL_TYPE}
+tokenizer_type: ${TOKENIZER_TYPE}
+trust_remote_code: ${TRUST_REMOTE_CODE}
+tokenizer_use_fast: ${TOKENIZER_USE_FAST}
+tokenizer_legacy: ${TOKENIZER_LEGACY}
+resize_token_embeddings_to_32x: ${RESIZE_TOKEN_EMBEDDINGS_TO_32X}
+
+is_falcon_derived_model: ${IS_FALCON_DERIVED_MODEL}
+is_llama_derived_model: ${IS_LLAMA_DERIVED_MODEL}
+is_qwen_derived_model: ${IS_QWEN_DERIVED_MODEL}
+is_mistral_derived_model: ${IS_MISTRAL_DERIVED_MODEL}
+
+overrides_of_model_config:
+  rope_scaling:
+    type: ${ROPE_SCALING_TYPE}
+    factor: ${ROPE_SCALING_FACTOR}
+
+bnb_config_kwargs:
+  llm_int8_has_fp16_weight: ${BNB_LLM_INT8_HAS_FP16_WEIGHT}
+  bnb_4bit_quant_type: ${BNB_4BIT_QUANT_TYPE}
+  bnb_4bit_use_double_quant: ${BNB_4BIT_USE_DOUBLE_QUANT}
+
+gptq: ${GPTQ}
+load_in_8bit: ${LOAD_IN_8BIT}
+load_in_4bit: ${LOAD_IN_4BIT}
+bf16: ${BF16}
+fp16: ${FP16}
+tf32: ${TF32}
+bfloat16: ${BFLOAT16}
+float16: ${FLOAT16}
+
+gpu_memory_limit: ${GPU_MEMORY_LIMIT}
+lora_on_cpu: ${LORA_ON_CPU}
+
+datasets:
+  - path: ${DATASET_PATH}
+    type: ${DATASET_TYPE}
+    ds_type: ${DATASET_DS_TYPE}
+    data_files: ${DATASET_DATA_FILES}
+    shards: ${DATASET_SHARDS}
+    name: ${DATASET_NAME}
+    train_on_split: ${DATASET_TRAIN_ON_SPLIT}
+    revision: ${DATASET_REVISION}
+    trust_remote_code: ${DATASET_TRUST_REMOTE_CODE}
+
+rl: ${RL}
+dpo_use_weighting: ${DPO_USE_WEIGHTING}
+
+chat_template: ${CHAT_TEMPLATE}
+chat_template_jinja: ${CHAT_TEMPLATE_JINJA}
+default_system_message: ${DEFAULT_SYSTEM_MESSAGE}
+dataset_prepared_path: ${DATASET_PREPARED_PATH}
+push_dataset_to_hub: ${PUSH_DATASET_TO_HUB}
+dataset_processes: ${DATASET_PROCESSES}
+dataset_keep_in_memory: ${DATASET_KEEP_IN_MEMORY}
+hub_model_id: ${HUB_MODEL_ID}
+hub_strategy: ${HUB_STRATEGY}
+hf_use_auth_token: ${HF_USE_AUTH_TOKEN}
+val_set_size: ${VAL_SET_SIZE}
+dataset_shard_num: ${DATASET_SHARD_NUM}
+dataset_shard_idx: ${DATASET_SHARD_IDX}
+
+sequence_len: ${SEQUENCE_LEN}
+pad_to_sequence_len: ${PAD_TO_SEQUENCE_LEN}
+sample_packing: ${SAMPLE_PACKING}
+eval_sample_packing: ${EVAL_SAMPLE_PACKING}
+sample_packing_eff_est: ${SAMPLE_PACKING_EFF_EST}
+total_num_tokens: ${TOTAL_NUM_TOKENS}
+sample_packing_group_size: ${SAMPLE_PACKING_GROUP_SIZE}
+sample_packing_bin_size: ${SAMPLE_PACKING_BIN_SIZE}
+
+batch_flattening: ${BATCH_FLATTENING}
+device_map: ${DEVICE_MAP}
+max_memory: ${MAX_MEMORY}
+
+adapter: ${ADAPTER}
+lora_model_dir: ${LORA_MODEL_DIR}
+
+lora_r: ${LORA_R}
+lora_alpha: ${LORA_ALPHA}
+lora_dropout: ${LORA_DROPOUT}
+lora_target_modules:
+  - ${LORA_TARGET_MODULES}
+lora_target_linear: ${LORA_TARGET_LINEAR}
+peft_layers_to_transform: ${PEFT_LAYERS_TO_TRANSFORM}
+lora_modules_to_save: ${LORA_MODULES_TO_SAVE}
+lora_fan_in_fan_out: ${LORA_FAN_IN_FAN_OUT}
+
+loraplus_lr_ratio: ${LORAPLUS_LR_RATIO}
+loraplus_lr_embedding: ${LORAPLUS_LR_EMBEDDING}
+
+peft:
+  loftq_config:
+    loftq_bits: ${LOFTQ_BITS}
+
+relora_steps: ${RELORA_STEPS}
+relora_warmup_steps: ${RELORA_WARMUP_STEPS}
+relora_anneal_steps: ${RELORA_ANNEAL_STEPS}
+relora_prune_ratio: ${RELORA_PRUNE_RATIO}
+relora_cpu_offload: ${RELORA_CPU_OFFLOAD}
+
+wandb_mode: ${WANDB_MODE}
+wandb_project: ${WANDB_PROJECT}
+wandb_entity: ${WANDB_ENTITY}
+wandb_watch: ${WANDB_WATCH}
+wandb_name: ${WANDB_NAME}
+wandb_run_id: ${WANDB_RUN_ID}
+wandb_log_model: ${WANDB_LOG_MODEL}
+
+mlflow_tracking_uri: ${MLFLOW_TRACKING_URI}
+mlflow_experiment_name: ${MLFLOW_EXPERIMENT_NAME}
+mlflow_run_name: ${MLFLOW_RUN_NAME}
+hf_mlflow_log_artifacts: ${HF_MLFLOW_LOG_ARTIFACTS}
+
+use_comet: ${USE_COMET}
+comet_api_key: ${COMET_API_KEY}
+comet_workspace: ${COMET_WORKSPACE}
+comet_project_name: ${COMET_PROJECT_NAME}
+comet_experiment_key: ${COMET_EXPERIMENT_KEY}
+comet_mode: ${COMET_MODE}
+comet_online: ${COMET_ONLINE}
+comet_experiment_config: ${COMET_EXPERIMENT_CONFIG}
+
+output_dir: ${OUTPUT_DIR}
+
+torch_compile: ${TORCH_COMPILE}
+torch_compile_backend: ${TORCH_COMPILE_BACKEND}
+
+gradient_accumulation_steps: ${GRADIENT_ACCUMULATION_STEPS}
+micro_batch_size: ${MICRO_BATCH_SIZE}
+eval_batch_size: ${EVAL_BATCH_SIZE}
+num_epochs: ${NUM_EPOCHS}
+warmup_steps: ${WARMUP_STEPS}
+warmup_ratio: ${WARMUP_RATIO}
+learning_rate: ${LEARNING_RATE}
+lr_quadratic_warmup: ${LR_QUADRATIC_WARMUP}
+logging_steps: ${LOGGING_STEPS}
+eval_steps: ${EVAL_STEPS}
+evals_per_epoch: ${EVALS_PER_EPOCH}
+save_strategy: ${SAVE_STRATEGY}
+save_steps: ${SAVE_STEPS}
+saves_per_epoch: ${SAVES_PER_EPOCH}
+save_total_limit: ${SAVE_TOTAL_LIMIT}
+max_steps: ${MAX_STEPS}
+
+eval_table_size: ${EVAL_TABLE_SIZE}
+eval_max_new_tokens: ${EVAL_MAX_NEW_TOKENS}
+eval_causal_lm_metrics: ${EVAL_CAUSAL_LM_METRICS}
+
+profiler_steps: ${PROFILER_STEPS}
+loss_watchdog_threshold: ${LOSS_WATCHDOG_THRESHOLD}
+loss_watchdog_patience: ${LOSS_WATCHDOG_PATIENCE}
+
+save_safetensors: ${SAVE_SAFETENSORS}
+train_on_inputs: ${TRAIN_ON_INPUTS}
+group_by_length: ${GROUP_BY_LENGTH}
+gradient_checkpointing: ${GRADIENT_CHECKPOINTING}
+early_stopping_patience: ${EARLY_STOPPING_PATIENCE}
+
+lr_scheduler: ${LR_SCHEDULER}
+lr_scheduler_kwargs: ${LR_SCHEDULER_KWARGS}
+cosine_min_lr_ratio: ${COSINE_MIN_LR_RATIO}
+cosine_constant_lr_ratio: ${COSINE_CONSTANT_LR_RATIO}
+lr_div_factor: ${LR_DIV_FACTOR}
+
+optimizer: ${OPTIMIZER}
+optim_args: ${OPTIM_ARGS}
+optim_target_modules: ${OPTIM_TARGET_MODULES}
+weight_decay: ${WEIGHT_DECAY}
+adam_beta1: ${ADAM_BETA1}
+adam_beta2: ${ADAM_BETA2}
+adam_epsilon: ${ADAM_EPSILON}
+max_grad_norm: ${MAX_GRAD_NORM}
+
+neftune_noise_alpha: ${NEFTUNE_NOISE_ALPHA}
+
+flash_optimum: ${FLASH_OPTIMUM}
+xformers_attention: ${XFORMERS_ATTENTION}
+flash_attention: ${FLASH_ATTENTION}
+flash_attn_cross_entropy: ${FLASH_ATTN_CROSS_ENTROPY}
+flash_attn_rms_norm: ${FLASH_ATTN_RMS_NORM}
+flash_attn_fuse_qkv: ${FLASH_ATTN_FUSE_QKV}
+flash_attn_fuse_mlp: ${FLASH_ATTN_FUSE_MLP}
+sdp_attention: ${SDP_ATTENTION}
+s2_attention: ${S2_ATTENTION}
+resume_from_checkpoint: ${RESUME_FROM_CHECKPOINT}
+auto_resume_from_checkpoints: ${AUTO_RESUME_FROM_CHECKPOINTS}
+
+local_rank: ${LOCAL_RANK}
+
+special_tokens:
+  bos_token: ${SPECIAL_TOKEN_BOS}
+  eos_token: ${SPECIAL_TOKEN_EOS}
+  unk_token: ${SPECIAL_TOKEN_UNK}
+  pad_token: ${SPECIAL_TOKEN_PAD}
+
+tokens: ${TOKENS}
+
+fsdp: ${FSDP}
+fsdp_config: ${FSDP_CONFIG}
+deepspeed: ${DEEPSPEED}
+
+ddp_timeout: ${DDP_TIMEOUT}
+ddp_bucket_cap_mb: ${DDP_BUCKET_CAP_MB}
+ddp_broadcast_buffers: ${DDP_BROADCAST_BUFFERS}
+
+torchdistx_path: ${TORCHDISTX_PATH}
+pretraining_dataset: ${PRETRAINING_DATASET}
+debug: ${DEBUG}
+seed: ${SEED}
+strict: ${STRICT}
