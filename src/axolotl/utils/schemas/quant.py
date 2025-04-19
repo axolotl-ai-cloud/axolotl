@@ -28,7 +28,7 @@ class QuantizationConfig(BaseModel):
     backend: Literal["bnb", "hqq", "gptq"] | None = None
     bits: int | None = None
     bnb_config: dict[str, Any] | None = None
-    hqq_config: Annotated[list[HQQConfig], MinLen(1)] | None = None
+    hqq_config: HQQConfig | Annotated[list[HQQConfig], MinLen(1)] | None = None
 
     @model_validator(mode="before")
     @classmethod
