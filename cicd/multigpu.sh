@@ -3,8 +3,8 @@ set -e
 
 # Only run two tests at a time to avoid OOM on GPU (with coverage collection)
 pytest -v -n2 \
-  --ignore=/workspace/axolotl/tests/e2e/multigpu/solo/
-  --ignore=/workspace/axolotl/tests/e2e/multigpu/patched/
+  --ignore=/workspace/axolotl/tests/e2e/multigpu/solo/ \
+  --ignore=/workspace/axolotl/tests/e2e/multigpu/patched/ \
   /workspace/axolotl/tests/e2e/multigpu/ \
   --cov=axolotl \
   --cov-report=xml:multigpu-coverage.xml
