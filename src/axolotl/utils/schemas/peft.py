@@ -95,11 +95,12 @@ class LoraConfig(BaseModel):
                     raise ValueError("Can't merge qlora if using gptq")
 
             else:
-                if self.quantization.bits >= 4:
-                    raise ValueError("Can't load qlora in >4 bit")
+                if self.quantization:
+                    if self.quantization.bits >= 4:
+                        raise ValueError("Can't load qlora in >4 bit")
 
-                if self.quantization.backend == "gptq":
-                    raise ValueError("Can't load qlora if using gptq")
+                    if self.quantization.backend == "gptq":
+                        raise ValueError("Can't load qlora if using gptq")
 
         return self
 
