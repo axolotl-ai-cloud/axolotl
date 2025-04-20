@@ -96,7 +96,7 @@ class LoraConfig(BaseModel):
 
             else:
                 if self.quantization:
-                    if self.quantization.bits >= 4:
+                    if self.quantization.bits > 4:
                         raise ValueError("Can't load qlora in >4 bit")
 
                     if self.quantization.backend == "gptq":
