@@ -33,7 +33,10 @@ class TestMixtral(unittest.TestCase):
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 2048,
-                "load_in_4bit": True,
+                "quantization": {
+                    "backend": "bnb",
+                    "bits": 4,
+                },
                 "adapter": "qlora",
                 "lora_r": 16,
                 "lora_alpha": 32,
