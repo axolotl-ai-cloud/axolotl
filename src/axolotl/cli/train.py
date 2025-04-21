@@ -51,9 +51,9 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
 
     plugin_manager = PluginManager.get_instance()
     plugin_manager.post_train(cfg, model)
-    
+
     del model, tokenizer, trainer
-    
+
     plugin_manager.post_train_unload(cfg)
 
 
