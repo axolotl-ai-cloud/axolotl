@@ -22,7 +22,7 @@ hf_xet==1.0.0
 
 optimum==1.16.2
 hf_transfer
-hqq
+hqq==0.2.5
 sentencepiece
 gradio==5.23.3
 
