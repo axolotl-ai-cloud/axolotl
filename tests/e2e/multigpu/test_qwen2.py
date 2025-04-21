@@ -28,7 +28,10 @@ class TestMultiGPUQwen2:
         cfg = DictDefault(
             {
                 "base_model": base_model,
-                "load_in_4bit": True,
+                "quantization": {
+                    "backend": "bnb",
+                    "bits": 4,
+                },
                 "rl": "dpo",
                 "chat_template": "chatml",
                 "sequence_len": 2048,
