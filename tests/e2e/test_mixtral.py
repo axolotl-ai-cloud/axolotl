@@ -35,7 +35,10 @@ class TestMixtral(unittest.TestCase):
                 "tokenizer_config": "LoneStriker/Mixtral-8x7B-v0.1-HF",
                 "flash_attention": True,
                 "sequence_len": 1024,
-                "load_in_4bit": True,
+                "quantization": {
+                    "backend": "bnb",
+                    "bits": 4,
+                },
                 "adapter": "qlora",
                 "lora_r": 4,
                 "lora_alpha": 8,
@@ -91,7 +94,10 @@ class TestMixtral(unittest.TestCase):
                 "tokenizer_config": "LoneStriker/Mixtral-8x7B-v0.1-HF",
                 "flash_attention": False,
                 "sequence_len": 1024,
-                "load_in_4bit": True,
+                "quantization": {
+                    "backend": "bnb",
+                    "bits": 4,
+                },
                 "adapter": "qlora",
                 "lora_r": 4,
                 "lora_alpha": 8,
