@@ -457,7 +457,21 @@ class PluginManager:
             if plugin_callbacks:
                 callbacks.extend(plugin_callbacks)
         return callbacks
+        
+    def post_train(self, cfg, model):
+        """
+        Calls the post_train method of all registered plugins.
 
+        Parameters:
+        cfg (dict): The configuration for the plugins.
+        model (object): The loaded model.
+
+        Returns:
+        None
+        """
+        for plugin in self.plugins.values():
+            plugin.post_train(cfg, model)
+            
     def post_train_unload(self, cfg):
         """
         Calls the post_train_unload method of all registered plugins.
