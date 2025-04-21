@@ -40,7 +40,7 @@ class RexLR(LRScheduler):
         self.max_lr = max_lr
         self.total_steps = total_steps
         self.num_warmup_steps = num_warmup_steps
-        self.last_step = last_step - 1
+        self.last_step = max(last_step - 1, 0)
 
         # Ensure each parameter group has an "initial_lr" key to avoid issues when resuming.
         for group in optimizer.param_groups:
