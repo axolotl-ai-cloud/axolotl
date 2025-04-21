@@ -58,8 +58,6 @@ overrides_of_model_kwargs:
 
 
 # Quantization configuration.
-# See: https://huggingface.co/docs/transformers/main/en//quantization/hqq
-#      https://github.com/mobiusml/hqq
 quantization:
   backend: bnb | hqq | gptq
   bits: 8
