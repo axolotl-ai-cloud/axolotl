@@ -171,7 +171,10 @@ class TestMultiGPULlama:
                 "sample_packing": False,
                 "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
-                "load_in_8bit": True,
+                "quantization": {
+                    "backend": "bnb",
+                    "bits": 8,
+                },
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
@@ -249,7 +252,10 @@ class TestMultiGPULlama:
                 "sample_packing": False,
                 "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
-                "load_in_4bit": True,
+                "quantization": {
+                    "backend": "bnb",
+                    "bits": 4,
+                },
                 "adapter": "qlora",
                 "lora_r": 8,
                 "lora_alpha": 16,
@@ -548,7 +554,10 @@ class TestMultiGPULlama:
                 "base_model": "axolotl-ai-co/SmolLM2-135M-bnb-nf4-bf16",
                 "adapter": "qlora",
                 "mean_resizing_embeddings": True,
-                "load_in_4bit": True,
+                "quantization": {
+                    "backend": "bnb",
+                    "bits": 4,
+                },
                 "lora_r": 8,
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
@@ -648,7 +657,10 @@ class TestMultiGPULlama:
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "load_in_4bit": True,
+                "quantization": {
+                    "backend": "bnb",
+                    "bits": 4,
+                },
             }
         else:
             adapter = {}
@@ -722,7 +734,10 @@ class TestMultiGPULlama:
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "load_in_4bit": True,
+                "quantization": {
+                    "backend": "bnb",
+                    "bits": 4,
+                },
             }
         else:
             adapter = {}
@@ -796,7 +811,10 @@ class TestMultiGPULlama:
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "load_in_4bit": True,
+                "quantization": {
+                    "backend": "bnb",
+                    "bits": 4,
+                },
             }
         else:
             adapter = {}
