@@ -39,8 +39,8 @@ class TrainerCliArgs:
 class VllmServeCliArgs:
     """Dataclass with CLI arguments for `axolotl vllm-serve` command."""
 
-    tensor_parallel_size: int = field(
-        default=1,
+    tensor_parallel_size: Optional[int] = field(
+        default=None,
         metadata={"help": "Number of tensor parallel workers to use."},
     )
     host: Optional[str] = field(
