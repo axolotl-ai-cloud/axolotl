@@ -36,3 +36,11 @@ class VllmConfig(BaseModel):
         default=None,
         json_schema_extra={"description": "Enable prefix caching for VLLM"},
     )
+    host: str | None = Field(
+        default="0.0.0.0",  # nosec B104
+        json_schema_extra={"description": "Host for the vLLM server to start on"},
+    )
+    port: int | None = Field(
+        default=8000,
+        json_schema_extra={"description": "Port of the vLLM server to start on"},
+    )

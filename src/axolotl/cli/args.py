@@ -39,16 +39,16 @@ class TrainerCliArgs:
 class VllmServeCliArgs:
     """Dataclass with CLI arguments for `axolotl vllm-serve` command."""
 
-    tensor_parallel_size: int = field(
-        default=1,
+    tensor_parallel_size: Optional[int] = field(
+        default=None,
         metadata={"help": "Number of tensor parallel workers to use."},
     )
-    host: str = field(
-        default="0.0.0.0",  # nosec B104
+    host: Optional[str] = field(
+        default=None,  # nosec B104
         metadata={"help": "Host address to run the server on."},
     )
-    port: int = field(
-        default=8000,
+    port: Optional[int] = field(
+        default=None,
         metadata={"help": "Port to run the server on."},
     )
     gpu_memory_utilization: Optional[float] = field(
