@@ -4,7 +4,7 @@ LLMCompressor and Sparse Finetuning config models.
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 from typing_extensions import Annotated
 
 
@@ -38,7 +38,3 @@ class LLMCompressorArgs(BaseModel):
             description="Arguments enabling compression pathways through the LLM Compressor plugins"
         ),
     ]
-
-    model_config = ConfigDict(
-        validate_assignment=True,
-    )
