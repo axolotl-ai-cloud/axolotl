@@ -5,7 +5,7 @@ sequence parallelism functionality; i.e., duplicating data across ranks in the s
 sequencee parallel group.
 """
 
-from typing import Optional, Sized
+from typing import Sized
 
 import torch
 from torch.utils.data import Sampler
@@ -23,11 +23,11 @@ class SequenceParallelRepeatRandomSampler(Sampler):
         self,
         dataset: Sized,
         mini_repeat_count: int,
+        world_size: int,
+        rank: int,
         batch_size: int = 1,
         repeat_count: int = 1,
         sequence_parallel_degree: int = 1,
-        world_size: Optional[int] = None,
-        rank: Optional[int] = None,
         shuffle: bool = True,
         seed: int = 0,
         drop_last: bool = False,

@@ -19,8 +19,6 @@ from axolotl.monkeypatch.attention.ring_attn import (
     update_ring_attn_params,
 )
 
-LOG = logging.getLogger(__name__)
-
 
 def apply_sequence_parallelism(
     batch: dict[str, torch.Tensor],
