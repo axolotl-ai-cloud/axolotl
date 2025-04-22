@@ -1,9 +1,14 @@
-import runpod
+"""
+Runpod serverless entrypoint handler
+"""
+
 import os
+
+import runpod
+import yaml
+from huggingface_hub._login import login
 from train import train
 from utils import get_output_dir
-from huggingface_hub._login import login
-import yaml
 
 BASE_VOLUME = os.environ.get("BASE_VOLUME", "/runpod-volume")
 if not os.path.exists(BASE_VOLUME):
@@ -30,7 +35,7 @@ async def handler(job):
     args["runpod_job_id"] = runpod_job_id
 
     yaml_data = yaml.dump(args, default_flow_style=False)
-    with open(config_path, "w") as file:
+    with open(config_path, "w", encoding="utf-8") as file:
         file.write(yaml_data)
 
     # Handle credentials
