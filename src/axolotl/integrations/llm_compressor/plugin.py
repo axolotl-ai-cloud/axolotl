@@ -5,11 +5,12 @@ by maintaining masks for zero weights during training.
 
 import logging
 from functools import wraps
-from typing import Any, Callable, ParamSpec, TypeVar
+from typing import Any, Callable, Concatenate, ParamSpec, TypeVar
 
 from llmcompressor import active_session, create_session
 from llmcompressor.core import callbacks as session_callbacks
 from llmcompressor.recipe import Recipe
+from torch.nn import Module
 from transformers.trainer import Trainer
 from transformers.trainer_callback import TrainerCallback, TrainerControl, TrainerState
 from transformers.training_args import TrainingArguments
@@ -42,6 +43,7 @@ class LLMCompressorCallbackHandler(TrainerCallback):
         self.recipe = (
             Recipe.model_validate(recipe) if not isinstance(recipe, Recipe) else recipe
         )
+        self.original_compute_loss = trainer.compute_loss
         self.trainer.compute_loss = compute_loss_wrapper(self.trainer.compute_loss)
         create_session()
 
@@ -110,6 +112,7 @@ class LLMCompressorCallbackHandler(TrainerCallback):
         """
         super().on_train_end(args, state, control, **kwargs)
         active_session().finalize()
+        self.trainer.compute_loss_func = self.original_compute_loss
 
 
 class LLMCompressorPlugin(BasePlugin):
@@ -145,7 +148,9 @@ class LLMCompressorPlugin(BasePlugin):
         return [callback]
 
 
-def compute_loss_wrapper(compute_loss_func: Callable[P, R]) -> Callable[P, R]:
+def compute_loss_wrapper(
+    compute_loss_func: Callable[Concatenate[Module, P], R],
+) -> Callable[Concatenate[Module, P], R]:
     """
     Wraps the loss computation function to trigger the loss_calculated callback.
 
@@ -157,9 +162,9 @@ def compute_loss_wrapper(compute_loss_func: Callable[P, R]) -> Callable[P, R]:
     """
 
     @wraps(compute_loss_func)
-    def compute_and_notify(*args: P.args, **kwargs: P.kwargs) -> R:
-        loss = compute_loss_func(*args, **kwargs)
-        if active_session().lifecycle.initialized_:
+    def compute_and_notify(model: Module, *args: P.args, **kwargs: P.kwargs) -> R:
+        loss = compute_loss_func(model, *args, **kwargs)
+        if active_session().lifecycle.initialized_ and model.training:
             session_callbacks.loss_calculated(loss=loss)
         return loss
 
