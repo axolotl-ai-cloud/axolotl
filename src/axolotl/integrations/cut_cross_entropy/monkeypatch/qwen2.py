@@ -33,6 +33,5 @@ def patch_qwen2(
         maybe_model.forward = MethodType(cce_forward, maybe_model)
         return maybe_model
 
-    print("Patching qwen2")
     modeling_qwen2.Qwen2ForCausalLM.forward = cce_forward
     return None
