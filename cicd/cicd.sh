@@ -9,8 +9,7 @@ pytest -v --durations=10 -n8 \
   --ignore=tests/patched/ \
   --ignore=tests/cli \
   /workspace/axolotl/tests/ \
-  --cov=axolotl \
-  --cov-report=xml:coverage.xml
+  --cov=axolotl
 
 # Run lora kernels tests with coverage append
 pytest -v --durations=10 \
@@ -51,11 +50,6 @@ pytest -v --durations=10 \
   /workspace/axolotl/tests/e2e/ \
   --cov=axolotl \
   --cov-append \
-  --cov-report=xml:coverage.xml
+  --cov-report=xml:e2e-coverage.xml
 
-# Upload coverage to Codecov
-if [ -f e2e-coverage.xml ]; then
-  codecov -f e2e-coverage.xml -F e2e,pytorch-${PYTORCH_VERSION}
-else
-  echo "Coverage file not found. Coverage report may have failed."
-fi
+codecov upload-process -t $CODECOV_TOKEN -f e2e-coverage.xml -F e2e,pytorch-${PYTORCH_VERSION}
