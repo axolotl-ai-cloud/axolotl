@@ -87,24 +87,24 @@ class LoraConfig(BaseModel):
     def validate_qlora(self):
         if self.adapter == "qlora":
             if self.merge_lora:
-                if self.quantization.bits == 8:
+                if self.quantization.bits == 8 or self.cfg.load_in_8bit:
                     raise ValueError("Can't merge qlora if loaded in 8bit")
 
                 if self.quantization.backend == "gptq":
                     raise ValueError("Can't merge qlora if using gptq")
 
-                if self.quantization.bits == 4:
+                if self.quantization.bits == 4 or self.cfg.load_in_4bit:
                     raise ValueError("Can't merge qlora if loaded in 4bit")
 
             else:
                 if self.quantization:
-                    if self.quantization.bits == 8:
+                    if self.quantization.bits == 8 or self.cfg.load_in_8bit:
                         raise ValueError("Can't load qlora in 8bit")
 
                     if self.quantization.backend == "gptq":
                         raise ValueError("Can't load qlora if using gptq")
 
-                    if not self.quantization.bits == 4:
+                    if not self.quantization.bits == 4 or self.cfg.load_in_4bit:
                         raise ValueError("Require quantization.bits <= 4 for qlora")
 
         return self
@@ -121,6 +121,24 @@ class LoraConfig(BaseModel):
     def validate_lora_dropout(cls, data):
         if data.get("adapter") is not None and data.get("lora_dropout") is None:
             data["lora_dropout"] = 0.0
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_hqq(cls, data):
+        if (
+            data.get("quantization")
+            and data.get("quantization").get("backend") == "hqq"
+        ):
+            if not data.get("quantization").get("hqq_config"):
+                raise ValueError(
+                    "If using HQQ, must set `hqq_config` under `quantization`"
+                )
+
+            if data.get("load_in_4bit") or data.get("load_in_8bit"):
+                raise ValueError(
+                    "If using HQQ quantization, please remove load_in_4bit or load_in_8bit"
+                )
         return data
 
 

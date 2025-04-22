@@ -243,15 +243,10 @@ def normalize_config(cfg):
             elif cfg.quantization.bits == 4:
                 cfg.load_in_4bit = True
 
-        elif cfg.quantization.backend == "gptq":
+        if cfg.quantization.backend == "gptq":
             cfg.gptq = True
         elif cfg.quantization.backend == "hqq":
             cfg.hqq = True
-
-    if cfg.hqq and not cfg.quantization.hqq_config:
-        raise ValueError(
-            "If using HQQ, must set `hqq_config` to a list of HQQConfig objects"
-        )
 
 
 def normalize_cfg_datasets(cfg):

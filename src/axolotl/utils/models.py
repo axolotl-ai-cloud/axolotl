@@ -838,6 +838,7 @@ class ModelLoader:
             (not self.cfg.quantization)
             and (not self.cfg.load_in_8bit)
             and (not self.cfg.load_in_4bit)
+            and not self.cfg.gptq
         ):
             return
         self.model_kwargs["load_in_8bit"] = self.cfg.load_in_8bit

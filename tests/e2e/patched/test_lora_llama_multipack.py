@@ -89,6 +89,9 @@ class TestLoraLlama(unittest.TestCase):
                 "sequence_len": 1024,
                 "sample_packing": True,
                 "flash_attention": True,
+                "quantization": {
+                    "backend": "gptq",
+                },
                 "load_in_8bit": True,
                 "adapter": "lora",
                 "gptq": True,
