@@ -1,4 +1,9 @@
+"""
+Runpod launcher utils
+"""
+
 import os
+
 import yaml
 
 
@@ -27,7 +32,8 @@ def make_valid_config(input_args):
     :return: str, path to the updated config file
     """
     # Load default config
-    all_args = yaml.safe_load(open("config/config.yaml", "r"))
+    with open("config/config.yaml", "r", encoding="utf-8") as fin:
+        all_args = yaml.safe_load(fin)
 
     if not input_args:
         print("No args provided, using defaults")
@@ -38,7 +44,7 @@ def make_valid_config(input_args):
     updated_config_path = "config/updated_config.yaml"
 
     # Save updated config to new file
-    with open(updated_config_path, "w") as f:
+    with open(updated_config_path, "w", encoding="utf-8") as f:
         yaml.dump(all_args, f)
 
     return updated_config_path
@@ -57,9 +63,9 @@ def set_config_env_vars(args: dict):
         """Convert Python values to string format for environment variables"""
         if value is None:
             return ""
-        elif isinstance(value, bool):
+        if isinstance(value, bool):
             return str(value).lower()
-        elif isinstance(value, (list, dict)):
+        if isinstance(value, (list, dict)):
             return str(value)
         return str(value)
 
