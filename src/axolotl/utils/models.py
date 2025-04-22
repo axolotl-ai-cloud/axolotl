@@ -893,7 +893,7 @@ class ModelLoader:
                 # but deepspeed needs this still in bfloat16
                 bnb_config["bnb_4bit_quant_storage"] = torch.float32
 
-            if self.cfg.quantization.bnb_config_kwargs:
+            if self.cfg.quantization and self.cfg.quantization.bnb_config_kwargs:
                 bnb_config.update(self.cfg.quantization.bnb_config_kwargs)
 
             self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
