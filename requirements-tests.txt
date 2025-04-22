@@ -1,4 +1,5 @@
 codecov
+codecov-cli
 pytest
 pytest-cov
 pytest-retry
