@@ -276,7 +276,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 and "eos_token" not in self.prompter.chat_template
             ):
                 LOG.warning(
-                    f"EOS token '{self.tokenizer.eos_token}' not found in chat template. Please check if your template/EOS token is correct."
+                    f"EOS token '{self.tokenizer.eos_token}' not found in chat_template. Please check if your template/EOS token is correct."
                 )
             return
 
@@ -285,7 +285,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         for token in self.eot_tokens:
             # Check if EOT token is in the chat_template
             if token not in self.prompter.chat_template:
-                LOG.warning(f"EOT token '{token}' not found in chat template.")
+                LOG.warning(f"EOT token '{token}' not found in chat_template.")
                 # Don't add to the valid tokens list
                 continue
 
