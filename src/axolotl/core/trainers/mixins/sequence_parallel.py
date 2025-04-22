@@ -160,7 +160,6 @@ class SequenceParallelMixin:
         )
 
 
-<<<<<<< HEAD
 class SequenceParallelContextManager:
     """
     Context manager for sequence parallelism operations.
@@ -313,40 +312,3 @@ class SequenceParallelContextManager:
                     result[:, pos] = gathered_tensor[:, i]
 
         return result
-=======
-class SequenceParallelismManager:
-    def __init__(self, local_rank, local_world_size):
-        self.local_rank = local_rank
-        self.local_world_size = local_world_size
-        
-    @contextmanager
-    def apply(self, batch):
-        """
-        Context manager that applies sequence parallelism slicing to a batch,
-        and restores the original batch afterward if needed.
-        
-        Args:
-            batch: Batch dictionary from parent collator.
-            
-        Yields:
-            Sliced batch dictionary for use in the model.
-        """
-        # Get local (start, end) for sequence parallelism slicing
-        total_seq_len = batch["input_ids"].size(1)
-        slice_size = total_seq_len // self.local_world_size
-        start = self.local_rank * slice_size
-        end = start + slice_size
-        
-        # Update params for varlen ring attention calculation
-        if batch.get("position_ids") is not None:
-            update_ring_attn_params(
-                input_ids=batch["input_ids"], position_ids=batch["position_ids"]
-            )
-
-        # Slice batch for sequence parallel processing
-        for key in batch:
-            if isinstance(batch[key], torch.Tensor) and batch[key].size(1) == total_seq_len:
-                batch[key] = batch[key][:, start:end]
-
-        yield batch
->>>>>>> c0054f07 (progress)
