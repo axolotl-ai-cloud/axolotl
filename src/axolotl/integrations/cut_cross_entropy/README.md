@@ -47,6 +47,8 @@ cut_cross_entropy: true
 - qwen2
 - cohere
 - cohere2
+- glm
+- glm4
 
 ## Citation
 
