@@ -422,6 +422,9 @@ class TrainerBuilderBase(abc.ABC):
             if self.cfg.torch_compile_mode:
                 training_args_kwargs["torch_compile_mode"] = self.cfg.torch_compile_mode
 
+        if self.cfg.compile_optimizer:
+            training_args_kwargs["compile_optimizer"] = True
+
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
         if self.cfg.gradient_checkpointing:
             training_args_kwargs["gradient_checkpointing"] = (
