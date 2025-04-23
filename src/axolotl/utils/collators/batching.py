@@ -141,8 +141,8 @@ class DataCollatorForSeq2Seq:
             )
             features["decoder_input_ids"] = decoder_input_ids
 
-        if self.sequence_parallel_degree > 1:
-            features = self.apply_sequence_parallelism(features)
+        # if self.sequence_parallel_degree > 1:
+        #     features = self.apply_sequence_parallelism(features)
 
         return features
 

@@ -25,6 +25,7 @@ from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+from axolotl.core.trainers.sp import SequenceParallelContext
 from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
@@ -192,6 +193,12 @@ def execute_training(
             enable_flash=True,
             enable_math=True,
             enable_mem_efficient=True,
+        ):
+            trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+    elif cfg.sequence_parallel_degree > 1:
+        with SequenceParallelContext(
+            sequence_parallel_degree=cfg.sequence_parallel_degree,
+            ring_attn_func=cfg.ring_attn_func,
         ):
             trainer.train(resume_from_checkpoint=resume_from_checkpoint)
     else:
