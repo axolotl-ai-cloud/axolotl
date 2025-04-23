@@ -37,3 +37,7 @@ RUN git lfs install --skip-repo && \
     pip3 install awscli && \
     # The base image ships with `pydantic==1.8.2` which is not working
     pip3 install -U --no-cache-dir pydantic==1.10.10
+
+RUN if [ "$PYTORCH_VERSION" = "2.7.0" ] ; then \
+        pip3 install flash-attn==2.7.4.post1; \
+    fi
