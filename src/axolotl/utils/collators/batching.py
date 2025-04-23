@@ -1,4 +1,4 @@
-src/axolotl/train.py"""Data collators for axolotl to pad labels and position_ids for packed sequences"""
+"""Data collators for axolotl to pad labels and position_ids for packed sequences"""
 
 from dataclasses import dataclass
 from typing import Any
