@@ -932,9 +932,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 collator = DataCollatorForSeq2Seq
 
         kwargs["return_tensors"] = "pt"
-        if issubclass(collator, DataCollatorForSeq2Seq):
-            kwargs["sequence_parallel_degree"] = training_args.sequence_parallel_degree
-            kwargs["ring_attn_func"] = training_args.ring_attn_func
 
         return collator(
             *collator_args,
