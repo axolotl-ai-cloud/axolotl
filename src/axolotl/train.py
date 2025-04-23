@@ -197,6 +197,7 @@ def execute_training(
             trainer.train(resume_from_checkpoint=resume_from_checkpoint)
     elif cfg.sequence_parallel_degree > 1:
         with SequenceParallelContext(
+            model=trainer.model,
             sequence_parallel_degree=cfg.sequence_parallel_degree,
             ring_attn_func=cfg.ring_attn_func,
         ):
