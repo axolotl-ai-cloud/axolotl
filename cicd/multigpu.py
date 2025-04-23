@@ -29,6 +29,7 @@ df_args = {
     "CUDA": os.environ.get("CUDA", "121"),
     "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/main"),
     "GITHUB_SHA": os.environ.get("GITHUB_SHA", ""),
+    "CODECOV_TOKEN": os.environ.get("CODECOV_TOKEN", ""),
     "HF_HOME": "/workspace/data/huggingface-cache/hub",
 }
 

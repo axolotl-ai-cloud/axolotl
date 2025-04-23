@@ -28,6 +28,7 @@ df_args = {
     "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/main"),
     "GITHUB_SHA": os.environ.get("GITHUB_SHA", ""),
     "NIGHTLY_BUILD": os.environ.get("NIGHTLY_BUILD", ""),
+    "CODECOV_TOKEN": os.environ.get("CODECOV_TOKEN", ""),
     "HF_HOME": "/workspace/data/huggingface-cache/hub",
 }
 
