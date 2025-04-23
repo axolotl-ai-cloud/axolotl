@@ -18,6 +18,7 @@ from pydantic import (
 )
 from transformers.utils.import_utils import is_torch_npu_available
 
+from axolotl.utils.distributed import is_main_process
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
     DPODataset,
@@ -1205,6 +1206,7 @@ class AxolotlInputConfig(
         if getattr(self, "sequence_parallel_degree", 1) == 1:
             return self
 
+        # Your validation logic for ring_attn_func
         from axolotl.monkeypatch.attention.ring_attn.patch import RingAttnFunc
 
         if self.ring_attn_func is not None:
