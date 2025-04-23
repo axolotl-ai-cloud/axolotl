@@ -201,13 +201,13 @@ See [LM Eval Harness](https://github.com/EleutherAI/lm-evaluation-harness) for m
 
 ### delinearize-llama4
 
-Delinearizes a Llama 4 linearized model into a regular HuggingFace Llama 4 model.
+Delinearizes a Llama 4 linearized model into a regular HuggingFace Llama 4 model. This only works with the non-quantized linearized model.
 
 ```bash
 axolotl delinearize-llama4 --model path/to/model_dir --output path/to/output_dir
 ```
 
-This would be necessary to use with other frameworks.
+This would be necessary to use with other frameworks. If you have an adapter, merge it with the non-quantized linearized model before delinearizing.
 
 
 ## Legacy CLI Usage
