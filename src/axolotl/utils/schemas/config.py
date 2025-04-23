@@ -719,9 +719,10 @@ class AxolotlInputConfig(
             and data.get("eval_sample_packing") is None
             and not data.get("eval_table_size")
         ):
-            LOG.info(
-                "explicitly setting `eval_sample_packing` to match `sample_packing`"
-            )
+            if is_main_process():
+                LOG.info(
+                    "explicitly setting `eval_sample_packing` to match `sample_packing`"
+                )
             data["eval_sample_packing"] = True
 
         if (
@@ -1206,7 +1207,6 @@ class AxolotlInputConfig(
         if getattr(self, "sequence_parallel_degree", 1) == 1:
             return self
 
-        # Your validation logic for ring_attn_func
         from axolotl.monkeypatch.attention.ring_attn.patch import RingAttnFunc
 
         if self.ring_attn_func is not None:
