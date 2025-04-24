@@ -2,6 +2,7 @@
 Module for Axolotl trainer sequence parallelism mixin and training context manager
 """
 
+import functools
 import logging
 
 import torch
@@ -18,6 +19,66 @@ from axolotl.monkeypatch.attention.ring_attn import (
 )
 
 LOG = logging.getLogger(__name__)
+
+
+def apply_sequence_parallelism(
+    batch: dict[str, torch.Tensor],
+    local_rank: int,
+    local_world_size: int,
+    ring_attn_func: RingAttnFunc,
+) -> dict[str, torch.Tensor]:
+    """
+    Apply sequence parallelism slicing to a batch.
+
+    Args:
+        batch: Batch dictionary (e.g., input_ids, attention_mask, etc.)
+        local_rank: Local rank in the sequence parallel group
+        local_world_size: World size of the sequence parallel group
+        ring_attn_func: The ring attention function to use
+
+    Returns:
+        Sliced batch dictionary.
+    """
+    # Update ring attention params if needed
+    if batch.get("position_ids") is not None:
+        update_ring_attn_params(position_ids=batch["position_ids"])
+
+    # Slice batch for sequence parallel processing
+    total_seq_len = batch["input_ids"].size(1)
+    for key in batch:
+        if (
+            key in batch
+            and isinstance(batch[key], torch.Tensor)
+            and batch[key].dim() > 1
+            and batch[key].size(1) == total_seq_len
+        ):
+
+            if ring_attn_func in [
+                RingAttnFunc.VARLEN_LLAMA3,
+                RingAttnFunc.BATCH_RING,
+            ]:
+                # Split in sequential fashion and grab this rank's chunk
+                batch[key] = (
+                    batch[key].chunk(local_world_size, dim=1)[local_rank].contiguous()
+                )
+            elif ring_attn_func is RingAttnFunc.BATCH_ZIGZAG:
+                chunks = batch[key].chunk(2 * local_world_size, dim=1)
+
+                # Take rank's chunk and opposing chunk for zigzag pattern
+                selected_chunks = [
+                    chunks[local_rank],
+                    chunks[2 * local_world_size - local_rank - 1],
+                ]
+                batch[key] = torch.cat(selected_chunks, dim=1).contiguous()
+            elif ring_attn_func is RingAttnFunc.BATCH_STRIPE:
+                # Split into striped data and stack
+                tensor = torch.stack(
+                    batch[key].split(local_world_size, dim=1),
+                    dim=1,
+                ).transpose(1, 2)
+                batch[key] = tensor[:, local_rank].contiguous()
+
+    return batch
 
 
 class SequenceParallelMixin:
@@ -125,11 +186,20 @@ class SequenceParallelContextManager:
         # Will store hook handles for removal
         self.hook_handles: list[RemovableHandle] = []
 
+        # Create a partially applied version of the apply_sequence_parallelism function
+        # with pre-configured params
+        self.apply_sequence_parallelism = functools.partial(
+            apply_sequence_parallelism,
+            local_rank=self.local_rank,
+            local_world_size=self.local_world_size,
+            ring_attn_func=self.ring_attn_func,
+        )
+
     def __enter__(self):
         # Forward pre-hook to apply sequence parallelism
         def sequence_parallel_pre_hook(_, args, kwargs):
             # Apply sequence parallelism to kwargs
-            kwargs = self.apply_sequence_parallelism(kwargs)
+            kwargs = self.apply_sequence_parallelism(batch=kwargs)
             return args, kwargs
 
         # Forward post-hook to gather outputs
@@ -154,61 +224,6 @@ class SequenceParallelContextManager:
         for handle in self.hook_handles:
             handle.remove()
         self.hook_handles = []
-
-    def apply_sequence_parallelism(
-        self, batch: dict[str, torch.Tensor]
-    ) -> dict[str, torch.Tensor]:
-        """
-        Apply sequence parallelism slicing to a batch.
-
-        Args:
-            batch: Batch dictionary (e.g., input_ids, attention_mask, etc.)
-
-        Returns:
-            Sliced batch dictionary.
-        """
-        # Update ring attention params if needed
-        if batch.get("position_ids") is not None:
-            update_ring_attn_params(position_ids=batch["position_ids"])
-
-        # Slice batch for sequence parallel processing
-        total_seq_len = batch["input_ids"].size(1)
-        for key in batch:
-            if (
-                key in batch
-                and isinstance(batch[key], torch.Tensor)
-                and batch[key].dim() > 1
-                and batch[key].size(1) == total_seq_len
-            ):
-
-                if self.ring_attn_func in [
-                    RingAttnFunc.VARLEN_LLAMA3,
-                    RingAttnFunc.BATCH_RING,
-                ]:
-                    # Split in sequential fashion and grab this rank's chunk
-                    batch[key] = (
-                        batch[key]
-                        .chunk(self.local_world_size, dim=1)[self.local_rank]
-                        .contiguous()
-                    )
-                elif self.ring_attn_func is RingAttnFunc.BATCH_ZIGZAG:
-                    chunks = batch[key].chunk(2 * self.local_world_size, dim=1)
-
-                    # Take rank's chunk and opposing chunk for zigzag pattern
-                    selected_chunks = [
-                        chunks[self.local_rank],
-                        chunks[2 * self.local_world_size - self.local_rank - 1],
-                    ]
-                    batch[key] = torch.cat(selected_chunks, dim=1).contiguous()
-                elif self.ring_attn_func is RingAttnFunc.BATCH_STRIPE:
-                    # Split into striped data and stack
-                    tensor = torch.stack(
-                        batch[key].split(self.local_world_size, dim=1),
-                        dim=1,
-                    ).transpose(1, 2)
-                    batch[key] = tensor[:, self.local_rank].contiguous()
-
-        return batch
 
     def gather_outputs(self, output):
         """Gather sharded outputs from all ranks and reconstruct the full tensor."""
