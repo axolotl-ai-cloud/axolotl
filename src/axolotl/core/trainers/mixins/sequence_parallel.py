@@ -14,10 +14,10 @@ from torch.utils.data import DistributedSampler, Sampler
 from torch.utils.hooks import RemovableHandle
 
 from axolotl.monkeypatch.attention.ring_attn import (
-    RingAttnFunc,
     get_ring_attn_group,
     update_ring_attn_params,
 )
+from axolotl.utils.schemas.enums import RingAttnFunc
 
 
 def apply_sequence_parallelism(
