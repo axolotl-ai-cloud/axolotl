@@ -79,7 +79,7 @@ class TestPhi(unittest.TestCase):
                 "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 2048,
                 "sample_packing": False,
-                "load_in_8bit": False,
+                "load_in_4bit": True,
                 "adapter": "qlora",
                 "lora_r": 64,
                 "lora_alpha": 32,
@@ -111,6 +111,7 @@ class TestPhi(unittest.TestCase):
                 "bf16": "auto",
             }
         )
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)

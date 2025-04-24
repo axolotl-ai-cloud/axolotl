@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pytest
 from datasets import Dataset
 
-from axolotl.utils.config import normalize_config
+from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.data import prepare_dataset
 from axolotl.utils.data.rl import load_prepare_preference_datasets
 from axolotl.utils.data.utils import deduplicate_and_log_datasets
@@ -319,6 +319,7 @@ class TestDeduplicateNonRL(unittest.TestCase):
                 "num_epochs": 1,
             }
         )
+        self.cfg_1 = validate_config(self.cfg_1)
         normalize_config(self.cfg_1)
 
     @pytest.mark.skip(reason="TODO: fix hf hub offline to work with HF rate limits")

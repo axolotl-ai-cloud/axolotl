@@ -5,7 +5,7 @@ Simple end-to-end test for Liger integration
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
-from axolotl.utils.config import normalize_config, prepare_plugins
+from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
 from tests.e2e.utils import check_model_output_exists, require_torch_2_4_1
@@ -54,6 +54,7 @@ class LigerIntegrationTestCase:
             }
         )
         # pylint: disable=duplicate-code
+        cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
@@ -100,6 +101,7 @@ class LigerIntegrationTestCase:
             }
         )
         # pylint: disable=duplicate-code
+        cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
