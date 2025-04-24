@@ -26,3 +26,11 @@ Multi-GPU (4xH100) for Llama 4 Scout uses 62.8GB VRAM/GPU @ 4k contenxt length @
 ### Llama 4 Maverick 17Bx128Experts (400B)
 
 Coming Soon
+
+## Delinearized Llama 4 Models
+
+We provide a script to delinearize Llama 4 linearized models into regular HuggingFace Llama 4 models.
+
+```bash
+axolotl delinearize-llama4 --model path/to/model_dir --output path/to/output_dir
+```

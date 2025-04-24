@@ -19,6 +19,12 @@ This guide covers all the ways you can install and set up Axolotl for your envir
 
 ## Installation Methods {#sec-installation-methods}
 
+::: {.callout-important}
+Please make sure to have Pytorch installed before installing Axolotl in your local environment.
+
+Follow the instructions at: [https://pytorch.org/get-started/locally/](https://pytorch.org/get-started/locally/)
+:::
+
 ### PyPI Installation (Recommended) {#sec-pypi}
 
 ```{.bash}
