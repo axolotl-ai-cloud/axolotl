@@ -187,8 +187,6 @@ def execute_training(
         trainer: The configured trainer object.
         resume_from_checkpoint: Path to checkpoint to resume from, if applicable.
     """
-    LOG.info("Starting trainer...")
-
     # Define the context managers to use
     flash_context = (
         torch.backends.cuda.sdp_kernel(
@@ -209,6 +207,7 @@ def execute_training(
         else nullcontext()
     )
 
+    LOG.info("Starting trainer...")
     with flash_context, sequence_parallel_context:
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
