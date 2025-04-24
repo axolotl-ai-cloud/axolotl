@@ -76,7 +76,9 @@ See [`examples/llama-3/sparse-finetuning.yaml`](examples/llama-3/sparse-finetuni
 
 ## Inference with vLLM
 
-After fine-tuning your sparse model, you can leverage vLLM for efficient inference:
+After fine-tuning your sparse model, you can leverage vLLM for efficient inference.
+You can also use LLMCompressor to apply additional quantization to your fine-tuned
+sparse model before inference for even greater performance benefits.:
 
 ```python
 from vllm import LLM, SamplingParams
