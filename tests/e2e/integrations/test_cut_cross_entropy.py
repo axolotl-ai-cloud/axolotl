@@ -8,7 +8,7 @@ from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils import get_pytorch_version
-from axolotl.utils.config import normalize_config, prepare_plugins
+from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
 from ..utils import check_model_output_exists
@@ -56,6 +56,7 @@ class TestCutCrossEntropyIntegration:
     # pylint: disable=redefined-outer-name
     def test_llama_w_cce(self, min_cfg, temp_dir):
         cfg = DictDefault(min_cfg)
+        cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
@@ -101,6 +102,7 @@ class TestCutCrossEntropyIntegration:
                 "bf16": "auto",
             }
         )
+        cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
@@ -129,6 +131,7 @@ class TestCutCrossEntropyIntegration:
                 attention_type: True,
             }
         )
+        cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
