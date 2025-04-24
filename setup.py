@@ -51,7 +51,7 @@ def parse_requirements(extras_require_map):
             try:
                 torch_version = version("torch")
             except PackageNotFoundError:
-                torch_version = "2.5.1"
+                torch_version = "2.6.0"  # default to torch 2.6
             _install_requires.append(f"torch=={torch_version}")
 
             version_match = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", torch_version)
@@ -64,9 +64,15 @@ def parse_requirements(extras_require_map):
             else:
                 raise ValueError("Invalid version format")
 
-            if (major, minor) >= (2, 6):
+            if (major, minor) >= (2, 7):
                 _install_requires.pop(_install_requires.index(xformers_version))
-                _install_requires.append("xformers==0.0.29.post2")
+                # _install_requires.append("xformers==0.0.29.post3")  # xformers seems to be hard pinned to 2.6.0
+                extras_require_map["vllm"] = ["vllm==0.8.3"]
+            elif (major, minor) >= (2, 6):
+                _install_requires.pop(_install_requires.index(xformers_version))
+                _install_requires.append(
+                    "xformers==0.0.29.post2"
+                )  # vllm needs post2 w torch 2.6
                 extras_require_map["vllm"] = ["vllm==0.8.3"]
             elif (major, minor) >= (2, 5):
                 _install_requires.pop(_install_requires.index(xformers_version))

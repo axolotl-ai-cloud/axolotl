@@ -272,7 +272,7 @@ class ReLoRAScheduler(LRScheduler):
         self.warmup_steps = warmup_steps
         self.anneal_steps = anneal_steps
         self.min_lr_scale = min_lr_scale
-        super().__init__(optimizer, inner_schedule.last_epoch, inner_schedule.verbose)
+        super().__init__(optimizer, inner_schedule.last_epoch)
 
     def get_lr(self) -> float:
         self.inner_schedule.last_epoch = self.last_epoch
