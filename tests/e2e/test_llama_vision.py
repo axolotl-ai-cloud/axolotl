@@ -109,6 +109,7 @@ class TestLlamaVision(unittest.TestCase):
                 "bf16": True,
             }
         )
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)

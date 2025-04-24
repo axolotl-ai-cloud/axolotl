@@ -75,6 +75,7 @@ class TestReLoraLlama(unittest.TestCase):
         )
 
         cfg = validate_config(cfg)
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)

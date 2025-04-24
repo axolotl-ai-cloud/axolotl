@@ -6,7 +6,7 @@ import unittest
 
 import transformers
 
-from axolotl.utils.config import normalize_config
+from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
 
@@ -47,6 +47,7 @@ class TestModelPatches(unittest.TestCase):
                 "eval_steps": 10,
             }
         )
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         tokenizer = load_tokenizer(cfg)
         load_model(cfg, tokenizer, inference=False)
@@ -79,6 +80,7 @@ class TestModelPatches(unittest.TestCase):
                 "eval_steps": 10,
             }
         )
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         tokenizer = load_tokenizer(cfg)
         load_model(cfg, tokenizer, inference=False)
