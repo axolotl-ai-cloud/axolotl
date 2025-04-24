@@ -79,7 +79,7 @@ class TestPhi(unittest.TestCase):
                 "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 2048,
                 "sample_packing": False,
-                "load_in_8bit": False,
+                "load_in_4bit": True,
                 "adapter": "qlora",
                 "lora_r": 64,
                 "lora_alpha": 32,
