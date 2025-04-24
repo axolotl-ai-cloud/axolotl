@@ -80,7 +80,6 @@ class TestResumeLlama:
                 "resume_from_checkpoint": f"{temp_dir}/checkpoint-9/",
             }
         )
-        cfg = validate_config(cfg)
         normalize_config(resume_cfg)
         cli_args = TrainerCliArgs()
 

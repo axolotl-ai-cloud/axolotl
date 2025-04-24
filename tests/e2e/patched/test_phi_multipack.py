@@ -83,7 +83,7 @@ class TestPhiMultipack(unittest.TestCase):
                 "sample_packing": True,
                 "flash_attention": True,
                 "pad_to_sequence_len": True,
-                "load_in_8bit": False,
+                "load_in_4bit": True,
                 "adapter": "qlora",
                 "lora_r": 64,
                 "lora_alpha": 32,
