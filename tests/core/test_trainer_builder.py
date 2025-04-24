@@ -5,7 +5,7 @@ unit tests for axolotl.core.trainer_builder
 import pytest
 
 from axolotl.core.trainer_builder import HFRLTrainerBuilder
-from axolotl.utils.config import normalize_config, validate_config
+from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
 
@@ -37,7 +37,6 @@ def fixture_cfg():
         }
     )
 
-    cfg = validate_config(cfg)
     normalize_config(cfg)
 
     return cfg
