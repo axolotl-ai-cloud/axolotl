@@ -36,9 +36,10 @@ class BasePlugin:
     Methods:
     register(cfg): Registers the plugin with the given configuration.
     pre_model_load(cfg): Performs actions before the model is loaded.
-    post_model_load(cfg, model): Performs actions after the model is loaded.
+    post_model_build(cfg, model): Performs actions after the model is loaded, but before LoRA adapters are applied.
     pre_lora_load(cfg, model): Performs actions before LoRA weights are loaded.
     post_lora_load(cfg, model): Performs actions after LoRA weights are loaded.
+    post_model_load(cfg, model): Performs actions after the model is loaded, inclusive of any adapters.
     create_optimizer(cfg, trainer): Creates and returns an optimizer for training.
     create_lr_scheduler(cfg, trainer, optimizer): Creates and returns a learning rate scheduler.
     add_callbacks_pre_trainer(cfg, model): Adds callbacks to the trainer before training.
@@ -69,6 +70,17 @@ class BasePlugin:
     def pre_model_load(self, cfg):  # pylint: disable=unused-argument
         """
         Performs actions before the model is loaded.
+
+        Parameters:
+        cfg (dict): The configuration for the plugin.
+
+        Returns:
+        None
+        """
+
+    def post_model_build(self, cfg, model):  # pylint: disable=unused-argument
+        """
+        Performs actions after the model is built/loaded, but before any adapters are applied.
 
         Parameters:
         cfg (dict): The configuration for the plugin.
@@ -329,9 +341,25 @@ class PluginManager:
         for plugin in self.plugins.values():
             plugin.pre_model_load(cfg)
 
+    def post_model_build(self, cfg, model):
+        """
+        Calls the post_model_build method of all registered plugins after the model has been built/loaded,
+        but before any adapters have been applied.
+
+        Parameters:
+        cfg (dict): The configuration for the plugins.
+        model (object): The loaded model.
+
+        Returns:
+        None
+        """
+        for plugin in self.plugins.values():
+            plugin.post_model_build(cfg, model)
+
     def post_model_load(self, cfg, model):
         """
-        Calls the post_model_load method of all registered plugins.
+        Calls the post_model_load method of all registered plugins after the model has been loaded
+        inclusive of any adapters
 
         Parameters:
         cfg (dict): The configuration for the plugins.

@@ -53,6 +53,7 @@ from transformers.integrations.deepspeed import (
 )
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
+from axolotl.integrations.base import PluginManager
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
@@ -571,8 +572,6 @@ class ModelLoader:
             patch_gemma3conditionalgeneration_forward()
 
         # load any patches from plugins
-        from axolotl.integrations.base import PluginManager
-
         plugin_manager = PluginManager.get_instance()
         plugin_manager.pre_model_load(self.cfg)
 
@@ -1331,6 +1330,10 @@ class ModelLoader:
                 before_kbit_train_or_finetune=False,
             )
 
+        plugin_manager = PluginManager.get_instance()
+        plugin_manager.post_model_build(self.cfg, self.model)
+        plugin_manager.pre_lora_load(self.cfg, self.model)
+
         # ---------------------------------------------------------
         #  load lora or adapter
         # ---------------------------------------------------------
@@ -1392,7 +1395,7 @@ class ModelLoader:
             gc.collect()
             torch.cuda.empty_cache()
 
-        # TODO resume_from_checkpoint handling
+        plugin_manager.post_model_load(self.cfg, self.model)
         return self.model, lora_config
 
 
@@ -1427,9 +1430,15 @@ def load_adapter(model, cfg, adapter, inference=False):
     if hasattr(model, "enable_input_require_grads"):
         model.enable_input_require_grads()
     if adapter in ["lora", "qlora"]:
-        return load_lora(model, cfg, inference=inference)
+        res = load_lora(model, cfg, inference=inference)
+        plugin_manager = PluginManager.get_instance()
+        plugin_manager.post_lora_load(cfg, res[0])
+        return res
     if adapter == "llama-adapter":
-        return load_llama_adapter(model, cfg)
+        res = load_llama_adapter(model, cfg)
+        plugin_manager = PluginManager.get_instance()
+        plugin_manager.post_lora_load(cfg, res[0])
+        return res
 
     raise NotImplementedError(f"{adapter} peft adapter not available")
 

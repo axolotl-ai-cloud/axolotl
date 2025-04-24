@@ -514,7 +514,6 @@ def train(
 
     plugin_manager = PluginManager.get_instance()
     plugin_manager.post_model_load(cfg, model)
-    plugin_manager.post_lora_load(cfg, model)
 
     # Handle untrained tokens if configured
     safe_serialization = cfg.save_safetensors is True
