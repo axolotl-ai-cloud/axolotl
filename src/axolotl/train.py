@@ -26,7 +26,7 @@ from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
-from axolotl.core.trainers.sp import SequenceParallelContext
+from axolotl.core.trainers.mixins.sequence_parallel import SequenceParallelContext
 from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
