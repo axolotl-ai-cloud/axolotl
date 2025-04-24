@@ -26,7 +26,9 @@ from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
-from axolotl.core.trainers.mixins.sequence_parallel import SequenceParallelContext
+from axolotl.core.trainers.mixins.sequence_parallel import (
+    SequenceParallelContextManager,
+)
 from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
@@ -198,7 +200,7 @@ def execute_training(
         else nullcontext()
     )
     sequence_parallel_context = (
-        SequenceParallelContext(
+        SequenceParallelContextManager(
             model=trainer.model,
             sequence_parallel_degree=cfg.sequence_parallel_degree,
             ring_attn_func=cfg.ring_attn_func,

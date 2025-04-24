@@ -378,11 +378,6 @@ class AxolotlTrainer(
             num_items_in_batch=num_items_in_batch,
         )
 
-        # This is needed due to details of our sequence parallel implementation; the HF
-        # trainer averages the loss over the full sequence length depite our splitting
-        # the data along the sequence dimension.
-        loss *= self.args.sequence_parallel_degree
-
         return loss
 
     @staticmethod

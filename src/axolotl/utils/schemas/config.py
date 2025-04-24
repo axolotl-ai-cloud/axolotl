@@ -1161,7 +1161,7 @@ class AxolotlInputConfig(
                     "flash_attention: true must be set with sequence_parallel_degree > 1"
                 )
 
-            if self.sample_packing and not self.micro_batch_size:
+            if self.sample_packing and self.micro_batch_size > 1:
                 raise ValueError(
                     "micro_batch_size must be set to 1 when sample_packing is enabled"
                     "due to a `ring-flash-attn` requirement"
