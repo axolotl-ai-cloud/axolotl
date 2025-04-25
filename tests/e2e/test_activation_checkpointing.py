@@ -21,7 +21,7 @@ class TestActivationCheckpointing:
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
-                "sequence_len": 512,
+                "sequence_len": 1024,
                 "val_set_size": 0.0,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
