@@ -3,8 +3,6 @@ Module for Axolotl trainer sequence parallelism mixin and training context manag
 """
 
 import functools
-import logging
-from contextlib import contextmanager
 
 import torch
 import torch.distributed as dist
