@@ -17,6 +17,7 @@ class TestActivationCheckpointing:
     """
 
     def test_activation_checkpointing_offload(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
