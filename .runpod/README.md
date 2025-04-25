@@ -1,4 +1,4 @@
-<h1>LLM Training- Full finetune, LoRA, QLoRa etc. Llama/Mistral/Gemma</h1>
+<h1>LLM Post Training- Full fine-tune, LoRA, QLoRa etc. Llama/Mistral/Gemma and more</h1>
 
 # Configuration Options
 
