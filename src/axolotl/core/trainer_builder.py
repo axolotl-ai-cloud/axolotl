@@ -1051,6 +1051,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.rpo_alpha is not None:
             training_args_kwargs["rpo_alpha"] = self.cfg.rpo_alpha
 
+        if self.cfg.use_wandb:
+            training_args_kwargs["run_name"] = self.cfg.wandb_name
+
         training_args_cls = None
         blocklist_args_kwargs = []
         if self.cfg.rl == "simpo":
