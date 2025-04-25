@@ -466,8 +466,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="axolotl.utils.collators.batching" class="level1">
 <h1>utils.collators.batching</h1>
 <p><code>utils.collators.batching</code></p>
-<p>Data collators for axolotl to pad labels and position_ids for packed sequences. Also
-includes logic for handling sequence parallelism collation.</p>
+<p>Data collators for axolotl to pad labels and position_ids for packed sequences</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -508,9 +507,7 @@ includes logic for handling sequence parallelism collation.</p>
 <span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    label_pad_token_id<span class="op">=-</span><span class="dv">100</span>,</span>
 <span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    position_pad_token_id<span class="op">=</span><span class="dv">0</span>,</span>
 <span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    return_tensors<span class="op">=</span><span class="st">'pt'</span>,</span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    sequence_parallel_degree<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    ring_attn_func<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Collator for multipack specific to the using the BatchSampler</p>
 </section>
 <section id="axolotl.utils.collators.batching.DataCollatorForSeq2Seq" class="level3">
@@ -525,17 +522,15 @@ includes logic for handling sequence parallelism collation.</p>
 <span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    label_pad_token_id<span class="op">=-</span><span class="dv">100</span>,</span>
 <span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    position_pad_token_id<span class="op">=</span><span class="dv">0</span>,</span>
 <span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    return_tensors<span class="op">=</span><span class="st">'pt'</span>,</span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    sequence_parallel_degree<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    ring_attn_func<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Data collator that will dynamically pad the inputs received, as well as the labels and position_ids</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 4%">
+<col style="width: 3%">
 <col style="width: 12%">
-<col style="width: 81%">
+<col style="width: 82%">
 <col style="width: 1%">
 </colgroup>
 <thead>
@@ -589,111 +584,33 @@ includes logic for handling sequence parallelism collation.</p>
 <td>The type of Tensor to return. Allowable values are “np”, “pt” and “tf”.</td>
 <td><code>'pt'</code></td>
 </tr>
-<tr class="even">
-<td>sequence_parallel_degree</td>
-<td><code>int</code></td>
-<td>The degree of sequence parallelism. Default to 1 for no sequence parallelism.</td>
-<td><code>1</code></td>
-</tr>
 </tbody>
 </table>
-</section>
-<section id="methods" class="level4">
-<h4 class="anchored" data-anchor-id="methods">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.utils.collators.batching.DataCollatorForSeq2Seq.apply_sequence_parallelism">apply_sequence_parallelism</a></td>
-<td>Apply sequence parallelism slicing to a batch.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.utils.collators.batching.DataCollatorForSeq2Seq.apply_sequence_parallelism" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.collators.batching.DataCollatorForSeq2Seq.apply_sequence_parallelism">apply_sequence_parallelism</h5>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.collators.batching.DataCollatorForSeq2Seq.apply_sequence_parallelism(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    batch,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Apply sequence parallelism slicing to a batch.</p>
-<section id="parameters-1" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 9%">
-<col style="width: 31%">
-<col style="width: 45%">
-<col style="width: 13%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>batch</td>
-<td>dict[str, torch.Tensor]</td>
-<td>Batch dictionary from parent collator.</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns" class="level6 doc-section doc-section-returns">
-<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h6>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>torch.Tensor</td>
-<td>Sliced batch dictionary.</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
 </section>
 </section>
 <section id="axolotl.utils.collators.batching.PretrainingBatchSamplerDataCollatorForSeq2Seq" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.collators.batching.PretrainingBatchSamplerDataCollatorForSeq2Seq">PretrainingBatchSamplerDataCollatorForSeq2Seq</h3>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.collators.batching.PretrainingBatchSamplerDataCollatorForSeq2Seq(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>args,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    multipack_attn<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.collators.batching.PretrainingBatchSamplerDataCollatorForSeq2Seq(</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>args,</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    multipack_attn<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Collator for multipack specific to the using the BatchSampler</p>
 </section>
 <section id="axolotl.utils.collators.batching.V2BatchSamplerDataCollatorForSeq2Seq" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.collators.batching.V2BatchSamplerDataCollatorForSeq2Seq">V2BatchSamplerDataCollatorForSeq2Seq</h3>
-<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.collators.batching.V2BatchSamplerDataCollatorForSeq2Seq(</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    model<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    padding<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    max_length<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    pad_to_multiple_of<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    label_pad_token_id<span class="op">=-</span><span class="dv">100</span>,</span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    position_pad_token_id<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    return_tensors<span class="op">=</span><span class="st">'pt'</span>,</span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>    sequence_parallel_degree<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    ring_attn_func<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.collators.batching.V2BatchSamplerDataCollatorForSeq2Seq(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    model<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    padding<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    max_length<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    pad_to_multiple_of<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    label_pad_token_id<span class="op">=-</span><span class="dv">100</span>,</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    position_pad_token_id<span class="op">=</span><span class="dv">0</span>,</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    return_tensors<span class="op">=</span><span class="st">'pt'</span>,</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Collator for multipack specific to the using the BatchSampler</p>
 
 
