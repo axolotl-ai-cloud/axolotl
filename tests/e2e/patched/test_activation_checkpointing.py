@@ -2,13 +2,23 @@
 E2E tests for activation checkpointing
 """
 
+import pytest
+import transformers
+from torch.utils.checkpoint import checkpoint
+
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_model_output_exists
+from ..utils import check_model_output_exists
+
+
+@pytest.fixture()
+def fix_checkpoint_after_test():
+    yield
+    transformers.modeling_utils.checkpoint = checkpoint
 
 
 class TestActivationCheckpointing:
@@ -16,7 +26,11 @@ class TestActivationCheckpointing:
     E2E tests for activation checkpointing
     """
 
-    def test_activation_checkpointing_offload(self, temp_dir):
+    def test_activation_checkpointing_offload(
+        self,
+        temp_dir,
+        fix_checkpoint_after_test,  # pylint: disable=unused-argument,redefined-outer-name
+    ):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
