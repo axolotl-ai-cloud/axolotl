@@ -1,5 +1,7 @@
 codecov:
   require_ci_to_pass: yes
+  notify:
+    wait_for_ci: true
 
 coverage:
   precision: 2

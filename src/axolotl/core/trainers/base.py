@@ -371,12 +371,14 @@ class AxolotlTrainer(
                 num_items_in_batch=num_items_in_batch,
             )
 
-        return super().compute_loss(
+        loss = super().compute_loss(
             model,
             inputs,
             return_outputs=return_outputs,
             num_items_in_batch=num_items_in_batch,
         )
+
+        return loss
 
     @staticmethod
     def orpo_concatenate_inputs(inputs, label_pad_token=-100, pad_token=0, device=None):

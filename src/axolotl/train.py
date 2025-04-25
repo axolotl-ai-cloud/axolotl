@@ -6,6 +6,7 @@ import os
 import signal
 import sys
 import weakref
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Dict
 
@@ -25,6 +26,9 @@ from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+from axolotl.core.trainers.mixins.sequence_parallel import (
+    SequenceParallelContextManager,
+)
 from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
@@ -185,16 +189,28 @@ def execute_training(
         trainer: The configured trainer object.
         resume_from_checkpoint: Path to checkpoint to resume from, if applicable.
     """
-    LOG.info("Starting trainer...")
-    if cfg.flash_optimum:
-        with torch.backends.cuda.sdp_kernel(
-            # TODO configure these from the YAML w/ sdp_kernel_kwargs: ...
+    # Define the context managers to use
+    flash_context = (
+        torch.backends.cuda.sdp_kernel(
             enable_flash=True,
             enable_math=True,
             enable_mem_efficient=True,
-        ):
-            trainer.train(resume_from_checkpoint=resume_from_checkpoint)
-    else:
+        )
+        if cfg.flash_optimum
+        else nullcontext()
+    )
+    sequence_parallel_context = (
+        SequenceParallelContextManager(
+            model=trainer.model,
+            sequence_parallel_degree=cfg.sequence_parallel_degree,
+            ring_attn_func=cfg.ring_attn_func,
+        )
+        if cfg.sequence_parallel_degree > 1
+        else nullcontext()
+    )
+
+    LOG.info("Starting trainer...")
+    with flash_context, sequence_parallel_context:
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
 
