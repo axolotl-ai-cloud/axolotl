@@ -134,10 +134,9 @@ def prepare_dataset(cfg, tokenizer, processor=None, preprocess_iterable=None):
                     "csv", data_files=f.name, split="train", streaming=True
                 )
         else:
-            if is_local_main_process():
-                iter_ds = load_dataset(
-                    path, streaming=True, split=split, name=name, data_files=data_files
-                )
+            iter_ds = load_dataset(
+                path, streaming=True, split=split, name=name, data_files=data_files
+            )
 
         if skip:
             LOG.info(f"Skipping {skip} samples from the dataset")
