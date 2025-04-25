@@ -28,6 +28,8 @@ main-base-py{python_version}-cu{cuda_version}-{pytorch_version}
 
 Tags examples:
 
+- `main-base-py3.11-cu128-2.7.0`
+- `main-base-py3.11-cu126-2.7.0`
 - `main-base-py3.11-cu124-2.6.0`
 - `main-base-py3.11-cu124-2.5.1`
 - `main-base-py3.11-cu124-2.4.1`
@@ -50,7 +52,7 @@ Link: [Docker Hub](https://hub.docker.com/r/axolotlai/axolotl)
 # on push to main
 main-py{python_version}-cu{cuda_version}-{pytorch_version}
 
-# latest main (currently torch 2.5.1, python 3.11, cuda 12.4)
+# latest main (currently torch 2.6.0, python 3.11, cuda 12.4)
 main-latest
 
 # nightly build
@@ -68,6 +70,7 @@ There may be some extra tags appended to the image, like `-vllm` which installs 
 
 Tags examples:
 
+- `main-py3.11-cu126-2.7.0`
 - `main-py3.11-cu124-2.6.0`
 - `main-py3.11-cu124-2.5.1`
 - `main-py3.11-cu124-2.4.1`
