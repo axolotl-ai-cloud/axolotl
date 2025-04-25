@@ -28,7 +28,7 @@ class CutCrossEntropyArgs(BaseModel):
     Input args for Cut Cross Entropy.
     """
 
-    cut_cross_entropy: Optional[bool] = None
+    cut_cross_entropy: Optional[bool] = True
 
     @model_validator(mode="before")
     @classmethod
