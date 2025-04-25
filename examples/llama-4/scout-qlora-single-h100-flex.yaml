@@ -10,7 +10,6 @@ plugins:
 liger_glu_activation: true
 liger_rms_norm: true
 liger_layer_norm: true
-cut_cross_entropy: true
 
 llama4_linearized_experts: true  # needed with custom linearized experts model
 load_in_4bit: true

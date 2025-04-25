@@ -27,8 +27,6 @@ pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transform
 ```yaml
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
-
-cut_cross_entropy: true
 ```
 
 ## Supported Models
