@@ -11,13 +11,13 @@ liger-kernel==0.5.8
 
 packaging==23.2
 
-peft==0.15.1
+peft==0.15.2
 transformers==4.51.3
 tokenizers>=0.21.1
 accelerate==1.6.0
 datasets==3.5.0
 deepspeed>=0.15.4
-trl==0.16.1
+trl==0.17.0
 hf_xet==1.0.0
 hqq==0.2.5
 
