@@ -2,13 +2,13 @@
 E2E tests for activation checkpointing
 """
 
-from e2e.utils import check_model_output_exists
-
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
+
+from .utils import check_model_output_exists
 
 
 class TestActivationCheckpointing:
