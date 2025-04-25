@@ -1124,6 +1124,12 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             **training_args_kwargs,
         )
 
+        # unset run_name so wandb sets up experiment names
+        if self.cfg.use_wandb and training_args.run_name == training_args.output_dir:
+            training_args.run_name = (  # pylint: disable=attribute-defined-outside-init
+                None
+            )
+
         return training_args
 
     def build(self, total_num_steps):
