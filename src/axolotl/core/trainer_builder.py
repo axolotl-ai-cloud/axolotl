@@ -1009,6 +1009,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_kwargs["dataloader_prefetch_factor"] = (
                 self.cfg.dataloader_prefetch_factor
             )
+        if self.cfg.seed:
+            training_args_kwargs["seed"] = self.cfg.seed
         if self.cfg.gradient_checkpointing:
             training_args_kwargs["gradient_checkpointing"] = (
                 self.cfg.gradient_checkpointing

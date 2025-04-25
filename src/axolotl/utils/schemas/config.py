@@ -18,7 +18,6 @@ from pydantic import (
 )
 from transformers.utils.import_utils import is_torch_npu_available
 
-from axolotl.monkeypatch.attention.ring_attn import RingAttnFunc
 from axolotl.utils.distributed import is_main_process
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
