@@ -1435,10 +1435,10 @@ def load_adapter(model, cfg, adapter, inference=False):
         plugin_manager.post_lora_load(cfg, res[0])
         return res
     if adapter == "llama-adapter":
-        res = load_llama_adapter(model, cfg)
+        model, lora_config = load_llama_adapter(model, cfg)
         plugin_manager = PluginManager.get_instance()
-        plugin_manager.post_lora_load(cfg, res[0])
-        return res
+        plugin_manager.post_lora_load(cfg, model)
+        return model, lora_config
 
     raise NotImplementedError(f"{adapter} peft adapter not available")
 
