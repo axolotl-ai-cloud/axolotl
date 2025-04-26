@@ -1430,10 +1430,10 @@ def load_adapter(model, cfg, adapter, inference=False):
     if hasattr(model, "enable_input_require_grads"):
         model.enable_input_require_grads()
     if adapter in ["lora", "qlora"]:
-        res = load_lora(model, cfg, inference=inference)
+        model, lora_config = load_lora(model, cfg, inference=inference)
         plugin_manager = PluginManager.get_instance()
-        plugin_manager.post_lora_load(cfg, res[0])
-        return res
+        plugin_manager.post_lora_load(cfg, model)
+        return model, lora_config
     if adapter == "llama-adapter":
         model, lora_config = load_llama_adapter(model, cfg)
         plugin_manager = PluginManager.get_instance()
