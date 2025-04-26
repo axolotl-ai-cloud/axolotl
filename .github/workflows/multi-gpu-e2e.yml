@@ -8,6 +8,7 @@ on:
       - 'setup.py'
       - 'pyproject.toml'
       - '.github/workflows/multi-gpu-e2e.yml'
+      - 'src/axolotl/core/trainers/mixins/sequence_parallel.py'
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * 1,4'  # Runs at 00:00 UTC every monday & thursday

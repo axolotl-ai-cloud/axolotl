@@ -528,6 +528,13 @@ def setup_torch_compile_env(cfg):
 def setup_deepspeed_env(cfg, stage=None):
     from transformers.integrations.deepspeed import HfTrainerDeepSpeedConfig
 
+    from axolotl.utils.distributed import distributed_state
+
+    if distributed_state and distributed_state.initialized:
+        raise RuntimeError(
+            "Distributed State already initialized before Deepspeed setup"
+        )
+
     os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
     os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
     if stage:

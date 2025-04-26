@@ -131,11 +131,6 @@ class TestConfigValidation:
         # Mock the ring_flash_attn module
         monkeypatch.setitem(sys.modules, "ring_flash_attn", MagicMock())
 
-        # Mock the is_main_process function to return True
-        monkeypatch.setattr(
-            "axolotl.utils.schemas.config.is_main_process", lambda: True
-        )
-
     @pytest.fixture
     def base_cfg(self):
         """Create a base configuration for testing."""
