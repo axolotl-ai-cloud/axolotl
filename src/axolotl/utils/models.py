@@ -75,6 +75,7 @@ from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
 
 LOG = logging.getLogger(__name__)
+PLUGIN_MANAGER = PluginManager.get_instance()
 
 MULTIMODAL_AUTO_MODEL_MAPPING = {
     "mllama": MllamaForConditionalGeneration,
@@ -572,8 +573,8 @@ class ModelLoader:
             patch_gemma3conditionalgeneration_forward()
 
         # load any patches from plugins
-        plugin_manager = PluginManager.get_instance()
-        plugin_manager.pre_model_load(self.cfg)
+        
+        PLUGIN_MANAGER.pre_model_load(self.cfg)
 
         # monkey patch to allow additional Accelerator init kwargs
         if self.cfg.fp8:
@@ -1251,8 +1252,7 @@ class ModelLoader:
 
         try:
             skip_move_to_device = self.build_model(qlora_fsdp)
-            plugin_manager = PluginManager.get_instance()
-            plugin_manager.post_model_build(self.cfg, self.model)
+            PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
         except Exception as err:  # pylint: disable=broad-exception-caught
             LOG.exception(err)
             raise err
@@ -1332,8 +1332,7 @@ class ModelLoader:
                 before_kbit_train_or_finetune=False,
             )
 
-        plugin_manager = PluginManager.get_instance()
-        plugin_manager.pre_lora_load(self.cfg, self.model)
+        PLUGIN_MANAGER.pre_lora_load(self.cfg, self.model)
 
         # ---------------------------------------------------------
         #  load lora or adapter
@@ -1396,7 +1395,7 @@ class ModelLoader:
             gc.collect()
             torch.cuda.empty_cache()
 
-        plugin_manager.post_model_load(self.cfg, self.model)
+        PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
         return self.model, lora_config
 
 
@@ -1432,13 +1431,11 @@ def load_adapter(model, cfg, adapter, inference=False):
         model.enable_input_require_grads()
     if adapter in ["lora", "qlora"]:
         model, lora_config = load_lora(model, cfg, inference=inference)
-        plugin_manager = PluginManager.get_instance()
-        plugin_manager.post_lora_load(cfg, model)
+        PLUGIN_MANAGER.post_lora_load(cfg, model)
         return model, lora_config
     if adapter == "llama-adapter":
         model, lora_config = load_llama_adapter(model, cfg)
-        plugin_manager = PluginManager.get_instance()
-        plugin_manager.post_lora_load(cfg, model)
+        PLUGIN_MANAGER.post_lora_load(cfg, model)
         return model, lora_config
 
     raise NotImplementedError(f"{adapter} peft adapter not available")
