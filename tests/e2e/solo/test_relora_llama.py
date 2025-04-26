@@ -34,7 +34,10 @@ class TestReLoraLlama(unittest.TestCase):
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "flash_attention": True,
-                "load_in_8bit": True,
+                "quantization": {
+                    "backend": "bnb",
+                    "bits": 8,
+                },
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,

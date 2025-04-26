@@ -21,8 +21,10 @@ class TestModelsUtils:
                 "base_model": "JackFram/llama-68m",
                 "model_type": "LlamaForCausalLM",
                 "tokenizer_type": "LlamaTokenizer",
-                "load_in_8bit": True,
-                "load_in_4bit": False,
+                "quantization": {
+                    "backend": "bnb",
+                    "bits": 8,
+                },
                 "adapter": "lora",
                 "flash_attention": False,
                 "sample_packing": True,

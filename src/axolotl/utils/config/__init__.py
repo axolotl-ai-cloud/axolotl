@@ -233,6 +233,18 @@ def normalize_config(cfg):
 
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
+    if cfg.quantization:
+        if cfg.quantization.backend in ["bnb"]:
+            if cfg.quantization.bits == 8:
+                cfg.load_in_8bit = True
+            elif cfg.quantization.bits == 4:
+                cfg.load_in_4bit = True
+
+        if cfg.quantization.backend == "gptq":
+            cfg.gptq = True
+        elif cfg.quantization.backend == "hqq":
+            cfg.hqq = True
+
 
 def normalize_cfg_datasets(cfg):
     """

@@ -30,8 +30,10 @@ class TestMultiGPUEval:
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
-                "load_in_8bit": False,
-                "load_in_4bit": True,
+                "quantization": {
+                    "backend": "bnb",
+                    "bits": 4,
+                },
                 "strict": False,
                 "sequence_len": 2048,
                 "adapter": "qlora",
@@ -99,8 +101,10 @@ class TestMultiGPUEval:
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
-                "load_in_8bit": False,
-                "load_in_4bit": True,
+                "quantization": {
+                    "backend": "bnb",
+                    "bits": 4,
+                },
                 "strict": False,
                 "sequence_len": 2048,
                 "adapter": "qlora",

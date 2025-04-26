@@ -55,20 +55,46 @@ overrides_of_model_config:
 overrides_of_model_kwargs:
   # use_cache: False
 
-# optional overrides to the bnb 4bit quantization configuration
-# https://huggingface.co/docs/transformers/main/main_classes/quantization#transformers.BitsAndBytesConfig
-bnb_config_kwargs:
-  # These are default values
-  llm_int8_has_fp16_weight: false
-  bnb_4bit_quant_type: nf4
-  bnb_4bit_use_double_quant: true
 
 
+# Quantization configuration.
+quantization:
+  backend: bnb | hqq | gptq
+  bits: 8
+  # optional overrides to the bnb 4bit quantization configuration
+  # https://huggingface.co/docs/transformers/main/main_classes/quantization#transformers.BitsAndBytesConfig
+  bnb_config_kwargs:
+    # These are default values
+    llm_int8_has_fp16_weight: false
+    bnb_4bit_quant_type: nf4
+    bnb_4bit_use_double_quant: true
+
+  # If using hqq config, additional config paramters are needed. See: https://huggingface.co/docs/transformers/main/en//quantization/hqq
+  hqq_config:
+    # pick one of the following, depending on if you want to uniformly quantize the whole model or
+    # apply different quantization settings to specific layers in the model:
+
+    # if uniformly quantize the whole model:
+    group_size: 64
+    # if we want to invoke dynamic_config in order to apply specific layers with different quantization settings:
+    - nbits: 4
+      group_size: 64
+      target_modules:
+        - self_attn.k_proj
+        - self_attn.v_proj
+        - self_attn.o_proj
+    - nbits: 3
+      group_size: 32
+      target_modules:
+        - mlp.gate_proj
+        - mlp.up_proj
+        - mlp.down_proj
+
+# (Internal Use Only)
 # Whether you are training a 4-bit GPTQ quantized model
-gptq: true
-
+gptq:
 # This will attempt to quantize the model down to 8 bits and use adam 8 bit optimizer
-load_in_8bit: true
+load_in_8bit:
 # Use bitsandbytes 4 bit
 load_in_4bit:
 

@@ -23,6 +23,7 @@ hqq==0.2.5
 
 optimum==1.16.2
 hf_transfer
+hqq==0.2.5
 sentencepiece
 gradio==5.23.3
 
