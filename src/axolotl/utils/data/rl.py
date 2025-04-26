@@ -22,6 +22,8 @@ from axolotl.utils.schemas.enums import RLType
 
 LOG = logging.getLogger(__name__)
 
+import torch.distributed as dist
+
 
 def _get_path(ds_hash, cfg):
     prepared_ds_path = (
@@ -246,5 +248,5 @@ def load_prepare_preference_datasets(cfg):
         train_dataset, eval_dataset, _ = deduplicate_and_log_datasets(
             train_dataset=train_dataset, eval_dataset=eval_dataset
         )
-
+    
     return train_dataset, eval_dataset
