@@ -82,11 +82,8 @@ class BasePlugin:
         """
         Performs actions after the model is built/loaded, but before any adapters are applied.
 
-        Parameters:
-        cfg (dict): The configuration for the plugin.
-
-        Returns:
-        None
+        Args:
+            cfg (dict): The configuration for the plugin.
         """
 
     def post_model_load(self, cfg, model):  # pylint: disable=unused-argument
