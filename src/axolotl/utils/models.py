@@ -1251,6 +1251,8 @@ class ModelLoader:
 
         try:
             skip_move_to_device = self.build_model(qlora_fsdp)
+            plugin_manager = PluginManager.get_instance()
+            plugin_manager.post_model_build(self.cfg, self.model)
         except Exception as err:  # pylint: disable=broad-exception-caught
             LOG.exception(err)
             raise err
@@ -1331,7 +1333,6 @@ class ModelLoader:
             )
 
         plugin_manager = PluginManager.get_instance()
-        plugin_manager.post_model_build(self.cfg, self.model)
         plugin_manager.pre_lora_load(self.cfg, self.model)
 
         # ---------------------------------------------------------
