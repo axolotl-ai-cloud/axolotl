@@ -9,6 +9,7 @@ import sys
 import time
 from pathlib import Path
 
+import psutil
 import pytest
 import requests
 import yaml
@@ -22,7 +23,7 @@ from tests.e2e.utils import require_vllm
 
 def start_vllm(
     model: str, env: dict | None = None, wait: int | None = None, quiet=False, **kwargs
-) -> int:
+) -> subprocess.Popen:
     """
     helper function to start the VLLM server in the background, mostly for testing purposes
     """
@@ -82,8 +83,22 @@ def start_vllm(
         process.kill()
         raise RuntimeError(f"VLLM server process did not start within {wait} seconds.")
 
-    # return the process id
-    return process.pid
+    # return the process
+    return process
+
+
+def recursive_kill(process: subprocess.Popen):
+    """
+    Recursively kill a process and its children
+    """
+    process = psutil.Process(process.pid)
+    for child in psutil.Process(process.pid).children(recursive=True):
+        child.terminate()
+        child.kill()
+        os.kill(child.pid, 9)
+    process.terminate()
+    process.kill()
+    os.kill(process.pid, 9)
 
 
 class TestGRPO:
@@ -179,7 +194,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             "CUDA_VISIBLE_DEVICES": "1",
             # "VLLM_USE_V1": "0",
         }
-        vllm_process_id = start_vllm(
+        vllm_process = start_vllm(
             cfg.base_model,
             env=env,
             quiet=True,
@@ -205,7 +220,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 env={"NCCL_P2P_LEVEL": "LOC", "NCCL_DEBUG": "INFO", **current_env},
             )
         finally:
-            os.kill(vllm_process_id, 9)
+            recursive_kill(vllm_process)
 
     @pytest.mark.parametrize(
         "num_gpus",
@@ -267,7 +282,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             "CUDA_VISIBLE_DEVICES": "1",
             # "VLLM_USE_V1": "0",
         }
-        vllm_process_id = start_vllm(
+        vllm_process = start_vllm(
             cfg.base_model,
             env=env,
             quiet=True,
@@ -293,4 +308,4 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 env={"NCCL_P2P_LEVEL": "LOC", "NCCL_DEBUG": "INFO", **current_env},
             )
         finally:
-            os.kill(vllm_process_id, 9)
+            recursive_kill(vllm_process)
