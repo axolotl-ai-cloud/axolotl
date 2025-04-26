@@ -61,14 +61,16 @@ def start_vllm(
     # wait until the http server is ready, even if it 404s, but timeout after 60 seconds
     started = False
     if wait and host and port:
-        for _ in range(int(wait)):
+        for i in range(int(wait)):
             try:
                 response = requests.get(f"http://{host}:{port}", timeout=1)
+                print(f"{i}: VLLM server (status: {response.status_code})")
                 if int(response.status_code) in [200, 404]:
                     started = True
                     break
-            except requests.exceptions.RequestException:
-                pass
+            except requests.exceptions.RequestException as exc:
+                print(f"{i}: VLLM server failed to start: {str(exc)}")
+                # pass
 
             # also check if the process.pid is still running
             if not process.poll() is None:
