@@ -130,6 +130,8 @@ def create_flash_attn_forward(
                 )
 
         # Call ring flash attention function
+        print(f"{dist.get_rank()}: before attn_output")
+        # dist.barrier()
         attn_output = RING_ATTN_FUNC_MAPPING[ring_attn_func](
             query_states,
             key_states,
@@ -143,6 +145,8 @@ def create_flash_attn_forward(
             return_attn_probs=False,
             group=process_group,
         )
+        # dist.barrier()
+        print(f"{dist.get_rank()}: after attn_output")
 
         return attn_output
 

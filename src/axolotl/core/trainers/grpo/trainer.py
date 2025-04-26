@@ -10,7 +10,6 @@ import datasets
 import torch
 import torch.distributed as dist
 import torch.utils.data
-import transformers
 from accelerate.utils import (
     broadcast_object_list,
     gather,
@@ -19,7 +18,6 @@ from accelerate.utils import (
     set_seed,
 )
 from datasets import Dataset, IterableDataset
-from packaging import version
 from torch import nn
 from torch.utils.data import (
     BatchSampler,
@@ -27,17 +25,12 @@ from torch.utils.data import (
     Sampler,
 )
 from transformers import (
-    AutoModelForCausalLM,
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
-    GenerationConfig,
     PreTrainedModel,
     PreTrainedTokenizerBase,
     Trainer,
     TrainerCallback,
     is_wandb_available,
 )
-from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.trainer_utils import seed_worker
 from transformers.utils import is_peft_available
 from trl import GRPOTrainer
@@ -47,26 +40,18 @@ from trl.data_utils import (
     maybe_apply_chat_template,
 )
 from trl.extras.profiling import profiling_context, profiling_decorator
-from trl.extras.vllm_client import VLLMClient
 from trl.import_utils import (
     is_deepspeed_available,
     is_rich_available,
-    is_vllm_available,
 )
 from trl.models import (
-    create_reference_model,
-    prepare_deepspeed,
     unwrap_model_for_generation,
 )
-from trl.trainer.callbacks import SyncRefModelCallback
 from trl.trainer.grpo_config import GRPOConfig
 from trl.trainer.grpo_trainer import RewardFunc
 from trl.trainer.utils import (
-    generate_model_card,
-    get_comet_experiment_url,
     pad,
     print_prompt_completions_sample,
-    selective_log_softmax,
 )
 
 from axolotl.core.trainers.grpo.sampler import SequenceParallelRepeatRandomSampler
@@ -166,6 +151,8 @@ class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
         self.sp_group = get_ring_attn_group()
         self.local_rank = dist.get_rank(group=self.sp_group)
         self.local_world_size = dist.get_world_size(group=self.sp_group)
+        
+        set_seed(args.seed)  # , device_specific=True)
 
     def _get_train_sampler(self) -> Sampler:
         # Get distributed training info
@@ -338,8 +325,6 @@ class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
     def _generate_and_score_completions(
         self, inputs: dict[str, torch.Tensor | Any]
     ) -> dict[str, torch.Tensor | Any]:
-        print("start of _generate_and_score_completions")
-
         device = self.accelerator.device
         prompts = [x["prompt"] for x in inputs]
         prompts_text = [
@@ -353,7 +338,7 @@ class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
             padding_side="left",
             add_special_tokens=False,
         )
-        prompt_inputs = Trainer._prepare_inputs(prompt_inputs)
+        prompt_inputs = Trainer._prepare_inputs(self, prompt_inputs)
         prompt_ids, prompt_mask = (
             prompt_inputs["input_ids"],
             prompt_inputs["attention_mask"],
@@ -391,15 +376,14 @@ class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
                         max_tokens=self.max_completion_length,
                         guided_decoding_regex=self.guided_decoding_regex,
                     )
-                    print(
-                        f"{dist.get_rank()}: completion_ids.shape: {completion_ids.shape}"
-                    )
             else:
-                completion_ids = [None] * len(all_prompts_text)
+                completion_ids = [None] * (
+                    len(all_prompts_text) // self.args.sequence_parallel_degree
+                )
 
             # Broadcast the completions from the main process to all processes
             completion_ids = broadcast_object_list(completion_ids, from_process=0)
-
+            
             # Determine the appropriate slice based on sequence parallelism
             if self.args.sequence_parallel_degree > 1:
                 # Calculate SP group ID (which group of ranks this rank belongs to)
@@ -545,7 +529,7 @@ class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
                         padding_side="right",
                         add_special_tokens=False,
                     )
-                    reward_inputs = Trainer._prepare_inputs(reward_inputs)
+                    reward_inputs = Trainer._prepare_inputs(self, reward_inputs)
                     with torch.inference_mode():
                         rewards_per_func[:, i] = reward_func(**reward_inputs).logits[
                             :, 0
@@ -680,8 +664,6 @@ class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
                     }
                     df = pd.DataFrame(table)
                     wandb.log({"completions": wandb.Table(dataframe=df)})
-
-        print("end of _generate_and_score_completions")
 
         return {
             "prompt_ids": prompt_ids,
