@@ -18,7 +18,6 @@ from pydantic import (
 )
 from transformers.utils.import_utils import is_torch_npu_available
 
-from axolotl.utils.distributed import is_main_process
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
     DPODataset,
@@ -719,10 +718,9 @@ class AxolotlInputConfig(
             and data.get("eval_sample_packing") is None
             and not data.get("eval_table_size")
         ):
-            if is_main_process():
-                LOG.info(
-                    "explicitly setting `eval_sample_packing` to match `sample_packing`"
-                )
+            LOG.info(
+                "explicitly setting `eval_sample_packing` to match `sample_packing`"
+            )
             data["eval_sample_packing"] = True
 
         if (
@@ -1179,15 +1177,14 @@ class AxolotlInputConfig(
             # TODO: monkeypatch / callback to average losses correctly across SP ranks
             # / fix gradient scaling across SP ranks. Losses, grads should be scaled
             # according to the proportion of non-padding tokens per rank.
-            if is_main_process():
-                LOG.warning(
-                    "Sequence parallelism (SP) is enabled with "
-                    f"sequence_parallel_degree={self.sequence_parallel_degree}. "
-                    "Please note that logged losses may differ slightly to the non-SP "
-                    "losses due to transformers Trainer implementation details. "
-                    "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
-                    "for more details."
-                )
+            LOG.warning(
+                "Sequence parallelism (SP) is enabled with "
+                f"sequence_parallel_degree={self.sequence_parallel_degree}. "
+                "Please note that logged losses may differ slightly to the non-SP "
+                "losses due to transformers Trainer implementation details. "
+                "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
+                "for more details."
+            )
 
         return self
 
