@@ -1048,6 +1048,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.rpo_alpha is not None:
             training_args_kwargs["rpo_alpha"] = self.cfg.rpo_alpha
 
+        if self.cfg.use_wandb:
+            training_args_kwargs["run_name"] = self.cfg.wandb_name
+
         training_args_cls = None
         blocklist_args_kwargs = []
         if self.cfg.rl == "simpo":
@@ -1117,6 +1120,12 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             save_total_limit=self.cfg.save_total_limit or 5,
             **training_args_kwargs,
         )
+
+        # unset run_name so wandb sets up experiment names
+        if self.cfg.use_wandb and training_args.run_name == training_args.output_dir:
+            training_args.run_name = (  # pylint: disable=attribute-defined-outside-init
+                None
+            )
 
         return training_args
 
