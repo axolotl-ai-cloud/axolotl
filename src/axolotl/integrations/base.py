@@ -343,12 +343,9 @@ class PluginManager:
         Calls the post_model_build method of all registered plugins after the model has been built/loaded,
         but before any adapters have been applied.
 
-        Parameters:
-        cfg (dict): The configuration for the plugins.
-        model (object): The loaded model.
-
-        Returns:
-        None
+        Args:
+            cfg (dict): The configuration for the plugins.
+            model (object): The loaded model.
         """
         for plugin in self.plugins.values():
             plugin.post_model_build(cfg, model)
