@@ -573,7 +573,7 @@ class ModelLoader:
             patch_gemma3conditionalgeneration_forward()
 
         # load any patches from plugins
-        
+
         PLUGIN_MANAGER.pre_model_load(self.cfg)
 
         # monkey patch to allow additional Accelerator init kwargs

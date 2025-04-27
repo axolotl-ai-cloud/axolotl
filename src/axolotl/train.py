@@ -29,7 +29,6 @@ from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuil
 from axolotl.core.trainers.mixins.sequence_parallel import (
     SequenceParallelContextManager,
 )
-from axolotl.integrations.base import PluginManager
 from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
