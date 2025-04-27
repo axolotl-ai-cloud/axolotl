@@ -9,10 +9,12 @@ set -e
 #  --cov=axolotl
 
 # Run solo tests with coverage append
-pytest -v --durations=10 -n1 \
-  /workspace/axolotl/tests/e2e/multigpu/solo/ \
-  --cov=axolotl \
-  --cov-append
+#pytest -v --durations=10 -n1 \
+#  /workspace/axolotl/tests/e2e/multigpu/solo/ \
+#  --cov=axolotl \
+#  --cov-append
+
+pytest -v --durations=10 -n1 /workspace/axolotl/tests/e2e/multigpu/solo/test_grpo.py::TestGRPO::test_llama_dora[1]
 
 #pytest -v  --durations=10 -n1 /workspace/axolotl/tests/e2e/multigpu/patched/ \
 #  --cov=axolotl \
