@@ -104,7 +104,6 @@ def start_vllm(
                     break
             except requests.exceptions.RequestException as exc:
                 print(f"{i}: VLLM server failed to start: {str(exc)}")
-                # pass
 
             # also check if the process.pid is still running
             if not process.poll() is None:
@@ -238,7 +237,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             cfg.base_model,
             env=env,
             quiet=True,
-            wait=300,
+            wait=180,
             gpu_memory_utilization=0.15,
             max_model_len=cfg.vllm.max_model_len,
             enable_prefix_caching=cfg.vllm.enable_prefix_caching,
@@ -331,7 +330,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             cfg.base_model,
             env=env,
             quiet=True,
-            wait=300,
+            wait=180,
             gpu_memory_utilization=0.15,
             max_model_len=cfg.vllm.max_model_len,
             enable_prefix_caching=cfg.vllm.enable_prefix_caching,
