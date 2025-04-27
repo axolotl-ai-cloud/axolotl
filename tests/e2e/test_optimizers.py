@@ -234,6 +234,8 @@ class TestCustomOptimizers(unittest.TestCase):
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "came_pytorch",
+                "adam_beta3": 0.9999,
+                "adam_epsilon2": 1e-16,
                 "max_steps": 5,
                 "lr_scheduler": "cosine",
             }

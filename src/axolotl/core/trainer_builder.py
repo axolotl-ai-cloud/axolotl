@@ -699,6 +699,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 optimizer_cls = ADOPT
                 adam_kwargs["decouple"] = True
                 optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "came_pytorch":
+                from came_pytorch import CAME
+
+                optimizer_cls = CAME
+                # append 3rd arg to betas tuple
+                adam_kwargs["betas"] += (self.cfg.adam_beta3,)
+                adam_kwargs["eps"] = (adam_kwargs["eps"], self.cfg.adam_epsilon2)
+                optimizer_kwargs.update(adam_kwargs)
 
             # Parse any additional optimizer args from config
             if self.cfg.optim_args:
@@ -727,22 +735,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 else:
                     optim_args = self.cfg.optim_args
                 training_arguments_kwargs["optim_args"] = optim_args
-
-        if self.cfg.optimizer == "came_pytorch":
-            from came_pytorch import CAME
-
-            came_kwargs = {"lr": training_arguments_kwargs["learning_rate"]}
-            if "weight_decay" in training_arguments_kwargs:
-                came_kwargs["weight_decay"] = training_arguments_kwargs["weight_decay"]
-
-            # TODO: Add ability to set "betas" and "eps"
-
-            trainer_kwargs["optimizers"] = (
-                CAME(params=self.model.parameters(), **came_kwargs),
-                None,
-            )
-            # Set default so transformers doesn't throw
-            training_arguments_kwargs["optim"] = "adamw_hf"
 
         if self.cfg.optimizer == "adamw_anyprecision":
             if Path(self.cfg.torchdistx_path).exists():

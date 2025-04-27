@@ -142,6 +142,7 @@ extras_require = {
         "apollo-torch",
         "lomo-optim==0.1.1",
         "torch-optimi==0.2.1",
+        "came_pytorch==0.1.3",
     ],
     "ray": [
         "ray[train]",
