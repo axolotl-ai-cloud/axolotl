@@ -237,7 +237,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             cfg.base_model,
             env=env,
             quiet=True,
-            wait=120,
+            wait=300,
             gpu_memory_utilization=0.15,
             max_model_len=cfg.vllm.max_model_len,
             enable_prefix_caching=cfg.vllm.enable_prefix_caching,
@@ -256,7 +256,11 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     "--main-process-port",
                     f"{get_torch_dist_unique_port()}",
                 ],
-                env={"NCCL_P2P_LEVEL": "LOC", "NCCL_DEBUG": "INFO", **current_env},
+                env={
+                    "NCCL_P2P_LEVEL": "LOC",
+                    "NCCL_DEBUG": "INFO",
+                    **current_env,
+                },
             )
         finally:
             recursive_kill(vllm_process)
@@ -325,7 +329,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             cfg.base_model,
             env=env,
             quiet=True,
-            wait=120,
+            wait=300,
             gpu_memory_utilization=0.15,
             max_model_len=cfg.vllm.max_model_len,
             enable_prefix_caching=cfg.vllm.enable_prefix_caching,
@@ -344,7 +348,11 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     "--main-process-port",
                     f"{get_torch_dist_unique_port()}",
                 ],
-                env={"NCCL_P2P_LEVEL": "LOC", "NCCL_DEBUG": "INFO", **current_env},
+                env={
+                    "NCCL_P2P_LEVEL": "LOC",
+                    "NCCL_DEBUG": "INFO",
+                    **current_env,
+                },
             )
         finally:
             recursive_kill(vllm_process)
