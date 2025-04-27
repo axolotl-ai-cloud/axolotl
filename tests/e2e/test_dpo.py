@@ -31,8 +31,8 @@ class TestDPOLlamaLora(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -40,7 +40,9 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
-                "special_tokens": {},
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "rl": "dpo",
                 "datasets": [
                     {
@@ -77,8 +79,8 @@ class TestDPOLlamaLora(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -86,7 +88,9 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
-                "special_tokens": {},
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "rl": "dpo",
                 "rpo_alpha": 0.5,
                 "datasets": [
@@ -124,8 +128,8 @@ class TestDPOLlamaLora(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -133,7 +137,9 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
-                "special_tokens": {},
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "rl": "dpo",
                 "dpo_use_weighting": True,
                 "datasets": [
@@ -172,8 +178,8 @@ class TestDPOLlamaLora(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -181,7 +187,9 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
-                "special_tokens": {},
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "rl": "kto_pair",
                 "datasets": [
                     {
@@ -218,8 +226,8 @@ class TestDPOLlamaLora(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -227,7 +235,9 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
-                "special_tokens": {},
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "rl": "ipo",
                 "datasets": [
                     {
@@ -264,7 +274,7 @@ class TestDPOLlamaLora(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "tokenizer_type": "LlamaTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
@@ -273,7 +283,9 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
-                "special_tokens": {},
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "rl": "orpo",
                 "orpo_alpha": 0.1,
                 "remove_unused_columns": False,
@@ -314,7 +326,7 @@ class TestDPOLlamaLora(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "tokenizer_type": "LlamaTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
@@ -323,7 +335,9 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
-                "special_tokens": {},
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "rl": "kto",
                 "rl_beta": 0.5,
                 "kto_desirable_weight": 1.0,

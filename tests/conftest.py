@@ -79,9 +79,9 @@ def download_smollm2_135m_model():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def download_llama_68m_random_model():
+def download_smollm2_135m_gptq_model():
     # download the model
-    snapshot_download_w_retry("JackFram/llama-68m", repo_type="model")
+    snapshot_download_w_retry("lilmeaty/SmolLM2-135M-Instruct-GPTQ", repo_type="model")
 
 
 @pytest.fixture(scope="session", autouse=True)
