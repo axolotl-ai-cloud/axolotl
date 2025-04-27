@@ -59,9 +59,10 @@ def start_vllm(
     print(f"VLLM server process started (PID: {process.pid})")
 
     # wait until the http server is ready, even if it 404s, but timeout after 60 seconds
+    period_seconds = 5
     started = False
     if wait and host and port:
-        for i in range(int(wait)):
+        for i in range(0, int(wait), period_seconds):
             try:
                 response = requests.get(f"http://{host}:{port}", timeout=1)
                 print(f"{i}: VLLM server (status: {response.status_code})")
@@ -76,7 +77,7 @@ def start_vllm(
             if not process.poll() is None:
                 break
 
-            time.sleep(1)
+            time.sleep(period_seconds)
 
     if wait and not started:
         print(
@@ -200,7 +201,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             cfg.base_model,
             env=env,
             quiet=True,
-            wait=180,
+            wait=300,
             gpu_memory_utilization=0.15,
             max_model_len=cfg.vllm.max_model_len,
             enable_prefix_caching=cfg.vllm.enable_prefix_caching,
@@ -288,7 +289,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             cfg.base_model,
             env=env,
             quiet=True,
-            wait=180,
+            wait=300,
             gpu_memory_utilization=0.15,
             max_model_len=cfg.vllm.max_model_len,
             enable_prefix_caching=cfg.vllm.enable_prefix_caching,
