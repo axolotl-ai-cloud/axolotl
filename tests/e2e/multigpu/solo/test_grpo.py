@@ -4,8 +4,10 @@ GRPO test suite
 
 import os
 import random
+import shutil
 import subprocess  # nosec B404
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -22,7 +24,7 @@ from tests.e2e.utils import require_vllm
 
 
 def start_vllm(
-    model: str, env: dict | None = None, wait: int | None = None, quiet=False, **kwargs
+    model: str, env: dict, wait: int | None = None, quiet=False, **kwargs
 ) -> subprocess.Popen:
     """
     helper function to start the VLLM server in the background, mostly for testing purposes
@@ -47,10 +49,41 @@ def start_vllm(
     # print out the command to be executed
     print(" ".join(cmd))
 
+    vllm_logging_json = Path(tempfile.mkdtemp()) / "vllm_logging.json"
+    with open(vllm_logging_json, "w", encoding="utf-8") as temp_file:
+        temp_file.write(
+            """{
+  "formatters": {
+    "json": {
+      "class": "pythonjsonlogger.jsonlogger.JsonFormatter"
+    }
+  },
+  "handlers": {
+    "file": {
+      "class": "logging.FileHandler",
+      "formatter": "json",
+      "level": "INFO",
+      "filename": "/tmp/vllm.log",
+      "mode": "a"
+    }
+  },
+  "loggers": {
+    "vllm": {
+      "handlers": ["file"],
+      "level": "INFO",
+      "propagate": false
+    }
+  },
+  "version": 1
+}"""
+        )
+
+    cmd_env = env.copy()
+    cmd_env.update({"VLLM_LOGGING_CONFIG_PATH": vllm_logging_json})
     # start `trl vllm-serve` command in the background and capture the process id
     process = subprocess.Popen(  # pylint: disable=consider-using-with
         cmd,
-        env=env,
+        env=cmd_env,
         stdout=subprocess.DEVNULL if quiet else subprocess.PIPE,
         stderr=subprocess.DEVNULL if quiet else subprocess.PIPE,
     )  # nosec B603
@@ -83,7 +116,10 @@ def start_vllm(
         print(
             f"VLLM server process did not start within {wait} seconds. Please check your server logs."
         )
-        process.kill()
+        recursive_kill(process)
+        with open("/tmp/vllm.log", "r", encoding="utf-8") as log_file:
+            print(log_file.read())
+        shutil.rmtree("/tmp/vllm.log")
         raise RuntimeError(f"VLLM server process did not start within {wait} seconds.")
 
     # return the process
