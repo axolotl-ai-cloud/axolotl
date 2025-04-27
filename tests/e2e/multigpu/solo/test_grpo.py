@@ -62,7 +62,7 @@ def start_vllm(
     "file": {
       "class": "logging.FileHandler",
       "formatter": "json",
-      "level": "INFO",
+      "level": "DEBUG",
       "filename": "/tmp/vllm.log",
       "mode": "a"
     }
@@ -70,7 +70,7 @@ def start_vllm(
   "loggers": {
     "vllm": {
       "handlers": ["file"],
-      "level": "INFO",
+      "level": "DEBUG",
       "propagate": false
     }
   },
