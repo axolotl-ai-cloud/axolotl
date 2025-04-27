@@ -231,6 +231,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             "NCCL_P2P_LEVEL": "NVL",
             **current_env,
             "CUDA_VISIBLE_DEVICES": "1",
+            "VLLM_DISABLE_COMPILE_CACHE": "1",
             # "VLLM_USE_V1": "0",
         }
         vllm_process = start_vllm(
@@ -323,6 +324,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             "NCCL_P2P_LEVEL": "NVL",  # nccl can be brittle, assume P2P isn't reliable
             **current_env,
             "CUDA_VISIBLE_DEVICES": "1",
+            "VLLM_DISABLE_COMPILE_CACHE": "1",
             # "VLLM_USE_V1": "0",
         }
         vllm_process = start_vllm(
