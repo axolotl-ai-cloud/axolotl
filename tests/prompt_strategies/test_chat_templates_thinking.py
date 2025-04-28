@@ -6,13 +6,14 @@ import logging
 
 import pytest
 from datasets import Dataset
-from hf_offline_utils import enable_hf_offline
 from transformers import AutoTokenizer
 
 from axolotl.prompt_strategies.chat_template import (
     load,
 )
 from axolotl.utils.dict import DictDefault
+
+from tests.hf_offline_utils import enable_hf_offline
 
 logging.basicConfig(level=logging.DEBUG)
 LOG = logging.getLogger("axolotl")
