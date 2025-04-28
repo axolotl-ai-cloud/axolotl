@@ -50,6 +50,7 @@ class SFTDataset(BaseModel):
     message_property_mappings: dict[str, str] | None = None
     message_field_training: str | None = None
     message_field_training_detail: str | None = None
+    split_thinking: bool | None = None
     logprobs_field: str | None = None
     temperature: float | None = None
     roles_to_train: list[str] | None = None
