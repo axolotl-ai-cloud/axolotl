@@ -178,4 +178,7 @@ class TestPluginHooks:
             assert "post_train" in file_contents
             # assert "post_train_unload" in file_contents  # not called from test train call
 
-        os.remove(temp_dir + "/plugin_hooks.log")
+        try:
+            os.remove("/tmp/axolotl-log-hooks" + "/plugin_hooks.log")
+        except FileNotFoundError:
+            pass
