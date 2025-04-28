@@ -15,11 +15,6 @@ jobs:
           - cuda: 124
             cuda_version: 12.4.1
             python_version: "3.11"
-            pytorch: 2.4.1
-            axolotl_extras:
-          - cuda: 124
-            cuda_version: 12.4.1
-            python_version: "3.11"
             pytorch: 2.5.1
             axolotl_extras:
           - cuda: 124
@@ -70,11 +65,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - cuda: 124
-            cuda_version: 12.4.1
-            python_version: "3.11"
-            pytorch: 2.4.1
-            axolotl_extras:
           - cuda: 124
             cuda_version: 12.4.1
             python_version: "3.11"
