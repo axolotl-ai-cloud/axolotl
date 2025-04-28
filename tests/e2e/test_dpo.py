@@ -275,7 +275,7 @@ class TestDPOLlamaLora(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
-                "tokenizer_type": "LlamaTokenizer",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
