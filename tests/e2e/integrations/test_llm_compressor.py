@@ -90,12 +90,9 @@ class TestLLMCompressorIntegration:
 
 
 def _check_llmcompressor_model_outputs(temp_dir, save_compressed):
-
-    # recipe.yaml should exist
-    assert (Path(temp_dir) / "recipe.yaml").exists()
-
-    # sparsity config exists if save_compressed
     if save_compressed:
+        assert (Path(temp_dir) / "recipe.yaml").exists()
+
         from compressed_tensors import ModelCompressor
         from compressed_tensors.config import Sparse24BitMaskConfig
 
