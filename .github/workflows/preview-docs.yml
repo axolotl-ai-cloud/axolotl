@@ -34,14 +34,13 @@ jobs:
           python3 -m pip install jupyter quartodoc
           python3 -m pip install -e . --no-deps
 
-      - name: Render docs
-        run: quarto render
+      - name: Build autodoc
+        run: quartodoc build
 
-      - name: Netlify publish
+      - name: Netlify build and publish
         uses: quarto-dev/quarto-actions/publish@v2
         with:
           target: netlify
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
