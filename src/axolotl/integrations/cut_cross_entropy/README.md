@@ -32,8 +32,8 @@ plugins:
 ## Supported Models
 
 - llama
-- llama4_text
 - llama4
+- llama4_text
 - mllama
 - phi3
 - gemma
@@ -43,6 +43,11 @@ plugins:
 - mistral
 - mistral3
 - qwen2
+- qwen2_moe
+- qwen2_vl
+- qwen2_5_vl
+- qwen3
+- qwen3_moe
 - cohere
 - cohere2
 - glm
