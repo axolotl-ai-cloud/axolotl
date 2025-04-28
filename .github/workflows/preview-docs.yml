@@ -37,10 +37,19 @@ jobs:
       - name: Build autodoc
         run: quartodoc build
 
-      - name: Netlify build and publish
-        uses: quarto-dev/quarto-actions/publish@v2
+      - name: Quarto render
+        run: quarto render
+
+      - name: Netlify Publish
+        uses: nwtgck/actions-netlify@v3.0
         with:
-          target: netlify
+          publish-dir: './_site'
+          enable-pull-request-comment: true
+          enable-github-deployment: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          deploy-message: "Deployed On Netlify"
+          github-deployment-environment: 'preview'
+          github-deployment-description: 'Preview Deployment'
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
