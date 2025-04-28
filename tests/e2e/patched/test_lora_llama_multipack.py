@@ -31,8 +31,8 @@ class TestLoraLlama(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "sample_packing": True,
                 "flash_attention": True,
@@ -44,9 +44,7 @@ class TestLoraLlama(unittest.TestCase):
                 "lora_target_linear": True,
                 "val_set_size": 0.2,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -84,9 +82,9 @@ class TestLoraLlama(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "TheBlokeAI/jackfram_llama-68m-GPTQ",
+                "base_model": "lilmeaty/SmolLM2-135M-Instruct-GPTQ",
                 "model_type": "AutoModelForCausalLM",
-                "tokenizer_type": "LlamaTokenizer",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "sample_packing": True,
                 "flash_attention": True,
@@ -100,9 +98,7 @@ class TestLoraLlama(unittest.TestCase):
                 "lora_target_linear": True,
                 "val_set_size": 0.02,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
