@@ -154,6 +154,10 @@ datasets:
     # Key containing the messages (default: "messages")
     field_messages: messages
 
+    # Key containing the system message (default: "system")
+    # If the system message is not present in the dataset sample, it will be loaded from the field_system property.
+    field_system: system
+
     # Mapping of properties from the input dataset to the chat template.
     # (default: message_property_mappings={'role':'role', 'content':'content'})
     # If a property exists in the template but not in this mapping, the system will attempt
