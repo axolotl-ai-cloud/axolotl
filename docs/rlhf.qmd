@@ -538,7 +538,7 @@ CUDA_VISIBLE_DEVICES=0,1 axolotl train grpo.yaml --num-processes 2
 ```
 
 ::: {.callout-note}
-Due to trl's implementation with vllm, the vllm instance must use the last N GPUs instead of the first N GPUs. This is why in the example above, we use `CUDA_VISIBLE_DEVICES=2,3` for the vllm instance.
+Due to trl's implementation with vLLM, the vLLM instance must use the last N GPUs instead of the first N GPUs. This is why in the example above, we use `CUDA_VISIBLE_DEVICES=2,3` for the vLLM instance.
 :::
 
 #### Reward functions
