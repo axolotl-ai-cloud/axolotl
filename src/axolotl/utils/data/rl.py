@@ -205,8 +205,33 @@ def load_prepare_preference_datasets(cfg):
                 eval_dataset = load_split(cfg.test_datasets, cfg)
         if not eval_dataset:
             if cfg.val_set_size:
+                # ensure we end up with the same fingerprint by doing rank0 first and being able to cache
+                to_hash_train = (
+                    train_dataset._fingerprint  # pylint: disable=protected-access
+                    + "|"
+                    + str(cfg.val_set_size)
+                    + "|"
+                    + "train"
+                    + "|"
+                    + str(cfg.seed or 42)
+                )
+                to_hash_test = (
+                    train_dataset._fingerprint  # pylint: disable=protected-access
+                    + "|"
+                    + str(cfg.val_set_size)
+                    + "|"
+                    + "test"
+                    + "|"
+                    + str(cfg.seed or 42)
+                )
+                train_fingerprint = md5(to_hash_train)
+                test_fingerprint = md5(to_hash_test)
                 ds_w_test_split = train_dataset.train_test_split(
-                    test_size=cfg.val_set_size, seed=cfg.seed
+                    test_size=cfg.val_set_size,
+                    seed=cfg.seed,
+                    shuffle=False,
+                    train_new_fingerprint=train_fingerprint,
+                    test_new_fingerprint=test_fingerprint,
                 )
                 eval_dataset = ds_w_test_split["test"]
                 train_dataset = ds_w_test_split["train"]
