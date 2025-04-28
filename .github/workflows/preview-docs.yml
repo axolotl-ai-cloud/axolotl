@@ -52,4 +52,4 @@ jobs:
           github-deployment-description: 'Preview Deployment'
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.NETLIFY_SITE_ID }}
