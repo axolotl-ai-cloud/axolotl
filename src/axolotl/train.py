@@ -200,6 +200,7 @@ def execute_training(
         else nullcontext()
     )
     sequence_parallel_context = (
+        # DTensorSequenceParallelContextManager(
         SequenceParallelContextManager(
             model=trainer.model,
             sequence_parallel_degree=cfg.sequence_parallel_degree,
@@ -208,6 +209,9 @@ def execute_training(
         if cfg.sequence_parallel_degree > 1
         else nullcontext()
     )
+
+    print(sequence_parallel_context)
+    import sys; sys.exit()
 
     LOG.info("Starting trainer...")
     with flash_context, sequence_parallel_context:
