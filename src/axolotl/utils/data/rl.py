@@ -204,7 +204,12 @@ def load_prepare_preference_datasets(cfg):
             else:
                 eval_dataset = load_split(cfg.test_datasets, cfg)
         if not eval_dataset:
-            eval_dataset = None
+            if cfg.val_set_size:
+                ds_w_test_split = train_dataset.train_test_split(
+                    test_size=cfg.val_set_size, seed=cfg.seed
+                )
+                eval_dataset = ds_w_test_split["test"]
+                train_dataset = ds_w_test_split["train"]
 
         if not train_is_preprocessed:
             _save_preprocessed_ds(cfg, cfg.datasets, train_dataset)
