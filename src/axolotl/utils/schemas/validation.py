@@ -1,8 +1,9 @@
 """Module with validation methods for config pydantic model."""
 
-# pylint: disable=too-many-lines,too-many-boolean-expressions
-
+import json
 import logging
+import tempfile
+from pathlib import Path
 
 from pydantic import (
     field_validator,
@@ -11,6 +12,8 @@ from pydantic import (
 from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
+
+# pylint: disable=too-many-lines
 
 LOG = logging.getLogger(__name__)
 
@@ -871,6 +874,28 @@ class OptimizationValidationMixin:
                 "FSDP SHARDED_STATE_DICT not compatible with save_safetensors"
             )
         return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_tensor_parallel_size(cls, data):
+        tensor_parallel_size = data.get("tensor_parallel_size")
+        if tensor_parallel_size is not None and tensor_parallel_size > 1:
+            if not data.get("deepspeed"):
+                raise ValueError(
+                    "Tensor parallelism (TP) is only supported with DeepSpeed"
+                )
+            with open(data.get("deepspeed"), "r", encoding="utf-8") as ds_fin:
+                ds_config = json.load(ds_fin)
+                if "tensor_parallel" not in ds_config:
+                    ds_config["tensor_parallel"] = {"autotp_size": tensor_parallel_size}
+                    temp_dir = tempfile.mkdtemp()
+                    with open(
+                        Path(temp_dir) / "autotp_ds.json", "w", encoding="utf-8"
+                    ) as ds_fout:
+                        json.dump(ds_config, ds_fout, indent=4)
+                    data["deepspeed"] = str(Path(temp_dir) / "autotp_ds.json")
+
+        return data
 
 
 class SystemValidationMixin:
