@@ -25,11 +25,14 @@ jobs:
         uses: quarto-dev/quarto-actions/setup@v2
 
       - name: Setup Python
-        uses: actions/setup-python@v4
-      - run: pip install jupyter quartodoc
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-      - name: Generate API docs
-        run: quartodoc build
+      - name: Install dependencies
+        run: |
+          python3 -m pip install jupyter quartodoc
+          python3 -m pip install -e . --no-deps
 
       - name: Render docs
         run: quarto render
