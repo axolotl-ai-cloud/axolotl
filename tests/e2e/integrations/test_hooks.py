@@ -29,75 +29,79 @@ class LogHooksPlugin(BasePlugin):
         except FileNotFoundError:
             pass
 
-    def pre_model_load(self, cfg):
+    def pre_model_load(self, cfg):  # pylint: disable=unused-argument
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("pre_model_load\n")
 
-    def post_model_build(self, cfg, model):
+    def post_model_build(self, cfg, model):  # pylint: disable=unused-argument
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("post_model_build\n")
 
-    def pre_lora_load(self, cfg, model):
+    def pre_lora_load(self, cfg, model):  # pylint: disable=unused-argument
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("pre_lora_load\n")
 
-    def post_lora_load(self, cfg, model):
+    def post_lora_load(self, cfg, model):  # pylint: disable=unused-argument
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("post_lora_load\n")
 
-    def post_model_load(self, cfg, model):
+    def post_model_load(self, cfg, model):  # pylint: disable=unused-argument
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("post_model_load\n")
 
-    def create_optimizer(self, cfg, trainer):
+    def create_optimizer(self, cfg, trainer):  # pylint: disable=unused-argument
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("create_optimizer\n")
 
-    def get_trainer_cls(self, cfg):
+    def get_trainer_cls(self, cfg):  # pylint: disable=unused-argument
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("get_trainer_cls\n")
 
-    def create_lr_scheduler(self, cfg, trainer, optimizer):
+    def create_lr_scheduler(
+        self, cfg, trainer, optimizer
+    ):  # pylint: disable=unused-argument
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("create_lr_scheduler\n")
 
-    def add_callbacks_pre_trainer(self, cfg, model):
+    def add_callbacks_pre_trainer(self, cfg, model):  # pylint: disable=unused-argument
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("add_callbacks_pre_trainer\n")
         return []
 
-    def add_callbacks_post_trainer(self, cfg, trainer):
+    def add_callbacks_post_trainer(
+        self, cfg, trainer
+    ):  # pylint: disable=unused-argument
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("add_callbacks_post_trainer\n")
         return []
 
-    def post_train(self, cfg, model):
+    def post_train(self, cfg, model):  # pylint: disable=unused-argument
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("post_train\n")
 
-    def post_train_unload(self, cfg):
+    def post_train_unload(self, cfg):  # pylint: disable=unused-argument
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
@@ -110,6 +114,7 @@ class TestPluginHooks:
     """
 
     def test_plugin_hooks(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
