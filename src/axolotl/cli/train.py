@@ -1,5 +1,6 @@
 """CLI to run training on a model."""
 
+import gc
 import logging
 import os
 from pathlib import Path
@@ -48,7 +49,10 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
     model, tokenizer, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
+
     del model, tokenizer, trainer
+
+    gc.collect()
 
     plugin_manager = PluginManager.get_instance()
     plugin_manager.post_train_unload(cfg)
