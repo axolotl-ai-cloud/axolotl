@@ -40,7 +40,7 @@ jobs:
       - name: Netlify Publish
         uses: nwtgck/actions-netlify@v3.0
         with:
-          publish-dir: './docs/api'
+          publish-dir: './_site'
           enable-pull-request-comment: true
           enable-github-deployment: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
