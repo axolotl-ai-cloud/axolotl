@@ -54,6 +54,7 @@ class TestSplitThinking:
     """
 
     def test_splits_think(self, messages_w_reasoning, qwen3_tokenizer):
+        # pylint: disable=duplicate-code
         strategy = load(
             qwen3_tokenizer,
             DictDefault(
