@@ -37,16 +37,11 @@ jobs:
       - name: Render docs
         run: quarto render
 
-      - name: Netlify Publish
-        uses: nwtgck/actions-netlify@v3.0
+      - name: Netlify publish
+        uses: quarto-dev/quarto-actions/publish@v2
         with:
-          publish-dir: './_site'
-          enable-pull-request-comment: true
-          enable-github-deployment: true
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          deploy-message: "Deployed On Netlify"
-          github-deployment-environment: 'preview'
-          github-deployment-description: 'Preview Deployment'
+          target: netlify
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
