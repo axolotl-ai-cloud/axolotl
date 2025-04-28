@@ -38,7 +38,9 @@ def apply_sequence_parallelism(
         update_ring_attn_params(position_ids=batch["position_ids"])
 
     if dist.get_rank() == 0:
-        import ipdb; ipdb.set_trace()
+        import ipdb
+
+        ipdb.set_trace()
     dist.barrier()
 
     # Slice batch for sequence parallel processing

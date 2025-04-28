@@ -3,5 +3,5 @@
 # pylint: disable=unused-import
 # flake8: noqa
 
-from .sequence_parallel import SequenceParallelContextManager
 from .dtensor_sequence_parallel import DTensorSequenceParallelContextManager
+from .sequence_parallel import SequenceParallelContextManager
