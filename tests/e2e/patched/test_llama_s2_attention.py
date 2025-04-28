@@ -31,8 +31,8 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 16384,
                 "sample_packing": False,
                 "flash_attention": True,
@@ -44,7 +44,9 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "val_set_size": 0.02,
-                "special_tokens": {},
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "datasets": [
                     {
                         "path": "Yukang/LongAlpaca-12k",
@@ -78,14 +80,16 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 16384,
                 "sample_packing": False,
                 "flash_attention": True,
                 "s2_attention": True,
                 "val_set_size": 0.02,
-                "special_tokens": {},
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "datasets": [
                     {
                         "path": "Yukang/LongAlpaca-12k",
