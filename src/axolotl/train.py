@@ -211,7 +211,9 @@ def execute_training(
     )
 
     print(sequence_parallel_context)
-    import sys; sys.exit()
+    import sys
+
+    sys.exit()
 
     LOG.info("Starting trainer...")
     with flash_context, sequence_parallel_context:
