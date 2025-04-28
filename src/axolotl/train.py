@@ -287,7 +287,19 @@ def save_trained_model(
                 os.remove(os.path.join(cfg.output_dir, "model.safetensors"))
             except FileNotFoundError:
                 pass
-    elif hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
+    elif cfg.local_rank == 0:
+        if cfg.flash_optimum and BetterTransformer:
+            model = BetterTransformer.reverse(model)
+
+        if cfg.rl and cfg.adapter and not cfg.rl_adapter_ref_model:
+            trainer.model.save_pretrained(
+                cfg.output_dir, safe_serialization=safe_serialization
+            )
+
+        model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
+
+    if hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
+        # TODO: add integration support so this can be implemented completely within the plugin
         from axolotl.integrations.llm_compressor.utils import (
             save_compressed_model,
         )
@@ -299,17 +311,6 @@ def save_trained_model(
             safe_serialization=safe_serialization,
             save_compressed=cfg.llmcompressor.save_compressed,
         )
-
-    elif cfg.local_rank == 0:
-        if cfg.flash_optimum and BetterTransformer:
-            model = BetterTransformer.reverse(model)
-
-        if cfg.rl and cfg.adapter and not cfg.rl_adapter_ref_model:
-            trainer.model.save_pretrained(
-                cfg.output_dir, safe_serialization=safe_serialization
-            )
-
-        model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
 
 
 def create_model_card(cfg: DictDefault, trainer: Trainer):
