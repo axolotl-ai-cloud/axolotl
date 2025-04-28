@@ -502,9 +502,7 @@ The input format is a simple JSON input with customizable fields based on the ab
 Check out our [GRPO cookbook](https://github.com/axolotl-ai-cloud/axolotl-cookbook/tree/main/grpo#training-an-r1-style-large-language-model-using-grpo).
 :::
 
-If you have multiple GPUs available, we reccomend using `vLLM` with the `GRPOTrainer` to significantly speedup trajectory generation during training.
-First, launch a `vLLM` server using `trl vllm-serve` - you may use a config file or CLI overrides to configure your vLLM server. In this example, we're
-using 4 GPUs - 2 for training, and 2 for vLLM:
+In the latest GRPO implementation, `vLLM` is used to significantly speedup trajectory generation during training. In this example, we're using 4 GPUs - 2 for training, and 2 for vLLM:
 
 ::: {.callout-important}
 Make sure you've installed the correct version of vLLM by including it as an extra when installing axolotl, e.g. `pip install axolotl[vllm]`.
@@ -538,6 +536,10 @@ Your `vLLM` instance will now attempt to spin up, and it's time to kick off trai
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 axolotl train grpo.yaml --num-processes 2
 ```
+
+::: {.callout-note}
+Due to trl's implementation with vllm, the vllm instance must use the last N GPUs instead of the first N GPUs. This is why in the example above, we use `CUDA_VISIBLE_DEVICES=2,3` for the vllm instance.
+:::
 
 #### Reward functions
 
