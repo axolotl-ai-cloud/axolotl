@@ -12,7 +12,11 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import check_model_output_exists, require_torch_2_4_1
+from tests.e2e.utils import (
+    check_model_output_exists,
+    require_llmcompressor,
+    require_torch_2_4_1,
+)
 
 MODELS = [
     "nm-testing/llama2.c-stories42M-pruned2.4-compressed",
@@ -26,6 +30,7 @@ MODELS = [
 @pytest.mark.parametrize(
     "save_compressed", [True, False], ids=["save_compressed", "save_uncompressed"]
 )
+@require_llmcompressor
 class TestLLMCompressorIntegration:
     """
     e2e tests for axolotl.integrations.llm_compressor.LLMCompressorPlugin
