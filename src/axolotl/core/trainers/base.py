@@ -609,4 +609,6 @@ class AxolotlTrainer(
         run_dir = self._get_output_dir(trial=trial)
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
-        return super()._save_checkpoint(model, trial, **kwargs)
+        result = super()._save_checkpoint(model, trial, **kwargs)
+        super().save_state()
+        return result
