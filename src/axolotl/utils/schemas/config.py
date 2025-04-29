@@ -1049,6 +1049,7 @@ class AxolotlInputConfig(
             or data.get("lora_qkv_kernel")
             or data.get("lora_o_kernel")
         ):
+            print(data.get("lora_mlp_kernel"))
             if data.get("adapter") == "lora" and data.get("load_in_8bit"):
                 raise ValueError(
                     "lora_mlp_kernel, lora_mlp_kernel, and lora_mlp_kernel are not compatible with 8-bit LoRA"
@@ -1357,7 +1358,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
                 LOG.warning(
                     "Auto-enabling LoRA kernel optimizations for faster training. "
-                    + "Please explicitly set `lora_*_kernel` config values to `False` to disable. "
+                    + "Please explicitly set `lora_*_kernel` config values to `false` to disable. "
                     + "See https://docs.axolotl.ai/docs/lora_optims.html for more info."
                 )
 
