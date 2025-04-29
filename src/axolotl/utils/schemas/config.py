@@ -1324,7 +1324,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             unsloth_fields = ["unsloth_lora_mlp", "unsloth_lora_qkv", "unsloth_lora_o"]
             kernel_fields = ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
             if (
-                all(data.get(k) is not None for k in kernel_fields)
+                any(data.get(k) is not None for k in kernel_fields)
                 or any(data.get(k) for k in unsloth_fields)
                 or data.get("adapter") == "lora"
                 and data.get("load_in_8bit")
