@@ -845,10 +845,9 @@ List[callable]: A list of callback functions to be added to the TrainingArgs.</p
 </section>
 <section id="axolotl.integrations.base.PluginManager.create_lr_scheduler" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.create_lr_scheduler">create_lr_scheduler</h5>
-<div class="sourceCode" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.create_lr_scheduler(cfg, trainer, optimizer)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.create_lr_scheduler(trainer, optimizer)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Calls the create_lr_scheduler method of all registered plugins and returns the first non-None scheduler.</p>
 <p>Parameters:
-cfg (dict): The configuration for the plugins.
 trainer (object): The trainer object for training.
 optimizer (object): The optimizer for training.</p>
 <p>Returns:
@@ -856,10 +855,9 @@ object: The created learning rate scheduler, or None if none was found.</p>
 </section>
 <section id="axolotl.integrations.base.PluginManager.create_optimizer" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.create_optimizer">create_optimizer</h5>
-<div class="sourceCode" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.create_optimizer(cfg, trainer)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.create_optimizer(trainer)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Calls the create_optimizer method of all registered plugins and returns the first non-None optimizer.</p>
 <p>Parameters:
-cfg (dict): The configuration for the plugins.
 trainer (object): The trainer object for training.</p>
 <p>Returns:
 object: The created optimizer, or None if none was found.</p>
