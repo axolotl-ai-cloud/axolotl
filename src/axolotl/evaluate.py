@@ -81,6 +81,7 @@ def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> Dict[str, f
     model, tokenizer, _, processor = setup_model_and_tokenizer(cfg)
 
     # Get datasets
+    # pylint: disable=duplicate-code
     train_dataset = dataset_meta.train_dataset
     eval_dataset = dataset_meta.eval_dataset
     total_num_steps = dataset_meta.total_num_steps
