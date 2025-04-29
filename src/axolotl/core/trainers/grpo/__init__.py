@@ -15,9 +15,7 @@ LOG = logging.getLogger("axolotl")
 
 
 class GRPOStrategy:
-    """
-    Strategy for GRPO training
-    """
+    """Strategy for GRPO training"""
 
     @classmethod
     def get_trainer_class(cls):

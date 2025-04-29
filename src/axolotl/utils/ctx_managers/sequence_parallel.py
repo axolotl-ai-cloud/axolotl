@@ -16,12 +16,6 @@ from axolotl.monkeypatch.attention.ring_attn.patch import (
 )
 from axolotl.utils.schemas.enums import RingAttnFunc
 
-PADDING_MAP = {
-    "input_ids": 0,
-    "attention_mask": 0,
-    "labels": -100,
-}
-
 
 # TODO(djsaunde): implement zigzag, stripe patterns here (and elsewhere) in this
 # module. Currently, we just focus on batch ring and varlen llama3 for simplicity.
@@ -86,9 +80,8 @@ def apply_sequence_parallelism(
         # Replace the integer with the boolean mask
         batch["logits_to_keep"] = mask
 
-    divisor = local_world_size
-
     # Calculate padding needed to make the sequence length divisible by the divisor
+    divisor = local_world_size
     if total_seq_len % divisor != 0:
         pad_len = divisor - (total_seq_len % divisor)
 
@@ -100,7 +93,7 @@ def apply_sequence_parallelism(
                 and batch[key].size(1) == total_seq_len
             ):
                 # Create padding tensor
-                pad_value = PADDING_MAP.get(key, 0)
+                pad_value = -100 if key == "labels" else 0
                 padding = torch.full(
                     (batch[key].size(0), pad_len, *batch[key].shape[2:]), 
                     pad_value,
@@ -124,22 +117,6 @@ def apply_sequence_parallelism(
         # Update the total sequence length after padding
         total_seq_len = batch["input_ids"].size(1)
 
-    # Calculate the chunk size for each rank
-    chunk_size = total_seq_len // local_world_size
-
-    # If position_ids aren't already in the batch, create them with the proper offset
-    if "position_ids" not in batch:
-        # Calculate position offset for this rank
-        position_offset = local_rank * chunk_size
-
-        # Create position IDs tensor with the correct global positions
-        batch["position_ids"] = torch.arange(
-            position_offset, 
-            position_offset + chunk_size,
-            dtype=torch.long,
-            device=batch["input_ids"].device
-        ).expand(batch["input_ids"].size(0), -1)
-
     # Slice batch for sequence parallel processing
     for key in batch:
         # Skip non-tensor values or tensors without sequence dimension
@@ -151,6 +128,22 @@ def apply_sequence_parallelism(
             batch[key] = (
                 batch[key].chunk(local_world_size, dim=1)[local_rank].contiguous()
             )
+
+    # Calculate the chunk size for each rank
+    chunk_size = total_seq_len // local_world_size
+
+    # If position_ids aren't already in the batch, create them with the proper offset
+    if "position_ids" not in batch:
+        # Calculate position offset for this rank
+        position_offset = local_rank * chunk_size
+
+        # Create position IDs tensor with the correct global positions
+        batch["position_ids"] = torch.arange(
+            position_offset,
+            position_offset + chunk_size,
+            dtype=torch.long,
+            device=batch["input_ids"].device
+        ).expand(batch["input_ids"].size(0), -1)
 
     return batch, original_seq_len, pad_len
 
