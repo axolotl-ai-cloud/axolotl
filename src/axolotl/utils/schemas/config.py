@@ -1317,6 +1317,54 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="before")
     @classmethod
+    def check_auto_enable_lora_kernels(cls, data):
+        # Only proceed if using LoRA or QLoRA adapter
+        if data.get("adapter") in ["lora", "qlora"]:
+            # Skip if already set, using unsloth optimizations, or using 8-bit
+            unsloth_fields = ["unsloth_lora_mlp", "unsloth_lora_qkv", "unsloth_lora_o"]
+            kernel_fields = ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
+            if (
+                any(data.get(k) is not None for k in kernel_fields)
+                or any(data.get(k) for k in unsloth_fields)
+                or data.get("adapter") == "lora"
+                and data.get("load_in_8bit")
+            ):
+                return data
+
+            # Check multi-GPU compatibility
+            capabilities = data.get("capabilities")
+            is_multi_gpu = capabilities and capabilities.get("n_gpu", 0) > 1
+            is_fsdp = data.get("fsdp") is not None
+            is_fsdp2 = (
+                data.get("fsdp_config") is not None
+                and str(data.get("fsdp_config").get("fsdp_version")) == "2"
+            )
+
+            if (
+                not is_multi_gpu
+                or (is_multi_gpu and not is_fsdp)
+                or (is_multi_gpu and is_fsdp2)
+            ):
+                # Auto-enable kernels if not explicitly set by user
+                if data.get("lora_mlp_kernel") is None:
+                    data["lora_mlp_kernel"] = True
+
+                if data.get("lora_qkv_kernel") is None:
+                    data["lora_qkv_kernel"] = True
+
+                if data.get("lora_o_kernel") is None:
+                    data["lora_o_kernel"] = True
+
+                LOG.warning(
+                    "Auto-enabling LoRA kernel optimizations for faster training. "
+                    + "Please explicitly set `lora_*_kernel` config values to `false` to disable. "
+                    + "See https://docs.axolotl.ai/docs/lora_optims.html for more info."
+                )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_adopt_torch_version(cls, data):
         if (data.get("optimizer") is not None) and ("adopt" in data.get("optimizer")):
             env_capabilities = data.get("env_capabilities", {})
