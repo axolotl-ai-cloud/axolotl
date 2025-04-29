@@ -1207,8 +1207,6 @@ class AxolotlInputConfig(
         if getattr(self, "sequence_parallel_degree", 1) == 1:
             return self
 
-        from axolotl.utils.schemas.enums import RingAttnFunc
-
         if self.ring_attn_func is not None:
             valid_funcs = list(RingAttnFunc)
             if self.ring_attn_func in valid_funcs:

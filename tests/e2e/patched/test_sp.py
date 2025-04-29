@@ -10,13 +10,14 @@ import pytest
 import torch
 from accelerate.state import PartialState
 
-from axolotl.core.trainers.mixins.sequence_parallel import apply_sequence_parallelism
 from axolotl.monkeypatch.attention.ring_attn import (
     get_ring_attn_group,
     register_ring_attn,
     set_ring_attn_group,
 )
+from axolotl.utils.ctx_managers.sequence_parallel import apply_sequence_parallelism
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.schemas.enums import RingAttnFunc
 
 
 @pytest.fixture
