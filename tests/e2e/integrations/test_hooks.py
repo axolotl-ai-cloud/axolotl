@@ -72,7 +72,7 @@ class LogHooksPlugin(BasePlugin):
             f.write("get_trainer_cls\n")
 
     def create_lr_scheduler(
-        self, cfg, trainer, optimizer
+        self, cfg, trainer, optimizer, num_training_steps
     ):  # pylint: disable=unused-argument
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
@@ -172,7 +172,7 @@ class TestPluginHooks:
             assert "post_model_load" in file_contents
             # assert "create_optimizer" in file_contents  # not implemented yet
             assert "get_trainer_cls" in file_contents
-            # assert "create_lr_scheduler" in file_contents  # not implemented yet
+            assert "create_lr_scheduler" in file_contents
             assert "add_callbacks_pre_trainer" in file_contents
             assert "add_callbacks_post_trainer" in file_contents
             assert "post_train" in file_contents

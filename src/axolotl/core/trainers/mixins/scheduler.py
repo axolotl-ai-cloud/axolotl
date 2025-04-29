@@ -6,6 +6,7 @@ import torch
 from torch.optim.lr_scheduler import OneCycleLR
 from transformers.trainer import Trainer
 
+from axolotl.integrations.base import PluginManager
 from axolotl.utils.schedulers import (
     RexLR,
     get_cosine_schedule_with_min_lr,
@@ -25,7 +26,7 @@ class SchedulerMixin(Trainer):
 
     def create_scheduler(
         self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
-    ):
+    ):# -> LayerWiseDummyScheduler | Any | LambdaLR | DummyScheduler | OneCycleLR:
         """
         Setup the scheduler. The optimizer of the trainer must have been set up either before this method is called or
         passed as an argument.
@@ -47,7 +48,17 @@ class SchedulerMixin(Trainer):
         # fmt: off
         if self.lr_scheduler is None:  # type: ignore  # pylint: disable=access-member-before-definition
             # fmt: on
-            if self.args.alternate_lr_scheduler_type == "one_cycle":
+            plugin_manager = PluginManager.get_instance()
+            lr_scheduler = plugin_manager.create_lr_scheduler(
+                cfg=self.args,
+                trainer=optimizer,
+                optimizer=optimizer,
+                num_training_steps=num_training_steps
+            )
+            if lr_scheduler is not None:
+                LOG.info(f"Using plugin-created lr_scheduler: {lr_scheduler}")
+                self.lr_scheduler = lr_scheduler
+            elif self.args.alternate_lr_scheduler_type == "one_cycle":
                 num_warmup_steps = self.args.get_warmup_steps(num_training_steps)
                 pct_start = num_warmup_steps / num_training_steps
                 extra_lr_kwargs = {}

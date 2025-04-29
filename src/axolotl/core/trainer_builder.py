@@ -835,7 +835,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             and self.cfg.datasets is not None
         ):
             trainer_kwargs["dataset_tags"] = [
-                d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
             ]
         trainer = trainer_cls(
             model=self.model,
