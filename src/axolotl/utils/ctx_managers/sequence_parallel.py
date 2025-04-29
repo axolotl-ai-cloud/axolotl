@@ -1,7 +1,7 @@
 """Module for Axolotl trainer sequence parallelism manager and utilities"""
 
-from collections import defaultdict
 import functools
+from collections import defaultdict
 from typing import DefaultDict
 
 import torch
@@ -44,7 +44,7 @@ def apply_sequence_parallelism(
     # Update ring attention params if needed
     if batch.get("position_ids") is not None:
         update_ring_attn_params(position_ids=batch["position_ids"])
-    
+
     # Add padding to make sequence length divisible by local_world_size
     original_seq_len = batch["input_ids"].size(1)
     total_seq_len = original_seq_len
@@ -69,14 +69,16 @@ def apply_sequence_parallelism(
 
         if rank_end > start_position:
             # Calculate how many of the last N tokens fall within this rank's range
-            tokens_in_rank = min(rank_end, total_seq_len) - max(rank_start, start_position)
-            
+            tokens_in_rank = min(rank_end, total_seq_len) - max(
+                rank_start, start_position
+            )
+
             # Calculate where these tokens start in the local chunk
             local_start_idx = max(0, start_position - rank_start)
-            
+
             # Set the appropriate positions in the mask to True
-            mask[local_start_idx:local_start_idx + tokens_in_rank] = True
-        
+            mask[local_start_idx : local_start_idx + tokens_in_rank] = True
+
         # Replace the integer with the boolean mask
         batch["logits_to_keep"] = mask
 
@@ -95,7 +97,7 @@ def apply_sequence_parallelism(
                 # Create padding tensor
                 pad_value = -100 if key == "labels" else 0
                 padding = torch.full(
-                    (batch[key].size(0), pad_len, *batch[key].shape[2:]), 
+                    (batch[key].size(0), pad_len, *batch[key].shape[2:]),
                     pad_value,
                     dtype=batch[key].dtype,
                     device=batch[key].device,
@@ -142,7 +144,7 @@ def apply_sequence_parallelism(
             position_offset,
             position_offset + chunk_size,
             dtype=torch.long,
-            device=batch["input_ids"].device
+            device=batch["input_ids"].device,
         ).expand(batch["input_ids"].size(0), -1)
 
     return batch, original_seq_len, pad_len
@@ -174,7 +176,7 @@ class SequenceParallelContextManager:
 
         # Will store hook handles for removal
         self.hook_handles: DefaultDict[list[RemovableHandle]] = defaultdict(list)
-        
+
         # Store original sequence length and padding information
         self.original_seq_len = None
         self.pad_len = 0
@@ -190,7 +192,9 @@ class SequenceParallelContextManager:
         # Forward pre-hook to apply sequence parallelism
         def sequence_parallel_pre_hook(_, args, kwargs):
             # Apply sequence parallelism to kwargs and get original sequence length and padding info
-            kwargs, self.original_seq_len, self.pad_len = self.apply_sequence_parallelism(batch=kwargs)
+            kwargs, self.original_seq_len, self.pad_len = (
+                self.apply_sequence_parallelism(batch=kwargs)
+            )
             return args, kwargs
 
         # Forward post-hook to gather outputs
@@ -204,8 +208,8 @@ class SequenceParallelContextManager:
                     if isinstance(value, torch.Tensor) and value.dim() > 1:
                         if value.size(1) == self.original_seq_len + self.pad_len:
                             # Slice to remove padding
-                            output[key] = value[:, :self.original_seq_len].contiguous()
-            
+                            output[key] = value[:, : self.original_seq_len].contiguous()
+
             return output
 
         # Register both hooks
@@ -223,10 +227,10 @@ class SequenceParallelContextManager:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         # Remove all hooks
-        for i in range(len(self.hook_handles)):
-            for handle in self.hook_handles[i]:
+        for key in self.hook_handles:
+            for handle in self.hook_handles[key]:
                 handle.remove()
-            self.hook_handles[i] = []
+            self.hook_handles[key] = []
 
     def gather_outputs(self, output: CausalLMOutputWithPast) -> CausalLMOutputWithPast:
         """Gather sharded outputs from all ranks and reconstruct the full tensor."""
@@ -258,7 +262,7 @@ class SequenceParallelContextManager:
             all_shapes = [torch.zeros_like(local_shape) for _ in range(world_size)]
             dist.all_gather(all_shapes, local_shape, group=self.process_group)
             all_seq_lens = [shape[1] for shape in all_shapes]
-            
+
             # Create properly sized tensors for gathering
             gathered_tensors = []
             for i in range(world_size):

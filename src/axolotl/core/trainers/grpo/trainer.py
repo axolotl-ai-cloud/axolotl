@@ -151,7 +151,7 @@ class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
         self.sp_group = get_ring_attn_group()
         self.local_rank = dist.get_rank(group=self.sp_group)
         self.local_world_size = dist.get_world_size(group=self.sp_group)
-        
+
         # set_seed(args.seed, device_specific=True)
         set_seed(args.seed)
 
@@ -384,7 +384,7 @@ class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
 
             # Broadcast the completions from the main process to all processes
             completion_ids = broadcast_object_list(completion_ids, from_process=0)
-            
+
             # Determine the appropriate slice based on sequence parallelism
             if self.args.sequence_parallel_degree > 1:
                 # Calculate SP group ID (which group of ranks this rank belongs to)
