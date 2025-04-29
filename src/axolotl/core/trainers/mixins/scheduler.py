@@ -51,7 +51,7 @@ class SchedulerMixin(Trainer):
             plugin_manager = PluginManager.get_instance()
             lr_scheduler = plugin_manager.create_lr_scheduler(
                 cfg=self.args,
-                trainer=optimizer,
+                trainer=trainer,
                 optimizer=optimizer,
                 num_training_steps=num_training_steps
             )
