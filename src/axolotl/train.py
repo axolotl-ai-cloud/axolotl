@@ -199,21 +199,18 @@ def execute_training(
         if cfg.flash_optimum
         else nullcontext()
     )
-    sequence_parallel_context = (
-        # DTensorSequenceParallelContextManager(
-        SequenceParallelContextManager(
-            model=trainer.model,
+
+    sequence_parallel_context = nullcontext()
+    if cfg.sequence_parallel_degree > 1:
+        models = [trainer.model]
+        if getattr(trainer, "ref_model", None) is not None:
+            models.append(trainer.ref_model)
+        # sequence_parallel_context = DTensorSequenceParallelContextManager(
+        sequence_parallel_context = SequenceParallelContextManager(
+            models=models,
             sequence_parallel_degree=cfg.sequence_parallel_degree,
             ring_attn_func=cfg.ring_attn_func,
         )
-        if cfg.sequence_parallel_degree > 1
-        else nullcontext()
-    )
-
-    print(sequence_parallel_context)
-    import sys
-
-    sys.exit()
 
     LOG.info("Starting trainer...")
     with flash_context, sequence_parallel_context:
