@@ -3,7 +3,7 @@
 import logging
 
 import torch
-from torch.optim.lr_scheduler import OneCycleLR
+from torch.optim.lr_scheduler import LRScheduler, OneCycleLR
 from transformers.trainer import Trainer
 
 from axolotl.integrations.base import PluginManager
@@ -27,9 +27,9 @@ class SchedulerMixin(Trainer):
 
     def create_scheduler(
         self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
-    ):
+    ) -> LRScheduler:
         """
-        Setup the scheduler. The optimizer of the trainer must have been set up either before this method is called or
+        Set up the scheduler. The optimizer of the trainer must have been set up either before this method is called or
         passed as an argument.
 
         Args:
@@ -51,8 +51,7 @@ class SchedulerMixin(Trainer):
             # fmt: on
             plugin_manager = PluginManager.get_instance()
             assert self.axolotl_cfg is not None, "Expected trainer's axolotl_cfg to be present"
-            lr_scheduler = plugin_manager.create_lr_scheduler(
-                cfg=self.axolotl_cfg,
+            lr_scheduler: LRScheduler | None = plugin_manager.create_lr_scheduler(
                 trainer=self,
                 optimizer=optimizer,
                 num_training_steps=num_training_steps
@@ -123,4 +122,4 @@ class SchedulerMixin(Trainer):
             if use_cosine_min_lr:
                 LOG.warning("axolotl's cosine scheduler with min lr not used (e.g., because of deepspeed).")
 
-        return self.lr_scheduler
+        return self.lr_scheduler  # type: ignore

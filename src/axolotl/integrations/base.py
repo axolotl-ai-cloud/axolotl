@@ -24,6 +24,7 @@ import logging
 from typing import OrderedDict
 
 import torch
+from torch.optim.lr_scheduler import LRScheduler
 
 
 class BasePlugin:
@@ -147,7 +148,7 @@ class BasePlugin:
 
     def create_lr_scheduler(
         self, cfg, trainer, optimizer, num_training_steps
-    ):  # pylint: disable=unused-argument
+    ) -> LRScheduler | None:  # pylint: disable=unused-argument
         """
         Creates and returns a learning rate scheduler.
 
@@ -158,7 +159,7 @@ class BasePlugin:
         num_training_steps (int): Total number of training steps
 
         Returns:
-        object: The created learning rate scheduler.
+        object (LRScheduler): The created learning rate scheduler.
         """
 
     def add_callbacks_pre_trainer(self, cfg, model):  # pylint: disable=unused-argument
@@ -437,7 +438,9 @@ class PluginManager:
                 return optimizer
         return None
 
-    def create_lr_scheduler(self, trainer, optimizer, num_training_steps):
+    def create_lr_scheduler(
+        self, trainer, optimizer, num_training_steps
+    ) -> LRScheduler | None:
         """
         Calls the create_lr_scheduler method of all registered plugins and returns the first non-None scheduler.
 
@@ -449,7 +452,12 @@ class PluginManager:
         object: The created learning rate scheduler, or None if none was found.
         """
         for plugin in self.plugins.values():
-            scheduler = plugin.create_lr_scheduler(self.cfg, trainer=trainer, optimizer=optimizer, num_training_steps=num_training_steps)
+            scheduler: LRScheduler | None = plugin.create_lr_scheduler(
+                self.cfg,
+                trainer=trainer,
+                optimizer=optimizer,
+                num_training_steps=num_training_steps,
+            )
             if scheduler is not None:
                 return scheduler
         return None
