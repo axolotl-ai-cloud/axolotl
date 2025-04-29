@@ -109,6 +109,24 @@ def require_vllm(test_case):
     )(test_case)
 
 
+def require_llmcompressor(test_case):
+    """
+    Decorator marking a test that requires a llmcompressor to be installed
+    """
+
+    def is_llmcompressor_installed():
+        try:
+            import llmcompressor  # pylint: disable=unused-import  # noqa: F401
+
+            return True
+        except ImportError:
+            return False
+
+    return unittest.skipUnless(
+        is_llmcompressor_installed(), "test requires a llmcompressor to be installed"
+    )(test_case)
+
+
 def is_hopper():
     compute_capability = torch.cuda.get_device_capability()
     return compute_capability == (9, 0)
