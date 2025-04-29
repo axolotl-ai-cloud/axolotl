@@ -1,6 +1,7 @@
 """Module for ReLoRA trainer"""
 
 import torch
+from torch.optim.lr_scheduler import LRScheduler
 
 from axolotl.core.trainers.base import AxolotlTrainer
 from axolotl.monkeypatch.relora import ReLoRAScheduler
@@ -19,9 +20,11 @@ class ReLoRATrainer(AxolotlTrainer):
         self,
         num_training_steps: int,
         optimizer: torch.optim.Optimizer | None = None,
-    ):
+    ) -> LRScheduler:
         optimizer = self.optimizer if optimizer is None else optimizer
-        lr_scheduler = super().create_scheduler(num_training_steps, optimizer)
+        lr_scheduler: LRScheduler = super().create_scheduler(
+            num_training_steps, optimizer
+        )
 
         if self.args.relora_steps:
             warmup_steps = (
@@ -30,7 +33,7 @@ class ReLoRATrainer(AxolotlTrainer):
             anneal_steps = (
                 self.args.relora_anneal_steps if self.args.relora_anneal_steps else 1
             )
-            self.lr_scheduler = ReLoRAScheduler(
+            self.lr_scheduler = ReLoRAScheduler(  # type: ignore
                 optimizer,
                 lr_scheduler,
                 self.args.relora_steps,
@@ -38,6 +41,6 @@ class ReLoRATrainer(AxolotlTrainer):
                 warmup_steps,
             )
         else:
-            self.lr_scheduler = lr_scheduler
+            self.lr_scheduler = lr_scheduler  # type: ignore
 
-        return self.lr_scheduler
+        return self.lr_scheduler  # type: ignore
