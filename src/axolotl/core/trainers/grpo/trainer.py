@@ -152,7 +152,8 @@ class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
         self.local_rank = dist.get_rank(group=self.sp_group)
         self.local_world_size = dist.get_world_size(group=self.sp_group)
         
-        set_seed(args.seed)  # , device_specific=True)
+        # set_seed(args.seed, device_specific=True)
+        set_seed(args.seed)
 
     def _get_train_sampler(self) -> Sampler:
         # Get distributed training info
