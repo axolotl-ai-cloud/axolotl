@@ -52,7 +52,7 @@ QKV_PATCHES = [
         """
     query_states, key_states, value_states = self.apply_qkv(hidden_states)
     query_states = self.q_norm(query_states.view(hidden_shape)).transpose(1, 2)
-    key_states = self.k_norm(key_states.view(hidden_shape))transpose(1, 2)
+    key_states = self.k_norm(key_states.view(hidden_shape)).transpose(1, 2)
     value_states = value_states.view(hidden_shape).transpose(1, 2)
 """.lstrip(
             "\n"
