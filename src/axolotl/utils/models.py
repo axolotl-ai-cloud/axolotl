@@ -1321,7 +1321,9 @@ class ModelLoader:
                 (needs_fa2_dtype or self.cfg.flash_attention or self.cfg.flex_attention)
                 and not qlora_fsdp
             )
-            or self.cfg.cut_cross_entropy  # Cut cross entropy requires embedding layers to be in fp16/bf16 for backward pass
+            or
+            # Cut cross entropy requires embedding layers to be in fp16/bf16 for backward pass
+            self.cfg.cut_cross_entropy
         )
 
         if should_convert:
@@ -1353,6 +1355,38 @@ class ModelLoader:
                 self.model, lora_config = load_adapter(
                     self.model, self.cfg, self.cfg.adapter
                 )
+
+        # ---------------------------------------------------------
+        #  apply torchao quantization config
+        # ---------------------------------------------------------
+        if self.cfg.qat:
+            # need to validate earlier in the config that peft_use_dora is False
+            qat_cfg = self.cfg.qat_config
+            from torchao.quantization import quantize_
+            from torchao.quantization.qat import (
+                FakeQuantizeConfig,
+                IntXQuantizationAwareTrainingConfig,
+            )
+
+            from axolotl.utils.config import TorchDType
+
+            activation_dtype = TorchDType[qat_cfg.activation_dtype].value
+            weight_dtype = TorchDType[qat_cfg.weight_dtype].value
+            quantize_embedding = qat_cfg.quantize_embedding
+            activation_config = FakeQuantizeConfig(
+                dtype=activation_dtype, granularity="per_token", is_symmetric=False
+            )
+            weight_config = FakeQuantizeConfig(
+                dtype=weight_dtype, group_size=qat_cfg.group_size
+            )
+            quantize_config = IntXQuantizationAwareTrainingConfig(
+                activation_config,
+                weight_config,
+                filter_fn=lambda m, _: (
+                    isinstance(m, torch.nn.Embedding) if quantize_embedding else None
+                ),
+            )
+            quantize_(self.model, quantize_config)
 
         # ---------------------------------------------------------
         #  put model to accelerator

@@ -44,6 +44,7 @@ from axolotl.utils.schemas.model import (
 )
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
+from axolotl.utils.schemas.qat import QATConfig
 from axolotl.utils.schemas.training import HyperparametersConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.vllm import VllmConfig
@@ -89,6 +90,9 @@ class AxolotlInputConfig(
     )
     vllm: VllmConfig | None = Field(
         default_factory=lambda: VllmConfig(),  # pylint: disable=unnecessary-lambda
+    )
+    qat: QATConfig | None = Field(
+        default_factory=lambda: QATConfig(),  # pylint: disable=unnecessary-lambda
     )
     reward_model: bool | None = None
     process_reward_model: bool | None = None
@@ -1388,3 +1392,16 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
 
         return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_qat_dora(cls, data):
+        qat_cfg = data.get("qat", {})
+        if not qat_cfg:
+            return data
+        if data.get("peft_use_dora"):
+            LOG.warning(
+                "QAT and `peft_use_dora` may produce unexpected results. "
+                "Consider setting using LoRA instead."
+            )
+        return data

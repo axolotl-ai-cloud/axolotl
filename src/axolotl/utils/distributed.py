@@ -93,7 +93,8 @@ def cleanup_distributed():
     termination or when training successfully completes.
     """
     # Ensure that all operations are completed before destroying the process group
-    torch.cuda.synchronize()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
     # Destroy the process group
     if torch.distributed.is_initialized():
         torch.distributed.destroy_process_group()

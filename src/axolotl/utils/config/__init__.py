@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+from enum import Enum
 from typing import Optional
 
 import torch
@@ -21,6 +22,18 @@ from axolotl.utils.schemas.config import AxolotlInputConfig as AxolotlInputConfi
 from axolotl.utils.schemas.datasets import DPODataset, KTODataset, SFTDataset
 
 LOG = logging.getLogger("axolotl")
+
+
+class TorchDType(Enum):
+    int1 = torch.int1
+    int2 = torch.int2
+    int3 = torch.int3
+    int4 = torch.int4
+    int5 = torch.int5
+    int6 = torch.int6
+    int7 = torch.int7
+    int8 = torch.int8
+    uint8 = torch.uint8
 
 
 def choose_device(cfg):
