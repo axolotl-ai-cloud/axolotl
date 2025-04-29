@@ -1318,7 +1318,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def auto_enable_lora_kernels(cls, data):
+    def check_auto_enable_lora_kernels(cls, data):
         # Only proceed if using LoRA or QLoRA adapter
         if data.get("adapter") in ["lora", "qlora"]:
             # Skip if already set, using unsloth optimizations, or using 8-bit
