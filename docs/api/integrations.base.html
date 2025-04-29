@@ -518,7 +518,7 @@ pre_lora_load(cfg, model): Performs actions before LoRA weights are loaded.
 post_lora_load(cfg, model): Performs actions after LoRA weights are loaded.
 post_model_load(cfg, model): Performs actions after the model is loaded, inclusive of any adapters.
 create_optimizer(cfg, trainer): Creates and returns an optimizer for training.
-create_lr_scheduler(cfg, trainer, optimizer): Creates and returns a learning rate scheduler.
+create_lr_scheduler(cfg, trainer, optimizer, num_training_steps): Creates and returns a learning rate scheduler.
 add_callbacks_pre_trainer(cfg, model): Adds callbacks to the trainer before training.
 add_callbacks_post_trainer(cfg, trainer): Adds callbacks to the trainer after training.</p>
 <section id="methods" class="level4">
@@ -612,14 +612,20 @@ List[callable]: A list of callback functions to be added to the TrainingArgs</p>
 </section>
 <section id="axolotl.integrations.base.BasePlugin.create_lr_scheduler" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin.create_lr_scheduler">create_lr_scheduler</h5>
-<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin.create_lr_scheduler(cfg, trainer, optimizer)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin.create_lr_scheduler(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    trainer,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    optimizer,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    num_training_steps,</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Creates and returns a learning rate scheduler.</p>
 <p>Parameters:
 cfg (dict): The configuration for the plugin.
 trainer (object): The trainer object for training.
-optimizer (object): The optimizer for training.</p>
+optimizer (object): The optimizer for training.
+num_training_steps (int): Total number of training steps</p>
 <p>Returns:
-object: The created learning rate scheduler.</p>
+object (LRScheduler): The created learning rate scheduler.</p>
 </section>
 <section id="axolotl.integrations.base.BasePlugin.create_optimizer" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin.create_optimizer">create_optimizer</h5>
@@ -845,7 +851,11 @@ List[callable]: A list of callback functions to be added to the TrainingArgs.</p
 </section>
 <section id="axolotl.integrations.base.PluginManager.create_lr_scheduler" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.create_lr_scheduler">create_lr_scheduler</h5>
-<div class="sourceCode" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.create_lr_scheduler(trainer, optimizer)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.create_lr_scheduler(</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>    trainer,</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>    optimizer,</span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>    num_training_steps,</span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Calls the create_lr_scheduler method of all registered plugins and returns the first non-None scheduler.</p>
 <p>Parameters:
 trainer (object): The trainer object for training.
