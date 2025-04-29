@@ -1,13 +1,15 @@
 """Module for Axolotl trainer sequence parallelism manager using DTensor"""
 
+from collections import defaultdict
 import functools
-from typing import Optional, Union
+from typing import DefaultDict, Optional, Union
 
 import torch
 import torch.distributed as dist
 from torch import nn
 from torch.distributed.device_mesh import DeviceMesh
-from torch.distributed.tensor import DTensor, Replicate, Shard, distribute_tensor
+from torch.distributed.tensor import DTensor, Replicate, Shard
+from torch.utils.hooks import RemovableHandle
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from axolotl.monkeypatch.attention.ring_attn import get_ring_attn_group
@@ -61,12 +63,6 @@ def apply_sequence_parallelism_dtensor(
     # Get sequence length for sharding
     total_seq_len = batch["input_ids"].size(1)
     world_size = device_mesh.size(0)
-
-    if dist.get_rank() == 0:
-        import ipdb
-
-        ipdb.set_trace()
-    dist.barrier()
 
     if ring_attn_func in [RingAttnFunc.VARLEN_LLAMA3, RingAttnFunc.BATCH_RING]:
         for key in batch:
@@ -149,11 +145,11 @@ class DTensorSequenceParallelContextManager:
 
     def __init__(
         self,
-        model: nn.Module,
+        models: list[nn.Module],
         sequence_parallel_degree: int,
         ring_attn_func: RingAttnFunc,
     ):
-        self.model = model
+        self.models = models
         self.sequence_parallel_degree = sequence_parallel_degree
         self.ring_attn_func = ring_attn_func
         self.process_group = get_ring_attn_group()
@@ -166,7 +162,7 @@ class DTensorSequenceParallelContextManager:
         self.device_mesh = create_device_mesh(self.process_group)
 
         # Will store hook handles for removal
-        self.hook_handles: list[torch.utils.hooks.RemovableHandle] = []
+        self.hook_handles: DefaultDict[list[RemovableHandle]] = defaultdict(list)
 
     def __enter__(self):
         self._convert_model_params_to_dtensor()
@@ -191,36 +187,39 @@ class DTensorSequenceParallelContextManager:
             return output
 
         # Register both hooks
-        self.hook_handles.append(
-            self.model.register_forward_pre_hook(
-                sequence_parallel_pre_hook, with_kwargs=True
+        for i, model in enumerate(self.models):
+            self.hook_handles[i].append(
+                model.register_forward_pre_hook(
+                    sequence_parallel_pre_hook, with_kwargs=True
+                )
             )
-        )
-        self.hook_handles.append(
-            self.model.register_forward_hook(sequence_parallel_post_hook)
-        )
+            self.hook_handles[i].append(
+                model.register_forward_hook(sequence_parallel_post_hook)
+            )
 
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         # Remove all hooks
-        for handle in self.hook_handles:
-            handle.remove()
-        self.hook_handles = []
+        for i in range(len(self.hook_handles)):
+            for handle in self.hook_handles[i]:
+                handle.remove()
+            self.hook_handles[i] = []
 
     def _convert_model_params_to_dtensor(self):
         """Convert model parameters to DTensors to avoid mixed tensor types."""
-        for _, param in self.model.named_parameters():
-            # For embeddings and parameters that are accessed during attention computation,
-            # we need to convert to DTensor with Replicate placement
-            with torch.no_grad():
-                # Create a DTensor with Replicate placement (all devices have full copy)
-                param_dtensor = DTensor.from_local(
-                    param,
-                    self.device_mesh,
-                    [Replicate()],
-                )
+        for model in self.models:
+            for _, param in model.named_parameters():
+                # For embeddings and parameters that are accessed during attention computation,
+                # we need to convert to DTensor with Replicate placement
+                with torch.no_grad():
+                    # Create a DTensor with Replicate placement (all devices have full copy)
+                    param_dtensor = DTensor.from_local(
+                        param,
+                        self.device_mesh,
+                        [Replicate()],
+                    )
 
-                # Replace the parameter with its DTensor version
-                # This approach preserves the parameter in the model's parameter list
-                param.data = param_dtensor.to_local()
+                    # Replace the parameter with its DTensor version
+                    # This approach preserves the parameter in the model's parameter list
+                    param.data = param_dtensor.to_local()
