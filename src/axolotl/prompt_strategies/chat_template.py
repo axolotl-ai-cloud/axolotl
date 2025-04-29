@@ -42,6 +42,7 @@ class ChatTemplatePrompter(Prompter):
             message_property_mappings = {
                 "role": "role",
                 "content": "content",
+                "reasoning_content": "reasoning_content",
             }
 
         if roles:
@@ -661,16 +662,34 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         # if the role is assistant that we want to use reasoning_content
         if self.split_thinking and transformed_message["role"] == "assistant":
             content = transformed_message["content"]
-            pairs = [("<think>", "</think>"), ("<reasoning>", "</reasoning>")]
-            for pair in pairs:
-                if pair[0] in content and pair[1] in content:
-                    start_idx = content.find(pair[0])
-                    end_idx = content.find(pair[1])
-                    thinking_content = content[start_idx + len(pair[0]) : end_idx]
+            thinking_pairs = [
+                ("<think>", "</think>"),
+                ("<reasoning>", "</reasoning>"),
+                ("<|begin_of_thought|>", "<|end_of_thought|>"),
+            ]
+            content_pairs = [("<|begin_of_solution|>", "<|end_of_solution|>")]
+            for tpair in thinking_pairs:
+                if tpair[0] in content and tpair[1] in content:
+                    start_idx = content.find(tpair[0])
+                    end_idx = content.find(tpair[1])
+                    thinking_content = content[start_idx + len(tpair[0]) : end_idx]
                     transformed_message["reasoning_content"] = thinking_content.strip()
-                    transformed_message["content"] = content[
-                        end_idx + len(pair[1]) :
-                    ].lstrip()
+                    remainder = content[end_idx + len(tpair[1]) :].lstrip()
+                    cpair_found = False
+                    for cpair in content_pairs:
+                        if cpair[0] in remainder and cpair[1] in remainder:
+                            start_idx = remainder.find(cpair[0])
+                            end_idx = remainder.find(cpair[1])
+                            content_content = remainder[
+                                start_idx + len(cpair[0]) : end_idx
+                            ]
+                            transformed_message["content"] = content_content.strip()
+                            cpair_found = True
+                            break
+                    if not cpair_found:
+                        transformed_message["content"] = content[
+                            end_idx + len(tpair[1]) :
+                        ].lstrip()
                     break
 
         # Determine which keys in the original message were not mapped
