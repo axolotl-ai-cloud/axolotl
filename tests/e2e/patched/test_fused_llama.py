@@ -32,7 +32,7 @@ class TestFusedLlama(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "flash_attention": True,
                 "pad_to_sequence_len": True,
                 "flash_attn_fuse_qkv": True,
@@ -41,9 +41,7 @@ class TestFusedLlama(unittest.TestCase):
                 "sequence_len": 1024,
                 "val_set_size": 0.02,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
