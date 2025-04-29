@@ -1,6 +1,7 @@
 """CLI to run evaluation on a model."""
 
 import logging
+import os
 from pathlib import Path
 from typing import Union
 
@@ -14,6 +15,7 @@ from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
 from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.evaluate import evaluate
+from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.dict import DictDefault
 
 LOG = logging.getLogger(__name__)
@@ -29,10 +31,14 @@ def do_evaluate(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
         cfg: Dictionary mapping `axolotl` config keys to values.
         cli_args: CLI arguments.
     """
+    # Enable expandable segments for cuda allocation to improve VRAM usage
+    set_pytorch_cuda_alloc_conf()
+
     # pylint: disable=duplicate-code
     print_axolotl_text_art()
     check_accelerate_default_config()
-    check_user_token()
+    if int(os.getenv("LOCAL_RANK", "0")) == 0:
+        check_user_token()
 
     if cfg.rl:
         dataset_meta = load_preference_datasets(cfg=cfg, cli_args=cli_args)
