@@ -24,6 +24,7 @@ import logging
 from typing import OrderedDict
 
 import torch
+from torch.optim.lr_scheduler import LRScheduler
 
 
 class BasePlugin:
@@ -41,7 +42,7 @@ class BasePlugin:
     post_lora_load(cfg, model): Performs actions after LoRA weights are loaded.
     post_model_load(cfg, model): Performs actions after the model is loaded, inclusive of any adapters.
     create_optimizer(cfg, trainer): Creates and returns an optimizer for training.
-    create_lr_scheduler(cfg, trainer, optimizer): Creates and returns a learning rate scheduler.
+    create_lr_scheduler(cfg, trainer, optimizer, num_training_steps): Creates and returns a learning rate scheduler.
     add_callbacks_pre_trainer(cfg, model): Adds callbacks to the trainer before training.
     add_callbacks_post_trainer(cfg, trainer): Adds callbacks to the trainer after training.
     """
@@ -146,8 +147,8 @@ class BasePlugin:
         """
 
     def create_lr_scheduler(
-        self, cfg, trainer, optimizer
-    ):  # pylint: disable=unused-argument
+        self, cfg, trainer, optimizer, num_training_steps
+    ) -> LRScheduler | None:  # pylint: disable=unused-argument
         """
         Creates and returns a learning rate scheduler.
 
@@ -155,9 +156,10 @@ class BasePlugin:
         cfg (dict): The configuration for the plugin.
         trainer (object): The trainer object for training.
         optimizer (object): The optimizer for training.
+        num_training_steps (int): Total number of training steps
 
         Returns:
-        object: The created learning rate scheduler.
+        object (LRScheduler): The created learning rate scheduler.
         """
 
     def add_callbacks_pre_trainer(self, cfg, model):  # pylint: disable=unused-argument
@@ -436,7 +438,9 @@ class PluginManager:
                 return optimizer
         return None
 
-    def create_lr_scheduler(self, trainer, optimizer):
+    def create_lr_scheduler(
+        self, trainer, optimizer, num_training_steps
+    ) -> LRScheduler | None:
         """
         Calls the create_lr_scheduler method of all registered plugins and returns the first non-None scheduler.
 
@@ -448,7 +452,12 @@ class PluginManager:
         object: The created learning rate scheduler, or None if none was found.
         """
         for plugin in self.plugins.values():
-            scheduler = plugin.create_lr_scheduler(self.cfg, trainer, optimizer)
+            scheduler: LRScheduler | None = plugin.create_lr_scheduler(
+                self.cfg,
+                trainer=trainer,
+                optimizer=optimizer,
+                num_training_steps=num_training_steps,
+            )
             if scheduler is not None:
                 return scheduler
         return None
