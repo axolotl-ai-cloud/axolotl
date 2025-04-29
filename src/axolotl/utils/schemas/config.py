@@ -1049,7 +1049,6 @@ class AxolotlInputConfig(
             or data.get("lora_qkv_kernel")
             or data.get("lora_o_kernel")
         ):
-            print(data.get("lora_mlp_kernel"))
             if data.get("adapter") == "lora" and data.get("load_in_8bit"):
                 raise ValueError(
                     "lora_mlp_kernel, lora_mlp_kernel, and lora_mlp_kernel are not compatible with 8-bit LoRA"
