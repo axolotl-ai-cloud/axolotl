@@ -650,7 +650,4 @@ def setup_trainer(
     trainer_builder.train_dataset = train_dataset
     trainer_builder.eval_dataset = eval_dataset
 
-    trainer = trainer_builder.build(total_num_steps)
-    trainer.axolotl_cfg = cfg
-
-    return trainer
+    return trainer_builder.build(total_num_steps)

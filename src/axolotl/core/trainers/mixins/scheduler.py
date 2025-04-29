@@ -23,7 +23,6 @@ class SchedulerMixin(Trainer):
     """
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
-    axolotl_cfg = None
 
     def create_scheduler(
         self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
@@ -50,7 +49,6 @@ class SchedulerMixin(Trainer):
         if self.lr_scheduler is None:  # type: ignore  # pylint: disable=access-member-before-definition
             # fmt: on
             plugin_manager = PluginManager.get_instance()
-            assert self.axolotl_cfg is not None, "Expected trainer's axolotl_cfg to be present"
             lr_scheduler: LRScheduler | None = plugin_manager.create_lr_scheduler(
                 trainer=self,
                 optimizer=optimizer,
