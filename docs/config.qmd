@@ -184,6 +184,10 @@ datasets:
     # adding a system turn with empty content.
     drop_system_message:
 
+    # Optional[bool]. Whether to split the assistant turn based on a reasoning trace inside delimited tags
+    # defaults to False
+    split_thinking:
+
     # IMPORTANT: The following fields determine which parts of the conversation to train on.
     # Priority order: message_field_training > message_field_training_detail > train_on_inputs or role in roles_to_train
     # See examples at `docs/dataset-formats/conversation.qmd`
@@ -208,9 +212,6 @@ datasets:
     # The key in the message turn that contains the training details. Useful to selectively train on certain tokens in a turn.
     # The value of the key is a List[Dict] containing `begin_offset` (start character index in content), `end_offset` (end character index in content), and `train` (boolean whether to train).
     message_field_training_detail: train_detail
-    # Whether to split the assistant turn based on a reasoning trace inside delimited tags
-    # defaults to False
-    split_thinking:
 
 
 # If false, the datasets will not be shuffled and will keep their original order in `datasets`.

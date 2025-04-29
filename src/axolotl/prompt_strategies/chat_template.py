@@ -4,7 +4,7 @@ HF Chat Templates prompt strategy
 
 import logging
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Set, Union
 
 from pydantic import BaseModel
 from transformers import ProcessorMixin
@@ -29,12 +29,12 @@ class ChatTemplatePrompter(Prompter):
         chat_template: str,
         processor=None,
         max_length=2048,
-        message_property_mappings: Optional[Dict[str, str]] = None,
-        message_field_training: Optional[str] = None,
-        message_field_training_detail: Optional[str] = None,
+        message_property_mappings: Dict[str, str] | None = None,
+        message_field_training: str | None = None,
+        message_field_training_detail: str | None = None,
         field_messages: str = "messages",
         field_system: str = "system",
-        roles: Optional[Dict[str, List[str]]] = None,
+        roles: Dict[str, List[str]] | None = None,
         drop_system_message: bool = False,
     ):
         # check if message_property_mappings is None or empty dict
@@ -65,7 +65,7 @@ class ChatTemplatePrompter(Prompter):
         self.field_messages = field_messages
         self.field_system = field_system
         self.tokenizer = tokenizer
-        self.processor: Optional[ProcessorMixin] = processor
+        self.processor: ProcessorMixin | None = processor
         self.chat_template = chat_template
         self.max_length = max_length
         self.drop_system_message = drop_system_message
@@ -224,11 +224,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         tokenizer,
         train_on_inputs: bool,
         sequence_len: int,
-        roles_to_train: Optional[List[str]] = None,
-        train_on_eos: Optional[str] = None,
-        train_on_eot: Optional[str] = None,
-        eot_tokens: Optional[List[str]] = None,
-        split_thinking: Optional[bool] = False,
+        roles_to_train: list[str] | None = None,
+        train_on_eos: str | None = None,
+        train_on_eot: str | None = None,
+        eot_tokens: list[str] | None = None,
+        split_thinking: bool | None = False,
     ):
         super().__init__(prompter, tokenizer, train_on_inputs, sequence_len)
         self.prompter: ChatTemplatePrompter = prompter
@@ -714,7 +714,7 @@ class StrategyLoader:
         self,
         tokenizer,
         cfg,
-        ds_cfg: Optional[Union[Dict[str, Any], DatasetConfig]] = None,
+        ds_cfg: Union[Dict[str, Any], DatasetConfig] | None = None,
         processor=None,
     ):
         if ds_cfg is None:

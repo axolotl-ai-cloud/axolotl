@@ -15,7 +15,7 @@
 """
 Chat template prompt strategy loader with KD support
 """
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import torch
 
@@ -37,7 +37,7 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
         train_on_eos=None,
         train_on_eot=None,
         eot_tokens=None,
-        split_thinking: Optional[bool] = False,
+        split_thinking: bool | None = False,
         logprobs_field="logprobs",
         gen_temperature=1.0,
         kd_temperature=1.0,
