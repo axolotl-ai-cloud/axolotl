@@ -12,7 +12,7 @@ from axolotl.utils.dict import DictDefault
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestE2eQwen:
+class TestE2eEvaluate:
     """Test cases for evaluate CLI"""
 
     def test_evaluate(self, temp_dir):
