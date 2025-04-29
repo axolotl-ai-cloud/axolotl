@@ -9,8 +9,6 @@ dataset_prepared_path: last_run_prepared
 val_set_size: 0.1
 output_dir: ./outputs/lora-out
 
-load_in_8bit: true
-
 adapter: lora
 lora_model_dir:
 
@@ -21,8 +19,7 @@ pad_to_sequence_len: true
 
 lora_r: 16
 lora_alpha: 32
-# lora_dropout: 0.05
-lora_dropout: 0
+lora_dropout: 0.05
 lora_target_modules:
   - gate_proj
   - down_proj
@@ -31,10 +28,6 @@ lora_target_modules:
   - v_proj
   - k_proj
   - o_proj
-
-lora_mlp_kernel: true
-lora_qkv_kernel: true
-lora_o_kernel: true
 
 wandb_project:
 wandb_entity:
