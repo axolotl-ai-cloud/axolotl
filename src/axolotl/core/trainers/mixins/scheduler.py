@@ -26,7 +26,7 @@ class SchedulerMixin(Trainer):
 
     def create_scheduler(
         self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
-    ):# -> LayerWiseDummyScheduler | Any | LambdaLR | DummyScheduler | OneCycleLR:
+    ):
         """
         Setup the scheduler. The optimizer of the trainer must have been set up either before this method is called or
         passed as an argument.
