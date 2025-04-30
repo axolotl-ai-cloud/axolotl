@@ -40,7 +40,7 @@ class QATConfig(BaseModel):
         default=False, description="Quantize embedding"
     )
     group_size: int | None = Field(default=32, description="Group size")
-
+    fake_quant_after_n_steps: int | None = Field(default=None, description="Fake quant after n steps")
     @field_validator('activation_dtype', 'weight_dtype', mode='before')
     @classmethod
     def map_str_to_dtype_enum(cls, v: Any) -> TorchDType | None:

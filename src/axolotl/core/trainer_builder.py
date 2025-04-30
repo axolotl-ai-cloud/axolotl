@@ -248,7 +248,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.gc_steps:
             callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
-
+        
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
