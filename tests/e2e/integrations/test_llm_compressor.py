@@ -30,12 +30,12 @@ MODELS = [
 @pytest.mark.parametrize(
     "save_compressed", [True, False], ids=["save_compressed", "save_uncompressed"]
 )
-@require_llmcompressor
 class TestLLMCompressorIntegration:
     """
     e2e tests for axolotl.integrations.llm_compressor.LLMCompressorPlugin
     """
 
+    @require_llmcompressor
     @require_torch_2_4_1
     def test_llmcompressor_plugin(
         self, temp_dir, base_model: str, save_compressed: bool

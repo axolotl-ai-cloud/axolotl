@@ -105,7 +105,7 @@ def require_vllm(test_case):
             return False
 
     return unittest.skipUnless(
-        is_vllm_installed(), "test requires a vllm to be installed"
+        is_vllm_installed(), "test requires vllm to be installed"
     )(test_case)
 
 
@@ -123,7 +123,7 @@ def require_llmcompressor(test_case):
             return False
 
     return unittest.skipUnless(
-        is_llmcompressor_installed(), "test requires a llmcompressor to be installed"
+        is_llmcompressor_installed(), "test requires llmcompressor to be installed"
     )(test_case)
 
 
