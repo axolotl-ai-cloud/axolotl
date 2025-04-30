@@ -5,7 +5,6 @@ E2E smoke tests for LLMCompressorPlugin integration
 from pathlib import Path
 
 import pytest
-from llmcompressor import active_session
 
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
@@ -41,6 +40,8 @@ class TestLLMCompressorIntegration:
     def test_llmcompressor_plugin(
         self, temp_dir, base_model: str, save_compressed: bool
     ):
+        from llmcompressor import active_session
+
         # core cfg
         cfg = DictDefault(
             {
