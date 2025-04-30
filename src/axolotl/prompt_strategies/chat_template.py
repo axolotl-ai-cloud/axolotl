@@ -670,18 +670,18 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             content_pairs = [("<|begin_of_solution|>", "<|end_of_solution|>")]
             for tpair in thinking_pairs:
                 if tpair[0] in content and tpair[1] in content:
-                    start_idx = content.find(tpair[0])
+                    t_start_idx = content.find(tpair[0])
                     end_idx = content.find(tpair[1])
-                    thinking_content = content[start_idx + len(tpair[0]) : end_idx]
+                    thinking_content = content[t_start_idx + len(tpair[0]) : end_idx]
                     transformed_message["reasoning_content"] = thinking_content.strip()
                     remainder = content[end_idx + len(tpair[1]) :].lstrip()
                     cpair_found = False
                     for cpair in content_pairs:
                         if cpair[0] in remainder and cpair[1] in remainder:
-                            start_idx = remainder.find(cpair[0])
+                            c_start_idx = remainder.find(cpair[0])
                             end_idx = remainder.find(cpair[1])
                             content_content = remainder[
-                                start_idx + len(cpair[0]) : end_idx
+                                c_start_idx + len(cpair[0]) : end_idx
                             ]
                             transformed_message["content"] = content_content.strip()
                             cpair_found = True
