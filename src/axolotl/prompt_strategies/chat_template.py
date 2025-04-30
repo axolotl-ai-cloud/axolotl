@@ -669,27 +669,39 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             ]
             content_pairs = [("<|begin_of_solution|>", "<|end_of_solution|>")]
             for tpair in thinking_pairs:
+                # check if the thinking pair is in the content
                 if tpair[0] in content and tpair[1] in content:
+                    # find the start and end index of the thinking pair
                     t_start_idx = content.find(tpair[0])
-                    end_idx = content.find(tpair[1])
-                    thinking_content = content[t_start_idx + len(tpair[0]) : end_idx]
+                    t_end_idx = content.find(tpair[1])
+
+                    # get the thinking content
+                    thinking_content = content[t_start_idx + len(tpair[0]) : t_end_idx]
                     transformed_message["reasoning_content"] = thinking_content.strip()
-                    remainder = content[end_idx + len(tpair[1]) :].lstrip()
+
+                    # take remainder of the content
+                    # strip whitespace from beginning of the remainder (thinking tokens)
+                    remainder = content[t_end_idx + len(tpair[1]) :].lstrip()
+
+                    # check if the content pair is in the remainder
                     cpair_found = False
                     for cpair in content_pairs:
                         if cpair[0] in remainder and cpair[1] in remainder:
+                            # find the start and end index of the content pair
                             c_start_idx = remainder.find(cpair[0])
-                            end_idx = remainder.find(cpair[1])
+                            c_end_idx = remainder.find(cpair[1])
+
+                            # get the content content
                             content_content = remainder[
-                                c_start_idx + len(cpair[0]) : end_idx
+                                c_start_idx + len(cpair[0]) : c_end_idx
                             ]
                             transformed_message["content"] = content_content.strip()
                             cpair_found = True
                             break
+
+                    # else, the content is the remainder
                     if not cpair_found:
-                        transformed_message["content"] = content[
-                            end_idx + len(tpair[1]) :
-                        ].lstrip()
+                        transformed_message["content"] = remainder
                     break
 
         # Determine which keys in the original message were not mapped
