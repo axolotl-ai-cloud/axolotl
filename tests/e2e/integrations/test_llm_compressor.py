@@ -90,10 +90,12 @@ class TestLLMCompressorIntegration:
         cli_args = TrainerCliArgs()
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, dataset_meta=dataset_meta)
-        check_model_output_exists(temp_dir, cfg)
-        _check_llmcompressor_model_outputs(temp_dir, save_compressed)
-        active_session().reset()
+        try:
+            train(cfg=cfg, dataset_meta=dataset_meta)
+            check_model_output_exists(temp_dir, cfg)
+            _check_llmcompressor_model_outputs(temp_dir, save_compressed)
+        finally:
+            active_session().reset()
 
 
 def _check_llmcompressor_model_outputs(temp_dir, save_compressed):
