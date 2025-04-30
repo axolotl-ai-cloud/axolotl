@@ -14,9 +14,10 @@ val_set_size: 0.05
 output_dir: ./outputs/out
 
 sequence_len: 2048
-sample_packing: true
-eval_sample_packing: true
-pad_to_sequence_len: true
+sample_packing: false
+flex_attention: false
+eval_sample_packing: false
+# pad_to_sequence_len: true
 
 qat:
   activation_dtype: int8
@@ -39,29 +40,29 @@ learning_rate: 0.0002
 bf16: auto
 tf32: false
 
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: false
+# gradient_checkpointing: true
+# gradient_checkpointing_kwargs:
+#   use_reentrant: false
 resume_from_checkpoint:
 logging_steps: 1
-flash_attention: false
+flash_attention: true
 
 warmup_steps: 10
 evals_per_epoch: 4
 saves_per_epoch: 1
 weight_decay: 0.0
-# fsdp:
-#   - full_shard
-#   - auto_wrap
-# fsdp_config:
-#   fsdp_version: 2
-#   fsdp_offload_params: false
-#   fsdp_cpu_ram_efficient_loading: true
-#   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
-#   fsdp_transformer_layer_cls_to_wrap: Qwen3TextDecoderLayer
-#   fsdp_state_dict_type: SHARDED_STATE_DICT
-#   fsdp_sharding_strategy: FULL_SHARD
-#   fsdp_reshard_after_forward: true
-#   fsdp_activation_checkpointing: true
+fsdp:
+  - full_shard
+  - auto_wrap
+fsdp_config:
+  fsdp_version: 2
+  fsdp_offload_params: false
+  fsdp_cpu_ram_efficient_loading: true
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_transformer_layer_cls_to_wrap: Qwen3DecoderLayer
+  fsdp_state_dict_type: SHARDED_STATE_DICT
+  fsdp_sharding_strategy: FULL_SHARD
+  fsdp_reshard_after_forward: true
+  fsdp_activation_checkpointing: true
 
 special_tokens:
