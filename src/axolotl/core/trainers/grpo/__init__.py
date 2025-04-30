@@ -70,6 +70,13 @@ class GRPOStrategy:
         if trl.scale_rewards is not None:
             grpo_args_kwargs["scale_rewards"] = trl.scale_rewards
 
+        if trl.loss_type is not None:
+            grpo_args_kwargs["loss_type"] = trl.loss_type
+        if trl.mask_truncated_completions is not None:
+            grpo_args_kwargs["mask_truncated_completions"] = (
+                trl.mask_truncated_completions
+            )
+
         if trl.temperature is not None:
             grpo_args_kwargs["temperature"] = trl.temperature
         if trl.top_p is not None:
@@ -85,6 +92,11 @@ class GRPOStrategy:
             grpo_args_kwargs["num_iterations"] = trl.num_iterations
         if trl.epsilon is not None:
             grpo_args_kwargs["epsilon"] = trl.epsilon
+        if trl.epsilon_high is not None:
+            grpo_args_kwargs["epsilon_high"] = trl.epsilon_high
+
+        if trl.use_liger_loss is not None:
+            grpo_args_kwargs["use_liger_loss"] = trl.use_liger_loss
 
         return grpo_args_kwargs
 

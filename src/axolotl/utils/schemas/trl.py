@@ -133,3 +133,25 @@ class TRLConfig(BaseModel):
             "description": "Epsilon value for clipping in the GRPO algorithm."
         },
     )
+    epsilon_high: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Upper-bound epsilon value for clipping in the GRPO algorithm."
+        },
+    )
+    use_liger_loss: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Whether to use Liger loss for GRPO."},
+    )
+    loss_type: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Specifies the loss formulation to use. Supported values are `grpo`, `bnpo`, and `dr_grpo`."
+        },
+    )
+    mask_truncated_completions: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "When enabled, truncated completions are excluded from the loss calculation."
+        },
+    )
