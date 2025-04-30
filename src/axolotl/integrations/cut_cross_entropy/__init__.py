@@ -76,7 +76,7 @@ class CutCrossEntropyPlugin(BasePlugin):
                 cce_patch,
             )
 
-            if is_main_process(use_distributed=False):
+            if is_main_process(use_environ=True):
                 LOG.info(
                     f"Applying Cut Cross Entropy to model type: {cfg.model_config_type}"
                 )

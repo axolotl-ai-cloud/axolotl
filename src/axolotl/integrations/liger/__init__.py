@@ -85,7 +85,7 @@ class LigerPlugin(BasePlugin):
                 kwargs["geglu"] = cfg.liger_glu_activation
             elif "swiglu" in liger_fn_sig.parameters:
                 kwargs["swiglu"] = cfg.liger_glu_activation
-            if is_main_process(use_distributed=False):
+            if is_main_process(use_environ=True):
                 LOG.info(
                     f"Applying LIGER to {cfg.model_config_type} with kwargs: {kwargs}"
                 )

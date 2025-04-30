@@ -69,20 +69,26 @@ def barrier():
         dist.barrier()
 
 
-def is_main_process(use_distributed=True):
+def is_main_process(use_environ=False):
     """
     Check if the current process is the main process. If not in distributed mode,
     always return `True`.
+
+    Args:
+    - use_environ (bool, optional): Use environment variable to determine main process.
+
+    Returns:
+    - bool: `True` if the current process is the main process, `False` otherwise.
     """
-    if not use_distributed:
+    if use_environ:
         return os.environ.get("LOCAL_RANK", "0") == "0"
     if not is_distributed():
         return True
     return dist.get_rank() == 0
 
 
-def is_local_main_process(use_distributed=True):
-    if not use_distributed:
+def is_local_main_process(use_environ=False):
+    if use_environ:
         return os.environ.get("LOCAL_RANK", "0") == "0"
     return PartialState().is_local_main_process
 
