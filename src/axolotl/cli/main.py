@@ -28,7 +28,6 @@ from axolotl.cli.utils import (
     fetch_from_github,
     filter_none_kwargs,
 )
-from axolotl.cli.vllm_serve import do_vllm_serve
 from axolotl.integrations.lm_eval.cli import lm_eval
 from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.schemas.config import AxolotlInputConfig
@@ -327,6 +326,8 @@ def fetch(directory: str, dest: Optional[str]) -> None:
 @add_options_from_dataclass(VllmServeCliArgs)
 @filter_none_kwargs
 def vllm_serve(config: str, **cli_args: VllmServeCliArgs):
+    from axolotl.cli.vllm_serve import do_vllm_serve
+
     do_vllm_serve(config, cli_args)
 
 
