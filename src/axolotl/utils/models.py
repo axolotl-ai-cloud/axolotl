@@ -1361,23 +1361,19 @@ class ModelLoader:
         # ---------------------------------------------------------
         if self.cfg.qat:
             # need to validate earlier in the config that peft_use_dora is False
-            qat_cfg = self.cfg.qat_config
+            qat_cfg = self.cfg.qat
             from torchao.quantization import quantize_
             from torchao.quantization.qat import (
                 FakeQuantizeConfig,
                 IntXQuantizationAwareTrainingConfig,
             )
-
-            from axolotl.utils.config import TorchDType
-
-            activation_dtype = TorchDType[qat_cfg.activation_dtype].value
-            weight_dtype = TorchDType[qat_cfg.weight_dtype].value
+            
             quantize_embedding = qat_cfg.quantize_embedding
             activation_config = FakeQuantizeConfig(
-                dtype=activation_dtype, granularity="per_token", is_symmetric=False
+                dtype=qat_cfg.activation_dtype.value, granularity="per_token", is_symmetric=False
             )
             weight_config = FakeQuantizeConfig(
-                dtype=weight_dtype, group_size=qat_cfg.group_size
+                dtype=qat_cfg.weight_dtype.value, group_size=qat_cfg.group_size
             )
             quantize_config = IntXQuantizationAwareTrainingConfig(
                 activation_config,

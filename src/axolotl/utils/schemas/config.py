@@ -179,8 +179,6 @@ class AxolotlInputConfig(
     tf32: bool | None = None
     float32: bool | None = None
 
-    # torch_dtype: torch.dtype | None
-
     gradient_checkpointing: Literal["unsloth", "offload"] | bool | None = Field(
         default=False
     )
