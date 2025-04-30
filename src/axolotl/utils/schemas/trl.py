@@ -141,7 +141,7 @@ class TRLConfig(BaseModel):
     )
     use_liger_loss: bool | None = Field(
         default=None,
-        json_schema_extra={"description": "Whether to use LIGER loss for GRPO."},
+        json_schema_extra={"description": "Whether to use Liger loss for GRPO."},
     )
     loss_type: str | None = Field(
         default=None,

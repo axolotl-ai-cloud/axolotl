@@ -1150,6 +1150,18 @@ class AxolotlInputConfig(
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_grpo_peft_liger(cls, data):
+        if (
+            data.get("rl") == "grpo"
+            and data.get("trl", {})
+            and data.get("trl").get("use_liger_loss")
+            and data.get("adapter")
+        ):
+            raise ValueError("PEFT + GRPO + Liger is not yet supported")
+        return data
+
     @model_validator(mode="after")
     def check_sequence_parallel_degree(self):
         if not self.sequence_parallel_degree:
