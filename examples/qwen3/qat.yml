@@ -18,6 +18,11 @@ sample_packing: true
 eval_sample_packing: true
 pad_to_sequence_len: true
 
+qat:
+  activation_dtype: int8
+  weight_dtype: int4
+  group_size: 32
+  
 wandb_project:
 wandb_entity:
 wandb_watch:
