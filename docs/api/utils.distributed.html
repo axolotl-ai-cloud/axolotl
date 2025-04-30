@@ -459,7 +459,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#axolotl.utils.distributed.is_main_process" id="toc-axolotl.utils.distributed.is_main_process" class="nav-link" data-scroll-target="#axolotl.utils.distributed.is_main_process">is_main_process</a></li>
   <li><a href="#axolotl.utils.distributed.reduce_and_broadcast" id="toc-axolotl.utils.distributed.reduce_and_broadcast" class="nav-link" data-scroll-target="#axolotl.utils.distributed.reduce_and_broadcast">reduce_and_broadcast</a></li>
   <li><a href="#axolotl.utils.distributed.zero_first" id="toc-axolotl.utils.distributed.zero_first" class="nav-link" data-scroll-target="#axolotl.utils.distributed.zero_first">zero_first</a></li>
-  <li><a href="#axolotl.utils.distributed.zero_only" id="toc-axolotl.utils.distributed.zero_only" class="nav-link" data-scroll-target="#axolotl.utils.distributed.zero_only">zero_only</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -521,10 +520,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td><a href="#axolotl.utils.distributed.zero_first">zero_first</a></td>
 <td>runs the wrapped context so that rank 0 runs first before other ranks</td>
 </tr>
-<tr class="even">
-<td><a href="#axolotl.utils.distributed.zero_only">zero_only</a></td>
-<td>Context manager that only runs the enclosed block on the main rank.</td>
-</tr>
 </tbody>
 </table>
 <section id="axolotl.utils.distributed.barrier" class="level3">
@@ -579,9 +574,13 @@ The value is then broadcasted to all other ranks.</p>
 </section>
 <section id="axolotl.utils.distributed.is_main_process" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.distributed.is_main_process">is_main_process</h3>
-<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.is_main_process()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.is_main_process(use_environ<span class="op">=</span><span class="va">False</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Check if the current process is the main process. If not in distributed mode,
 always return <code>True</code>.</p>
+<p>Args:
+- use_environ (bool, optional): Use environment variable to determine main process.</p>
+<p>Returns:
+- bool: <code>True</code> if the current process is the main process, <code>False</code> otherwise.</p>
 </section>
 <section id="axolotl.utils.distributed.reduce_and_broadcast" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.distributed.reduce_and_broadcast">reduce_and_broadcast</h3>
@@ -599,11 +598,6 @@ and then broadcast the reduced result to all ranks.</p>
 <h3 class="anchored" data-anchor-id="axolotl.utils.distributed.zero_first">zero_first</h3>
 <div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.zero_first(is_main)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>runs the wrapped context so that rank 0 runs first before other ranks</p>
-</section>
-<section id="axolotl.utils.distributed.zero_only" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.distributed.zero_only">zero_only</h3>
-<div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.zero_only()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Context manager that only runs the enclosed block on the main rank.</p>
 
 
 </section>
