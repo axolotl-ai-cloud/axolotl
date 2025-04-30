@@ -41,6 +41,8 @@ def apply_sequence_parallelism(
             - original_seq_len: The original sequence length before padding
             - pad_len: The number of padding tokens added
     """
+    batch = {k: v.clone() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+
     # Update ring attention params if needed
     if batch.get("position_ids") is not None:
         update_ring_attn_params(position_ids=batch["position_ids"])
@@ -121,7 +123,6 @@ def apply_sequence_parallelism(
 
     # Slice batch for sequence parallel processing
     for key in batch:
-        # Skip non-tensor values or tensors without sequence dimension
         if not isinstance(batch[key], torch.Tensor) or batch[key].dim() <= 1:
             continue
 
@@ -132,17 +133,15 @@ def apply_sequence_parallelism(
             )
 
     # Calculate the chunk size for each rank
-    chunk_size = total_seq_len // local_world_size
+    original_chunk_size = original_seq_len // local_world_size
+    padded_chunk_size = total_seq_len // local_world_size
 
     # If position_ids aren't already in the batch, create them with the proper offset
     if "position_ids" not in batch:
-        # Calculate position offset for this rank
-        position_offset = local_rank * chunk_size
-
-        # Create position IDs tensor with the correct global positions
+        position_offset = local_rank * original_chunk_size
         batch["position_ids"] = torch.arange(
             position_offset,
-            position_offset + chunk_size,
+            position_offset + padded_chunk_size,
             dtype=torch.long,
             device=batch["input_ids"].device,
         ).expand(batch["input_ids"].size(0), -1)
@@ -250,66 +249,60 @@ class SequenceParallelContextManager:
 
     def gather_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
         """Gather a sharded tensor from all ranks while preserving gradients."""
-        # Prepare tensors for all_gather
         world_size = self.local_world_size
-        requires_grad = tensor.requires_grad
+        group = self.process_group
 
-        # Create list to store tensors from all ranks
-        with torch.no_grad():
-            # Each rank might have different sequence lengths based on logits_to_keep
-            # So we need to gather shape information first
-            local_shape = torch.tensor(list(tensor.shape), device=tensor.device)
-            all_shapes = [torch.zeros_like(local_shape) for _ in range(world_size)]
-            dist.all_gather(all_shapes, local_shape, group=self.process_group)
-            all_seq_lens = [shape[1] for shape in all_shapes]
+        if not tensor.requires_grad:
+            # Non-grad version — simple all_gather under no_grad
+            with torch.no_grad():
+                local_shape = torch.tensor(list(tensor.shape), device=tensor.device)
+                all_shapes = [torch.zeros_like(local_shape) for _ in range(world_size)]
+                dist.all_gather(all_shapes, local_shape, group=group)
+                gathered_tensors = [
+                    torch.zeros(tuple(s.tolist()), dtype=tensor.dtype, device=tensor.device)
+                    for s in all_shapes
+                ]
+                dist.all_gather(gathered_tensors, tensor, group=group)
+                return torch.cat(gathered_tensors, dim=1)
 
-            # Create properly sized tensors for gathering
-            gathered_tensors = []
-            for i in range(world_size):
-                # Create tensor with the same shape as the corresponding rank's tensor
-                shape = [int(dim) for dim in all_shapes[i].tolist()]
-                gathered_tensors.append(
-                    torch.zeros(shape, dtype=tensor.dtype, device=tensor.device)
-                )
-            dist.all_gather(gathered_tensors, tensor.detach(), group=self.process_group)
-
-        # If doesn't require gradient, just process normally
-        if not requires_grad:
-            return torch.cat(gathered_tensors, dim=1)
-
-        # For tensors requiring gradients, use a custom autograd function
-        rank = dist.get_rank(group=self.process_group)
-        result = AllGatherWithGrad.apply(tensor, gathered_tensors, rank, all_seq_lens)
-
-        return result
-
+        # Gradient-preserving gather
+        return AllGatherWithGrad.apply(tensor, group)
 
 class AllGatherWithGrad(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input_tensor, gathered_tensors, rank, all_seq_lens):
-        ctx.rank = rank
+    def forward(ctx, input_tensor, group):
+        ctx.group = group
+        ctx.rank = dist.get_rank(group)
         ctx.input_shape = input_tensor.shape
-        ctx.all_seq_lens = all_seq_lens
-        ctx.save_for_backward(input_tensor)
 
-        return torch.cat(gathered_tensors, dim=1)
+        # Gather shape metadata
+        local_shape = torch.tensor(list(input_tensor.shape), device=input_tensor.device)
+        world_size = dist.get_world_size(group)
+        all_shapes = [torch.zeros_like(local_shape) for _ in range(world_size)]
+        ctx.all_seq_lens = [int(s[1].item()) for s in all_shapes]
+
+        # Gradient-tracking all_gather
+        gathered = [
+            torch.zeros(tuple(s.tolist()), dtype=input_tensor.dtype, device=input_tensor.device)
+            for s in all_shapes
+        ]
+        dist.all_gather(gathered, input_tensor, group=group)
+        return torch.cat(gathered, dim=1)
 
     @staticmethod
     def backward(ctx, grad_output):
         rank = ctx.rank
-        input_shape = ctx.input_shape
         all_seq_lens = ctx.all_seq_lens
+        input_shape = ctx.input_shape
 
-        # Simple sharding - each rank gets its corresponding section
+        # Slice the portion of grad_output for this rank
         start_idx = sum(all_seq_lens[:rank])
         end_idx = start_idx + all_seq_lens[rank]
         grad_input = grad_output[:, start_idx:end_idx].contiguous()
 
-        # Verify shape
         if grad_input.shape != input_shape:
             raise ValueError(
-                f"Gradient shape mismatch in AllGatherWithGrad.backward: "
-                f"got {grad_input.shape} but expected {input_shape}"
+                f"Gradient shape mismatch: expected {input_shape}, got {grad_input.shape}"
             )
 
-        return grad_input, None, None, None, None
+        return grad_input, None  # second return is for 'group'
