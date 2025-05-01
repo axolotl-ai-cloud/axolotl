@@ -235,6 +235,8 @@ def load_cfg_from_dict(config: DictDefault | dict) -> DictDefault:
         `DictDefault` mapping configuration keys to values after re-parsing with all the validation.
     """
 
+    if isinstance(config, DictDefault):
+        config = config.to_dict()
     with tempfile.NamedTemporaryFile(
         mode="w", delete=True, suffix=".yml", prefix="axolotl_config_"
     ) as temp_file:
