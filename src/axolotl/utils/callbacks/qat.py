@@ -1,14 +1,23 @@
 from transformers import TrainerCallback
 from torchao.quantization.qat.linear import FakeQuantizedLinear
-from axolotl.utils.dict import DictDefault
+import torch.nn as nn
+from functools import partial
+
+
+def toggle_fake_quant(mod: nn.Module, enable: bool):
+    if isinstance(mod, FakeQuantizedLinear):
+        if mod.activation_fake_quantizer is not None:
+            mod.activation_fake_quantizer.enabled = enable
+        if mod.weight_fake_quantizer is not None:
+            mod.weight_fake_quantizer.enabled = enable
+
 
 class QATCallback(TrainerCallback):
-    def __init__(self, cfg: DictDefault):
-        self.fake_quant_after_n_steps = cfg.fake_quant_after_n_steps
+    def __init__(self, fake_quant_after_n_steps: int):
+        self.fake_quant_after_n_steps = fake_quant_after_n_steps
 
-    def on_step_begin(self, args, state, control, model, optimizer, lr_scheduler):
+    def on_step_begin(self, args, state, control, model, **kwargs):
         if state.global_step == 0:
-            model.apply(lambda mod: mod.disable_fake_quant() if isinstance(mod, FakeQuantizedLinear) else None)
+            model.apply(partial(toggle_fake_quant, enable=False))
         elif state.global_step == self.fake_quant_after_n_steps:
-            model.apply(lambda mod: mod.enable_fake_quant() if isinstance(mod, FakeQuantizedLinear) else None)
-        
+            model.apply(partial(toggle_fake_quant, enable=True))
