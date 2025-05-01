@@ -480,6 +480,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#usage-5" id="toc-usage-5" class="nav-link" data-scroll-target="#usage-5">Usage</a></li>
   <li><a href="#citation-4" id="toc-citation-4" class="nav-link" data-scroll-target="#citation-4">Citation</a></li>
   </ul></li>
+  <li><a href="#llmcompressor" id="toc-llmcompressor" class="nav-link" data-scroll-target="#llmcompressor">LLMCompressor</a>
+  <ul class="collapse">
+  <li><a href="#requirements-1" id="toc-requirements-1" class="nav-link" data-scroll-target="#requirements-1">Requirements</a></li>
+  <li><a href="#usage-6" id="toc-usage-6" class="nav-link" data-scroll-target="#usage-6">Usage</a></li>
+  <li><a href="#storage-optimization-with-save_compressed" id="toc-storage-optimization-with-save_compressed" class="nav-link" data-scroll-target="#storage-optimization-with-save_compressed">Storage Optimization with save_compressed</a></li>
+  <li><a href="#example-config" id="toc-example-config" class="nav-link" data-scroll-target="#example-config">Example Config</a></li>
+  <li><a href="#inference-with-vllm" id="toc-inference-with-vllm" class="nav-link" data-scroll-target="#inference-with-vllm">Inference with vLLM</a></li>
+  <li><a href="#learn-more" id="toc-learn-more" class="nav-link" data-scroll-target="#learn-more">Learn More</a></li>
+  </ul></li>
   <li><a href="#adding-a-new-integration" id="toc-adding-a-new-integration" class="nav-link" data-scroll-target="#adding-a-new-integration">Adding a new integration</a></li>
   </ul>
 </nav>
@@ -742,6 +751,95 @@ By identifying the top n% of layers with the highest SNR, you can optimize train
 <p>Please see reference <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/spectrum">here</a></p>
 </section>
 </section>
+<section id="llmcompressor" class="level2">
+<h2 class="anchored" data-anchor-id="llmcompressor">LLMCompressor</h2>
+<p>Fine-tune sparsified models in Axolotl using Neural Magic’s <a href="https://github.com/vllm-project/llm-compressor">LLMCompressor</a>.</p>
+<p>This integration enables fine-tuning of models sparsified using LLMCompressor within the Axolotl training framework. By combining LLMCompressor’s model compression capabilities with Axolotl’s distributed training pipelines, users can efficiently fine-tune sparse models at scale.</p>
+<p>It uses Axolotl’s plugin system to hook into the fine-tuning flows while maintaining sparsity throughout training.</p>
+<hr>
+<section id="requirements-1" class="level3">
+<h3 class="anchored" data-anchor-id="requirements-1">Requirements</h3>
+<ul>
+<li><p>Axolotl with <code>llmcompressor</code> extras:</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="st">"axolotl[llmcompressor]"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p>Requires <code>llmcompressor &gt;= 0.5.1</code></p></li>
+</ul>
+<p>This will install all necessary dependencies to fine-tune sparsified models using the integration.</p>
+<hr>
+</section>
+<section id="usage-6" class="level3">
+<h3 class="anchored" data-anchor-id="usage-6">Usage</h3>
+<p>To enable sparse fine-tuning with this integration, include the plugin in your Axolotl config:</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.llm_compressor.LLMCompressorPlugin</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="fu">llmcompressor</span><span class="kw">:</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">recipe</span><span class="kw">:</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">finetuning_stage</span><span class="kw">:</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">finetuning_modifiers</span><span class="kw">:</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">ConstantPruningModifier</span><span class="kw">:</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">targets</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="st">'re:.*q_proj.weight'</span><span class="kw">,</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="st">'re:.*k_proj.weight'</span><span class="kw">,</span></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="st">'re:.*v_proj.weight'</span><span class="kw">,</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="st">'re:.*o_proj.weight'</span><span class="kw">,</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="st">'re:.*gate_proj.weight'</span><span class="kw">,</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="st">'re:.*up_proj.weight'</span><span class="kw">,</span></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="st">'re:.*down_proj.weight'</span><span class="kw">,</span></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="kw">]</span></span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">start</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save_compressed</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>This plugin <strong>does not apply pruning or sparsification itself</strong> — it is intended for <strong>fine-tuning models that have already been sparsified</strong>.</p>
+<p>Pre-sparsified checkpoints can be:
+- Generated using <a href="https://github.com/vllm-project/llm-compressor">LLMCompressor</a>
+- Downloaded from <a href="https://huggingface.co/neuralmagic">Neural Magic’s Hugging Face page</a>
+- Any custom LLM with compatible sparsity patterns that you’ve created yourself</p>
+<p>To learn more about writing and customizing LLMCompressor recipes, refer to the official documentation:
+<a href="https://github.com/vllm-project/llm-compressor/blob/main/README.md">https://github.com/vllm-project/llm-compressor/blob/main/README.md</a></p>
+</section>
+<section id="storage-optimization-with-save_compressed" class="level3">
+<h3 class="anchored" data-anchor-id="storage-optimization-with-save_compressed">Storage Optimization with save_compressed</h3>
+<p>Setting <code>save_compressed: true</code> in your configuration enables saving models in a compressed format, which:
+- Reduces disk space usage by approximately 40%
+- Maintains compatibility with vLLM for accelerated inference
+- Maintains compatibility with llmcompressor for further optimization (example: quantization)</p>
+<p>This option is highly recommended when working with sparse models to maximize the benefits of model compression.</p>
+</section>
+<section id="example-config" class="level3">
+<h3 class="anchored" data-anchor-id="example-config">Example Config</h3>
+<p>See <a href="examples/llama-3/sparse-finetuning.yaml"><code>examples/llama-3/sparse-finetuning.yaml</code></a> for a complete example.</p>
+<hr>
+</section>
+<section id="inference-with-vllm" class="level3">
+<h3 class="anchored" data-anchor-id="inference-with-vllm">Inference with vLLM</h3>
+<p>After fine-tuning your sparse model, you can leverage vLLM for efficient inference.
+You can also use LLMCompressor to apply additional quantization to your fine-tuned
+sparse model before inference for even greater performance benefits.:</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> vllm <span class="im">import</span> LLM, SamplingParams</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>prompts <span class="op">=</span> [</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">"Hello, my name is"</span>,</span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">"The president of the United States is"</span>,</span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">"The capital of France is"</span>,</span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">"The future of AI is"</span>,</span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>]</span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a>sampling_params <span class="op">=</span> SamplingParams(temperature<span class="op">=</span><span class="fl">0.8</span>, top_p<span class="op">=</span><span class="fl">0.95</span>)</span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>llm <span class="op">=</span> LLM(<span class="st">"path/to/your/sparse/model"</span>)</span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a>outputs <span class="op">=</span> llm.generate(prompts, sampling_params)</span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> output <span class="kw">in</span> outputs:</span>
+<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a>    prompt <span class="op">=</span> output.prompt</span>
+<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a>    generated_text <span class="op">=</span> output.outputs[<span class="dv">0</span>].text</span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"Prompt: </span><span class="sc">{</span>prompt<span class="sc">!r}</span><span class="ss">, Generated text: </span><span class="sc">{</span>generated_text<span class="sc">!r}</span><span class="ss">"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>For more details on vLLM’s capabilities and advanced configuration options, see the <a href="https://docs.vllm.ai/">official vLLM documentation</a>.</p>
+</section>
+<section id="learn-more" class="level3">
+<h3 class="anchored" data-anchor-id="learn-more">Learn More</h3>
+<p>For details on available sparsity and quantization schemes, fine-tuning recipes, and usage examples, visit the official LLMCompressor repository:</p>
+<p><a href="https://github.com/vllm-project/llm-compressor">https://github.com/vllm-project/llm-compressor</a></p>
+<p>Please see reference <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/llm_compressor">here</a></p>
+</section>
+</section>
 <section id="adding-a-new-integration" class="level2">
 <h2 class="anchored" data-anchor-id="adding-a-new-integration">Adding a new integration</h2>
 <p>Plugins can be used to customize the behavior of the training pipeline through <a href="https://en.wikipedia.org/wiki/Hooking">hooks</a>. See <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/integrations/base.py"><code>axolotl.integrations.BasePlugin</code></a> for the possible hooks.</p>
@@ -782,10 +880,10 @@ Warning
 </div>
 <div class="callout-body-container callout-body">
 <p>If you could not load your integration, please ensure you are pip installing in editable mode.</p>
-<div class="sourceCode" id="cb14"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">-e</span> .</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb17"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">-e</span> .</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>and correctly spelled the integration name in the config file.</p>
-<div class="sourceCode" id="cb15"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.your_integration_name.YourIntegrationPlugin</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb18"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.your_integration_name.YourIntegrationPlugin</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </div>
 <div class="callout callout-style-default callout-note callout-titled">
