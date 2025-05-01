@@ -27,6 +27,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+env:
+  TRANSFORMERS_IS_CI: "yes"
+
 jobs:
   pre-commit:
     name: pre-commit

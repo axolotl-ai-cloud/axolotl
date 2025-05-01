@@ -30,7 +30,7 @@ jobs:
             cuda_version: 12.6.3
             python_version: "3.11"
             pytorch: 2.7.0
-            axolotl_extras: vllm
+            axolotl_extras:
     runs-on: axolotl-gpu-runner
     steps:
       - name: Checkout
@@ -62,6 +62,7 @@ jobs:
             CUDA=${{ matrix.cuda }}
             PYTORCH_VERSION=${{ matrix.pytorch }}
             AXOLOTL_ARGS=${{ matrix.axolotl_args }}
+            AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}
           file: ./docker/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: |

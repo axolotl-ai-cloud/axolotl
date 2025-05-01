@@ -1150,6 +1150,18 @@ class AxolotlInputConfig(
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_grpo_peft_liger(cls, data):
+        if (
+            data.get("rl") == "grpo"
+            and data.get("trl", {})
+            and data.get("trl").get("use_liger_loss")
+            and data.get("adapter")
+        ):
+            raise ValueError("PEFT + GRPO + Liger is not yet supported")
+        return data
+
     @model_validator(mode="after")
     def check_sequence_parallel_degree(self):
         if not self.sequence_parallel_degree:
@@ -1319,6 +1331,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @classmethod
     def check_auto_enable_lora_kernels(cls, data):
         # Only proceed if using LoRA or QLoRA adapter
+        if data.get("rl"):
+            # RL trainers not tested so don't enable kernels by default
+            return data
         if data.get("adapter") in ["lora", "qlora"]:
             # Skip if already set, using unsloth optimizations, or using 8-bit
             unsloth_fields = ["unsloth_lora_mlp", "unsloth_lora_qkv", "unsloth_lora_o"]

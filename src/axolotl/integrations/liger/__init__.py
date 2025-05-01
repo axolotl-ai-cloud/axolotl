@@ -23,8 +23,8 @@ import logging
 import sys
 
 from axolotl.integrations.base import BasePlugin
+from axolotl.utils.distributed import is_main_process
 
-from ...utils.distributed import zero_only
 from .args import LigerArgs  # pylint: disable=unused-import. # noqa: F401
 from .utils import patch_with_compile_disable
 
@@ -85,7 +85,7 @@ class LigerPlugin(BasePlugin):
                 kwargs["geglu"] = cfg.liger_glu_activation
             elif "swiglu" in liger_fn_sig.parameters:
                 kwargs["swiglu"] = cfg.liger_glu_activation
-            with zero_only():
+            if is_main_process(use_environ=True):
                 LOG.info(
                     f"Applying LIGER to {cfg.model_config_type} with kwargs: {kwargs}"
                 )

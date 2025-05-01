@@ -69,17 +69,27 @@ def barrier():
         dist.barrier()
 
 
-def is_main_process():
+def is_main_process(use_environ=False):
     """
     Check if the current process is the main process. If not in distributed mode,
     always return `True`.
+
+    Args:
+    - use_environ (bool, optional): Use environment variable to determine main process.
+
+    Returns:
+    - bool: `True` if the current process is the main process, `False` otherwise.
     """
+    if use_environ:
+        return os.environ.get("LOCAL_RANK", "0") == "0"
     if not is_distributed():
         return True
     return dist.get_rank() == 0
 
 
-def is_local_main_process():
+def is_local_main_process(use_environ=False):
+    if use_environ:
+        return os.environ.get("LOCAL_RANK", "0") == "0"
     return PartialState().is_local_main_process
 
 
@@ -97,17 +107,6 @@ def cleanup_distributed():
     # Destroy the process group
     if torch.distributed.is_initialized():
         torch.distributed.destroy_process_group()
-
-
-@contextmanager
-def zero_only():
-    """
-    Context manager that only runs the enclosed block on the main rank.
-    """
-    if is_main_process():
-        yield
-    else:
-        yield None
 
 
 @contextmanager
