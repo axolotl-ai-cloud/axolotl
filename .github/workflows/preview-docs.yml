@@ -4,6 +4,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+    # Run the workflow only when one of these files changes
+    paths:
+      - '**/*.md'      # any Markdown file
+      - '**/*.qmd'     # any Quarto file
+      - '_quarto.yaml'
+
 permissions:
   checks: write
   contents: write
