@@ -9,6 +9,7 @@ on:
       - 'pyproject.toml'
       - '.github/workflows/multi-gpu-e2e.yml'
       - 'src/axolotl/core/trainers/mixins/sequence_parallel.py'
+      - 'src/axolotl/utils/distributed.py'
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * 1,4'  # Runs at 00:00 UTC every monday & thursday
@@ -30,13 +31,6 @@ jobs:
             python_version: "3.11"
             pytorch: 2.6.0
             axolotl_extras: vllm
-            num_gpus: 2
-            nightly_build: "true"
-          - cuda: 124
-            cuda_version: 12.4.1
-            python_version: "3.11"
-            pytorch: 2.4.1
-            axolotl_extras:  # no vllm support for 2.4.1
             num_gpus: 2
             nightly_build: "true"
           - cuda: 124

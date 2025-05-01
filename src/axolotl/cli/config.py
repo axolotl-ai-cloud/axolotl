@@ -152,6 +152,12 @@ def prepare_plugins(cfg: DictDefault):
             plugin_manager.register(plugin_name)
 
 
+def plugin_set_cfg(cfg: DictDefault):
+    if cfg.get("plugins"):
+        plugin_manager = PluginManager.get_instance()
+        plugin_manager.cfg = cfg
+
+
 def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs) -> DictDefault:
     """
     Loads the `axolotl` configuration stored at `config`, validates it, and performs
@@ -213,5 +219,6 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs) -> DictDefa
     setup_wandb_env_vars(cfg)
     setup_mlflow_env_vars(cfg)
     setup_comet_env_vars(cfg)
+    plugin_set_cfg(cfg)
 
     return cfg

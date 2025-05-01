@@ -4,7 +4,7 @@ HF Chat Templates prompt strategy
 
 import logging
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Set, Union
 
 from pydantic import BaseModel
 from transformers import ProcessorMixin
@@ -29,12 +29,12 @@ class ChatTemplatePrompter(Prompter):
         chat_template: str,
         processor=None,
         max_length=2048,
-        message_property_mappings: Optional[Dict[str, str]] = None,
-        message_field_training: Optional[str] = None,
-        message_field_training_detail: Optional[str] = None,
+        message_property_mappings: Dict[str, str] | None = None,
+        message_field_training: str | None = None,
+        message_field_training_detail: str | None = None,
         field_messages: str = "messages",
         field_system: str = "system",
-        roles: Optional[Dict[str, List[str]]] = None,
+        roles: Dict[str, List[str]] | None = None,
         drop_system_message: bool = False,
     ):
         # check if message_property_mappings is None or empty dict
@@ -42,6 +42,7 @@ class ChatTemplatePrompter(Prompter):
             message_property_mappings = {
                 "role": "role",
                 "content": "content",
+                "reasoning_content": "reasoning_content",
             }
 
         if roles:
@@ -65,7 +66,7 @@ class ChatTemplatePrompter(Prompter):
         self.field_messages = field_messages
         self.field_system = field_system
         self.tokenizer = tokenizer
-        self.processor: Optional[ProcessorMixin] = processor
+        self.processor: ProcessorMixin | None = processor
         self.chat_template = chat_template
         self.max_length = max_length
         self.drop_system_message = drop_system_message
@@ -224,10 +225,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         tokenizer,
         train_on_inputs: bool,
         sequence_len: int,
-        roles_to_train: Optional[List[str]] = None,
-        train_on_eos: Optional[str] = None,
-        train_on_eot: Optional[str] = None,
-        eot_tokens: Optional[List[str]] = None,
+        roles_to_train: list[str] | None = None,
+        train_on_eos: str | None = None,
+        train_on_eot: str | None = None,
+        eot_tokens: list[str] | None = None,
+        split_thinking: bool | None = False,
     ):
         super().__init__(prompter, tokenizer, train_on_inputs, sequence_len)
         self.prompter: ChatTemplatePrompter = prompter
@@ -247,6 +249,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         self.eot_tokens = (
             eot_tokens if eot_tokens is not None else [self.tokenizer.eos_token]
         )
+        self.split_thinking = split_thinking
 
         self.images = "images"
 
@@ -655,6 +658,52 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 transformed_message["role"], transformed_message["role"]
             )
 
+        # TODO handle reasoning_content with split_thinking
+        # if the role is assistant that we want to use reasoning_content
+        if self.split_thinking and transformed_message["role"] == "assistant":
+            content = transformed_message["content"]
+            thinking_pairs = [
+                ("<think>", "</think>"),
+                ("<reasoning>", "</reasoning>"),
+                ("<|begin_of_thought|>", "<|end_of_thought|>"),
+            ]
+            content_pairs = [("<|begin_of_solution|>", "<|end_of_solution|>")]
+            for tpair in thinking_pairs:
+                # check if the thinking pair is in the content
+                if tpair[0] in content and tpair[1] in content:
+                    # find the start and end index of the thinking pair
+                    t_start_idx = content.find(tpair[0])
+                    t_end_idx = content.find(tpair[1])
+
+                    # get the thinking content
+                    thinking_content = content[t_start_idx + len(tpair[0]) : t_end_idx]
+                    transformed_message["reasoning_content"] = thinking_content.strip()
+
+                    # take remainder of the content
+                    # strip whitespace from beginning of the remainder (thinking tokens)
+                    remainder = content[t_end_idx + len(tpair[1]) :].lstrip()
+
+                    # check if the content pair is in the remainder
+                    cpair_found = False
+                    for cpair in content_pairs:
+                        if cpair[0] in remainder and cpair[1] in remainder:
+                            # find the start and end index of the content pair
+                            c_start_idx = remainder.find(cpair[0])
+                            c_end_idx = remainder.find(cpair[1])
+
+                            # get the content content
+                            content_content = remainder[
+                                c_start_idx + len(cpair[0]) : c_end_idx
+                            ]
+                            transformed_message["content"] = content_content.strip()
+                            cpair_found = True
+                            break
+
+                    # else, the content is the remainder
+                    if not cpair_found:
+                        transformed_message["content"] = remainder
+                    break
+
         # Determine which keys in the original message were not mapped
         mapped_values = set(self.prompter.message_property_mappings.values())
         remaining_keys = set(message) - mapped_values
@@ -689,13 +738,14 @@ class StrategyLoader:
             "train_on_eos": ds_cfg.get("train_on_eos", "turn"),
             "train_on_eot": ds_cfg.get("train_on_eot", None),
             "eot_tokens": cfg.get("eot_tokens", None),  # loads from cfg, not ds_cfg
+            "split_thinking": ds_cfg.get("split_thinking", False),
         }
 
     def __call__(
         self,
         tokenizer,
         cfg,
-        ds_cfg: Optional[Union[Dict[str, Any], DatasetConfig]] = None,
+        ds_cfg: Union[Dict[str, Any], DatasetConfig] | None = None,
         processor=None,
     ):
         if ds_cfg is None:

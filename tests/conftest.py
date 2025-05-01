@@ -91,6 +91,12 @@ def download_qwen_2_5_half_billion_model():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def download_qwen3_half_billion_model():
+    # download the model
+    snapshot_download_w_retry("Qwen/Qwen3-0.6B", repo_type="model")
+
+
+@pytest.fixture(scope="session", autouse=True)
 def download_tatsu_lab_alpaca_dataset():
     # download the dataset
     snapshot_download_w_retry("tatsu-lab/alpaca", repo_type="dataset")

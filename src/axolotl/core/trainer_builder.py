@@ -60,6 +60,7 @@ from axolotl.core.training_args import (
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback
+from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
 from axolotl.processing_strategies import get_processing_strategy
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
@@ -113,6 +114,8 @@ class TrainerBuilderBase(abc.ABC):
         # model.push_to_hub instead of trainer.push_to_hub.
         if hasattr(model, "add_model_tags"):
             model.add_model_tags(["axolotl"])
+
+        patch_trainer_get_lr()
 
     @property
     def model_ref(self):
