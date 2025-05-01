@@ -105,7 +105,25 @@ def require_vllm(test_case):
             return False
 
     return unittest.skipUnless(
-        is_vllm_installed(), "test requires a vllm to be installed"
+        is_vllm_installed(), "test requires vllm to be installed"
+    )(test_case)
+
+
+def require_llmcompressor(test_case):
+    """
+    Decorator marking a test that requires a llmcompressor to be installed
+    """
+
+    def is_llmcompressor_installed():
+        try:
+            import llmcompressor  # pylint: disable=unused-import  # noqa: F401
+
+            return True
+        except ImportError:
+            return False
+
+    return unittest.skipUnless(
+        is_llmcompressor_installed(), "test requires llmcompressor to be installed"
     )(test_case)
 
 
