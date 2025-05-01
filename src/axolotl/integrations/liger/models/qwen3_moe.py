@@ -163,7 +163,7 @@ def apply_liger_kernel_to_qwen3_moe(
         cross_entropy and fused_linear_cross_entropy
     ), "cross_entropy and fused_linear_cross_entropy cannot both be True."
 
-    modeling_qwen3_moe = sys.modules["transformers.models.qwen3.modeling_qwen3_moe"]
+    modeling_qwen3_moe = sys.modules["transformers.models.qwen3_moe.modeling_qwen3_moe"]
 
     if rms_norm:
         modeling_qwen3_moe.Qwen3MoeRMSNorm = LigerRMSNorm
