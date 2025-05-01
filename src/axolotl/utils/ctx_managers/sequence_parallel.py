@@ -42,23 +42,27 @@ def apply_sequence_parallelism(
             - pad_len: The number of padding tokens added
     """
     batch = {k: v.clone() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+    original_seq_len = batch["input_ids"].size(1)
 
     # Update ring attention params if needed
     if batch.get("position_ids") is not None:
         update_ring_attn_params(position_ids=batch["position_ids"])
-
-    # Add padding to make sequence length divisible by local_world_size
-    original_seq_len = batch["input_ids"].size(1)
-    total_seq_len = original_seq_len
-    pad_len = 0
+    else:
+        # If position_ids aren't already in the batch, create them
+        batch["position_ids"] = torch.arange(
+            0,
+            original_seq_len,
+            dtype=torch.long,
+            device=batch["input_ids"].device,
+        ).expand(batch["input_ids"].size(0), -1)
 
     # Handle logits_to_keep
     if "logits_to_keep" in batch and isinstance(batch["logits_to_keep"], int):
         logits_to_keep = batch["logits_to_keep"]
 
         # Calculate which positions in the full sequence contain the last N tokens
-        start_position = max(0, total_seq_len - logits_to_keep)
-        chunk_size = total_seq_len // local_world_size
+        start_position = max(0, original_seq_len - logits_to_keep)
+        chunk_size = original_seq_len // local_world_size
         rank_start = local_rank * chunk_size
         rank_end = rank_start + chunk_size
 
@@ -71,7 +75,7 @@ def apply_sequence_parallelism(
 
         if rank_end > start_position:
             # Calculate how many of the last N tokens fall within this rank's range
-            tokens_in_rank = min(rank_end, total_seq_len) - max(
+            tokens_in_rank = min(rank_end, original_seq_len) - max(
                 rank_start, start_position
             )
 
@@ -84,11 +88,13 @@ def apply_sequence_parallelism(
         # Replace the integer with the boolean mask
         batch["logits_to_keep"] = mask
 
-    # Calculate padding needed to make the sequence length divisible by the divisor
+    # Add padding to make sequence length divisible by local_world_size
+    total_seq_len = original_seq_len
+    pad_len = 0
     divisor = local_world_size
     if total_seq_len % divisor != 0:
         pad_len = divisor - (total_seq_len % divisor)
-
+        
         # Apply padding to all relevant tensors
         for key in batch:
             if (
@@ -121,30 +127,34 @@ def apply_sequence_parallelism(
         # Update the total sequence length after padding
         total_seq_len = batch["input_ids"].size(1)
 
+    print(f"{dist.get_rank()}: pad_len: {pad_len}")
+
     # Slice batch for sequence parallel processing
     for key in batch:
+        print(key, isinstance(batch[key], torch.Tensor), batch[key].dim())
         if not isinstance(batch[key], torch.Tensor) or batch[key].dim() <= 1:
             continue
 
+        print(key, batch[key].size(1))
         if batch[key].size(1) == total_seq_len:
             # Split in sequential fashion and grab this rank's chunk
             batch[key] = (
                 batch[key].chunk(local_world_size, dim=1)[local_rank].contiguous()
             )
 
-    # Calculate the chunk size for each rank
-    original_chunk_size = original_seq_len // local_world_size
-    padded_chunk_size = total_seq_len // local_world_size
+    # # Calculate the chunk size for each rank
+    # original_chunk_size = original_seq_len // local_world_size
+    # padded_chunk_size = total_seq_len // local_world_size
 
-    # If position_ids aren't already in the batch, create them with the proper offset
-    if "position_ids" not in batch:
-        position_offset = local_rank * original_chunk_size
-        batch["position_ids"] = torch.arange(
-            position_offset,
-            position_offset + padded_chunk_size,
-            dtype=torch.long,
-            device=batch["input_ids"].device,
-        ).expand(batch["input_ids"].size(0), -1)
+    # # If position_ids aren't already in the batch, create them with the proper offset
+    # if "position_ids" not in batch:
+    #     position_offset = local_rank * original_chunk_size
+    #     batch["position_ids"] = torch.arange(
+    #         position_offset,
+    #         position_offset + padded_chunk_size,
+    #         dtype=torch.long,
+    #         device=batch["input_ids"].device,
+    #     ).expand(batch["input_ids"].size(0), -1)
 
     return batch, original_seq_len, pad_len
 
@@ -265,44 +275,58 @@ class SequenceParallelContextManager:
                 dist.all_gather(gathered_tensors, tensor, group=group)
                 return torch.cat(gathered_tensors, dim=1)
 
-        # Gradient-preserving gather
         return AllGatherWithGrad.apply(tensor, group)
+
 
 class AllGatherWithGrad(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input_tensor, group):
         ctx.group = group
         ctx.rank = dist.get_rank(group)
-        ctx.input_shape = input_tensor.shape
-
+        ctx.world_size = dist.get_world_size(group)
+        
         # Gather shape metadata
         local_shape = torch.tensor(list(input_tensor.shape), device=input_tensor.device)
-        world_size = dist.get_world_size(group)
+        world_size = ctx.world_size
         all_shapes = [torch.zeros_like(local_shape) for _ in range(world_size)]
-        ctx.all_seq_lens = [int(s[1].item()) for s in all_shapes]
-
-        # Gradient-tracking all_gather
+        dist.all_gather(all_shapes, local_shape, group=group)
+        
+        # Store sequence lengths for backward pass
+        seq_lens = [int(shape[1].item()) for shape in all_shapes]
+        ctx.seq_lens = seq_lens
+        
+        # Perform all_gather operation
         gathered = [
-            torch.zeros(tuple(s.tolist()), dtype=input_tensor.dtype, device=input_tensor.device)
-            for s in all_shapes
+            torch.zeros(tuple(shape.tolist()), dtype=input_tensor.dtype, device=input_tensor.device)
+            for shape in all_shapes
         ]
         dist.all_gather(gathered, input_tensor, group=group)
-        return torch.cat(gathered, dim=1)
-
+        
+        # Concatenate tensors along sequence dimension
+        result = torch.cat(gathered, dim=1)
+        
+        # Save input tensor shape for backward
+        ctx.input_shape = input_tensor.shape
+        
+        return result
+    
     @staticmethod
     def backward(ctx, grad_output):
+        # Unpack saved variables
         rank = ctx.rank
-        all_seq_lens = ctx.all_seq_lens
+        seq_lens = ctx.seq_lens
         input_shape = ctx.input_shape
+        
+        # Calculate offset for this rank's chunk
+        offset = sum(seq_lens[:rank])
+        
+        # Extract gradient for this rank's chunk
+        grad_slice = grad_output[:, offset:offset+seq_lens[rank]].contiguous()
+        
+        # Critical: Ensure the gradient has the right shape
+        if grad_slice.shape != input_shape:
+            grad_slice = grad_slice.view(input_shape)
+            
+        # No additional modifications or scaling necessary
+        return grad_slice, None
 
-        # Slice the portion of grad_output for this rank
-        start_idx = sum(all_seq_lens[:rank])
-        end_idx = start_idx + all_seq_lens[rank]
-        grad_input = grad_output[:, start_idx:end_idx].contiguous()
-
-        if grad_input.shape != input_shape:
-            raise ValueError(
-                f"Gradient shape mismatch: expected {input_shape}, got {grad_input.shape}"
-            )
-
-        return grad_input, None  # second return is for 'group'
