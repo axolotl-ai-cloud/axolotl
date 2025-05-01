@@ -67,7 +67,7 @@ def resolve_dtype(cfg):
         else:
             LOG.debug("bf16 support not detected, disabling for this configuration.")
             cfg.bf16 = False
-            if cfg.fp16 is None:
+            if cfg.fp16 is None and not cfg.float16:
                 cfg.fp16 = True
 
     if cfg.device == "mps":

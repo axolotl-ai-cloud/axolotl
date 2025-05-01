@@ -47,7 +47,7 @@ def sample_dataset(dataset: Dataset, num_samples: int) -> Dataset:
 def load_datasets(
     *,
     cfg: DictDefault,
-    cli_args: Union[PreprocessCliArgs, TrainerCliArgs],
+    cli_args: PreprocessCliArgs | TrainerCliArgs | None = None,
 ) -> TrainDatasetMeta:
     """
     Loads one or more training or evaluation datasets, calling
@@ -64,7 +64,8 @@ def load_datasets(
     tokenizer = load_tokenizer(cfg)
     processor = load_processor(cfg, tokenizer=tokenizer) if cfg.processor_type else None
     preprocess_iterable = (
-        hasattr(cli_args, "iterable")
+        cli_args
+        and hasattr(cli_args, "iterable")
         and cli_args.iterable is not None
         and cli_args.iterable
     )
@@ -76,7 +77,7 @@ def load_datasets(
         preprocess_iterable=preprocess_iterable,
     )
 
-    if (
+    if cli_args and (
         cli_args.debug
         or cfg.debug
         or cli_args.debug_text_only
