@@ -63,6 +63,7 @@ class GRPOStrategy:
 
         grpo_args_kwargs["max_completion_length"] = trl.max_completion_length
         grpo_args_kwargs["log_completions"] = trl.log_completions
+        grpo_args_kwargs["num_completions_to_print"] = trl.num_completions_to_print
 
         if trl.reward_weights:
             grpo_args_kwargs["reward_weights"] = trl.reward_weights
