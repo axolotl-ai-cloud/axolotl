@@ -525,7 +525,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </table>
 <section id="axolotl.common.datasets.load_datasets" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.common.datasets.load_datasets">load_datasets</h3>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>common.datasets.load_datasets(cfg, cli_args)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>common.datasets.load_datasets(cfg, cli_args<span class="op">=</span><span class="va">None</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Loads one or more training or evaluation datasets, calling
 <code>axolotl.utils.data.prepare_dataset</code>. Optionally, logs out debug information.</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
@@ -533,7 +533,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <table class="caption-top table">
 <colgroup>
 <col style="width: 8%">
-<col style="width: 36%">
+<col style="width: 37%">
 <col style="width: 44%">
 <col style="width: 10%">
 </colgroup>
@@ -554,9 +554,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </tr>
 <tr class="even">
 <td>cli_args</td>
-<td>Union[PreprocessCliArgs, TrainerCliArgs]</td>
+<td>PreprocessCliArgs | TrainerCliArgs | None</td>
 <td>Command-specific CLI arguments.</td>
-<td><em>required</em></td>
+<td><code>None</code></td>
 </tr>
 </tbody>
 </table>
