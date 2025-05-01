@@ -8,6 +8,7 @@ on:
     paths:
       - '**/*.md'      # any Markdown file
       - '**/*.qmd'     # any Quarto file
+      - '_quarto.yaml'
 
 permissions:
   checks: write
