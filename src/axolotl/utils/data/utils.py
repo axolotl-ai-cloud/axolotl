@@ -12,6 +12,7 @@ import requests
 from datasets import Dataset, IterableDataset
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import log_warning_rank_zero
 from axolotl.utils.samplers.utils import get_dataset_lengths
 from axolotl.utils.trainer import drop_long_seq
 
@@ -160,8 +161,9 @@ def deduplicate_and_log_datasets(
 
 def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
     if "input_ids" not in dataset.column_names:
-        LOG.warning(
-            "Dataset does not contain 'input_ids' column. Skip drop long seq. This is expected for RewardModeling."
+        log_warning_rank_zero(
+            LOG,
+            "Dataset does not contain 'input_ids' column. Skip drop long seq. This is expected for RewardModeling.",
         )
         return dataset
 
@@ -174,9 +176,15 @@ def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
     try:
         ds_lengths = get_dataset_lengths(dataset, from_arrow=True)
         min_input_len = np.min(ds_lengths)
-        LOG.info(f"min_input_len: {min_input_len}")
+        LOG.info(
+            LOG,
+            f"min_input_len: {min_input_len}",
+        )
         max_input_len = np.max(ds_lengths)
-        LOG.info(f"max_input_len: {max_input_len}")
+        LOG.info(
+            LOG,
+            f"max_input_len: {max_input_len}",
+        )
     except AttributeError:
         pass
 
@@ -204,6 +212,9 @@ def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
     if prior_len:
         dropped = prior_len - len(dataset)
         if dropped:
-            LOG.warning(f"Dropped {dropped} long samples from dataset")
+            LOG.warning(
+                LOG,
+                f"Dropped {dropped} long samples from dataset",
+            )
 
     return dataset
