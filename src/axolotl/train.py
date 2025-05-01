@@ -30,7 +30,6 @@ from axolotl.core.trainers.mixins.sequence_parallel import (
     SequenceParallelContextManager,
 )
 from axolotl.integrations.base import PluginManager
-from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
@@ -42,7 +41,6 @@ try:
 except ImportError:
     BetterTransformer = None
 
-configure_logging()
 LOG = get_logger(__name__)
 
 
