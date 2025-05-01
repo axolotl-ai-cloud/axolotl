@@ -20,11 +20,9 @@ from transformers import (
     ProcessorMixin,
 )
 
-from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_processor, load_tokenizer
 
-configure_logging()
 LOG = logging.getLogger(__name__)
 
 

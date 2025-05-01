@@ -597,6 +597,8 @@ def prepare_optim_env(cfg):
         os.environ["ACCELERATE_MIXED_PRECISION"] = "bf16"
     elif cfg.fp16:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "fp16"
+    else:
+        os.environ["ACCELERATE_MIXED_PRECISION"] = "no"
 
 
 def prepare_opinionated_env(cfg):

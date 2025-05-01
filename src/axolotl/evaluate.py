@@ -11,7 +11,6 @@ from accelerate.logging import get_logger
 from datasets import Dataset
 from transformers.trainer import Trainer
 
-from axolotl.logging_config import configure_logging
 from axolotl.train import (
     TrainDatasetMeta,
     setup_model_and_tokenizer,
@@ -24,7 +23,6 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
 sys.path.insert(0, src_dir)
 
-configure_logging()
 LOG = get_logger(__name__)
 
 
