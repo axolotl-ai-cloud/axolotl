@@ -54,6 +54,11 @@ from axolotl.utils.data.utils import (
 )
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_local_main_process, zero_first
+from axolotl.utils.logging import (
+    log_debug_rank_zero,
+    log_info_rank_zero,
+    log_warning_rank_zero,
+)
 from axolotl.utils.trainer import (
     calculate_total_num_steps,
     process_datasets_for_packing,
@@ -167,7 +172,10 @@ def prepare_dataset(cfg, tokenizer, processor=None, preprocess_iterable=None):
             )
 
         if cfg.dataset_exact_deduplication:
-            LOG.info("Deduplication not available for pretrained datasets")
+            log_info_rank_zero(
+                LOG,
+                "Deduplication not available for pretrained datasets",
+            )
 
         return train_dataset, eval_dataset, cfg.max_steps, prompters
 
@@ -182,10 +190,12 @@ def prepare_dataset(cfg, tokenizer, processor=None, preprocess_iterable=None):
         total_num_steps = min(
             calculate_total_num_steps(cfg, train_dataset), cfg.max_steps
         )
-        LOG.info(f"Maximum number of steps set at {total_num_steps}")
     else:
         total_num_steps = calculate_total_num_steps(cfg, train_dataset)
-
+    log_info_rank_zero(
+        LOG,
+        f"Maximum number of steps set at {total_num_steps}",
+    )
     return train_dataset, eval_dataset, total_num_steps, prompters
 
 
@@ -235,8 +245,9 @@ def load_tokenized_prepared_datasets(
     use_auth_token = cfg.hf_use_auth_token
     try:
         if cfg.push_dataset_to_hub:
-            LOG.info(
-                f"Attempting to load prepared dataset from Huggingface hub at {cfg.push_dataset_to_hub} (version {ds_hash})..."
+            log_info_rank_zero(
+                LOG,
+                f"Attempting to load prepared dataset from Huggingface hub at {cfg.push_dataset_to_hub} (version {ds_hash})...",
             )
             dataset = load_dataset(
                 cfg.push_dataset_to_hub,
@@ -257,28 +268,48 @@ def load_tokenized_prepared_datasets(
         and not cfg.is_preprocess
         and not cfg.skip_prepare_dataset
     ):
-        LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
+        log_info_rank_zero(
+            LOG,
+            f"Loading prepared dataset from disk at {prepared_ds_path}...",
+        )
         dataset = load_from_disk(str(prepared_ds_path))
-        LOG.info("Prepared dataset loaded from disk...")
+        log_info_rank_zero(
+            LOG,
+            "Prepared dataset loaded from disk...",
+        )
     else:
         if cfg.push_dataset_to_hub:
-            LOG.info("Unable to find prepared dataset in Huggingface hub")
+            log_info_rank_zero(
+                LOG,
+                "Unable to find prepared dataset in Huggingface hub",
+            )
         if cfg.is_preprocess:
-            LOG.info(
-                f"Skipping prepared dataset in {prepared_ds_path} for pre-processing..."
+            log_info_rank_zero(
+                LOG,
+                f"Skipping prepared dataset in {prepared_ds_path} for pre-processing...",
             )
         else:
-            LOG.info(f"Unable to find prepared dataset in {prepared_ds_path}")
-        LOG.info("Loading raw datasets...")
+            log_info_rank_zero(
+                LOG,
+                f"Unable to find prepared dataset in {prepared_ds_path}",
+            )
+        log_info_rank_zero(
+            LOG,
+            "Loading raw datasets...",
+        )
         if not cfg.is_preprocess:
-            LOG.warning(
-                "Processing datasets during training can lead to VRAM instability. Please pre-process your dataset."
+            log_warning_rank_zero(
+                LOG,
+                "Processing datasets during training can lead to VRAM instability. Please pre-process your dataset.",
             )
 
         if cfg.seed:
             seed = cfg.seed
         else:
-            LOG.info("No seed provided, using default seed of 42")
+            log_info_rank_zero(
+                LOG,
+                "No seed provided, using default seed of 42",
+            )
             seed = 42
 
         datasets = []
@@ -331,15 +362,24 @@ def load_tokenized_prepared_datasets(
         if len(datasets) == 1:
             dataset = datasets[0]
         else:
-            LOG.info("merging datasets")
+            log_info_rank_zero(
+                LOG,
+                "Merging datasets...",
+            )
             dataset = concatenate_datasets(datasets)
 
         if len(datasets) > 1:
             if cfg.shuffle_merged_datasets:
-                LOG.debug("shuffle merged datasets")
+                log_debug_rank_zero(
+                    LOG,
+                    "Shuffling merged datasets...",
+                )
                 dataset = dataset.shuffle(seed=seed)
             else:
-                LOG.debug("NOT shuffling merged datasets")
+                log_debug_rank_zero(
+                    LOG,
+                    "NOT shuffling merged datasets",
+                )
 
         if not cfg.skip_prepare_dataset:
             dataset = drop_long_seq_in_dataset(dataset, cfg)
@@ -348,7 +388,10 @@ def load_tokenized_prepared_datasets(
                 dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
         if cfg.local_rank == 0 and not cfg.skip_prepare_dataset:
-            LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
+            log_info_rank_zero(
+                LOG,
+                f"Saving merged prepared dataset to disk... {prepared_ds_path}",
+            )
             if isinstance(dataset, IterableDataset):
                 num_workers = cfg.dataset_processes
 
@@ -484,7 +527,7 @@ def get_dataset_wrapper(
     }
 
     LOG.info(
-        f"Loading dataset with base_type: {d_base_type} and prompt_style: {d_prompt_style}"
+        f"Loading dataset with base_type: {d_base_type} and prompt_style: {d_prompt_style}",
     )
 
     if (
