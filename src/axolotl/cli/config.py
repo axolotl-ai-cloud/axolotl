@@ -222,3 +222,23 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs) -> DictDefa
     plugin_set_cfg(cfg)
 
     return cfg
+
+
+def load_cfg_from_dict(config: DictDefault | dict) -> DictDefault:
+    """
+    takes an existing config reparses it with all the validation
+
+    Args:
+        config: existing `axolotl` config dictionary.
+
+    Returns:
+        `DictDefault` mapping configuration keys to values after re-parsing with all the validation.
+    """
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", delete=True, suffix=".yml", prefix="axolotl_config_"
+    ) as temp_file:
+        yaml.dump(config, temp_file)
+        config = load_cfg(temp_file.name)
+
+    return config
