@@ -42,6 +42,7 @@ class BasePlugin:
     pre_lora_load(cfg, model): Performs actions before LoRA weights are loaded.
     post_lora_load(cfg, model): Performs actions after LoRA weights are loaded.
     post_model_load(cfg, model): Performs actions after the model is loaded, inclusive of any adapters.
+    post_trainer_create(cfg, trainer): Performs actions after the trainer is created.
     create_optimizer(cfg, trainer): Creates and returns an optimizer for training.
     create_lr_scheduler(cfg, trainer, optimizer, num_training_steps): Creates and returns a learning rate scheduler.
     add_callbacks_pre_trainer(cfg, model): Adds callbacks to the trainer before training.
@@ -69,12 +70,13 @@ class BasePlugin:
         Returns a pydantic model for the plugin's input arguments.
         """
 
-    def load_datasets(self, cfg):
+    def load_datasets(self, cfg, preprocess: bool = False):
         """
         Loads and preprocesses the dataset for training.
 
         Parameters:
         cfg (dict): The configuration for the plugin.
+        preprocess (bool): Whether this is the preprocess step of the datasets.
 
         Returns:
         dataset_meta (TrainDatasetMeta | None): The metadata for the training dataset.
@@ -144,6 +146,18 @@ class BasePlugin:
 
         Returns:
         class: The class for the trainer.
+        """
+
+    def post_trainer_create(self, cfg, trainer):  # pylint: disable=unused-argument
+        """
+        Performs actions after the trainer is created.
+
+        Parameters:
+        cfg (dict): The configuration for the plugin.
+        trainer (object): The trainer object for training.
+
+        Returns:
+        None
         """
 
     def create_optimizer(self, cfg, trainer):  # pylint: disable=unused-argument
@@ -350,18 +364,19 @@ class PluginManager:
                 input_args.append(input_args_from_plugin)
         return input_args
 
-    def load_datasets(self, cfg):
+    def load_datasets(self, cfg, preprocess: bool = False):
         """
         Calls the load_datasets method of each registered plugin.
 
         Parameters:
         cfg (dict): The configuration for the plugins.
+        preprocess (bool): Whether this is preprocess step of the datasets.
 
         Returns:
-        dataset_meta (DatasetMeta | None): The dataset metadata loaded from all registered plugins.
+        dataset_meta (TrainDatasetMeta | None): The dataset metadata loaded from all registered plugins.
         """
         for plugin in self.plugins.values():
-            dataset_meta = plugin.load_datasets(cfg)
+            dataset_meta = plugin.load_datasets(cfg, preprocess)
             if dataset_meta is not None:
                 return dataset_meta
         return None
@@ -449,6 +464,20 @@ class PluginManager:
             if trainer_cls is not None:
                 return trainer_cls
         return None
+
+    def post_trainer_create(self, cfg, trainer):
+        """
+        Calls the post_trainer_create method of all registered plugins.
+
+        Parameters:
+        cfg (dict): The configuration for the plugins.
+        trainer (object): The trainer object for training.
+
+        Returns:
+        None
+        """
+        for plugin in self.plugins.values():
+            plugin.post_trainer_create(cfg, trainer)
 
     def create_optimizer(self, trainer):
         """
