@@ -41,7 +41,7 @@ def apply_sequence_parallelism(
             - original_seq_len: The original sequence length before padding
             - pad_len: The number of padding tokens added
     """
-    batch = {k: v.clone() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+    # batch = {k: v.clone() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
     original_seq_len = batch["input_ids"].size(1)
 
     # Update ring attention params if needed
@@ -127,34 +127,31 @@ def apply_sequence_parallelism(
         # Update the total sequence length after padding
         total_seq_len = batch["input_ids"].size(1)
 
-    print(f"{dist.get_rank()}: pad_len: {pad_len}")
-
     # Slice batch for sequence parallel processing
     for key in batch:
-        print(key, isinstance(batch[key], torch.Tensor), batch[key].dim())
         if not isinstance(batch[key], torch.Tensor) or batch[key].dim() <= 1:
             continue
 
-        print(key, batch[key].size(1))
+        # Split in sequential fashion and grab this rank's chunk
         if batch[key].size(1) == total_seq_len:
-            # Split in sequential fashion and grab this rank's chunk
             batch[key] = (
                 batch[key].chunk(local_world_size, dim=1)[local_rank].contiguous()
             )
+        elif key == "logits_to_keep":
+            batch[key] = (
+                batch[key].chunk(local_world_size, dim=0)[local_rank].contiguous()
+            )
 
-    # # Calculate the chunk size for each rank
-    # original_chunk_size = original_seq_len // local_world_size
-    # padded_chunk_size = total_seq_len // local_world_size
+    # Handle num_items_in_batch
+    if "num_items_in_batch" in batch:
+        batch["num_items_in_batch"] = (batch["labels"] != -100).sum()
 
-    # # If position_ids aren't already in the batch, create them with the proper offset
-    # if "position_ids" not in batch:
-    #     position_offset = local_rank * original_chunk_size
-    #     batch["position_ids"] = torch.arange(
-    #         position_offset,
-    #         position_offset + padded_chunk_size,
-    #         dtype=torch.long,
-    #         device=batch["input_ids"].device,
-    #     ).expand(batch["input_ids"].size(0), -1)
+    shapes = {}
+    for k, v in batch.items():
+        if len(v.shape) > 1:
+            shapes[k] = v.shape
+        else:
+            shapes[k] = v.item()
 
     return batch, original_seq_len, pad_len
 
@@ -213,6 +210,7 @@ class SequenceParallelContextManager:
 
             # Remove padding if it was added
             if self.pad_len > 0:
+                print("here")
                 for key, value in output.items():
                     if isinstance(value, torch.Tensor) and value.dim() > 1:
                         if value.size(1) == self.original_seq_len + self.pad_len:
@@ -245,37 +243,11 @@ class SequenceParallelContextManager:
         """Gather sharded outputs from all ranks and reconstruct the full tensor."""
         for key, value in output.items():
             if isinstance(value, torch.Tensor) and value.dim() > 1:
-                # Gather sequence-sharded tensors
-                gathered_value = self.gather_tensor(value)
-                output[key] = gathered_value
+                output[key] = AllGatherWithGrad.apply(value, self.process_group)
             else:
-                gathered_value = value.clone()
-                dist.all_reduce(
-                    gathered_value, op=dist.ReduceOp.SUM, group=self.process_group
-                )
-                output[key] = gathered_value
+                output[key] = AllReduceWithGrad.apply(value, self.process_group)
 
         return output
-
-    def gather_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
-        """Gather a sharded tensor from all ranks while preserving gradients."""
-        world_size = self.local_world_size
-        group = self.process_group
-
-        if not tensor.requires_grad:
-            # Non-grad version — simple all_gather under no_grad
-            with torch.no_grad():
-                local_shape = torch.tensor(list(tensor.shape), device=tensor.device)
-                all_shapes = [torch.zeros_like(local_shape) for _ in range(world_size)]
-                dist.all_gather(all_shapes, local_shape, group=group)
-                gathered_tensors = [
-                    torch.zeros(tuple(s.tolist()), dtype=tensor.dtype, device=tensor.device)
-                    for s in all_shapes
-                ]
-                dist.all_gather(gathered_tensors, tensor, group=group)
-                return torch.cat(gathered_tensors, dim=1)
-
-        return AllGatherWithGrad.apply(tensor, group)
 
 
 class AllGatherWithGrad(torch.autograd.Function):
@@ -305,9 +277,6 @@ class AllGatherWithGrad(torch.autograd.Function):
         # Concatenate tensors along sequence dimension
         result = torch.cat(gathered, dim=1)
         
-        # Save input tensor shape for backward
-        ctx.input_shape = input_tensor.shape
-        
         return result
     
     @staticmethod
@@ -315,18 +284,34 @@ class AllGatherWithGrad(torch.autograd.Function):
         # Unpack saved variables
         rank = ctx.rank
         seq_lens = ctx.seq_lens
-        input_shape = ctx.input_shape
-        
+
         # Calculate offset for this rank's chunk
         offset = sum(seq_lens[:rank])
-        
+
         # Extract gradient for this rank's chunk
+        print(f"{dist.get_rank}: grad_output.shape: {grad_output.shape}")
         grad_slice = grad_output[:, offset:offset+seq_lens[rank]].contiguous()
-        
-        # Critical: Ensure the gradient has the right shape
-        if grad_slice.shape != input_shape:
-            grad_slice = grad_slice.view(input_shape)
-            
+        print(f"{dist.get_rank}: grad_slice.shape: {grad_slice.shape}")
+
         # No additional modifications or scaling necessary
         return grad_slice, None
 
+
+class AllReduceWithGrad(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input_tensor, group):
+        ctx.group = group
+        output = input_tensor.clone()
+        dist.all_reduce(output, op=dist.ReduceOp.SUM, group=group)
+
+        return output
+        
+    @staticmethod
+    def backward(ctx, grad_output):
+        # For all_reduce with sum, each process gets the same gradient
+        # We need to divide by world_size to avoid gradient magnification
+        group = ctx.group
+        world_size = dist.get_world_size(group)
+        grad_input = grad_output / world_size
+
+        return grad_input, None
