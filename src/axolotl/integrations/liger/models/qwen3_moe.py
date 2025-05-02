@@ -1,25 +1,23 @@
 """
-Liger FLCE for Qwen3 MoE
+Liger FLCE for Qwen3 MoE. Based on transformers v4.51.3.
 """
 
 import sys
 from copy import deepcopy
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Union
 
 import torch
 from liger_kernel.transformers.model.loss_utils import LigerForCausalLMLoss
-from transformers.modeling_outputs import CausalLMOutputWithPast
+from transformers.modeling_outputs import MoeCausalLMOutputWithPast
 from transformers.models.qwen3_moe.modeling_qwen3_moe import load_balancing_loss_func
 
 
 def lce_forward(
     self,
-    input_ids: torch.LongTensor = None,
+    input_ids: Optional[torch.LongTensor] = None,
     attention_mask: Optional[torch.Tensor] = None,
     position_ids: Optional[torch.LongTensor] = None,
-    past_key_values: Optional[
-        Union["Cache", List[torch.FloatTensor]]  # noqa: F821
-    ] = None,
+    past_key_values: Optional[List[torch.FloatTensor]] = None,
     inputs_embeds: Optional[torch.FloatTensor] = None,
     labels: Optional[torch.LongTensor] = None,
     use_cache: Optional[bool] = None,
@@ -28,8 +26,8 @@ def lce_forward(
     output_router_logits: Optional[bool] = None,
     cache_position: Optional[torch.LongTensor] = None,
     logits_to_keep: Union[int, torch.Tensor] = 0,
-    **loss_kwargs,
-) -> Union[Tuple, CausalLMOutputWithPast]:
+    **kwargs,
+) -> MoeCausalLMOutputWithPast:
     r"""
     Args:
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
@@ -76,6 +74,7 @@ def lce_forward(
         output_hidden_states=output_hidden_states,
         output_router_logits=output_router_logits,
         cache_position=cache_position,
+        **kwargs,
     )
 
     hidden_states = outputs[0]
@@ -89,7 +88,7 @@ def lce_forward(
             lm_head_weight=self.lm_head.weight,
             labels=labels,
             hidden_size=self.config.hidden_size,
-            **loss_kwargs,
+            **kwargs,
         )
 
     else:  # if in inference mode materialize logits
@@ -104,7 +103,7 @@ def lce_forward(
                 logits=logits,
                 labels=labels,
                 vocab_size=self.config.vocab_size,
-                **loss_kwargs,
+                **kwargs,
             )
 
     aux_loss = None
@@ -120,7 +119,7 @@ def lce_forward(
                 loss.device
             )  # make sure to reside in the same device
 
-    return CausalLMOutputWithPast(
+    return MoeCausalLMOutputWithPast(
         loss=loss,
         aux_loss=aux_loss,
         logits=logits,
@@ -153,7 +152,7 @@ def apply_liger_kernel_to_qwen3_moe(
         layer_norm (bool): Whether to apply Liger's LayerNorm. Default is False.
     """
 
-    import transformers.models.qwen3.modeling_qwen3  # noqa: F401  # pylint: disable=unused-import
+    import transformers.models.qwen3_moe.modeling_qwen3_moe  # noqa: F401  # pylint: disable=unused-import
     from liger_kernel.transformers.functional import liger_cross_entropy
     from liger_kernel.transformers.layer_norm import LigerLayerNorm
     from liger_kernel.transformers.rms_norm import LigerRMSNorm
