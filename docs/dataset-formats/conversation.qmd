@@ -218,7 +218,7 @@ After split, it will look like:
 
 ```json
 {
-  "thinking": "Some thinking outputs",
+  "reasoning_content": "Some thinking outputs",
   "content": "Output after thinking..."
 }
 ```
