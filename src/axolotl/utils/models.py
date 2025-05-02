@@ -68,12 +68,12 @@ from axolotl.utils.distributed import (
     get_device_count,
     get_device_type,
     is_local_main_process,
-    is_main_process,
 )
 from axolotl.utils.gradient_checkpointing import (
     hf_grad_checkpoint_disk_offload_wrapper,
     hf_grad_checkpoint_offload_wrapper,
 )
+from axolotl.utils.logging import log_debug_rank_zero
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
@@ -457,11 +457,10 @@ def load_tokenizer(cfg):
             {"additional_special_tokens": additional_special_tokens}
         )
 
-    if is_main_process(use_environ=True):
-        LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
-        LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
-        LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
-        LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
+    log_debug_rank_zero(LOG, f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
+    log_debug_rank_zero(LOG, f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
+    log_debug_rank_zero(LOG, f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
+    log_debug_rank_zero(LOG, f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
 
     if cfg.chat_template:
         chat_template_string = get_chat_template_from_config(
