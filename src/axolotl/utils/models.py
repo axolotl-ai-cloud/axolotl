@@ -1371,7 +1371,7 @@ class ModelLoader:
             
             if qat_cfg.activation_dtype:
                 activation_config = FakeQuantizeConfig(
-                    dtype=qat_cfg.activation_dtype.value, granularity="per_token", is_symmetric=False
+                    dtype=qat_cfg.activation_dtype, granularity="per_token", is_symmetric=False
                 )
             else:
                 activation_config = None

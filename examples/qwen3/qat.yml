@@ -29,7 +29,8 @@ qat:
   activation_dtype: int8
   weight_dtype: int4
   group_size: 256
-  fake_quant_after_n_steps: 1000
+  fake_quant_after_n_steps: 50
+  save_quantized_model: true
 
 wandb_project: qat
 wandb_entity:
@@ -39,7 +40,7 @@ wandb_log_model:
 
 gradient_accumulation_steps: 1
 micro_batch_size: 2
-max_steps: 2000
+max_steps: 100
 optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 2e-5
