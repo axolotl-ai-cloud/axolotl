@@ -2,6 +2,8 @@
 
 In this example, we finetune Orpcanopylabs/orpheus-tts-0.1-pretrained (a LLaMA 3.2 3b model) to output audio.
 
+The `finetune.yml` withe current settings will run on any Nvidia GPU with 45GB VRAM or more. If you adjust the batch size it can easily run on any GPU under 24GB.
+
 ## Dataset pre-processing for pre-training
 If you are adding another voice in English, please jump ahead to finetuning pre-processing.
 
