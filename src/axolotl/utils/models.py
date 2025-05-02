@@ -1359,42 +1359,8 @@ class ModelLoader:
         #  apply torchao quantization config
         # ---------------------------------------------------------
         if self.cfg.qat:
-            qat_cfg = self.cfg.qat
-            from torchao.quantization import quantize_
-            from torchao.quantization.qat import (
-                FakeQuantizeConfig,
-                IntXQuantizationAwareTrainingConfig,
-            )
-            from torchao.quantization.quant_api import _is_linear
-
-            quantize_embedding = qat_cfg.quantize_embedding
-            
-            if qat_cfg.activation_dtype:
-                activation_config = FakeQuantizeConfig(
-                    dtype=qat_cfg.activation_dtype, granularity="per_token", is_symmetric=False
-                )
-            else:
-                activation_config = None
-
-            if qat_cfg.weight_dtype:
-                weight_config = FakeQuantizeConfig(
-                    dtype=qat_cfg.weight_dtype.value, group_size=qat_cfg.group_size
-                )
-            else:
-                weight_config = None
-            quantize_config = IntXQuantizationAwareTrainingConfig(
-                activation_config,
-                weight_config,
-            )
-
-            if quantize_embedding:
-                filter_fn = lambda m, _: (isinstance(m, torch.nn.Embedding) or _is_linear(m))
-            else:
-                filter_fn = None
-            quantize_(self.model,
-                      quantize_config,
-                      filter_fn=filter_fn
-                      )
+            from axolotl.utils.quantization import quantize_model
+            quantize_model(self.model, self.cfg.qat)
 
         # ---------------------------------------------------------
         #  put model to accelerator

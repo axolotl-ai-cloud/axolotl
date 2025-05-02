@@ -3,9 +3,10 @@ QAT Config Schema
 """
 
 from enum import Enum
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 import torch
 from typing import Any
+
 
 class TorchIntDType(Enum):
     int1 = torch.int1
@@ -34,17 +35,20 @@ class QATConfig(BaseModel):
     activation_dtype: TorchIntDType | None = Field(
         default=None, description="Activation dtype"
     )
-    weight_dtype: TorchIntDType | None = Field(default=None, description="Weight dtype")
+    weight_dtype: TorchIntDType = Field(
+        default=TorchIntDType.int8, description="Weight dtype")
     quantize_embedding: bool | None = Field(
         default=False, description="Quantize embedding"
     )
     group_size: int | None = Field(default=32, description="Group size")
-    fake_quant_after_n_steps: int | None = Field(default=None, description="Fake quant after n steps")
-    quantize_saved_model: bool | None = Field(default=False, description="Quantize saved model")
+    fake_quant_after_n_steps: int | None = Field(
+        default=None, description="Fake quant after n steps")
+    quantize_saved_model: bool | None = Field(
+        default=False, description="Quantize saved model")
 
     @field_validator('weight_dtype', mode='before')
     @classmethod
-    def map_str_to_dtype_enum(cls, v: Any) -> TorchIntDType | None:
+    def validate_weight_dtype(cls, v: Any) -> TorchIntDType | None:
         try:
             return TorchIntDType[v]
         except KeyError as e:
@@ -52,14 +56,27 @@ class QATConfig(BaseModel):
             raise ValueError(
                 f"Invalid weight_dtype: '{v}'. Must be one of: {valid_keys}"
             ) from e
-        
+
     @field_validator('activation_dtype', mode='before')
     @classmethod
-    def map_str_to_dtype_enum(cls, v: Any) -> TorchIntDType | None:
+    def validate_activation_dtype(cls, v: Any) -> TorchIntDType | None:
         if v == "int4":
             return TorchIntDType.int4
         elif v == "int8":
             return TorchIntDType.int8
         else:
-            raise ValueError(f"Invalid activation_dtype: '{v}'. Must be one of: ['int4', 'int8']")
-    
+            raise ValueError(
+                f"Invalid activation_dtype: '{v}'. Must be one of: ['int4', 'int8']")
+
+    @model_validator(mode='after')
+    def validate_dtype_combination(self) -> 'QATConfig':
+        if (
+            self.activation_dtype is not None and
+            self.activation_dtype == TorchIntDType.int4 and
+            self.weight_dtype != TorchIntDType.int4
+        ):
+            import ipdb; ipdb.set_trace()
+            raise ValueError(
+                "If 'activation_dtype' is specified as 'int4', 'weight_dtype' must also be specified as 'int4'.")
+
+        return self
