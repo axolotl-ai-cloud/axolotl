@@ -1,24 +1,22 @@
 """
-Liger FLCE for Qwen3
+Liger FLCE for Qwen3. Based on transformers v4.51.3.
 """
 
 import sys
-from copy import deepcopy
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import torch
 from liger_kernel.transformers.model.loss_utils import LigerForCausalLMLoss
+from transformers.cache_utils import Cache
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 
 def lce_forward(
     self,
-    input_ids: torch.LongTensor = None,
+    input_ids: Optional[torch.LongTensor] = None,
     attention_mask: Optional[torch.Tensor] = None,
     position_ids: Optional[torch.LongTensor] = None,
-    past_key_values: Optional[
-        Union["Cache", List[torch.FloatTensor]]  # noqa: F821
-    ] = None,
+    past_key_values: Optional[Cache] = None,
     inputs_embeds: Optional[torch.FloatTensor] = None,
     labels: Optional[torch.LongTensor] = None,
     use_cache: Optional[bool] = None,
@@ -26,7 +24,7 @@ def lce_forward(
     output_hidden_states: Optional[bool] = None,
     cache_position: Optional[torch.LongTensor] = None,
     logits_to_keep: Union[int, torch.Tensor] = 0,
-    **loss_kwargs,
+    **kwargs,
 ) -> Union[Tuple, CausalLMOutputWithPast]:
     r"""
     Args:
@@ -68,6 +66,7 @@ def lce_forward(
         output_attentions=output_attentions,
         output_hidden_states=output_hidden_states,
         cache_position=cache_position,
+        **kwargs,
     )
 
     hidden_states = outputs[0]
@@ -81,7 +80,7 @@ def lce_forward(
             lm_head_weight=self.lm_head.weight,
             labels=labels,
             hidden_size=self.config.hidden_size,
-            **loss_kwargs,
+            **kwargs,
         )
 
     else:  # if in inference mode materialize logits
@@ -96,7 +95,7 @@ def lce_forward(
                 logits=logits,
                 labels=labels,
                 vocab_size=self.config.vocab_size,
-                **loss_kwargs,
+                **kwargs,
             )
 
     return CausalLMOutputWithPast(
@@ -147,16 +146,7 @@ def apply_liger_kernel_to_qwen3(
         modeling_qwen3.Qwen3RMSNorm = LigerRMSNorm
 
     if glu_activation:
-
-        def _liger_swiglu_mlp_wrapper(config, intermediate_size=None, **kwargs):
-            "Accepts intermediate_size to pass to LigerSwiGLUMLP"
-            # clone config to avoid modifying the original
-            config = deepcopy(config)
-            if intermediate_size:
-                setattr(config, "intermediate_size", intermediate_size)
-            return LigerSwiGLUMLP(config, **kwargs)
-
-        modeling_qwen3.Qwen3MLP = _liger_swiglu_mlp_wrapper
+        modeling_qwen3.Qwen3MLP = LigerSwiGLUMLP
 
     if layer_norm:
         modeling_qwen3.nn.LayerNorm = LigerLayerNorm
