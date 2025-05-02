@@ -628,7 +628,7 @@
         "type": "self_attn.k_proj"
     },
     "model.layers.14.self_attn.k_proj": {
-        "snr": 0.993511372242091062,
+        "snr": 0.9935113787651062,
         "type": "self_attn.k_proj"
     },
     "model.layers.15.self_attn.k_proj": {
