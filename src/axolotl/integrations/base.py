@@ -36,6 +36,7 @@ class BasePlugin:
 
     Methods:
     register(cfg): Registers the plugin with the given configuration.
+    load_datasets(cfg): Loads and preprocesses the dataset for training.
     pre_model_load(cfg): Performs actions before the model is loaded.
     post_model_build(cfg, model): Performs actions after the model is loaded, but before LoRA adapters are applied.
     pre_lora_load(cfg, model): Performs actions before LoRA weights are loaded.
@@ -66,6 +67,17 @@ class BasePlugin:
     def get_input_args(self):
         """
         Returns a pydantic model for the plugin's input arguments.
+        """
+
+    def load_datasets(self, cfg):
+        """
+        Loads and preprocesses the dataset for training.
+
+        Parameters:
+        cfg (dict): The configuration for the plugin.
+
+        Returns:
+        dataset_meta (TrainDatasetMeta | None): The metadata for the training dataset.
         """
 
     def pre_model_load(self, cfg):  # pylint: disable=unused-argument
@@ -337,6 +349,22 @@ class PluginManager:
             if input_args_from_plugin is not None:
                 input_args.append(input_args_from_plugin)
         return input_args
+
+    def load_datasets(self, cfg):
+        """
+        Calls the load_datasets method of each registered plugin.
+
+        Parameters:
+        cfg (dict): The configuration for the plugins.
+
+        Returns:
+        dataset_meta (DatasetMeta | None): The dataset metadata loaded from all registered plugins.
+        """
+        for plugin in self.plugins.values():
+            dataset_meta = plugin.load_datasets(cfg)
+            if dataset_meta is not None:
+                return dataset_meta
+        return None
 
     def pre_model_load(self, cfg):
         """
