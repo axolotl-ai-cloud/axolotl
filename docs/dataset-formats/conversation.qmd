@@ -196,6 +196,34 @@ datasets:
 It is not necessary to set both `message_field_training` and `message_field_training_detail` at once.
 :::
 
+8. (For Qwen3 template only) Enable reasoning split, where the reasoning is split from the content and passed as a separate field into the template.
+
+```yaml
+datasets:
+  - path: ...
+    type: chat_template
+    chat_template: qwen3
+    split_thinking: true
+```
+
+For example, a content can look like:
+
+```json
+{
+  "content": "<think>Some thinking outputs</think>Output after thinking."
+}
+```
+
+After split, it will look like:
+
+```json
+{
+  "thinking": "Some thinking outputs",
+  "content": "Output after thinking..."
+}
+```
+
+
 ## sharegpt
 
 ::: {.callout-important}
