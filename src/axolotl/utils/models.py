@@ -3,7 +3,6 @@
 # pylint: disable=too-many-lines
 import gc
 import importlib
-import logging
 import math
 import os
 import types
@@ -70,11 +69,11 @@ from axolotl.utils.distributed import (
     is_local_main_process,
 )
 from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_offload_wrapper
-from axolotl.utils.logging import log_debug_rank_zero
+from axolotl.utils.logging import get_logger
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 MULTIMODAL_AUTO_MODEL_MAPPING = {
@@ -135,7 +134,10 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
             and hasattr(model_config.vision_config, "image_size")
         ):
             cfg.image_size = model_config.vision_config.image_size
-            LOG.debug(f"Loaded image size: {cfg.image_size} from model config")
+            LOG.debug(
+                f"Loaded image size: {cfg.image_size} from model config",
+                main_process_only=True,
+            )
 
     quant_config_exists = (
         hasattr(model_config, "quantization_config")
@@ -152,7 +154,8 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
         if model_config.quantization_config.get("config_groups"):
             LOG.warning(
                 "Found `config_groups` in a compressed-tensors config. "
-                "QAT integration with llmcompressor is not tested."
+                "QAT integration with llmcompressor is not tested.",
+                main_process_only=True,
             )
         # Skip further quant checks for compressed-tensors
         return
@@ -453,10 +456,15 @@ def load_tokenizer(cfg):
             {"additional_special_tokens": additional_special_tokens}
         )
 
-    log_debug_rank_zero(LOG, f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
-    log_debug_rank_zero(LOG, f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
-    log_debug_rank_zero(LOG, f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
-    log_debug_rank_zero(LOG, f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
+    LOG.debug(
+        f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}", main_process_only=True
+    )
+    LOG.debug(
+        f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}", main_process_only=True
+    )
+    LOG.debug(
+        f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}", main_process_only=True
+    )
 
     if cfg.chat_template:
         chat_template_string = get_chat_template_from_config(
@@ -513,7 +521,10 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
         elif im_height is not None:
             cfg.image_size = im_height
 
-        LOG.debug(f"Loaded image size: {cfg.image_size} from processor")
+        LOG.debug(
+            f"Loaded image size: {cfg.image_size} from processor",
+            main_process_only=True,
+        )
 
     return processor
 
@@ -740,14 +751,20 @@ class ModelLoader:
 
             if self.cfg.sample_packing:
                 if self.cfg.device not in ["mps", "cpu"] and not self.inference:
-                    LOG.info("patching with flash attention for sample packing")
+                    LOG.info(
+                        "patching with flash attention for sample packing",
+                        main_process_only=True,
+                    )
                     replace_llama_attn_with_flash_attn(
                         packed=True,
                         cross_entropy=self.cfg.flash_attn_cross_entropy,
                         rms_norm=self.cfg.flash_attn_rms_norm,
                     )
             elif self.cfg.s2_attention:
-                LOG.info("patching w/ flash-enabled, shifted-sparse attention")
+                LOG.info(
+                    "patching w/ flash-enabled, shifted-sparse attention",
+                    main_process_only=True,
+                )
                 replace_llama_attn_with_flash_attn(
                     packed=False,
                     cross_entropy=self.cfg.flash_attn_cross_entropy,
@@ -765,14 +782,17 @@ class ModelLoader:
                 hijack_llama_attention,
             )
 
-            LOG.info("patching with xformers attention")
+            LOG.info("patching with xformers attention", main_process_only=True)
             hijack_llama_attention()
         elif self.cfg.sample_packing:
             from axolotl.monkeypatch.llama_patch_multipack import (
                 hijack_llama_prepare_4d_mask,
             )
 
-            LOG.info("patching llama _prepare_4d_causal_attention_mask*")
+            LOG.info(
+                "patching llama _prepare_4d_causal_attention_mask*",
+                main_process_only=True,
+            )
             hijack_llama_prepare_4d_mask()
         elif self.cfg.s2_attention:
             raise NotImplementedError(
@@ -854,7 +874,8 @@ class ModelLoader:
         if self.cfg.gptq:
             if not hasattr(self.model_config, "quantization_config"):
                 LOG.warning(
-                    "model config does not contain quantization_config information"
+                    "model config does not contain quantization_config information",
+                    main_process_only=True,
                 )
             else:
                 if self.cfg.gptq_disable_exllama is not None:
@@ -1066,11 +1087,11 @@ class ModelLoader:
                 )
 
                 if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
-                    LOG.info("patching with SwiGLU")
+                    LOG.info("patching with SwiGLU", main_process_only=True)
                     replace_llama_mlp_with_swiglu(self.model)
 
                 if self.cfg.flash_attn_fuse_qkv:
-                    LOG.info("patching with fused QKV")
+                    LOG.info("patching with fused QKV", main_process_only=True)
                     replace_llama_qkv_with_fused(self.model)
         elif self.model_type == "MambaLMHeadModel":
             # FIXME this is janky at best and hacked together to make it work
@@ -1143,7 +1164,8 @@ class ModelLoader:
             and self.cfg.sequence_len > self.model.config.max_position_embeddings
         ):
             LOG.warning(
-                f"increasing model.config.max_position_embeddings from {self.model.config.max_position_embeddings} to {self.cfg.sequence_len}"
+                f"increasing model.config.max_position_embeddings from {self.model.config.max_position_embeddings} to {self.cfg.sequence_len}",
+                main_process_only=True,
             )
             self.model.config.max_position_embeddings = self.cfg.sequence_len
 
@@ -1207,7 +1229,10 @@ class ModelLoader:
             and self.cfg.adapter in ["lora", "qlora"]
             and (self.cfg.load_in_8bit or self.cfg.load_in_4bit)
         ):
-            LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
+            LOG.info(
+                "converting PEFT model w/ prepare_model_for_kbit_training",
+                main_process_only=True,
+            )
             self.model = prepare_model_for_kbit_training(
                 self.model, use_gradient_checkpointing=self.cfg.gradient_checkpointing
             )
@@ -1269,7 +1294,7 @@ class ModelLoader:
             skip_move_to_device = self.build_model(qlora_fsdp)
             PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
         except Exception as err:  # pylint: disable=broad-exception-caught
-            LOG.exception(err)
+            LOG.exception(err, main_process_only=True)
             raise err
 
         if isinstance(self.model, (PeftModel, PeftModelForCausalLM)) and not qlora_fsdp:
@@ -1340,7 +1365,9 @@ class ModelLoader:
         )
 
         if should_convert:
-            LOG.info("Converting modules to %s", self.cfg.torch_dtype)
+            LOG.info(
+                "Converting modules to %s", self.cfg.torch_dtype, main_process_only=True
+            )
             self.convert_embedding_modules_dtype(
                 embedding_modules=embedding_modules,
                 dist_dtype=self.cfg.torch_dtype,
@@ -1393,7 +1420,10 @@ class ModelLoader:
             if param.requires_grad:
                 requires_grad.append(f"{name}: {param.requires_grad}")
         if len(requires_grad) == 0:
-            LOG.warning("there are no parameters that require gradient updates")
+            LOG.warning(
+                "there are no parameters that require gradient updates",
+                main_process_only=True,
+            )
 
         if self.cfg.flash_optimum:
             from optimum.bettertransformer import BetterTransformer
@@ -1467,7 +1497,7 @@ def load_llama_adapter(model, cfg):
     )
 
     if cfg.lora_model_dir:
-        LOG.debug("Loading pretrained PEFT - llama_adapter")
+        LOG.debug("Loading pretrained PEFT - llama_adapter", main_process_only=True)
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
@@ -1534,7 +1564,10 @@ def load_lora(model, cfg, inference=False, config_only=False):
 
     if cfg.lora_target_linear:
         linear_names = find_all_linear_names(model)
-        LOG.info(f"found linear modules: {repr(sorted(linear_names))}")
+        LOG.info(
+            f"found linear modules: {repr(sorted(linear_names))}",
+            main_process_only=True,
+        )
         lora_target_modules_as_list = (
             lora_target_modules
             if isinstance(lora_target_modules, list)
@@ -1551,7 +1584,10 @@ def load_lora(model, cfg, inference=False, config_only=False):
         lora_config_kwargs["init_lora_weights"] = cfg.peft_init_lora_weights
     if cfg.peft_use_dora:
         lora_config_kwargs["use_dora"] = cfg.peft_use_dora
-        LOG.info("Initializing LoRA weights using dora. This might take longer.")
+        LOG.info(
+            "Initializing LoRA weights using dora. This might take longer.",
+            main_process_only=True,
+        )
     if cfg.peft_use_rslora:
         lora_config_kwargs["use_rslora"] = cfg.peft_use_rslora
     if cfg.peft_layer_replication:
@@ -1585,7 +1621,7 @@ def load_lora(model, cfg, inference=False, config_only=False):
         setup_quantized_meta_for_peft(model)
 
     if cfg.lora_model_dir:
-        LOG.debug("Loading pretrained PEFT - LoRA")
+        LOG.debug("Loading pretrained PEFT - LoRA", main_process_only=True)
         model_kwargs: Any = {}
         if cfg.lora_on_cpu:
             model_kwargs["max_memory"] = {"cpu": "256GiB"}
@@ -1604,7 +1640,9 @@ def load_lora(model, cfg, inference=False, config_only=False):
             model.print_trainable_parameters()
         except AttributeError as exc:
             LOG.warning(
-                "Exception caught during model.print_trainable_parameters(): %s", exc
+                "Exception caught during model.print_trainable_parameters(): %s",
+                exc,
+                main_process_only=True,
             )
     elif (
         cfg.fsdp

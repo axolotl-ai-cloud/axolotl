@@ -12,7 +12,6 @@ from typing import Any, Dict
 
 import torch
 import transformers.modelcard
-from accelerate.logging import get_logger
 from accelerate.utils import save_fsdp_model
 from datasets import Dataset
 from huggingface_hub.errors import OfflineModeIsEnabled
@@ -33,6 +32,7 @@ from axolotl.integrations.base import PluginManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
+from axolotl.utils.logging import get_logger
 from axolotl.utils.models import load_model, load_processor, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
 

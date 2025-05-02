@@ -1,7 +1,6 @@
 """CLI to run training on a model."""
 
 import gc
-import logging
 import os
 from pathlib import Path
 from typing import Union
@@ -21,8 +20,6 @@ from axolotl.train import train
 from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.config import normalize_config, resolve_dtype
 from axolotl.utils.dict import DictDefault
-
-LOG = logging.getLogger(__name__)
 
 
 def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
