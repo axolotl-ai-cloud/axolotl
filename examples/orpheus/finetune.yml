@@ -11,7 +11,7 @@ liger_fused_linear_cross_entropy: true
 
 datasets:
   - path: <your-hf-dataset-id>
-    type: 
+    type:  # leave empty to load pre-tokenized
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.01
 output_dir: ./outputs/out
