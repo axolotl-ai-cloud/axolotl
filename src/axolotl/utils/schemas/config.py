@@ -523,6 +523,9 @@ class AxolotlInputConfig(
         },
     )
 
+    chunked_cross_entropy: bool | None = None
+    chunked_cross_entropy_num_chunks: int | None = None
+
     llama4_linearized_experts: bool | None = None
 
     deepspeed: str | dict[str, Any] | None = Field(
