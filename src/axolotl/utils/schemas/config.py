@@ -440,16 +440,6 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
-    def check_sample_packing_w_xformers(cls, data):
-        if data.get("sample_packing") and data.get("xformers_attention"):
-            raise ValueError(
-                "sample_packing not compatible with xformers_attention. Use flash_attention"
-            )
-
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     # pylint: disable=duplicate-code
     def check_chat_template_config(cls, data):
         # if chat_template is set to jinja, chat_template_jinja is required
