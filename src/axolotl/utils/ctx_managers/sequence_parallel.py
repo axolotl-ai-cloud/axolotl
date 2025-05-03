@@ -91,7 +91,7 @@ def apply_sequence_parallelism(
     # Add padding to make sequence length divisible by local_world_size
     total_seq_len = original_seq_len
     pad_len = 0
-    divisor = local_world_size
+    divisor = min(local_world_size, 64)
     if total_seq_len % divisor != 0:
         pad_len = divisor - (total_seq_len % divisor)
         
@@ -152,7 +152,7 @@ def apply_sequence_parallelism(
             shapes[k] = v.shape
         else:
             shapes[k] = v.item()
-
+    
     return batch, original_seq_len, pad_len
 
 
@@ -198,9 +198,17 @@ class SequenceParallelContextManager:
         # Forward pre-hook to apply sequence parallelism
         def sequence_parallel_pre_hook(_, args, kwargs):
             # Apply sequence parallelism to kwargs and get original sequence length and padding info
+            # shapes = {k: v.shape for k, v in kwargs.items()}
+            # print(f"{dist.get_rank()}: before {shapes}")
+            # print(f"{dist.get_rank()}: before {kwargs['attention_mask'].sum(1)}")
+            # dist.barrier()
             kwargs, self.original_seq_len, self.pad_len = (
                 self.apply_sequence_parallelism(batch=kwargs)
             )
+            # shapes = {k: v.shape for k, v in kwargs.items()}
+            # print(f"{dist.get_rank()}: after {shapes}")
+            # print(f"{dist.get_rank()}: after {kwargs['attention_mask'].sum(1)}")
+            # dist.barrier()
             return args, kwargs
 
         # Forward post-hook to gather outputs
@@ -210,7 +218,6 @@ class SequenceParallelContextManager:
 
             # Remove padding if it was added
             if self.pad_len > 0:
-                print("here")
                 for key, value in output.items():
                     if isinstance(value, torch.Tensor) and value.dim() > 1:
                         if value.size(1) == self.original_seq_len + self.pad_len:
@@ -289,9 +296,7 @@ class AllGatherWithGrad(torch.autograd.Function):
         offset = sum(seq_lens[:rank])
 
         # Extract gradient for this rank's chunk
-        print(f"{dist.get_rank}: grad_output.shape: {grad_output.shape}")
-        grad_slice = grad_output[:, offset:offset+seq_lens[rank]].contiguous()
-        print(f"{dist.get_rank}: grad_slice.shape: {grad_slice.shape}")
+        grad_slice = grad_output[:, offset:offset + seq_lens[rank]].contiguous()
 
         # No additional modifications or scaling necessary
         return grad_slice, None
@@ -301,17 +306,32 @@ class AllReduceWithGrad(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input_tensor, group):
         ctx.group = group
-        output = input_tensor.clone()
-        dist.all_reduce(output, op=dist.ReduceOp.SUM, group=group)
+        ctx.had_nan = torch.isnan(input_tensor).any().item()
+
+        safe_input = torch.where(
+            torch.isnan(input_tensor), 
+            torch.zeros_like(input_tensor), 
+            input_tensor,
+        )
+        output = safe_input.clone()
+        dist.all_reduce(output, op=dist.ReduceOp.AVG, group=group)
+
+        ctx.save_for_backward(input_tensor)
 
         return output
         
     @staticmethod
     def backward(ctx, grad_output):
-        # For all_reduce with sum, each process gets the same gradient
-        # We need to divide by world_size to avoid gradient magnification
+        input_tensor, = ctx.saved_tensors
         group = ctx.group
         world_size = dist.get_world_size(group)
         grad_input = grad_output / world_size
+
+        if ctx.had_nan:
+            grad_input = torch.where(
+                torch.isnan(input_tensor),
+                torch.zeros_like(grad_input),
+                grad_input,
+            )
 
         return grad_input, None
