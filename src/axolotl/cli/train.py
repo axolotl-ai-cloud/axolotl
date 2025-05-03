@@ -18,7 +18,7 @@ from axolotl.cli.config import load_cfg
 from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.integrations.base import PluginManager
 from axolotl.train import train
-from axolotl.utils import set_pytorch_cuda_alloc_conf
+from axolotl.utils import patch_optimized_env
 from axolotl.utils.config import normalize_config, resolve_dtype
 from axolotl.utils.dict import DictDefault
 
@@ -36,7 +36,7 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         cli_args: Training-specific CLI arguments.
     """
     # Enable expandable segments for cuda allocation to improve VRAM usage
-    set_pytorch_cuda_alloc_conf()
+    patch_optimized_env()
 
     print_axolotl_text_art()
     check_accelerate_default_config()
