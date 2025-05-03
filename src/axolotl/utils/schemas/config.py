@@ -242,6 +242,9 @@ class AxolotlInputConfig(
     unsloth_rms_norm: bool | None = None
     unsloth_rope: bool | None = None
 
+    chunked_cross_entropy: bool | None = None
+    chunked_cross_entropy_num_chunks: int | None = None
+
     lora_mlp_kernel: bool | None = None
     lora_qkv_kernel: bool | None = None
     lora_o_kernel: bool | None = None
