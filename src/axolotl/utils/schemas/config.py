@@ -461,9 +461,10 @@ class AxolotlInputConfig(
             and not data.get("flash_attention")
             and not data.get("sdp_attention")
             and not data.get("flex_attention")
+            and not data.get("xformers_attention")
         ):
             LOG.warning(
-                "sample_packing without flash, sdp or flex attention does not handle cross sample decontamination."
+                "sample_packing without flash, sdp, xformers or flex attention does not handle cross sample decontamination."
             )
 
         return data
