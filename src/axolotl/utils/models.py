@@ -561,6 +561,11 @@ class ModelLoader:
 
             patch_accelerate_fsdp_utils()
 
+        if self.cfg.adapter:
+            from axolotl.monkeypatch.peft.utils import patch_peft_prep_code
+
+            patch_peft_prep_code()
+
         if self.cfg.flex_attention:
             from axolotl.monkeypatch.attention.flex_attn import (
                 patch_flex_make_mask,
@@ -1180,7 +1185,7 @@ class ModelLoader:
                 ],
             )
 
-    def prepare_model(self, qlora_fsdp) -> None:
+    def prepare_model(self, qlora_fsdp: bool) -> None:
         skip_prepare_model_for_kbit_training = False
         if self.cfg.model_config_type == "qwen" and self.cfg.adapter == "lora":
             # Qwen doesn't play nicely with LoRA if this is enabled
