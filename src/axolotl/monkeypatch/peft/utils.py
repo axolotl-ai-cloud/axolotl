@@ -7,6 +7,7 @@ import logging
 
 import peft
 
+import axolotl
 from axolotl.monkeypatch.utils import detab_code
 
 LOG = logging.getLogger(__name__)
