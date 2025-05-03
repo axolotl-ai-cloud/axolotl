@@ -70,6 +70,9 @@ def resolve_dtype(cfg):
             if cfg.fp16 is None and not cfg.float16:
                 cfg.fp16 = True
 
+    if cfg.fp16 and cfg.bf16 == "auto":
+        cfg.bf16 = False
+
     if cfg.device == "mps":
         cfg.load_in_8bit = False
         cfg.tf32 = False
