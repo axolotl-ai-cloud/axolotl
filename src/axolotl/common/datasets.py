@@ -48,6 +48,7 @@ def load_datasets(
     *,
     cfg: DictDefault,
     cli_args: PreprocessCliArgs | TrainerCliArgs | None = None,
+    debug: bool = False,
 ) -> TrainDatasetMeta:
     """
     Loads one or more training or evaluation datasets, calling
@@ -56,6 +57,7 @@ def load_datasets(
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
         cli_args: Command-specific CLI arguments.
+        debug: Whether to print out tokenization of sample
 
     Returns:
         Dataclass with fields for training and evaluation datasets and the computed
@@ -77,20 +79,25 @@ def load_datasets(
         preprocess_iterable=preprocess_iterable,
     )
 
-    if cli_args and (
-        cli_args.debug
-        or cfg.debug
-        or cli_args.debug_text_only
-        or int(cli_args.debug_num_examples) > 0
-    ):
+    if (  # pylint: disable=too-many-boolean-expressions
+        cli_args
+        and (
+            cli_args.debug
+            or cfg.debug
+            or cli_args.debug_text_only
+            or int(cli_args.debug_num_examples) > 0
+        )
+    ) or debug:
         LOG.info("check_dataset_labels...")
 
-        train_samples = sample_dataset(train_dataset, cli_args.debug_num_examples)
+        num_examples = cli_args.debug_num_examples if cli_args else 1
+        text_only = cli_args.debug_text_only if cli_args else False
+        train_samples = sample_dataset(train_dataset, num_examples)
         check_dataset_labels(
             train_samples,
             tokenizer,
-            num_examples=cli_args.debug_num_examples,
-            text_only=cli_args.debug_text_only,
+            num_examples=num_examples,
+            text_only=text_only,
         )
 
         LOG.info("printing prompters...")
