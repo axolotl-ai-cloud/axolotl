@@ -247,7 +247,9 @@ class AxolotlDPOTrainer(RngLoaderMixin, SchedulerMixin, DPOTrainer):
                 )
 
         # Base evaluation
-        initial_output = super().evaluation_loop(
+        initial_output = super(  # pylint: disable=bad-super-call
+            DPOTrainer, self
+        ).evaluation_loop(
             dataloader,
             description,
             prediction_loss_only,
