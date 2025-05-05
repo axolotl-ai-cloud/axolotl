@@ -24,7 +24,7 @@ def dequantize(
 ) -> torch.Tensor:
     """
     Fast NF4 dequantization using `bitsandbytes` CUDA kernels.
-
+#
     Performs efficient dequantization of weights from NF4 format using `bitsandbytes`'
     optimized CUDA implementations. Supports both legacy list and new `QuantState`
     formats.

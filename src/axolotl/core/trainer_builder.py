@@ -76,6 +76,7 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.callbacks.lisa import lisa_callback_factory
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
+from axolotl.utils.callbacks.qat import QATCallback
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
@@ -252,6 +253,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.gc_steps:
             callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
 
+        if self.cfg.qat:
+            callbacks.append(QATCallback(self.cfg.qat.fake_quant_after_n_steps))
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):

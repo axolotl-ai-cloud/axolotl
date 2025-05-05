@@ -1,0 +1,77 @@
+base_model: Qwen/Qwen3-8B
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: axolotl-ai-co/qwen3-8b-c4
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+# torch_compile: true
+liger_glu_activation: true
+liger_rms_norm: true
+liger_layer_norm: true
+
+pretraining_dataset:
+  - path: allenai/c4
+    name: en
+    split: train
+    type: pretrain
+output_dir: ./outputs/out_test
+
+sequence_len: 1024
+sample_packing: true
+# flex_attention: true
+
+qat:
+  activation_dtype: int8
+  weight_dtype: int4
+  group_size: 256
+  fake_quant_after_n_steps: 50
+  save_quantized_model: true
+
+wandb_project: qat
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 1
+micro_batch_size: 2
+max_steps: 100
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 2e-5
+
+bf16: true
+tf32: true
+
+# gradient_checkpointing: true
+# gradient_checkpointing_kwargs:
+#   use_reentrant: false
+resume_from_checkpoint:
+logging_steps: 1
+flash_attention: true
+
+warmup_steps: 10
+eval_strategy: "no"
+# evals_per_epoch: 4
+saves_per_epoch: 0
+weight_decay: 0.0
+fsdp:
+  - full_shard
+  - auto_wrap
+fsdp_config:
+  fsdp_version: 2
+  fsdp_offload_params: false
+  fsdp_cpu_ram_efficient_loading: true
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_transformer_layer_cls_to_wrap: Qwen3DecoderLayer
+  fsdp_state_dict_type: FULL_STATE_DICT
+  fsdp_sharding_strategy: FULL_SHARD
+  fsdp_reshard_after_forward: true
+  fsdp_activation_checkpointing: true
+
+special_tokens:
