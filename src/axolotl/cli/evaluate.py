@@ -15,7 +15,7 @@ from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
 from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.evaluate import evaluate
-from axolotl.utils import set_pytorch_cuda_alloc_conf
+from axolotl.utils import patch_optimized_env
 from axolotl.utils.dict import DictDefault
 
 LOG = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ def do_evaluate(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
         cli_args: CLI arguments.
     """
     # Enable expandable segments for cuda allocation to improve VRAM usage
-    set_pytorch_cuda_alloc_conf()
+    patch_optimized_env()
 
     # pylint: disable=duplicate-code
     print_axolotl_text_art()

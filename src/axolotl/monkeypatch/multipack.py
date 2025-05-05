@@ -18,6 +18,8 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "mixtral",
     "qwen2",
     "qwen2_moe",
+    "qwen3",
+    "qwen3_moe",
     "falcon",
     "phi",
     "phi3",
