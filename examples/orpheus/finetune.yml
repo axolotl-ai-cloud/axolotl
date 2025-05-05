@@ -1,4 +1,4 @@
-base_model: canopylabs/orpheus-tts-0.1-pretrained
+base_model: canopylabs/orpheus-3b-0.1-pretrained
 
 hub_model_id: <your-hub-model-id>
 
