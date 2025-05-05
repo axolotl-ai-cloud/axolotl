@@ -163,7 +163,7 @@ def allocate_sequentially(
     """
     Sequential allocator that preserves example order
 
-    Parameters:
+    Args:
         sequence_lengths: The lengths of all examples
         rank: The current rank (for distributed training)
         bin_capacity: The capacity of each bin (maximum sequence length)
@@ -226,8 +226,8 @@ class MultipackBatchSampler(BatchSampler):
         batch_max_len: int,  # Maximum sequence length (bin capacity)
         lengths: np.ndarray,  # Sequence lengths
         packing_efficiency_estimate: float = 1.0,  # Initial efficiency estimate
-        drop_last: bool = False,  # Whether to drop incomplete batches
-        num_count_samples: int = 16,  # Number of samples to estimate batch count
+        drop_last: bool = False,  # Whether to drop final batches (might be incomplete)
+        num_count_samples: int = 16,  # Number of times to estimate batch count
         sequential: bool = False,  # Whether to use sequential packing
         group_size: int = 100_000,  # Size of groups for parallel packing
         num_processes: int | None = None,  # Number of processes for parallel packing
