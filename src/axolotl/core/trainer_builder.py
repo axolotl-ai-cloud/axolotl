@@ -491,7 +491,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         # these are all the "standard" kwargs that are def used
         training_arguments_kwargs["max_steps"] = (
-            total_num_steps if self.cfg.max_steps else -1
+            self.cfg.max_steps if self.cfg.max_steps else -1
         )
         training_arguments_kwargs["max_seq_length"] = self.cfg.sequence_len
         training_arguments_kwargs["per_device_train_batch_size"] = (

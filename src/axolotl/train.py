@@ -30,7 +30,6 @@ from axolotl.core.trainers.mixins.sequence_parallel import (
     SequenceParallelContextManager,
 )
 from axolotl.integrations.base import PluginManager
-from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
@@ -42,7 +41,6 @@ try:
 except ImportError:
     BetterTransformer = None
 
-configure_logging()
 LOG = get_logger(__name__)
 
 
@@ -296,7 +294,22 @@ def save_trained_model(
             trainer.model.save_pretrained(
                 cfg.output_dir, safe_serialization=safe_serialization
             )
+
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
+
+    if hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
+        # TODO: add integration support so this can be implemented completely within the plugin
+        from axolotl.integrations.llm_compressor.utils import (
+            save_compressed_model,
+        )
+
+        save_compressed_model(
+            model=model,
+            output_dir=cfg.output_dir,
+            trainer=trainer,
+            safe_serialization=safe_serialization,
+            save_compressed=cfg.llmcompressor.save_compressed,
+        )
 
 
 def create_model_card(cfg: DictDefault, trainer: Trainer):

@@ -141,6 +141,22 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
         hasattr(model_config, "quantization_config") and
         model_config.quantization_config
     )
+
+    # Detect compressed-tensors config
+    is_compressed_tensors_config = (
+        quant_config_exists
+        and model_config.quantization_config.get("quant_method") == "compressed-tensors"
+    )
+
+    if is_compressed_tensors_config:
+        if model_config.quantization_config.get("config_groups"):
+            LOG.warning(
+                "Found `config_groups` in a compressed-tensors config. "
+                "QAT integration with llmcompressor is not tested."
+            )
+        # Skip further quant checks for compressed-tensors
+        return
+
     quant_config_method_is_gptq = (
         quant_config_exists and
         "quant_method" in model_config.quantization_config and
