@@ -868,3 +868,29 @@ class GCCallback(TrainerCallback):
     ):
         torch.cuda.empty_cache()
         gc.collect()
+
+
+def colab_inference_post_train_callback(trainer: Trainer):
+    class ColabCallback(TrainerCallback):
+        """Callback to prep model for inference on Google Colab"""
+
+        def __init__(self, cfg):
+            self.gpu_name = torch.cuda.get_device_name(0)
+            self.cfg = cfg
+
+        def on_train_end(
+            self, args, state, control, **kwargs
+        ):  # pylint: disable=unused-argument
+            """
+            handle T4 gpu, we need to convert attention to eager for inference
+            """
+            if "Tesla T4" in self.gpu_name and self.cfg.xformers_attention:
+                trainer.model.eval()
+            trainer.model.config._attn_implementation = (  # pylint: disable=protected-access
+                "eager"
+            )
+            trainer.model.gradient_checkpointing_disable()
+            trainer.model.config.use_cache = True
+            trainer.model.eval()
+
+    return ColabCallback
