@@ -21,6 +21,7 @@ import importlib.util
 import inspect
 import logging
 import math
+import os
 import sys
 from abc import abstractmethod
 from pathlib import Path
@@ -72,6 +73,7 @@ from axolotl.utils.callbacks import (
     SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
     causal_lm_bench_eval_callback_factory,
+    colab_inference_post_train_callback,
     log_prediction_callback_factory,
 )
 from axolotl.utils.callbacks.lisa import lisa_callback_factory
@@ -292,6 +294,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.lisa_step_interval and self.cfg.lisa_n_layers:
             callbacks.append(lisa_callback_factory(trainer))
+
+        if any("COLAB_" in key for key in os.environ):
+            ColabCallback = colab_inference_post_train_callback(trainer)
+            callbacks.append(ColabCallback(self.cfg))
 
         callbacks.extend(super().get_post_trainer_create_callbacks(trainer=trainer))
         return callbacks
