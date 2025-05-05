@@ -41,7 +41,6 @@ def apply_sequence_parallelism(
             - original_seq_len: The original sequence length before padding
             - pad_len: The number of padding tokens added
     """
-    # batch = {k: v.clone() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
     original_seq_len = batch["input_ids"].size(1)
 
     # Update ring attention params if needed
