@@ -7,7 +7,7 @@ import logging
 import math
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import cpu_count
-from typing import Iterable, List, Union
+from typing import Iterable, Union
 
 import numba
 import numpy as np
@@ -183,38 +183,37 @@ def allocate_sequentially(
         total_tokens_used: Number of actual example tokens
         total_token_slots: Maximum theoretical number of example tokens (number of bins * bin capacity)
     """
-    rank_batches = []
-    total_tokens_used = 0
+    result = []
+    total_used = 0
 
     # First, do sequential packing into bins
     all_bins = []
-    current_bin = []
+    current_bin = [0 for i in range(0)]  # numba hint
     remaining_capacity = bin_capacity
 
-    # Process each sequence in order
     for idx, size in enumerate(sequence_lengths):
         if size <= remaining_capacity:
             # Example fits in current bin
             current_bin.append(idx)
             remaining_capacity -= size
-            total_tokens_used += size
+            total_used += size
         else:
             # Example doesn't fit, start a new bin
             if current_bin:  # Add non-empty bin to all_bins
                 all_bins.append(current_bin)
             current_bin = [idx]
             remaining_capacity = bin_capacity - size
-            total_tokens_used += size
+            total_used += size
 
     # Add the last bin if not empty
     if current_bin:
         all_bins.append(current_bin)
 
-    # Assign bins to ranks - each rank gets every num_ranks-th bin
+    # Assign bins to ranks - each rank gets every n-th bin
     for bin_idx in range(rank, len(all_bins), num_ranks):
-        rank_batches.append(all_bins[bin_idx])
+        result.append(all_bins[bin_idx])
 
-    return rank_batches, total_tokens_used, len(all_bins) * bin_capacity
+    return result, total_used, len(all_bins) * bin_capacity
 
 
 class MultipackBatchSampler(BatchSampler):
@@ -311,6 +310,8 @@ class MultipackBatchSampler(BatchSampler):
                 bin_capacity=self.batch_max_len,
                 num_ranks=1,
             )
+            # Map bin indices back to original indices
+            bins = [[indices[b_idx] for b_idx in bin_indices] for bin_indices in bins]
         else:
             # Use parallel packing
             all_bins = pack_parallel(
@@ -382,7 +383,7 @@ class MultipackBatchSampler(BatchSampler):
         Returns a conservative efficiency estimate based on the measurements
         """
 
-        def calc_sample_packing_eff_est(estimates: List[float]):
+        def calc_sample_packing_eff_est(estimates: list[float]):
             LOG.debug(f"sample_packing_eff_est across ranks: {repr(estimates)}")
             # Use 99.7% of max observed efficiency as a safe estimate
             max_eff = max(float(eff) for eff in estimates)
