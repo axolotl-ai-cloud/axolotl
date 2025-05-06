@@ -21,6 +21,7 @@ from transformers import PreTrainedModel, PreTrainedTokenizer, ProcessorMixin
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.trainer import Trainer
 
+from axolotl.cli.art import print_axolotl_text_art
 from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
@@ -29,7 +30,7 @@ from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuil
 from axolotl.core.trainers.mixins.sequence_parallel import (
     SequenceParallelContextManager,
 )
-from axolotl.logging_config import configure_logging
+from axolotl.integrations.base import PluginManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
@@ -41,7 +42,6 @@ try:
 except ImportError:
     BetterTransformer = None
 
-configure_logging()
 LOG = get_logger(__name__)
 
 
@@ -295,7 +295,22 @@ def save_trained_model(
             trainer.model.save_pretrained(
                 cfg.output_dir, safe_serialization=safe_serialization
             )
+
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
+
+    if hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
+        # TODO: add integration support so this can be implemented completely within the plugin
+        from axolotl.integrations.llm_compressor.utils import (
+            save_compressed_model,
+        )
+
+        save_compressed_model(
+            model=model,
+            output_dir=cfg.output_dir,
+            trainer=trainer,
+            safe_serialization=safe_serialization,
+            save_compressed=cfg.llmcompressor.save_compressed,
+        )
 
 
 def create_model_card(cfg: DictDefault, trainer: Trainer):
@@ -502,6 +517,8 @@ def train(
     Returns:
         Tuple of (model, tokenizer) after training
     """
+    print_axolotl_text_art()
+
     # Setup model, tokenizer, (causal or RLHF) trainer, etc.
     (
         trainer,
@@ -532,5 +549,8 @@ def train(
     create_model_card(cfg, trainer)
     if not cfg.use_ray:
         cleanup_distributed()
+
+    plugin_manager = PluginManager.get_instance()
+    plugin_manager.post_train(cfg, model)
 
     return model, tokenizer, trainer

@@ -4,6 +4,7 @@ shared pytest fixtures
 
 import functools
 import importlib
+import os
 import shutil
 import sys
 import tempfile
@@ -79,15 +80,21 @@ def download_smollm2_135m_model():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def download_llama_68m_random_model():
+def download_smollm2_135m_gptq_model():
     # download the model
-    snapshot_download_w_retry("JackFram/llama-68m", repo_type="model")
+    snapshot_download_w_retry("lilmeaty/SmolLM2-135M-Instruct-GPTQ", repo_type="model")
 
 
 @pytest.fixture(scope="session", autouse=True)
 def download_qwen_2_5_half_billion_model():
     # download the model
     snapshot_download_w_retry("Qwen/Qwen2.5-0.5B", repo_type="model")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_qwen3_half_billion_model():
+    # download the model
+    snapshot_download_w_retry("Qwen/Qwen3-0.6B", repo_type="model")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -523,31 +530,32 @@ def dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff(
 
 
 # # pylint: disable=redefined-outer-name,unused-argument
-# def test_load_fixtures(
-#     download_smollm2_135m_model,
-#     download_llama_68m_random_model,
-#     download_qwen_2_5_half_billion_model,
-#     download_tatsu_lab_alpaca_dataset,
-#     download_mhenrichsen_alpaca_2k_dataset,
-#     download_mhenrichsen_alpaca_2k_w_revision_dataset,
-#     download_mlabonne_finetome_100k_dataset,
-#     download_argilla_distilabel_capybara_dpo_7k_binarized_dataset,
-#     download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset,
-#     download_fozzie_alpaca_dpo_dataset,
-#     download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset,
-#     download_argilla_dpo_pairs_dataset,
-#     download_tiny_shakespeare_dataset,
-#     download_deepseek_model_fixture,
-#     download_huggyllama_model_fixture,
-#     download_llama_1b_model_fixture,
-#     download_llama3_8b_model_fixture,
-#     download_llama3_8b_instruct_model_fixture,
-#     download_phi_35_mini_model_fixture,
-#     download_phi_3_medium_model_fixture,
-#     download_mistral_7b_model_fixture,
-#     download_gemma_2b_model_fixture,
-#     download_gemma2_9b_model_fixture,
-#     download_mlx_mistral_7b_model_fixture,
-#     download_llama2_model_fixture,
-# ):
-#     pass
+@pytest.mark.skipif(
+    os.environ.get("AXOLOTL_IS_CI_CACHE_PRELOAD", "-1") != "1",
+    reason="Not running in CI cache preload",
+)
+def test_load_fixtures(
+    download_smollm2_135m_model,
+    download_qwen_2_5_half_billion_model,
+    download_tatsu_lab_alpaca_dataset,
+    download_mhenrichsen_alpaca_2k_dataset,
+    download_mhenrichsen_alpaca_2k_w_revision_dataset,
+    download_mlabonne_finetome_100k_dataset,
+    download_argilla_distilabel_capybara_dpo_7k_binarized_dataset,
+    download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset,
+    download_argilla_dpo_pairs_dataset,
+    download_tiny_shakespeare_dataset,
+    download_deepseek_model_fixture,
+    download_huggyllama_model_fixture,
+    download_llama_1b_model_fixture,
+    download_llama3_8b_model_fixture,
+    download_llama3_8b_instruct_model_fixture,
+    download_phi_35_mini_model_fixture,
+    download_phi_3_medium_model_fixture,
+    download_mistral_7b_model_fixture,
+    download_gemma_2b_model_fixture,
+    download_gemma2_9b_model_fixture,
+    download_mlx_mistral_7b_model_fixture,
+    download_llama2_model_fixture,
+):
+    pass

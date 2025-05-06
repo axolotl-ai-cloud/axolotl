@@ -63,12 +63,20 @@ class GRPOStrategy:
 
         grpo_args_kwargs["max_completion_length"] = trl.max_completion_length
         grpo_args_kwargs["log_completions"] = trl.log_completions
+        grpo_args_kwargs["num_completions_to_print"] = trl.num_completions_to_print
 
         if trl.reward_weights:
             grpo_args_kwargs["reward_weights"] = trl.reward_weights
 
         if trl.scale_rewards is not None:
             grpo_args_kwargs["scale_rewards"] = trl.scale_rewards
+
+        if trl.loss_type is not None:
+            grpo_args_kwargs["loss_type"] = trl.loss_type
+        if trl.mask_truncated_completions is not None:
+            grpo_args_kwargs["mask_truncated_completions"] = (
+                trl.mask_truncated_completions
+            )
 
         if trl.temperature is not None:
             grpo_args_kwargs["temperature"] = trl.temperature
@@ -85,6 +93,11 @@ class GRPOStrategy:
             grpo_args_kwargs["num_iterations"] = trl.num_iterations
         if trl.epsilon is not None:
             grpo_args_kwargs["epsilon"] = trl.epsilon
+        if trl.epsilon_high is not None:
+            grpo_args_kwargs["epsilon_high"] = trl.epsilon_high
+
+        if trl.use_liger_loss is not None:
+            grpo_args_kwargs["use_liger_loss"] = trl.use_liger_loss
 
         return grpo_args_kwargs
 
@@ -135,7 +148,9 @@ class GRPOStrategy:
         try:
             # use importlib to dynamically load the reward function from the module
             reward_func_module_name = reward_func_fqn.split(".")[-1]
-            reward_func_module = importlib.import_module(reward_func_fqn.split(".")[-2])
+            reward_func_module = importlib.import_module(
+                ".".join(reward_func_fqn.split(".")[:-1])
+            )
             reward_func = getattr(reward_func_module, reward_func_module_name)
             if not len(inspect.signature(reward_func).parameters) >= 2:
                 raise ValueError(

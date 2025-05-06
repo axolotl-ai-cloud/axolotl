@@ -8,9 +8,6 @@ from accelerate.commands.config import config_args
 from huggingface_hub import HfApi
 from huggingface_hub.utils import LocalTokenNotFoundError
 
-from axolotl.logging_config import configure_logging
-
-configure_logging()
 LOG = logging.getLogger(__name__)
 
 

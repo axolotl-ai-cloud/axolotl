@@ -309,6 +309,7 @@ class AxolotlInputConfig(
         | Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")]
     ) | None = None
     chat_template_jinja: str | None = None
+    eot_tokens: list[str] | None = None
     default_system_message: str | None = None
 
     fix_untrained_tokens: int | list[int] | None = None
@@ -511,10 +512,17 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def hint_sample_packing_padding(cls, data):
-        if data.get("sample_packing") and not data.get("pad_to_sequence_len"):
-            LOG.warning(
-                "`pad_to_sequence_len: true` is recommended when using sample_packing"
-            )
+        if data.get("sample_packing"):
+            pad_to_sequence_len = data.get("pad_to_sequence_len")
+            if pad_to_sequence_len is False:
+                LOG.warning(
+                    "`pad_to_sequence_len: true` is recommended when using sample_packing"
+                )
+            elif pad_to_sequence_len is None:
+                LOG.info(
+                    "Setting `pad_to_sequence_len: true` to prevent memory leaks when sample_packing"
+                )
+                data["pad_to_sequence_len"] = True
         return data
 
     @model_validator(mode="before")
@@ -1149,6 +1157,18 @@ class AxolotlInputConfig(
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_grpo_peft_liger(cls, data):
+        if (
+            data.get("rl") == "grpo"
+            and data.get("trl", {})
+            and data.get("trl").get("use_liger_loss")
+            and data.get("adapter")
+        ):
+            raise ValueError("PEFT + GRPO + Liger is not yet supported")
+        return data
+
     @model_validator(mode="after")
     def check_sequence_parallel_degree(self):
         if not self.sequence_parallel_degree:
@@ -1312,6 +1332,57 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                     raise ValueError(
                         "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with FSDP1."
                     )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_auto_enable_lora_kernels(cls, data):
+        # Only proceed if using LoRA or QLoRA adapter
+        if data.get("rl"):
+            # RL trainers not tested so don't enable kernels by default
+            return data
+        if data.get("adapter") in ["lora", "qlora"]:
+            # Skip if already set, using unsloth optimizations, or using 8-bit
+            unsloth_fields = ["unsloth_lora_mlp", "unsloth_lora_qkv", "unsloth_lora_o"]
+            kernel_fields = ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
+            if (
+                any(data.get(k) is not None for k in kernel_fields)
+                or any(data.get(k) for k in unsloth_fields)
+                or data.get("adapter") == "lora"
+                and data.get("load_in_8bit")
+            ):
+                return data
+
+            # Check multi-GPU compatibility
+            capabilities = data.get("capabilities")
+            is_multi_gpu = capabilities and capabilities.get("n_gpu", 0) > 1
+            is_fsdp = data.get("fsdp") is not None
+            is_fsdp2 = (
+                data.get("fsdp_config") is not None
+                and str(data.get("fsdp_config").get("fsdp_version")) == "2"
+            )
+
+            if (
+                not is_multi_gpu
+                or (is_multi_gpu and not is_fsdp)
+                or (is_multi_gpu and is_fsdp2)
+            ):
+                # Auto-enable kernels if not explicitly set by user
+                if data.get("lora_mlp_kernel") is None:
+                    data["lora_mlp_kernel"] = True
+
+                if data.get("lora_qkv_kernel") is None:
+                    data["lora_qkv_kernel"] = True
+
+                if data.get("lora_o_kernel") is None:
+                    data["lora_o_kernel"] = True
+
+                LOG.warning(
+                    "Auto-enabling LoRA kernel optimizations for faster training. "
+                    + "Please explicitly set `lora_*_kernel` config values to `false` to disable. "
+                    + "See https://docs.axolotl.ai/docs/lora_optims.html for more info."
+                )
+
         return data
 
     @model_validator(mode="before")

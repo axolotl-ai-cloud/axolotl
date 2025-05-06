@@ -53,6 +53,7 @@ from transformers.integrations.deepspeed import (
 )
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
+from axolotl.integrations.base import PluginManager
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
@@ -67,13 +68,14 @@ from axolotl.utils.distributed import (
     get_device_count,
     get_device_type,
     is_local_main_process,
-    zero_only,
+    is_main_process,
 )
 from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_offload_wrapper
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
 
 LOG = logging.getLogger(__name__)
+PLUGIN_MANAGER = PluginManager.get_instance()
 
 MULTIMODAL_AUTO_MODEL_MAPPING = {
     "mllama": MllamaForConditionalGeneration,
@@ -139,6 +141,22 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
         hasattr(model_config, "quantization_config")
         and model_config.quantization_config
     )
+
+    # Detect compressed-tensors config
+    is_compressed_tensors_config = (
+        quant_config_exists
+        and model_config.quantization_config.get("quant_method") == "compressed-tensors"
+    )
+
+    if is_compressed_tensors_config:
+        if model_config.quantization_config.get("config_groups"):
+            LOG.warning(
+                "Found `config_groups` in a compressed-tensors config. "
+                "QAT integration with llmcompressor is not tested."
+            )
+        # Skip further quant checks for compressed-tensors
+        return
+
     quant_config_method_is_gptq = (
         quant_config_exists
         and "quant_method" in model_config.quantization_config
@@ -435,7 +453,7 @@ def load_tokenizer(cfg):
             {"additional_special_tokens": additional_special_tokens}
         )
 
-    with zero_only():
+    if is_main_process(use_environ=True):
         LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
         LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
         LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
@@ -571,10 +589,8 @@ class ModelLoader:
             patch_gemma3conditionalgeneration_forward()
 
         # load any patches from plugins
-        from axolotl.integrations.base import PluginManager
 
-        plugin_manager = PluginManager.get_instance()
-        plugin_manager.pre_model_load(self.cfg)
+        PLUGIN_MANAGER.pre_model_load(self.cfg)
 
         # monkey patch to allow additional Accelerator init kwargs
         if self.cfg.fp8:
@@ -1252,6 +1268,7 @@ class ModelLoader:
 
         try:
             skip_move_to_device = self.build_model(qlora_fsdp)
+            PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
         except Exception as err:  # pylint: disable=broad-exception-caught
             LOG.exception(err)
             raise err
@@ -1331,6 +1348,8 @@ class ModelLoader:
                 before_kbit_train_or_finetune=False,
             )
 
+        PLUGIN_MANAGER.pre_lora_load(self.cfg, self.model)
+
         # ---------------------------------------------------------
         #  load lora or adapter
         # ---------------------------------------------------------
@@ -1392,7 +1411,7 @@ class ModelLoader:
             gc.collect()
             torch.cuda.empty_cache()
 
-        # TODO resume_from_checkpoint handling
+        PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
         return self.model, lora_config
 
 
@@ -1427,9 +1446,13 @@ def load_adapter(model, cfg, adapter, inference=False):
     if hasattr(model, "enable_input_require_grads"):
         model.enable_input_require_grads()
     if adapter in ["lora", "qlora"]:
-        return load_lora(model, cfg, inference=inference)
+        model, lora_config = load_lora(model, cfg, inference=inference)
+        PLUGIN_MANAGER.post_lora_load(cfg, model)
+        return model, lora_config
     if adapter == "llama-adapter":
-        return load_llama_adapter(model, cfg)
+        model, lora_config = load_llama_adapter(model, cfg)
+        PLUGIN_MANAGER.post_lora_load(cfg, model)
+        return model, lora_config
 
     raise NotImplementedError(f"{adapter} peft adapter not available")
 

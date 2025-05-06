@@ -5,6 +5,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Union
 from urllib.parse import urlparse
 
@@ -152,7 +153,15 @@ def prepare_plugins(cfg: DictDefault):
             plugin_manager.register(plugin_name)
 
 
-def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs) -> DictDefault:
+def plugin_set_cfg(cfg: DictDefault):
+    if cfg.get("plugins"):
+        plugin_manager = PluginManager.get_instance()
+        plugin_manager.cfg = cfg
+
+
+def load_cfg(
+    config: str | Path | DictDefault = Path("examples/"), **kwargs
+) -> DictDefault:
     """
     Loads the `axolotl` configuration stored at `config`, validates it, and performs
     various setup.
@@ -164,13 +173,24 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs) -> DictDefa
     Returns:
         `DictDefault` mapping configuration keys to values.
     """
-    config = check_remote_config(config)
-    if Path(config).is_dir():
-        config = choose_config(Path(config))
+    if isinstance(config, (str, Path)):
+        config = check_remote_config(config)
+        if Path(config).is_dir():
+            config = choose_config(Path(config))
 
-    # Load the config from the yaml file
-    with open(config, encoding="utf-8") as file:
-        cfg: DictDefault = DictDefault(yaml.safe_load(file))
+        # Load the config from the yaml file
+        with open(config, encoding="utf-8") as file:
+            cfg: DictDefault = DictDefault(yaml.safe_load(file))
+
+        cfg.axolotl_config_path = config
+    else:
+        cfg = config
+        with NamedTemporaryFile(
+            mode="w", delete=False, suffix=".yml", prefix="axolotl_config_"
+        ) as temp_file:
+            temp_file.write(yaml.dump(config.to_dict()))
+            temp_file.close()
+        cfg.axolotl_config_path = temp_file.name
 
     # If there are any options passed in the cli, if it is something that seems valid
     # from the yaml, then overwrite the value
@@ -183,8 +203,6 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs) -> DictDefa
                 cfg[k] = bool(kwargs[k])
             else:
                 cfg[k] = kwargs[k]
-
-    cfg.axolotl_config_path = config
 
     try:
         device_props = torch.cuda.get_device_properties("cuda")
@@ -213,5 +231,6 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs) -> DictDefa
     setup_wandb_env_vars(cfg)
     setup_mlflow_env_vars(cfg)
     setup_comet_env_vars(cfg)
+    plugin_set_cfg(cfg)
 
     return cfg

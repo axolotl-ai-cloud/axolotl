@@ -1,5 +1,6 @@
 """CLI to run training on a model."""
 
+import gc
 import logging
 import os
 from pathlib import Path
@@ -17,7 +18,7 @@ from axolotl.cli.config import load_cfg
 from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.integrations.base import PluginManager
 from axolotl.train import train
-from axolotl.utils import set_pytorch_cuda_alloc_conf
+from axolotl.utils import patch_optimized_env
 from axolotl.utils.config import normalize_config, resolve_dtype
 from axolotl.utils.dict import DictDefault
 
@@ -35,7 +36,7 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         cli_args: Training-specific CLI arguments.
     """
     # Enable expandable segments for cuda allocation to improve VRAM usage
-    set_pytorch_cuda_alloc_conf()
+    patch_optimized_env()
 
     print_axolotl_text_art()
     check_accelerate_default_config()
@@ -48,7 +49,10 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
     model, tokenizer, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
+
     del model, tokenizer, trainer
+
+    gc.collect()
 
     plugin_manager = PluginManager.get_instance()
     plugin_manager.post_train_unload(cfg)

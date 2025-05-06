@@ -164,7 +164,7 @@ Here is an example of a multi-modal dataset:
         {
             "role": "user",
             "content": [
-                {"type": "image", "image": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/bee.jpg"},
+                {"type": "image", "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/bee.jpg"},
                 {"type": "text", "text": "Describe this image in detail."}
             ]
         },

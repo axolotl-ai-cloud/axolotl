@@ -35,6 +35,9 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
         sequence_len,
         roles_to_train=None,
         train_on_eos=None,
+        train_on_eot=None,
+        eot_tokens=None,
+        split_thinking: bool | None = False,
         logprobs_field="logprobs",
         gen_temperature=1.0,
         kd_temperature=1.0,
@@ -50,6 +53,9 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
             sequence_len,
             roles_to_train=roles_to_train,
             train_on_eos=train_on_eos,
+            train_on_eot=train_on_eot,
+            eot_tokens=eot_tokens,
+            split_thinking=split_thinking,
         )
 
     @property

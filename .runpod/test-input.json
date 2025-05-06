@@ -1,0 +1,86 @@
+{
+  "input": {
+    "name": "quick_smoke_test_sft",
+    "user_id": "user",
+    "model_id": "llama-test",
+    "run_id": "llama-test",
+    "credentials": {
+      "wandb_api_key": "",
+      "hf_token": ""
+    },
+    "args": {
+      "base_model": "HuggingFaceTB/SmolLM2-135M",
+      "model_type": "AutoModelForCausalLM",
+      "tokenizer_type": "AutoTokenizer",
+      "load_in_4bit": true,
+      "strict": false,
+      "datasets": [
+        {
+          "path": "mhenrichsen/alpaca_2k_test",
+          "type": "alpaca",
+          "split": "train[:10%]"
+        }
+      ],
+      "val_set_size": 0.02,
+      "output_dir": "./outputs/lora-out",
+      "sequence_len": 4096,
+      "sample_packing": true,
+      "eval_sample_packing": false,
+      "pad_to_sequence_len": true,
+      "adapter": "qlora",
+      "lora_r": 32,
+      "lora_alpha": 64,
+      "lora_dropout": 0.05,
+      "lora_target_linear": true,
+      "lora_modules_to_save": [
+        "embed_tokens",
+        "lm_head"
+      ],
+      "gradient_accumulation_steps": 2,
+      "micro_batch_size": 1,
+      "num_epochs": 1,
+      "optimizer": "adamw_torch_fused",
+      "lr_scheduler": "cosine",
+      "learning_rate": 0.0002,
+      "train_on_inputs": false,
+      "group_by_length": false,
+      "bf16": "auto",
+      "tf32": true,
+      "gradient_checkpointing": true,
+      "logging_steps": 1,
+      "flash_attention": true,
+      "warmup_steps": 1,
+      "evals_per_epoch": 1,
+      "eval_max_new_tokens": 128,
+      "saves_per_epoch": 1,
+      "weight_decay": 0.0,
+      "special_tokens": {
+        "pad_token": "<|endoftext|>"
+      },
+      "max_steps": 20
+    },
+    "timeout": 100000
+  },
+  "config": {
+    "gpuTypeId": "NVIDIA GeForce RTX 4090",
+    "gpuCount": 1,
+    "containerDiskInGb": 200,
+    "env": [
+      {
+        "key": "TOKENIZER",
+        "value": ""
+      },
+      {
+        "key": "DISABLE_LOG_STATS",
+        "value": "true"
+      }
+    ],
+    "allowedCudaVersions": [
+      "12.8",
+      "12.7",
+      "12.6",
+      "12.5",
+      "12.4"
+    ]
+  }
+}

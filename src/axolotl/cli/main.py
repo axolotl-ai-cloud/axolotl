@@ -28,9 +28,8 @@ from axolotl.cli.utils import (
     fetch_from_github,
     filter_none_kwargs,
 )
-from axolotl.cli.vllm_serve import do_vllm_serve
 from axolotl.integrations.lm_eval.cli import lm_eval
-from axolotl.utils import set_pytorch_cuda_alloc_conf
+from axolotl.utils import patch_optimized_env
 from axolotl.utils.schemas.config import AxolotlInputConfig
 
 
@@ -56,6 +55,8 @@ def preprocess(config: str, cloud: Optional[str] = None, **kwargs) -> None:
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
+    patch_optimized_env()
+
     if cloud:
         from axolotl.cli.cloud import do_cli_preprocess
 
@@ -101,7 +102,7 @@ def train(
             config options.
     """
     # Enable expandable segments for cuda allocation to improve VRAM usage
-    set_pytorch_cuda_alloc_conf()
+    patch_optimized_env()
 
     if "use_ray" in kwargs and kwargs["use_ray"]:
         accelerate = False
@@ -327,6 +328,8 @@ def fetch(directory: str, dest: Optional[str]) -> None:
 @add_options_from_dataclass(VllmServeCliArgs)
 @filter_none_kwargs
 def vllm_serve(config: str, **cli_args: VllmServeCliArgs):
+    from axolotl.cli.vllm_serve import do_vllm_serve
+
     do_vllm_serve(config, cli_args)
 
 

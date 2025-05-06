@@ -67,6 +67,12 @@ class TRLConfig(BaseModel):
         default=False,
         json_schema_extra={"description": "Whether to log completions"},
     )
+    num_completions_to_print: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of completions to print. If `log_completions` is `True`, this will be the number of completions logged."
+        },
+    )
     sync_ref_model: bool | None = Field(
         default=False,
         json_schema_extra={
@@ -131,5 +137,27 @@ class TRLConfig(BaseModel):
         default=None,
         json_schema_extra={
             "description": "Epsilon value for clipping in the GRPO algorithm."
+        },
+    )
+    epsilon_high: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Upper-bound epsilon value for clipping in the GRPO algorithm."
+        },
+    )
+    use_liger_loss: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Whether to use Liger loss for GRPO."},
+    )
+    loss_type: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Specifies the loss formulation to use. Supported values are `grpo`, `bnpo`, and `dr_grpo`."
+        },
+    )
+    mask_truncated_completions: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "When enabled, truncated completions are excluded from the loss calculation."
         },
     )

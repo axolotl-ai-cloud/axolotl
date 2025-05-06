@@ -24,6 +24,7 @@ import logging
 from typing import OrderedDict
 
 import torch
+from torch.optim.lr_scheduler import LRScheduler
 
 
 class BasePlugin:
@@ -36,11 +37,12 @@ class BasePlugin:
     Methods:
     register(cfg): Registers the plugin with the given configuration.
     pre_model_load(cfg): Performs actions before the model is loaded.
-    post_model_load(cfg, model): Performs actions after the model is loaded.
+    post_model_build(cfg, model): Performs actions after the model is loaded, but before LoRA adapters are applied.
     pre_lora_load(cfg, model): Performs actions before LoRA weights are loaded.
     post_lora_load(cfg, model): Performs actions after LoRA weights are loaded.
+    post_model_load(cfg, model): Performs actions after the model is loaded, inclusive of any adapters.
     create_optimizer(cfg, trainer): Creates and returns an optimizer for training.
-    create_lr_scheduler(cfg, trainer, optimizer): Creates and returns a learning rate scheduler.
+    create_lr_scheduler(cfg, trainer, optimizer, num_training_steps): Creates and returns a learning rate scheduler.
     add_callbacks_pre_trainer(cfg, model): Adds callbacks to the trainer before training.
     add_callbacks_post_trainer(cfg, trainer): Adds callbacks to the trainer after training.
     """
@@ -75,6 +77,14 @@ class BasePlugin:
 
         Returns:
         None
+        """
+
+    def post_model_build(self, cfg, model):  # pylint: disable=unused-argument
+        """
+        Performs actions after the model is built/loaded, but before any adapters are applied.
+
+        Args:
+            cfg (dict): The configuration for the plugin.
         """
 
     def post_model_load(self, cfg, model):  # pylint: disable=unused-argument
@@ -137,8 +147,8 @@ class BasePlugin:
         """
 
     def create_lr_scheduler(
-        self, cfg, trainer, optimizer
-    ):  # pylint: disable=unused-argument
+        self, cfg, trainer, optimizer, num_training_steps
+    ) -> LRScheduler | None:  # pylint: disable=unused-argument
         """
         Creates and returns a learning rate scheduler.
 
@@ -146,9 +156,10 @@ class BasePlugin:
         cfg (dict): The configuration for the plugin.
         trainer (object): The trainer object for training.
         optimizer (object): The optimizer for training.
+        num_training_steps (int): Total number of training steps
 
         Returns:
-        object: The created learning rate scheduler.
+        object (LRScheduler): The created learning rate scheduler.
         """
 
     def add_callbacks_pre_trainer(self, cfg, model):  # pylint: disable=unused-argument
@@ -261,6 +272,7 @@ class PluginManager:
     plugins: OrderedDict[str, BasePlugin] = collections.OrderedDict()
 
     _instance = None
+    _cfg = None
 
     def __new__(cls):
         """
@@ -268,7 +280,9 @@ class PluginManager:
         """
         if cls._instance is None:
             cls._instance = super(PluginManager, cls).__new__(cls)
-            cls._instance.plugins = collections.OrderedDict()
+            cls._instance.plugins: OrderedDict[str, BasePlugin] = (
+                collections.OrderedDict()
+            )
         return cls._instance
 
     @staticmethod
@@ -280,6 +294,14 @@ class PluginManager:
         if PluginManager._instance is None:
             PluginManager()
         return PluginManager._instance  # type: ignore
+
+    @property
+    def cfg(self):
+        return self._cfg
+
+    @cfg.setter
+    def cfg(self, cfg):
+        self._cfg = cfg
 
     def register(self, plugin_name: str):
         """
@@ -329,9 +351,22 @@ class PluginManager:
         for plugin in self.plugins.values():
             plugin.pre_model_load(cfg)
 
+    def post_model_build(self, cfg, model):
+        """
+        Calls the post_model_build method of all registered plugins after the model has been built/loaded,
+        but before any adapters have been applied.
+
+        Args:
+            cfg (dict): The configuration for the plugins.
+            model (object): The loaded model.
+        """
+        for plugin in self.plugins.values():
+            plugin.post_model_build(cfg, model)
+
     def post_model_load(self, cfg, model):
         """
-        Calls the post_model_load method of all registered plugins.
+        Calls the post_model_load method of all registered plugins after the model has been loaded
+        inclusive of any adapters
 
         Parameters:
         cfg (dict): The configuration for the plugins.
@@ -387,29 +422,29 @@ class PluginManager:
                 return trainer_cls
         return None
 
-    def create_optimizer(self, cfg, trainer):
+    def create_optimizer(self, trainer):
         """
         Calls the create_optimizer method of all registered plugins and returns the first non-None optimizer.
 
         Parameters:
-        cfg (dict): The configuration for the plugins.
         trainer (object): The trainer object for training.
 
         Returns:
         object: The created optimizer, or None if none was found.
         """
         for plugin in self.plugins.values():
-            optimizer = plugin.create_optimizer(cfg, trainer)
+            optimizer = plugin.create_optimizer(self.cfg, trainer)
             if optimizer is not None:
                 return optimizer
         return None
 
-    def create_lr_scheduler(self, cfg, trainer, optimizer):
+    def create_lr_scheduler(
+        self, trainer, optimizer, num_training_steps
+    ) -> LRScheduler | None:
         """
         Calls the create_lr_scheduler method of all registered plugins and returns the first non-None scheduler.
 
         Parameters:
-        cfg (dict): The configuration for the plugins.
         trainer (object): The trainer object for training.
         optimizer (object): The optimizer for training.
 
@@ -417,7 +452,12 @@ class PluginManager:
         object: The created learning rate scheduler, or None if none was found.
         """
         for plugin in self.plugins.values():
-            scheduler = plugin.create_lr_scheduler(cfg, trainer, optimizer)
+            scheduler: LRScheduler | None = plugin.create_lr_scheduler(
+                self.cfg,
+                trainer=trainer,
+                optimizer=optimizer,
+                num_training_steps=num_training_steps,
+            )
             if scheduler is not None:
                 return scheduler
         return None
@@ -457,6 +497,20 @@ class PluginManager:
             if plugin_callbacks:
                 callbacks.extend(plugin_callbacks)
         return callbacks
+
+    def post_train(self, cfg, model):
+        """
+        Calls the post_train method of all registered plugins.
+
+        Parameters:
+        cfg (dict): The configuration for the plugins.
+        model (object): The loaded model.
+
+        Returns:
+        None
+        """
+        for plugin in self.plugins.values():
+            plugin.post_train(cfg, model)
 
     def post_train_unload(self, cfg):
         """

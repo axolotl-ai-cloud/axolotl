@@ -190,7 +190,7 @@ class MultipackBatchSampler(BatchSampler):
         self.len_across_ranks = None
 
         if self.sequential and not isinstance(sampler, SequentialSampler):
-            LOG.warn(
+            LOG.warning(
                 "using sequential sample packing with non-sequential sampler, did you want to also enable curriculum_sampling?"
             )
 

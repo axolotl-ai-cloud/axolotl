@@ -2,14 +2,19 @@
 
 # pylint: disable=redefined-outer-name
 
+from pathlib import Path
+
 import pytest
 import torch
+import yaml
 from accelerate.state import PartialState
 from peft import PeftModelForCausalLM, get_peft_config
 from transformers import AutoModelForCausalLM, LlamaForCausalLM
 from transformers.models.llama.configuration_llama import LlamaConfig
 from transformers.models.llama.modeling_llama import LlamaAttention
+from transformers.models.qwen3_moe.modeling_qwen3_moe import Qwen3MoeAttention
 
+from axolotl.cli.config import load_cfg
 from axolotl.kernels.lora import (
     apply_lora_mlp_geglu,
     apply_lora_mlp_swiglu,
@@ -66,29 +71,36 @@ def small_llama_model():
     return LlamaForCausalLM(LlamaConfig(**config))
 
 
-def test_attention_patching_integration():
+@pytest.mark.parametrize(
+    "model_name,attention_cls",
+    [
+        ("HuggingFaceTB/SmolLM2-135M", LlamaAttention),
+        ("Qwen/Qwen3-30B-A3B", Qwen3MoeAttention),
+    ],
+)
+def test_attention_patching_integration(model_name, attention_cls):
     """Test attention patching in integration context."""
-    cfg = {"base_model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0"}
+    cfg = {"base_model": model_name}
 
     # Store the original implementation
-    original_forward = getattr(LlamaAttention, "forward")
+    original_forward = getattr(attention_cls, "forward")
 
     # Apply patch
     patch_self_attn_lora(cfg)
 
     # Get the new forward method
-    patched_forward = LlamaAttention.forward
+    patched_forward = attention_cls.forward
 
     # Check the forward method was replaced
     assert original_forward is not patched_forward
     assert patched_forward.__name__ == "axolotl_attn_forward"
 
     # Check original implementation was stored
-    assert hasattr(LlamaAttention, "_original_forward")
+    assert hasattr(attention_cls, "_original_forward")
 
     # Clean up
-    setattr(LlamaAttention, "forward", original_forward)
-    delattr(LlamaAttention, "_original_forward")
+    setattr(attention_cls, "forward", original_forward)
+    delattr(attention_cls, "_original_forward")
 
 
 def test_swiglu_mlp_integration(small_llama_model):
@@ -413,3 +425,42 @@ def test_kernel_training_integration():
     # Verify correct activation function
     layer = model.model.model.layers[0]
     assert layer.mlp.forward.__func__ is apply_lora_mlp_swiglu
+
+
+def test_kernel_training_integration_auto_enable(temp_dir):
+    """Test model loading with auto-enabled kernel patches."""
+    # Create minimal config without explicitly setting kernel options
+    cfg = DictDefault(
+        {
+            "base_model": "HuggingFaceTB/SmolLM2-135M",
+            "tokenizer_config": "HuggingFaceTB/SmolLM2-135M",
+            "learning_rate": 0.000001,
+            "datasets": [
+                {
+                    "path": "mhenrichsen/alpaca_2k_test",
+                    "type": "alpaca",
+                }
+            ],
+            "micro_batch_size": 1,
+            "gradient_accumulation_steps": 1,
+            "adapter": "lora",
+            "lora_r": 8,
+            "lora_alpha": 16,
+            "lora_dropout": 0.0,
+            "lora_target_linear": True,
+            "sequence_len": 1024,
+        }
+    )
+
+    # Write cfg to yaml file
+    path = Path(temp_dir) / "config.yaml"
+    with open(path, "w", encoding="utf-8") as fout:
+        fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
+
+    # Load config
+    cfg = load_cfg(str(path))
+
+    # Verify kernel options were auto-enabled in the config
+    assert cfg.lora_mlp_kernel is True
+    assert cfg.lora_qkv_kernel is True
+    assert cfg.lora_o_kernel is True

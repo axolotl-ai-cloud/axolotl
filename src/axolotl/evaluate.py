@@ -11,20 +11,19 @@ from accelerate.logging import get_logger
 from datasets import Dataset
 from transformers.trainer import Trainer
 
-from axolotl.logging_config import configure_logging
-from axolotl.train import TrainDatasetMeta
-from axolotl.utils import set_pytorch_cuda_alloc_conf
+from axolotl.train import (
+    TrainDatasetMeta,
+    setup_model_and_tokenizer,
+)
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
-from axolotl.utils.models import load_model, load_processor, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
 sys.path.insert(0, src_dir)
 
-configure_logging()
-LOG = get_logger("axolotl.evaluate")
+LOG = get_logger(__name__)
 
 
 def evaluate_dataset(
@@ -75,37 +74,22 @@ def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> Dict[str, f
     Returns:
         Dictionary mapping metric names to their values.
     """
-    # pylint: disable=duplicate-code
-    # Enable expandable segments for cuda allocation to improve VRAM usage
-    set_pytorch_cuda_alloc_conf()
-
-    # Load tokenizer
-    LOG.debug(
-        f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
-        main_process_only=True,
-    )
-    tokenizer = load_tokenizer(cfg)
-
-    # Load processor for multimodal models if needed
-    processor = None
-    if cfg.is_multimodal:
-        processor = load_processor(cfg, tokenizer)
+    # Load tokenizer, processor and model
+    LOG.debug("loading model for evaluation...")
+    model, tokenizer, _, processor = setup_model_and_tokenizer(cfg)
 
     # Get datasets
+    # pylint: disable=duplicate-code
     train_dataset = dataset_meta.train_dataset
     eval_dataset = dataset_meta.eval_dataset
     total_num_steps = dataset_meta.total_num_steps
 
-    # Load model
-    LOG.debug("loading model for evaluation...")
-    model, _ = load_model(cfg, tokenizer, processor=processor)
-
     # Set up trainer
     trainer = setup_trainer(
-        cfg,
+        cfg=cfg,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        model=(model, None, None),  # No need for model_ref or peft_config
+        model=model,
         tokenizer=tokenizer,
         processor=processor,
         total_num_steps=total_num_steps,

@@ -1,0 +1,93 @@
+{
+  "title": "Axolotl Fine-Tuning",
+  "description": "Serverless fine-tuning of open-source LLMs with Axolotl. Supports LoRA, QLoRA, DPO, and more using Hugging Face models and datasets.",
+  "type": "serverless",
+  "category": "language",
+  "iconUrl": "https://avatars.githubusercontent.com/u/167502477",
+  "config": {
+    "runsOn": "GPU",
+    "containerDiskInGb": 200,
+    "gpuCount": 1,
+    "allowedCudaVersions": [
+      "12.8",
+      "12.7",
+      "12.6",
+      "12.5",
+      "12.4"
+    ],
+    "presets": [],
+    "env": [
+      {
+        "key": "TOKENIZER",
+        "input": {
+          "name": "Tokenizer",
+          "type": "string",
+          "description": "Name or path of the Hugging Face tokenizer to use.",
+          "default": "",
+          "advanced": true
+        }
+      },
+      {
+        "key": "MAX_NUM_SEQS",
+        "input": {
+          "name": "Max Num Seqs",
+          "type": "number",
+          "description": "Maximum number of sequences per iteration.",
+          "default": 256,
+          "advanced": true
+        }
+      },
+      {
+        "key": "DISABLE_LOG_STATS",
+        "input": {
+          "name": "Disable Log Stats",
+          "type": "boolean",
+          "description": "Disable logging statistics.",
+          "default": false,
+          "trueValue": "true",
+          "falseValue": "false"
+        }
+      },
+      {
+        "key": "LOAD_FORMAT",
+        "input": {
+          "name": "Load Format",
+          "type": "string",
+          "description": "The format of the model weights to load.",
+          "default": "auto",
+          "options": [
+            {
+              "label": "auto",
+              "value": "auto"
+            },
+            {
+              "label": "pt",
+              "value": "pt"
+            },
+            {
+              "label": "safetensors",
+              "value": "safetensors"
+            },
+            {
+              "label": "npcache",
+              "value": "npcache"
+            },
+            {
+              "label": "dummy",
+              "value": "dummy"
+            },
+            {
+              "label": "tensorizer",
+              "value": "tensorizer"
+            },
+            {
+              "label": "bitsandbytes",
+              "value": "bitsandbytes"
+            }
+          ],
+          "advanced": true
+        }
+      }
+    ]
+  }
+}

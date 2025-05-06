@@ -23,8 +23,8 @@ import logging
 import sys
 
 from axolotl.integrations.base import BasePlugin
+from axolotl.utils.distributed import is_main_process
 
-from ...utils.distributed import zero_only
 from .args import LigerArgs  # pylint: disable=unused-import. # noqa: F401
 from .utils import patch_with_compile_disable
 
@@ -85,7 +85,7 @@ class LigerPlugin(BasePlugin):
                 kwargs["geglu"] = cfg.liger_glu_activation
             elif "swiglu" in liger_fn_sig.parameters:
                 kwargs["swiglu"] = cfg.liger_glu_activation
-            with zero_only():
+            if is_main_process(use_environ=True):
                 LOG.info(
                     f"Applying LIGER to {cfg.model_config_type} with kwargs: {kwargs}"
                 )
@@ -145,6 +145,30 @@ class LigerPlugin(BasePlugin):
             )
 
             apply_liger_kernel_to_llama4(
+                cross_entropy=cfg.liger_cross_entropy,
+                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
+                glu_activation=cfg.liger_glu_activation,
+                rms_norm=cfg.liger_rms_norm,
+                layer_norm=cfg.liger_layer_norm,
+            )
+        elif cfg.model_config_type == "qwen3":
+            from axolotl.integrations.liger.models.qwen3 import (
+                apply_liger_kernel_to_qwen3,
+            )
+
+            apply_liger_kernel_to_qwen3(
+                cross_entropy=cfg.liger_cross_entropy,
+                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
+                glu_activation=cfg.liger_glu_activation,
+                rms_norm=cfg.liger_rms_norm,
+                layer_norm=cfg.liger_layer_norm,
+            )
+        elif cfg.model_config_type == "qwen3_moe":
+            from axolotl.integrations.liger.models.qwen3_moe import (
+                apply_liger_kernel_to_qwen3_moe,
+            )
+
+            apply_liger_kernel_to_qwen3_moe(
                 cross_entropy=cfg.liger_cross_entropy,
                 fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
                 glu_activation=cfg.liger_glu_activation,

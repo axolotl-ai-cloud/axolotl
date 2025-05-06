@@ -5,9 +5,7 @@
 import transformers
 from cut_cross_entropy.cce_utils import LinearCrossEntropyImpl
 from cut_cross_entropy.linear_cross_entropy import LCE_IMPL_DEFAULT
-from cut_cross_entropy.transformers.llama import patch_llama
 from cut_cross_entropy.transformers.phi3 import patch_phi3
-from cut_cross_entropy.transformers.qwen2 import patch_qwen2
 from cut_cross_entropy.transformers.utils import PatchOptions, TransformersModelT
 
 from axolotl.integrations.cut_cross_entropy.monkeypatch.cohere import (
@@ -24,6 +22,9 @@ from axolotl.integrations.cut_cross_entropy.monkeypatch.glm4 import (
     patch_glm,
     patch_glm4,
 )
+from axolotl.integrations.cut_cross_entropy.monkeypatch.llama import (
+    patch_llama,
+)
 from axolotl.integrations.cut_cross_entropy.monkeypatch.llama4 import (
     patch_llama4,
     patch_llama4_text,
@@ -33,6 +34,22 @@ from axolotl.integrations.cut_cross_entropy.monkeypatch.mistral3 import (
     patch_mistral3,
 )
 from axolotl.integrations.cut_cross_entropy.monkeypatch.mllama import patch_mllama
+from axolotl.integrations.cut_cross_entropy.monkeypatch.qwen2 import (
+    patch_qwen2,
+)
+from axolotl.integrations.cut_cross_entropy.monkeypatch.qwen2_5_vl import (
+    patch_qwen2_5_vl,
+)
+from axolotl.integrations.cut_cross_entropy.monkeypatch.qwen2_moe import (
+    patch_qwen2_moe,
+)
+from axolotl.integrations.cut_cross_entropy.monkeypatch.qwen2_vl import (
+    patch_qwen2_vl,
+)
+from axolotl.integrations.cut_cross_entropy.monkeypatch.qwen3 import patch_qwen3
+from axolotl.integrations.cut_cross_entropy.monkeypatch.qwen3_moe import (
+    patch_qwen3_moe,
+)
 
 CUT_CROSS_ENTROPY_MODEL_MAPPING = {
     "llama": patch_llama,
@@ -47,6 +64,11 @@ CUT_CROSS_ENTROPY_MODEL_MAPPING = {
     "mistral": patch_mistral,
     "mistral3": patch_mistral3,
     "qwen2": patch_qwen2,
+    "qwen2_moe": patch_qwen2_moe,
+    "qwen2_vl": patch_qwen2_vl,
+    "qwen2_5_vl": patch_qwen2_5_vl,
+    "qwen3": patch_qwen3,
+    "qwen3_moe": patch_qwen3_moe,
     "cohere": patch_cohere,
     "cohere2": patch_cohere2,
     "glm": patch_glm,

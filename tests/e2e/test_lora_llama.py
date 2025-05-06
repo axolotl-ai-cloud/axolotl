@@ -28,8 +28,8 @@ class TestLoraLlama(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -39,9 +39,7 @@ class TestLoraLlama(unittest.TestCase):
                 "lora_target_linear": True,
                 "val_set_size": 0.02,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -50,13 +48,13 @@ class TestLoraLlama(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 1,
-                "micro_batch_size": 8,
+                "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
-                "max_steps": 20,
+                "max_steps": 5,
             }
         )
 

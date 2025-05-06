@@ -12,10 +12,8 @@ import torch
 import torch.distributed as dist
 from accelerate.logging import get_logger
 
-from axolotl.logging_config import configure_logging
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
 
-configure_logging()
 LOG = get_logger(__name__)
 
 

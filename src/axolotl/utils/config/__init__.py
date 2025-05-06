@@ -59,7 +59,7 @@ def choose_device(cfg):
 
 def resolve_dtype(cfg):
     if (
-        cfg.bf16 == "auto" and not cfg.use_ray
+        not cfg.fp16 and cfg.bf16 == "auto" and not cfg.use_ray
     ):  # if we use ray we want to defer this check to the worker node
         if is_torch_bf16_gpu_available():
             LOG.debug("bf16 support detected, enabling for this configuration.")
@@ -67,7 +67,7 @@ def resolve_dtype(cfg):
         else:
             LOG.debug("bf16 support not detected, disabling for this configuration.")
             cfg.bf16 = False
-            if cfg.fp16 is None:
+            if cfg.fp16 is None and not cfg.float16:
                 cfg.fp16 = True
 
     if cfg.device == "mps":

@@ -648,7 +648,7 @@ class TestValidation(BaseValidation):
             DictDefault(
                 {
                     "sample_packing": True,
-                    "pad_to_sequence_len": None,
+                    "pad_to_sequence_len": False,
                     "flash_attention": True,
                 }
             )
@@ -661,6 +661,26 @@ class TestValidation(BaseValidation):
                 in record.message
                 for record in self._caplog.records
             )
+
+    def test_packing_autoset(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "sample_packing": True,
+                    "pad_to_sequence_len": None,
+                    "flash_attention": True,
+                }
+            )
+            | minimal_cfg
+        )
+        with self._caplog.at_level(logging.INFO):
+            cfg = validate_config(cfg)
+            assert any(
+                "Setting `pad_to_sequence_len: true` to prevent memory leaks when sample_packing"
+                in record.message
+                for record in self._caplog.records
+            )
+            assert cfg.pad_to_sequence_len is True
 
     def test_merge_lora_no_bf16_fail(self, minimal_cfg):
         """

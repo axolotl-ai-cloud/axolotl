@@ -35,6 +35,7 @@ class ChatTemplate(str, Enum):
     jamba = "jamba"  # pylint: disable=invalid-name
     jinja = "jinja"  # pylint: disable=invalid-name
     qwen_25 = "qwen_25"  # pylint: disable=invalid-name
+    qwen3 = "qwen3"  # pylint: disable=invalid-name
     tokenizer_default = "tokenizer_default"  # pylint: disable=invalid-name
     exaone = "exaone"  # pylint: disable=invalid-name
     metharme = "metharme"  # pylint: disable=invalid-name

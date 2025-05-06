@@ -60,6 +60,7 @@ from axolotl.core.training_args import (
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback
+from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
 from axolotl.processing_strategies import get_processing_strategy
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
@@ -114,6 +115,8 @@ class TrainerBuilderBase(abc.ABC):
         if hasattr(model, "add_model_tags"):
             model.add_model_tags(["axolotl"])
 
+        patch_trainer_get_lr()
+
     @property
     def model_ref(self):
         return self._model_ref
@@ -164,6 +167,9 @@ class TrainerBuilderBase(abc.ABC):
                     steps_to_profile=self.cfg.profiler_steps,
                 )
             )
+
+        if self.cfg.gc_steps:
+            callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
 
         if self.cfg.use_wandb:
             callbacks.append(
@@ -245,9 +251,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.loss_watchdog_threshold is not None:
             callbacks.append(LossWatchDogCallback(self.cfg))
-
-        if self.cfg.gc_steps:
-            callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
 
         return callbacks
 
@@ -485,7 +488,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         # these are all the "standard" kwargs that are def used
         training_arguments_kwargs["max_steps"] = (
-            total_num_steps if self.cfg.max_steps else -1
+            self.cfg.max_steps if self.cfg.max_steps else -1
         )
         training_arguments_kwargs["max_seq_length"] = self.cfg.sequence_len
         training_arguments_kwargs["per_device_train_batch_size"] = (
