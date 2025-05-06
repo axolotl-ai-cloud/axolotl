@@ -73,11 +73,12 @@ load_in_8bit: true
 load_in_4bit:
 
 # Use CUDA bf16
-bf16: true # bool or 'full' for `bf16_full_eval`. require >=ampere
+bf16: true # bool or 'full' for `bf16_full_eval`, or 'auto' for automatic detection. require >=ampere
 # Use CUDA fp16
 fp16: true
 # Use CUDA tf32
 tf32: true # require >=ampere
+# Note: if bf16 is set to 'auto', and fp16 is set to true, we will prefer the explict fp16 setting
 
 # No AMP (automatic mixed precision)
 bfloat16: true # require >=ampere
