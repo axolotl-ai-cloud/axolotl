@@ -706,9 +706,15 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 from came_pytorch import CAME
 
                 optimizer_cls = CAME
-                # append 3rd arg to betas tuple
-                adam_kwargs["betas"] += (self.cfg.adam_beta3,)
-                adam_kwargs["eps"] = (adam_kwargs["eps"], self.cfg.adam_epsilon2)
+
+                beta1 = training_arguments_kwargs.get("adam_beta1", 0.9)
+                beta2 = training_arguments_kwargs.get("adam_beta2", 0.999)
+                beta3 = training_arguments_kwargs.get("adam_beta2", 0.9999)
+                eps1 = training_arguments_kwargs.get("adam_epsilon", 1e-30)
+                eps2 = training_arguments_kwargs.get("adam_epsilon2", 1e-16)
+                adam_kwargs["betas"] = (beta1, beta2, beta3)
+                adam_kwargs["eps"] = (eps1, eps2)
+
                 optimizer_kwargs.update(adam_kwargs)
 
             # Parse any additional optimizer args from config
