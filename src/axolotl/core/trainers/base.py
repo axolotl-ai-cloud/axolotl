@@ -610,3 +610,15 @@ class AxolotlTrainer(
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
         return super()._save_checkpoint(model, trial, **kwargs)
+
+    def compute_loss_context_manager(self):
+        from contextlib import ExitStack
+
+        from torchtune.training import OffloadActivations
+
+        stack = ExitStack()
+
+        stack.enter_context(super().compute_loss_context_manager())
+        stack.enter_context(OffloadActivations())
+
+        return stack
