@@ -24,7 +24,7 @@ PATCHED_PREPARE_CODE = """
         for name, param in model.named_parameters():
             if (
                 (param.dtype == torch.float16) or (param.dtype == torch.bfloat16)
-            ) and param.__class__.__name__ != "Params4bit" and "norm" in name:
+            ) and param.__class__.__name__ != "Params4bit" and all(embed_name not in name for embed_name in ["embed_tokens", "lm_head"]):
                 param.data = param.data.to(torch.float32)
 """
 

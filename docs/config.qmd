@@ -32,6 +32,8 @@ tokenizer_legacy:
 resize_token_embeddings_to_32x:
 # Optional[bool] Whether to shrink the embeddings to len(tokenizer). By default, we won't shrink.
 shrink_embeddings:
+# Optional[bool] Don't upcast the embeddings to float32 when using PEFT. Useful for low-VRAM GPUs
+embeddings_skip_upcast:
 # Whether to load the model with randomly initialized weights. Useful for
 # pre-training a model from scratch or debugging purposes.
 random_init_weights:

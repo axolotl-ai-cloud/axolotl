@@ -561,7 +561,7 @@ class ModelLoader:
 
             patch_accelerate_fsdp_utils()
 
-        if self.cfg.adapter:
+        if self.cfg.adapter and self.cfg.embeddings_skip_upcast:
             from axolotl.monkeypatch.peft.utils import patch_peft_prep_code
 
             patch_peft_prep_code()

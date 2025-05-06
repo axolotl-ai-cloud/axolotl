@@ -82,6 +82,7 @@ class AxolotlInputConfig(
     mean_resizing_embeddings: bool | None = False
     # optionally shrink the embeddings when the tokenizer vocab size is smaller
     shrink_embeddings: bool | None = None
+    embeddings_skip_upcast: bool | None = None
 
     rl: RLType | None = None
     trl: TRLConfig | None = Field(
