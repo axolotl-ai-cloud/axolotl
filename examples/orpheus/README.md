@@ -9,7 +9,7 @@ If you are adding another voice in English, please jump ahead to finetuning pre-
 
 For this to work, we need to preprocess our dataset. Since we are expecting to output audio, we will need to add tokens to the tokenizer.
 
-Using this code, it will download the SNAC model and add the correct tokens and upload the final dataset. 
+Using this code, it will download the SNAC model and add the correct tokens and upload the final dataset.
 
 ```python
 import torch
@@ -170,7 +170,7 @@ ds.push_to_hub(name_to_push_dataset_to)
 
 
 ## Finetune pre-processing
-Use this code to add a new voice. 
+Use this code to add a new voice.
 
 ```python
 import torch
@@ -339,4 +339,3 @@ After preprocessing is done, fill out the blanks in finetune.yml and simply run 
 
 ## Inference
 For inference, please refer to the original [orpheus github](https://github.com/canopyai/Orpheus-TTS/tree/main).
-
