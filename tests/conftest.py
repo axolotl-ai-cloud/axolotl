@@ -4,6 +4,7 @@ shared pytest fixtures
 
 import functools
 import importlib
+import os
 import shutil
 import sys
 import tempfile
@@ -529,6 +530,7 @@ def dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff(
 
 
 # # pylint: disable=redefined-outer-name,unused-argument
+@pytest.mark.skipif(os.environ.get("AXOLOTL_IS_CI_CACHE_PRELOAD", "-1") != "1")
 def test_load_fixtures(
     download_smollm2_135m_model,
     download_qwen_2_5_half_billion_model,
