@@ -26,7 +26,6 @@ from typing import OrderedDict
 import torch
 from torch.optim.lr_scheduler import LRScheduler
 
-from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.utils.dict import DictDefault
 
 
@@ -73,9 +72,7 @@ class BasePlugin:
         Returns a pydantic model for the plugin's input arguments.
         """
 
-    def load_datasets(
-        self, cfg: DictDefault, preprocess: bool = False
-    ) -> TrainDatasetMeta | None:
+    def load_datasets(self, cfg: DictDefault, preprocess: bool = False):
         """
         Loads and preprocesses the dataset for training.
 
@@ -369,7 +366,7 @@ class PluginManager:
                 input_args.append(input_args_from_plugin)
         return input_args
 
-    def load_datasets(self, cfg, preprocess: bool = False) -> TrainDatasetMeta | None:
+    def load_datasets(self, cfg, preprocess: bool = False):
         """
         Calls the load_datasets method of each registered plugin.
 
