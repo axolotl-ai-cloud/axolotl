@@ -58,6 +58,7 @@ def fixture_base_cfg():
             "dataloader_num_workers": 1,
             "dataloader_pin_memory": True,
             "dataloader_prefetch_factor": 2,
+            "sequence_parallel_degree": 1,
             # Dtype
             "fp16": False,
             "bf16": False,
