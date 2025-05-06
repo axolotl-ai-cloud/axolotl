@@ -145,13 +145,6 @@ def apply_sequence_parallelism(
     if "num_items_in_batch" in batch:
         batch["num_items_in_batch"] = (batch["labels"] != -100).sum()
 
-    shapes = {}
-    for k, v in batch.items():
-        if len(v.shape) > 1:
-            shapes[k] = v.shape
-        else:
-            shapes[k] = v.item()
-    
     return batch, original_seq_len, pad_len
 
 
@@ -192,22 +185,14 @@ class SequenceParallelContextManager:
             local_rank=self.local_rank,
             local_world_size=self.local_world_size,
         )
-
+        
     def __enter__(self):
         # Forward pre-hook to apply sequence parallelism
         def sequence_parallel_pre_hook(_, args, kwargs):
             # Apply sequence parallelism to kwargs and get original sequence length and padding info
-            # shapes = {k: v.shape for k, v in kwargs.items()}
-            # print(f"{dist.get_rank()}: before {shapes}")
-            # print(f"{dist.get_rank()}: before {kwargs['attention_mask'].sum(1)}")
-            # dist.barrier()
             kwargs, self.original_seq_len, self.pad_len = (
                 self.apply_sequence_parallelism(batch=kwargs)
             )
-            # shapes = {k: v.shape for k, v in kwargs.items()}
-            # print(f"{dist.get_rank()}: after {shapes}")
-            # print(f"{dist.get_rank()}: after {kwargs['attention_mask'].sum(1)}")
-            # dist.barrier()
             return args, kwargs
 
         # Forward post-hook to gather outputs
