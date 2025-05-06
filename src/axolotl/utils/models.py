@@ -144,8 +144,8 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
 
     # Detect compressed-tensors config
     is_compressed_tensors_config = (
-        quant_config_exists
-        and model_config.quantization_config.get("quant_method") == "compressed-tensors"
+        quant_config_exists and
+        model_config.quantization_config.get("quant_method") == "compressed-tensors"
     )
 
     if is_compressed_tensors_config:
@@ -1375,8 +1375,15 @@ class ModelLoader:
         #  apply torchao quantization config
         # ---------------------------------------------------------
         if self.cfg.qat:
-            from axolotl.utils.quantization import quantize_model
-            quantize_model(self.model, self.cfg.qat)
+            from axolotl.utils.quantization import quantize_model_for_qat
+
+            quantize_model_for_qat(
+                self.model,
+                self.cfg.qat.weight_dtype,
+                self.cfg.qat.group_size,
+                self.cfg.qat.activation_dtype,
+                self.cfg.qat.quantize_embedding,
+            )
 
         # ---------------------------------------------------------
         #  put model to accelerator

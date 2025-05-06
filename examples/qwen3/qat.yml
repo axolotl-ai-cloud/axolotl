@@ -7,8 +7,7 @@ load_in_4bit: false
 strict: false
 
 plugins:
-  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
-
+  - axolotl.integrations.liger.LigerPlugin
 # torch_compile: true
 liger_glu_activation: true
 liger_rms_norm: true
@@ -22,14 +21,19 @@ pretraining_dataset:
 output_dir: ./outputs/out_test
 
 sequence_len: 1024
-sample_packing: true
-# flex_attention: true
 
+sample_packing: true
+flex_attention: true
+pad_to_sequence_len: true
+
+flex_attn_compile_kwargs:
+  dynamic: false
+  mode: max-autotune-no-cudagraphs
 qat:
   activation_dtype: int8
   weight_dtype: int4
   group_size: 256
-  fake_quant_after_n_steps: 50
+  fake_quant_after_n_steps: 1000
   save_quantized_model: true
 
 wandb_project: qat
@@ -40,7 +44,7 @@ wandb_log_model:
 
 gradient_accumulation_steps: 1
 micro_batch_size: 2
-max_steps: 100
+max_steps: 2000
 optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 2e-5
@@ -53,7 +57,7 @@ tf32: true
 #   use_reentrant: false
 resume_from_checkpoint:
 logging_steps: 1
-flash_attention: true
+# flash_attention: true
 
 warmup_steps: 10
 eval_strategy: "no"

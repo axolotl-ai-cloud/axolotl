@@ -23,30 +23,30 @@ def dequantize(
     out: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """
-    Fast NF4 dequantization using `bitsandbytes` CUDA kernels.
-#
-    Performs efficient dequantization of weights from NF4 format using `bitsandbytes`'
-    optimized CUDA implementations. Supports both legacy list and new `QuantState`
-    formats.
+        Fast NF4 dequantization using `bitsandbytes` CUDA kernels.
+    #
+        Performs efficient dequantization of weights from NF4 format using `bitsandbytes`'
+        optimized CUDA implementations. Supports both legacy list and new `QuantState`
+        formats.
 
-    Args:
-        W: Quantized weight tensor to dequantize
-        quant_state: Quantization state containing metadata needed for
-            dequantization. Can be either a `QuantState` object or legacy list format.
-            If None, returns `W` unchanged.
-        out: Optional output tensor for storing dequantized results. Must match
-            expected shape and dtype if provided.
+        Args:
+            W: Quantized weight tensor to dequantize
+            quant_state: Quantization state containing metadata needed for
+                dequantization. Can be either a `QuantState` object or legacy list format.
+                If None, returns `W` unchanged.
+            out: Optional output tensor for storing dequantized results. Must match
+                expected shape and dtype if provided.
 
-    Returns:
-        Dequantized tensor in the specified dtype (fp16 or bf16). Will be transposed if
-        input `W` was transposed.
+        Returns:
+            Dequantized tensor in the specified dtype (fp16 or bf16). Will be transposed if
+            input `W` was transposed.
 
-    Raises:
-        AssertionError: If provided output tensor doesn't match expected shape / dtype.
+        Raises:
+            AssertionError: If provided output tensor doesn't match expected shape / dtype.
 
-    Note:
-        Uses CUDA streams for better performance when available in newer `bitsandbytes`
-        versions (>0.43.3).
+        Note:
+            Uses CUDA streams for better performance when available in newer `bitsandbytes`
+            versions (>0.43.3).
     """
     if quant_state is None:
         return W

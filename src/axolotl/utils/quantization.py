@@ -1,29 +1,31 @@
-from torchao.quantization.quant_api import _is_linear
+from dataclasses import dataclass
+from typing import Optional
+
+import torch
+from torchao.core.config import AOBaseConfig
+from torchao.dtypes import QDQLayout
+from torchao.dtypes.utils import Layout
+from torchao.experimental.quant_api import (
+    Int8DynamicActivationIntxWeightConfig,
+)
+from torchao.quantization import quantize_
+from torchao.quantization.granularity import Granularity, PerAxis, PerGroup
 from torchao.quantization.qat import (
     FakeQuantizeConfig,
     IntXQuantizationAwareTrainingConfig,
 )
-from torchao.quantization import quantize_
-from dataclasses import dataclass
-import torch
 from torchao.quantization.quant_api import (
-    UIntXWeightOnlyConfig,
     Int4DynamicActivationInt4WeightConfig,
+    Int4WeightOnlyConfig,
     Int8DynamicActivationInt8WeightConfig,
     Int8WeightOnlyConfig,
-    Int4WeightOnlyConfig,
+    UIntXWeightOnlyConfig,
 )
-from torchao.experimental.quant_api import (
-    Int8DynamicActivationIntxWeightConfig,
-)
-from typing import Optional
-from torchao.core.config import AOBaseConfig
-from torchao.quantization.granularity import Granularity, PerAxis, PerGroup
 from torchao.quantization.quant_primitives import MappingType
-from torchao.dtypes.utils import Layout
 from torchao.utils import TORCH_VERSION_AT_LEAST_2_6
+
 from axolotl.utils.schemas.qat import TorchIntDType
-from torchao.dtypes import QDQLayout
+
 # adapted from https://github.com/pytorch/ao/blob/main/torchao/quantization/quant_api.py#L1825
 # TODO @SalmanMohammadi to be imported under torchao.quantization.quant_api.IntxWeightOnlyConfig w/torchao 0.11.0
 
@@ -54,25 +56,26 @@ class IntxWeightOnlyConfig(AOBaseConfig):
 
     def __post_init__(self):
         assert TORCH_VERSION_AT_LEAST_2_6, "IntxWeightOnlyConfig requires torch 2.6+"
-        assert self.weight_dtype in [getattr(torch, f"int{b}") for b in range(1, 9)], (
-            f"weight_dtype must be torch.intx, where 1 <= x <= 8, but got {self.weight_dtype}"
-        )
-        assert isinstance(self.granularity, (PerAxis, PerGroup)), (
-            f"granularity must be PerAxis or PerGroup, but got {self.granularity}"
-        )
+        assert self.weight_dtype in [
+            getattr(torch, f"int{b}") for b in range(1, 9)
+        ], f"weight_dtype must be torch.intx, where 1 <= x <= 8, but got {self.weight_dtype}"
+        assert isinstance(
+            self.granularity, (PerAxis, PerGroup)
+        ), f"granularity must be PerAxis or PerGroup, but got {self.granularity}"
         if isinstance(self.granularity, PerAxis):
-            assert self.granularity.axis == 0, (
-                f"axis must be 0 with PerAxis, but got {self.granularity.axis}"
-            )
-        assert self.mapping_type in [MappingType.ASYMMETRIC, MappingType.SYMMETRIC], (
-            f"mapping_type must be MappingType.ASYMMETRIC or MappingType.SYMMETRIC, but got {self.mapping_type}"
-        )
+            assert (
+                self.granularity.axis == 0
+            ), f"axis must be 0 with PerAxis, but got {self.granularity.axis}"
+        assert self.mapping_type in [
+            MappingType.ASYMMETRIC,
+            MappingType.SYMMETRIC,
+        ], f"mapping_type must be MappingType.ASYMMETRIC or MappingType.SYMMETRIC, but got {self.mapping_type}"
 
 
 def get_ptq_config(
-        weight_dtype: TorchIntDType,
-        activation_dtype: TorchIntDType | None = None,
-        group_size: int | None = None,
+    weight_dtype: TorchIntDType,
+    activation_dtype: TorchIntDType | None = None,
+    group_size: int | None = None,
 ):
     if group_size is not None:
         granularity = PerGroup(group_size)
@@ -99,11 +102,9 @@ def get_ptq_config(
                 granularity=granularity,
             )
     elif activation_dtype == TorchIntDType.int4 and weight_dtype == TorchIntDType.int4:
-        return Int4DynamicActivationInt4WeightConfig(
-        )
+        return Int4DynamicActivationInt4WeightConfig()
     elif activation_dtype == TorchIntDType.int8 and weight_dtype == TorchIntDType.int8:
-        return Int8DynamicActivationInt8WeightConfig(
-        )
+        return Int8DynamicActivationInt8WeightConfig()
     elif activation_dtype == TorchIntDType.int8:
         return Int8DynamicActivationIntxWeightConfig(
             weight_dtype=weight_dtype.value,
@@ -112,43 +113,61 @@ def get_ptq_config(
         )
     else:
         raise ValueError(
-            f"Invalid activation/weight dtype combination: {activation_dtype}/{weight_dtype}")
+            f"Invalid activation/weight dtype combination: {activation_dtype}/{weight_dtype}"
+        )
 
 
-def quantize_model_for_qat(model, qat_cfg):
-    quantize_embedding = qat_cfg.quantize_embedding
-
-    if qat_cfg.activation_dtype:
+def quantize_model_for_qat(
+    model,
+    weight_dtype: TorchIntDType,
+    group_size: int,
+    activation_dtype: TorchIntDType | None = None,
+    quantize_embedding: bool = False,
+):
+    if activation_dtype:
         activation_config = FakeQuantizeConfig(
-            dtype=qat_cfg.activation_dtype, granularity="per_token", is_symmetric=False
+            dtype=activation_dtype.value, granularity="per_token", is_symmetric=False
         )
-    else:
-        activation_config = None
-
-    if qat_cfg.weight_dtype:
-        weight_config = FakeQuantizeConfig(
-            dtype=qat_cfg.weight_dtype, group_size=qat_cfg.group_size
-        )
-    else:
-        weight_config = None
+    weight_config = FakeQuantizeConfig(dtype=weight_dtype.value, group_size=group_size)
     quantize_config = IntXQuantizationAwareTrainingConfig(
-        activation_config,
-        weight_config,
+        activation_config=None if activation_dtype is None else activation_config,
+        weight_config=weight_config,
     )
-
     if quantize_embedding:
-        def filter_fn(m, _): return (isinstance(m, torch.nn.Embedding) or _is_linear(m))
-    else:
-        filter_fn = None
-    quantize_(model,
-              quantize_config,
-              filter_fn=filter_fn
-              )
+        # activation fake quantization is not supported for embedding layers
+        embedding_quantize_config = IntXQuantizationAwareTrainingConfig(
+            activation_config=None,
+            weight_config=weight_config,
+        )
+        quantize_(
+            model,
+            embedding_quantize_config,
+            filter_fn=lambda m, _: isinstance(m, torch.nn.Embedding),
+        )
+    quantize_(model, quantize_config)
 
-def quantize_model_for_ptq(model, qat_cfg):
+
+def quantize_model_for_ptq(
+    model,
+    weight_dtype: TorchIntDType,
+    group_size: int | None = None,
+    activation_dtype: TorchIntDType | None = None,
+    quantize_embedding: bool | None = None,
+):
     ptq_config = get_ptq_config(
-        weight_dtype=qat_cfg.weight_dtype,
-        activation_dtype=qat_cfg.activation_dtype,
-        group_size=qat_cfg.group_size,
+        weight_dtype=weight_dtype,
+        activation_dtype=activation_dtype,
+        group_size=group_size,
     )
+    if quantize_embedding:
+        embedding_quantize_config = get_ptq_config(
+            weight_dtype=weight_dtype,
+            activation_dtype=None,
+            group_size=group_size,
+        )
+        quantize_(
+            model,
+            embedding_quantize_config,
+            filter_fn=lambda m, _: isinstance(m, torch.nn.Embedding),
+        )
     quantize_(model, ptq_config)

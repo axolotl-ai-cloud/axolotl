@@ -3,13 +3,17 @@ from functools import partial
 import torch.nn as nn
 from torchao.quantization import quantize_
 from torchao.quantization.qat import FromIntXQuantizationAwareTrainingConfig
+from torchao.quantization.qat.embedding import FakeQuantizedEmbedding
 from torchao.quantization.qat.linear import FakeQuantizedLinear
 from transformers import TrainerCallback
-from src.axolotl.utils.schemas.qat import QATConfig
+
 from axolotl.utils.quantization import get_ptq_config
 
+from src.axolotl.utils.schemas.qat import QATConfig
+
+
 def toggle_fake_quant(mod: nn.Module, enable: bool):
-    if isinstance(mod, FakeQuantizedLinear):
+    if isinstance(mod, FakeQuantizedLinear) or isinstance(mod, FakeQuantizedEmbedding):
         if mod.activation_fake_quantizer is not None:
             mod.activation_fake_quantizer.enabled = enable
         if mod.weight_fake_quantizer is not None:
@@ -36,4 +40,3 @@ class QATCallback(TrainerCallback):
                 group_size=self.cfg.group_size,
             )
             quantize_(model, ptq_config)
-        

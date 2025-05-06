@@ -254,7 +254,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
 
         if self.cfg.qat:
-            callbacks.append(QATCallback(self.cfg.qat.fake_quant_after_n_steps))
+            callbacks.append(QATCallback(self.cfg.qat))
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):

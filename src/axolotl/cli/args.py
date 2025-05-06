@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+from axolotl.utils.schemas.qat import TorchIntDType
+
 
 @dataclass
 class PreprocessCliArgs:
@@ -82,6 +84,14 @@ class VllmServeCliArgs:
             "hardware support this feature."
         },
     )
+
+
+class QuantizeCliArgs:
+    """Dataclass with CLI arguments for `axolotl quantize` command."""
+
+    weight_dtype: Optional[TorchIntDType] = field(default=None)
+    activation_dtype: Optional[TorchIntDType] = field(default=None)
+    group_size: Optional[int] = field(default=None)
 
 
 @dataclass

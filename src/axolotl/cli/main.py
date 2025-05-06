@@ -17,6 +17,7 @@ import axolotl
 from axolotl.cli.args import (
     EvaluateCliArgs,
     PreprocessCliArgs,
+    QuantizeCliArgs,
     TrainerCliArgs,
     VllmServeCliArgs,
 )
@@ -331,6 +332,15 @@ def vllm_serve(config: str, **cli_args: VllmServeCliArgs):
     from axolotl.cli.vllm_serve import do_vllm_serve
 
     do_vllm_serve(config, cli_args)
+
+
+@cli.command()
+@click.argument("config", type=click.Path(exists=True, path_type=str))
+@filter_none_kwargs
+def quantize(config: str, **cli_args: QuantizeCliArgs):
+    from axolotl.cli.quantize import do_quantize
+
+    do_quantize(config, cli_args)
 
 
 @cli.command()

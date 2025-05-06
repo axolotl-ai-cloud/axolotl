@@ -3,9 +3,10 @@ QAT Config Schema
 """
 
 from enum import Enum
-from pydantic import BaseModel, Field, field_validator, model_validator
-import torch
 from typing import Any
+
+import torch
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class TorchIntDType(Enum):
@@ -36,17 +37,20 @@ class QATConfig(BaseModel):
         default=None, description="Activation dtype"
     )
     weight_dtype: TorchIntDType = Field(
-        default=TorchIntDType.int8, description="Weight dtype")
+        default=TorchIntDType.int8, description="Weight dtype"
+    )
     quantize_embedding: bool | None = Field(
         default=False, description="Quantize embedding"
     )
     group_size: int | None = Field(default=32, description="Group size")
     fake_quant_after_n_steps: int | None = Field(
-        default=None, description="Fake quant after n steps")
+        default=None, description="Fake quant after n steps"
+    )
     quantize_saved_model: bool | None = Field(
-        default=False, description="Quantize saved model")
+        default=False, description="Quantize saved model"
+    )
 
-    @field_validator('weight_dtype', mode='before')
+    @field_validator("weight_dtype", mode="before")
     @classmethod
     def validate_weight_dtype(cls, v: Any) -> TorchIntDType | None:
         try:
@@ -57,7 +61,7 @@ class QATConfig(BaseModel):
                 f"Invalid weight_dtype: '{v}'. Must be one of: {valid_keys}"
             ) from e
 
-    @field_validator('activation_dtype', mode='before')
+    @field_validator("activation_dtype", mode="before")
     @classmethod
     def validate_activation_dtype(cls, v: Any) -> TorchIntDType | None:
         if v == "int4":
@@ -66,17 +70,21 @@ class QATConfig(BaseModel):
             return TorchIntDType.int8
         else:
             raise ValueError(
-                f"Invalid activation_dtype: '{v}'. Must be one of: ['int4', 'int8']")
+                f"Invalid activation_dtype: '{v}'. Must be one of: ['int4', 'int8']"
+            )
 
-    @model_validator(mode='after')
-    def validate_dtype_combination(self) -> 'QATConfig':
+    @model_validator(mode="after")
+    def validate_dtype_combination(self) -> "QATConfig":
         if (
-            self.activation_dtype is not None and
-            self.activation_dtype == TorchIntDType.int4 and
-            self.weight_dtype != TorchIntDType.int4
+            self.activation_dtype is not None
+            and self.activation_dtype == TorchIntDType.int4
+            and self.weight_dtype != TorchIntDType.int4
         ):
-            import ipdb; ipdb.set_trace()
+            import ipdb
+
+            ipdb.set_trace()
             raise ValueError(
-                "If 'activation_dtype' is specified as 'int4', 'weight_dtype' must also be specified as 'int4'.")
+                "If 'activation_dtype' is specified as 'int4', 'weight_dtype' must also be specified as 'int4'."
+            )
 
         return self
