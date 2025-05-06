@@ -281,6 +281,9 @@ def load_dataset_w_config(
             **load_ds_kwargs,
         )
     if not ds:
-        raise ValueError("unhandled dataset load")
+        raise ValueError(
+            "Cannot load dataset from the given config. Please check (if applicable) path / name / data_files. "
+            "This is not from the dataset type."
+        )
 
     return ds
