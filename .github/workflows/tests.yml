@@ -140,7 +140,7 @@ jobs:
       max-parallel: 2
       matrix:
         python_version: ["3.11"]
-        pytorch_version: ["2.6.0"]
+        pytorch_version: ["2.5.1", "2.6.0", "2.7.0"]
     timeout-minutes: 20
 
     steps:
@@ -193,10 +193,9 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v tests/conftest.py
-#          pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/ --cov=axolotl --cov-report=xml
-#          pytest -v tests/patched/ --cov=axolotl --cov-append --cov-report=xml
-#          pytest -v tests/cli/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/ --cov=axolotl --cov-report=xml
+          pytest -v tests/patched/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v tests/cli/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -219,7 +218,7 @@ jobs:
       max-parallel: 1
       matrix:
         python_version: ["3.11"]
-        pytorch_version: ["2.6.0"]
+        pytorch_version: ["2.5.1", "2.6.0", "2.7.0"]
     timeout-minutes: 20
 
     steps:
