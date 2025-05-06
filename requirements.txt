@@ -15,7 +15,7 @@ peft==0.15.2
 transformers==4.51.3
 tokenizers>=0.21.1
 accelerate==1.6.0
-datasets==3.5.0
+datasets==3.5.1
 deepspeed>=0.15.4
 trl==0.17.0
 hf_xet==1.1.0
