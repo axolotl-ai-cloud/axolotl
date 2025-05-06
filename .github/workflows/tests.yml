@@ -45,7 +45,7 @@ jobs:
           SKIP: no-commit-to-branch
 
   preload-cache:
-    name: PyTest
+    name: Preload HF cache
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
