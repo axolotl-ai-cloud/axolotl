@@ -353,7 +353,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["warmup_steps"] = warmup_steps
         training_arguments_kwargs["logging_steps"] = logging_steps
 
-        if self.cfg.seed:
+        if self.cfg.seed is not None:
             training_arguments_kwargs["seed"] = self.cfg.seed
 
         if self.cfg.gradient_checkpointing:
@@ -1033,6 +1033,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_kwargs["dataloader_prefetch_factor"] = (
                 self.cfg.dataloader_prefetch_factor
             )
+
+        if self.cfg.seed is not None:
+            training_args_kwargs["seed"] = self.cfg.seed
+
         if self.cfg.gradient_checkpointing:
             training_args_kwargs["gradient_checkpointing"] = (
                 self.cfg.gradient_checkpointing
@@ -1172,7 +1176,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 self.cfg.precompute_ref_log_probs
             )
         if self.cfg.rl is RLType.GRPO:
-            trainer_cls = GRPOStrategy.get_trainer_class()
+            trainer_cls = GRPOStrategy.get_trainer_class(
+                sequence_parallel=self.cfg.sequence_parallel_degree > 1
+            )
             trainer_cls_args = [self.model]
             trainer_cls_args.extend(GRPOStrategy.set_trainer_args(self.cfg))
             trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))

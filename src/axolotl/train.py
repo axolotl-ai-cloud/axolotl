@@ -7,7 +7,7 @@ import os
 import signal
 import sys
 import weakref
-from contextlib import nullcontext
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Dict
 
@@ -186,30 +186,31 @@ def execute_training(
         trainer: The configured trainer object.
         resume_from_checkpoint: Path to checkpoint to resume from, if applicable.
     """
-    # Define the context managers to use
-    flash_context = (
-        torch.backends.cuda.sdp_kernel(
-            enable_flash=True,
-            enable_math=True,
-            enable_mem_efficient=True,
-        )
-        if cfg.flash_optimum
-        else nullcontext()
-    )
+    with ExitStack() as stack:
+        # Define the context managers to use
+        if cfg.flash_optimum:
+            stack.enter_context(
+                torch.backends.cuda.sdp_kernel(
+                    enable_flash=True,
+                    enable_math=True,
+                    enable_mem_efficient=True,
+                )
+            )
 
-    sequence_parallel_context = nullcontext()
-    if cfg.sequence_parallel_degree > 1:
-        models = [trainer.model]
-        if getattr(trainer, "ref_model", None) is not None:
-            models.append(trainer.ref_model)
-        sequence_parallel_context = SequenceParallelContextManager(  # type: ignore[assignment]
-            models=models,
-            sequence_parallel_degree=cfg.sequence_parallel_degree,
-            ring_attn_func=cfg.ring_attn_func,
-        )
+        if cfg.sequence_parallel_degree > 1:
+            models = [trainer.model]
+            if getattr(trainer, "ref_model", None) is not None:
+                models.append(trainer.ref_model)
 
-    LOG.info("Starting trainer...")
-    with flash_context, sequence_parallel_context:
+            stack.enter_context(
+                SequenceParallelContextManager(
+                    models=models,
+                    sequence_parallel_degree=cfg.sequence_parallel_degree,
+                    ring_attn_func=cfg.ring_attn_func,
+                )
+            )
+
+        LOG.info("Starting trainer...")
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
 

@@ -186,7 +186,7 @@ def load_prepare_preference_datasets(cfg):
                     )
 
         combined_datasets = concatenate_datasets(split_datasets)
-        combined_datasets = combined_datasets.shuffle(seed=cfg.seed)
+        combined_datasets = combined_datasets.shuffle(seed=cfg.seed or 42)
 
         return combined_datasets
 
@@ -206,6 +206,8 @@ def load_prepare_preference_datasets(cfg):
                 eval_dataset = load_split(cfg.test_datasets, cfg)
         if not eval_dataset:
             if cfg.val_set_size:
+                seed = cfg.seed if cfg.seed is not None else 42
+
                 # ensure we end up with the same fingerprint by doing rank0 first and being able to cache
                 to_hash_train = (
                     train_dataset._fingerprint  # pylint: disable=protected-access
@@ -214,7 +216,7 @@ def load_prepare_preference_datasets(cfg):
                     + "|"
                     + "train"
                     + "|"
-                    + str(cfg.seed or 42)
+                    + str(seed)
                 )
                 to_hash_test = (
                     train_dataset._fingerprint  # pylint: disable=protected-access
@@ -223,13 +225,13 @@ def load_prepare_preference_datasets(cfg):
                     + "|"
                     + "test"
                     + "|"
-                    + str(cfg.seed or 42)
+                    + str(seed)
                 )
                 train_fingerprint = md5(to_hash_train)
                 test_fingerprint = md5(to_hash_test)
                 ds_w_test_split = train_dataset.train_test_split(
                     test_size=cfg.val_set_size,
-                    seed=cfg.seed,
+                    seed=seed,
                     shuffle=False,
                     train_new_fingerprint=train_fingerprint,
                     test_new_fingerprint=test_fingerprint,
