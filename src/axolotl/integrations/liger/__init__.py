@@ -151,6 +151,30 @@ class LigerPlugin(BasePlugin):
                 rms_norm=cfg.liger_rms_norm,
                 layer_norm=cfg.liger_layer_norm,
             )
+        elif cfg.model_config_type == "qwen3":
+            from axolotl.integrations.liger.models.qwen3 import (
+                apply_liger_kernel_to_qwen3,
+            )
+
+            apply_liger_kernel_to_qwen3(
+                cross_entropy=cfg.liger_cross_entropy,
+                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
+                glu_activation=cfg.liger_glu_activation,
+                rms_norm=cfg.liger_rms_norm,
+                layer_norm=cfg.liger_layer_norm,
+            )
+        elif cfg.model_config_type == "qwen3_moe":
+            from axolotl.integrations.liger.models.qwen3_moe import (
+                apply_liger_kernel_to_qwen3_moe,
+            )
+
+            apply_liger_kernel_to_qwen3_moe(
+                cross_entropy=cfg.liger_cross_entropy,
+                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
+                glu_activation=cfg.liger_glu_activation,
+                rms_norm=cfg.liger_rms_norm,
+                layer_norm=cfg.liger_layer_norm,
+            )
         else:
             logging.warning(
                 f"Unsupported model config type: {cfg.model_config_type}. Liger not applied."

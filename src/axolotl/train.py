@@ -12,7 +12,6 @@ from typing import Any, Dict
 
 import torch
 import transformers.modelcard
-from accelerate.logging import get_logger
 from accelerate.utils import save_fsdp_model
 from datasets import Dataset
 from huggingface_hub.errors import OfflineModeIsEnabled
@@ -30,10 +29,10 @@ from axolotl.core.trainers.mixins.sequence_parallel import (
     SequenceParallelContextManager,
 )
 from axolotl.integrations.base import PluginManager
-from axolotl.logging_config import configure_logging
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
+from axolotl.utils.logging import get_logger
 from axolotl.utils.models import load_model, load_processor, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
 
@@ -42,7 +41,6 @@ try:
 except ImportError:
     BetterTransformer = None
 
-configure_logging()
 LOG = get_logger(__name__)
 
 
@@ -296,7 +294,22 @@ def save_trained_model(
             trainer.model.save_pretrained(
                 cfg.output_dir, safe_serialization=safe_serialization
             )
+
         model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
+
+    if hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
+        # TODO: add integration support so this can be implemented completely within the plugin
+        from axolotl.integrations.llm_compressor.utils import (
+            save_compressed_model,
+        )
+
+        save_compressed_model(
+            model=model,
+            output_dir=cfg.output_dir,
+            trainer=trainer,
+            safe_serialization=safe_serialization,
+            save_compressed=cfg.llmcompressor.save_compressed,
+        )
 
 
 def create_model_card(cfg: DictDefault, trainer: Trainer):
