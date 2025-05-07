@@ -1314,8 +1314,11 @@ class ModelLoader:
 
         # make sure these are fp32 per Ramesh et al. (2021)
         embedding_modules = get_linear_embedding_layers(self.cfg.model_config_type)
-        if self.cfg.fsdp:
-            # FSDP doesn't like mixed Float and BFloat16
+        if not self.cfg.fsdp:
+            # we don't run this during FSDP because this will leave mixed
+            # float and bfloat16 dtypes in the model which FSDP doesn't like
+            if self.cfg.load_in_4bit and self.cfg.embeddings_skip_upcast:
+                embedding_modules = []
             self.convert_embedding_modules_dtype(
                 embedding_modules,
                 dist_dtype=torch.float32,
