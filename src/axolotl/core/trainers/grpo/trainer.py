@@ -107,7 +107,6 @@ class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
             peft_config=peft_config,
         )
 
-        # Now execute your custom logic
         # Get number of SP groups (number of processes divided by SP degree)
         num_processes = self.accelerator.num_processes
         num_sp_groups = num_processes // self.args.sequence_parallel_degree
