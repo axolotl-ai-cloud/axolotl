@@ -14,7 +14,7 @@ if transformers_version > version.parse("4.51.3"):
     from transformers.modeling_layers import GradientCheckpointingLayer
 
     def uses_gc_layers(decoder_layer):
-        return isinstance(decoder_layer, GradientCheckpointingLayer)
+        return isinstance(decoder_layer.func.__self__, GradientCheckpointingLayer)
 
 else:
 
