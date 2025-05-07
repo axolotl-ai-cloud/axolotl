@@ -609,6 +609,7 @@ lr_div_factor: # Learning rate div factor
 # - optimi_adamw
 # - ao_adamw_8bit
 # - ao_adamw_fp8
+# - came_pytorch
 optimizer:
 # Dictionary of arguments to pass to the optimizer
 optim_args:
