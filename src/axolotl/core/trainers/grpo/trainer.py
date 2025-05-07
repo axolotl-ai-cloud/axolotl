@@ -1,6 +1,6 @@
 """Axolotl GRPO trainer"""
 
-# pylint: disable=too-many-lines,duplicate-code
+# pylint: disable=too-many-lines,duplicate-code,protected-access,no-member
 
 import warnings
 from contextlib import nullcontext
@@ -153,7 +153,7 @@ class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
         self.local_world_size = dist.get_world_size(group=self.sp_group)
 
         # set_seed(args.seed, device_specific=True)
-        set_seed(args.seed)
+        set_seed(args.seed)  # type: ignore[union-attr]
 
     def _get_train_sampler(self) -> Sampler:
         # Get distributed training info
@@ -327,7 +327,7 @@ class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
         self, inputs: dict[str, torch.Tensor | Any]
     ) -> dict[str, torch.Tensor | Any]:
         device = self.accelerator.device
-        prompts = [x["prompt"] for x in inputs]
+        prompts = [x["prompt"] for x in inputs]  # type: ignore[index]
         prompts_text = [
             maybe_apply_chat_template(example, self.processing_class)["prompt"]
             for example in inputs
@@ -352,8 +352,10 @@ class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
         # Generate completions using either vLLM or regular generation
         if self.args.use_vllm:
             # First, have main process load weights if needed
-            if self.state.global_step != self._last_loaded_step:
+            # pylint: disable=access-member-before-definition
+            if self.state.global_step != self._last_loaded_step:  # type: ignore[has-type]
                 self._move_model_to_vllm()
+                # pylint: disable=attribute-defined-outside-init
                 self._last_loaded_step = self.state.global_step
 
             # Generate completions using vLLM: gather all prompts and use them in a single call in the main process
@@ -483,11 +485,11 @@ class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
         completions_text = self.processing_class.batch_decode(
             completion_ids, skip_special_tokens=True
         )
-        if is_conversational(inputs[0]):
+        if is_conversational(inputs[0]):  # type: ignore[index]
             completions = []
             for prompt, completion in zip(prompts, completions_text):
                 bootstrap = (
-                    prompt.pop()["content"] if prompt[-1]["role"] == "assistant" else ""
+                    prompt.pop()["content"] if prompt[-1]["role"] == "assistant" else ""  # type: ignore[index,attr-defined]
                 )
                 completions.append(
                     [{"role": "assistant", "content": bootstrap + completion}]
@@ -513,16 +515,16 @@ class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
                 if isinstance(
                     reward_func, nn.Module
                 ):  # Module instead of PretrainedModel for compat with compiled models
-                    if is_conversational(inputs[0]):
+                    if is_conversational(inputs[0]):  # type: ignore[index]
                         messages = [
-                            {"messages": p + c} for p, c in zip(prompts, completions)
+                            {"messages": p + c} for p, c in zip(prompts, completions)  # type: ignore[operator]
                         ]
                         texts = [
                             apply_chat_template(x, reward_processing_class)["text"]
                             for x in messages
                         ]
                     else:
-                        texts = [p + c for p, c in zip(prompts, completions)]
+                        texts = [p + c for p, c in zip(prompts, completions)]  # type: ignore[operator]
                     reward_inputs = reward_processing_class(
                         text=texts,
                         return_tensors="pt",
@@ -538,7 +540,7 @@ class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
                 else:
                     # Repeat all input columns (but "prompt" and "completion") to match the number of generations
                     keys = [
-                        key for key in inputs[0] if key not in ["prompt", "completion"]
+                        key for key in inputs[0] if key not in ["prompt", "completion"]  # type: ignore[index]
                     ]
                     reward_kwargs = {
                         key: [example[key] for example in inputs] for key in keys
