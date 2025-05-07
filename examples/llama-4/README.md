@@ -34,3 +34,5 @@ We provide a script to delinearize Llama 4 linearized models into regular Huggin
 ```bash
 axolotl delinearize-llama4 --model path/to/model_dir --output path/to/output_dir
 ```
+
+Note: This only works with the non-quantized linearized model. If you have an adapter, merge it with the *non-quantized linearized* model before delinearizing.
