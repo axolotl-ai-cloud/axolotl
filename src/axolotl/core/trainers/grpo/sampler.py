@@ -1,19 +1,17 @@
-"""
-Repeat random sampler (similar to the one implemented in
+"""Repeat random sampler (similar to the one implemented in
 https://github.com/huggingface/trl/blob/main/trl/trainer/grpo_trainer.py) that adds
 sequence parallelism functionality; i.e., duplicating data across ranks in the same
-sequencee parallel group.
+sequence parallel group.
 """
 
-from typing import Sized
+from typing import Iterator, Sized
 
 import torch
 from torch.utils.data import Sampler
 
 
 class SequenceParallelRepeatRandomSampler(Sampler):
-    """
-    SequenceParallelRepeatRandomSampler for GRPO training with sequence parallelism.
+    """Sampler for GRPO training with sequence parallelism.
 
     This sampler ensures:
     - Ranks in the same sequence parallel (SP) group receive identical data.
@@ -21,7 +19,7 @@ class SequenceParallelRepeatRandomSampler(Sampler):
     - Entire batches are repeated for reuse in multiple updates.
     - Data is properly distributed across SP groups.
 
-    In the figure below, the values represent dataset indices. Each SP group has
+    In the table below, the values represent dataset indices. Each SP group has
     `sequence_parallel_degree = 2` GPUs working together on the same data. There are 2
     SP groups (SP0 and SP1), with `world_size = 4` total GPUs.
 
@@ -40,14 +38,17 @@ class SequenceParallelRepeatRandomSampler(Sampler):
                          2       5         [4 4 4  5 5 5]     [6 6 6  7 7 7]
                                             ...
 
-    Key behaviors:
-    1. Each GPU in the same SP group (e.g., GPU 0 and GPU 1) gets identical data.
-    2. Different SP groups (e.g., SP0 vs SP1) get different data slices.
-    3. Each index is repeated mini_repeat_count times consecutively.
-    4. The entire pattern repeats repeat_count times for multiple updates.
-
-    The total samples processed = num_sp_groups * batch_size * mini_repeat_count
-    * repeat_count where num_sp_groups = world_size / sequence_parallel_degree.
+    Args:
+        dataset: Dataset to sample from.
+        mini_repeat_count: How many times to repeat each sample immediately.
+        world_size: Total number of processes.
+        rank: Rank of current process.
+        batch_size: Number of samples per batch.
+        repeat_count: How many times to repeat the full sampling process.
+        sequence_parallel_degree: Number of ranks in a sequence parallel group.
+        shuffle: Whether to shuffle the dataset.
+        seed: Random seed for shuffling.
+        drop_last: Whether to drop the last incomplete batch.
     """
 
     def __init__(
@@ -101,7 +102,12 @@ class SequenceParallelRepeatRandomSampler(Sampler):
                 * self.batch_size
             )
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[int]:
+        """Creates iterator over dataset indices.
+
+        Returns:
+            Iterator that yields indices into the dataset.
+        """
         # Deterministically shuffle based on epoch and seed
         if self.shuffle:
             # Use same seed for all ranks in the same SP group
@@ -144,12 +150,21 @@ class SequenceParallelRepeatRandomSampler(Sampler):
 
         return iter(final_indices)
 
-    def __len__(self):
+    def __len__(self) -> int:
+        """Returns the total length of the iterable including repetitions.
+
+        Returns:
+            Total number of samples.
+        """
         # Total length including all repetitions
         return (
             self.num_samples_per_sp_group * self.mini_repeat_count * self.repeat_count
         )
 
-    def set_epoch(self, epoch):
-        """Sets the epoch for this sampler"""
+    def set_epoch(self, epoch: int) -> None:
+        """Sets the epoch for this sampler.
+
+        Args:
+            epoch: Epoch number to use for shuffling.
+        """
         self.epoch = epoch
