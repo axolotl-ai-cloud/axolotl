@@ -74,7 +74,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-2b3e328b71be8d25427581baeb23079b.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-653e373a27bf50c3d267316c2b2b59fb.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-ce762b396f898894284bb8eeee180359.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -525,7 +525,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </table>
 <section id="axolotl.common.datasets.load_datasets" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.common.datasets.load_datasets">load_datasets</h3>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>common.datasets.load_datasets(cfg, cli_args<span class="op">=</span><span class="va">None</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>common.datasets.load_datasets(cfg, cli_args<span class="op">=</span><span class="va">None</span>, debug<span class="op">=</span><span class="va">False</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Loads one or more training or evaluation datasets, calling
 <code>axolotl.utils.data.prepare_dataset</code>. Optionally, logs out debug information.</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
@@ -557,6 +557,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>PreprocessCliArgs | TrainerCliArgs | None</td>
 <td>Command-specific CLI arguments.</td>
 <td><code>None</code></td>
+</tr>
+<tr class="odd">
+<td>debug</td>
+<td>bool</td>
+<td>Whether to print out tokenization of sample</td>
+<td><code>False</code></td>
 </tr>
 </tbody>
 </table>

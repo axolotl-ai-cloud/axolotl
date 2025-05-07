@@ -75,7 +75,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-2b3e328b71be8d25427581baeb23079b.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-653e373a27bf50c3d267316c2b2b59fb.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-ce762b396f898894284bb8eeee180359.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -652,8 +652,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-178"><a href="#cb1-178" aria-hidden="true" tabindex="-1"></a><span class="co">    # adding a system turn with empty content.</span></span>
 <span id="cb1-179"><a href="#cb1-179" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">drop_system_message</span><span class="kw">:</span></span>
 <span id="cb1-180"><a href="#cb1-180" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-181"><a href="#cb1-181" aria-hidden="true" tabindex="-1"></a><span class="co">    # Optional[bool]. Whether to split the assistant turn based on a reasoning trace inside delimited tags</span></span>
-<span id="cb1-182"><a href="#cb1-182" aria-hidden="true" tabindex="-1"></a><span class="co">    # defaults to False</span></span>
+<span id="cb1-181"><a href="#cb1-181" aria-hidden="true" tabindex="-1"></a><span class="co">    # Optional[bool]. (for Qwen3 template only) Whether to split the assistant content based on a reasoning trace inside delimited tags</span></span>
+<span id="cb1-182"><a href="#cb1-182" aria-hidden="true" tabindex="-1"></a><span class="co">    # See example at `docs/dataset-formats/conversation.qmd`</span></span>
 <span id="cb1-183"><a href="#cb1-183" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split_thinking</span><span class="kw">:</span></span>
 <span id="cb1-184"><a href="#cb1-184" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-185"><a href="#cb1-185" aria-hidden="true" tabindex="-1"></a><span class="co">    # IMPORTANT: The following fields determine which parts of the conversation to train on.</span></span>
@@ -1015,7 +1015,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-541"><a href="#cb1-541" aria-hidden="true" tabindex="-1"></a><span class="fu">early_stopping_patience</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
 <span id="cb1-542"><a href="#cb1-542" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-543"><a href="#cb1-543" aria-hidden="true" tabindex="-1"></a><span class="co"># Specify a scheduler and kwargs to use with the optimizer</span></span>
-<span id="cb1-544"><a href="#cb1-544" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_scheduler</span><span class="kw">:</span><span class="co"> # 'one_cycle' | 'rex' | 'log_sweep' | empty for cosine</span></span>
+<span id="cb1-544"><a href="#cb1-544" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_scheduler</span><span class="kw">:</span><span class="co"> # 'one_cycle' | 'rex' | 'log_sweep' | 'linear' | 'cosine_with_restarts' | 'polynomial' | 'constant' | 'constant_with_warmup' | 'inverse_sqrt' | 'reduce_lr_on_plateau' | 'cosine_with_min_lr' | 'warmup_stable_decay' | empty for cosine</span></span>
 <span id="cb1-545"><a href="#cb1-545" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_scheduler_kwargs</span><span class="kw">:</span></span>
 <span id="cb1-546"><a href="#cb1-546" aria-hidden="true" tabindex="-1"></a><span class="fu">cosine_min_lr_ratio</span><span class="kw">:</span><span class="co"> # decay lr to some percentage of the peak lr, e.g. cosine_min_lr_ratio=0.1 for 10% of peak lr</span></span>
 <span id="cb1-547"><a href="#cb1-547" aria-hidden="true" tabindex="-1"></a><span class="fu">cosine_constant_lr_ratio</span><span class="kw">:</span><span class="co"> # freeze lr at some percentage of the step, e.g. cosine_constant_lr_ratio=0.8 means start cosine_min_lr at 80% of training step (https://arxiv.org/pdf/2308.04014.pdf)</span></span>
