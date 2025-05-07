@@ -1,5 +1,5 @@
 """
-Repeat random sampler (akin to the one implemented in
+Repeat random sampler (similar to the one implemented in
 https://github.com/huggingface/trl/blob/main/trl/trainer/grpo_trainer.py) that adds
 sequence parallelism functionality; i.e., duplicating data across ranks in the same
 sequencee parallel group.
@@ -13,10 +13,41 @@ from torch.utils.data import Sampler
 
 class SequenceParallelRepeatRandomSampler(Sampler):
     """
-    Sampler for GRPO training with sequence parallelism that ensures:
-      - Ranks in the same sequence parallel group receive identical data.
-      - Each index is repeated multiple times for sampling different completions.
-      - Entire batches are repeated for reuse in multiple updates.
+    SequenceParallelRepeatRandomSampler for GRPO training with sequence parallelism.
+
+    This sampler ensures:
+    - Ranks in the same sequence parallel (SP) group receive identical data.
+    - Each index is repeated multiple times for sampling different completions.
+    - Entire batches are repeated for reuse in multiple updates.
+    - Data is properly distributed across SP groups.
+
+    In the figure below, the values represent dataset indices. Each SP group has
+    `sequence_parallel_degree = 2` GPUs working together on the same data. There are 2
+    SP groups (SP0 and SP1), with `world_size = 4` total GPUs.
+
+                                               Sequence Parallel Groups
+                                        |       SP0        |       SP1        |
+                                        |  GPU 0  |  GPU 1 |  GPU 2  |  GPU 3 |
+                    global_step  step    <---> mini_repeat_count=3
+                                            <----------> batch_size=2 per SP group
+    grad_accum=2   ▲  ▲  0       0         [0 0 0  1 1 1]     [2 2 2  3 3 3]   <- SP groups get different data
+                   ▼  |  0       1         [0 0 0  1 1 1]     [2 2 2  3 3 3]   <- Same data for each SP group GPU
+                      |
+                      |  1       2         [0 0 0  1 1 1]     [2 2 2  3 3 3]   <- Repeat same indices for iterations
+    num_iterations=2  ▼  1       3         [0 0 0  1 1 1]     [2 2 2  3 3 3]   <- When using gradient accumulation
+
+                         2       4         [4 4 4  5 5 5]     [6 6 6  7 7 7]   <- New batch of data indices
+                         2       5         [4 4 4  5 5 5]     [6 6 6  7 7 7]
+                                            ...
+
+    Key behaviors:
+    1. Each GPU in the same SP group (e.g., GPU 0 and GPU 1) gets identical data.
+    2. Different SP groups (e.g., SP0 vs SP1) get different data slices.
+    3. Each index is repeated mini_repeat_count times consecutively.
+    4. The entire pattern repeats repeat_count times for multiple updates.
+
+    The total samples processed = num_sp_groups * batch_size * mini_repeat_count
+    * repeat_count where num_sp_groups = world_size / sequence_parallel_degree.
     """
 
     def __init__(
