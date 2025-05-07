@@ -9,6 +9,7 @@ import torch.distributed as dist
 from torch import nn
 from torch.utils.hooks import RemovableHandle
 from transformers.modeling_outputs import CausalLMOutputWithPast
+from transformers.utils import ModelOutput
 
 from axolotl.monkeypatch.attention.ring_attn.patch import (
     get_ring_attn_group,
@@ -23,6 +24,7 @@ def apply_sequence_parallelism(
     batch: dict[str, torch.Tensor],
     local_rank: int,
     local_world_size: int,
+    ring_attn_func: RingAttnFunc,  # pylint: disable=unused-argument
 ) -> tuple[dict[str, torch.Tensor], int, int]:
     """
     Apply sequence parallelism slicing to a batch.
@@ -31,15 +33,17 @@ def apply_sequence_parallelism(
     to only keep the last N tokens in the sequence during generation.
 
     Args:
-        batch: Batch dictionary (e.g., input_ids, attention_mask, etc.)
-        local_rank: Local rank in the sequence parallel group
-        local_world_size: World size of the sequence parallel group
+        batch: Batch dictionary (e.g., input_ids, attention_mask, etc.).
+        local_rank: Local rank in the sequence parallel group.
+        local_world_size: World size of the sequence parallel group.
+        ring_attn_func: Which ring attention function to use. Currently unused, but
+            related to above TODO.
 
     Returns:
-        tuple: (sliced_batch, original_seq_len, pad_len)
-            - sliced_batch: Batch dictionary with sliced tensors
-            - original_seq_len: The original sequence length before padding
-            - pad_len: The number of padding tokens added
+        tuple of:
+            - Batch dictionary with sliced tensors.
+            - The original sequence length before padding.
+            - The number of padding tokens added.
     """
     original_seq_len = batch["input_ids"].size(1)
 
@@ -93,7 +97,7 @@ def apply_sequence_parallelism(
     divisor = min(local_world_size, 64)
     if total_seq_len % divisor != 0:
         pad_len = divisor - (total_seq_len % divisor)
-        
+
         # Apply padding to all relevant tensors
         for key in batch:
             if (
@@ -126,7 +130,7 @@ def apply_sequence_parallelism(
         # Update the total sequence length after padding
         total_seq_len = batch["input_ids"].size(1)
 
-    # Slice batch for sequence parallel processing
+    # Slice batch for sequence parallel
     for key in batch:
         if not isinstance(batch[key], torch.Tensor) or batch[key].dim() <= 1:
             continue
@@ -173,10 +177,10 @@ class SequenceParallelContextManager:
         self.local_world_size = dist.get_world_size(self.process_group)
 
         # Will store hook handles for removal
-        self.hook_handles: DefaultDict[list[RemovableHandle]] = defaultdict(list)
+        self.hook_handles: DefaultDict[int, list[RemovableHandle]] = defaultdict(list)
 
         # Store original sequence length and padding information
-        self.original_seq_len = None
+        self.original_seq_len = 0
         self.pad_len = 0
 
         # Create a partially applied version of the apply_sequence_parallelism function
@@ -184,8 +188,9 @@ class SequenceParallelContextManager:
             apply_sequence_parallelism,
             local_rank=self.local_rank,
             local_world_size=self.local_world_size,
+            ring_attn_func=self.ring_attn_func,
         )
-        
+
     def __enter__(self):
         # Forward pre-hook to apply sequence parallelism
         def sequence_parallel_pre_hook(_, args, kwargs):
@@ -196,7 +201,7 @@ class SequenceParallelContextManager:
             return args, kwargs
 
         # Forward post-hook to gather outputs
-        def sequence_parallel_post_hook(_, __, output):
+        def sequence_parallel_post_hook(_, __, output: ModelOutput) -> ModelOutput:
             # Gather the sharded outputs
             output = self.gather_outputs(output)
 
@@ -242,80 +247,125 @@ class SequenceParallelContextManager:
 
 
 class AllGatherWithGrad(torch.autograd.Function):
+    """Custom autograd function for all-gather to preserve gradients."""
+
     @staticmethod
-    def forward(ctx, input_tensor, group):
+    def forward(
+        ctx: torch.autograd.function.FunctionCtx,
+        input_tensor: torch.Tensor,
+        group: dist.ProcessGroup,
+    ) -> torch.Tensor:
+        """
+        Forward pass of all-gather of data with sequence dimension.
+
+        Args:
+            ctx: `torch.autograd` function context.
+            input_tensor: Tensor from model output with sequence dimension.
+            group: `torch.distributed` process group.
+
+        Returns:
+            Tensor from gathering the `input_tensor` from across the process group and
+                concatenating along the sequence dimension.
+        """
         ctx.group = group
         ctx.rank = dist.get_rank(group)
         ctx.world_size = dist.get_world_size(group)
-        
+
         # Gather shape metadata
         local_shape = torch.tensor(list(input_tensor.shape), device=input_tensor.device)
         world_size = ctx.world_size
         all_shapes = [torch.zeros_like(local_shape) for _ in range(world_size)]
         dist.all_gather(all_shapes, local_shape, group=group)
-        
+
         # Store sequence lengths for backward pass
         seq_lens = [int(shape[1].item()) for shape in all_shapes]
         ctx.seq_lens = seq_lens
-        
+
         # Perform all_gather operation
         gathered = [
-            torch.zeros(tuple(shape.tolist()), dtype=input_tensor.dtype, device=input_tensor.device)
+            torch.zeros(
+                tuple(shape.tolist()),
+                dtype=input_tensor.dtype,
+                device=input_tensor.device,
+            )
             for shape in all_shapes
         ]
         dist.all_gather(gathered, input_tensor, group=group)
-        
+
         # Concatenate tensors along sequence dimension
         result = torch.cat(gathered, dim=1)
-        
+
         return result
-    
+
     @staticmethod
-    def backward(ctx, grad_output):
-        # Unpack saved variables
+    def backward(
+        ctx: torch.autograd.function.FunctionCtx, grad_output: torch.Tensor
+    ) -> tuple[torch.Tensor, None]:
+        """
+        Backward pass for all-gather operation.
+
+        Extracts the gradient slice corresponding to this rank's original input
+        from the full gradient tensor.
+
+        Args:
+            ctx: `torch.autograd` function context.
+            grad_output: Gradient from subsequent layers with respect to the
+                concatenated output tensor.
+
+        Returns:
+            Tuple containing the gradient slice for this rank's input tensor and `None`
+                for the process group parameter which doesn't require gradients.
+        """
         rank = ctx.rank
         seq_lens = ctx.seq_lens
 
-        # Calculate offset for this rank's chunk
-        offset = sum(seq_lens[:rank])
-
         # Extract gradient for this rank's chunk
-        grad_slice = grad_output[:, offset:offset + seq_lens[rank]].contiguous()
+        offset = sum(seq_lens[:rank])
+        grad_slice = grad_output[:, offset : offset + seq_lens[rank]].contiguous()
 
-        # No additional modifications or scaling necessary
         return grad_slice, None
 
 
 class AllReduceWithGrad(torch.autograd.Function):
+    """Custom autograd function for all-reduce to preserve gradients."""
+
     @staticmethod
-    def forward(ctx, input_tensor, group):
-        ctx.group = group
-        ctx.had_nan = torch.isnan(input_tensor).any().item()
+    def forward(
+        ctx: torch.autograd.function.FunctionCtx,  # pylint: disable=unused-argument
+        input_tensor: torch.Tensor,
+        group: dist.ProcessGroup,
+    ) -> torch.Tensor:
+        """
+        Forward pass of all-reduce operation with gradient preservation.
 
-        safe_input = torch.where(
-            torch.isnan(input_tensor), 
-            torch.zeros_like(input_tensor), 
-            input_tensor,
-        )
-        output = safe_input.clone()
-        dist.all_reduce(output, op=dist.ReduceOp.AVG, group=group)
+        Args:
+            ctx: `torch.autograd` function context.
+            input_tensor: Tensor to be reduced across the process group.
+            group: `torch.distributed` process group.
 
-        ctx.save_for_backward(input_tensor)
+        Returns:
+            Tensor containing the result of the all-reduce operation (average)
+            across all processes in the group.
+        """
+        output = input_tensor.clone()
+        dist.all_reduce(input_tensor, op=dist.ReduceOp.AVG, group=group)
 
         return output
-        
+
     @staticmethod
-    def backward(ctx, grad_output):
-        input_tensor, = ctx.saved_tensors
-        group = ctx.group
-        world_size = dist.get_world_size(group)
-        grad_input = grad_output / world_size
+    def backward(
+        ctx: torch.autograd.function.FunctionCtx,  # pylint: disable=unused-argument
+        grad_output: torch.Tensor,
+    ) -> tuple[torch.Tensor, None]:
+        """
+        Backward pass for all-reduce operation.
 
-        if ctx.had_nan:
-            grad_input = torch.where(
-                torch.isnan(input_tensor),
-                torch.zeros_like(grad_input),
-                grad_input,
-            )
+        Args:
+            ctx: `torch.autograd` function context.
+            grad_output: Gradient from subsequent layers.
 
-        return grad_input, None
+        Returns:
+            Tuple containing the scaled gradient for the input tensor and `None` for
+                the process group parameter which doesn't require gradients.
+        """
+        return grad_output, None

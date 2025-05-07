@@ -64,5 +64,5 @@ class RingAttnFunc(str, Enum):
     # VARLEN_ZIGZAG = "varlen_zigzag"
     VARLEN_LLAMA3 = "varlen_llama3"
     BATCH_RING = "batch_ring"
-    BATCH_ZIGZAG = "batch_zigzag"
-    BATCH_STRIPE = "batch_stripe"
+    # BATCH_ZIGZAG = "batch_zigzag"
+    # BATCH_STRIPE = "batch_stripe"

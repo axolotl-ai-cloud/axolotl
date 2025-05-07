@@ -202,7 +202,7 @@ def execute_training(
         models = [trainer.model]
         if getattr(trainer, "ref_model", None) is not None:
             models.append(trainer.ref_model)
-        sequence_parallel_context = SequenceParallelContextManager(
+        sequence_parallel_context = SequenceParallelContextManager(  # type: ignore[assignment]
             models=models,
             sequence_parallel_degree=cfg.sequence_parallel_degree,
             ring_attn_func=cfg.ring_attn_func,
