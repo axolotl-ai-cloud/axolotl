@@ -25,7 +25,7 @@ import os
 import sys
 from abc import abstractmethod
 from pathlib import Path
-from typing import List, Type, Union
+from typing import Any, Dict, Type, Union
 
 import torch
 import transformers
@@ -155,7 +155,7 @@ class TrainerBuilderBase(abc.ABC):
     def build(self, total_num_steps):
         pass
 
-    def get_callbacks(self) -> List[TrainerCallback]:
+    def get_callbacks(self) -> list[TrainerCallback]:
         callbacks = []
 
         plugin_manager = PluginManager.get_instance()
@@ -229,6 +229,264 @@ class TrainerBuilderBase(abc.ABC):
     def hook_post_create_trainer(self, trainer):
         # TODO
         return trainer
+
+    def _set_base_training_args(self, total_num_steps) -> dict[str, Any]:
+        training_args_kwargs: Dict[str, Any] = {}
+
+        warmup_steps = 0
+        warmup_ratio = 0.0
+        if self.cfg.warmup_steps:
+            warmup_steps = self.cfg.warmup_steps
+        elif self.cfg.warmup_ratio:
+            if total_num_steps:
+                warmup_steps = max(int(self.cfg.warmup_ratio * total_num_steps), 0)
+            else:
+                warmup_ratio = self.cfg.warmup_ratio
+        elif total_num_steps:
+            warmup_steps = min(int(0.03 * total_num_steps), 100)
+        else:
+            warmup_ratio = 0.03
+
+        if warmup_steps == 1:
+            warmup_steps = 2
+
+        logging_steps = (
+            self.cfg.logging_steps
+            if self.cfg.logging_steps is not None
+            else (
+                500  # transformers defaults to 500
+                if not total_num_steps
+                else max(min(int(0.005 * total_num_steps), 10), 1)
+            )
+        )
+
+        training_args_kwargs["warmup_ratio"] = warmup_ratio
+        training_args_kwargs["warmup_steps"] = warmup_steps
+        training_args_kwargs["logging_steps"] = logging_steps
+
+        # precision
+        training_args_kwargs["fp16"] = (self.cfg.fp16 and not self.cfg.bf16) or False
+        training_args_kwargs["tf32"] = self.cfg.tf32
+        if self.cfg.bf16 == "full":
+            training_args_kwargs["bf16_full_eval"] = True
+        else:
+            training_args_kwargs["bf16"] = self.cfg.bf16 or self.cfg.bfloat16
+
+        # hub
+        if self.cfg.hub_model_id:
+            training_args_kwargs["hub_model_id"] = self.cfg.hub_model_id
+            training_args_kwargs["push_to_hub"] = True
+            training_args_kwargs["hub_private_repo"] = True
+            training_args_kwargs["hub_always_push"] = True
+
+            if self.cfg.hub_strategy:
+                training_args_kwargs["hub_strategy"] = self.cfg.hub_strategy
+
+        # save_strategy and save_steps
+        if self.cfg.save_steps:
+            training_args_kwargs["save_strategy"] = "steps"
+            training_args_kwargs["save_steps"] = self.cfg.save_steps
+        elif self.cfg.save_strategy:
+            training_args_kwargs["save_strategy"] = self.cfg.save_strategy
+        else:
+            # default to saving each epoch if not defined
+            training_args_kwargs["save_strategy"] = "epoch"
+
+        # eval_strategy and eval_steps
+        if not self.eval_dataset or self.cfg.val_set_size == 0:
+            # do not eval if no eval_dataset or val_set_size=0
+            training_args_kwargs["eval_strategy"] = "no"
+        elif self.cfg.eval_steps:
+            training_args_kwargs["eval_strategy"] = "steps"
+            training_args_kwargs["eval_steps"] = self.cfg.eval_steps
+        elif self.cfg.eval_strategy:
+            training_args_kwargs["eval_strategy"] = self.cfg.eval_strategy
+
+        if self.cfg.gradient_checkpointing:
+            training_args_kwargs["gradient_checkpointing"] = (
+                self.cfg.gradient_checkpointing
+            )
+            if self.cfg.gradient_checkpointing_kwargs is not None:
+                training_args_kwargs["gradient_checkpointing_kwargs"] = (
+                    self.cfg.gradient_checkpointing_kwargs
+                )
+            else:
+                training_args_kwargs["gradient_checkpointing_kwargs"] = {
+                    "use_reentrant": False
+                }
+
+        # set arg into trainer_args_kwargs with same name if value not None
+        for arg in [
+            "adam_beta1",
+            "adam_beta2",
+            "adam_epsilon",
+            "max_grad_norm",
+            "dataloader_num_workers",
+            "dataloader_pin_memory",
+            "dataloader_prefetch_factor",
+            "gradient_accumulation_steps",
+            "learning_rate",
+            "output_dir",
+            "save_safetensors",
+            "save_only_model",
+            "include_tokens_per_second",
+            "weight_decay",
+        ]:
+            if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
+                training_args_kwargs[arg] = getattr(self.cfg, arg)
+
+        training_args_kwargs["per_device_train_batch_size"] = self.cfg.micro_batch_size
+
+        if self.cfg.eval_batch_size:
+            training_args_kwargs["per_device_eval_batch_size"] = (
+                self.cfg.eval_batch_size
+            )
+
+        training_args_kwargs["save_total_limit"] = (
+            self.cfg.save_total_limit if self.cfg.save_total_limit else 4
+        )
+
+        training_args_kwargs["max_steps"] = self.cfg.max_steps or total_num_steps or -1
+
+        # max_length is not used in CausalTrainer
+        if self.cfg.reward_model or self.cfg.rl:
+            training_args_kwargs["max_length"] = self.cfg.sequence_len
+
+        # reporting
+        report_to = []
+        if self.cfg.use_wandb:
+            report_to.append("wandb")
+        if self.cfg.use_mlflow:
+            report_to.append("mlflow")
+        if self.cfg.use_tensorboard:
+            report_to.append("tensorboard")
+        if self.cfg.use_comet:
+            report_to.append("comet_ml")
+
+        training_args_kwargs["report_to"] = report_to
+        if self.cfg.use_wandb:
+            training_args_kwargs["run_name"] = self.cfg.wandb_name
+        elif self.cfg.use_mlflow:
+            training_args_kwargs["run_name"] = self.cfg.mlflow_run_name
+        else:
+            training_args_kwargs["run_name"] = None
+
+        # optim/scheduler
+        training_args_kwargs["loraplus_lr_ratio"] = self.cfg.loraplus_lr_ratio
+        training_args_kwargs["loraplus_lr_embedding"] = self.cfg.loraplus_lr_embedding
+        if self.cfg.lr_scheduler in ["one_cycle", "log_sweep"]:
+            training_args_kwargs["lr_scheduler_type"] = "cosine"
+            training_args_kwargs["alternate_lr_scheduler_type"] = self.cfg.lr_scheduler
+        else:
+            training_args_kwargs["lr_scheduler_type"] = (
+                self.cfg.lr_scheduler if self.cfg.lr_scheduler else "cosine"
+            )
+        training_args_kwargs["lr_scheduler_kwargs"] = (
+            self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
+        )
+        training_args_kwargs["cosine_min_lr_ratio"] = self.cfg.cosine_min_lr_ratio
+        training_args_kwargs["cosine_constant_lr_ratio"] = (
+            self.cfg.cosine_constant_lr_ratio
+        )
+
+        # Handle custom optimizer
+        custom_supported_optimizers = [opt.value for opt in CustomSupportedOptimizers]
+        if self.cfg.optimizer in custom_supported_optimizers:
+            # Common optimizer kwargs
+            optimizer_kwargs = {
+                "lr": training_args_kwargs.get("learning_rate"),
+                "weight_decay": training_args_kwargs.get("weight_decay"),
+            }
+
+            # Adam-specific kwargs
+            adam_kwargs: dict = {}
+            if training_args_kwargs.get("adam_beta1") and training_args_kwargs.get(
+                "adam_beta2"
+            ):
+                adam_kwargs["betas"] = (
+                    training_args_kwargs.get("adam_beta1"),
+                    training_args_kwargs.get("adam_beta2"),
+                )
+            if training_args_kwargs.get("adam_epsilon"):
+                adam_kwargs["eps"] = training_args_kwargs.get("adam_epsilon")
+
+            if self.cfg.optimizer == "muon":
+                from axolotl.contribs.mit.muon import (  # pylint: disable=no-name-in-module
+                    MuonOptimizerFactory,
+                )
+
+                optimizer_cls = MuonOptimizerFactory
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "optimi_adamw":
+                from optimi import AdamW
+
+                optimizer_kwargs["foreach"] = False
+                optimizer_cls = AdamW
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "ao_adamw_4bit":
+                # TODO remove 20250401
+                from torchao.prototype.low_bit_optim import AdamW4bit
+
+                optimizer_cls = AdamW4bit
+                optimizer_kwargs.update(adam_kwargs)
+
+                LOG.warning(
+                    f"`ao_adamw_4bit` will be deprecated soon. Please use `{OptimizerNames.ADAMW_TORCH_4BIT}` instead."
+                )
+            elif self.cfg.optimizer == "ao_adamw_8bit":
+                from torchao.prototype.low_bit_optim import AdamW8bit
+
+                optimizer_cls = AdamW8bit
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "ao_adamw_fp8":
+                from torchao.prototype.low_bit_optim import AdamWFp8
+
+                optimizer_cls = AdamWFp8
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "adopt_adamw":
+                from axolotl.utils.optimizers.adopt import ADOPT
+
+                optimizer_cls = ADOPT
+                adam_kwargs["decouple"] = True
+                optimizer_kwargs.update(adam_kwargs)
+
+            # Parse any additional optimizer args from config
+            if self.cfg.optim_args:
+                if isinstance(self.cfg.optim_args, dict):
+                    optimizer_kwargs.update(self.cfg.optim_args)
+                else:
+                    # Parse string format "key1=value1,key2=value2"
+                    for mapping in self.cfg.optim_args.replace(" ", "").split(","):
+                        key, value = mapping.split("=")
+                        optimizer_kwargs[key] = value
+
+            training_args_kwargs["optimizer_cls_and_kwargs"] = (
+                optimizer_cls,
+                optimizer_kwargs,
+            )
+        else:
+            # Use transformers' optimizer
+            training_args_kwargs["optim"] = self.cfg.optimizer
+
+            # Parse any additional optimizer args from config
+            if self.cfg.optim_args:
+                if isinstance(self.cfg.optim_args, dict):
+                    optim_args = ",".join(
+                        [f"{key}={value}" for key, value in self.cfg.optim_args.items()]
+                    )
+                else:
+                    optim_args = self.cfg.optim_args
+                training_args_kwargs["optim_args"] = optim_args
+
+            if self.cfg.optimizer == "adamw_anyprecision":
+                if Path(self.cfg.torchdistx_path).exists():
+                    sys.path.append(self.cfg.torchdistx_path)
+                    importlib.import_module("torchdistx")
+
+        if self.cfg.optim_target_modules:
+            training_args_kwargs["optim_target_modules"] = self.cfg.optim_target_modules
+
+        return training_args_kwargs
 
 
 class HFCausalTrainerBuilder(TrainerBuilderBase):
@@ -319,51 +577,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return AxolotlTrainer
 
     def build(self, total_num_steps):
-        warmup_steps = None
-        if self.cfg.warmup_steps is not None:
-            warmup_steps = self.cfg.warmup_steps
-        elif self.cfg.warmup_ratio is not None:
-            warmup_steps = max(int(self.cfg.warmup_ratio * total_num_steps), 0)
-        else:
-            warmup_steps = min(int(0.03 * total_num_steps), 100)
-        if warmup_steps == 1:
-            warmup_steps = 2
-
-        logging_steps = (
-            self.cfg.logging_steps
-            if self.cfg.logging_steps is not None
-            else max(min(int(0.005 * total_num_steps), 10), 1)
-        )
-
-        training_arguments_kwargs = {}
-
-        if self.cfg.include_tokens_per_second is not None:
-            training_arguments_kwargs["include_tokens_per_second"] = (
-                self.cfg.include_tokens_per_second
-            )
-
-        if self.cfg.bf16 == "full":
-            training_arguments_kwargs["bf16_full_eval"] = True
-        else:
-            training_arguments_kwargs["bf16"] = self.cfg.bf16
-        training_arguments_kwargs["fp16"] = (
-            self.cfg.fp16 and not self.cfg.bf16
-        ) or False
-        training_arguments_kwargs["tf32"] = self.cfg.tf32
-        training_arguments_kwargs["warmup_steps"] = warmup_steps
-        training_arguments_kwargs["logging_steps"] = logging_steps
+        training_arguments_kwargs = self._set_base_training_args(total_num_steps)
 
         if self.cfg.seed:
             training_arguments_kwargs["seed"] = self.cfg.seed
 
-        if self.cfg.gradient_checkpointing:
-            training_arguments_kwargs["gradient_checkpointing"] = (
-                self.cfg.gradient_checkpointing
-            )
-            if self.cfg.gradient_checkpointing_kwargs is not None:
-                training_arguments_kwargs["gradient_checkpointing_kwargs"] = (
-                    self.cfg.gradient_checkpointing_kwargs
-                )
         if self.cfg.fsdp:
             training_arguments_kwargs["fsdp"] = self.cfg.fsdp
             if self.cfg.fsdp_config:
@@ -383,39 +601,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.lr_quadratic_warmup
             )
 
-        if self.cfg.adam_beta1:
-            training_arguments_kwargs["adam_beta1"] = self.cfg.adam_beta1
-        if self.cfg.adam_beta2:
-            training_arguments_kwargs["adam_beta2"] = self.cfg.adam_beta2
-        if self.cfg.adam_epsilon:
-            training_arguments_kwargs["adam_epsilon"] = self.cfg.adam_epsilon
-        if self.cfg.max_grad_norm:
-            training_arguments_kwargs["max_grad_norm"] = self.cfg.max_grad_norm
-
-        if self.cfg.hub_model_id:
-            training_arguments_kwargs["hub_model_id"] = self.cfg.hub_model_id
-            training_arguments_kwargs["push_to_hub"] = True
-            training_arguments_kwargs["hub_private_repo"] = True
-            training_arguments_kwargs["hub_always_push"] = True
-
-            if self.cfg.hub_strategy:
-                training_arguments_kwargs["hub_strategy"] = self.cfg.hub_strategy
-
-        if self.cfg.save_safetensors is not None:
-            training_arguments_kwargs["save_safetensors"] = self.cfg.save_safetensors
-
-        if self.cfg.dataloader_pin_memory is not None:
-            training_arguments_kwargs["dataloader_pin_memory"] = (
-                self.cfg.dataloader_pin_memory
-            )
-        if self.cfg.dataloader_num_workers is not None:
-            training_arguments_kwargs["dataloader_num_workers"] = (
-                self.cfg.dataloader_num_workers
-            )
-        if self.cfg.dataloader_prefetch_factor is not None:
-            training_arguments_kwargs["dataloader_prefetch_factor"] = (
-                self.cfg.dataloader_prefetch_factor
-            )
         if self.cfg.dataloader_drop_last is not None:
             training_arguments_kwargs["dataloader_drop_last"] = (
                 self.cfg.dataloader_drop_last
@@ -427,29 +612,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["remove_unused_columns"] = (
                 self.cfg.remove_unused_columns
             )
-
-        if not self.cfg.test_datasets and self.cfg.val_set_size == 0:
-            # no eval set, so don't eval
-            training_arguments_kwargs["eval_strategy"] = "no"
-        elif self.cfg.eval_steps:
-            training_arguments_kwargs["eval_strategy"] = "steps"
-            training_arguments_kwargs["eval_steps"] = self.cfg.eval_steps
-        elif self.cfg.eval_strategy:
-            training_arguments_kwargs["eval_strategy"] = self.cfg.eval_strategy
-        else:
-            # we have an eval set, but no steps defined, default to use epoch
-            training_arguments_kwargs["eval_strategy"] = "epoch"
-
-        if self.cfg.save_steps:
-            training_arguments_kwargs["save_strategy"] = "steps"
-            training_arguments_kwargs["save_steps"] = self.cfg.save_steps
-        elif self.cfg.save_strategy:
-            training_arguments_kwargs["save_strategy"] = self.cfg.save_strategy
-        else:
-            # default to saving each epoch if not defined
-            training_arguments_kwargs["save_strategy"] = "epoch"
-
-        training_arguments_kwargs["save_only_model"] = self.cfg.save_only_model
 
         if self.cfg.do_bench_eval:
             training_arguments_kwargs["do_bench_eval"] = self.cfg.do_bench_eval
@@ -493,33 +655,18 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             )
 
         # these are all the "standard" kwargs that are def used
-        training_arguments_kwargs["max_steps"] = (
-            self.cfg.max_steps if self.cfg.max_steps else -1
-        )
         training_arguments_kwargs["max_seq_length"] = self.cfg.sequence_len
-        training_arguments_kwargs["per_device_train_batch_size"] = (
-            self.cfg.micro_batch_size
-        )
-        if self.cfg.eval_batch_size:
-            training_arguments_kwargs["per_device_eval_batch_size"] = (
-                self.cfg.eval_batch_size
-            )
+
         if self.cfg.auto_find_batch_size is not None:
             training_arguments_kwargs["auto_find_batch_size"] = (
                 self.cfg.auto_find_batch_size
             )
-        training_arguments_kwargs["gradient_accumulation_steps"] = (
-            self.cfg.gradient_accumulation_steps
-        )
+
         training_arguments_kwargs["eval_accumulation_steps"] = (
             self.cfg.gradient_accumulation_steps
         )
         training_arguments_kwargs["num_train_epochs"] = self.cfg.num_epochs
-        training_arguments_kwargs["learning_rate"] = self.cfg.learning_rate
-        training_arguments_kwargs["output_dir"] = self.cfg.output_dir
-        training_arguments_kwargs["save_total_limit"] = (
-            self.cfg.save_total_limit if self.cfg.save_total_limit else 4
-        )
+
         training_arguments_kwargs["load_best_model_at_end"] = (
             (
                 self.cfg.load_best_model_at_end is not False
@@ -544,45 +691,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         training_arguments_kwargs["group_by_length"] = self.cfg.group_by_length
         training_arguments_kwargs["curriculum_sampling"] = self.cfg.curriculum_sampling
-        report_to = []
-        if self.cfg.use_wandb:
-            report_to.append("wandb")
-            if self.cfg.wandb_name:
-                training_arguments_kwargs["run_name"] = self.cfg.wandb_name
-        if self.cfg.use_mlflow:
-            report_to.append("mlflow")
-        if self.cfg.use_tensorboard:
-            report_to.append("tensorboard")
-        if self.cfg.use_comet:
-            report_to.append("comet_ml")
 
-        training_arguments_kwargs["report_to"] = report_to
-        if self.cfg.use_wandb:
-            training_arguments_kwargs["run_name"] = self.cfg.wandb_name
-        elif self.cfg.use_mlflow:
-            training_arguments_kwargs["run_name"] = self.cfg.mlflow_run_name
-        else:
-            training_arguments_kwargs["run_name"] = None
-
-        if self.cfg.lr_scheduler in ["one_cycle", "rex", "log_sweep"]:
-            training_arguments_kwargs["lr_scheduler_type"] = "cosine"
-            training_arguments_kwargs["alternate_lr_scheduler_type"] = (
-                self.cfg.lr_scheduler
-            )
-        else:
-            training_arguments_kwargs["lr_scheduler_type"] = (
-                self.cfg.lr_scheduler if self.cfg.lr_scheduler else "cosine"
-            )
-        training_arguments_kwargs["lr_scheduler_kwargs"] = (
-            self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
-        )
-        training_arguments_kwargs["cosine_min_lr_ratio"] = self.cfg.cosine_min_lr_ratio
-        training_arguments_kwargs["cosine_constant_lr_ratio"] = (
-            self.cfg.cosine_constant_lr_ratio
-        )
-        training_arguments_kwargs["weight_decay"] = (
-            self.cfg.weight_decay if self.cfg.weight_decay is not None else 0.0
-        )
+        training_arguments_kwargs["embedding_lr"] = self.cfg.embedding_lr
+        training_arguments_kwargs["embedding_lr_scale"] = self.cfg.embedding_lr_scale
+        training_arguments_kwargs["lr_groups"] = self.cfg.lr_groups
 
         training_arguments_kwargs["sample_packing"] = bool(self.cfg.sample_packing)
         training_arguments_kwargs["multipack_real_batches"] = (
@@ -644,108 +756,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             )
 
         trainer_kwargs = {}
-
-        if self.cfg.reward_model:
-            training_arguments_kwargs["max_length"] = self.cfg.sequence_len
-
-        # Handle custom optimizer
-        custom_supported_optimizers = [opt.value for opt in CustomSupportedOptimizers]
-        if self.cfg.optimizer in custom_supported_optimizers:
-            # Common optimizer kwargs
-            optimizer_kwargs = {
-                "lr": training_arguments_kwargs.get("learning_rate"),
-                "weight_decay": training_arguments_kwargs.get("weight_decay"),
-            }
-
-            # Adam-specific kwargs
-            adam_kwargs = {}
-            if training_arguments_kwargs.get(
-                "adam_beta1"
-            ) and training_arguments_kwargs.get("adam_beta2"):
-                adam_kwargs["betas"] = (
-                    training_arguments_kwargs.get("adam_beta1"),
-                    training_arguments_kwargs.get("adam_beta2"),
-                )
-            if training_arguments_kwargs.get("adam_epsilon"):
-                adam_kwargs["eps"] = training_arguments_kwargs.get("adam_epsilon")
-
-            if self.cfg.optimizer == "muon":
-                from axolotl.contribs.mit.muon import (  # pylint: disable=no-name-in-module
-                    MuonOptimizerFactory,
-                )
-
-                optimizer_cls = MuonOptimizerFactory
-                optimizer_kwargs.update(adam_kwargs)
-            elif self.cfg.optimizer == "optimi_adamw":
-                from optimi import AdamW
-
-                optimizer_kwargs["foreach"] = False
-                optimizer_cls = AdamW
-                optimizer_kwargs.update(adam_kwargs)
-            elif self.cfg.optimizer == "ao_adamw_4bit":
-                # TODO remove 20250401
-                from torchao.prototype.low_bit_optim import AdamW4bit
-
-                optimizer_cls = AdamW4bit
-                optimizer_kwargs.update(adam_kwargs)
-
-                LOG.warning(
-                    f"`ao_adamw_4bit` will be deprecated soon. Please use `{OptimizerNames.ADAMW_TORCH_4BIT}` instead."
-                )
-            elif self.cfg.optimizer == "ao_adamw_8bit":
-                from torchao.prototype.low_bit_optim import AdamW8bit
-
-                optimizer_cls = AdamW8bit
-                optimizer_kwargs.update(adam_kwargs)
-            elif self.cfg.optimizer == "ao_adamw_fp8":
-                from torchao.prototype.low_bit_optim import AdamWFp8
-
-                optimizer_cls = AdamWFp8
-                optimizer_kwargs.update(adam_kwargs)
-            elif self.cfg.optimizer == "adopt_adamw":
-                from axolotl.utils.optimizers.adopt import ADOPT
-
-                optimizer_cls = ADOPT
-                adam_kwargs["decouple"] = True
-                optimizer_kwargs.update(adam_kwargs)
-
-            # Parse any additional optimizer args from config
-            if self.cfg.optim_args:
-                if isinstance(self.cfg.optim_args, dict):
-                    optimizer_kwargs.update(self.cfg.optim_args)
-                else:
-                    # Parse string format "key1=value1,key2=value2"
-                    for mapping in self.cfg.optim_args.replace(" ", "").split(","):
-                        key, value = mapping.split("=")
-                        optimizer_kwargs[key] = value
-
-            trainer_kwargs["optimizer_cls_and_kwargs"] = (
-                optimizer_cls,
-                optimizer_kwargs,
-            )
-        else:
-            # Use transformers' optimizer
-            training_arguments_kwargs["optim"] = self.cfg.optimizer
-
-            # Parse any additional optimizer args from config
-            if self.cfg.optim_args:
-                if isinstance(self.cfg.optim_args, dict):
-                    optim_args = ",".join(
-                        [f"{key}={value}" for key, value in self.cfg.optim_args.items()]
-                    )
-                else:
-                    optim_args = self.cfg.optim_args
-                training_arguments_kwargs["optim_args"] = optim_args
-
-        if self.cfg.optimizer == "adamw_anyprecision":
-            if Path(self.cfg.torchdistx_path).exists():
-                sys.path.append(self.cfg.torchdistx_path)
-                importlib.import_module("torchdistx")
-
-        if self.cfg.optim_target_modules:
-            training_arguments_kwargs["optim_target_modules"] = (
-                self.cfg.optim_target_modules
-            )
 
         training_arguments_kwargs["embedding_lr"] = self.cfg.embedding_lr
         training_arguments_kwargs["embedding_lr_scale"] = self.cfg.embedding_lr_scale
@@ -815,9 +825,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             # A100 is best at 64, while others at 8. Let's use the larger so we don't have to check
             # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
             data_collator_kwargs["pad_to_multiple_of"] = 64
-
-        if self.cfg.reward_model:
-            data_collator_kwargs["max_length"] = self.cfg.sequence_len
 
         trainer_cls = self._get_trainer_cls()
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
@@ -898,8 +905,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         collator_args = [self.tokenizer]
         if self.cfg.reward_model:
             collator = RewardDataCollatorWithPadding
-            if "max_length" in kwargs:
-                kwargs.pop("max_length")
         elif use_batch_sampler_collator:
             if self.cfg.flex_attention:
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
@@ -961,46 +966,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         return callbacks
 
     def build_training_arguments(self, total_num_steps):
-        training_args_kwargs = {}
-        for arg in [
-            "adam_beta1",
-            "adam_beta2",
-            "adam_epsilon",
-            "dataloader_num_workers",
-            "dataloader_pin_memory",
-        ]:
-            if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
-                training_args_kwargs[arg] = getattr(self.cfg, arg)
-
-        if self.cfg.hub_model_id:
-            training_args_kwargs["hub_model_id"] = self.cfg.hub_model_id
-            training_args_kwargs["push_to_hub"] = True
-            training_args_kwargs["hub_private_repo"] = True
-            training_args_kwargs["hub_always_push"] = True
-
-            if self.cfg.hub_strategy:
-                training_args_kwargs["hub_strategy"] = self.cfg.hub_strategy
-
-        if self.cfg.save_safetensors is not None:
-            training_args_kwargs["save_safetensors"] = self.cfg.save_safetensors
-
-        if self.eval_dataset:
-            training_args_kwargs["eval_strategy"] = "steps"
-            training_args_kwargs["eval_steps"] = self.cfg.eval_steps
-        else:
-            training_args_kwargs["eval_strategy"] = "no"
-
-        if self.cfg.bf16 or self.cfg.bfloat16:
-            training_args_kwargs["bf16"] = True
-
-        training_args_kwargs["loraplus_lr_ratio"] = self.cfg.loraplus_lr_ratio
-        training_args_kwargs["loraplus_lr_embedding"] = self.cfg.loraplus_lr_embedding
-        training_args_kwargs["lr_scheduler_type"] = (
-            self.cfg.lr_scheduler if self.cfg.lr_scheduler else "cosine"
+        training_args_kwargs = self._set_base_training_args(
+            total_num_steps=total_num_steps
         )
-        training_args_kwargs["lr_scheduler_kwargs"] = (
-            self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
-        )
+
         if self.cfg.remove_unused_columns is not None:
             training_args_kwargs["remove_unused_columns"] = (
                 self.cfg.remove_unused_columns
@@ -1008,41 +977,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         else:
             training_args_kwargs["remove_unused_columns"] = False
 
-        if self.cfg.dataloader_pin_memory is not None:
-            training_args_kwargs["dataloader_pin_memory"] = (
-                self.cfg.dataloader_pin_memory
-            )
-        if self.cfg.dataloader_num_workers is not None:
-            training_args_kwargs["dataloader_num_workers"] = (
-                self.cfg.dataloader_num_workers
-            )
-        if self.cfg.dataloader_prefetch_factor is not None:
-            training_args_kwargs["dataloader_prefetch_factor"] = (
-                self.cfg.dataloader_prefetch_factor
-            )
-        if self.cfg.gradient_checkpointing:
-            training_args_kwargs["gradient_checkpointing"] = (
-                self.cfg.gradient_checkpointing
-            )
-            if self.cfg.gradient_checkpointing_kwargs is not None:
-                training_args_kwargs["gradient_checkpointing_kwargs"] = (
-                    self.cfg.gradient_checkpointing_kwargs
-                )
-            else:
-                training_args_kwargs["gradient_checkpointing_kwargs"] = {
-                    "use_reentrant": False
-                }
-
-        # set save_strategy and save_steps
-        if self.cfg.save_steps:
-            training_args_kwargs["save_strategy"] = "steps"
-            training_args_kwargs["save_steps"] = self.cfg.save_steps
-        elif self.cfg.save_strategy:
-            training_args_kwargs["save_strategy"] = self.cfg.save_strategy
-        else:
-            # default to saving each epoch if not defined
-            training_args_kwargs["save_strategy"] = "epoch"
-
+        # only rlhf
         if self.cfg.dataset_processes:
             training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
 
@@ -1065,14 +1000,12 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.rl == "simpo":
             training_args_cls = AxolotlCPOConfig
             training_args_kwargs["loss_type"] = "simpo"
-            training_args_kwargs["max_length"] = self.cfg.sequence_len
             training_args_kwargs["simpo_gamma"] = self.cfg.simpo_gamma
             if self.cfg.cpo_alpha is not None:
                 training_args_kwargs["cpo_alpha"] = self.cfg.cpo_alpha
 
         elif self.cfg.rl == "orpo":
             training_args_cls = AxolotlORPOConfig
-            training_args_kwargs["max_length"] = self.cfg.sequence_len
             if self.cfg.max_prompt_len:
                 training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
@@ -1086,7 +1019,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 self.cfg.kto_undesirable_weight or 1.0
             )
 
-            training_args_kwargs["max_length"] = self.cfg.sequence_len
             if self.cfg.max_prompt_len:
                 training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
@@ -1099,7 +1031,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_cls = AxolotlDPOConfig
             if self.cfg.rl == "ipo":
                 training_args_kwargs["loss_type"] = "ipo"
-            training_args_kwargs["max_length"] = self.cfg.sequence_len
             training_args_kwargs["max_completion_length"] = None
             training_args_kwargs["max_prompt_length"] = self.cfg.sequence_len
             training_args_kwargs["generate_during_eval"] = self.cfg.use_wandb
@@ -1114,19 +1045,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if blocklist_key in training_args_kwargs:
                 del training_args_kwargs[blocklist_key]
 
-        max_steps = self.cfg.max_steps or total_num_steps or -1
         training_args_kwargs["num_train_epochs"] = self.cfg.num_epochs
         training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
-            self.cfg.output_dir,
-            per_device_train_batch_size=self.cfg.micro_batch_size,
-            max_steps=max_steps,
-            gradient_accumulation_steps=self.cfg.gradient_accumulation_steps,
-            learning_rate=self.cfg.learning_rate,
-            warmup_steps=self.cfg.warmup_steps,
             logging_first_step=True,
-            logging_steps=1,
-            optim=self.cfg.optimizer,
-            save_total_limit=self.cfg.save_total_limit or 5,
             **training_args_kwargs,
         )
 
