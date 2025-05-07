@@ -15,7 +15,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import check_model_output_exists, most_recent_subdir
+from ..utils import check_model_output_exists, most_recent_subdir, require_torch_2_6_0
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
@@ -26,6 +26,7 @@ class TestResumeLlama:
     Test case for resuming training of llama models
     """
 
+    @require_torch_2_6_0
     def test_resume_lora_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
@@ -62,6 +63,7 @@ class TestResumeLlama:
                 "save_total_limit": 5,
                 "max_steps": 15,
                 "use_tensorboard": True,
+                "save_safetensors": True,
             }
         )
         if is_torch_bf16_gpu_available():

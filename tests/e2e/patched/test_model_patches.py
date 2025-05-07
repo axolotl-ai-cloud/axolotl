@@ -56,7 +56,7 @@ class TestModelPatches(unittest.TestCase):
     def test_mistral_multipack(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "openaccess-ai-collective/tiny-mistral",
+                "base_model": "trl-internal-testing/tiny-MistralForCausalLM-0.2",
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 2048,

@@ -29,12 +29,12 @@ from axolotl.utils.dict import DictDefault
 
 MODEL_CONFIGS = [
     {
-        "name": "openaccess-ai-collective/tiny-mistral",
+        "name": "trl-internal-testing/tiny-MistralForCausalLM-0.2",
         "expected_activation": apply_lora_mlp_swiglu,
         "dtype": torch.float16,
     },
     {
-        "name": "Qwen/Qwen2-7B",
+        "name": "trl-internal-testing/tiny-Qwen2ForCausalLM-2.5",
         "expected_activation": apply_lora_mlp_swiglu,
         "dtype": torch.float16,
     },
@@ -44,7 +44,7 @@ MODEL_CONFIGS = [
         "dtype": torch.float32,
     },
     {
-        "name": "mhenrichsen/gemma-2b",
+        "name": "trl-internal-testing/tiny-Gemma2ForCausalLM",
         "expected_activation": apply_lora_mlp_geglu,
         "dtype": torch.float16,
     },
@@ -156,7 +156,9 @@ def test_swiglu_mlp_integration(small_llama_model):
 def test_geglu_model_integration():
     """Test GeGLU activation with Gemma model."""
     model = AutoModelForCausalLM.from_pretrained(
-        "mhenrichsen/gemma-2b", torch_dtype=torch.float16, device_map="cuda:0"
+        "trl-internal-testing/tiny-Gemma2ForCausalLM",
+        torch_dtype=torch.float16,
+        device_map="cuda:0",
     )
     peft_config = get_peft_config(
         {
