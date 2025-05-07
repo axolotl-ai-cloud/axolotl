@@ -513,6 +513,9 @@ def train(
         processor,
     ) = setup_model_and_trainer(cfg, dataset_meta)
 
+    plugin_manager = PluginManager.get_instance()
+    plugin_manager.post_trainer_create(cfg, trainer)
+
     # Handle untrained tokens if configured
     safe_serialization = cfg.save_safetensors is True
     train_dataset = dataset_meta.train_dataset
@@ -535,7 +538,6 @@ def train(
     if not cfg.use_ray:
         cleanup_distributed()
 
-    plugin_manager = PluginManager.get_instance()
     plugin_manager.post_train(cfg, model)
 
     return model, tokenizer, trainer

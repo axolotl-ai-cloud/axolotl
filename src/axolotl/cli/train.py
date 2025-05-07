@@ -43,10 +43,13 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
     if int(os.getenv("LOCAL_RANK", "0")) == 0:
         check_user_token()
 
-    if cfg.rl:
-        dataset_meta = load_preference_datasets(cfg=cfg, cli_args=cli_args)
-    else:
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+    plugin_manager = PluginManager.get_instance()
+    dataset_meta = plugin_manager.load_datasets(cfg, preprocess=False)
+    if not dataset_meta:
+        if cfg.rl:
+            dataset_meta = load_preference_datasets(cfg=cfg, cli_args=cli_args)
+        else:
+            dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
     model, tokenizer, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
 
