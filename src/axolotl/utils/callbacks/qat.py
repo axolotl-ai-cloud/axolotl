@@ -10,7 +10,9 @@ from transformers import TrainerCallback
 from axolotl.utils.quantization import get_ptq_config
 
 from src.axolotl.utils.schemas.qat import QATConfig
+import logging
 
+logger = logging.getLogger(__name__)
 
 def toggle_fake_quant(mod: nn.Module, enable: bool):
     if isinstance(mod, FakeQuantizedLinear) or isinstance(mod, FakeQuantizedEmbedding):
@@ -27,8 +29,10 @@ class QATCallback(TrainerCallback):
     def on_step_begin(self, args, state, control, model, **kwargs):
         if self.cfg.fake_quant_after_n_steps is not None:
             if state.global_step == 0:
+                logger.info(f"Disabling fake quantization at step {state.global_step}")
                 model.apply(partial(toggle_fake_quant, enable=False))
             elif state.global_step == self.cfg.fake_quant_after_n_steps:
+                logger.info(f"Enabling fake quantization at step {state.global_step}")
                 model.apply(partial(toggle_fake_quant, enable=True))
 
     def on_train_end(self, args, state, control, model, **kwargs):
@@ -39,4 +43,6 @@ class QATCallback(TrainerCallback):
                 activation_dtype=self.cfg.activation_dtype,
                 group_size=self.cfg.group_size,
             )
+            logger.info("Quantizing model with post-training config...")
+            print(ptq_config)
             quantize_(model, ptq_config)
