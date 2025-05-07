@@ -282,9 +282,9 @@ def load_dataset_w_config(
         )
     if not ds:
         raise ValueError(
-            f"Cannot load dataset from the given config (path: {config_dataset.path}). "
-            "Please check (if applicable) path / name / data_files. "
-            "This is not from the dataset type."
+            "The dataset could not be loaded. This could be due to a misconfigured dataset path "
+            f"({config_dataset.path}). Try double-check your path / name / data_files. "
+            "This is not caused by the dataset type."
         )
 
     return ds
