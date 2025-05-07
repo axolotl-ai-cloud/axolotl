@@ -14,9 +14,9 @@ from torch.utils.data import Sampler
 class SequenceParallelRepeatRandomSampler(Sampler):
     """
     Sampler for GRPO training with sequence parallelism that ensures:
-    1. Ranks in the same sequence parallel group receive identical data
-    2. Each index is repeated multiple times for sampling different completions
-    3. Entire batches are repeated for reuse in multiple updates
+      - Ranks in the same sequence parallel group receive identical data.
+      - Each index is repeated multiple times for sampling different completions.
+      - Entire batches are repeated for reuse in multiple updates.
     """
 
     def __init__(
