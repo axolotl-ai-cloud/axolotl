@@ -550,6 +550,11 @@ class ModelLoader:
 
             patch_accelerate_fsdp_utils()
 
+        if self.cfg.adapter and self.cfg.embeddings_skip_upcast:
+            from axolotl.monkeypatch.peft.utils import patch_peft_prep_code
+
+            patch_peft_prep_code()
+
         if self.cfg.flex_attention:
             from axolotl.monkeypatch.attention.flex_attn import (
                 patch_flex_make_mask,
@@ -1169,7 +1174,7 @@ class ModelLoader:
                 ],
             )
 
-    def prepare_model(self, qlora_fsdp) -> None:
+    def prepare_model(self, qlora_fsdp: bool) -> None:
         skip_prepare_model_for_kbit_training = False
         if self.cfg.model_config_type == "qwen" and self.cfg.adapter == "lora":
             # Qwen doesn't play nicely with LoRA if this is enabled
@@ -1299,7 +1304,10 @@ class ModelLoader:
         # make sure these are fp32 per Ramesh et al. (2021)
         embedding_modules = get_linear_embedding_layers(self.cfg.model_config_type)
         if not self.cfg.fsdp:
-            # FSDP doesn't like mixed Float and BFloat16
+            # we don't run this during FSDP because this will leave mixed
+            # float and bfloat16 dtypes in the model which FSDP doesn't like
+            if self.cfg.load_in_4bit and self.cfg.embeddings_skip_upcast:
+                embedding_modules = []
             self.convert_embedding_modules_dtype(
                 embedding_modules,
                 dist_dtype=torch.float32,
