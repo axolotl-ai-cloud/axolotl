@@ -708,6 +708,20 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 optimizer_cls = ADOPT
                 adam_kwargs["decouple"] = True
                 optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "came_pytorch":
+                from came_pytorch import CAME
+
+                optimizer_cls = CAME
+
+                beta1 = training_arguments_kwargs.get("adam_beta1", 0.9)
+                beta2 = training_arguments_kwargs.get("adam_beta2", 0.999)
+                beta3 = training_arguments_kwargs.get("adam_beta2", 0.9999)
+                eps1 = training_arguments_kwargs.get("adam_epsilon", 1e-30)
+                eps2 = training_arguments_kwargs.get("adam_epsilon2", 1e-16)
+                adam_kwargs["betas"] = (beta1, beta2, beta3)
+                adam_kwargs["eps"] = (eps1, eps2)
+
+                optimizer_kwargs.update(adam_kwargs)
 
             # Parse any additional optimizer args from config
             if self.cfg.optim_args:
