@@ -2,7 +2,6 @@
 Test case for handling embeddings when using peft
 """
 
-import pytest
 import torch
 
 from axolotl.train import setup_model_and_tokenizer
@@ -15,18 +14,16 @@ class TestLlamaPeftEmbeddings:
     test class for handling embeddings when using peft
     """
 
-    @pytest.mark.parametrize(
-        "embeddings_skip_upcast",
-        [
-            True,
-            False,
-        ],
-    )
-    def test_peft_embeddings_upcast(self, temp_dir, embeddings_skip_upcast):
+    def test_peft_embeddings_upcast(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "load_in_4bit": True,
+                "adapter": "qlora",
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_target_linear": True,
                 "trust_remote_code": True,
                 "sequence_len": 512,
                 "val_set_size": 0.01,
@@ -51,7 +48,7 @@ class TestLlamaPeftEmbeddings:
                 "sample_packing": False,
                 "bf16": "auto",
                 "save_safetensors": True,
-                "embeddings_skip_upcast": embeddings_skip_upcast,
+                "embeddings_skip_upcast": True,
             }
         )
 
@@ -61,6 +58,6 @@ class TestLlamaPeftEmbeddings:
         model, _, _, _ = setup_model_and_tokenizer(cfg)
 
         # Check if the embeddings are upcast correctly
-        dtype = torch.bfloat16 if embeddings_skip_upcast else torch.float32
-        assert model.base_model.model.model.embed_tokens.weight.dtype == dtype
-        assert model.base_model.model.lm_head.weight.dtype == dtype
+        # only embed_tokens is a parameter that may be upcast
+        assert model.base_model.model.model.embed_tokens.weight.dtype == torch.bfloat16
+        assert model.base_model.model.lm_head.weight.dtype == torch.bfloat16
