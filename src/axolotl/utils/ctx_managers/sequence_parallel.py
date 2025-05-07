@@ -59,7 +59,6 @@ def apply_sequence_parallelism(
             device=batch["input_ids"].device,
         ).expand(batch["input_ids"].size(0), -1)
 
-    # Handle logits_to_keep
     if "logits_to_keep" in batch and isinstance(batch["logits_to_keep"], int):
         logits_to_keep = batch["logits_to_keep"]
 
