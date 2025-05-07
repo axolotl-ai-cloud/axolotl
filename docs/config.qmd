@@ -184,8 +184,8 @@ datasets:
     # adding a system turn with empty content.
     drop_system_message:
 
-    # Optional[bool]. Whether to split the assistant turn based on a reasoning trace inside delimited tags
-    # defaults to False
+    # Optional[bool]. (for Qwen3 template only) Whether to split the assistant content based on a reasoning trace inside delimited tags
+    # See example at `docs/dataset-formats/conversation.qmd`
     split_thinking:
 
     # IMPORTANT: The following fields determine which parts of the conversation to train on.
