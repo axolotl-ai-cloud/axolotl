@@ -404,7 +404,7 @@ class TestDatasetPreparation:
                 assert "labels" in dataset.features
                 shutil.rmtree(tmp_ds_path)
 
-    # @enable_hf_offline
+    @enable_hf_offline
     def test_loading_local_dataset_folder(self, tokenizer):
         """Verify that a dataset downloaded to a local folder can be loaded"""
 
@@ -414,7 +414,6 @@ class TestDatasetPreparation:
             snapshot_path = snapshot_download(
                 repo_id="mhenrichsen/alpaca_2k_test",
                 repo_type="dataset",
-                local_dir=tmp_ds_path,
             )
             shutil.copytree(snapshot_path, tmp_ds_path, dirs_exist_ok=True)
 
