@@ -2,6 +2,7 @@
 
 import importlib
 import inspect
+import logging
 import os
 import signal
 import sys
@@ -12,7 +13,6 @@ from typing import Any, Dict
 
 import torch
 import transformers.modelcard
-from accelerate.logging import get_logger
 from accelerate.utils import save_fsdp_model
 from datasets import Dataset
 from huggingface_hub.errors import OfflineModeIsEnabled
@@ -42,7 +42,7 @@ try:
 except ImportError:
     BetterTransformer = None
 
-LOG = get_logger(__name__)
+LOG = logging.getLogger(__name__)
 
 
 def setup_model_and_tokenizer(
@@ -63,7 +63,6 @@ def setup_model_and_tokenizer(
     # Load tokenizer
     LOG.debug(
         f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
-        main_process_only=True,
     )
     tokenizer = load_tokenizer(cfg)
 

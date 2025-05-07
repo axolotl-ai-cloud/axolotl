@@ -6,6 +6,8 @@ import logging
 import os
 import unittest
 
+import pytest
+
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
@@ -23,6 +25,7 @@ class TestFalconPatched(unittest.TestCase):
     Test case for Falcon models
     """
 
+    @pytest.mark.skip(reason="no tiny models for testing with safetensors")
     @with_temp_dir
     def test_qlora(self, temp_dir):
         # pylint: disable=duplicate-code
@@ -71,6 +74,7 @@ class TestFalconPatched(unittest.TestCase):
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
 
+    @pytest.mark.skip(reason="no tiny models for testing with safetensors")
     @with_temp_dir
     def test_ft(self, temp_dir):
         # pylint: disable=duplicate-code

@@ -28,7 +28,7 @@ class TestMistral(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "openaccess-ai-collective/tiny-mistral",
+                "base_model": "trl-internal-testing/tiny-MistralForCausalLM-0.2",
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 1024,
@@ -76,7 +76,7 @@ class TestMistral(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "openaccess-ai-collective/tiny-mistral",
+                "base_model": "trl-internal-testing/tiny-MistralForCausalLM-0.2",
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 1024,
