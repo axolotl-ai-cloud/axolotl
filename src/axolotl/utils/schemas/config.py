@@ -27,7 +27,7 @@ from axolotl.utils.schemas.datasets import (
     StepwiseSupervisedDataset,
 )
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
-from axolotl.utils.schemas.enums import ChatTemplate, RLType
+from axolotl.utils.schemas.enums import AttentionBackend, ChatTemplate, RLType
 from axolotl.utils.schemas.integrations import (
     CometConfig,
     GradioConfig,
@@ -222,6 +222,10 @@ class AxolotlInputConfig(
         },
     )
 
+    attention: AttentionBackend | None = Field(
+        default=None,
+        json_schema_extra={"description": "attention backend to use"},
+    )
     xformers_attention: bool | None = None
     sdp_attention: bool | None = None
     s2_attention: bool | None = None
@@ -434,6 +438,65 @@ class AxolotlInputConfig(
                 + "Please download the model from HuggingFace Hub manually for correct branch, "
                 + "point to its path, and remove revision_of_model from the config."
             )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_attn(cls, data):  # pylint: disable=too-many-return-statements
+        attention = data.get("attention")
+
+        # Define mapping between enum values and flag names
+        backend_mapping = {
+            AttentionBackend.eager: "eager_attention",
+            AttentionBackend.flash: "flash_attention",
+            AttentionBackend.flex: "flex_attention",
+            AttentionBackend.s2: "s2_attention",
+            AttentionBackend.sdpa: "sdp_attention",
+            AttentionBackend.xformers: "xformers_attention",
+        }
+
+        # Check if any attention flag is set
+        any_flag_set = any(
+            data.get(flag_name) for flag_name in backend_mapping.values()
+        )
+
+        # CASE 1: attention is set but no flags are set - set the corresponding flag
+        if attention and not any_flag_set:
+            flag_name = backend_mapping.get(attention)
+            if flag_name:
+                data[flag_name] = True
+            return data
+
+        # CASE 2: no attention set but flags are set - set attention from flags
+        if not attention:
+            LOG.warning(
+                "*_attention will be deprecated soon. One of `attention: eager | flash | flex | s2 | sdp | xformers` is recommended"
+            )
+
+            # Find the first True flag and set attention accordingly
+            for backend, flag_name in backend_mapping.items():
+                if data.get(flag_name):
+                    data["attention"] = backend
+                    return data
+
+        # CASE 3: both attention and flags are set - check for consistency
+        if attention:
+            expected_flag = backend_mapping.get(attention)
+            for backend, flag_name in backend_mapping.items():
+                # If a flag is set that doesn't match the attention value
+                if data.get(flag_name) and flag_name != expected_flag:
+                    raise ValueError(f"attention mismatch with {flag_name} already set")
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_sample_packing_w_xformers(cls, data):
+        if data.get("sample_packing") and data.get("xformers_attention"):
+            raise ValueError(
+                "sample_packing not compatible with xformers_attention. Use flash_attention"
+            )
+
         return data
 
     @model_validator(mode="before")
