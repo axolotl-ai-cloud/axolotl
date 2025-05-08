@@ -210,8 +210,17 @@ def execute_training(
                 )
             )
 
+        torch.cuda.memory._record_memory_history(
+            max_entries=100000
+        )
+
         LOG.info("Starting trainer...")
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+
+        import torch.distributed as dist
+        torch.cuda.memory._dump_snapshot(f"../memory_snapshot_{dist.get_rank()}.pickle")
+        # torch.cuda.memory._dump_snapshot(f"../memory_snapshot.pickle")
+        torch.cuda.memory._record_memory_history(enabled=None)
 
 
 def save_trained_model(

@@ -198,25 +198,23 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
 
         # Initialize the SP group
         self.sp_group = get_ring_attn_group()
+        self.rank = dist.get_rank()
+        self.world_size = dist.get_world_size()
         self.local_rank = dist.get_rank(group=self.sp_group)
         self.local_world_size = dist.get_world_size(group=self.sp_group)
 
     def _get_train_sampler(self) -> Sampler:
-        # Get distributed training info
-        world_size = dist.get_world_size()
-        rank = dist.get_rank()
-
         effective_batch_size = (
             self.args.per_device_train_batch_size
-            * world_size
+            * self.world_size
             * self.args.gradient_accumulation_steps
         )
 
         return SequenceParallelRepeatRandomSampler(
             dataset=self.train_dataset,
             mini_repeat_count=self.num_generations,
-            world_size=world_size,
-            rank=rank,
+            world_size=self.world_size,
+            rank=self.rank,
             batch_size=effective_batch_size
             // self.num_generations
             // self.args.sequence_parallel_degree,
@@ -295,12 +293,6 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
         # pylint: disable=access-member-before-definition
         data_collator = self.data_collator  # type: ignore
 
-        # Initialize SP group attributes if sequence parallelism is enabled
-        if self.args.sequence_parallel_degree > 1:
-            self.sp_group = get_ring_attn_group()
-            self.local_rank = dist.get_rank(group=self.sp_group)
-            self.local_world_size = dist.get_world_size(group=self.sp_group)
-
         # Handle dataset preprocessing
         if isinstance(train_dataset, datasets.Dataset):
             # Add debug print before any modifications
@@ -362,12 +354,36 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
             # Generate completions using vLLM: gather all prompts and use them in a single call in the main process
             all_prompts_text = gather_object(prompts_text)
             if self.accelerator.is_main_process:
-                # Since 'prompts' contains 'num_generations' duplicates, we first take unique prompts, and generate
-                # num_generations outputs for each one. This is faster than generating outputs for each duplicate
-                # prompt individually.
-                ordered_set_of_prompts = all_prompts_text[
-                    :: self.num_generations * self.args.sequence_parallel_degree
-                ]
+                if self.args.sequence_parallel_degree > 1:
+                    # Calculate sequence parallel group information
+                    world_size = self.accelerator.num_processes
+                    sequence_parallel_degree = self.args.sequence_parallel_degree
+                    num_sp_groups = world_size // sequence_parallel_degree
+                    
+                    # Since processes in the same SP group have the same prompts, we need to ensure
+                    # we only take one copy of each prompt from each SP group
+                    ordered_set_of_prompts = []
+                    for sp_group_id in range(num_sp_groups):
+                        # Get the first process from each SP group (typically the group leader)
+                        group_leader_rank = sp_group_id * sequence_parallel_degree
+
+                        # Extract prompts from this SP group, accounting for num_generations duplicates
+                        # We only need prompts from one rank in each SP group
+                        group_prompts = all_prompts_text[
+                            group_leader_rank * len(prompts_text):
+                            (group_leader_rank + 1) * len(prompts_text):
+                            self.num_generations
+                        ]
+
+                        ordered_set_of_prompts.extend(group_prompts)
+                else:
+                    # Since 'prompts' contains 'num_generations' duplicates, we first take unique prompts, and generate
+                    # num_generations outputs for each one. This is faster than generating outputs for each duplicate
+                    # prompt individually.
+                    ordered_set_of_prompts = all_prompts_text[
+                        :: self.num_generations * self.args.sequence_parallel_degree
+                    ]
+
                 with profiling_context(self, "vLLM.generate"):
                     completion_ids = self.vllm_client.generate(
                         prompts=ordered_set_of_prompts,
@@ -690,40 +706,6 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
         self._textual_logs["completion"].extend(gather_object(completions_text))
         for i, name in enumerate(self.reward_func_names):
             self._textual_logs["rewards"][name].extend(rewards_per_func[:, i].tolist())
-
-        # Add wandb and rich logging if enabled
-        if (
-            self.log_completions
-            and self.state.global_step % self.args.logging_steps == 0
-        ):
-            prompts_to_log = gather_object(prompts_text)
-            completions_to_log = gather_object(completions_text)
-            rewards_to_log = rewards.tolist()
-
-            if self.accelerator.is_main_process:
-                if is_rich_available():
-                    print_prompt_completions_sample(
-                        prompts_to_log,
-                        completions_to_log,
-                        rewards_to_log,
-                        self.state.global_step,
-                    )
-                if (
-                    self.args.report_to
-                    and "wandb" in self.args.report_to
-                    and wandb.run is not None
-                ):
-                    import pandas as pd
-
-                    # For logging
-                    table = {
-                        "step": [str(self.state.global_step)] * len(rewards),
-                        "prompt": prompts_to_log,
-                        "completion": completions_to_log,
-                        "reward": rewards.tolist(),
-                    }
-                    df = pd.DataFrame(table)
-                    wandb.log({"completions": wandb.Table(dataframe=df)})
 
         return {
             "prompt_ids": prompt_ids,

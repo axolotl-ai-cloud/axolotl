@@ -237,9 +237,12 @@ class SequenceParallelContextManager:
 
     def gather_outputs(self, output: CausalLMOutputWithPast) -> CausalLMOutputWithPast:
         """Gather sharded outputs from all ranks and reconstruct the full tensor."""
+        from torch.distributed.nn.functional import all_gather
+
         for key, value in output.items():
             if isinstance(value, torch.Tensor) and value.dim() > 1:
                 output[key] = AllGatherWithGrad.apply(value, self.process_group)
+                #     output[key] = torch.cat(gathered, dim=1)
 
         return output
 
@@ -322,48 +325,3 @@ class AllGatherWithGrad(torch.autograd.Function):
         grad_slice = grad_output[:, offset : offset + seq_lens[rank]].contiguous()
 
         return grad_slice, None
-
-
-class AllReduceWithGrad(torch.autograd.Function):
-    """Custom autograd function for all-reduce to preserve gradients."""
-
-    @staticmethod
-    def forward(
-        ctx: torch.autograd.function.FunctionCtx,  # pylint: disable=unused-argument
-        input_tensor: torch.Tensor,
-        group: dist.ProcessGroup,
-    ) -> torch.Tensor:
-        """
-        Forward pass of all-reduce operation with gradient preservation.
-
-        Args:
-            ctx: `torch.autograd` function context.
-            input_tensor: Tensor to be reduced across the process group.
-            group: `torch.distributed` process group.
-
-        Returns:
-            Tensor containing the result of the all-reduce operation (average)
-            across all processes in the group.
-        """
-        output = input_tensor.clone()
-        dist.all_reduce(input_tensor, op=dist.ReduceOp.AVG, group=group)
-
-        return output
-
-    @staticmethod
-    def backward(
-        ctx: torch.autograd.function.FunctionCtx,  # pylint: disable=unused-argument
-        grad_output: torch.Tensor,
-    ) -> tuple[torch.Tensor, None]:
-        """
-        Backward pass for all-reduce operation.
-
-        Args:
-            ctx: `torch.autograd` function context.
-            grad_output: Gradient from subsequent layers.
-
-        Returns:
-            Tuple containing the scaled gradient for the input tensor and `None` for
-                the process group parameter which doesn't require gradients.
-        """
-        return grad_output, None
