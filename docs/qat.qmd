@@ -1,0 +1,35 @@
+---
+title: "Quantization Aware Training (QAT)"
+back-to-top-navigation: true
+toc: true
+toc-expand: 2
+toc-depth: 4
+---
+
+## Overview
+
+[Quantization Aware Training](https://pytorch.org/blog/introduction-to-quantization-on-pytorch/#quantization-aware-training) (QAT) is a technique for improving the accuracy of models which are quantized
+by applying "fake" quantizations to the model's weights (and optionally, activations) during training. This fake 
+quantization allows for the model to adjust for noise introduced by the quantization, so when the model is eventually
+quantized, the accuracy loss is minimized. We use the quantization techniques implemented in [torchao](https://github.com/pytorch/ao) to provide
+support for QAT and post-training quantization (PTQ) in axolotl.
+
+We recommend reviewing the excellent QAT tutorial in the [torchtune library](https://pytorch.org/torchtune/main/tutorials/qat_finetune.html#quantizing-the-qat-model),
+and the QAT documentation in the [torchao library](https://github.com/pytorch/ao/tree/main/torchao/quantization/qat), for more details. 
+
+## Configuring QAT in Axolotl
+
+To enable QAT in axolotl, add the following to your configuration file:
+
+```yaml
+qat:
+  activation_dtype: # Optional[str] = "int8". Fake quantization layout to use for activation quantization. Valid options are "int4" and "int8"
+  weight_dtype: # Optional[str] = "int8". Fake quantization layout to use for weight quantization. Valid options are uintX or intX for X in [1, 2, 3, 4, 5, 6, 7, 8]
+  group_size: # Optional[int] = 32. The number of elements in each group for per-group fake quantization
+  fake_quant_after_n_steps: # Optional[int] = None. The number of steps to apply fake quantization after
+  save_quantized_model: # Optional[bool] = False. Whether to save the quantized model. If false, weights must be quantized after trainingusing the ``quantize`` CLI.
+```
+
+
+
+

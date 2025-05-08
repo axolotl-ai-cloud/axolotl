@@ -91,9 +91,7 @@ class AxolotlInputConfig(
     vllm: VllmConfig | None = Field(
         default_factory=lambda: VllmConfig(),  # pylint: disable=unnecessary-lambda
     )
-    qat: QATConfig | None = Field(
-        default_factory=lambda: QATConfig(),  # pylint: disable=unnecessary-lambda
-    )
+    qat: QATConfig | None = None
     reward_model: bool | None = None
     process_reward_model: bool | None = None
     num_labels: int | None = None

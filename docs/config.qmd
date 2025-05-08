@@ -63,6 +63,13 @@ bnb_config_kwargs:
   bnb_4bit_quant_type: nf4
   bnb_4bit_use_double_quant: true
 
+# quantization aware training
+qat:
+  activation_dtype: # Optional[str] = "int8". Fake quantization layout to use for activation quantization. Valid options are "int4" and "int8"
+  weight_dtype: # Optional[str] = "int8". Fake quantization layout to use for weight quantization. Valid options are uintX or intX for X in [1, 2, 3, 4, 5, 6, 7, 8]
+  group_size: # Optional[int] = 32. The number of elements in each group for per-group fake quantization
+  fake_quant_after_n_steps: # Optional[int] = None. The number of steps to apply fake quantization after
+  save_quantized_model: # Optional[bool] = False. Whether to save the quantized model. If false, weights must be quantized after trainingusing the ``quantize`` CLI.
 
 # Whether you are training a 4-bit GPTQ quantized model
 gptq: true

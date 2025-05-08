@@ -1,3 +1,4 @@
+import logging
 from functools import partial
 
 import torch.nn as nn
@@ -10,9 +11,9 @@ from transformers import TrainerCallback
 from axolotl.utils.quantization import get_ptq_config
 
 from src.axolotl.utils.schemas.qat import QATConfig
-import logging
 
 logger = logging.getLogger(__name__)
+
 
 def toggle_fake_quant(mod: nn.Module, enable: bool):
     if isinstance(mod, FakeQuantizedLinear) or isinstance(mod, FakeQuantizedEmbedding):

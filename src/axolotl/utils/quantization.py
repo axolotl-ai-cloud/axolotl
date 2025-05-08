@@ -89,10 +89,14 @@ def get_ptq_config(
                 group_size=group_size,
             )
         elif weight_dtype == TorchIntDType.int8:
+            if group_size is None:
+                raise ValueError("group_size must be specified for int8 weight only quantization")
             return Int8WeightOnlyConfig(
                 group_size=group_size,
             )
         elif weight_dtype == TorchIntDType.int4:
+            if group_size is None:
+                raise ValueError("group_size must be specified for int4 weight only quantization")
             return Int4WeightOnlyConfig(
                 group_size=group_size,
             )
@@ -159,12 +163,14 @@ def quantize_model_for_ptq(
         activation_dtype=activation_dtype,
         group_size=group_size,
     )
+    # print(ptq_config)
     if quantize_embedding:
         embedding_quantize_config = get_ptq_config(
             weight_dtype=weight_dtype,
             activation_dtype=None,
             group_size=group_size,
         )
+        # print("embedding_quantize_config", embedding_quantize_config)
         quantize_(
             model,
             embedding_quantize_config,

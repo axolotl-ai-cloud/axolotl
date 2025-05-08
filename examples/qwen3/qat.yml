@@ -8,7 +8,6 @@ strict: false
 
 plugins:
   - axolotl.integrations.liger.LigerPlugin
-# torch_compile: true
 liger_glu_activation: true
 liger_rms_norm: true
 liger_layer_norm: true
@@ -18,30 +17,30 @@ pretraining_dataset:
     name: en
     split: train
     type: pretrain
-# dataloader_num_workers: 4
-output_dir: ./outputs/out_base
+
+output_dir: ./outputs/out_test
 
 sequence_len: 1024
 
 sample_packing: true
 flex_attention: true
-# pad_to_sequence_len: true
+pad_to_sequence_len: true
 
 flex_attn_compile_kwargs:
   dynamic: false
   mode: max-autotune-no-cudagraphs
 
-# qat:
-#   activation_dtype: int8
-#   weight_dtype: int8
-#   group_size: 256
-#   fake_quant_after_n_steps: 1000
-#   save_quantized_model: true
+qat:
+  activation_dtype: int8
+  weight_dtype: int8
+  group_size: 256
+  fake_quant_after_n_steps: 2
+  save_quantized_model: true
 
 wandb_project: qat
 wandb_entity:
 wandb_watch:
-wandb_name:
+wandb_name: base
 wandb_log_model:
 
 gradient_accumulation_steps: 1
@@ -54,12 +53,8 @@ learning_rate: 2e-5
 bf16: true
 tf32: true
 
-# gradient_checkpointing: true
-# gradient_checkpointing_kwargs:
-#   use_reentrant: false
 resume_from_checkpoint:
 logging_steps: 1
-# flash_attention: true
 
 warmup_steps: 10
 eval_strategy: "no"

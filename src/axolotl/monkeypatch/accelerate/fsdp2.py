@@ -56,6 +56,8 @@ def set_state_dict_type(self, state_dict_type=None):
     """
     Set the state dict config based on the `StateDictType`.
     """
+    import os
+
     from torch.distributed.fsdp.fully_sharded_data_parallel import (
         FullOptimStateDictConfig,
         FullStateDictConfig,
@@ -63,7 +65,6 @@ def set_state_dict_type(self, state_dict_type=None):
         ShardedStateDictConfig,
         StateDictType,
     )
-    import os
 
     # Override the state_dict_type if provided, typical use case:
     # user trains with sharded, but final save is with full
@@ -72,7 +73,8 @@ def set_state_dict_type(self, state_dict_type=None):
 
     if self.state_dict_type is None:
         self.state_dict_type = os.environ.get(
-            "FSDP_STATE_DICT_TYPE", "FULL_STATE_DICT" if self.fsdp_version == 1 else "SHARDED_STATE_DICT"
+            "FSDP_STATE_DICT_TYPE",
+            "FULL_STATE_DICT" if self.fsdp_version == 1 else "SHARDED_STATE_DICT",
         )
     if isinstance(self.state_dict_type, str):
         if self.state_dict_type.isdigit():
@@ -83,17 +85,19 @@ def set_state_dict_type(self, state_dict_type=None):
     if self.state_dict_type == StateDictType.FULL_STATE_DICT:
         if self.state_dict_config is None:
             self.state_dict_config = FullStateDictConfig(
-                offload_to_cpu=True, rank0_only=True)
+                offload_to_cpu=True, rank0_only=True
+            )
         if self.optim_state_dict_config is None:
             self.optim_state_dict_config = FullOptimStateDictConfig(
-                offload_to_cpu=True, rank0_only=True)
+                offload_to_cpu=True, rank0_only=True
+            )
     elif self.state_dict_type == StateDictType.SHARDED_STATE_DICT:
         if self.state_dict_config is None:
             self.state_dict_config = ShardedStateDictConfig(offload_to_cpu=True)
         if self.optim_state_dict_config is None:
             self.optim_state_dict_config = ShardedOptimStateDictConfig(
-                offload_to_cpu=True)
-
+                offload_to_cpu=True
+            )
 
 
 def get_state_dict(self, model, unwrap=True):
@@ -127,8 +131,9 @@ def get_state_dict(self, model, unwrap=True):
 
     if self.distributed_type == DistributedType.DEEPSPEED:
         zero3_sharding = self.deepspeed_config["zero_optimization"]["stage"] == 3
-        tp_sharding = self.deepspeed_config.get(
-            "tensor_parallel", {}).get("autotp_size", 0) > 1
+        tp_sharding = (
+            self.deepspeed_config.get("tensor_parallel", {}).get("autotp_size", 0) > 1
+        )
         if zero3_sharding or tp_sharding:
             if model.zero_gather_16bit_weights_on_model_save():
                 if tp_sharding and not compare_versions("deepspeed", ">=", "0.16.4"):
@@ -151,7 +156,8 @@ def get_state_dict(self, model, unwrap=True):
             from deepspeed.checkpoint.utils import clone_tensors_for_torch_save
 
             state_dict = clone_tensors_for_torch_save(
-                self.unwrap_model(model).state_dict())
+                self.unwrap_model(model).state_dict()
+            )
     elif self.is_fsdp2:
         state_dict = {}
         sharded_state_dict = model.state_dict()
@@ -167,12 +173,16 @@ def get_state_dict(self, model, unwrap=True):
                 state_dict[param_name] = param.cpu()
             torch.distributed.barrier()
     elif self.distributed_type == DistributedType.FSDP:
-        from torch.distributed.fsdp import FullStateDictConfig, StateDictType
+        from torch.distributed.fsdp import FullStateDictConfig
         from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+        from torch.distributed.fsdp import StateDictType
 
         full_state_dict_config = FullStateDictConfig(
-            offload_to_cpu=True, rank0_only=True)
-        with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, full_state_dict_config):
+            offload_to_cpu=True, rank0_only=True
+        )
+        with FSDP.state_dict_type(
+            model, StateDictType.FULL_STATE_DICT, full_state_dict_config
+        ):
             state_dict = model.state_dict()
     else:
         if unwrap:
@@ -200,7 +210,9 @@ def patch_accelerate_fsdp2():
         get_state_dict,
     )
 
-    accelerate.utils.dataclasses.FullyShardedDataParallelPlugin.set_state_dict_type = set_state_dict_type
+    accelerate.utils.dataclasses.FullyShardedDataParallelPlugin.set_state_dict_type = (
+        set_state_dict_type
+    )
     setattr(
         sys.modules["accelerate.utils.dataclasses"],
         "FullyShardedDataParallelPlugin.set_state_dict_type",

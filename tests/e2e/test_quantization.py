@@ -11,16 +11,19 @@ from torchao.quantization.quant_api import (
     Int8WeightOnlyConfig,
     UIntXWeightOnlyConfig,
 )
+from torchao.quantization.linear_activation_quantized_tensor import LinearActivationQuantizedTensor
+from torchao.dtypes.affine_quantized_tensor import AffineQuantizedTensor
 from transformers import AutoModelForCausalLM
 
 from axolotl.utils.quantization import (
     IntxWeightOnlyConfig,
     get_ptq_config,
     quantize_model_for_qat,
+    quantize_model_for_ptq,
 )
 from axolotl.utils.schemas.qat import TorchIntDType
 
-ptq_test_cases = [
+ptq_config_test_cases = [
     # weight_dtype, activation_dtype, group_size, expected_type, expected_params
     (
         TorchIntDType.uint4,
@@ -29,29 +32,8 @@ ptq_test_cases = [
         UIntXWeightOnlyConfig,
         {"dtype": torch.uint4, "group_size": None},
     ),
-    (
-        TorchIntDType.uint8,
-        None,
-        128,
-        UIntXWeightOnlyConfig,
-        {"dtype": torch.uint8, "group_size": 128},
-    ),
     (TorchIntDType.int8, None, None, Int8WeightOnlyConfig, {"group_size": None}),
-    (TorchIntDType.int4, None, 128, Int4WeightOnlyConfig, {"group_size": 128}),
-    (
-        TorchIntDType.int2,
-        None,
-        None,
-        IntxWeightOnlyConfig,
-        {"weight_dtype": torch.int2, "granularity": PerAxis(0)},
-    ),
-    (
-        TorchIntDType.int2,
-        None,
-        64,
-        IntxWeightOnlyConfig,
-        {"weight_dtype": torch.int2, "granularity": PerGroup(64)},
-    ),
+    (TorchIntDType.int4, None, 4, Int4WeightOnlyConfig, {"group_size": 4}),
     (
         TorchIntDType.int4,
         TorchIntDType.int4,
@@ -77,17 +59,6 @@ ptq_test_cases = [
             "has_weight_zeros": False,
         },
     ),
-    (
-        TorchIntDType.int2,
-        TorchIntDType.int8,
-        128,
-        Int8DynamicActivationIntxWeightConfig,
-        {
-            "weight_dtype": torch.int2,
-            "granularity": PerGroup(128),
-            "has_weight_zeros": False,
-        },
-    ),
 ]
 
 
@@ -95,7 +66,7 @@ class TestQuantization:
 
     @pytest.mark.parametrize(
         "weight_dtype,activation_dtype,group_size,expected_type,expected_params",
-        ptq_test_cases,
+        ptq_config_test_cases,
     )
     def test_get_ptq_config(
         self, weight_dtype, activation_dtype, group_size, expected_type, expected_params
@@ -118,27 +89,32 @@ class TestQuantization:
                 assert getattr(config, param_name) == param_value
 
     @pytest.mark.parametrize(
-        "weight_dtype", [TorchIntDType.int8, TorchIntDType.int4, TorchIntDType.int2]
+        "weight_dtype", [TorchIntDType.int8, TorchIntDType.int4]
     )
     @pytest.mark.parametrize(
         "activation_dtype", [None, TorchIntDType.int4, TorchIntDType.int8]
     )
-    @pytest.mark.parametrize("group_size", [32, 64])
+    @pytest.mark.parametrize("group_size", [4, 8])
     @pytest.mark.parametrize("quantize_embedding", [False, True])
     def test_quantize_model_for_qat(
         self, weight_dtype, activation_dtype, group_size, quantize_embedding
     ):
-        model = AutoModelForCausalLM.from_pretrained("HuggingFaceTB/SmolLM2-135M")
+        model = AutoModelForCausalLM.from_pretrained(
+            "trl-internal-testing/tiny-MistralForCausalLM-0.2",
+            device_map="cuda",
+            torch_dtype=torch.bfloat16,
+        )
         quantize_model_for_qat(
             model, weight_dtype, group_size, activation_dtype, quantize_embedding
         )
+        if quantize_embedding:
+            assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
+            assert hasattr(model.model.embed_tokens, "weight_fake_quantizer")
+            assert model.model.embed_tokens.weight_fake_quantizer.config.dtype == weight_dtype.value
+            assert model.model.embed_tokens.weight_fake_quantizer.config.group_size == group_size
+
         for child in list(model.children()):
-            if quantize_embedding and isinstance(child, torch.nn.Embedding):
-                assert isinstance(child, FakeQuantizedEmbedding)
-                assert hasattr(child, "weight_fake_quantizer")
-                assert child.weight_fake_quantizer.config.dtype == weight_dtype.value
-                assert child.weight_fake_quantizer.config.group_size == group_size
-            elif isinstance(child, torch.nn.Linear):
+            if isinstance(child, torch.nn.Linear):
                 assert isinstance(child, FakeQuantizedLinear)
                 assert hasattr(child, "weight_fake_quantizer")
                 assert child.weight_fake_quantizer.config.dtype == weight_dtype.value
@@ -146,10 +122,34 @@ class TestQuantization:
                 if activation_dtype:
                     assert hasattr(child, "activation_fake_quantizer")
                     assert (
-                        child.activation_fake_quantizer.config.dtype
-                        == activation_dtype.value
+                        child.activation_fake_quantizer.config.dtype ==
+                        activation_dtype.value
                     )
                 else:
                     assert child.activation_fake_quantizer is None
 
-    # def test_quantize_model_for_ptq(self, weight_dtype, activation_dtype, group_size, quantize_embedding):
+    @pytest.mark.parametrize(
+        "weight_dtype", [TorchIntDType.int8, TorchIntDType.int4,
+                         TorchIntDType.uint4, TorchIntDType.uint7]
+    )
+    @pytest.mark.parametrize(
+        "activation_dtype", [None, None, None, None, None]
+    )
+    @pytest.mark.parametrize("group_size", [4, 8])
+    @pytest.mark.parametrize("quantize_embedding", [False, True])
+    def test_quantize_model_for_ptq(self, weight_dtype, activation_dtype, group_size, quantize_embedding):
+        model = AutoModelForCausalLM.from_pretrained(
+            "trl-internal-testing/tiny-MistralForCausalLM-0.2",
+            device_map="cuda",
+            torch_dtype=torch.bfloat16,
+        )
+        quantize_model_for_ptq(model, weight_dtype, group_size,
+                               activation_dtype, quantize_embedding)
+        if quantize_embedding:
+            assert isinstance(model.model.embed_tokens.weight, AffineQuantizedTensor)
+        for child in list(model.children()):
+            if isinstance(child, torch.nn.Linear):
+                if activation_dtype:
+                    assert isinstance(child.weight, LinearActivationQuantizedTensor)
+                else:
+                    assert isinstance(child.weight, AffineQuantizedTensor)

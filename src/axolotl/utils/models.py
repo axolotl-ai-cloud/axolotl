@@ -130,22 +130,22 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
 
         # check if image_size is not set and load image size from model config if available
         if (
-            cfg.image_size is None and
-            hasattr(model_config, "vision_config") and
-            hasattr(model_config.vision_config, "image_size")
+            cfg.image_size is None
+            and hasattr(model_config, "vision_config")
+            and hasattr(model_config.vision_config, "image_size")
         ):
             cfg.image_size = model_config.vision_config.image_size
             LOG.debug(f"Loaded image size: {cfg.image_size} from model config")
 
     quant_config_exists = (
-        hasattr(model_config, "quantization_config") and
-        model_config.quantization_config
+        hasattr(model_config, "quantization_config")
+        and model_config.quantization_config
     )
 
     # Detect compressed-tensors config
     is_compressed_tensors_config = (
-        quant_config_exists and
-        model_config.quantization_config.get("quant_method") == "compressed-tensors"
+        quant_config_exists
+        and model_config.quantization_config.get("quant_method") == "compressed-tensors"
     )
 
     if is_compressed_tensors_config:
@@ -158,9 +158,9 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
         return
 
     quant_config_method_is_gptq = (
-        quant_config_exists and
-        "quant_method" in model_config.quantization_config and
-        model_config.quantization_config["quant_method"] == "gptq"
+        quant_config_exists
+        and "quant_method" in model_config.quantization_config
+        and model_config.quantization_config["quant_method"] == "gptq"
     )
 
     if cfg.gptq and not quant_config_method_is_gptq:
@@ -171,11 +171,11 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
 
     lora_modules_to_save = get_linear_embedding_layers(model_config.model_type)
     if (
-        cfg.adapter and
-        cfg.tokens and
-        (
-            not cfg.lora_modules_to_save or
-            not all(x in cfg.lora_modules_to_save for x in lora_modules_to_save)
+        cfg.adapter
+        and cfg.tokens
+        and (
+            not cfg.lora_modules_to_save
+            or not all(x in cfg.lora_modules_to_save for x in lora_modules_to_save)
         )
     ):
         lora_modules_to_save = ", ".join(map(lambda x: f"`{x}`", lora_modules_to_save))
@@ -353,9 +353,9 @@ def load_tokenizer(cfg):
             "LlamaTokenizerFast",
             "CodeLlamaTokenizer",
             "CodeLlamaTokenizerFast",
-        ] and
-        hasattr(tokenizer, "pad_token") and
-        not tokenizer.pad_token
+        ]
+        and hasattr(tokenizer, "pad_token")
+        and not tokenizer.pad_token
     ):
         # set a pad_token, but use eos_token so we don't add a new token
         tokenizer.pad_token = LLAMA_DEFAULT_EOS_TOKEN
@@ -392,16 +392,16 @@ def load_tokenizer(cfg):
             # is adapter training to make sure lora_modules_to_save is set
             # pylint: disable=too-many-boolean-expressions
             if (
-                (getattr(tokenizer, k) is None or getattr(tokenizer, k) != val) and
-                (len(tokenizer.encode(val, add_special_tokens=False)) > 2) and
-                cfg.adapter and
-                (
-                    not cfg.lora_modules_to_save or
-                    not all(
+                (getattr(tokenizer, k) is None or getattr(tokenizer, k) != val)
+                and (len(tokenizer.encode(val, add_special_tokens=False)) > 2)
+                and cfg.adapter
+                and (
+                    not cfg.lora_modules_to_save
+                    or not all(
                         x in cfg.lora_modules_to_save for x in lora_modules_to_save
                     )
-                ) and
-                k != "pad_token"
+                )
+                and k != "pad_token"
             ):
                 lora_modules_to_save = ", ".join(
                     [f"`{x}`" for x in lora_modules_to_save]
@@ -425,8 +425,8 @@ def load_tokenizer(cfg):
             in (
                 "LlamaTokenizerFast",
                 "CodeLlamaTokenizerFast",
-            ) and
-            bos_or_eos_in_special_tokens
+            )
+            and bos_or_eos_in_special_tokens
         ):
             tokenizer.update_post_processor()
 
@@ -493,9 +493,9 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
 
     # Attempt to load image size from processor if available
     if (
-        cfg.image_size is None and
-        hasattr(processor, "size") and
-        any(dim in processor.size for dim in ["width", "height"])
+        cfg.image_size is None
+        and hasattr(processor, "size")
+        and any(dim in processor.size for dim in ["width", "height"])
     ):
         im_width = None
         im_height = None
@@ -620,9 +620,9 @@ class ModelLoader:
             )
 
         if (
-            self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES and
-            (self.cfg.flash_attention or self.cfg.flex_attention) and
-            self.cfg.sample_packing
+            self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
+            and (self.cfg.flash_attention or self.cfg.flex_attention)
+            and self.cfg.sample_packing
         ):
             if "auto_map" in self.model_config:
                 try:
@@ -648,8 +648,8 @@ class ModelLoader:
             self.patch_llama_derived_model()
 
         if (
-            self.cfg.model_config_type == "mistral" and
-            self.cfg.flash_attn_cross_entropy_loss
+            self.cfg.model_config_type == "mistral"
+            and self.cfg.flash_attn_cross_entropy_loss
         ):
             from axolotl.monkeypatch.mistral_attn_hijack_flash import (
                 patch_mistral_cross_entropy,
@@ -689,8 +689,8 @@ class ModelLoader:
                 replace_btlm_attn_with_flash_attn(self.cfg.base_model)
 
             if (
-                self.model_config.model_type == "stablelm_epoch" and
-                self.cfg.sample_packing
+                self.model_config.model_type == "stablelm_epoch"
+                and self.cfg.sample_packing
             ):
                 from axolotl.monkeypatch.stablelm_attn_hijack_flash import (
                     replace_stablelm_attn_with_flash_attn,
@@ -866,9 +866,9 @@ class ModelLoader:
                     **self.model_config.quantization_config
                 )
         if (
-            self.cfg.adapter in ["qlora", "lora"] and
-            hasattr(self.model_config, "quantization_config") and
-            self.model_config.quantization_config["quant_method"]
+            self.cfg.adapter in ["qlora", "lora"]
+            and hasattr(self.model_config, "quantization_config")
+            and self.model_config.quantization_config["quant_method"]
             in ["gptq", "awq", "bitsandbytes"]
         ):
             if self.model_config.quantization_config["quant_method"] == "gptq":
@@ -974,9 +974,9 @@ class ModelLoader:
                 )
                 hf_ds_cfg.fill_match(
                     "train_batch_size",
-                    int(os.getenv("WORLD_SIZE", "1")) *
-                    self.cfg.micro_batch_size *
-                    self.cfg.gradient_accumulation_steps,
+                    int(os.getenv("WORLD_SIZE", "1"))
+                    * self.cfg.micro_batch_size
+                    * self.cfg.gradient_accumulation_steps,
                 )
                 if "device_map" in self.model_kwargs:
                     del self.model_kwargs["device_map"]
@@ -990,9 +990,9 @@ class ModelLoader:
 
         skip_move_to_device = False
         if (  # pylint: disable=condition-evals-to-constant)
-            (self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading) and
-            not qlora_fsdp and
-            False
+            (self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
+            and not qlora_fsdp
+            and False
         ):
             self.model = load_sharded_model(
                 self.base_model,
@@ -1002,11 +1002,11 @@ class ModelLoader:
             )
             skip_move_to_device = True
         elif (
-            qlora_fsdp and
-            self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading and
-            (
-                self.cfg.model_config_type == "dbrx" or
-                self.cfg.qlora_sharded_model_loading
+            qlora_fsdp
+            and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+            and (
+                self.cfg.model_config_type == "dbrx"
+                or self.cfg.qlora_sharded_model_loading
             )
         ):
             quant_storage = self.cfg.torch_dtype
@@ -1025,9 +1025,9 @@ class ModelLoader:
             )
             skip_move_to_device = True
         elif (
-            self.model_config.model_type in ["llama", "llama4"] and
-            not self.cfg.trust_remote_code and
-            not self.cfg.gptq
+            self.model_config.model_type in ["llama", "llama4"]
+            and not self.cfg.trust_remote_code
+            and not self.cfg.gptq
         ):
             # TODO do we need to open this up for all models?
             if self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
@@ -1087,9 +1087,9 @@ class ModelLoader:
                 **self.model_kwargs,
             )
         elif (
-            self.model_type and
-            self.model_type != "AutoModelForCausalLM" and
-            not self.cfg.trust_remote_code
+            self.model_type
+            and self.model_type != "AutoModelForCausalLM"
+            and not self.cfg.trust_remote_code
         ):
             if self.cfg.gptq:
                 self.model = self.auto_model_loader.from_pretrained(
@@ -1115,8 +1115,8 @@ class ModelLoader:
                 )
             else:
                 if (
-                    self.cfg.fsdp and
-                    self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+                    self.cfg.fsdp
+                    and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
                 ):
                     # disabling either of these two still leads to VRAM spike before setting back down
                     skip_move_to_device = True
@@ -1138,10 +1138,10 @@ class ModelLoader:
 
     def adjust_model_config(self) -> None:
         if (
-            hasattr(self.model, "config") and
-            hasattr(self.model.config, "max_position_embeddings") and
-            self.model.config.max_position_embeddings and
-            self.cfg.sequence_len > self.model.config.max_position_embeddings
+            hasattr(self.model, "config")
+            and hasattr(self.model.config, "max_position_embeddings")
+            and self.model.config.max_position_embeddings
+            and self.cfg.sequence_len > self.model.config.max_position_embeddings
         ):
             LOG.warning(
                 f"increasing model.config.max_position_embeddings from {self.model.config.max_position_embeddings} to {self.cfg.sequence_len}"
@@ -1149,18 +1149,18 @@ class ModelLoader:
             self.model.config.max_position_embeddings = self.cfg.sequence_len
 
         if (
-            hasattr(self.model, "config") and
-            hasattr(self.model.config, "bos_token_id") and
-            self.model.config.bos_token_id and
-            self.model.config.bos_token_id != self.tokenizer.bos_token_id
+            hasattr(self.model, "config")
+            and hasattr(self.model.config, "bos_token_id")
+            and self.model.config.bos_token_id
+            and self.model.config.bos_token_id != self.tokenizer.bos_token_id
         ):
             self.model.config.bos_token_id = self.tokenizer.bos_token_id
 
         if (
-            hasattr(self.model, "config") and
-            hasattr(self.model.config, "eos_token_id") and
-            self.model.config.eos_token_id and
-            self.model.config.eos_token_id != self.tokenizer.eos_token_id
+            hasattr(self.model, "config")
+            and hasattr(self.model.config, "eos_token_id")
+            and self.model.config.eos_token_id
+            and self.model.config.eos_token_id != self.tokenizer.eos_token_id
         ):
             self.model.config.eos_token_id = self.tokenizer.eos_token_id
 
@@ -1187,9 +1187,9 @@ class ModelLoader:
             skip_prepare_model_for_kbit_training = True
 
         loftq_bits = (
-            self.cfg.peft and
-            self.cfg.peft.loftq_config and
-            self.cfg.peft.loftq_config.loftq_bits
+            self.cfg.peft
+            and self.cfg.peft.loftq_config
+            and self.cfg.peft.loftq_config.loftq_bits
         )
         if self.cfg.adapter == "lora" and loftq_bits:
             skip_prepare_model_for_kbit_training = True
@@ -1204,9 +1204,9 @@ class ModelLoader:
             skip_prepare_model_for_kbit_training = True
 
         if (
-            not skip_prepare_model_for_kbit_training and
-            self.cfg.adapter in ["lora", "qlora"] and
-            (self.cfg.load_in_8bit or self.cfg.load_in_4bit)
+            not skip_prepare_model_for_kbit_training
+            and self.cfg.adapter in ["lora", "qlora"]
+            and (self.cfg.load_in_8bit or self.cfg.load_in_4bit)
         ):
             LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
             self.model = prepare_model_for_kbit_training(
@@ -1246,9 +1246,9 @@ class ModelLoader:
 
     def apply_lora_patch(self) -> None:
         if (
-            self.cfg.lora_mlp_kernel or
-            self.cfg.lora_qkv_kernel or
-            self.cfg.lora_o_kernel
+            self.cfg.lora_mlp_kernel
+            or self.cfg.lora_qkv_kernel
+            or self.cfg.lora_o_kernel
         ):
             from axolotl.monkeypatch.lora_kernels import apply_lora_kernel_patches
 
@@ -1282,10 +1282,10 @@ class ModelLoader:
             else len(self.tokenizer)
         )
         if hasattr(self.model, "get_input_embeddings") and (
-            self.model.get_input_embeddings().num_embeddings < embeddings_len or
-            (
-                self.model.get_input_embeddings().num_embeddings > embeddings_len and
-                self.cfg.shrink_embeddings
+            self.model.get_input_embeddings().num_embeddings < embeddings_len
+            or (
+                self.model.get_input_embeddings().num_embeddings > embeddings_len
+                and self.cfg.shrink_embeddings
             )
         ):
             resize_kwargs = {}
@@ -1334,9 +1334,10 @@ class ModelLoader:
             # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
             # convert them back to fp16/bf16 for flash-attn compatibility.
             (
-                (needs_fa2_dtype or self.cfg.flash_attention or self.cfg.flex_attention) and
-                not qlora_fsdp
-            ) or
+                (needs_fa2_dtype or self.cfg.flash_attention or self.cfg.flex_attention)
+                and not qlora_fsdp
+            )
+            or
             # Cut cross entropy requires embedding layers to be in fp16/bf16 for backward pass
             self.cfg.cut_cross_entropy
         )
@@ -1359,9 +1360,9 @@ class ModelLoader:
             # if we're not loading the reference model, then we're loading the model for training
             # then the dpo trainer doesn't want the peft model loaded over it, it just wants the lora/peft config
             if (
-                self.cfg.adapter and
-                self.cfg.rl in ["dpo", "ipo", "kto"] and
-                not self.cfg.merge_lora
+                self.cfg.adapter
+                and self.cfg.rl in ["dpo", "ipo", "kto"]
+                and not self.cfg.merge_lora
             ):
                 _, lora_config = load_lora(
                     self.model, self.cfg, inference=False, config_only=True
@@ -1389,10 +1390,10 @@ class ModelLoader:
         #  put model to accelerator
         # ---------------------------------------------------------
         if (
-            self.cfg.ddp and
-            not self.cfg.load_in_8bit and
-            not (self.cfg.rl and self.cfg.load_in_4bit) and
-            not skip_move_to_device
+            self.cfg.ddp
+            and not self.cfg.load_in_8bit
+            and not (self.cfg.rl and self.cfg.load_in_4bit)
+            and not skip_move_to_device
         ):
             # TODO revaldate this conditional
             self.model.to(f"{str(get_device_type())}:{self.cfg.local_rank}")
@@ -1502,9 +1503,9 @@ def find_all_linear_names(model):
     lora_module_names = set()
     for name, module in model.named_modules():
         if (
-            isinstance(module, cls) or
-            "Linear" in module.__class__.__name__ and
-            module.__class__.__name__ not in ("LlamaLinearScalingRotaryEmbedding",)
+            isinstance(module, cls)
+            or "Linear" in module.__class__.__name__
+            and module.__class__.__name__ not in ("LlamaLinearScalingRotaryEmbedding",)
         ):
             names = name.split(".")
             lora_module_names.add(names[0] if len(names) == 1 else names[-1])
@@ -1593,10 +1594,10 @@ def load_lora(model, cfg, inference=False, config_only=False):
     rank = int(os.environ.get("LOCAL_RANK", 0))
 
     if (
-        cfg.fsdp and
-        cfg.adapter and
-        cfg.fsdp_config.fsdp_cpu_ram_efficient_loading and
-        rank != 0
+        cfg.fsdp
+        and cfg.adapter
+        and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        and rank != 0
     ):
         setup_quantized_meta_for_peft(model)
 
@@ -1623,10 +1624,10 @@ def load_lora(model, cfg, inference=False, config_only=False):
                 "Exception caught during model.print_trainable_parameters(): %s", exc
             )
     elif (
-        cfg.fsdp and
-        cfg.adapter and
-        cfg.fsdp_config.fsdp_cpu_ram_efficient_loading and
-        rank != 0
+        cfg.fsdp
+        and cfg.adapter
+        and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        and rank != 0
     ):
         setup_quantized_peft_meta_for_training(model)
 
