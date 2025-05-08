@@ -41,6 +41,7 @@ class WandbConfig(BaseModel):
     use_wandb: bool | None = None
     wandb_name: str | None = None
     wandb_run_id: str | None = None
+    wandb_run_group: str | None = None
     wandb_mode: str | None = None
     wandb_project: str | None = None
     wandb_entity: str | None = None
