@@ -197,6 +197,7 @@ class SequenceParallelContextManager:
             kwargs, self.original_seq_len, self.pad_len = (
                 self.apply_sequence_parallelism(batch=kwargs)
             )
+
             return args, kwargs
 
         # Forward post-hook to gather outputs
@@ -239,8 +240,6 @@ class SequenceParallelContextManager:
         for key, value in output.items():
             if isinstance(value, torch.Tensor) and value.dim() > 1:
                 output[key] = AllGatherWithGrad.apply(value, self.process_group)
-            else:
-                output[key] = AllReduceWithGrad.apply(value, self.process_group)
 
         return output
 
