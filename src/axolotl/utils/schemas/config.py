@@ -1,9 +1,10 @@
 """Module with Pydantic models for configuration."""
 
-# pylint: disable=too-many-lines
-
+import json
 import logging
 import os
+import tempfile
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from annotated_types import MinLen
@@ -47,6 +48,9 @@ from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
 from axolotl.utils.schemas.training import HyperparametersConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.vllm import VllmConfig
+
+# pylint: disable=too-many-lines
+
 
 LOG = logging.getLogger(__name__)
 
@@ -261,6 +265,8 @@ class AxolotlInputConfig(
     sequence_parallel_degree: int | None = None
     heads_k_stride: int | None = None
     ring_attn_func: str | None = None
+
+    tensor_parallel_size: int | None = None
 
     special_tokens: SpecialTokensConfig | None = None
     tokens: list[str] | None = None
@@ -1199,6 +1205,28 @@ class AxolotlInputConfig(
             )
 
         return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_tensor_parallel_size(cls, data):
+        tensor_parallel_size = data.get("tensor_parallel_size")
+        if tensor_parallel_size is not None and tensor_parallel_size > 1:
+            if not data.get("deepspeed"):
+                raise ValueError(
+                    "Tensor parallelism (TP) is only supported with DeepSpeed"
+                )
+            with open(data.get("deepspeed"), "r", encoding="utf-8") as ds_fin:
+                ds_config = json.load(ds_fin)
+                if "tensor_parallel" not in ds_config:
+                    ds_config["tensor_parallel"] = {"autotp_size": tensor_parallel_size}
+                    temp_dir = tempfile.mkdtemp()
+                    with open(
+                        Path(temp_dir) / "autotp_ds.json", "w", encoding="utf-8"
+                    ) as ds_fout:
+                        json.dump(ds_config, ds_fout, indent=4)
+                    data["deepspeed"] = str(Path(temp_dir) / "autotp_ds.json")
+
+        return data
 
     @model_validator(mode="after")
     def validate_ring_attn_func(self):
