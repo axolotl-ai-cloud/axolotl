@@ -102,13 +102,13 @@ class TestSequenceParallelism:
             (True, 1, True, None),  # defaults to varlen_llama3 ring_attn_func
             (False, 2, True, None),  # defaults to batch_ring ring_attn_func
             # (False, 2, True, "batch_zigzag"),
-            # (False, 2, False),  # not yet working
+            (False, 2, False, None),  # defaults to batch_ring ring_attn_func
         ],
         ids=[
             "sample_packing, varlen_llama3 ring_attn_func",
             "no sample_packing, no pad_to_sequence_len, batch_ring ring_attn_func",
             # "no sample_packing, no pad_to_sequence_len, batch_zigzag ring_attn_func",
-            # "no sample_packing, pad_to_sequence_len",  # not yet working
+            "no sample_packing, no pad_to_sequence_len",
         ],
     )
     def test_sequence_parallel_training(
