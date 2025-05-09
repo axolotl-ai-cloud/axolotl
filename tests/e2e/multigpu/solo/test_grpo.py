@@ -166,7 +166,6 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
 """
             )
 
-    @pytest.nark.skip(reason="brittle test times out")
     @pytest.mark.parametrize(
         "num_gpus",
         [1, 2],
@@ -266,7 +265,6 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         finally:
             recursive_kill(vllm_process)
 
-    @pytest.nark.skip(reason="brittle test times out")
     @pytest.mark.parametrize(
         "num_gpus",
         [1, 2],
