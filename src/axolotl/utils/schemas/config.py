@@ -18,7 +18,6 @@ from pydantic import (
 )
 from transformers.utils.import_utils import is_torch_npu_available
 
-from axolotl.utils.distributed import is_main_process
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
     DPODataset,
@@ -403,10 +402,9 @@ class AxolotlInputConfig(
     @classmethod
     def check_pretraining_w_group_by_length(cls, data):
         if data.get("pretraining_dataset") and data.get("group_by_length"):
-            if is_main_process(use_environ=True):
-                LOG.warning(
-                    "You probably want to disable group_by_length as it will force a streamed dataset to download completely."
-                )
+            LOG.warning(
+                "You probably want to disable group_by_length as it will force a streamed dataset to download completely."
+            )
         return data
 
     @model_validator(mode="before")
@@ -466,10 +464,9 @@ class AxolotlInputConfig(
             and not data.get("flex_attention")
             and not data.get("xformers_attention")
         ):
-            if is_main_process(use_environ=True):
-                LOG.warning(
-                    "sample_packing without flash, sdp, xformers or flex attention does not handle cross sample decontamination."
-                )
+            LOG.warning(
+                "sample_packing without flash, sdp, xformers or flex attention does not handle cross sample decontamination."
+            )
 
         return data
 
@@ -483,10 +480,7 @@ class AxolotlInputConfig(
             if data.get("sample_packing") and not batch_flattening_auto:
                 raise ValueError("batch_flattening not compatible with sample_packing")
             if data.get("micro_batch_size") == 1 and not batch_flattening_auto:
-                if is_main_process(use_environ=True):
-                    LOG.warning(
-                        "batch_flattening has no effect with micro_batch_size == 1"
-                    )
+                LOG.warning("batch_flattening has no effect with micro_batch_size == 1")
 
             if (
                 batch_flattening_auto
@@ -513,15 +507,13 @@ class AxolotlInputConfig(
         if data.get("sample_packing"):
             pad_to_sequence_len = data.get("pad_to_sequence_len")
             if pad_to_sequence_len is False:
-                if is_main_process(use_environ=True):
-                    LOG.warning(
-                        "`pad_to_sequence_len: true` is recommended when using sample_packing"
-                    )
+                LOG.warning(
+                    "`pad_to_sequence_len: true` is recommended when using sample_packing"
+                )
             elif pad_to_sequence_len is None:
-                if is_main_process(use_environ=True):
-                    LOG.info(
-                        "Setting `pad_to_sequence_len: true` to prevent memory leaks when sample_packing"
-                    )
+                LOG.info(
+                    "Setting `pad_to_sequence_len: true` to prevent memory leaks when sample_packing"
+                )
                 data["pad_to_sequence_len"] = True
         return data
 
@@ -529,10 +521,9 @@ class AxolotlInputConfig(
     @classmethod
     def hint_reward_model_pad(cls, data):
         if data.get("reward_model") and not data.get("pad_to_sequence_len"):
-            if is_main_process(use_environ=True):
-                LOG.warning(
-                    "`pad_to_sequence_len: true` is recommended when using reward_model"
-                )
+            LOG.warning(
+                "`pad_to_sequence_len: true` is recommended when using reward_model"
+            )
             if data.get("pad_to_sequence_len") is None:
                 data["pad_to_sequence_len"] = True
         return data
@@ -554,10 +545,9 @@ class AxolotlInputConfig(
             and data.get("micro_batch_size")
             and data.get("eval_batch_size") != data.get("micro_batch_size")
         ):
-            if is_main_process(use_environ=True):
-                LOG.warning(
-                    "eval_batch_size != micro_batch_size. This can lead to VRAM instability."
-                )
+            LOG.warning(
+                "eval_batch_size != micro_batch_size. This can lead to VRAM instability."
+            )
         return data
 
     @model_validator(mode="before")
@@ -589,10 +579,9 @@ class AxolotlInputConfig(
     @model_validator(mode="after")
     def check_offload_grad_checkpointing(self):
         if self.gradient_checkpointing and self.gradient_checkpointing == "unsloth":
-            if is_main_process(use_environ=True):
-                LOG.warning(
-                    "`unsloth` is deprecated for gradient_checkpointing, use `offload`"
-                )
+            LOG.warning(
+                "`unsloth` is deprecated for gradient_checkpointing, use `offload`"
+            )
             self.gradient_checkpointing = "offload"
         return self
 
@@ -600,18 +589,16 @@ class AxolotlInputConfig(
     def check_better_transformers(self):
         if self.flash_optimum is True:
             if self.adapter:
-                if is_main_process(use_environ=True):
-                    LOG.warning(
-                        "BetterTransformers probably doesn't work with PEFT adapters"
-                    )
+                LOG.warning(
+                    "BetterTransformers probably doesn't work with PEFT adapters"
+                )
             if self.fp16 or self.bf16:
                 raise ValueError("AMP is not supported with BetterTransformer")
             if self.float16 is not True and self.bfloat16 is not True:
-                if is_main_process(use_environ=True):
-                    LOG.warning(
-                        "You should probably set bfloat16 or float16 to true to "
-                        "load the model in float16 for BetterTransformers"
-                    )
+                LOG.warning(
+                    "You should probably set bfloat16 or float16 to true to "
+                    "load the model in float16 for BetterTransformers"
+                )
         return self
 
     @model_validator(mode="after")
@@ -619,8 +606,7 @@ class AxolotlInputConfig(
         if any([self.adam_beta1, self.adam_beta2, self.adam_epsilon]) and (
             not self.optimizer or "adamw" not in str(self.optimizer).lower()
         ):
-            if is_main_process(use_environ=True):
-                LOG.warning("adamw hyperparameters found, but no adamw optimizer set")
+            LOG.warning("adamw hyperparameters found, but no adamw optimizer set")
         return self
 
     @model_validator(mode="before")
@@ -653,10 +639,9 @@ class AxolotlInputConfig(
         if data.get("hub_model_id") and (
             data.get("save_strategy") not in ["steps", "epoch", None]
         ):
-            if is_main_process(use_environ=True):
-                LOG.warning(
-                    "hub_model_id is set without any models being saved. To save a model, set save_strategy."
-                )
+            LOG.warning(
+                "hub_model_id is set without any models being saved. To save a model, set save_strategy."
+            )
         return data
 
     @model_validator(mode="before")
@@ -709,10 +694,9 @@ class AxolotlInputConfig(
             and not data.get("test_datasets")
             and not data.get("val_set_size")
         ):
-            if is_main_process(use_environ=True):
-                LOG.warning(
-                    "`do_bench_eval` needs a test dataset to run evals, adding an empty test_dataset."
-                )
+            LOG.warning(
+                "`do_bench_eval` needs a test dataset to run evals, adding an empty test_dataset."
+            )
             data["test_datasets"] = [{"path": "axolotl-ai-co/empty-test-ds"}]
         return data
 
@@ -734,10 +718,9 @@ class AxolotlInputConfig(
             and data.get("eval_sample_packing") is None
             and not data.get("eval_table_size")
         ):
-            if is_main_process(use_environ=True):
-                LOG.info(
-                    "explicitly setting `eval_sample_packing` to match `sample_packing`"
-                )
+            LOG.info(
+                "explicitly setting `eval_sample_packing` to match `sample_packing`"
+            )
             data["eval_sample_packing"] = True
 
         if (
@@ -745,10 +728,9 @@ class AxolotlInputConfig(
             and data.get("eval_sample_packing") is False
             and data.get("remove_unused_columns") is None
         ):
-            if is_main_process(use_environ=True):
-                LOG.info(
-                    "setting `remove_unused_columns: false` for when sample_packing and eval_sample_packing don't match"
-                )
+            LOG.info(
+                "setting `remove_unused_columns: false` for when sample_packing and eval_sample_packing don't match"
+            )
             data["remove_unused_columns"] = False
 
         return data
@@ -758,10 +740,9 @@ class AxolotlInputConfig(
     def check_mm_prepare(cls, data):
         if data.get("skip_prepare_dataset"):
             if data.get("remove_unused_columns") is None:
-                if is_main_process(use_environ=True):
-                    LOG.info(
-                        "setting `remove_unused_columns: false` for skip_prepare_dataset"
-                    )
+                LOG.info(
+                    "setting `remove_unused_columns: false` for skip_prepare_dataset"
+                )
                 data["remove_unused_columns"] = False
 
         return data
@@ -840,10 +821,9 @@ class AxolotlInputConfig(
             and not self.flash_attention
             and self.sample_packing
         ):
-            if is_main_process(use_environ=True):
-                LOG.warning(
-                    "Full fine tune w/o FA2 w/ sample packing and fp16/float16 is likely to raise errors. Try LoRA."
-                )
+            LOG.warning(
+                "Full fine tune w/o FA2 w/ sample packing and fp16/float16 is likely to raise errors. Try LoRA."
+            )
             # ValueError: Attempting to unscale FP16 gradients.
             # OR
             # RuntimeError: expected mat1 and mat2 to have the same dtype, but got: float != c10::Half
@@ -863,10 +843,7 @@ class AxolotlInputConfig(
             self.peft and self.peft.loftq_config and self.peft.loftq_config.loftq_bits
         )
         if not self.load_in_8bit and self.adapter == "lora" and not loftq:
-            if is_main_process(use_environ=True):
-                LOG.warning(
-                    "We recommend setting `load_in_8bit: true` for LORA finetuning"
-                )
+            LOG.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
         return self
 
     @model_validator(mode="after")
@@ -945,10 +922,9 @@ class AxolotlInputConfig(
             # torch.utils.checkpoint.CheckpointError: torch.utils.checkpoint:
             # Recomputed values for the following tensors have different metadata
             # than during the forward pass.
-            if is_main_process(use_environ=True):
-                LOG.warning(
-                    "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values"
-                )
+            LOG.warning(
+                "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values"
+            )
         return data
 
     @model_validator(mode="before")
@@ -967,10 +943,9 @@ class AxolotlInputConfig(
             data.get("evaluation_strategy") is not None
             and data.get("eval_strategy") is None
         ):
-            if is_main_process(use_environ=True):
-                LOG.info(
-                    "explicitly setting `eval_strategy` from the `evaluation_strategy`"
-                )
+            LOG.info(
+                "explicitly setting `eval_strategy` from the `evaluation_strategy`"
+            )
             data["eval_strategy"] = data.get("evaluation_strategy")
         return data
 
@@ -1214,15 +1189,14 @@ class AxolotlInputConfig(
             # TODO: monkeypatch / callback to average losses correctly across SP ranks
             # / fix gradient scaling across SP ranks. Losses, grads should be scaled
             # according to the proportion of non-padding tokens per rank.
-            if is_main_process(use_environ=True):
-                LOG.warning(
-                    "Sequence parallelism (SP) is enabled with "
-                    f"sequence_parallel_degree={self.sequence_parallel_degree}. "
-                    "Please note that logged losses may differ slightly to the non-SP "
-                    "losses due to transformers Trainer implementation details. "
-                    "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
-                    "for more details."
-                )
+            LOG.warning(
+                "Sequence parallelism (SP) is enabled with "
+                f"sequence_parallel_degree={self.sequence_parallel_degree}. "
+                "Please note that logged losses may differ slightly to the non-SP "
+                "losses due to transformers Trainer implementation details. "
+                "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
+                "for more details."
+            )
 
         return self
 
@@ -1272,10 +1246,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     def check_bf16(self):
         if self.capabilities.bf16:
             if not self.bf16 and not self.bfloat16:
-                if is_main_process(use_environ=True):
-                    LOG.info(
-                        "bf16 support detected, but not enabled for this configuration."
-                    )
+                LOG.info(
+                    "bf16 support detected, but not enabled for this configuration."
+                )
         else:
             if (
                 not self.merge_lora
@@ -1301,11 +1274,10 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             and not is_sm_90
         ):
             # https://github.com/pytorch/pytorch/blob/1b03423526536b5f3d35bdfa95ccc6197556cf9b/test/test_transformers.py#L2440-L2450
-            if is_main_process(use_environ=True):
-                LOG.warning(
-                    "sample_packing & torch sdpa with bf16 is unsupported may results in 0.0 loss. "
-                    "This may work on H100s."
-                )
+            LOG.warning(
+                "sample_packing & torch sdpa with bf16 is unsupported may results in 0.0 loss. "
+                "This may work on H100s."
+            )
 
         return data
 
@@ -1399,12 +1371,11 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 if data.get("lora_o_kernel") is None:
                     data["lora_o_kernel"] = True
 
-                if is_main_process(use_environ=True):
-                    LOG.warning(
-                        "Auto-enabling LoRA kernel optimizations for faster training. "
-                        + "Please explicitly set `lora_*_kernel` config values to `false` to disable. "
-                        + "See https://docs.axolotl.ai/docs/lora_optims.html for more info."
-                    )
+                LOG.warning(
+                    "Auto-enabling LoRA kernel optimizations for faster training. "
+                    + "Please explicitly set `lora_*_kernel` config values to `false` to disable. "
+                    + "See https://docs.axolotl.ai/docs/lora_optims.html for more info."
+                )
 
         return data
 
@@ -1453,10 +1424,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 if version.parse(
                     env_capabilities.get("torch_version")
                 ) >= version.parse("2.5.1"):
-                    if is_main_process(use_environ=True):
-                        LOG.info(
-                            "torch.compile is available, setting torch_compile to True"
-                        )
+                    LOG.info(
+                        "torch.compile is available, setting torch_compile to True"
+                    )
                     data["torch_compile"] = True
                 else:
                     data["torch_compile"] = False
@@ -1477,9 +1447,8 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if self.env_capabilities and self.env_capabilities.torch_version:
             torch_version = self.env_capabilities.torch_version
             if version.parse(torch_version) < version.parse("2.5.1"):
-                if is_main_process(use_environ=True):
-                    LOG.warning(
-                        f"torch=={torch_version} may not be supported in future versions. Please consider upgrading to torch>=2.5.1."
-                    )
+                LOG.warning(
+                    f"torch=={torch_version} may not be supported in future versions. Please consider upgrading to torch>=2.5.1."
+                )
 
         return self
