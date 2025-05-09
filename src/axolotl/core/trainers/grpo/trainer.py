@@ -28,7 +28,6 @@ from transformers import (
     PreTrainedTokenizerBase,
     Trainer,
     TrainerCallback,
-    is_wandb_available,
 )
 from transformers.trainer_utils import seed_worker
 from transformers.utils import is_peft_available
@@ -39,19 +38,11 @@ from trl.data_utils import (
     maybe_apply_chat_template,
 )
 from trl.extras.profiling import profiling_context, profiling_decorator
-from trl.import_utils import (
-    is_deepspeed_available,
-    is_rich_available,
-)
-from trl.models import (
-    unwrap_model_for_generation,
-)
+from trl.import_utils import is_deepspeed_available
+from trl.models import unwrap_model_for_generation
 from trl.trainer.grpo_config import GRPOConfig
 from trl.trainer.grpo_trainer import RewardFunc, nanstd
-from trl.trainer.utils import (
-    pad,
-    print_prompt_completions_sample,
-)
+from trl.trainer.utils import pad
 
 from axolotl.core.trainers.grpo.sampler import SequenceParallelRepeatRandomSampler
 from axolotl.core.trainers.mixins import RngLoaderMixin, SchedulerMixin
@@ -63,9 +54,6 @@ if is_peft_available():
 
 if is_deepspeed_available():
     import deepspeed
-
-if is_wandb_available():
-    import wandb
 
 
 class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
@@ -359,7 +347,7 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
                     world_size = self.accelerator.num_processes
                     sequence_parallel_degree = self.args.sequence_parallel_degree
                     num_sp_groups = world_size // sequence_parallel_degree
-                    
+
                     # Since processes in the same SP group have the same prompts, we need to ensure
                     # we only take one copy of each prompt from each SP group
                     ordered_set_of_prompts = []
@@ -370,9 +358,9 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
                         # Extract prompts from this SP group, accounting for num_generations duplicates
                         # We only need prompts from one rank in each SP group
                         group_prompts = all_prompts_text[
-                            group_leader_rank * len(prompts_text):
-                            (group_leader_rank + 1) * len(prompts_text):
-                            self.num_generations
+                            group_leader_rank
+                            * len(prompts_text) : (group_leader_rank + 1)
+                            * len(prompts_text) : self.num_generations
                         ]
 
                         ordered_set_of_prompts.extend(group_prompts)
