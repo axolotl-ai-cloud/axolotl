@@ -256,7 +256,7 @@ class TestConfigValidation:
             AxolotlInputConfig(**cfg)
 
         # Verify error message
-        assert "ring_attn_func: INVALID_FUNC must be in" in str(excinfo.value)
+        assert "Input should be 'varlen_llama3' or 'batch_ring'" in str(excinfo.value)
 
 
 class TestApplySequenceParallelism:
@@ -420,5 +420,6 @@ class TestApplySequenceParallelism:
         )
 
         # Verification should pass
-        assert "position_ids" not in result
+        assert "position_ids" in result
+        assert result["input_ids"].shape[1] == result["position_ids"].shape[1]
         assert result["input_ids"].shape[1] == original_input_ids.shape[1] // 2
