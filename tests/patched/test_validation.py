@@ -1685,3 +1685,18 @@ class TestValidationMLflow(BaseValidation):
         assert new_cfg.use_mlflow is True
 
         os.environ.pop("MLFLOW_EXPERIMENT_NAME", None)
+
+
+class TestDataloaderValidation(BaseValidation):
+    """
+    tests for dataloader_* sane defaults
+    """
+
+    def test_dataloader_auto_defaults(self, minimal_cfg):
+        cfg = minimal_cfg
+
+        new_cfg = validate_config(cfg, {"n_gpu": 8}, {"torch_version": "2.6.0"})
+
+        assert new_cfg.dataloader_num_workers == 8
+        assert new_cfg.dataloader_pin_memory is True
+        assert new_cfg.dataloader_prefetch_factor == 256

@@ -1450,3 +1450,17 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
 
         return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_dataloader_opts(cls, data):
+        if (
+            data.get("dataloader_num_workers") is None
+            and data.get("dataloader_pin_memory") is None
+            and data.get("dataloader_prefetch_factor") is None
+        ):
+            data["dataloader_num_workers"] = data.get("capabilities").get("n_gpu", 1)
+            data["dataloader_pin_memory"] = True
+            data["dataloader_prefetch_factor"] = 256
+
+        return data
