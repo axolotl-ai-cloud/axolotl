@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-from axolotl.utils.schemas.qat import TorchIntDType
+from axolotl.utils.schemas.enums import TorchIntDType
 
 
 @dataclass

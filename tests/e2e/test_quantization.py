@@ -1,6 +1,5 @@
 import pytest
 import torch
-from torchao.experimental.quant_api import Int8DynamicActivationIntxWeightConfig
 from torchao.quantization.granularity import PerAxis, PerGroup
 from torchao.quantization.qat.embedding import FakeQuantizedEmbedding
 from torchao.quantization.qat.linear import FakeQuantizedLinear
@@ -16,12 +15,31 @@ from torchao.dtypes.affine_quantized_tensor import AffineQuantizedTensor
 from transformers import AutoModelForCausalLM
 
 from axolotl.utils.quantization import (
-    IntxWeightOnlyConfig,
     get_ptq_config,
     quantize_model_for_qat,
     quantize_model_for_ptq,
 )
-from axolotl.utils.schemas.qat import TorchIntDType
+from axolotl.utils.schemas.enums import TorchIntDType
+from axolotl.utils.schemas.qat import QATConfig
+from axolotl.utils.callbacks.qat import QATCallback
+from transformers.trainer_callback import TrainerState
+
+
+@pytest.fixture(scope="module")
+def model():
+    model = AutoModelForCausalLM.from_pretrained(
+        "HuggingFaceTB/SmolLM2-135M",
+        device_map="cuda",
+        torch_dtype=torch.bfloat16,
+    )
+    with torch.device(model.device):
+        model.model.embed_tokens = torch.nn.Embedding(
+            model.model.embed_tokens.weight.shape[0],
+            model.model.embed_tokens.weight.shape[1],
+            dtype=model.model.embed_tokens.weight.dtype,
+        )
+    return model
+
 
 ptq_config_test_cases = [
     # weight_dtype, activation_dtype, group_size, expected_type, expected_params
@@ -32,7 +50,7 @@ ptq_config_test_cases = [
         UIntXWeightOnlyConfig,
         {"dtype": torch.uint4, "group_size": None},
     ),
-    (TorchIntDType.int8, None, None, Int8WeightOnlyConfig, {"group_size": None}),
+    (TorchIntDType.int8, None, 32, Int8WeightOnlyConfig, {"group_size": 32}),
     (TorchIntDType.int4, None, 4, Int4WeightOnlyConfig, {"group_size": 4}),
     (
         TorchIntDType.int4,
@@ -48,22 +66,21 @@ ptq_config_test_cases = [
         Int8DynamicActivationInt8WeightConfig,
         {},
     ),
-    (
-        TorchIntDType.int4,
-        TorchIntDType.int8,
-        None,
-        Int8DynamicActivationIntxWeightConfig,
-        {
-            "weight_dtype": torch.int4,
-            "granularity": PerAxis(0),
-            "has_weight_zeros": False,
-        },
-    ),
+]
+
+ptq_test_cases = [
+    # weight_dtype, activation_dtype, group_size, quantize_embedding, expected_exception
+    (TorchIntDType.int8, None, 8, False, None),
+    (TorchIntDType.int4, None, 4, True, None),
+    (TorchIntDType.uint4, None, 8, False, None),
+    (TorchIntDType.int4, TorchIntDType.int4, 8, False, None),
+    (TorchIntDType.int8, TorchIntDType.int8, 8, True, None),
+    (TorchIntDType.int8, None, None, False, ValueError),
+    (TorchIntDType.int4, None, None, False, ValueError),
 ]
 
 
 class TestQuantization:
-
     @pytest.mark.parametrize(
         "weight_dtype,activation_dtype,group_size,expected_type,expected_params",
         ptq_config_test_cases,
@@ -89,7 +106,7 @@ class TestQuantization:
                 assert getattr(config, param_name) == param_value
 
     @pytest.mark.parametrize(
-        "weight_dtype", [TorchIntDType.int8, TorchIntDType.int4]
+        "weight_dtype", [TorchIntDType.int8, TorchIntDType.int4, TorchIntDType.uint4]
     )
     @pytest.mark.parametrize(
         "activation_dtype", [None, TorchIntDType.int4, TorchIntDType.int8]
@@ -97,13 +114,8 @@ class TestQuantization:
     @pytest.mark.parametrize("group_size", [4, 8])
     @pytest.mark.parametrize("quantize_embedding", [False, True])
     def test_quantize_model_for_qat(
-        self, weight_dtype, activation_dtype, group_size, quantize_embedding
+        self, model, weight_dtype, activation_dtype, group_size, quantize_embedding
     ):
-        model = AutoModelForCausalLM.from_pretrained(
-            "trl-internal-testing/tiny-MistralForCausalLM-0.2",
-            device_map="cuda",
-            torch_dtype=torch.bfloat16,
-        )
         quantize_model_for_qat(
             model, weight_dtype, group_size, activation_dtype, quantize_embedding
         )
@@ -129,27 +141,133 @@ class TestQuantization:
                     assert child.activation_fake_quantizer is None
 
     @pytest.mark.parametrize(
-        "weight_dtype", [TorchIntDType.int8, TorchIntDType.int4,
-                         TorchIntDType.uint4, TorchIntDType.uint7]
+        "weight_dtype,activation_dtype,group_size,quantize_embedding,expected_exception",
+        ptq_test_cases,
     )
-    @pytest.mark.parametrize(
-        "activation_dtype", [None, None, None, None, None]
-    )
-    @pytest.mark.parametrize("group_size", [4, 8])
-    @pytest.mark.parametrize("quantize_embedding", [False, True])
-    def test_quantize_model_for_ptq(self, weight_dtype, activation_dtype, group_size, quantize_embedding):
-        model = AutoModelForCausalLM.from_pretrained(
-            "trl-internal-testing/tiny-MistralForCausalLM-0.2",
-            device_map="cuda",
-            torch_dtype=torch.bfloat16,
+    def test_quantize_model_for_ptq(self, model, weight_dtype, activation_dtype, group_size, quantize_embedding, expected_exception):
+        if expected_exception:
+            with pytest.raises(expected_exception):
+                quantize_model_for_ptq(model, weight_dtype, group_size,
+                                       activation_dtype, quantize_embedding)
+        else:
+            quantize_model_for_ptq(model, weight_dtype, group_size,
+                                   activation_dtype, quantize_embedding)
+            if quantize_embedding:
+                assert isinstance(model.model.embed_tokens.weight,
+                                  AffineQuantizedTensor), "Embedding weight should be quantized"
+            for child in list(model.children()):
+                if isinstance(child, torch.nn.Linear):
+                    if activation_dtype:
+                        assert isinstance(
+                            child.weight, LinearActivationQuantizedTensor), "Linear weight should be quantized with activation quantization"
+                    else:
+                        assert isinstance(
+                            child.weight, AffineQuantizedTensor), "Linear weight should be quantized without activation quantization"
+
+
+class TestQuantizationCallback:
+
+    @pytest.fixture()
+    def trainer_state(self):
+        return TrainerState(
+            global_step=0,
         )
-        quantize_model_for_ptq(model, weight_dtype, group_size,
-                               activation_dtype, quantize_embedding)
-        if quantize_embedding:
-            assert isinstance(model.model.embed_tokens.weight, AffineQuantizedTensor)
-        for child in list(model.children()):
-            if isinstance(child, torch.nn.Linear):
-                if activation_dtype:
-                    assert isinstance(child.weight, LinearActivationQuantizedTensor)
-                else:
-                    assert isinstance(child.weight, AffineQuantizedTensor)
+
+    def test_qat_callback_fake_quant_after_n_steps(self, model, trainer_state):
+        cfg = QATConfig(
+            weight_dtype=TorchIntDType.int8,
+            activation_dtype=TorchIntDType.int8,
+            group_size=8,
+            quantize_embedding=True,
+            fake_quant_after_n_steps=100,
+        )
+
+        quantize_model_for_qat(model, cfg.weight_dtype, cfg.group_size,
+                               cfg.activation_dtype, cfg.quantize_embedding)
+        # ensure model has been quantized
+        assert model.model.embed_tokens.weight_fake_quantizer.enabled == True
+        assert model.lm_head.weight_fake_quantizer.enabled == True
+
+        qat_callback = QATCallback(cfg)
+
+        # simulate first training step
+        qat_callback.on_step_begin()
+        assert model.model.embed_tokens.weight_fake_quantizer.enabled == False
+        assert model.lm_head.weight_fake_quantizer.enabled == False
+
+        trainer_state.global_step = 100
+        qat_callback.on_step_begin(
+            args=None,
+            state=trainer_state,
+            control=None,
+            model=model,
+        )
+        assert model.model.embed_tokens.weight_fake_quantizer.enabled == True
+        assert model.lm_head.weight_fake_quantizer.enabled == True
+
+    def test_qat_callback_fake_quant_after_n_steps_none(self, model, trainer_state):
+        cfg = QATConfig(
+            weight_dtype=TorchIntDType.int8,
+            activation_dtype=TorchIntDType.int8,
+            group_size=8,
+            quantize_embedding=True,
+            fake_quant_after_n_steps=None,
+        )
+
+        quantize_model_for_qat(model, cfg.weight_dtype, cfg.group_size,
+                               cfg.activation_dtype, cfg.quantize_embedding)
+        # ensure model has been quantized
+
+        assert model.model.embed_tokens.weight_fake_quantizer.enabled == True
+        assert model.lm_head.weight_fake_quantizer.enabled == True
+        qat_callback = QATCallback(cfg)
+        # simulate first training step
+        qat_callback.on_step_begin()
+        # model should be quantized from the get-go
+        assert model.model.embed_tokens.weight_fake_quantizer.enabled == True
+        assert model.lm_head.weight_fake_quantizer.enabled == True
+
+    def test_qat_callback_on_train_end_no_save_quantized_model(self, model, trainer_state):
+
+        cfg = QATConfig(
+            weight_dtype=TorchIntDType.int8,
+            activation_dtype=TorchIntDType.int8,
+            group_size=8,
+            quantize_embedding=True,
+            save_quantized_model=False,
+        )
+        quantize_model_for_qat(model, cfg.weight_dtype, cfg.group_size,
+                               cfg.activation_dtype, cfg.quantize_embedding)
+        # ensure model has been quantized
+        assert model.model.embed_tokens.weight_fake_quantizer.enabled == True
+        assert model.lm_head.weight_fake_quantizer.enabled == True
+
+        qat_callback = QATCallback(cfg)
+        qat_callback.on_train_end(
+            args=None,
+            state=trainer_state,
+            control=None,
+            model=model,
+        )
+
+    def test_qat_callback_on_train_end_save_quantized_model(self, model, trainer_state):
+        quantize_model_for_qat(model, cfg.weight_dtype, cfg.group_size,
+                               cfg.activation_dtype, cfg.quantize_embedding)
+        # ensure model has been quantized
+        assert model.model.embed_tokens.weight_fake_quantizer.enabled == True
+        assert model.lm_head.weight_fake_quantizer.enabled == True
+
+        cfg = QATConfig(
+            weight_dtype=TorchIntDType.int8,
+            activation_dtype=TorchIntDType.int8,
+            group_size=8,
+            quantize_embedding=True,
+            save_quantized_model=True,
+        )
+        qat_callback = QATCallback(cfg)
+        qat_callback.on_train_end(
+            args=None,
+            state=trainer_state,
+            control=None,
+            model=model,
+        )
