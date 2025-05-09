@@ -387,8 +387,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["adam_beta1"] = self.cfg.adam_beta1
         if self.cfg.adam_beta2:
             training_arguments_kwargs["adam_beta2"] = self.cfg.adam_beta2
+        if self.cfg.adam_beta3:
+            training_arguments_kwargs["adam_beta3"] = self.cfg.adam_beta3
         if self.cfg.adam_epsilon:
             training_arguments_kwargs["adam_epsilon"] = self.cfg.adam_epsilon
+        if self.cfg.adam_epsilon2:
+            training_arguments_kwargs["adam_epsilon2"] = self.cfg.adam_epsilon2
         if self.cfg.max_grad_norm:
             training_arguments_kwargs["max_grad_norm"] = self.cfg.max_grad_norm
 
@@ -713,7 +717,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
                 beta1 = training_arguments_kwargs.get("adam_beta1", 0.9)
                 beta2 = training_arguments_kwargs.get("adam_beta2", 0.999)
-                beta3 = training_arguments_kwargs.get("adam_beta2", 0.9999)
+                beta3 = training_arguments_kwargs.get("adam_beta3", 0.9999)
                 eps1 = training_arguments_kwargs.get("adam_epsilon", 1e-30)
                 eps2 = training_arguments_kwargs.get("adam_epsilon2", 1e-16)
                 adam_kwargs["betas"] = (beta1, beta2, beta3)
