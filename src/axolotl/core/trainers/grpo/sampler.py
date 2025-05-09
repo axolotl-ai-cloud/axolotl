@@ -102,6 +102,10 @@ class SequenceParallelRepeatRandomSampler(Sampler):
                 * self.batch_size
             )
 
+        if shuffle:
+            self.generator = torch.Generator()
+            self.generator.manual_seed(seed)
+
     def __iter__(self) -> Iterator[int]:
         """Creates iterator over dataset indices.
 
@@ -110,13 +114,11 @@ class SequenceParallelRepeatRandomSampler(Sampler):
         """
         # Deterministically shuffle based on epoch and seed
         if self.shuffle:
-            # Use same seed for all ranks in the same SP group
-            g = torch.Generator()
-            seed_value = self.seed + self.epoch + self.sp_group_id * 10000
-            g.manual_seed(seed_value)
-            indices = torch.randperm(len(self.dataset), generator=g).tolist()
+            indices = torch.randperm(
+                self.num_samples, generator=self.generator
+            ).tolist()
         else:
-            indices = list(range(len(self.dataset)))
+            indices = list(range(self.num_samples))
 
         # Add extra samples to make it evenly divisible by batch_size
         if len(indices) % self.batch_size != 0:

@@ -1,8 +1,6 @@
 """Module for Axolotl trainer sequence parallelism manager and utilities"""
 
 import functools
-from collections import defaultdict
-from typing import DefaultDict
 
 import torch
 import torch.distributed as dist
@@ -176,7 +174,7 @@ class SequenceParallelContextManager:
         self.local_world_size = dist.get_world_size(self.process_group)
 
         # Will store hook handles for removal
-        self.hook_handles: DefaultDict[int, list[RemovableHandle]] = defaultdict(list)
+        self.hook_handles: list[RemovableHandle] = []
 
         # Store original sequence length and padding information
         self.original_seq_len = 0
@@ -216,13 +214,13 @@ class SequenceParallelContextManager:
             return output
 
         # Register both hooks
-        for i, model in enumerate(self.models):
-            self.hook_handles[i].append(
+        for model in self.models:
+            self.hook_handles.append(
                 model.register_forward_pre_hook(
                     sequence_parallel_pre_hook, with_kwargs=True
                 )
             )
-            self.hook_handles[i].append(
+            self.hook_handles.append(
                 model.register_forward_hook(sequence_parallel_post_hook)
             )
 
@@ -230,19 +228,15 @@ class SequenceParallelContextManager:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         # Remove all hooks
-        for key in self.hook_handles:
-            for handle in self.hook_handles[key]:
-                handle.remove()
-            self.hook_handles[key] = []
+        for handle in self.hook_handles:
+            handle.remove()
+        self.hook_handles = []
 
     def gather_outputs(self, output: CausalLMOutputWithPast) -> CausalLMOutputWithPast:
         """Gather sharded outputs from all ranks and reconstruct the full tensor."""
-        from torch.distributed.nn.functional import all_gather
-
         for key, value in output.items():
             if isinstance(value, torch.Tensor) and value.dim() > 1:
                 output[key] = AllGatherWithGrad.apply(value, self.process_group)
-                #     output[key] = torch.cat(gathered, dim=1)
 
         return output
 
@@ -270,11 +264,10 @@ class AllGatherWithGrad(torch.autograd.Function):
         """
         ctx.group = group
         ctx.rank = dist.get_rank(group)
-        ctx.world_size = dist.get_world_size(group)
+        world_size = dist.get_world_size(group)
 
         # Gather shape metadata
         local_shape = torch.tensor(list(input_tensor.shape), device=input_tensor.device)
-        world_size = ctx.world_size
         all_shapes = [torch.zeros_like(local_shape) for _ in range(world_size)]
         dist.all_gather(all_shapes, local_shape, group=group)
 
