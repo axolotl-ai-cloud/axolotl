@@ -1206,13 +1206,7 @@ class AxolotlInputConfig(
             return self
 
         if self.ring_attn_func is not None:
-            valid_funcs = list(RingAttnFunc)
-            if self.ring_attn_func in valid_funcs:
-                self.ring_attn_func = RingAttnFunc(self.ring_attn_func)
-            else:
-                raise ValueError(
-                    f"ring_attn_func: {self.ring_attn_func} must be in {valid_funcs}"
-                )
+            self.ring_attn_func = RingAttnFunc(self.ring_attn_func)
         else:
             # Default ring attention function selection
             sample_packing = getattr(self, "sample_packing", False)
