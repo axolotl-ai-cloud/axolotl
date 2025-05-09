@@ -227,7 +227,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
 
         current_env = os.environ.copy()
         env = {
-            "NCCL_P2P_LEVEL": "NVL",
+            "NCCL_P2P_LEVEL": "LOC",
             **current_env,
             "CUDA_VISIBLE_DEVICES": "1",
             "VLLM_DISABLE_COMPILE_CACHE": "1",
@@ -257,7 +257,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     f"{get_torch_dist_unique_port()}",
                 ],
                 env={
-                    "NCCL_P2P_LEVEL": "NVL",
+                    "NCCL_P2P_LEVEL": "LOC",
                     "NCCL_DEBUG": "INFO",
                     **current_env,
                 },
@@ -320,7 +320,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
 
         current_env = os.environ.copy()
         env = {
-            "NCCL_P2P_LEVEL": "NVL",  # nccl can be brittle, assume P2P isn't reliable
+            "NCCL_P2P_LEVEL": "LOC",  # nccl can be brittle, assume P2P isn't reliable
             **current_env,
             "CUDA_VISIBLE_DEVICES": "1",
             "VLLM_DISABLE_COMPILE_CACHE": "1",
@@ -350,7 +350,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     f"{get_torch_dist_unique_port()}",
                 ],
                 env={
-                    "NCCL_P2P_LEVEL": "NVL",
+                    "NCCL_P2P_LEVEL": "LOC",
                     "NCCL_DEBUG": "INFO",
                     **current_env,
                 },
