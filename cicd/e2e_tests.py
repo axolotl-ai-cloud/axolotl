@@ -1,6 +1,6 @@
 """Modal app to run axolotl GPU tests"""
 
-from single_gpu import GPU_CONFIG, VOLUME_CONFIG, app, cicd_image, run_cmd
+from .single_gpu import GPU_CONFIG, VOLUME_CONFIG, app, cicd_image, run_cmd
 
 
 @app.function(
