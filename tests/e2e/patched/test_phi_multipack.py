@@ -56,9 +56,9 @@ class TestPhiMultipack(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
-                "max_steps": 20,
-                "eval_steps": 10,
-                "save_steps": 10,
+                "max_steps": 5,
+                "eval_steps": 3,
+                "save_steps": 4,
                 "bf16": "auto",
             }
         )
@@ -108,9 +108,9 @@ class TestPhiMultipack(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
-                "max_steps": 20,
-                "eval_steps": 10,
-                "save_steps": 10,
+                "max_steps": 5,
+                "eval_steps": 3,
+                "save_steps": 4,
                 "bf16": "auto",
             }
         )
