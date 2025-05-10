@@ -200,7 +200,7 @@ def execute_training(
 
         if cfg.sequence_parallel_degree > 1:
             models = [trainer.model]
-            if getattr(trainer, "ref_model", None) is not None:
+            if hasattr(trainer, "ref_model"):
                 models.append(trainer.ref_model)
 
             stack.enter_context(
