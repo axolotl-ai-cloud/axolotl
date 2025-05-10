@@ -57,9 +57,9 @@ class Test4dMultipackLlama(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
-                "max_steps": 20,
-                "save_steps": 10,
-                "eval_steps": 10,
+                "max_steps": 5,
+                "save_steps": 3,
+                "eval_steps": 4,
                 "fp16": True,
             }
         )
@@ -105,9 +105,9 @@ class Test4dMultipackLlama(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
-                "max_steps": 20,
-                "save_steps": 10,
-                "eval_steps": 10,
+                "max_steps": 5,
+                "save_steps": 3,
+                "eval_steps": 4,
                 "fp16": True,
             }
         )

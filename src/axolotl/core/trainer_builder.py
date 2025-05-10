@@ -1057,6 +1057,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             # default to saving each epoch if not defined
             training_args_kwargs["save_strategy"] = "epoch"
 
+        training_args_kwargs["save_only_model"] = self.cfg.save_only_model
+
         if self.cfg.dataset_processes:
             training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
 
