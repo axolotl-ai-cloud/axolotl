@@ -18,6 +18,7 @@ from axolotl.monkeypatch.attention.ring_attn import (
 from axolotl.utils.ctx_managers.sequence_parallel import apply_sequence_parallelism
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.enums import RingAttnFunc
+from axolotl.utils.schemas.trl import TRLConfig
 
 
 @pytest.fixture
@@ -179,12 +180,44 @@ class TestConfigValidation:
                 False,
                 "micro_batch_size must be set to 1",
             ),
+            # Valid: Basic GRPO config
+            (
+                {
+                    "sequence_parallel_degree": 2,
+                    "flash_attention": True,
+                    "micro_batch_size": 2,
+                    "trl": {"use_liger_loss": True},
+                },
+                {
+                    "sequence_parallel_degree": 2,
+                    "flash_attention": True,
+                    "micro_batch_size": 2,
+                    "trl": TRLConfig(use_liger_loss=True),
+                },
+                True,
+                "GRPO + SP + Liger not currently supported",
+            ),
+            # Invalid: GRPO config with Liger loss
+            (
+                {
+                    "rl": "grpo",
+                    "sequence_parallel_degree": 2,
+                    "flash_attention": True,
+                    "micro_batch_size": 2,
+                    "trl": {"use_liger_loss": True},
+                },
+                None,
+                False,
+                "GRPO + SP + Liger not currently supported",
+            ),
         ],
         ids=[
             "valid_config",
             "default_sp_degree",
             "without_flash_attention",
             "sample_packing_with_large_batch",
+            "valid_grpo",
+            "grpo_with_liger_loss",
         ],
     )
     def test_sequence_parallel_config_validation(
