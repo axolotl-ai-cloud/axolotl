@@ -106,3 +106,4 @@ class TestBatchedSamplerPacking:
 
         original_idxs = set(range(len(train_dataset)))
         assert original_idxs == set(batch_idxs)
+        assert len(batch_idxs) == len(set(batch_idxs))
