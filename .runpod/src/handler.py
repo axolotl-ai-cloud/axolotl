@@ -57,8 +57,10 @@ async def handler(job):
     logger.info("Training Complete.")
 
     # Cleanup
-    del os.environ["WANDB_API_KEY"]
-    del os.environ["HF_TOKEN"]
+    if "WANDB_API_KEY" in os.environ:
+        del os.environ["WANDB_API_KEY"]
+    if "HF_TOKEN" in os.environ:
+        del os.environ["HF_TOKEN"]
 
 
 runpod.serverless.start({"handler": handler, "return_aggregate_stream": True})
