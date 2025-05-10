@@ -48,8 +48,23 @@ quartodoc:
       contents:
         - core.trainers.base
         - core.trainers.trl
+        - core.trainers.mamba
+        - core.trainers.relora
         - core.trainers.dpo.trainer
         - core.trainers.grpo.trainer
+        - core.trainers.grpo.sampler
+        - core.trainers.utils
+    - title: Mixins
+      desc: Mixin classes for augmenting trainers
+      contents:
+        - core.trainers.mixins.optimizer
+        - core.trainers.mixins.rng_state_loader
+        - core.trainers.mixins.scheduler
+        - core.trainers.mixins.sequence_parallel
+    - title: Context Managers
+      desc: Context managers for altering trainer behaviors
+      contents:
+        - utils.ctx_managers.sequence_parallel
     - title: Prompt Strategies
       desc: Prompt formatting strategies
       contents:
@@ -86,7 +101,7 @@ quartodoc:
         - kernels.swiglu
         - kernels.quantize
         - kernels.utils
-    - title: MonkeyPatches
+    - title: Monkey Patches
       desc: Runtime patches for model optimizations
       contents:
         - monkeypatch.llama_attn_hijack_flash

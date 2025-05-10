@@ -6,13 +6,12 @@ package, specifically the `hf_adapter.substitute_hf_flash_attn` function to patc
 their sequence parallel version of Flash Attention 2.
 """
 
-from enum import Enum
-
 import torch
 import torch.distributed as dist
 from accelerate.logging import get_logger
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
+from axolotl.utils.schemas.enums import RingAttnFunc
 
 LOG = get_logger(__name__)
 
@@ -39,17 +38,6 @@ def set_ring_attn_group(ring_attn_group: dist.ProcessGroup | None):
     """
     global RING_ATTN_GROUP  # pylint: disable=global-statement
     RING_ATTN_GROUP = ring_attn_group
-
-
-class RingAttnFunc(str, Enum):
-    """Enum class for supported `ring-flash-attn` implementations"""
-
-    # VARLEN_RING = "varlen_ring"
-    # VARLEN_ZIGZAG = "varlen_zigzag"
-    VARLEN_LLAMA3 = "varlen_llama3"
-    BATCH_RING = "batch_ring"
-    BATCH_ZIGZAG = "batch_zigzag"
-    BATCH_STRIPE = "batch_stripe"
 
 
 def register_ring_attn(
@@ -117,11 +105,7 @@ def register_ring_attn(
         substitute_hf_flash_attn(
             process_group=get_ring_attn_group(), heads_k_stride=heads_k_stride or 1
         )
-    elif ring_attn_func in [
-        RingAttnFunc.BATCH_RING,
-        RingAttnFunc.BATCH_ZIGZAG,
-        RingAttnFunc.BATCH_STRIPE,
-    ]:
+    elif ring_attn_func is RingAttnFunc.BATCH_RING:
         from axolotl.monkeypatch.attention.ring_attn.adapters.batch import (
             substitute_hf_flash_attn,
         )
