@@ -1,0 +1,18 @@
+diff --git a/.pre-commit-config.yaml b/.pre-commit-config.yaml
+index f627ec1..be78d0d 100644
+--- a/.pre-commit-config.yaml
++++ b/.pre-commit-config.yaml
+@@ -19,11 +19,11 @@ repos:
+     hooks:
+       - id: isort
+ -   repo: https://github.com/PyCQA/flake8
+-    rev: 7.1.2
++    rev: 7.2.0
+     hooks:
+     - id: flake8
+ -   repo: https://github.com/pylint-dev/pylint
+-    rev: v3.3.6
++    rev: v3.3.7
+     hooks:
+     - id: pylint
+ -   repo: https://github.com/pre-commit/mirrors-mypy
