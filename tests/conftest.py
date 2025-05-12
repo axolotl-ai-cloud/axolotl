@@ -58,7 +58,9 @@ def snapshot_download_w_retry(*args, **kwargs):
     """
     with hf_offline_context(True):
         try:
-            return snapshot_download(*args, **kwargs)
+            return snapshot_download(
+                *args, user_agent={"is_ci": "true", "axolotl": "ci"}, **kwargs
+            )
         except LocalEntryNotFoundError:
             pass
     with hf_offline_context(False):
