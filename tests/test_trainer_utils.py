@@ -1,3 +1,4 @@
+"""Module containing tests for trainer utility functions."""
 import unittest
 from functools import partial
 
