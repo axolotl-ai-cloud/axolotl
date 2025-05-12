@@ -64,7 +64,9 @@ def snapshot_download_w_retry(*args, **kwargs):
         except LocalEntryNotFoundError:
             pass
     with hf_offline_context(False):
-        return snapshot_download(*args, **kwargs)
+        return snapshot_download(
+            *args, user_agent={"is_ci": "true", "axolotl": "ci"}, **kwargs
+        )
 
 
 @pytest.fixture(scope="session", autouse=True)
