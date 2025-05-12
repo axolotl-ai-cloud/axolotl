@@ -207,6 +207,7 @@ def execute_training(
                 SequenceParallelContextManager(
                     models=models,
                     sequence_parallel_degree=cfg.sequence_parallel_degree,
+                    gradient_accumulation_steps=cfg.gradient_accumulation_steps,
                     ring_attn_func=cfg.ring_attn_func,
                 )
             )

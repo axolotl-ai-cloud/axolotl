@@ -22,6 +22,7 @@ def apply_sequence_parallelism(
     batch: dict[str, torch.Tensor],
     local_rank: int,
     local_world_size: int,
+    gradient_accumulation_steps: int,
     ring_attn_func: RingAttnFunc,  # pylint: disable=unused-argument
 ) -> tuple[dict[str, torch.Tensor], int, int]:
     """
@@ -34,6 +35,7 @@ def apply_sequence_parallelism(
         batch: Batch dictionary (e.g., input_ids, attention_mask, etc.).
         local_rank: Local rank in the sequence parallel group.
         local_world_size: World size of the sequence parallel group.
+        gradient_accumulation_steps: Number of steps to accumulate gradients over.
         ring_attn_func: Which ring attention function to use. Currently unused, but
             related to above TODO.
 
@@ -142,30 +144,43 @@ def apply_sequence_parallelism(
                 batch[key].chunk(local_world_size, dim=0)[local_rank].contiguous()
             )
 
-    # Handle num_items_in_batch
-    if "num_items_in_batch" in batch:
-        batch["num_items_in_batch"] = (batch["labels"] != -100).sum()
+        # Handle num_items_in_batch
+        # if "num_items_in_batch" in batch:
+        # Approximation; this needed since num_items_in_batch may be counted across
+        # all samples in a gradient accumulated batch, not on a per-step basis
+        # batch["num_items_in_batch"] //= local_world_size
+        batch["num_items_in_batch"] = (
+            batch["labels"] != -100
+        ).sum() * gradient_accumulation_steps
 
     return batch, original_seq_len, pad_len
 
 
 class SequenceParallelContextManager:
-    """
-    Context manager for sequence parallelism operations.
+    """Context manager for sequence parallelism operations.
 
     This class provides a context that will automatically apply sequence parallelism
     during model forward passes using a pre-forward hook, and gather outputs from
     across the sequence parallelism group using a post-forward hook.
+
+    Args:
+        models: List of models to apply sequence parallelism to pre- and post- forward
+            hooks.
+        sequence_parallel_degree: Number of processes to split sequences over.
+        gradient_accumulation_steps: Number of steps to accumulate gradients over.
+        ring_attn_func: Which ring attention function to use. Currently unused.
     """
 
     def __init__(
         self,
         models: list[nn.Module],
         sequence_parallel_degree: int,
+        gradient_accumulation_steps: int,
         ring_attn_func: RingAttnFunc,
     ):
         self.models = models
         self.sequence_parallel_degree = sequence_parallel_degree
+        self.gradient_accumulation_steps = gradient_accumulation_steps
         self.ring_attn_func = ring_attn_func
         self.process_group = get_ring_attn_group()
 
@@ -185,6 +200,7 @@ class SequenceParallelContextManager:
             apply_sequence_parallelism,
             local_rank=self.local_rank,
             local_world_size=self.local_world_size,
+            gradient_accumulation_steps=self.gradient_accumulation_steps,
             ring_attn_func=self.ring_attn_func,
         )
 

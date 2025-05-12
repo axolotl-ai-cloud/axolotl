@@ -100,10 +100,10 @@ class TestSequenceParallelism:
     @pytest.mark.parametrize(
         "sample_packing, micro_batch_size, pad_to_sequence_len, ring_attn_func, threshold",
         [
-            (True, 1, True, None, 5.0),  # defaults to varlen_llama3 ring_attn_func
+            (True, 1, True, None, 2.5),  # defaults to varlen_llama3 ring_attn_func
             (False, 2, True, None, 2.5),  # defaults to batch_ring ring_attn_func
-            # (False, 2, True, "batch_zigzag", 2.6),
-            (False, 2, False, None, 5.0),  # defaults to batch_ring ring_attn_func
+            # (False, 2, True, "batch_zigzag", 2.5),
+            (False, 2, False, None, 2.5),  # defaults to batch_ring ring_attn_func
         ],
         ids=[
             "sample_packing, varlen_llama3 ring_attn_func",
