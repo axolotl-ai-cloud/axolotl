@@ -1345,7 +1345,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             ):
                 return data
 
-            # Skip if dropout is not 0
+            # Skip if dropout is not 0, as auto enabling it would just disable it during runtime patch checks
             if data.get("lora_dropout") != 0:
                 return data
 
