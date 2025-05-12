@@ -167,7 +167,7 @@ def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
 
     # Get the handling method from config, default to "drop" for backward compatibility
     handling = cfg.get("excess_token_handling", "drop")
-    
+
     if handling == "drop":
         # Use the existing drop_long_seq function for backward compatibility
         seq_handler = functools.partial(
