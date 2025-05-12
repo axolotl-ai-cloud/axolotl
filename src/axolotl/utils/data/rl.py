@@ -80,6 +80,8 @@ def map_dataset(cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs):
 def drop_long_rl_seq(
     sample, rl, tokenizer, sequence_len, handling="drop"  # pylint: disable=invalid-name
 ):
+    result = None
+
     if rl in ("dpo", "ipo", "orpo", "simpo"):
         if not (
             sample.get("prompt") and sample.get("chosen") and sample.get("rejected")
@@ -97,47 +99,50 @@ def drop_long_rl_seq(
         len_rejected = len(tokenizer(rejected, add_special_tokens=False)["input_ids"])
 
         if handling == "drop":
-            return (len_prompt + len_chosen) <= sequence_len and (
+            result = (len_prompt + len_chosen) <= sequence_len and (
                 len_prompt + len_rejected
             ) <= sequence_len
 
         # truncate
-        # If both sequences fit, return sample unchanged
-        if (len_prompt + len_chosen) <= sequence_len and (
-            len_prompt + len_rejected
-        ) <= sequence_len:
-            return sample
+        else:
+            # If both sequences fit, return sample unchanged
+            if (len_prompt + len_chosen) <= sequence_len and (
+                len_prompt + len_rejected
+            ) <= sequence_len:
+                result = sample
+            else:
+                # For truncation, we need to truncate the chosen and rejected responses
+                # to fit within sequence_len, but preserve the prompt
 
-        # For truncation, we need to truncate the chosen and rejected responses
-        # to fit within sequence_len, but preserve the prompt
+                # Calculate maximum response length that can fit with the prompt
+                max_response_len = sequence_len - len_prompt
 
-        # Calculate maximum response length that can fit with the prompt
-        max_response_len = sequence_len - len_prompt
+                if max_response_len <= 0:
+                    # Prompt is already too long, we can't truncate effectively
+                    result = False if handling == "drop" else sample
+                else:
+                    # Truncate the chosen and rejected responses if needed
+                    if len_chosen > max_response_len:
+                        # Tokenize, truncate, and decode
+                        chosen_tokens = tokenizer(chosen, add_special_tokens=False)[
+                            "input_ids"
+                        ][:max_response_len]
+                        sample["chosen"] = tokenizer.decode(
+                            chosen_tokens, skip_special_tokens=True
+                        )
 
-        if max_response_len <= 0:
-            # Prompt is already too long, we can't truncate effectively
-            return False if handling == "drop" else sample
+                    if len_rejected > max_response_len:
+                        # Tokenize, truncate, and decode
+                        rejected_tokens = tokenizer(rejected, add_special_tokens=False)[
+                            "input_ids"
+                        ][:max_response_len]
+                        sample["rejected"] = tokenizer.decode(
+                            rejected_tokens, skip_special_tokens=True
+                        )
 
-        # Truncate the chosen and rejected responses if needed
-        if len_chosen > max_response_len:
-            # Tokenize, truncate, and decode
-            chosen_tokens = tokenizer(chosen, add_special_tokens=False)["input_ids"][
-                :max_response_len
-            ]
-            sample["chosen"] = tokenizer.decode(chosen_tokens, skip_special_tokens=True)
+                    result = sample
 
-        if len_rejected > max_response_len:
-            # Tokenize, truncate, and decode
-            rejected_tokens = tokenizer(rejected, add_special_tokens=False)[
-                "input_ids"
-            ][:max_response_len]
-            sample["rejected"] = tokenizer.decode(
-                rejected_tokens, skip_special_tokens=True
-            )
-
-        return sample
-
-    if rl == "kto":
+    elif rl == "kto":
         if not (sample.get("prompt") and sample.get("completion")):
             raise ValueError("Prompt and completion keys are required for KTO datasets")
 
@@ -150,36 +155,39 @@ def drop_long_rl_seq(
         )
 
         if handling == "drop":
-            return (len_prompt + len_completion) <= sequence_len
+            result = (len_prompt + len_completion) <= sequence_len
 
         # truncate
-        # If sequence fits, return sample unchanged
-        if (len_prompt + len_completion) <= sequence_len:
-            return sample
+        else:
+            # If sequence fits, return sample unchanged
+            if (len_prompt + len_completion) <= sequence_len:
+                result = sample
+            else:
+                # Calculate maximum completion length that can fit with the prompt
+                max_completion_len = sequence_len - len_prompt
 
-        # Calculate maximum completion length that can fit with the prompt
-        max_completion_len = sequence_len - len_prompt
+                if max_completion_len <= 0:
+                    # Prompt is already too long, we can't truncate effectively
+                    result = False if handling == "drop" else sample
+                else:
+                    # Truncate the completion if needed
+                    if len_completion > max_completion_len:
+                        # Tokenize, truncate, and decode
+                        completion_tokens = tokenizer(
+                            completion, add_special_tokens=False
+                        )["input_ids"][:max_completion_len]
+                        sample["completion"] = tokenizer.decode(
+                            completion_tokens, skip_special_tokens=True
+                        )
 
-        if max_completion_len <= 0:
-            # Prompt is already too long, we can't truncate effectively
-            return False if handling == "drop" else sample
+                    result = sample
 
-        # Truncate the completion if needed
-        if len_completion > max_completion_len:
-            # Tokenize, truncate, and decode
-            completion_tokens = tokenizer(completion, add_special_tokens=False)[
-                "input_ids"
-            ][:max_completion_len]
-            sample["completion"] = tokenizer.decode(
-                completion_tokens, skip_special_tokens=True
-            )
+    elif rl == "grpo":
+        result = True if handling == "drop" else sample
+    else:
+        raise ValueError("Unknown RL type")
 
-        return sample
-
-    if rl == "grpo":
-        return True if handling == "drop" else sample
-
-    raise ValueError("Unknown RL type")
+    return result
 
 
 def load_prepare_preference_datasets(cfg):

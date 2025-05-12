@@ -252,6 +252,7 @@ def truncate_or_drop_long_seq(
     Returns either a boolean/list of booleans (for drop mode) or the modified sample (for truncate mode).
     """
     min_sequence_len = min_sequence_len or 2
+    result = None
 
     if handling == "drop":
         return drop_long_seq(sample, sequence_len, min_sequence_len)
@@ -260,19 +261,16 @@ def truncate_or_drop_long_seq(
 
     # Edge case: if input_ids is empty
     if not input_ids:
-        return False if handling == "drop" else sample
-
-    # Check if single example or batched by looking at the first element
-    if isinstance(input_ids[0], int):
-        # Single example (input_ids is a list of int)
+        result = False if handling == "drop" else sample
+    # Single example (input_ids is a list of int)
+    elif isinstance(input_ids[0], int):
         length = len(input_ids)
 
         # Handle samples that are too short - always drop them
         if length < min_sequence_len:
-            return False if handling == "drop" else sample
-
+            result = False if handling == "drop" else sample
         # If truncation is enabled and the sample is too long, truncate it
-        if length > sequence_len and handling == "truncate":
+        elif length > sequence_len and handling == "truncate":
             sample["input_ids"] = input_ids[:sequence_len]
 
             # Also truncate attention_mask if present
@@ -291,52 +289,58 @@ def truncate_or_drop_long_seq(
             if "length" in sample:
                 sample["length"] = sequence_len
 
-            return sample
-
+            result = sample
         # For drop mode or if the sample doesn't exceed max length
-        return (
-            min_sequence_len <= length <= sequence_len if handling == "drop" else sample
-        )
-
+        else:
+            result = (
+                min_sequence_len <= length <= sequence_len
+                if handling == "drop"
+                else sample
+            )
     # Batched (input_ids is a list of lists)
-    if handling == "drop":
-        results = []
-        for seq in input_ids:
-            length = len(seq)
-            results.append(min_sequence_len <= length <= sequence_len)
-        return results
-    else:  # truncate
-        # Check each sequence in the batch
-        for i, seq in enumerate(input_ids):
-            length = len(seq)
+    else:
+        if handling == "drop":
+            results = []
+            for seq in input_ids:
+                length = len(seq)
+                results.append(min_sequence_len <= length <= sequence_len)
+            result = results
+        else:  # truncate
+            # Check each sequence in the batch
+            for i, seq in enumerate(input_ids):
+                length = len(seq)
 
-            # Skip sequences that are too short
-            if length < min_sequence_len:
-                continue
+                # Skip sequences that are too short
+                if length < min_sequence_len:
+                    continue
 
-            # Truncate sequences that are too long
-            if length > sequence_len:
-                input_ids[i] = seq[:sequence_len]
+                # Truncate sequences that are too long
+                if length > sequence_len:
+                    input_ids[i] = seq[:sequence_len]
 
-                # Also truncate attention_mask if present
-                if "attention_mask" in sample:
-                    sample["attention_mask"][i] = sample["attention_mask"][i][
-                        :sequence_len
-                    ]
+                    # Also truncate attention_mask if present
+                    if "attention_mask" in sample:
+                        sample["attention_mask"][i] = sample["attention_mask"][i][
+                            :sequence_len
+                        ]
 
-                # Also truncate labels if present
-                if "labels" in sample:
-                    sample["labels"][i] = sample["labels"][i][:sequence_len]
+                    # Also truncate labels if present
+                    if "labels" in sample:
+                        sample["labels"][i] = sample["labels"][i][:sequence_len]
 
-                # Also truncate position_ids if present
-                if "position_ids" in sample:
-                    sample["position_ids"][i] = sample["position_ids"][i][:sequence_len]
+                    # Also truncate position_ids if present
+                    if "position_ids" in sample:
+                        sample["position_ids"][i] = sample["position_ids"][i][
+                            :sequence_len
+                        ]
 
-                # Update length if present
-                if "length" in sample:
-                    sample["length"][i] = sequence_len
+                    # Update length if present
+                    if "length" in sample:
+                        sample["length"][i] = sequence_len
 
-        return sample
+            result = sample
+
+    return result
 
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
