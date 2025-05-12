@@ -6,4 +6,4 @@
 from .optimizer import OptimizerMixin
 from .rng_state_loader import RngLoaderMixin
 from .scheduler import SchedulerMixin
-from .sequence_parallel import SequenceParallelContextManager, SequenceParallelMixin
+from .sequence_parallel import SequenceParallelMixin
