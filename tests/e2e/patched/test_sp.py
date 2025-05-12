@@ -376,6 +376,7 @@ class TestApplySequenceParallelism:
         # Verify content: rank 1 should get the second half of the sequence
         assert torch.equal(result["input_ids"], original_input_ids[:, seq_len // 2 :])
 
+    # TODO(djsaunde): add back once implemented.
     # def test_batch_zigzag(self, sequence_parallel_batch):
     #     """Test BATCH_ZIGZAG sharding pattern."""
     #     batch = sequence_parallel_batch
