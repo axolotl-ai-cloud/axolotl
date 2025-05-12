@@ -18,7 +18,7 @@ pytest -v --durations=10 \
   --cov-append
 
 # Run patched tests excluding lora kernels with coverage append
-pytest -v --durations=10 \
+pytest --full-trace -vvv --durations=10 \
   --ignore=tests/e2e/patched/lora_kernels \
   /workspace/axolotl/tests/e2e/patched \
   --cov=axolotl \

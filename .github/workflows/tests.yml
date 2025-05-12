@@ -338,12 +338,6 @@ jobs:
           - cuda: 124
             cuda_version: 12.4.1
             python_version: "3.11"
-            pytorch: 2.4.1
-            num_gpus: 1
-            axolotl_extras:
-          - cuda: 124
-            cuda_version: 12.4.1
-            python_version: "3.11"
             pytorch: 2.5.1
             num_gpus: 1
             axolotl_extras:
@@ -377,3 +371,43 @@ jobs:
       - name: Run tests job on Modal
         run: |
           modal run cicd.e2e_tests
+
+  docker-e2e-cleanup:
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 90
+    needs: [docker-e2e-tests]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 124
+            cuda_version: 12.4.1
+            python_version: "3.11"
+            pytorch: 2.6.0
+            num_gpus: 1
+            axolotl_extras: vllm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Modal
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==0.71.8 jinja2
+      - name: Update env vars
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
+      - name: Run tests job on Modal
+        run: |
+          modal run cicd.cleanup
