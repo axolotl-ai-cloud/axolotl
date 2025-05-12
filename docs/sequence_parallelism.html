@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.7.30">
+<meta name="generator" content="quarto-1.7.31">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -72,7 +72,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-2b3e328b71be8d25427581baeb23079b.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-8ef56b68f8fa1e9d2ba328e99e439f80.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../site_libs/bootstrap/bootstrap-ce762b396f898894284bb8eeee180359.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
@@ -447,9 +447,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#sequence-parallelism" id="toc-sequence-parallelism" class="nav-link active" data-scroll-target="#sequence-parallelism">Sequence Parallelism</a>
-  <ul class="collapse">
-  <li><a href="#when-to-use-sequence-parallelism" id="toc-when-to-use-sequence-parallelism" class="nav-link" data-scroll-target="#when-to-use-sequence-parallelism">When to Use Sequence Parallelism</a></li>
+  <li><a href="#when-to-use-sequence-parallelism" id="toc-when-to-use-sequence-parallelism" class="nav-link active" data-scroll-target="#when-to-use-sequence-parallelism">When to Use Sequence Parallelism</a></li>
   <li><a href="#configuration" id="toc-configuration" class="nav-link" data-scroll-target="#configuration">Configuration</a></li>
   <li><a href="#implementation-details" id="toc-implementation-details" class="nav-link" data-scroll-target="#implementation-details">Implementation Details</a></li>
   <li><a href="#requirements" id="toc-requirements" class="nav-link" data-scroll-target="#requirements">Requirements</a></li>
@@ -457,7 +455,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#example" id="toc-example" class="nav-link" data-scroll-target="#example">Example</a></li>
   <li><a href="#sample-packing-with-sequence-parallelism" id="toc-sample-packing-with-sequence-parallelism" class="nav-link" data-scroll-target="#sample-packing-with-sequence-parallelism">Sample Packing with Sequence Parallelism</a></li>
   <li><a href="#effect-on-batch-size" id="toc-effect-on-batch-size" class="nav-link" data-scroll-target="#effect-on-batch-size">Effect on Batch Size</a></li>
-  </ul></li>
   </ul>
 </nav>
     </div>
@@ -488,8 +485,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<section id="sequence-parallelism" class="level1">
-<h1>Sequence Parallelism</h1>
 <p>Sequence parallelism is a technique that splits sequences across multiple GPUs,
 allowing you to train with very long sequences that wouldn’t fit on a single GPU. Each
 GPU processes a different portion of the sequence, and the results are aggregated
@@ -510,7 +505,7 @@ through a ring communication pattern.</p>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_parallel_degree</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span><span class="co">  # Split sequences across 4 GPUs</span></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; strides across the key dimension. Larger values use more memory but should make training faster.</span></span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">heads_k_stride</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; one of "varlen_llama3", "batch_ring", "batch_zigzag", "batch_stripe". Defaults to</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; one of "varlen_llama3" or "batch_ring". Defaults to</span></span>
 <span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co"># "varlen_llama3" when `sample_packing: true`, and "batch_ring" otherwise.</span></span>
 <span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">ring_attn_func</span><span class="kw">:</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>The <code>sequence_parallel_degree</code> should be a divisor of the total number of GPUs. For example:</p>
@@ -586,7 +581,6 @@ into 2 subsequences of length 4096 across 2 GPUs.</p>
 - If your per-GPU <code>micro_batch_size</code> is 2, the global batch size decreases from 16 to 4</p>
 
 
-</section>
 </section>
 
 </main> <!-- /main -->

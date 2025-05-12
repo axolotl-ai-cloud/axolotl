@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.7.30">
+<meta name="generator" content="quarto-1.7.31">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -36,7 +36,7 @@ ul.task-list li input[type="checkbox"] {
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-2b3e328b71be8d25427581baeb23079b.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-8ef56b68f8fa1e9d2ba328e99e439f80.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../../site_libs/bootstrap/bootstrap-ce762b396f898894284bb8eeee180359.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
@@ -416,9 +416,11 @@ ul.task-list li input[type="checkbox"] {
   <li><a href="#core" id="toc-core" class="nav-link" data-scroll-target="#core">Core</a></li>
   <li><a href="#cli" id="toc-cli" class="nav-link" data-scroll-target="#cli">CLI</a></li>
   <li><a href="#trainers" id="toc-trainers" class="nav-link" data-scroll-target="#trainers">Trainers</a></li>
+  <li><a href="#mixins" id="toc-mixins" class="nav-link" data-scroll-target="#mixins">Mixins</a></li>
+  <li><a href="#context-managers" id="toc-context-managers" class="nav-link" data-scroll-target="#context-managers">Context Managers</a></li>
   <li><a href="#prompt-strategies" id="toc-prompt-strategies" class="nav-link" data-scroll-target="#prompt-strategies">Prompt Strategies</a></li>
   <li><a href="#kernels" id="toc-kernels" class="nav-link" data-scroll-target="#kernels">Kernels</a></li>
-  <li><a href="#monkeypatches" id="toc-monkeypatches" class="nav-link" data-scroll-target="#monkeypatches">MonkeyPatches</a></li>
+  <li><a href="#monkey-patches" id="toc-monkey-patches" class="nav-link" data-scroll-target="#monkey-patches">Monkey Patches</a></li>
   <li><a href="#utils" id="toc-utils" class="nav-link" data-scroll-target="#utils">Utils</a></li>
   <li><a href="#schemas" id="toc-schemas" class="nav-link" data-scroll-target="#schemas">Schemas</a></li>
   <li><a href="#integrations" id="toc-integrations" class="nav-link" data-scroll-target="#integrations">Integrations</a></li>
@@ -584,12 +586,64 @@ ul.task-list li input[type="checkbox"] {
 <td>Module for TRL PPO trainer</td>
 </tr>
 <tr class="odd">
+<td><a href="../../docs/api/core.trainers.mamba.html#axolotl.core.trainers.mamba">core.trainers.mamba</a></td>
+<td>Module for mamba trainer</td>
+</tr>
+<tr class="even">
+<td><a href="../../docs/api/core.trainers.relora.html#axolotl.core.trainers.relora">core.trainers.relora</a></td>
+<td>Module for ReLoRA trainer</td>
+</tr>
+<tr class="odd">
 <td><a href="../../docs/api/core.trainers.dpo.trainer.html#axolotl.core.trainers.dpo.trainer">core.trainers.dpo.trainer</a></td>
 <td>DPO trainer for axolotl</td>
 </tr>
 <tr class="even">
 <td><a href="../../docs/api/core.trainers.grpo.trainer.html#axolotl.core.trainers.grpo.trainer">core.trainers.grpo.trainer</a></td>
-<td>Axolotl GRPO trainer</td>
+<td>Axolotl GRPO trainers (with and without sequence parallelism handling)</td>
+</tr>
+<tr class="odd">
+<td><a href="../../docs/api/core.trainers.grpo.sampler.html#axolotl.core.trainers.grpo.sampler">core.trainers.grpo.sampler</a></td>
+<td>Repeat random sampler (similar to the one implemented in</td>
+</tr>
+<tr class="even">
+<td><a href="../../docs/api/core.trainers.utils.html#axolotl.core.trainers.utils">core.trainers.utils</a></td>
+<td>Utils for Axolotl trainers</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="mixins" class="level2">
+<h2 class="anchored" data-anchor-id="mixins">Mixins</h2>
+<p>Mixin classes for augmenting trainers</p>
+<table class="caption-top table">
+<tbody>
+<tr class="odd">
+<td><a href="../../docs/api/core.trainers.mixins.optimizer.html#axolotl.core.trainers.mixins.optimizer">core.trainers.mixins.optimizer</a></td>
+<td>Module for Axolotl trainer optimizer mixin</td>
+</tr>
+<tr class="even">
+<td><a href="../../docs/api/core.trainers.mixins.rng_state_loader.html#axolotl.core.trainers.mixins.rng_state_loader">core.trainers.mixins.rng_state_loader</a></td>
+<td>Temporary fix/override for bug in resume from checkpoint</td>
+</tr>
+<tr class="odd">
+<td><a href="../../docs/api/core.trainers.mixins.scheduler.html#axolotl.core.trainers.mixins.scheduler">core.trainers.mixins.scheduler</a></td>
+<td>Module for Axolotl trainer scheduler mixin</td>
+</tr>
+<tr class="even">
+<td><a href="../../docs/api/core.trainers.mixins.sequence_parallel.html#axolotl.core.trainers.mixins.sequence_parallel">core.trainers.mixins.sequence_parallel</a></td>
+<td>Module for Axolotl trainer sequence parallelism mixin</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="context-managers" class="level2">
+<h2 class="anchored" data-anchor-id="context-managers">Context Managers</h2>
+<p>Context managers for altering trainer behaviors</p>
+<table class="caption-top table">
+<tbody>
+<tr class="odd">
+<td><a href="../../docs/api/utils.ctx_managers.sequence_parallel.html#axolotl.utils.ctx_managers.sequence_parallel">utils.ctx_managers.sequence_parallel</a></td>
+<td>Module for Axolotl trainer sequence parallelism manager and utilities</td>
 </tr>
 </tbody>
 </table>
@@ -730,8 +784,8 @@ ul.task-list li input[type="checkbox"] {
 </tbody>
 </table>
 </section>
-<section id="monkeypatches" class="level2">
-<h2 class="anchored" data-anchor-id="monkeypatches">MonkeyPatches</h2>
+<section id="monkey-patches" class="level2">
+<h2 class="anchored" data-anchor-id="monkey-patches">Monkey Patches</h2>
 <p>Runtime patches for model optimizations</p>
 <table class="caption-top table">
 <tbody>
