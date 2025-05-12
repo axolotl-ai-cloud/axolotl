@@ -1,6 +1,6 @@
 base_model: Qwen/Qwen3-8B
 # Automatically upload checkpoint and final model to HF
-# hub_model_id: axolotl-ai-co/qwen3-8b-c4
+# hub_model_id: 
 
 load_in_8bit: false
 load_in_4bit: false
@@ -18,7 +18,7 @@ pretraining_dataset:
     split: train
     type: pretrain
 
-output_dir: ./outputs/out_test
+output_dir: ./outputs/out_test_2
 
 sequence_len: 1024
 
@@ -35,7 +35,7 @@ qat:
   weight_dtype: int8
   group_size: 256
   fake_quant_after_n_steps: 2
-  save_quantized_model: true
+  quantize_with_ptq: true
 
 wandb_project: qat
 wandb_entity:
@@ -45,7 +45,7 @@ wandb_log_model:
 
 gradient_accumulation_steps: 1
 micro_batch_size: 2
-max_steps: 2000
+max_steps: 4
 optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 2e-5

@@ -91,6 +91,7 @@ class QuantizeCliArgs:
 
     weight_dtype: Optional[TorchIntDType] = field(default=None)
     activation_dtype: Optional[TorchIntDType] = field(default=None)
+    quantize_embedding: Optional[bool] = field(default=None)
     group_size: Optional[int] = field(default=None)
 
 

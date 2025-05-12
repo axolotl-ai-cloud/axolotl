@@ -27,7 +27,7 @@ class QATConfig(BaseModel):
     fake_quant_after_n_steps: int | None = Field(
         default=None, description="Fake quant after n steps"
     )
-    quantize_saved_model: bool | None = Field(
+    quantize_with_ptq: bool | None = Field(
         default=False, description="Quantize saved model"
     )
 
@@ -42,3 +42,20 @@ class QATConfig(BaseModel):
             raise ValueError(
                 f"Invalid dtype: '{v}'. Must be one of: ['int4', 'int8']"
             )
+
+
+class PTQConfig(BaseModel):
+    """
+    PTQ Config Schema
+    """
+
+    weight_dtype: TorchIntDType = Field(
+        default=TorchIntDType.int8, description="Weight dtype"
+    )
+    activation_dtype: TorchIntDType | None = Field(
+        default=None, description="Activation dtype"
+    )
+    quantize_embedding: bool | None = Field(
+        default=None, description="Quantize embedding"
+    )
+    group_size: int | None = Field(default=32, description="Group size")

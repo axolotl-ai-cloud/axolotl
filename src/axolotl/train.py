@@ -35,6 +35,7 @@ from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
 from axolotl.utils.models import load_model, load_processor, load_tokenizer
 from axolotl.utils.trainer import setup_trainer
+from axolotl.utils.quantization import convert_qat_model_for_ptq
 
 try:
     from optimum.bettertransformer import BetterTransformer
@@ -228,12 +229,17 @@ def save_trained_model(
         model: The trained model to save.
         safe_serialization: Whether to use safe serialization.
     """
-    LOG.info(f"Training completed! Saving pre-trained model to {cfg.output_dir}.")
+    LOG.info(f"Training completed! Saving trained model to {cfg.output_dir}.")
 
     # Post training module hooks
     for name, module in model.named_modules():
         if hasattr(module, "_post_training"):
             module._post_training(model, name)  # pylint: disable=protected-access
+
+    # handle QAT 
+    if cfg.qat:
+        LOG.info("Processing QAT model for saving...")
+        convert_qat_model_for_ptq(model, cfg)
 
     # Handle FSDP state dict type
     state_dict_type = "FULL_STATE_DICT"

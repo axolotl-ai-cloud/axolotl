@@ -44,7 +44,7 @@ from axolotl.utils.schemas.model import (
 )
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
-from axolotl.utils.schemas.qat import QATConfig
+from axolotl.utils.schemas.quantization import QATConfig
 from axolotl.utils.schemas.training import HyperparametersConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.vllm import VllmConfig
@@ -1468,14 +1468,15 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if not qat_cfg:
             return data
 
-        if qat_cfg.get("quantize_embedding") and qat_cfg.get("activation_dtype"):
-            raise ValueError(
-                "Activation fake quantization is not supported for embedding."
-                " Please only set one of `quantize_embedding` or `activation_dtype`."
-            )
-        if data.get("peft_use_dora"):
-            LOG.warning(
-                "QAT and `peft_use_dora` may produce unexpected results. "
-                "Consider setting using LoRA instead."
-            )
+        if data.get("peft"):
+            raise ValueError("QAT and PEFT cannot be used together.")
+        
+        if data.get("load_in_8bit"):
+            raise ValueError("QAT and load_in_8bit cannot be used together.")
+        
+        if data.get("load_in_4bit"):
+            raise ValueError("QAT and load_in_4bit cannot be used together.")
+        
+        
+        
         return data

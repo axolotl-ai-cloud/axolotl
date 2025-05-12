@@ -8,6 +8,9 @@ from torchao.dtypes.utils import Layout
 from torchao.experimental.quant_api import (
     Int8DynamicActivationIntxWeightConfig,
 )
+from torchao.quantization.quant_api import _is_linear
+
+from torchao.quantization.qat import FromIntXQuantizationAwareTrainingConfig
 from torchao.quantization import quantize_
 from torchao.quantization.granularity import Granularity, PerAxis, PerGroup
 from torchao.quantization.qat import (
@@ -23,9 +26,12 @@ from torchao.quantization.quant_api import (
 )
 from torchao.quantization.quant_primitives import MappingType
 from torchao.utils import TORCH_VERSION_AT_LEAST_2_6
-
+import torch.nn as nn
+import logging
 from axolotl.utils.schemas.enums import TorchIntDType
+from axolotl.utils.schemas.quantization import QATConfig
 
+LOG = logging.getLogger(__name__)
 
 def get_ptq_config(
     weight_dtype: TorchIntDType,
@@ -132,3 +138,20 @@ def quantize_model_for_ptq(
             embedding_quantize_config,
             filter_fn=lambda m, _: isinstance(m, torch.nn.Embedding),
         )
+
+
+def convert_qat_model_for_ptq(model, 
+                              weight_dtype: TorchIntDType,
+                              group_size: int,
+                              activation_dtype: TorchIntDType | None = None,
+                              quantize_embedding: bool | None = None,
+                              quantize_with_ptq: bool | None = None,
+                              ):
+    if quantize_embedding:
+        def filter_fn(m, _): return isinstance(m, nn.Embedding) or _is_linear(m)
+    else:
+        filter_fn = _is_linear
+    quantize_(model, FromIntXQuantizationAwareTrainingConfig(), filter_fn=filter_fn)
+    if quantize_with_ptq:
+        quantize_model_for_ptq(model, weight_dtype, group_size,
+                               activation_dtype, quantize_embedding)

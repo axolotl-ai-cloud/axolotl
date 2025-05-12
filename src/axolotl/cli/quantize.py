@@ -8,10 +8,10 @@ from typing import Union
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
-from axolotl.utils.logging import get_logger
+import logging
 from axolotl.utils.quantization import quantize_model_for_ptq
 
-LOG = get_logger(__name__)
+LOG = logging.getLogger(__name__)
 
 
 def do_quantize(
@@ -31,11 +31,19 @@ def do_quantize(
     model, _ = load_model_and_tokenizer(cfg=cfg)
     safe_serialization = cfg.save_safetensors is True
 
-    weight_dtype = cli_args.get("weight_dtype") or cfg.qat.weight_dtype
-    activation_dtype = cli_args.get("activation_dtype") or cfg.qat.activation_dtype
-    group_size = cli_args.get("group_size") or cfg.qat.group_size
+    if cfg.qat:
+        quantize_cfg = cfg.qat
+    elif cfg.quantization:
+        quantize_cfg = cfg.quantization
+    else:
+        raise ValueError("No quantization configuration found. Please specify either qat or quantization in your config file.")
 
-    quantize_model_for_ptq(model, weight_dtype, activation_dtype, group_size)
+    weight_dtype = cli_args.get("weight_dtype") or quantize_cfg.weight_dtype
+    activation_dtype = cli_args.get("activation_dtype") or quantize_cfg.activation_dtype
+    group_size = cli_args.get("group_size") or quantize_cfg.group_size
+    quantize_embedding = cli_args.get("quantize_embedding") or quantize_cfg.quantize_embedding
+
+    quantize_model_for_ptq(model, weight_dtype, group_size, activation_dtype, quantize_embedding)
 
     if cfg.local_rank == 0:
         LOG.info(

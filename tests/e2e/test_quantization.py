@@ -18,14 +18,15 @@ from axolotl.utils.quantization import (
     get_ptq_config,
     quantize_model_for_qat,
     quantize_model_for_ptq,
+    convert_qat_model_for_ptq,
 )
 from axolotl.utils.schemas.enums import TorchIntDType
-from axolotl.utils.schemas.qat import QATConfig
+from axolotl.utils.schemas.quantization import QATConfig
 from axolotl.utils.callbacks.qat import QATCallback
 from transformers.trainer_callback import TrainerState
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture()
 def model():
     model = AutoModelForCausalLM.from_pretrained(
         "HuggingFaceTB/SmolLM2-135M",
@@ -175,8 +176,8 @@ class TestQuantizationCallback:
 
     def test_qat_callback_fake_quant_after_n_steps(self, model, trainer_state):
         cfg = QATConfig(
-            weight_dtype=TorchIntDType.int8,
-            activation_dtype=TorchIntDType.int8,
+            weight_dtype="int8",
+            activation_dtype="int8",
             group_size=8,
             quantize_embedding=True,
             fake_quant_after_n_steps=100,
@@ -184,14 +185,22 @@ class TestQuantizationCallback:
 
         quantize_model_for_qat(model, cfg.weight_dtype, cfg.group_size,
                                cfg.activation_dtype, cfg.quantize_embedding)
+
         # ensure model has been quantized
+        assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
         assert model.model.embed_tokens.weight_fake_quantizer.enabled == True
+        assert isinstance(model.lm_head, FakeQuantizedLinear)
         assert model.lm_head.weight_fake_quantizer.enabled == True
 
         qat_callback = QATCallback(cfg)
 
         # simulate first training step
-        qat_callback.on_step_begin()
+        qat_callback.on_step_begin(
+            args=None,
+            state=trainer_state,
+            control=None,
+            model=model,
+        )
         assert model.model.embed_tokens.weight_fake_quantizer.enabled == False
         assert model.lm_head.weight_fake_quantizer.enabled == False
 
@@ -205,10 +214,10 @@ class TestQuantizationCallback:
         assert model.model.embed_tokens.weight_fake_quantizer.enabled == True
         assert model.lm_head.weight_fake_quantizer.enabled == True
 
-    def test_qat_callback_fake_quant_after_n_steps_none(self, model, trainer_state):
+    def test_qat_callback_fake_quant_after_n_steps_is_none(self, model, trainer_state):
         cfg = QATConfig(
-            weight_dtype=TorchIntDType.int8,
-            activation_dtype=TorchIntDType.int8,
+            weight_dtype="int8",
+            activation_dtype="int8",
             group_size=8,
             quantize_embedding=True,
             fake_quant_after_n_steps=None,
@@ -216,58 +225,70 @@ class TestQuantizationCallback:
 
         quantize_model_for_qat(model, cfg.weight_dtype, cfg.group_size,
                                cfg.activation_dtype, cfg.quantize_embedding)
-        # ensure model has been quantized
 
+        # ensure model has been quantized
+        assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
         assert model.model.embed_tokens.weight_fake_quantizer.enabled == True
+        assert isinstance(model.lm_head, FakeQuantizedLinear)
         assert model.lm_head.weight_fake_quantizer.enabled == True
+
         qat_callback = QATCallback(cfg)
         # simulate first training step
-        qat_callback.on_step_begin()
+        qat_callback.on_step_begin(
+            args=None,
+            state=trainer_state,
+            control=None,
+            model=model,
+        )
         # model should be quantized from the get-go
         assert model.model.embed_tokens.weight_fake_quantizer.enabled == True
         assert model.lm_head.weight_fake_quantizer.enabled == True
 
-    def test_qat_callback_on_train_end_no_save_quantized_model(self, model, trainer_state):
 
-        cfg = QATConfig(
-            weight_dtype=TorchIntDType.int8,
-            activation_dtype=TorchIntDType.int8,
-            group_size=8,
-            quantize_embedding=True,
-            save_quantized_model=False,
-        )
-        quantize_model_for_qat(model, cfg.weight_dtype, cfg.group_size,
-                               cfg.activation_dtype, cfg.quantize_embedding)
-        # ensure model has been quantized
-        assert model.model.embed_tokens.weight_fake_quantizer.enabled == True
-        assert model.lm_head.weight_fake_quantizer.enabled == True
+class TestConvertQATModelForPTQ:
+    def test_convert_qat_model_for_ptq_no_quantize_with_ptq(self, model):
+        config = QATConfig(weight_dtype="int8", activation_dtype="int8",
+                           group_size=8, quantize_embedding=True, quantize_with_ptq=False)
 
-        qat_callback = QATCallback(cfg)
-        qat_callback.on_train_end(
-            args=None,
-            state=trainer_state,
-            control=None,
-            model=model,
-        )
+        # quantize model for qat
+        quantize_model_for_qat(model, config.weight_dtype, config.group_size,
+                               config.activation_dtype, config.quantize_embedding)
+        assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
+        assert isinstance(model.lm_head, FakeQuantizedLinear)
 
-    def test_qat_callback_on_train_end_save_quantized_model(self, model, trainer_state):
-        quantize_model_for_qat(model, cfg.weight_dtype, cfg.group_size,
-                               cfg.activation_dtype, cfg.quantize_embedding)
-        # ensure model has been quantized
-        assert model.model.embed_tokens.weight_fake_quantizer.enabled == True
-        assert model.lm_head.weight_fake_quantizer.enabled == True
+        # apply conversion
+        convert_qat_model_for_ptq(model, config.weight_dtype, config.group_size,
+                                  config.activation_dtype, config.quantize_embedding,
+                                  config.quantize_with_ptq)
+        # ensure modules have been swapped out
+        assert not isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
+        assert not isinstance(model.lm_head, FakeQuantizedLinear)
 
-        cfg = QATConfig(
-            weight_dtype=TorchIntDType.int8,
-            activation_dtype=TorchIntDType.int8,
-            group_size=8,
-            quantize_embedding=True,
-            save_quantized_model=True,
-        )
-        qat_callback = QATCallback(cfg)
-        qat_callback.on_train_end(
-            args=None,
-            state=trainer_state,
-            control=None,
-            model=model,
-        )
+        # ensure weights have not been quantized
+        assert isinstance(model.model.embed_tokens.weight, torch.nn.Parameter)
+        assert not isinstance(model.model.embed_tokens.weight, AffineQuantizedTensor)
+        assert isinstance(model.lm_head.weight, torch.nn.Parameter)
+        assert not isinstance(model.lm_head.weight, LinearActivationQuantizedTensor)
+
+    def test_convert_qat_model_for_ptq_quantize_with_ptq(self, model):
+        config = QATConfig(weight_dtype="int8", activation_dtype="int8",
+                           group_size=8, quantize_embedding=True, quantize_with_ptq=True)
+
+        # quantize model for qat
+        quantize_model_for_qat(model, config.weight_dtype, config.group_size,
+                               config.activation_dtype, config.quantize_embedding)
+
+        assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
+        assert isinstance(model.lm_head, FakeQuantizedLinear)
+
+        # apply conversion
+        convert_qat_model_for_ptq(model, config.weight_dtype, config.group_size,
+                                  config.activation_dtype, config.quantize_embedding,
+                                  config.quantize_with_ptq)
+        # ensure modules have been swapped out
+        assert not isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
+        assert not isinstance(model.lm_head, FakeQuantizedLinear)
+
+        # ensure weights have been quantized
+        assert isinstance(model.model.embed_tokens.weight, AffineQuantizedTensor)
+        assert isinstance(model.lm_head.weight, LinearActivationQuantizedTensor)
