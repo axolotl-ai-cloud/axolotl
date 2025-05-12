@@ -1345,6 +1345,10 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             ):
                 return data
 
+            # Skip if dropout is not 0, as auto enabling it would just disable it during runtime patch checks
+            if data.get("lora_dropout") != 0:
+                return data
+
             # Check multi-GPU compatibility
             capabilities = data.get("capabilities")
             is_multi_gpu = capabilities and capabilities.get("n_gpu", 0) > 1
