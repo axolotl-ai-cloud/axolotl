@@ -920,16 +920,17 @@ Returns the minimum number of batches available on any rank</p>
 <span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>    bin_size,</span>
 <span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>    num_processes<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>    safe_mode<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>    mp_start_method<span class="op">=</span><span class="st">'spawn'</span>,</span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Pack sequences into bins using parallel processing</p>
 <section id="parameters-4" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-4">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 18%">
-<col style="width: 13%">
-<col style="width: 56%">
-<col style="width: 12%">
+<col style="width: 8%">
+<col style="width: 6%">
+<col style="width: 79%">
+<col style="width: 5%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -976,32 +977,16 @@ Returns the minimum number of batches available on any rank</p>
 <td>If True, use a more conservative packing approach</td>
 <td><code>True</code></td>
 </tr>
-</tbody>
-</table>
-</section>
-<section id="returns-4" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-4">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 8%">
-<col style="width: 8%">
-<col style="width: 82%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
 <tr class="odd">
-<td></td>
-<td></td>
-<td>List of bins, where each bin contains indices of sequences assigned to it</td>
+<td>mp_start_method</td>
+<td>str | None</td>
+<td>Multiprocessing start method (‘fork’, ‘spawn’, ‘forkserver’). ‘spawn’ is often safer with Numba/PyTorch. Set to None to use system default.</td>
+<td><code>'spawn'</code></td>
 </tr>
 </tbody>
 </table>
+<p>Returns:
+List of bins, where each bin contains indices of sequences assigned to it</p>
 
 
 </section>
