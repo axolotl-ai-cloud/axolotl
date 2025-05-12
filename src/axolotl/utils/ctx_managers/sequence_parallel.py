@@ -145,13 +145,12 @@ def apply_sequence_parallelism(
             )
 
         # Handle num_items_in_batch
-        # if "num_items_in_batch" in batch:
-        # Approximation; this needed since num_items_in_batch may be counted across
-        # all samples in a gradient accumulated batch, not on a per-step basis
-        # batch["num_items_in_batch"] //= local_world_size
-        batch["num_items_in_batch"] = (
-            batch["labels"] != -100
-        ).sum() * gradient_accumulation_steps
+        if "num_items_in_batch" in batch:
+            # Approximation; this needed since num_items_in_batch may be counted across
+            # all samples in a gradient accumulated batch, not on a per-step basis.
+            batch["num_items_in_batch"] = (
+                batch["labels"] != -100
+            ).sum() * gradient_accumulation_steps
 
     return batch, original_seq_len, pad_len
 

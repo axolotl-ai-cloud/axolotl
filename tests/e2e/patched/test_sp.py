@@ -63,12 +63,14 @@ def sequence_parallel_batch():
     input_ids = torch.arange(batch_size * seq_len).reshape(batch_size, seq_len)
     attention_mask = torch.ones(batch_size, seq_len)
     position_ids = torch.arange(seq_len).expand(batch_size, seq_len)
+    labels = input_ids.clone()
 
     # Create test batch
     batch = {
         "input_ids": input_ids,
         "attention_mask": attention_mask,
         "position_ids": position_ids,
+        "labels": labels,
     }
 
     return batch
@@ -327,6 +329,7 @@ class TestApplySequenceParallelism:
             batch=sequence_parallel_batch,
             local_rank=0,
             local_world_size=1,
+            gradient_accumulation_steps=1,
             ring_attn_func=RingAttnFunc.BATCH_RING,
         )
 
@@ -342,6 +345,7 @@ class TestApplySequenceParallelism:
             batch=batch,
             local_rank=0,
             local_world_size=2,
+            gradient_accumulation_steps=1,
             ring_attn_func=RingAttnFunc.BATCH_RING,
         )
 
@@ -365,6 +369,7 @@ class TestApplySequenceParallelism:
             batch=batch,
             local_rank=1,
             local_world_size=2,
+            gradient_accumulation_steps=1,
             ring_attn_func=RingAttnFunc.BATCH_RING,
         )
 
@@ -423,6 +428,7 @@ class TestApplySequenceParallelism:
             apply_sequence_parallelism,
             local_rank=0,
             local_world_size=2,
+            gradient_accumulation_steps=1,
             ring_attn_func=RingAttnFunc.BATCH_RING,
         )
 
@@ -449,6 +455,7 @@ class TestApplySequenceParallelism:
             batch=batch,
             local_rank=0,
             local_world_size=2,
+            gradient_accumulation_steps=1,
             ring_attn_func=RingAttnFunc.BATCH_RING,
         )
 
