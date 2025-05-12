@@ -186,6 +186,10 @@ class AxolotlInputConfig(
     unfrozen_parameters: list[str] | None = None
 
     sequence_len: int = Field(default=512)
+    excess_token_handling: Literal["drop", "truncate"] = Field(
+        default="drop",
+        json_schema_extra={"description": "how to handle tokens exceeding max sequence length - drop the sample or truncate"},
+    )
     min_sample_len: int | None = None
     max_prompt_len: int = Field(
         default=512,

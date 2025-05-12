@@ -259,6 +259,8 @@ def encode_packed_pretraining(
         # FIXME using attention mask unpad/pad with trainer and packed pretraining is broken atm
         # workaround by using the position id logic for now in trainer
         drop_attention_mask=multipack_attn,
+        # pass through handling mode from config via ds_wrapper function
+        handling=getattr(ds_wrapper, "cfg", {}).get("excess_token_handling", "drop"),
     )
 
     sampler = MultipackBatchSampler(

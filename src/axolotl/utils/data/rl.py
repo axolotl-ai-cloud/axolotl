@@ -78,7 +78,7 @@ def map_dataset(cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs):
 
 
 def drop_long_rl_seq(
-    sample, rl, tokenizer, sequence_len  # pylint: disable=invalid-name
+    sample, rl, tokenizer, sequence_len, handling="drop"  # pylint: disable=invalid-name
 ):
     if rl in ("dpo", "ipo", "orpo", "simpo"):
         if not (
@@ -96,9 +96,39 @@ def drop_long_rl_seq(
         len_chosen = len(tokenizer(chosen, add_special_tokens=False)["input_ids"])
         len_rejected = len(tokenizer(rejected, add_special_tokens=False)["input_ids"])
 
-        return (len_prompt + len_chosen) <= sequence_len and (
-            len_prompt + len_rejected
-        ) <= sequence_len
+        if handling == "drop":
+            return (len_prompt + len_chosen) <= sequence_len and (
+                len_prompt + len_rejected
+            ) <= sequence_len
+        else:  # truncate
+            # If both sequences fit, return sample unchanged
+            if (len_prompt + len_chosen) <= sequence_len and (
+                len_prompt + len_rejected
+            ) <= sequence_len:
+                return sample
+                
+            # For truncation, we need to truncate the chosen and rejected responses
+            # to fit within sequence_len, but preserve the prompt
+            
+            # Calculate maximum response length that can fit with the prompt
+            max_response_len = sequence_len - len_prompt
+            
+            if max_response_len <= 0:
+                # Prompt is already too long, we can't truncate effectively
+                return False if handling == "drop" else sample
+                
+            # Truncate the chosen and rejected responses if needed
+            if len_chosen > max_response_len:
+                # Tokenize, truncate, and decode
+                chosen_tokens = tokenizer(chosen, add_special_tokens=False)["input_ids"][:max_response_len]
+                sample["chosen"] = tokenizer.decode(chosen_tokens, skip_special_tokens=True)
+                
+            if len_rejected > max_response_len:
+                # Tokenize, truncate, and decode
+                rejected_tokens = tokenizer(rejected, add_special_tokens=False)["input_ids"][:max_response_len]
+                sample["rejected"] = tokenizer.decode(rejected_tokens, skip_special_tokens=True)
+                
+            return sample
 
     if rl == "kto":
         if not (sample.get("prompt") and sample.get("completion")):
@@ -112,10 +142,30 @@ def drop_long_rl_seq(
             tokenizer(completion, add_special_tokens=False)["input_ids"]
         )
 
-        return (len_prompt + len_completion) <= sequence_len
+        if handling == "drop":
+            return (len_prompt + len_completion) <= sequence_len
+        else:  # truncate
+            # If sequence fits, return sample unchanged
+            if (len_prompt + len_completion) <= sequence_len:
+                return sample
+                
+            # Calculate maximum completion length that can fit with the prompt
+            max_completion_len = sequence_len - len_prompt
+            
+            if max_completion_len <= 0:
+                # Prompt is already too long, we can't truncate effectively
+                return False if handling == "drop" else sample
+                
+            # Truncate the completion if needed
+            if len_completion > max_completion_len:
+                # Tokenize, truncate, and decode
+                completion_tokens = tokenizer(completion, add_special_tokens=False)["input_ids"][:max_completion_len]
+                sample["completion"] = tokenizer.decode(completion_tokens, skip_special_tokens=True)
+                
+            return sample
 
     if rl == "grpo":
-        return True
+        return True if handling == "drop" else sample
 
     raise ValueError("Unknown RL type")
 
@@ -169,20 +219,33 @@ def load_prepare_preference_datasets(cfg):
                     rl=_cfg.rl,
                     tokenizer=tokenizer,
                     sequence_len=cfg.sequence_len,
+                    handling=cfg.get("excess_token_handling", "drop"),
                 )
 
                 prior_len = len(split_datasets[i])
-                split_datasets[i] = split_datasets[i].filter(
-                    drop_long,
-                    num_proc=cfg.dataset_processes,
-                    load_from_cache_file=not cfg.is_preprocess,
-                    desc="Dropping Long Sequences",
-                )
-                dropped = prior_len - len(split_datasets[i])
-                if dropped:
-                    LOG.warning(
-                        f"Dropped {dropped} long samples from dataset index {i}"
+                
+                # Use filter for drop mode and map for truncate mode
+                handling = cfg.get("excess_token_handling", "drop")
+                if handling == "drop":
+                    split_datasets[i] = split_datasets[i].filter(
+                        drop_long,
+                        num_proc=cfg.dataset_processes,
+                        load_from_cache_file=not cfg.is_preprocess,
+                        desc="Dropping Long Sequences",
                     )
+                    dropped = prior_len - len(split_datasets[i])
+                    if dropped:
+                        LOG.warning(
+                            f"Dropped {dropped} long samples from dataset index {i}"
+                        )
+                else:
+                    split_datasets[i] = split_datasets[i].map(
+                        drop_long,
+                        num_proc=cfg.dataset_processes,
+                        load_from_cache_file=not cfg.is_preprocess,
+                        desc="Truncating Long Sequences",
+                    )
+                    LOG.info(f"Truncated long samples in dataset index {i} to {cfg.sequence_len} tokens")
 
         combined_datasets = concatenate_datasets(split_datasets)
         combined_datasets = combined_datasets.shuffle(seed=cfg.seed)
