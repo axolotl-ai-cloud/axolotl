@@ -106,13 +106,12 @@ jobs:
           pytest -v tests/patched/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v tests/cli/ --cov=axolotl --cov-append --cov-report=xml
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.xml
-          flags: unittests,pytorch-${{ matrix.pytorch_version }}
-          fail_ci_if_error: false
+          name: coverage-${{ matrix.pytorch_version }}
+          path: ./coverage.xml
+          retention-days: 1
 
       - name: cleanup pip cache
         run: |
@@ -336,3 +335,23 @@ jobs:
       - name: Run tests job on Modal
         run: |
           modal run cicd.cleanup
+
+  upload-coverage:
+    name: Upload Coverage to Codecov
+    runs-on: ubuntu-latest
+    needs: [pytest, docker-e2e-tests, docker-e2e-tests-1st]
+    if: always()
+
+    steps:
+      - name: Download coverage reports
+        uses: actions/download-artifact@v4
+        with:
+          path: coverage-reports
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          directory: coverage-reports
+          fail_ci_if_error: false
+          verbose: true
