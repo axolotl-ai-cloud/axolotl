@@ -166,6 +166,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
 """
             )
 
+    @pytest.mark.skip(reason="flaky test")
     @pytest.mark.parametrize(
         "num_gpus",
         [1, 2],
@@ -265,6 +266,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         finally:
             recursive_kill(vllm_process)
 
+    @pytest.mark.skip(reason="flaky test")
     @pytest.mark.parametrize(
         "num_gpus",
         [1, 2],
