@@ -260,7 +260,9 @@ def encode_packed_pretraining(
         # workaround by using the position id logic for now in trainer
         drop_attention_mask=multipack_attn,
         # pass through handling mode from config via ds_wrapper function
-        handling=getattr(ds_wrapper, "cfg", {}).get("excess_token_handling", "drop"),
+        handling=getattr(ds_wrapper, "cfg", {}).get(
+            "sequence_len_overflow_handling", "drop"
+        ),
     )
 
     sampler = MultipackBatchSampler(

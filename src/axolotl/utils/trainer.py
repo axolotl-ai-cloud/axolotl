@@ -484,22 +484,24 @@ def process_pretraining_datasets_for_packing(
     drop_attention_mask=False,
     handling="drop",
 ):
-    drop_long_fn = partial(drop_long_seq, sequence_len=sequence_len)
+    # Define the function to use for handling sequences based on the mode
+    seq_handler_fn = partial(
+        truncate_or_drop_long_seq,
+        sequence_len=sequence_len,
+        handling=handling,  # Pass handling mode
+    )
 
-    # Use filter for drop mode and map for truncate mode
-    if handling == "drop":
-        train_dataset = train_dataset.filter(
-            drop_long_fn,
-            desc="Dropping Long Sequences",
+    # Use map for truncate mode and filter for drop mode
+    if handling == "truncate":
+        train_dataset = train_dataset.map(
+            seq_handler_fn,
+            desc="Truncating Long Sequences",
             load_from_cache_file=False,
         )
-    else:
-        truncate_fn = partial(
-            truncate_or_drop_long_seq, sequence_len=sequence_len, handling=handling
-        )
-        train_dataset = train_dataset.map(
-            truncate_fn,
-            desc="Truncating Long Sequences",
+    else:  # handling == "drop"
+        train_dataset = train_dataset.filter(
+            seq_handler_fn,  # Use the same function, it returns boolean for drop mode
+            desc="Dropping Long Sequences",
             load_from_cache_file=False,
         )
 

@@ -332,8 +332,8 @@ dataset_shard_idx:
 # The maximum length of an input to train with, this should typically be less than 2048
 # as most models have a token/context limit of 2048
 sequence_len: 2048
-# How to handle tokens exceeding max sequence length - "drop" (default, removes sample) or "truncate" (cuts off excess tokens)
-excess_token_handling: drop
+# How to handle sequences that overflow the sequence_len: 'drop' (default, removes sample) or 'truncate' (cuts off excess tokens).
+sequence_len_overflow_handling: drop
 # Pad inputs so each step uses constant sized buffers
 # This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently
 pad_to_sequence_len:
