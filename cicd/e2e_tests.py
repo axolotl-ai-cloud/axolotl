@@ -6,7 +6,7 @@ from .single_gpu import GPU_CONFIG, VOLUME_CONFIG, app, cicd_image, run_cmd
 @app.function(
     image=cicd_image,
     gpu=GPU_CONFIG,
-    timeout=60 * 60,
+    timeout=90 * 60,  # 90 min
     cpu=8.0,
     memory=131072,
     volumes=VOLUME_CONFIG,
