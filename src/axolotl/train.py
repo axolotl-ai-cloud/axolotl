@@ -26,7 +26,7 @@ from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
-from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+from axolotl.core.trainers.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.core.trainers.mixins.sequence_parallel import (
     SequenceParallelContextManager,
 )

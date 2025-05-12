@@ -1,10 +1,8 @@
-"""
-unit tests for axolotl.core.trainer_builder
-"""
+"""Unit tests for axolotl.core.trainers.builders"""
 
 import pytest
 
-from axolotl.core.trainer_builder import HFRLTrainerBuilder
+from axolotl.core.trainers.builders import HFRLTrainerBuilder
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
@@ -53,9 +51,7 @@ def fixture_model(cfg, tokenizer):
 
 
 class TestHFRLTrainerBuilder:
-    """
-    TestCase class for DPO trainer builder
-    """
+    """Test case class for RL trainer builder"""
 
     def test_build_training_arguments(self, cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(cfg, model, tokenizer)
