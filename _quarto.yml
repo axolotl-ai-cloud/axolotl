@@ -139,7 +139,8 @@ quartodoc:
         - utils.optimizers.adopt
         - utils.data.pretraining
         - utils.data.sft
-        - utils.gradient_checkpointing.unsloth
+        - utils.gradient_checkpointing.offload_cpu
+        - utils.gradient_checkpointing.offload_disk
     - title: Schemas
       desc: Pydantic data models for Axolotl config
       contents:

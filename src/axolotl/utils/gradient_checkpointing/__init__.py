@@ -5,8 +5,11 @@ from functools import partial
 
 from packaging import version
 
-from axolotl.utils.gradient_checkpointing.unsloth import (
-    Unsloth_Offloaded_Gradient_Checkpointer,
+from axolotl.utils.gradient_checkpointing.offload_cpu import (
+    CPU_Offloaded_Gradient_Checkpointer,
+)
+from axolotl.utils.gradient_checkpointing.offload_disk import (
+    Disco,
 )
 
 transformers_version = version.parse(importlib.metadata.version("transformers"))
@@ -26,12 +29,31 @@ def hf_grad_checkpoint_offload_wrapper(
     decoder_layer, *args, use_reentrant=None
 ):  # pylint: disable=unused-argument
     if uses_gc_layers(decoder_layer):
-        return Unsloth_Offloaded_Gradient_Checkpointer.apply(
+        return CPU_Offloaded_Gradient_Checkpointer.apply(
             decoder_layer,
             *args,
         )
 
-    return Unsloth_Offloaded_Gradient_Checkpointer.apply(
+    return CPU_Offloaded_Gradient_Checkpointer.apply(
+        (
+            decoder_layer.func.__self__
+            if isinstance(decoder_layer, partial)
+            else decoder_layer.__self__
+        ),
+        *args,
+    )
+
+
+def hf_grad_checkpoint_disk_offload_wrapper(
+    decoder_layer, *args, use_reentrant=None
+):  # pylint: disable=unused-argument
+    if uses_gc_layers(decoder_layer):
+        return Disco.apply(
+            decoder_layer,
+            *args,
+        )
+
+    return Disco.apply(
         (
             decoder_layer.func.__self__
             if isinstance(decoder_layer, partial)

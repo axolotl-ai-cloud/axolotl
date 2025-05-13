@@ -70,7 +70,10 @@ from axolotl.utils.distributed import (
     is_local_main_process,
     is_main_process,
 )
-from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_offload_wrapper
+from axolotl.utils.gradient_checkpointing import (
+    hf_grad_checkpoint_disk_offload_wrapper,
+    hf_grad_checkpoint_offload_wrapper,
+)
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
@@ -620,6 +623,10 @@ class ModelLoader:
 
         if self.cfg.gradient_checkpointing in ["unsloth", "offload"]:
             transformers.modeling_utils.checkpoint = hf_grad_checkpoint_offload_wrapper
+        if self.cfg.gradient_checkpointing == "offload_disk":
+            transformers.modeling_utils.checkpoint = (
+                hf_grad_checkpoint_disk_offload_wrapper
+            )
 
         if self.cfg.flash_attention:
             self.patch_attention()

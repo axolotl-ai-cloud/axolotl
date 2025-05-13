@@ -26,10 +26,15 @@ class TestActivationCheckpointing:
     E2E tests for activation checkpointing
     """
 
+    @pytest.mark.parametrize(
+        "gradient_checkpointing",
+        ["offload", "offload_disk"],
+    )
     def test_activation_checkpointing_offload(
         self,
         temp_dir,
         fix_checkpoint_after_test,  # pylint: disable=unused-argument,redefined-outer-name
+        gradient_checkpointing,
     ):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
@@ -64,7 +69,7 @@ class TestActivationCheckpointing:
                 "sample_packing": True,
                 "bf16": True,
                 "save_safetensors": True,
-                "gradient_checkpointing": "offload",
+                "gradient_checkpointing": gradient_checkpointing,
             }
         )
 
