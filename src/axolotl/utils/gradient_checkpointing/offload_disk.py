@@ -423,7 +423,7 @@ class DiskOffloadManager:
 
 class Disco(torch.autograd.Function):
     """
-    DiskOffloadedGradientCheckpointer: Tensor Efficient Management with Prefetched Offloading
+    Disco: DIsk-based Storage and Checkpointing with Optimized prefetching
     Advanced disk-based gradient checkpointer with prefetching.
     """
 
