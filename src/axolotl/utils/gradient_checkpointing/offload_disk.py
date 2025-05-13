@@ -27,6 +27,8 @@ import threading
 import time
 import uuid
 from collections import deque
+from concurrent.futures import Future
+from typing import Dict
 
 import torch
 
@@ -43,16 +45,27 @@ class DiskOffloadManager:
     Includes synchronization to prevent race conditions.
     """
 
-    def __init__(self, prefetch_size=3, prefetch_to_gpu=True, save_workers=4):
+    def __init__(
+        self,
+        prefetch_size: int = 3,
+        prefetch_to_gpu: bool = True,
+        save_workers: int = 4,
+    ):
+        """
+        Args:
+            prefetch_size: Maximum number of tensors to prefetch in the background.
+            prefetch_to_gpu: Whether to prefetch tensors directly to GPU memory.
+            save_workers: Maximum number of concurrent save operations.
+        """
         self.temp_dir = tempfile.mkdtemp(prefix="disco_")
-        # logger.debug(f"Created temporary directory at {self.temp_dir}")
 
         # Track tensor paths and their status
-        self.tensor_paths = deque()  # Ordered history of tensor paths (LIFO)
-        self.file_locks = {}  # Maps file_path -> threading.Lock()
-        self.file_status = (
+        self.tensor_paths: deque = deque()  # Ordered history of tensor paths (LIFO)
+        self.file_locks: Dict[str, threading.Lock] = (
             {}
-        )  # Maps file_path -> status ("saving", "ready", "prefetching", "loaded", "deleted")
+        )  # Maps file_path -> threading.Lock()
+        # Maps file_path -> status ("saving", "ready", "prefetching", "loaded", "deleted")
+        self.file_status: Dict[str, str] = {}
 
         self.max_prefetch = prefetch_size
         self.prefetch_to_gpu = prefetch_to_gpu
@@ -61,13 +74,13 @@ class DiskOffloadManager:
         self.manager_lock = threading.RLock()  # Used for thread-safe operations
 
         # Prefetch queue and cache
-        self.prefetch_queue = queue.Queue()
-        self.prefetch_cache = {}  # Maps file_path -> tensor
+        self.prefetch_queue: queue.Queue = queue.Queue()
+        self.prefetch_cache: Dict[str, torch.Tensor] = {}  # Maps file_path -> tensor
 
         # Save queue and thread pool
-        self.save_queue = queue.Queue()
+        self.save_queue: queue.Queue = queue.Queue()
         self.save_pool = concurrent.futures.ThreadPoolExecutor(max_workers=save_workers)
-        self.save_futures = {}  # Maps file_path -> future
+        self.save_futures: Dict[str, Future] = {}
         self.save_semaphore = threading.Semaphore(
             save_workers * 2
         )  # Limit concurrent save operations
@@ -81,12 +94,10 @@ class DiskOffloadManager:
             worker = threading.Thread(target=self._prefetch_worker, daemon=True)
             worker.start()
             self.prefetch_workers.append(worker)
-        # logger.debug("Prefetch worker thread started")
 
         # Start save worker thread
         self.save_worker = threading.Thread(target=self._save_worker, daemon=True)
         self.save_worker.start()
-        # logger.debug("Save worker thread started")
         self.idx = 0
 
         atexit.register(self.cleanup)
@@ -114,7 +125,7 @@ class DiskOffloadManager:
                 time.sleep(0.01)  # Small sleep to prevent CPU spinning
                 continue
 
-    def _save_tensor_to_disk(self, tensor, file_path):
+    def _save_tensor_to_disk(self, tensor: torch.Tensor, file_path: str):
         """Actually save the tensor to disk"""
         try:
             # Save tensor to disk
@@ -125,7 +136,6 @@ class DiskOffloadManager:
             with self.manager_lock:
                 # Mark file as ready
                 self.file_status[file_path] = "ready"
-                # logger.debug(f"Saved tensor to {file_path}")
 
             # Release semaphore
             self.save_semaphore.release()
@@ -155,10 +165,8 @@ class DiskOffloadManager:
                         file_path not in self.file_status
                         or self.file_status[file_path] == "deleted"
                     ):
-                        # logger.debug(f"Skipping prefetch for deleted file {file_path}")
                         self.prefetch_queue.task_done()
                     if file_path in self.prefetch_cache:
-                        # logger.debug(f"File already in cache {file_path}")
                         self.prefetch_queue.task_done()
                         continue
 
@@ -167,7 +175,6 @@ class DiskOffloadManager:
                         self.file_status[file_path] == "saving"
                         and file_path in self.save_futures
                     ):
-                        # logger.debug(f"Waiting for file to finish saving before prefetching: {file_path}")
                         # Re-queue this prefetch request with a little delay
                         self.prefetch_queue.task_done()
                         time.sleep(0.1)
@@ -180,7 +187,6 @@ class DiskOffloadManager:
                 # Load tensor from disk and store in cache
                 try:
                     if os.path.exists(file_path):
-                        # logger.debug(f"Prefetching {file_path}")
                         if self.prefetch_to_gpu:
                             tensor = torch.load(
                                 file_path,
@@ -193,7 +199,6 @@ class DiskOffloadManager:
                         with self.manager_lock:
                             self.prefetch_cache[file_path] = tensor
                             self.file_status[file_path] = "ready"
-                            # logger.debug(f"Successfully prefetched {file_path}")
                     else:
                         with self.manager_lock:
                             if self.file_status.get(file_path) != "deleted":
@@ -214,11 +219,13 @@ class DiskOffloadManager:
                 time.sleep(0.01)  # Small sleep to prevent CPU spinning
                 continue
 
-    def save_tensor(self, tensor):
+    def save_tensor(self, tensor: torch.Tensor):
         """Save tensor to disk asynchronously and return file path with thread-safe operations"""
         # Generate unique file path
         self.idx += 1
-        file_path = os.path.join(self.temp_dir, f"{self.idx:06d}-{uuid.uuid4()}.pt")
+        file_path: str = os.path.join(
+            self.temp_dir, f"{self.idx:06d}-{uuid.uuid4()}.pt"
+        )
 
         with self.manager_lock:
             # Mark file as being saved
@@ -234,28 +241,27 @@ class DiskOffloadManager:
 
         return file_path
 
-    def wait_for_save(self, file_path, timeout=None):
+    def wait_for_save(self, file_path, timeout=None) -> None:
         """Wait for a tensor to be saved to disk"""
         start_time = time.time()
         while timeout is None or time.time() - start_time < timeout:
             with self.manager_lock:
                 if self.file_status.get(file_path) == "ready":
-                    return True
+                    return
                 if self.file_status.get(file_path) in ["error", "missing", "deleted"]:
-                    return False
+                    return
 
                 if file_path in self.save_futures:
                     future = self.save_futures[file_path]
                     if future.done():
-                        result = future.result()
-                        return result
+                        return
 
             # Small sleep to prevent CPU spinning
             time.sleep(0.01)
 
         # Timeout
         logger.warning(f"Timeout waiting for tensor to be saved: {file_path}")
-        return False
+        return
 
     def load_tensor(self, file_path, target_device="cuda"):
         """Load tensor from disk or prefetch cache with proper synchronization"""
@@ -268,7 +274,6 @@ class DiskOffloadManager:
         with self.manager_lock:
             # Check if tensor is already in cache
             if file_path in self.prefetch_cache:
-                # logger.debug(f"Loading {file_path} from cache")
                 tensor = self.prefetch_cache[file_path]
                 del self.prefetch_cache[file_path]
                 self.file_status[file_path] = "loaded"
@@ -280,7 +285,6 @@ class DiskOffloadManager:
             return tensor
 
         # If not in cache, load directly from disk
-        # logger.debug(f"Loading {file_path} directly from disk")
         try:
             if not os.path.exists(file_path):
                 logger.error(f"File not found for loading: {file_path}")
@@ -322,7 +326,6 @@ class DiskOffloadManager:
                     if os.path.exists(file_path):
                         os.remove(file_path)
                     self.file_status[file_path] = "deleted"
-                    # logger.debug(f"Deleted file {file_path}")
                     return True
                 except FileNotFoundError as e:
                     logger.warning(f"Error deleting file {file_path}: {e}")
@@ -347,10 +350,9 @@ class DiskOffloadManager:
 
         # Queue files for prefetching
         for path in prefetch_paths:
-            # logger.debug(f"Queueing {path} for prefetch")
             self.prefetch_queue.put(path)
 
-    def cleanup_tensor(self, file_path):
+    def cleanup_tensor(self, file_path: str):
         """Clean up a specific tensor file after it's been used"""
         with self.manager_lock:
             if file_path in self.tensor_paths:
@@ -372,7 +374,6 @@ class DiskOffloadManager:
 
     def cleanup(self):
         """Clean up all temp files and stop prefetch thread with proper synchronization"""
-        # logger.debug("Cleaning up DiskOffloadManager")
         self.stop_event.set()
 
         # Cancel all pending save operations
@@ -416,7 +417,6 @@ class DiskOffloadManager:
         try:
             if os.path.exists(self.temp_dir):
                 shutil.rmtree(self.temp_dir, ignore_errors=True)
-                # logger.debug(f"Removed temporary directory {self.temp_dir}")
         except FileNotFoundError as e:
             logger.warning(f"Error removing temporary directory {self.temp_dir}: {e}")
 
@@ -431,7 +431,7 @@ class Disco(torch.autograd.Function):
     _manager = None
 
     @staticmethod
-    def get_manager(prefetch_size=1, prefetch_to_gpu=True, save_workers=4):
+    def get_instance(prefetch_size=1, prefetch_to_gpu=True, save_workers=4):
         """Get or create the offload manager"""
         if Disco._manager is None:
             Disco._manager = DiskOffloadManager(
@@ -454,7 +454,7 @@ class Disco(torch.autograd.Function):
     ):
         """Forward pass that offloads activations to disk asynchronously"""
         # Get or create the manager
-        manager = Disco.get_manager(
+        manager = Disco.get_instance(
             prefetch_size=prefetch_size,
             prefetch_to_gpu=prefetch_to_gpu,
             save_workers=save_workers,
