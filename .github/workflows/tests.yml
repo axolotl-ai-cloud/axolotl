@@ -340,7 +340,6 @@ jobs:
     name: Upload Coverage to Codecov
     runs-on: ubuntu-latest
     needs: [pytest, docker-e2e-tests, docker-e2e-tests-1st]
-    if: always()
 
     steps:
       - name: Download coverage reports
