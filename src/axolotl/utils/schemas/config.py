@@ -178,7 +178,7 @@ class AxolotlInputConfig(
 
     # torch_dtype: torch.dtype | None
 
-    gradient_checkpointing: Literal["unsloth", "offload"] | bool | None = Field(
+    gradient_checkpointing: Literal["offload", "offload_disk"] | bool | None = Field(
         default=False
     )
     gradient_checkpointing_kwargs: dict[str, Any] | None = None

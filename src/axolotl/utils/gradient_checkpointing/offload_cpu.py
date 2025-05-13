@@ -1,4 +1,4 @@
-"""Unsloth checkpointing"""
+"""CPU offloaded checkpointing"""
 
 # Copyright 2023-present Daniel Han-Chen & the Unsloth team. All rights reserved.
 #
@@ -26,7 +26,7 @@ else:
     torch_cuda_amp_custom_bwd = torch.amp.custom_bwd(device_type="cuda")
 
 
-class Unsloth_Offloaded_Gradient_Checkpointer(  # pylint: disable=invalid-name
+class CPU_Offloaded_Gradient_Checkpointer(  # pylint: disable=invalid-name
     torch.autograd.Function
 ):
     """
