@@ -1188,6 +1188,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
 
+        if self.cfg.plugins:
+            plugin_manager = PluginManager.get_instance()
+            trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
+
         sig = inspect.signature(trainer_cls)
         if "tokenizer" in sig.parameters.keys():
             dpo_trainer_kwargs["tokenizer"] = self.tokenizer
