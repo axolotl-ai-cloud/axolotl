@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>utils.gradient_checkpointing.unsloth – Axolotl</title>
+<title>utils.gradient_checkpointing.offload_cpu – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -446,11 +446,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.utils.gradient_checkpointing.unsloth" id="toc-axolotl.utils.gradient_checkpointing.unsloth" class="nav-link active" data-scroll-target="#axolotl.utils.gradient_checkpointing.unsloth">utils.gradient_checkpointing.unsloth</a>
+  <li><a href="#axolotl.utils.gradient_checkpointing.offload_cpu" id="toc-axolotl.utils.gradient_checkpointing.offload_cpu" class="nav-link active" data-scroll-target="#axolotl.utils.gradient_checkpointing.offload_cpu">utils.gradient_checkpointing.offload_cpu</a>
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.utils.gradient_checkpointing.unsloth.Unsloth_Offloaded_Gradient_Checkpointer" id="toc-axolotl.utils.gradient_checkpointing.unsloth.Unsloth_Offloaded_Gradient_Checkpointer" class="nav-link" data-scroll-target="#axolotl.utils.gradient_checkpointing.unsloth.Unsloth_Offloaded_Gradient_Checkpointer">Unsloth_Offloaded_Gradient_Checkpointer</a></li>
+  <li><a href="#axolotl.utils.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer" id="toc-axolotl.utils.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer" class="nav-link" data-scroll-target="#axolotl.utils.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer">CPU_Offloaded_Gradient_Checkpointer</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -462,10 +462,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 
-<section id="axolotl.utils.gradient_checkpointing.unsloth" class="level1">
-<h1>utils.gradient_checkpointing.unsloth</h1>
-<p><code>utils.gradient_checkpointing.unsloth</code></p>
-<p>Unsloth checkpointing</p>
+<section id="axolotl.utils.gradient_checkpointing.offload_cpu" class="level1">
+<h1>utils.gradient_checkpointing.offload_cpu</h1>
+<p><code>utils.gradient_checkpointing.offload_cpu</code></p>
+<p>CPU offloaded checkpointing</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -477,14 +477,14 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.utils.gradient_checkpointing.unsloth.Unsloth_Offloaded_Gradient_Checkpointer">Unsloth_Offloaded_Gradient_Checkpointer</a></td>
+<td><a href="#axolotl.utils.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer">CPU_Offloaded_Gradient_Checkpointer</a></td>
 <td>Saves VRAM by smartly offloading to RAM.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.utils.gradient_checkpointing.unsloth.Unsloth_Offloaded_Gradient_Checkpointer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.gradient_checkpointing.unsloth.Unsloth_Offloaded_Gradient_Checkpointer">Unsloth_Offloaded_Gradient_Checkpointer</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.gradient_checkpointing.unsloth.Unsloth_Offloaded_Gradient_Checkpointer()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="axolotl.utils.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer">CPU_Offloaded_Gradient_Checkpointer</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Saves VRAM by smartly offloading to RAM.
 Tiny hit to performance, since we mask the movement via non blocking calls.</p>
 
