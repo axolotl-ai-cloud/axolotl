@@ -16,6 +16,7 @@ DISCO - DIsk-based Storage and Checkpointing with Optimized prefetching
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import atexit
 import concurrent.futures
 import logging
 import os
@@ -87,6 +88,8 @@ class DiskOffloadManager:
         self.save_worker.start()
         # logger.debug("Save worker thread started")
         self.idx = 0
+
+        atexit.register(self.cleanup)
 
     def _save_worker(self):
         """Background thread that processes the save queue"""
@@ -526,10 +529,3 @@ class Disco(torch.autograd.Function):
             # Clean up the file even on error
             manager.cleanup_tensor(file_path)
             raise
-
-    @staticmethod
-    def cleanup():
-        """Clean up the offload manager"""
-        if Disco._manager is not None:
-            Disco._manager.cleanup()
-            Disco._manager = None
