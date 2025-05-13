@@ -1477,6 +1477,21 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if data.get("load_in_4bit"):
             raise ValueError("QAT and load_in_4bit cannot be used together.")
         
-        
-        
+        if (
+            data.get("fsdp")
+            and data.get("fsdp_config")
+            and str(data["fsdp_config"].get("fsdp_version")) == "2"
+        ):
+            env_capabilities = data.get("env_capabilities", {})
+            torch_version = env_capabilities.get("torch_version")
+
+            if torch_version is None:
+                import torch
+
+                torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+
+            if version.parse(torch_version) < version.parse("2.7.0"):
+                raise ValueError(
+                    "FSDP2 and QAT are not supported on torch version < 2.7.0"
+                )
         return data

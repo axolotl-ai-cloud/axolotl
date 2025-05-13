@@ -18,7 +18,7 @@ pretraining_dataset:
     split: train
     type: pretrain
 
-output_dir: ./outputs/out_test_2
+output_dir: ./outputs/out_baseline
 
 sequence_len: 1024
 
@@ -30,26 +30,25 @@ flex_attn_compile_kwargs:
   dynamic: false
   mode: max-autotune-no-cudagraphs
 
-qat:
-  activation_dtype: int8
-  weight_dtype: int8
-  group_size: 256
-  fake_quant_after_n_steps: 2
-  quantize_with_ptq: true
+# qat:
+#   activation_dtype: int8
+#   weight_dtype: int8
+#   group_size: 256
+#   fake_quant_after_n_steps: 750
 
 wandb_project: qat
 wandb_entity:
 wandb_watch:
-wandb_name: base
+wandb_name: baseline-noqat
 wandb_log_model:
 
 gradient_accumulation_steps: 1
 micro_batch_size: 2
-max_steps: 4
+max_steps: 1500
 optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 2e-5
-
+save_only_model: true
 bf16: true
 tf32: true
 
@@ -70,7 +69,7 @@ fsdp_config:
   fsdp_cpu_ram_efficient_loading: true
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
   fsdp_transformer_layer_cls_to_wrap: Qwen3DecoderLayer
-  fsdp_state_dict_type: SHARDED_STATE_DICT
+  fsdp_state_dict_type: FULL_STATE_DICT
   fsdp_sharding_strategy: FULL_SHARD
   fsdp_reshard_after_forward: true
   fsdp_activation_checkpointing: true

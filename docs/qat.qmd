@@ -27,9 +27,6 @@ qat:
   weight_dtype: # Optional[str] = "int8". Fake quantization layout to use for weight quantization. Valid options are uintX or intX for X in [1, 2, 3, 4, 5, 6, 7, 8]
   group_size: # Optional[int] = 32. The number of elements in each group for per-group fake quantization
   fake_quant_after_n_steps: # Optional[int] = None. The number of steps to apply fake quantization after
-  quantize_with_ptq: # Optional[bool] = False. Whether to save the quantized model. If false, weights must be quantized after training has completed using the ``quantize`` CLI.
 ```
 
-
-
-
+Once you have finished training, you must quantize your model by using the same quantization configuration which you used to train the model with. You can use the [`quantize` command](./quantize.md) to do this.

@@ -13,7 +13,7 @@ from torchao.quantization.quant_api import (
 from torchao.quantization.linear_activation_quantized_tensor import LinearActivationQuantizedTensor
 from torchao.dtypes.affine_quantized_tensor import AffineQuantizedTensor
 from transformers import AutoModelForCausalLM
-
+import torch.nn as nn
 from axolotl.utils.quantization import (
     get_ptq_config,
     quantize_model_for_qat,
@@ -246,33 +246,9 @@ class TestQuantizationCallback:
 
 
 class TestConvertQATModelForPTQ:
-    def test_convert_qat_model_for_ptq_no_quantize_with_ptq(self, model):
+    def test_convert_qat_model_for_ptq(self, model):
         config = QATConfig(weight_dtype="int8", activation_dtype="int8",
-                           group_size=8, quantize_embedding=True, quantize_with_ptq=False)
-
-        # quantize model for qat
-        quantize_model_for_qat(model, config.weight_dtype, config.group_size,
-                               config.activation_dtype, config.quantize_embedding)
-        assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
-        assert isinstance(model.lm_head, FakeQuantizedLinear)
-
-        # apply conversion
-        convert_qat_model_for_ptq(model, config.weight_dtype, config.group_size,
-                                  config.activation_dtype, config.quantize_embedding,
-                                  config.quantize_with_ptq)
-        # ensure modules have been swapped out
-        assert not isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
-        assert not isinstance(model.lm_head, FakeQuantizedLinear)
-
-        # ensure weights have not been quantized
-        assert isinstance(model.model.embed_tokens.weight, torch.nn.Parameter)
-        assert not isinstance(model.model.embed_tokens.weight, AffineQuantizedTensor)
-        assert isinstance(model.lm_head.weight, torch.nn.Parameter)
-        assert not isinstance(model.lm_head.weight, LinearActivationQuantizedTensor)
-
-    def test_convert_qat_model_for_ptq_quantize_with_ptq(self, model):
-        config = QATConfig(weight_dtype="int8", activation_dtype="int8",
-                           group_size=8, quantize_embedding=True, quantize_with_ptq=True)
+                           group_size=8, quantize_embedding=True)
 
         # quantize model for qat
         quantize_model_for_qat(model, config.weight_dtype, config.group_size,
@@ -283,12 +259,11 @@ class TestConvertQATModelForPTQ:
 
         # apply conversion
         convert_qat_model_for_ptq(model, config.weight_dtype, config.group_size,
-                                  config.activation_dtype, config.quantize_embedding,
-                                  config.quantize_with_ptq)
+                                  config.activation_dtype, config.quantize_embedding)
         # ensure modules have been swapped out
         assert not isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
         assert not isinstance(model.lm_head, FakeQuantizedLinear)
 
         # ensure weights have been quantized
-        assert isinstance(model.model.embed_tokens.weight, AffineQuantizedTensor)
-        assert isinstance(model.lm_head.weight, LinearActivationQuantizedTensor)
+        assert isinstance(model.model.embed_tokens.weight, nn.Parameter)
+        assert isinstance(model.lm_head.weight, nn.Parameter)

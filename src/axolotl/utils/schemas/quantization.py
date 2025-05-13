@@ -27,9 +27,6 @@ class QATConfig(BaseModel):
     fake_quant_after_n_steps: int | None = Field(
         default=None, description="Fake quant after n steps"
     )
-    quantize_with_ptq: bool | None = Field(
-        default=False, description="Quantize saved model"
-    )
 
     @field_validator("activation_dtype", "weight_dtype", mode="before")
     @classmethod

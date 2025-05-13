@@ -25,7 +25,6 @@ from torchao.quantization.quant_api import (
     UIntXWeightOnlyConfig,
 )
 from torchao.quantization.quant_primitives import MappingType
-from torchao.utils import TORCH_VERSION_AT_LEAST_2_6
 import torch.nn as nn
 import logging
 from axolotl.utils.schemas.enums import TorchIntDType
@@ -77,8 +76,8 @@ def quantize_model_for_qat(
 ):
     """
     This function is used to quantize a model for QAT.
-    It quantizes the model's weights and activations to the specified weight_dtype and activation_dtype.
-    If quantize_embedding is True, it will also quantize the model's embedding weights. 
+    It swaps the model's linear layers with fake quantized linear layers.
+    If `quantize_embedding` is True, it will also swap the model's embedding weights with fake quantized embedding weights. 
     Args:
         model: The model to quantize.
         weight_dtype: The dtype to use for weight quantization.
@@ -145,13 +144,9 @@ def convert_qat_model_for_ptq(model,
                               group_size: int,
                               activation_dtype: TorchIntDType | None = None,
                               quantize_embedding: bool | None = None,
-                              quantize_with_ptq: bool | None = None,
                               ):
     if quantize_embedding:
         def filter_fn(m, _): return isinstance(m, nn.Embedding) or _is_linear(m)
     else:
         filter_fn = _is_linear
     quantize_(model, FromIntXQuantizationAwareTrainingConfig(), filter_fn=filter_fn)
-    if quantize_with_ptq:
-        quantize_model_for_ptq(model, weight_dtype, group_size,
-                               activation_dtype, quantize_embedding)

@@ -236,10 +236,13 @@ def save_trained_model(
         if hasattr(module, "_post_training"):
             module._post_training(model, name)  # pylint: disable=protected-access
 
-    # handle QAT 
+    # handle QAT
     if cfg.qat:
         LOG.info("Processing QAT model for saving...")
-        convert_qat_model_for_ptq(model, cfg)
+        convert_qat_model_for_ptq(model, cfg.qat.weight_dtype, cfg.qat.group_size,
+                                  cfg.qat.activation_dtype, cfg.qat.quantize_embedding)
+        LOG.info("QAT modules have been converted for PTQ. Please ensure you quantize "
+                 "your model weights with `axolotl quantize`.")
 
     # Handle FSDP state dict type
     state_dict_type = "FULL_STATE_DICT"
@@ -262,8 +265,8 @@ def save_trained_model(
         # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple
         # processes attempt to write the same file
         if (
-            state_dict_type == "SHARDED_STATE_DICT"
-            and cfg.fsdp_config.fsdp_state_dict_type == "SHARDED_STATE_DICT"
+            state_dict_type == "SHARDED_STATE_DICT" and
+            cfg.fsdp_config.fsdp_state_dict_type == "SHARDED_STATE_DICT"
         ):
             save_fsdp_model(
                 trainer.accelerator.state.fsdp_plugin,
@@ -316,6 +319,8 @@ def save_trained_model(
             safe_serialization=safe_serialization,
             save_compressed=cfg.llmcompressor.save_compressed,
         )
+
+    LOG.info(f"Model successfully saved to {cfg.output_dir}")
 
 
 def create_model_card(cfg: DictDefault, trainer: Trainer):
