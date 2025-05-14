@@ -120,6 +120,12 @@ axolotl train my_training.yml
 
 ## Common Tasks {#sec-common-tasks}
 
+::: {.callout-tip}
+
+The same yaml file is used for training, inference, and merging.
+
+:::
+
 ### Testing Your Model {#sec-testing}
 
 After training, test your model:
