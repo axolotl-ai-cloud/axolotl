@@ -106,7 +106,6 @@ class OptimizerMixin(Trainer):
         return optimizer_grouped_parameters
 
     def create_optimizer(self):
-
         if (
             self.args.loraplus_lr_ratio is None
             and self.args.embedding_lr_scale is None
@@ -198,4 +197,5 @@ class OptimizerMixin(Trainer):
             self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
                 self.optimizer
             )
+            
         return self.optimizer
