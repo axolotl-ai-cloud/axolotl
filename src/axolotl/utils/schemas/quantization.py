@@ -4,7 +4,7 @@ QAT Config Schema
 
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from axolotl.utils.schemas.enums import TorchIntDType
 
@@ -33,12 +33,9 @@ class QATConfig(BaseModel):
     def validate_dtype(cls, v: Any) -> TorchIntDType | None:
         if v == "int4":
             return TorchIntDType.int4
-        elif v == "int8":
+        if v == "int8":
             return TorchIntDType.int8
-        else:
-            raise ValueError(
-                f"Invalid dtype: '{v}'. Must be one of: ['int4', 'int8']"
-            )
+        raise ValueError(f"Invalid dtype: '{v}'. Must be one of: ['int4', 'int8']")
 
 
 class PTQConfig(BaseModel):

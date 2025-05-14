@@ -9,13 +9,13 @@ toc-depth: 4
 ## Overview
 
 [Quantization Aware Training](https://pytorch.org/blog/introduction-to-quantization-on-pytorch/#quantization-aware-training) (QAT) is a technique for improving the accuracy of models which are quantized
-by applying "fake" quantizations to the model's weights (and optionally, activations) during training. This fake 
+by applying "fake" quantizations to the model's weights (and optionally, activations) during training. This fake
 quantization allows for the model to adjust for noise introduced by the quantization, so when the model is eventually
 quantized, the accuracy loss is minimized. We use the quantization techniques implemented in [torchao](https://github.com/pytorch/ao) to provide
 support for QAT and post-training quantization (PTQ) in axolotl.
 
 We recommend reviewing the excellent QAT tutorial in the [torchtune library](https://pytorch.org/torchtune/main/tutorials/qat_finetune.html#quantizing-the-qat-model),
-and the QAT documentation in the [torchao library](https://github.com/pytorch/ao/tree/main/torchao/quantization/qat), for more details. 
+and the QAT documentation in the [torchao library](https://github.com/pytorch/ao/tree/main/torchao/quantization/qat), for more details.
 
 ## Configuring QAT in Axolotl
 

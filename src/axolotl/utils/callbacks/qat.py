@@ -1,15 +1,14 @@
+"""
+QAT Callback for HF Causal Trainer
+"""
+
 import logging
 from functools import partial
 
-import torch.nn as nn
-from torchao.quantization import quantize_
-from torchao.quantization.qat import FromIntXQuantizationAwareTrainingConfig
+from torch import nn
 from torchao.quantization.qat.embedding import FakeQuantizedEmbedding
 from torchao.quantization.qat.linear import FakeQuantizedLinear
 from transformers import TrainerCallback
-from torchao.quantization.quant_api import _is_linear
-
-from axolotl.utils.quantization import quantize_model_for_ptq
 
 from axolotl.utils.schemas.quantization import QATConfig
 
@@ -17,13 +16,27 @@ LOG = logging.getLogger(__name__)
 
 
 def toggle_fake_quant(mod: nn.Module, enable: bool):
-    if isinstance(mod, FakeQuantizedLinear) or isinstance(mod, FakeQuantizedEmbedding):
-        if isinstance(mod, FakeQuantizedLinear) and mod.activation_fake_quantizer is not None:
+    """
+    Toggle fake quantization for any fake quantized linear or embedding layers in the model.
+
+    Args:
+        mod: The module to toggle fake quantization for.
+        enable: Whether to enable or disable fake quantization.
+    """
+    if isinstance(mod, (FakeQuantizedLinear, FakeQuantizedEmbedding)):
+        if (
+            isinstance(mod, FakeQuantizedLinear)
+            and mod.activation_fake_quantizer is not None
+        ):
             mod.activation_fake_quantizer.enabled = enable
         mod.weight_fake_quantizer.enabled = enable
 
 
 class QATCallback(TrainerCallback):
+    """
+    Callback to toggle fake quantization for the model.
+    """
+
     def __init__(self, cfg: QATConfig):
         self.cfg = cfg
 

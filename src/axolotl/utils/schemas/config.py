@@ -1470,13 +1470,13 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
         if data.get("peft"):
             raise ValueError("QAT and PEFT cannot be used together.")
-        
+
         if data.get("load_in_8bit"):
             raise ValueError("QAT and load_in_8bit cannot be used together.")
-        
+
         if data.get("load_in_4bit"):
             raise ValueError("QAT and load_in_4bit cannot be used together.")
-        
+
         if (
             data.get("fsdp")
             and data.get("fsdp_config")

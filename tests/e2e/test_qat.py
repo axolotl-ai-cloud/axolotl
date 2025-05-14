@@ -1,12 +1,9 @@
 """
 E2E tests for QAT
 """
-import logging
-import os
+
 import unittest
 from pathlib import Path
-
-import pytest
 
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
@@ -46,10 +43,6 @@ class TestQATLlama(unittest.TestCase):
                         "split": "train[:1%]",
                     },
                 ],
-                "output_dir": temp_dir,
-                "gradient_accumulation_steps": 1,
-                "micro_batch_size": 4,
-                "max_steps": 20,
                 "chat_template": "chatml",
                 "qat": {
                     "quantize_embedding": True,

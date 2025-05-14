@@ -2,15 +2,15 @@
 CLI to post-training quantize a model using torchao
 """
 
+import logging
 from pathlib import Path
 from typing import Union
 
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
-
-import logging
-from axolotl.utils.quantization import quantize_model_for_ptq
-from transformers import AutoModelForCausalLM
+from axolotl.utils.quantization import TorchIntDType, quantize_model_for_ptq
 
 LOG = logging.getLogger(__name__)
 
@@ -29,30 +29,58 @@ def do_quantize(
     print_axolotl_text_art()
 
     cfg = load_cfg(config)
-    LOG.info(f"Loading model from {cfg.output_dir}...")
-    model = AutoModelForCausalLM.from_pretrained(cfg.output_dir)
     if cfg.qat:
         quantize_cfg = cfg.qat
+        model_path = cfg.output_dir
     elif cfg.quantization:
         quantize_cfg = cfg.quantization
+        model_path = cfg.base_model
     else:
-        raise ValueError("No quantization configuration found. Please specify either qat or quantization in your config file.")
+        raise ValueError(
+            "No quantization configuration found. Please specify either qat or quantization in your config file."
+        )
 
-    LOG.info(f"Quantizing model with configuration: {quantize_cfg}")
-    weight_dtype = cli_args.get("weight_dtype") or quantize_cfg.weight_dtype
-    activation_dtype = cli_args.get("activation_dtype") or quantize_cfg.activation_dtype
+    model_path = cli_args.get("base_model") or model_path
+    if weight_dtype := cli_args.get("weight_dtype"):
+        weight_dtype = TorchIntDType[weight_dtype]
+    else:
+        weight_dtype = quantize_cfg.weight_dtype
+    if activation_dtype := cli_args.get("activation_dtype"):
+        activation_dtype = TorchIntDType[activation_dtype]
+    else:
+        activation_dtype = quantize_cfg.activation_dtype
     group_size = cli_args.get("group_size") or quantize_cfg.group_size
-    quantize_embedding = cli_args.get("quantize_embedding") or quantize_cfg.quantize_embedding
+    quantize_embedding = (
+        cli_args.get("quantize_embedding") or quantize_cfg.quantize_embedding
+    )
+    output_dir = cli_args.get("output_dir") or cfg.output_dir
 
-    quantize_model_for_ptq(model, weight_dtype, group_size, activation_dtype, quantize_embedding)
+    LOG.info(f"Loading model from {model_path}...")
+    model = AutoModelForCausalLM.from_pretrained(model_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+    LOG.info(
+        f"Quantizing model with configuration: \n"
+        f"weight_dtype: {weight_dtype}\n"
+        f"activation_dtype: {activation_dtype}\n"
+        f"group_size: {group_size}\n"
+        f"quantize_embedding: {quantize_embedding}"
+    )
+
+    quantize_model_for_ptq(
+        model, weight_dtype, group_size, activation_dtype, quantize_embedding
+    )
 
     if cfg.local_rank == 0:
-        LOG.info(
-            f"Saving quantized model to: {str(Path(cfg.output_dir) / 'quantized')}..."
-        )
+        LOG.info(f"Saving quantized model to: {str(Path(output_dir) / 'quantized')}...")
         model.save_pretrained(
-            str(Path(cfg.output_dir) / "quantized"),
+            str(Path(output_dir) / "quantized"),
             safe_serialization=False,
             progressbar=True,
         )
-    LOG.info(f"Quantized model saved to: {str(Path(cfg.output_dir) / 'quantized')}...")
+        tokenizer.save_pretrained(
+            str(Path(output_dir) / "quantized"),
+            safe_serialization=False,
+            progressbar=True,
+        )
+    LOG.info(f"Quantized model saved to: {str(Path(output_dir) / 'quantized')}...")

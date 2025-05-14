@@ -336,6 +336,7 @@ def vllm_serve(config: str, **cli_args: VllmServeCliArgs):
 
 @cli.command()
 @click.argument("config", type=click.Path(exists=True, path_type=str))
+@add_options_from_dataclass(QuantizeCliArgs)
 @filter_none_kwargs
 def quantize(config: str, **cli_args: QuantizeCliArgs):
     from axolotl.cli.quantize import do_quantize

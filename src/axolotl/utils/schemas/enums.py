@@ -1,7 +1,9 @@
 """Enums for Axolotl input config"""
 
 from enum import Enum
+
 import torch
+
 
 class RLType(str, Enum):
     """RL trainer type configuration subset"""
@@ -57,6 +59,8 @@ class CustomSupportedOptimizers(str, Enum):
 
 
 class TorchIntDType(Enum):
+    """Torch integer data types"""
+
     uint1 = torch.uint1
     uint2 = torch.uint2
     uint3 = torch.uint3

@@ -1,6 +1,15 @@
+"""
+Tests for axolotl.utils.quantization
+"""
+
 import pytest
 import torch
+from torch import nn
+from torchao.dtypes.affine_quantized_tensor import AffineQuantizedTensor
 from torchao.quantization.granularity import PerAxis, PerGroup
+from torchao.quantization.linear_activation_quantized_tensor import (
+    LinearActivationQuantizedTensor,
+)
 from torchao.quantization.qat.embedding import FakeQuantizedEmbedding
 from torchao.quantization.qat.linear import FakeQuantizedLinear
 from torchao.quantization.quant_api import (
@@ -10,20 +19,18 @@ from torchao.quantization.quant_api import (
     Int8WeightOnlyConfig,
     UIntXWeightOnlyConfig,
 )
-from torchao.quantization.linear_activation_quantized_tensor import LinearActivationQuantizedTensor
-from torchao.dtypes.affine_quantized_tensor import AffineQuantizedTensor
 from transformers import AutoModelForCausalLM
-import torch.nn as nn
+from transformers.trainer_callback import TrainerState
+
+from axolotl.utils.callbacks.qat import QATCallback
 from axolotl.utils.quantization import (
-    get_ptq_config,
-    quantize_model_for_qat,
-    quantize_model_for_ptq,
     convert_qat_model_for_ptq,
+    get_ptq_config,
+    quantize_model_for_ptq,
+    quantize_model_for_qat,
 )
 from axolotl.utils.schemas.enums import TorchIntDType
 from axolotl.utils.schemas.quantization import QATConfig
-from axolotl.utils.callbacks.qat import QATCallback
-from transformers.trainer_callback import TrainerState
 
 
 @pytest.fixture()
@@ -123,8 +130,14 @@ class TestQuantization:
         if quantize_embedding:
             assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
             assert hasattr(model.model.embed_tokens, "weight_fake_quantizer")
-            assert model.model.embed_tokens.weight_fake_quantizer.config.dtype == weight_dtype.value
-            assert model.model.embed_tokens.weight_fake_quantizer.config.group_size == group_size
+            assert (
+                model.model.embed_tokens.weight_fake_quantizer.config.dtype
+                == weight_dtype.value
+            )
+            assert (
+                model.model.embed_tokens.weight_fake_quantizer.config.group_size
+                == group_size
+            )
 
         for child in list(model.children()):
             if isinstance(child, torch.nn.Linear):
@@ -135,8 +148,8 @@ class TestQuantization:
                 if activation_dtype:
                     assert hasattr(child, "activation_fake_quantizer")
                     assert (
-                        child.activation_fake_quantizer.config.dtype ==
-                        activation_dtype.value
+                        child.activation_fake_quantizer.config.dtype
+                        == activation_dtype.value
                     )
                 else:
                     assert child.activation_fake_quantizer is None
@@ -145,25 +158,42 @@ class TestQuantization:
         "weight_dtype,activation_dtype,group_size,quantize_embedding,expected_exception",
         ptq_test_cases,
     )
-    def test_quantize_model_for_ptq(self, model, weight_dtype, activation_dtype, group_size, quantize_embedding, expected_exception):
+    def test_quantize_model_for_ptq(
+        self,
+        model,
+        weight_dtype,
+        activation_dtype,
+        group_size,
+        quantize_embedding,
+        expected_exception,
+    ):
         if expected_exception:
             with pytest.raises(expected_exception):
-                quantize_model_for_ptq(model, weight_dtype, group_size,
-                                       activation_dtype, quantize_embedding)
+                quantize_model_for_ptq(
+                    model,
+                    weight_dtype,
+                    group_size,
+                    activation_dtype,
+                    quantize_embedding,
+                )
         else:
-            quantize_model_for_ptq(model, weight_dtype, group_size,
-                                   activation_dtype, quantize_embedding)
+            quantize_model_for_ptq(
+                model, weight_dtype, group_size, activation_dtype, quantize_embedding
+            )
             if quantize_embedding:
-                assert isinstance(model.model.embed_tokens.weight,
-                                  AffineQuantizedTensor), "Embedding weight should be quantized"
+                assert isinstance(
+                    model.model.embed_tokens.weight, AffineQuantizedTensor
+                ), "Embedding weight should be quantized"
             for child in list(model.children()):
                 if isinstance(child, torch.nn.Linear):
                     if activation_dtype:
                         assert isinstance(
-                            child.weight, LinearActivationQuantizedTensor), "Linear weight should be quantized with activation quantization"
+                            child.weight, LinearActivationQuantizedTensor
+                        ), "Linear weight should be quantized with activation quantization"
                     else:
                         assert isinstance(
-                            child.weight, AffineQuantizedTensor), "Linear weight should be quantized without activation quantization"
+                            child.weight, AffineQuantizedTensor
+                        ), "Linear weight should be quantized without activation quantization"
 
 
 class TestQuantizationCallback:
@@ -183,14 +213,19 @@ class TestQuantizationCallback:
             fake_quant_after_n_steps=100,
         )
 
-        quantize_model_for_qat(model, cfg.weight_dtype, cfg.group_size,
-                               cfg.activation_dtype, cfg.quantize_embedding)
+        quantize_model_for_qat(
+            model,
+            cfg.weight_dtype,
+            cfg.group_size,
+            cfg.activation_dtype,
+            cfg.quantize_embedding,
+        )
 
         # ensure model has been quantized
         assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
-        assert model.model.embed_tokens.weight_fake_quantizer.enabled == True
+        assert not model.model.embed_tokens.weight_fake_quantizer.enabled
         assert isinstance(model.lm_head, FakeQuantizedLinear)
-        assert model.lm_head.weight_fake_quantizer.enabled == True
+        assert not model.lm_head.weight_fake_quantizer.enabled
 
         qat_callback = QATCallback(cfg)
 
@@ -201,8 +236,8 @@ class TestQuantizationCallback:
             control=None,
             model=model,
         )
-        assert model.model.embed_tokens.weight_fake_quantizer.enabled == False
-        assert model.lm_head.weight_fake_quantizer.enabled == False
+        assert not model.model.embed_tokens.weight_fake_quantizer.enabled
+        assert not model.lm_head.weight_fake_quantizer.enabled
 
         trainer_state.global_step = 100
         qat_callback.on_step_begin(
@@ -211,8 +246,8 @@ class TestQuantizationCallback:
             control=None,
             model=model,
         )
-        assert model.model.embed_tokens.weight_fake_quantizer.enabled == True
-        assert model.lm_head.weight_fake_quantizer.enabled == True
+        assert model.model.embed_tokens.weight_fake_quantizer.enabled
+        assert model.lm_head.weight_fake_quantizer.enabled
 
     def test_qat_callback_fake_quant_after_n_steps_is_none(self, model, trainer_state):
         cfg = QATConfig(
@@ -223,14 +258,19 @@ class TestQuantizationCallback:
             fake_quant_after_n_steps=None,
         )
 
-        quantize_model_for_qat(model, cfg.weight_dtype, cfg.group_size,
-                               cfg.activation_dtype, cfg.quantize_embedding)
+        quantize_model_for_qat(
+            model,
+            cfg.weight_dtype,
+            cfg.group_size,
+            cfg.activation_dtype,
+            cfg.quantize_embedding,
+        )
 
         # ensure model has been quantized
         assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
-        assert model.model.embed_tokens.weight_fake_quantizer.enabled == True
+        assert not model.model.embed_tokens.weight_fake_quantizer.enabled
         assert isinstance(model.lm_head, FakeQuantizedLinear)
-        assert model.lm_head.weight_fake_quantizer.enabled == True
+        assert not model.lm_head.weight_fake_quantizer.enabled
 
         qat_callback = QATCallback(cfg)
         # simulate first training step
@@ -241,25 +281,39 @@ class TestQuantizationCallback:
             model=model,
         )
         # model should be quantized from the get-go
-        assert model.model.embed_tokens.weight_fake_quantizer.enabled == True
-        assert model.lm_head.weight_fake_quantizer.enabled == True
+        assert model.model.embed_tokens.weight_fake_quantizer.enabled
+        assert model.lm_head.weight_fake_quantizer.enabled
 
 
 class TestConvertQATModelForPTQ:
     def test_convert_qat_model_for_ptq(self, model):
-        config = QATConfig(weight_dtype="int8", activation_dtype="int8",
-                           group_size=8, quantize_embedding=True)
+        config = QATConfig(
+            weight_dtype="int8",
+            activation_dtype="int8",
+            group_size=8,
+            quantize_embedding=True,
+        )
 
         # quantize model for qat
-        quantize_model_for_qat(model, config.weight_dtype, config.group_size,
-                               config.activation_dtype, config.quantize_embedding)
+        quantize_model_for_qat(
+            model,
+            config.weight_dtype,
+            config.group_size,
+            config.activation_dtype,
+            config.quantize_embedding,
+        )
 
         assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
         assert isinstance(model.lm_head, FakeQuantizedLinear)
 
         # apply conversion
-        convert_qat_model_for_ptq(model, config.weight_dtype, config.group_size,
-                                  config.activation_dtype, config.quantize_embedding)
+        convert_qat_model_for_ptq(
+            model,
+            config.weight_dtype,
+            config.group_size,
+            config.activation_dtype,
+            config.quantize_embedding,
+        )
         # ensure modules have been swapped out
         assert not isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
         assert not isinstance(model.lm_head, FakeQuantizedLinear)

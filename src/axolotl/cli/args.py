@@ -3,8 +3,6 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-from axolotl.utils.schemas.enums import TorchIntDType
-
 
 @dataclass
 class PreprocessCliArgs:
@@ -80,19 +78,22 @@ class VllmServeCliArgs:
     enable_prefix_caching: Optional[bool] = field(
         default=None,
         metadata={
-            "help": "Whether to enable prefix caching in vLLM. If set to `True`, ensure that the model and the "
+            "help": "Whethe1r to enable prefix caching in vLLM. If set to `True`, ensure that the model and the "
             "hardware support this feature."
         },
     )
 
 
+@dataclass
 class QuantizeCliArgs:
     """Dataclass with CLI arguments for `axolotl quantize` command."""
 
-    weight_dtype: Optional[TorchIntDType] = field(default=None)
-    activation_dtype: Optional[TorchIntDType] = field(default=None)
+    base_model: Optional[str] = field(default=None)
+    weight_dtype: Optional[str] = field(default=None)
+    activation_dtype: Optional[str] = field(default=None)
     quantize_embedding: Optional[bool] = field(default=None)
     group_size: Optional[int] = field(default=None)
+    output_dir: Optional[str] = field(default=None)
 
 
 @dataclass
