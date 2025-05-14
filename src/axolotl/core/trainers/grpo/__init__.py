@@ -131,7 +131,7 @@ class GRPOStrategy:
         return None
 
     @classmethod
-    def get_blocklist_args_kwargs(cls):
+    def get_blocklist_args_kwargs(cls) -> list[str]:
         return ["dataset_num_proc", "max_length"]
 
     @classmethod
