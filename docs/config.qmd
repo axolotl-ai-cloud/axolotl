@@ -566,7 +566,25 @@ gradient_checkpointing: false
 early_stopping_patience: 3
 
 # Specify a scheduler and kwargs to use with the optimizer
-lr_scheduler: # 'one_cycle' | 'rex' | 'log_sweep' | 'linear' | 'cosine_with_restarts' | 'polynomial' | 'constant' | 'constant_with_warmup' | 'inverse_sqrt' | 'reduce_lr_on_plateau' | 'cosine_with_min_lr' | 'warmup_stable_decay' | empty for cosine
+# Valid values are driven by the Transformers SchedulerType class, see:
+# https://github.com/huggingface/transformers/blob/5f4ecf2d9f867a1255131d2461d75793c0cf1db2/src/transformers/trainer_utils.py#L420
+# Valid values include
+# - 'linear'
+# - 'cosine' (default)
+# - 'cosine_with_restarts'
+# - 'polynomial'
+# - 'constant'
+# - 'constant_with_warmup'
+# - 'inverse_sqrt'
+# - 'reduce_lr_on_plateau'
+# - 'cosine_with_min_lr'
+# - 'warmup_stable_decay'
+
+# Additional schedulers include:
+# - 'one_cycle'
+# - 'rex'
+# - 'log_sweep'
+lr_scheduler:
 lr_scheduler_kwargs:
 cosine_min_lr_ratio: # decay lr to some percentage of the peak lr, e.g. cosine_min_lr_ratio=0.1 for 10% of peak lr
 cosine_constant_lr_ratio: # freeze lr at some percentage of the step, e.g. cosine_constant_lr_ratio=0.8 means start cosine_min_lr at 80% of training step (https://arxiv.org/pdf/2308.04014.pdf)
@@ -584,7 +602,7 @@ lr_div_factor: # Learning rate div factor
 #
 # Valid values for 'optimizer' include:
 # - adamw_torch
-# - adamw_torch_fused
+# - adamw_torch_fused (default)
 # - adamw_torch_xla
 # - adamw_torch_npu_fused
 # - adamw_apex_fused
