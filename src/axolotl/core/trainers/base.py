@@ -156,6 +156,9 @@ class AxolotlTrainer(
         Helper method to get the sampler for evaluation. Handles sequence parallelism
         and sample packing cases.
 
+        Args:
+            eval_dataset: Evaluation dataset.
+
         Returns:
             If the dataset is non-empty, a sampler is returned, the type of which
                 depends on the passed training args.
@@ -237,9 +240,6 @@ class AxolotlTrainer(
             self.accelerator.even_batches = False
 
         # Return unprepared dataloader if using sequence parallelism
-        # TODO(djsaunde): We might be able to use `accelerate`'s dataloader preparation
-        # if we use `dispatch_batches` and `slice_fn_for_dispatch` properly (i.e.,
-        # slice each batch along the sequence dimension).
         if self.args.sequence_parallel_degree > 1:
             return dataloader
 
