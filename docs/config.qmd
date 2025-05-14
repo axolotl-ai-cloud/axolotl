@@ -270,10 +270,25 @@ trl:
 
   num_generations: # Optional[int]. Number of generations to sample.
   log_completions: # Optional[bool]. Whether to log completions.
+  num_completions_to_print: # Optional[int]. Number of completions to print when log_completions is True.
 
   sync_ref_model: # Optional[bool]. Whether to sync the reference model.
   ref_model_mixup_alpha: # Optional[float]. Mixup alpha for the reference model.
   ref_model_sync_steps: # Optional[int]. Sync steps for the reference model.
+  scale_rewards: # Optional[bool]. Whether to scale rewards by their standard deviation.
+
+  temperature: # Optional[float]. Sampling temperature for the GRPO policy.
+  top_p: # Optional[float]. Top-p sampling probability for the generation policy.
+  top_k: # Optional[int]. Top-k sampling for the generation policy.
+  min_p: # Optional[float]. Minimum probability for the generation policy.
+  repetition_penalty: # Optional[float]. Penalty for tokens that appear in prompt and generated text.
+
+  num_iterations: # Optional[int]. Number of iterations per batch (μ) for GRPO.
+  epsilon: # Optional[float]. Epsilon value for clipping in the GRPO algorithm.
+  epsilon_high: # Optional[float]. Upper-bound epsilon value for clipping in the GRPO algorithm.
+  use_liger_loss: # Optional[bool]. Whether to use Liger loss for GRPO.
+  loss_type: # Optional[str]. Loss formulation to use. Supported values: grpo, bnpo, dr_grpo.
+  mask_truncated_completions: # Optional[bool]. Whether to exclude truncated completions from loss calculation.
 
 
 # reward modelling: `True` or `False`
