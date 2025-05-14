@@ -49,7 +49,7 @@ max_steps: 2000
 optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 2e-5
-save_only_model: true
+# save_only_model: true
 bf16: true
 tf32: true
 
