@@ -221,7 +221,7 @@ datasets:
 # The same applies to the `test_datasets` option and the `pretraining_dataset` option. Default is true.
 shuffle_merged_datasets: true
 
-Deduplicates datasets and test_datasets with identical entries.
+# Deduplicates datasets and test_datasets with identical entries.
 dataset_exact_deduplication: true
 
 # A list of one or more datasets to eval the model with.
