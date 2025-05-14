@@ -109,7 +109,7 @@ jobs:
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-${{ matrix.pytorch_version }}
+          name: coverage-${{ matrix.pytorch_version }}-${{ github.run_id }}
           path: ./coverage.xml
           retention-days: 1
 
@@ -233,6 +233,14 @@ jobs:
         run: |
           modal run cicd.e2e_tests
 
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-e2e-1st-${{ github.run_id }}
+          path: ./e2e-coverage.xml
+          retention-days: 1
+
   docker-e2e-tests:
     if: github.repository_owner == 'axolotl-ai-cloud'
     # this job needs to be run on self-hosted GPU runners...
@@ -296,6 +304,14 @@ jobs:
         run: |
           modal run cicd.e2e_tests
 
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-e2e-${{ matrix.cuda }}-${{ matrix.pytorch }}-${{ github.run_id }}
+          path: ./e2e-coverage.xml
+          retention-days: 1
+
   docker-e2e-cleanup:
     runs-on: [self-hosted, modal]
     timeout-minutes: 90
@@ -340,6 +356,7 @@ jobs:
     name: Upload Coverage to Codecov
     runs-on: ubuntu-latest
     needs: [pytest, docker-e2e-tests, docker-e2e-tests-1st]
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
 
     steps:
       - name: Download coverage reports
@@ -354,3 +371,7 @@ jobs:
           directory: coverage-reports
           fail_ci_if_error: false
           verbose: true
+          carryforward: true
+          name: codecov-umbrella
+          override_commit: ${{ github.event.pull_request.head.sha || github.sha }}
+          override_pr: ${{ github.event.pull_request.number }}
