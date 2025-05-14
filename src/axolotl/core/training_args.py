@@ -9,7 +9,7 @@ from PIL.Image import Resampling
 from transformers import TrainingArguments
 from trl import CPOConfig, KTOConfig, ORPOConfig, PRMConfig, RewardConfig
 
-from axolotl.monkeypatch.attention.ring_attn.patch import RingAttnFunc
+from axolotl.utils.schemas.enums import RingAttnFunc
 
 
 @dataclass

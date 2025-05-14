@@ -507,6 +507,7 @@ save_strategy: # Set to `"no"` to skip checkpoint saves, `"epoch"` at end of eac
 save_steps: # Leave empty to save at each epoch, integer for every N steps. float for fraction of total steps
 saves_per_epoch: # number of times per epoch to save a checkpoint, mutually exclusive with save_steps
 save_total_limit: # Checkpoints saved at a time
+save_only_model: # Save only the model weights, skipping the optimizer. Using this means you can't resume from checkpoints.
 # Maximum number of iterations to train for. It precedes num_epochs which means that
 # if both are set, num_epochs will not be guaranteed.
 # e.g., when 1 epoch is 1000 steps => `num_epochs: 2` and `max_steps: 100` will train for 100 steps
@@ -540,7 +541,7 @@ train_on_inputs: false
 # Note that training loss may have an oscillating pattern with this enabled.
 group_by_length: false
 
-# Whether to use gradient checkpointing. Available options are: true, false, "offload".
+# Whether to use gradient checkpointing. Available options are: true, false, "offload", "offload_disk".
 # https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing
 gradient_checkpointing: false
 # additional kwargs to pass to the trainer for gradient checkpointing

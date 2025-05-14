@@ -27,7 +27,7 @@ from axolotl.utils.schemas.datasets import (
     StepwiseSupervisedDataset,
 )
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
-from axolotl.utils.schemas.enums import ChatTemplate, RLType
+from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
 from axolotl.utils.schemas.integrations import (
     CometConfig,
     GradioConfig,
@@ -178,7 +178,7 @@ class AxolotlInputConfig(
 
     # torch_dtype: torch.dtype | None
 
-    gradient_checkpointing: Literal["unsloth", "offload"] | bool | None = Field(
+    gradient_checkpointing: Literal["offload", "offload_disk"] | bool | None = Field(
         default=False
     )
     gradient_checkpointing_kwargs: dict[str, Any] | None = None
@@ -266,7 +266,7 @@ class AxolotlInputConfig(
 
     sequence_parallel_degree: int | None = None
     heads_k_stride: int | None = None
-    ring_attn_func: str | None = None
+    ring_attn_func: RingAttnFunc | None = None
 
     special_tokens: SpecialTokensConfig | None = None
     tokens: list[str] | None = None
@@ -788,7 +788,7 @@ class AxolotlInputConfig(
 
     @model_validator(mode="after")
     def check_simpo_warmup(self):
-        if self.rl == "simpo" and self.warmup_ratio:
+        if self.rl is RLType.SIMPO and self.warmup_ratio:
             raise ValueError(
                 "warmup_ratio is not supported with the simpo trainer. Please use `warmup_steps` instead"
             )
@@ -1155,16 +1155,28 @@ class AxolotlInputConfig(
 
         return data
 
+    # @model_validator(mode="before")
+    # @classmethod
+    # def check_grpo_peft_liger(cls, data):
+    #     if (
+    #         data.get("rl") == "grpo"
+    #         and data.get("trl", {})
+    #         and data.get("trl").get("use_liger_loss")
+    #         and data.get("adapter")
+    #     ):
+    #         raise ValueError("PEFT + GRPO + Liger is not yet supported")
+    #     return data
+    #
     @model_validator(mode="before")
     @classmethod
-    def check_grpo_peft_liger(cls, data):
+    def check_grpo_liger_sequence_parallel(cls, data):
         if (
             data.get("rl") == "grpo"
             and data.get("trl", {})
             and data.get("trl").get("use_liger_loss")
-            and data.get("adapter")
+            and data.get("sequence_parallel_degree", 1) > 1
         ):
-            raise ValueError("PEFT + GRPO + Liger is not yet supported")
+            raise ValueError("GRPO + SP + Liger not currently supported")
         return data
 
     @model_validator(mode="after")
@@ -1179,7 +1191,7 @@ class AxolotlInputConfig(
 
             if self.sample_packing and self.micro_batch_size > 1:
                 raise ValueError(
-                    "micro_batch_size must be set to 1 when sample_packing is enabled"
+                    "micro_batch_size must be set to 1 when sample_packing is enabled "
                     "due to a `ring-flash-attn` requirement"
                 )
 
@@ -1211,16 +1223,8 @@ class AxolotlInputConfig(
         if getattr(self, "sequence_parallel_degree", 1) == 1:
             return self
 
-        from axolotl.monkeypatch.attention.ring_attn.patch import RingAttnFunc
-
         if self.ring_attn_func is not None:
-            valid_funcs = list(RingAttnFunc)
-            if self.ring_attn_func in valid_funcs:
-                self.ring_attn_func = RingAttnFunc(self.ring_attn_func)
-            else:
-                raise ValueError(
-                    f"ring_attn_func: {self.ring_attn_func} must be in {valid_funcs}"
-                )
+            self.ring_attn_func = RingAttnFunc(self.ring_attn_func)
         else:
             # Default ring attention function selection
             sample_packing = getattr(self, "sample_packing", False)
@@ -1349,6 +1353,10 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 or data.get("adapter") == "lora"
                 and data.get("load_in_8bit")
             ):
+                return data
+
+            # Skip if dropout is not 0, as auto enabling it would just disable it during runtime patch checks
+            if data.get("lora_dropout") != 0:
                 return data
 
             # Check multi-GPU compatibility

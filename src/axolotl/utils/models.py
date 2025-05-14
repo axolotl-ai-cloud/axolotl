@@ -70,9 +70,13 @@ from axolotl.utils.distributed import (
     is_local_main_process,
     is_main_process,
 )
-from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_offload_wrapper
+from axolotl.utils.gradient_checkpointing import (
+    hf_grad_checkpoint_disk_offload_wrapper,
+    hf_grad_checkpoint_offload_wrapper,
+)
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
+from axolotl.utils.schemas.enums import RLType
 
 LOG = logging.getLogger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
@@ -619,6 +623,10 @@ class ModelLoader:
 
         if self.cfg.gradient_checkpointing in ["unsloth", "offload"]:
             transformers.modeling_utils.checkpoint = hf_grad_checkpoint_offload_wrapper
+        if self.cfg.gradient_checkpointing == "offload_disk":
+            transformers.modeling_utils.checkpoint = (
+                hf_grad_checkpoint_disk_offload_wrapper
+            )
 
         if self.cfg.flash_attention:
             self.patch_attention()
@@ -1372,7 +1380,7 @@ class ModelLoader:
             # then the dpo trainer doesn't want the peft model loaded over it, it just wants the lora/peft config
             if (
                 self.cfg.adapter
-                and self.cfg.rl in ["dpo", "ipo", "kto"]
+                and self.cfg.rl in [RLType.DPO, RLType.IPO, RLType.KTO]
                 and not self.cfg.merge_lora
             ):
                 _, lora_config = load_lora(
