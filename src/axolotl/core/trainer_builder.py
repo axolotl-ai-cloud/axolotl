@@ -1170,7 +1170,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.eval_dataset:
             trainer_kwargs["eval_dataset"] = self.eval_dataset
         if self.cfg.adapter and self.peft_config:
-            trainer_kwargs["peft_config"] = self.peft_config
+            if self.cfg.rl != "grpo":
+                trainer_kwargs["peft_config"] = self.peft_config
         if self.cfg.precompute_ref_log_probs is not None:
             trainer_kwargs["precompute_ref_log_probs"] = (
                 self.cfg.precompute_ref_log_probs
