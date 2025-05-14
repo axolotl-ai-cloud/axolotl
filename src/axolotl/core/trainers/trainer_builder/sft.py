@@ -196,9 +196,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["greater_is_better"] = self.cfg.greater_is_better
 
         if self.cfg.torch_compile:
-            if torch.__version__ < "2.1.0":  # pylint: disable=protected-access
-                LOG.warning("torch>=2.1.0 required for torch_compile to work properly")
-            elif torch._dynamo:  # pylint: disable=protected-access
+            if torch._dynamo:  # pylint: disable=protected-access
                 torch._dynamo.config.suppress_errors = (  # pylint: disable=protected-access
                     True
                 )
