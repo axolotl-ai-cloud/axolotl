@@ -14,10 +14,6 @@ from torch.nn import CrossEntropyLoss
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 
-# @add_start_docstrings_to_model_forward(DeepseekV2_INPUTS_DOCSTRING)
-# @replace_return_docstrings(
-#    output_type=CausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC
-# )
 def lce_forward(
     self,
     input_ids: torch.LongTensor = None,
