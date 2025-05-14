@@ -197,5 +197,5 @@ class OptimizerMixin(Trainer):
             self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
                 self.optimizer
             )
-            
+
         return self.optimizer
