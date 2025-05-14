@@ -342,6 +342,13 @@ def delinearize_llama4(model: str, output: str) -> None:
     do_delinearize_llama4(model, output)
 
 
+@cli.command()
+def wizard():
+    from axolotl.cli.wizard import do_wizard
+
+    do_wizard()
+
+
 cli.add_command(lm_eval)
 
 
