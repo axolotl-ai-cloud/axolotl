@@ -64,9 +64,9 @@ class HyperparametersConfig(BaseModel):
         },
     )
     torchdistx_path: str | None = None
-    lr_scheduler: (SchedulerType | Literal["one_cycle"] | Literal["rex"]) | None = (
-        SchedulerType.COSINE
-    )
+    lr_scheduler: (
+        SchedulerType | Literal["one_cycle"] | Literal["rex"] | Literal["log_sweep"]
+    ) | None = SchedulerType.COSINE
     lr_scheduler_kwargs: dict[str, Any] | None = None
     lr_quadratic_warmup: bool | None = None
     cosine_min_lr_ratio: float | None = None
