@@ -75,4 +75,4 @@ def patch_peft_prep_code():
     exec(prep_code, globals())  # pylint: disable=exec-used  # nosec B102
     LOG.info("patching prepare_model_for_kbit_training to allow for overrides")
     peft.utils.other.prepare_model_for_kbit_training = fixed_prepare_model_for_kbit_training  # pylint: disable=protected-access  # pylint: disable=undefined-variable  # noqa: F821
-    axolotl.utils.models.prepare_model_for_kbit_training = fixed_prepare_model_for_kbit_training  # pylint: disable=protected-access  # pylint: disable=undefined-variable  # noqa: F821
+    axolotl.loaders.model.prepare_model_for_kbit_training = fixed_prepare_model_for_kbit_training  # pylint: disable=protected-access  # pylint: disable=undefined-variable  # noqa: F821

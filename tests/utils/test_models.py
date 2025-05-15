@@ -7,8 +7,8 @@ from transformers import BitsAndBytesConfig, PreTrainedTokenizerBase
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.utils.import_utils import is_torch_mps_available
 
+from axolotl.loaders import ModelLoader
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import ModelLoader, load_model
 
 
 class TestModelsUtils:
@@ -70,13 +70,11 @@ class TestModelsUtils:
         )
 
         # Mock out call to HF hub
-        with patch(
-            "axolotl.utils.models.load_model_config"
-        ) as mocked_load_model_config:
+        with patch("axolotl.loaders.load_model_config") as mocked_load_model_config:
             mocked_load_model_config.return_value = {}
             with pytest.raises(ValueError) as exc:
                 # Should error before hitting tokenizer, so we pass in an empty str
-                load_model(cfg, tokenizer="")  # type: ignore
+                ModelLoader(cfg, tokenizer="").load()  # type: ignore
             assert (
                 "shifted-sparse attention does not currently support sample packing"
                 in str(exc.value)
