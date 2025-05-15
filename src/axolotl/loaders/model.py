@@ -140,6 +140,7 @@ class ModelLoader:
         self._apply_pre_model_load_setup()
 
         # Build the model
+        PLUGIN_MANAGER.pre_model_load(self.cfg)
         qlora_fsdp = self.cfg.fsdp and self.cfg.adapter == "qlora"
         skip_move_to_device = self._build_model(qlora_fsdp)
         PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
@@ -150,6 +151,7 @@ class ModelLoader:
         # Load adapters (LoRA, etc.)
         PLUGIN_MANAGER.pre_lora_load(self.cfg, self.model)
         lora_config = self._load_adapters()
+        PLUGIN_MANAGER.post_lora_load(self.cfg, self.model)
 
         # Apply remaining patches and finalize
         self._apply_post_lora_load_setup(skip_move_to_device)
