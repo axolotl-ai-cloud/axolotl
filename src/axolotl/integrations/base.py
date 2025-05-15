@@ -21,15 +21,17 @@ To create a new plugin, you need to inherit from the BasePlugin class and implem
 import collections
 import importlib
 import logging
-from typing import Callable, OrderedDict
+from typing import TYPE_CHECKING, Callable, OrderedDict, Union
 
 import torch
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from transformers import PreTrainedModel, Trainer
 
-from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.utils.dict import DictDefault
+
+if TYPE_CHECKING:
+    from axolotl.common.datasets import TrainDatasetMeta
 
 
 class BasePlugin:
@@ -74,7 +76,7 @@ class BasePlugin:
 
     def load_datasets(
         self, cfg: DictDefault, preprocess: bool = False
-    ) -> TrainDatasetMeta | None:
+    ) -> Union["TrainDatasetMeta", None]:
         """
         Loads and preprocesses the dataset for training.
 
@@ -366,7 +368,7 @@ class PluginManager:
 
     def load_datasets(
         self, cfg: DictDefault, preprocess: bool = False
-    ) -> TrainDatasetMeta | None:
+    ) -> Union["TrainDatasetMeta", None]:
         """
         Calls the load_datasets method of each registered plugin.
 
