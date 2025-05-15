@@ -18,12 +18,10 @@ from peft import (
 )
 from transformers import PreTrainedModel
 
-from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import get_linear_embedding_layers
 from axolotl.utils.dict import DictDefault
 
 LOG = logging.getLogger(__name__)
-PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 def setup_quantized_meta_for_peft(model: torch.nn.Module):
@@ -175,11 +173,9 @@ def load_adapter(
         model.enable_input_require_grads()
     if adapter in ["lora", "qlora"]:
         model, lora_config = load_lora(model, cfg, inference=inference)
-        PLUGIN_MANAGER.post_lora_load(cfg, model)
         return model, lora_config
     if adapter == "llama-adapter":
         model, lora_config = load_llama_adapter(model, cfg)
-        PLUGIN_MANAGER.post_lora_load(cfg, model)
         return model, lora_config
 
     raise NotImplementedError(f"{adapter} PEFT adapter not available")
