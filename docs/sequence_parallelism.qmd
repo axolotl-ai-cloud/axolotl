@@ -3,8 +3,6 @@ title: Sequence Parallelism
 description: Train with long sequences split across multiple GPUs.
 ---
 
-# Sequence Parallelism
-
 Sequence parallelism is a technique that splits sequences across multiple GPUs,
 allowing you to train with very long sequences that wouldn't fit on a single GPU. Each
 GPU processes a different portion of the sequence, and the results are aggregated
@@ -27,7 +25,7 @@ To enable sequence parallelism, add the following to your configuration file:
 sequence_parallel_degree: 4  # Split sequences across 4 GPUs
 # Optional; strides across the key dimension. Larger values use more memory but should make training faster.
 heads_k_stride: 1
-# Optional; one of "varlen_llama3", "batch_ring", "batch_zigzag", "batch_stripe". Defaults to
+# Optional; one of "varlen_llama3" or "batch_ring". Defaults to
 # "varlen_llama3" when `sample_packing: true`, and "batch_ring" otherwise.
 ring_attn_func:
 ```

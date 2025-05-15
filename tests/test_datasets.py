@@ -414,7 +414,6 @@ class TestDatasetPreparation:
             snapshot_path = snapshot_download(
                 repo_id="mhenrichsen/alpaca_2k_test",
                 repo_type="dataset",
-                local_dir=tmp_ds_path,
             )
             shutil.copytree(snapshot_path, tmp_ds_path, dirs_exist_ok=True)
 

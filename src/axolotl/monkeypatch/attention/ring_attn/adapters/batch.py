@@ -16,11 +16,7 @@ import torch
 import torch.distributed as dist
 import transformers
 import transformers.modeling_flash_attention_utils
-from ring_flash_attn import (
-    ring_flash_attn_func,
-    stripe_flash_attn_func,
-    zigzag_ring_flash_attn_func,
-)
+from ring_flash_attn import ring_flash_attn_func
 from ring_flash_attn.adapters.hf_adapter import check_params
 from transformers.modeling_flash_attention_utils import (
     _flash_supports_window_size,
@@ -28,12 +24,12 @@ from transformers.modeling_flash_attention_utils import (
 )
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
-from axolotl.monkeypatch.attention.ring_attn.patch import RingAttnFunc
+from axolotl.utils.schemas.enums import RingAttnFunc
 
 RING_ATTN_FUNC_MAPPING = {
-    RingAttnFunc.BATCH_RING: ring_flash_attn_func,
-    RingAttnFunc.BATCH_ZIGZAG: zigzag_ring_flash_attn_func,
-    RingAttnFunc.BATCH_STRIPE: stripe_flash_attn_func,
+    RingAttnFunc.BATCH_RING: torch.compile(ring_flash_attn_func),
+    # RingAttnFunc.BATCH_ZIGZAG: torch.compile(zigzag_ring_flash_attn_func),
+    # RingAttnFunc.BATCH_STRIPE: torch.compile(stripe_flash_attn_func),
 }
 
 

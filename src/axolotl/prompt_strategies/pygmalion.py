@@ -1,7 +1,7 @@
 """Module containing the PygmalionPromptTokenizingStrategy and PygmalionPrompter class"""
 
 import copy
-import logging
+from axolotl.utils.logging import get_logger
 from collections import defaultdict
 from typing import Generator, List, Tuple
 
@@ -11,7 +11,7 @@ from axolotl.prompt_tokenizers import (
     tokenize_prompt_default,
 )
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
 
 IGNORE_TOKEN_ID = -100
 
@@ -64,7 +64,7 @@ class PygmalionPromptTokenizingStrategy(PromptTokenizingStrategy):
                 # make sure we create the labels first, otherwise we get incorrect lengths
                 labels = [IGNORE_TOKEN_ID] * len(self.bot_prefix_token_ids) + [
                     *copy.deepcopy(res["input_ids"])
-                ][len(self.bot_prefix_token_ids) :]
+                ][len(self.bot_prefix_token_ids):]
             else:
                 LOG.warning(f"unknown role in conversation: {role}")
                 res = defaultdict(lambda: [])

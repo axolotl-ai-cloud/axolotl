@@ -32,6 +32,8 @@ tokenizer_legacy:
 resize_token_embeddings_to_32x:
 # Optional[bool] Whether to shrink the embeddings to len(tokenizer). By default, we won't shrink.
 shrink_embeddings:
+# Optional[bool] Don't upcast the embeddings to float32 when using PEFT. Useful for low-VRAM GPUs
+embeddings_skip_upcast:
 # Whether to load the model with randomly initialized weights. Useful for
 # pre-training a model from scratch or debugging purposes.
 random_init_weights:
@@ -73,11 +75,12 @@ load_in_8bit: true
 load_in_4bit:
 
 # Use CUDA bf16
-bf16: true # bool or 'full' for `bf16_full_eval`. require >=ampere
+bf16: true # bool or 'full' for `bf16_full_eval`, or 'auto' for automatic detection. require >=ampere
 # Use CUDA fp16
 fp16: true
 # Use CUDA tf32
 tf32: true # require >=ampere
+# Note: if bf16 is set to 'auto', and fp16 is set to true, we will prefer the explict fp16 setting
 
 # No AMP (automatic mixed precision)
 bfloat16: true # require >=ampere
@@ -184,8 +187,8 @@ datasets:
     # adding a system turn with empty content.
     drop_system_message:
 
-    # Optional[bool]. Whether to split the assistant turn based on a reasoning trace inside delimited tags
-    # defaults to False
+    # Optional[bool]. (for Qwen3 template only) Whether to split the assistant content based on a reasoning trace inside delimited tags
+    # See example at `docs/dataset-formats/conversation.qmd`
     split_thinking:
 
     # IMPORTANT: The following fields determine which parts of the conversation to train on.
@@ -502,6 +505,7 @@ save_strategy: # Set to `"no"` to skip checkpoint saves, `"epoch"` at end of eac
 save_steps: # Leave empty to save at each epoch, integer for every N steps. float for fraction of total steps
 saves_per_epoch: # number of times per epoch to save a checkpoint, mutually exclusive with save_steps
 save_total_limit: # Checkpoints saved at a time
+save_only_model: # Save only the model weights, skipping the optimizer. Using this means you can't resume from checkpoints.
 # Maximum number of iterations to train for. It precedes num_epochs which means that
 # if both are set, num_epochs will not be guaranteed.
 # e.g., when 1 epoch is 1000 steps => `num_epochs: 2` and `max_steps: 100` will train for 100 steps
@@ -535,7 +539,7 @@ train_on_inputs: false
 # Note that training loss may have an oscillating pattern with this enabled.
 group_by_length: false
 
-# Whether to use gradient checkpointing. Available options are: true, false, "offload".
+# Whether to use gradient checkpointing. Available options are: true, false, "offload", "offload_disk".
 # https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing
 gradient_checkpointing: false
 # additional kwargs to pass to the trainer for gradient checkpointing
@@ -547,7 +551,7 @@ gradient_checkpointing: false
 early_stopping_patience: 3
 
 # Specify a scheduler and kwargs to use with the optimizer
-lr_scheduler: # 'one_cycle' | 'rex' | 'log_sweep' | empty for cosine
+lr_scheduler: # 'one_cycle' | 'rex' | 'log_sweep' | 'linear' | 'cosine_with_restarts' | 'polynomial' | 'constant' | 'constant_with_warmup' | 'inverse_sqrt' | 'reduce_lr_on_plateau' | 'cosine_with_min_lr' | 'warmup_stable_decay' | empty for cosine
 lr_scheduler_kwargs:
 cosine_min_lr_ratio: # decay lr to some percentage of the peak lr, e.g. cosine_min_lr_ratio=0.1 for 10% of peak lr
 cosine_constant_lr_ratio: # freeze lr at some percentage of the step, e.g. cosine_constant_lr_ratio=0.8 means start cosine_min_lr at 80% of training step (https://arxiv.org/pdf/2308.04014.pdf)
@@ -609,6 +613,7 @@ lr_div_factor: # Learning rate div factor
 # - optimi_adamw
 # - ao_adamw_8bit
 # - ao_adamw_fp8
+# - came_pytorch
 optimizer:
 # Dictionary of arguments to pass to the optimizer
 optim_args:

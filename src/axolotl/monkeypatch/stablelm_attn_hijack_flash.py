@@ -32,7 +32,7 @@ from flash_attn.flash_attn_interface import (  # pylint: disable=ungrouped-impor
 from torch import nn
 from transformers import AutoConfig, AutoModelForCausalLM
 from transformers.modeling_outputs import BaseModelOutputWithPast
-from transformers.utils import logging
+from transformers.utils from axolotl.utils.logging import get_logger
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
 
@@ -121,9 +121,9 @@ def flashattn_attn(
     ).transpose(1, 2)
 
     query_rot = query_states[..., : self.rotary_ndims]
-    query_pass = query_states[..., self.rotary_ndims :]
+    query_pass = query_states[..., self.rotary_ndims:]
     key_rot = key_states[..., : self.rotary_ndims]
-    key_pass = key_states[..., self.rotary_ndims :]
+    key_pass = key_states[..., self.rotary_ndims:]
 
     kv_seq_len = key_states.shape[-2]
     if past_key_value is not None:

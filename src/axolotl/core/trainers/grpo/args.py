@@ -11,6 +11,4 @@ from axolotl.core.training_args import AxolotlTrainingMixins
 
 @dataclass
 class AxolotlGRPOConfig(AxolotlTrainingMixins, GRPOConfig):
-    """
-    Axolotl GRPO Config for GRPO training
-    """
+    """Axolotl GRPO Config for GRPO training"""

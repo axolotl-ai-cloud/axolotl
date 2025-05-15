@@ -68,10 +68,14 @@ from axolotl.utils.distributed import (
     get_device_type,
     is_local_main_process,
 )
-from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_offload_wrapper
+from axolotl.utils.gradient_checkpointing import (
+    hf_grad_checkpoint_disk_offload_wrapper,
+    hf_grad_checkpoint_offload_wrapper,
+)
 from axolotl.utils.logging import get_logger
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
+from axolotl.utils.schemas.enums import RLType
 
 LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
@@ -566,10 +570,20 @@ class ModelLoader:
         self.auto_model_loader = AutoModelForCausalLM  # pylint: disable=invalid-name
 
     def apply_patches(self) -> None:
+        if self.cfg.xformers_attention and self.cfg.sample_packing:
+            from axolotl.monkeypatch.attention import patch_xformers_attn_over_fa2
+
+            patch_xformers_attn_over_fa2()
+            self.cfg.flash_attention = True
         if self.cfg.fsdp_config and str(self.cfg.fsdp_config.fsdp_version) == "2":
             from axolotl.monkeypatch.accelerate.fsdp2 import patch_accelerate_fsdp_utils
 
             patch_accelerate_fsdp_utils()
+
+        if self.cfg.adapter and self.cfg.embeddings_skip_upcast:
+            from axolotl.monkeypatch.peft.utils import patch_peft_prep_code
+
+            patch_peft_prep_code()
 
         if self.cfg.flex_attention:
             from axolotl.monkeypatch.attention.flex_attn import (
@@ -619,6 +633,10 @@ class ModelLoader:
 
         if self.cfg.gradient_checkpointing in ["unsloth", "offload"]:
             transformers.modeling_utils.checkpoint = hf_grad_checkpoint_offload_wrapper
+        if self.cfg.gradient_checkpointing == "offload_disk":
+            transformers.modeling_utils.checkpoint = (
+                hf_grad_checkpoint_disk_offload_wrapper
+            )
 
         if self.cfg.flash_attention:
             self.patch_attention()
@@ -1201,7 +1219,7 @@ class ModelLoader:
                 ],
             )
 
-    def prepare_model(self, qlora_fsdp) -> None:
+    def prepare_model(self, qlora_fsdp: bool) -> None:
         skip_prepare_model_for_kbit_training = False
         if self.cfg.model_config_type == "qwen" and self.cfg.adapter == "lora":
             # Qwen doesn't play nicely with LoRA if this is enabled
@@ -1334,7 +1352,10 @@ class ModelLoader:
         # make sure these are fp32 per Ramesh et al. (2021)
         embedding_modules = get_linear_embedding_layers(self.cfg.model_config_type)
         if not self.cfg.fsdp:
-            # FSDP doesn't like mixed Float and BFloat16
+            # we don't run this during FSDP because this will leave mixed
+            # float and bfloat16 dtypes in the model which FSDP doesn't like
+            if self.cfg.load_in_4bit and self.cfg.embeddings_skip_upcast:
+                embedding_modules = []
             self.convert_embedding_modules_dtype(
                 embedding_modules,
                 dist_dtype=torch.float32,
@@ -1385,7 +1406,7 @@ class ModelLoader:
             # then the dpo trainer doesn't want the peft model loaded over it, it just wants the lora/peft config
             if (
                 self.cfg.adapter
-                and self.cfg.rl in ["dpo", "ipo", "kto"]
+                and self.cfg.rl in [RLType.DPO, RLType.IPO, RLType.KTO]
                 and not self.cfg.merge_lora
             ):
                 _, lora_config = load_lora(

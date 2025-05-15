@@ -2,13 +2,13 @@
 see https://github.com/huggingface/transformers/pull/35834
 """
 
-import logging
+from axolotl.utils.logging import get_logger
 from functools import partial
 from typing import Optional
 
 import torch
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def fixed_fa_peft_integration_check(

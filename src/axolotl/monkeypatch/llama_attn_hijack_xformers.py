@@ -2,7 +2,7 @@
 Directly copied the code from https://raw.githubusercontent.com/oobabooga/text-generation-webui/main/modules/llama_attn_hijack.py and made some adjustments
 """
 
-import logging
+from axolotl.utils.logging import get_logger
 import warnings
 from typing import Optional, Tuple
 

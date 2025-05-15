@@ -29,6 +29,12 @@ class LogHooksPlugin(BasePlugin):
         except FileNotFoundError:
             pass
 
+    def post_trainer_create(self, cfg, trainer):  # pylint: disable=unused-argument
+        with open(
+            self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
+        ) as f:
+            f.write("post_trainer_create\n")
+
     def pre_model_load(self, cfg):  # pylint: disable=unused-argument
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
@@ -165,6 +171,7 @@ class TestPluginHooks:
         ) as f:
             file_contents = f.readlines()
             file_contents = "\n".join(file_contents)
+            assert "post_trainer_create" in file_contents
             assert "pre_model_load" in file_contents
             assert "post_model_build" in file_contents
             assert "pre_lora_load" in file_contents

@@ -11,7 +11,7 @@ from transformers.models.llama.modeling_llama import LlamaFlashAttention2
 
 from axolotl.monkeypatch.utils import detab_code
 
-LOG = get_logger("axolotl.monkeypatch.unsloth")
+LOG = get_logger(__name__)
 
 ORIGINAL_QKV_CODE = """
     query_states = self.q_proj(hidden_states)
@@ -126,9 +126,9 @@ def patch_self_attn_lora():
             items_to_import.append(item)
 
     exec(  # pylint: disable=exec-used  # nosec B102
-        "from transformers.models.llama.modeling_llama import ("
-        + ", ".join(x for x in items_to_import)
-        + ")",
+        "from transformers.models.llama.modeling_llama import (" +
+        ", ".join(x for x in items_to_import) +
+        ")",
         globals(),
     )
     exec(self_attn_forward, globals())  # pylint: disable=exec-used  # nosec B102

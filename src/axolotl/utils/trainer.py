@@ -22,7 +22,7 @@ from axolotl.utils.distributed import reduce_and_broadcast
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
-LOG = get_logger("axolotl")
+LOG = get_logger(__name__)
 
 
 @torch.jit.script
@@ -392,9 +392,9 @@ def process_pretraining_datasets_for_packing(
 
 def calculate_total_num_steps(cfg, train_dataset, update=True):
     if (
-        not cfg.total_num_tokens
-        and not cfg.skip_prepare_dataset
-        and not cfg.reward_model
+        not cfg.total_num_tokens and
+        not cfg.skip_prepare_dataset and
+        not cfg.reward_model
     ):
         total_num_tokens = np.sum(
             train_dataset.select_columns("input_ids")
@@ -409,10 +409,10 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
     skip_estimates = cfg.model_config_type == "mamba"
 
     if (
-        not skip_estimates
-        and not cfg.total_supervised_tokens
-        and not cfg.skip_prepare_dataset
-        and not cfg.reward_model
+        not skip_estimates and
+        not cfg.total_supervised_tokens and
+        not cfg.skip_prepare_dataset and
+        not cfg.reward_model
     ):
         total_supervised_tokens = (
             train_dataset.data.column("labels")
@@ -436,16 +436,16 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 # match count to len est in dataloader
                 int(
                     math.floor(
-                        0.99
-                        * cfg.total_num_tokens
-                        / cfg.sample_packing_eff_est
-                        / cfg.sequence_len
-                        // cfg.batch_size
-                    )
-                    - 1
-                )
-                * cfg.num_epochs
-                * cfg.sequence_parallel_degree
+                        0.99 *
+                        cfg.total_num_tokens /
+                        cfg.sample_packing_eff_est /
+                        cfg.sequence_len //
+                        cfg.batch_size
+                    ) -
+                    1
+                ) *
+                cfg.num_epochs *
+                cfg.sequence_parallel_degree
             )
             LOG.debug(
                 f"total_num_tokens: {cfg.total_num_tokens:_}, total_num_steps: {total_num_steps:_}",
@@ -507,10 +507,10 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
     else:
         total_num_steps = int(
             math.ceil(
-                len(train_dataset)
-                * cfg.num_epochs
-                * cfg.sequence_parallel_degree
-                / cfg.batch_size
+                len(train_dataset) *
+                cfg.num_epochs *
+                cfg.sequence_parallel_degree /
+                cfg.batch_size
             )
         )
     LOG.debug(f"total_num_steps: {total_num_steps}", main_process_only=True)
@@ -637,9 +637,9 @@ def setup_trainer(
             on the provided parameters.
     """
     if (
-        cfg.torch_compile
-        and cfg.fsdp_config
-        and str(cfg.fsdp_config.fsdp_version) == "2"
+        cfg.torch_compile and
+        cfg.fsdp_config and
+        str(cfg.fsdp_config.fsdp_version) == "2"
     ):
         patch_evaluation_loop_for_fsdp2()
     if cfg.rl:

@@ -1,6 +1,6 @@
 """MLFlow module for trainer callbacks"""
 
-import logging
+from axolotl.utils.logging import get_logger
 from shutil import copyfile
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING
@@ -13,7 +13,7 @@ from axolotl.utils.distributed import is_main_process
 if TYPE_CHECKING:
     from axolotl.core.trainer_builder import AxolotlTrainingArguments
 
-LOG = logging.getLogger("axolotl.callbacks")
+LOG = get_logger(__name__)
 
 
 class SaveAxolotlConfigtoMlflowCallback(TrainerCallback):

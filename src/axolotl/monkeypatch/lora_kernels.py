@@ -2,7 +2,7 @@
 
 import importlib
 import inspect
-import logging
+from axolotl.utils.logging import get_logger
 import types
 from typing import Generator, Tuple, Type
 
@@ -366,9 +366,9 @@ def apply_lora_kernel_patches(
                     for linear_proj in ["q_proj", "k_proj", "v_proj"]
                 ]
                 can_patch_qkv = all(
-                    hasattr(module, "lora_A")
-                    and getattr(module, "base_layer", module).bias is None
-                    and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
+                    hasattr(module, "lora_A") and
+                    getattr(module, "base_layer", module).bias is None and
+                    len(getattr(module, "lora_magnitude_vector", []) or []) == 0
                     for module in layer_modules
                 )
 
@@ -385,9 +385,9 @@ def apply_lora_kernel_patches(
                     getattr(self_attn, linear_proj) for linear_proj in ["o_proj"]
                 ]
                 can_patch_o = all(
-                    hasattr(module, "lora_A")
-                    and getattr(module, "base_layer", module).bias is None
-                    and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
+                    hasattr(module, "lora_A") and
+                    getattr(module, "base_layer", module).bias is None and
+                    len(getattr(module, "lora_magnitude_vector", []) or []) == 0
                     for module in layer_modules
                 )
 
@@ -401,9 +401,9 @@ def apply_lora_kernel_patches(
             if cfg.lora_mlp_kernel:
                 # MLP patching
                 can_patch_mlp = all(
-                    hasattr(proj, "lora_A")
-                    and getattr(proj, "base_layer", proj).bias is None
-                    and len(getattr(proj, "lora_magnitude_vector", []) or []) == 0
+                    hasattr(proj, "lora_A") and
+                    getattr(proj, "base_layer", proj).bias is None and
+                    len(getattr(proj, "lora_magnitude_vector", []) or []) == 0
                     for proj in (gate_proj, up_proj, down_proj)
                 )
 

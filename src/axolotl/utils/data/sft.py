@@ -1,7 +1,7 @@
 """data handling specific to SFT"""
 
 import functools
-import logging
+from axolotl.utils.logging import get_logger
 import os
 import tempfile
 from pathlib import Path
@@ -64,7 +64,7 @@ from axolotl.utils.trainer import (
     process_datasets_for_packing,
 )
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 @retry_on_request_exceptions(max_retries=3, delay=5)
@@ -126,9 +126,9 @@ def prepare_dataset(cfg, tokenizer, processor=None, preprocess_iterable=None):
         # when letting accelerator dispatch batches from the main process, we don't need to load the dataset from
         # other ranks, we just need to present a fake dataset
         if (
-            cfg.accelerator_config
-            and cfg.accelerator_config.dispatch_batches
-            and not is_local_main_process()
+            cfg.accelerator_config and
+            cfg.accelerator_config.dispatch_batches and
+            not is_local_main_process()
         ):
             with tempfile.NamedTemporaryFile(mode="w+", delete=False) as f:
                 f.write("text\n")
@@ -153,7 +153,7 @@ def prepare_dataset(cfg, tokenizer, processor=None, preprocess_iterable=None):
             ds_wrapper_partial,
             max_tokens=cfg.sequence_len,
             batch_size=cfg.micro_batch_size,
-            seed=cfg.seed or 42,
+            seed=cfg.seed if cfg.seed is not None else 42,
             buffer_size=cfg.pretrain_multipack_buffer_size or 10_000,
         )
         # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
@@ -213,25 +213,25 @@ def load_tokenized_prepared_datasets(
     ds_hash = str(
         md5(
             (
-                str(cfg.sequence_len)
-                + "@"
-                + str(cfg.sample_packing)
-                + "@"
-                + str(cfg.eval_sample_packing)
-                + "@"
-                + str(cfg.group_by_length)
-                + "@"
-                + str(cfg.kd_temperature or 1.0)
-                + "|".join(
+                str(cfg.sequence_len) +
+                "@" +
+                str(cfg.sample_packing) +
+                "@" +
+                str(cfg.eval_sample_packing) +
+                "@" +
+                str(cfg.group_by_length) +
+                "@" +
+                str(cfg.kd_temperature or 1.0) +
+                "|".join(
                     sorted(
                         [
                             f"{d.path}:{d.type}:{d.shards}:{d.conversation}:{d.split}:{d.temperature or 1.0}"
                             for d in cfg_datasets
                         ]
                     )
-                )
-                + "|"
-                + tokenizer_name
+                ) +
+                "|" +
+                tokenizer_name
             )
         )
     )
@@ -263,10 +263,10 @@ def load_tokenized_prepared_datasets(
         # This is for the case where we already loaded a pretokenized dataset from the hub
         ...
     elif (
-        cfg.dataset_prepared_path
-        and any(prepared_ds_path.glob("*"))
-        and not cfg.is_preprocess
-        and not cfg.skip_prepare_dataset
+        cfg.dataset_prepared_path and
+        any(prepared_ds_path.glob("*")) and
+        not cfg.is_preprocess and
+        not cfg.skip_prepare_dataset
     ):
         log_info_rank_zero(
             LOG,
@@ -459,15 +459,18 @@ def load_prepare_datasets(
     )
 
     if split == "train" and val_set_size:
+        seed = cfg.seed if cfg.seed is not None else 42
+
         # ensure we end up with the same fingerprint by doing rank0 first and being able to cache
         to_hash_train = (
+<<<<<<< Updated upstream
             dataset._fingerprint  # pylint: disable=protected-access
             + "|"
             + str(val_set_size)
             + "|"
             + "train"
             + "|"
-            + str(cfg.seed or 42)
+            + str(seed)
         )
         to_hash_test = (
             dataset._fingerprint  # pylint: disable=protected-access
@@ -476,7 +479,25 @@ def load_prepare_datasets(
             + "|"
             + "test"
             + "|"
-            + str(cfg.seed or 42)
+            + str(seed)
+=======
+            dataset._fingerprint +  # pylint: disable=protected-access
+            "|" +
+            str(val_set_size) +
+            "|" +
+            "train" +
+            "|" +
+            str(cfg.seed or 42)
+        )
+        to_hash_test = (
+            dataset._fingerprint +  # pylint: disable=protected-access
+            "|" +
+            str(val_set_size) +
+            "|" +
+            "test" +
+            "|" +
+            str(cfg.seed or 42)
+>>>>>>> Stashed changes
         )
         train_fingerprint = md5(to_hash_train)
         test_fingerprint = md5(to_hash_test)
@@ -485,7 +506,7 @@ def load_prepare_datasets(
         dataset = dataset.train_test_split(
             test_size=val_set_size,
             shuffle=False,
-            seed=cfg.seed or 42,
+            seed=seed,
             train_new_fingerprint=train_fingerprint,
             test_new_fingerprint=test_fingerprint,
         )
@@ -529,10 +550,10 @@ def get_dataset_wrapper(
     )
 
     if (
-        isinstance(dataset, Dataset)
-        and "input_ids" in dataset.features
-        and "attention_mask" in dataset.features
-        and "labels" in dataset.features
+        isinstance(dataset, Dataset) and
+        "input_ids" in dataset.features and
+        "attention_mask" in dataset.features and
+        "labels" in dataset.features
     ):
         # dataset is already tokenized, just drop it straight in
         dataset_prompter = UnsupportedPrompter()

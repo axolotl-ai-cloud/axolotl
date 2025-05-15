@@ -3,7 +3,7 @@ Flash attention monkey patch for cerebras btlm model
 """
 
 import importlib
-import logging
+from axolotl.utils.logging import get_logger
 from typing import Optional, Tuple
 
 import torch
@@ -11,7 +11,7 @@ from accelerate import init_empty_weights
 from flash_attn.flash_attn_interface import flash_attn_func
 from transformers import AutoConfig, AutoModelForCausalLM
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
 
 
 def replace_btlm_attn_with_flash_attn(model_name="cerebras/btlm-3b-8k-base"):

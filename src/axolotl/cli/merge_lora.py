@@ -1,6 +1,6 @@
 """CLI to merge a trained LoRA into a base model."""
 
-import logging
+from axolotl.utils.logging import get_logger
 from pathlib import Path
 from typing import Union
 
@@ -14,7 +14,7 @@ from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
 from axolotl.utils.dict import DictDefault
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def do_merge_lora(*, cfg: DictDefault) -> None:

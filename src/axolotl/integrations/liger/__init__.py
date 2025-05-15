@@ -19,7 +19,7 @@ Liger Kernel is the collection of Triton-native kernels for LLM Training.
 It is designed to be performant, correct, and light-weight.
 """
 import inspect
-import logging
+from axolotl.utils.logging import get_logger
 import sys
 
 from axolotl.integrations.base import BasePlugin
@@ -28,7 +28,7 @@ from axolotl.utils.distributed import is_main_process
 from .args import LigerArgs  # pylint: disable=unused-import. # noqa: F401
 from .utils import patch_with_compile_disable
 
-LOG = logging.getLogger("axolotl.integrations.liger")
+LOG = get_logger(__name__)
 
 
 class LigerPlugin(BasePlugin):

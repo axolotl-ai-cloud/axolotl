@@ -1,10 +1,10 @@
 """Pydantic models for model input / output, etc. configuration"""
 
-import logging
+from axolotl.utils.logging import get_logger
 
 from pydantic import BaseModel, Field, field_validator
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class ModelInputConfig(BaseModel):

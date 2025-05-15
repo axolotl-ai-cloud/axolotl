@@ -2,11 +2,12 @@
 
 import importlib
 import inspect
+import logging
 import os
 import signal
 import sys
 import weakref
-from contextlib import nullcontext
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Dict
 
@@ -20,20 +21,20 @@ from transformers import PreTrainedModel, PreTrainedTokenizer, ProcessorMixin
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.trainer import Trainer
 
+from axolotl.cli.art import print_axolotl_text_art
 from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
-from axolotl.core.trainers.mixins.sequence_parallel import (
-    SequenceParallelContextManager,
-)
 from axolotl.integrations.base import PluginManager
+from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
 from axolotl.utils.logging import get_logger
 from axolotl.utils.models import load_model, load_processor, load_tokenizer
+from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.trainer import setup_trainer
 
 try:
@@ -41,7 +42,7 @@ try:
 except ImportError:
     BetterTransformer = None
 
-LOG = get_logger(__name__)
+LOG = logging.getLogger(__name__)
 
 
 def setup_model_and_tokenizer(
@@ -62,7 +63,6 @@ def setup_model_and_tokenizer(
     # Load tokenizer
     LOG.debug(
         f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
-        main_process_only=True,
     )
     tokenizer = load_tokenizer(cfg)
 
@@ -107,7 +107,7 @@ def setup_reference_model(
         Reference model if needed for RL training, `None` otherwise.
     """
     model_ref = None
-    if cfg.rl and cfg.rl != "orpo":
+    if cfg.rl and cfg.rl != RLType.ORPO:
         if cfg.adapter and not cfg.rl_adapter_ref_model:
             # use built-in trl autounwrap
             LOG.debug("Passing model_ref: None to RL trainer")
@@ -188,28 +188,32 @@ def execute_training(
         trainer: The configured trainer object.
         resume_from_checkpoint: Path to checkpoint to resume from, if applicable.
     """
-    # Define the context managers to use
-    flash_context = (
-        torch.backends.cuda.sdp_kernel(
-            enable_flash=True,
-            enable_math=True,
-            enable_mem_efficient=True,
-        )
-        if cfg.flash_optimum
-        else nullcontext()
-    )
-    sequence_parallel_context = (
-        SequenceParallelContextManager(
-            model=trainer.model,
-            sequence_parallel_degree=cfg.sequence_parallel_degree,
-            ring_attn_func=cfg.ring_attn_func,
-        )
-        if cfg.sequence_parallel_degree > 1
-        else nullcontext()
-    )
+    with ExitStack() as stack:
+        # Define the context managers to use
+        if cfg.flash_optimum:
+            stack.enter_context(
+                torch.backends.cuda.sdp_kernel(
+                    enable_flash=True,
+                    enable_math=True,
+                    enable_mem_efficient=True,
+                )
+            )
 
-    LOG.info("Starting trainer...")
-    with flash_context, sequence_parallel_context:
+        if cfg.sequence_parallel_degree > 1:
+            models = [trainer.model]
+            if hasattr(trainer, "ref_model"):
+                models.append(trainer.ref_model)
+
+            stack.enter_context(
+                SequenceParallelContextManager(
+                    models=models,
+                    sequence_parallel_degree=cfg.sequence_parallel_degree,
+                    gradient_accumulation_steps=cfg.gradient_accumulation_steps,
+                    ring_attn_func=cfg.ring_attn_func,
+                )
+            )
+
+        LOG.info("Starting trainer...")
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
 
@@ -516,6 +520,8 @@ def train(
     Returns:
         Tuple of (model, tokenizer) after training
     """
+    print_axolotl_text_art()
+
     # Setup model, tokenizer, (causal or RLHF) trainer, etc.
     (
         trainer,
@@ -524,6 +530,9 @@ def train(
         peft_config,
         processor,
     ) = setup_model_and_trainer(cfg, dataset_meta)
+
+    plugin_manager = PluginManager.get_instance()
+    plugin_manager.post_trainer_create(cfg, trainer)
 
     # Handle untrained tokens if configured
     safe_serialization = cfg.save_safetensors is True
@@ -547,7 +556,6 @@ def train(
     if not cfg.use_ray:
         cleanup_distributed()
 
-    plugin_manager = PluginManager.get_instance()
     plugin_manager.post_train(cfg, model)
 
     return model, tokenizer, trainer

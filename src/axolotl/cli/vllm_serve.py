@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Union
 
 from trl.scripts.vllm_serve import ScriptArguments
-from trl.scripts.vllm_serve import main as vllm_serve_main
 
 from axolotl.cli.config import load_cfg
 
@@ -27,6 +26,9 @@ def do_vllm_serve(
     """
     cfg = load_cfg(config)
     model = cfg.base_model
+
+    serve_module = cli_args.get("serve_module", "trl.scripts.vllm_serve")
+    vllm_serve_main = getattr(__import__(serve_module, fromlist=["main"]), "main")
 
     tensor_parallel_size = (
         cli_args.get("tensor_parallel_size") or cfg.vllm.tensor_parallel_size

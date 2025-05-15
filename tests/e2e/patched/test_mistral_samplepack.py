@@ -28,7 +28,7 @@ class TestMistral(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "openaccess-ai-collective/tiny-mistral",
+                "base_model": "trl-internal-testing/tiny-MistralForCausalLM-0.2",
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 1024,
@@ -57,9 +57,9 @@ class TestMistral(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
-                "max_steps": 20,
-                "save_steps": 10,
-                "eval_steps": 10,
+                "max_steps": 5,
+                "save_steps": 3,
+                "eval_steps": 4,
                 "bf16": "auto",
             }
         )
@@ -76,7 +76,7 @@ class TestMistral(unittest.TestCase):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "openaccess-ai-collective/tiny-mistral",
+                "base_model": "trl-internal-testing/tiny-MistralForCausalLM-0.2",
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 1024,
@@ -99,9 +99,9 @@ class TestMistral(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
-                "max_steps": 20,
-                "save_steps": 10,
-                "eval_steps": 10,
+                "max_steps": 5,
+                "save_steps": 3,
+                "eval_steps": 4,
                 "bf16": "auto",
             }
         )

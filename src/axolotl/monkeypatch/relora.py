@@ -2,7 +2,7 @@
 
 import glob
 import json
-import logging
+from axolotl.utils.logging import get_logger
 import os.path
 import shutil
 from functools import partial
@@ -28,7 +28,7 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import barrier, is_main_process
 
-LOG = logging.getLogger("axolotl.relora")
+LOG = get_logger(__name__)
 
 
 @torch.no_grad()
@@ -194,8 +194,8 @@ class ReLoRACallback(TrainerCallback):
             args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}", "relora"
         )
         if (
-            state.global_step >= self.relora_steps
-            and state.global_step % self.relora_steps != 0
+            state.global_step >= self.relora_steps and
+            state.global_step % self.relora_steps != 0
         ):
             if self.quantized:
                 if is_main_process() and self.last_full_model != checkpoint_folder:
@@ -327,8 +327,8 @@ def lora_delta_weight(layer: peft.tuners.lora.LoraLayer, device) -> torch.Tensor
                 layer.lora_B[adapter].weight.detach().to(device)
                 @ layer.lora_A[adapter].weight.detach().to(device),
                 getattr(layer, "fan_in_fan_out", False),
-            )
-            * layer.scaling[adapter]
+            ) *
+            layer.scaling[adapter]
         )
 
     raise ValueError("unhandled lora layer type")
@@ -441,8 +441,8 @@ def merge_and_save(
             out_shard_name = shard_path
             if out_shard_name.startswith("pytorch_model"):
                 out_shard_name = (
-                    out_shard_name.replace("pytorch_model", "model").rstrip(".bin")
-                    + ".safetensors"
+                    out_shard_name.replace("pytorch_model", "model").rstrip(".bin") +
+                    ".safetensors"
                 )
 
             for module_name in in_tensors:

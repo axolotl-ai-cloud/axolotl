@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-import logging
+from axolotl.utils.logging import get_logger
 import os
 from collections import defaultdict
 from functools import wraps
@@ -37,7 +37,7 @@ from axolotl.core.trainers.utils import (
 )
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class AxolotlTrainer(
@@ -114,6 +114,8 @@ class AxolotlTrainer(
             packing_efficiency_estimate=self.args.sample_packing_efficiency,
             batch_max_len=batch_max_len,
             batch_size=batch_size,
+            group_size=self.args.sample_packing_group_size,
+            bin_size=self.args.sample_packing_bin_size,
             sequential=self.args.sample_packing_sequentially,
             drop_last=True,
         )
@@ -229,8 +231,8 @@ class AxolotlTrainer(
         dataloader = DataLoader(dataset, **dataloader_params)
 
         if self.args.sample_packing and (
-            (not is_eval and not self.args.pretraining)
-            or (is_eval and self.args.eval_sample_packing is not False)
+            (not is_eval and not self.args.pretraining) or
+            (is_eval and self.args.eval_sample_packing is not False)
         ):
             self.accelerator.even_batches = False
 
@@ -287,9 +289,9 @@ class AxolotlTrainer(
 
         # Handle sample packing or sequence parallelism
         if (
-            self.args.sample_packing
-            and self.args.eval_sample_packing is not False
-            or self.args.sequence_parallel_degree > 1
+            self.args.sample_packing and
+            self.args.eval_sample_packing is not False or
+            self.args.sequence_parallel_degree > 1
         ):
             # Get appropriate data collator
             self.data_collator = (  # pylint: disable=attribute-defined-outside-init
@@ -371,14 +373,12 @@ class AxolotlTrainer(
                 num_items_in_batch=num_items_in_batch,
             )
 
-        loss = super().compute_loss(
+        return super().compute_loss(
             model,
             inputs,
             return_outputs=return_outputs,
             num_items_in_batch=num_items_in_batch,
         )
-
-        return loss
 
     @staticmethod
     def orpo_concatenate_inputs(inputs, label_pad_token=-100, pad_token=0, device=None):
@@ -560,8 +560,8 @@ class AxolotlTrainer(
 
         if self.is_fsdp_enabled:
             if (
-                "limit_all_gathers" in self.args.fsdp_config
-                and self.args.fsdp_config["limit_all_gathers"]
+                "limit_all_gathers" in self.args.fsdp_config and
+                self.args.fsdp_config["limit_all_gathers"]
             ):
                 self.accelerator.state.fsdp_plugin.limit_all_gathers = True
 

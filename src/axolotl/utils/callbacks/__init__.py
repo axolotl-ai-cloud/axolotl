@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import gc
 import json
-import logging
+from axolotl.utils.logging import get_logger
 import os
 import traceback
 from shutil import copyfile
@@ -50,7 +50,7 @@ if TYPE_CHECKING:
 
 
 IGNORE_INDEX = -100
-LOG = logging.getLogger("axolotl.callbacks")
+LOG = get_logger(__name__)
 
 
 class EvalFirstStepCallback(
@@ -86,9 +86,9 @@ class SaveBetterTransformerModelCallback(
     ):
         # Save
         if (
-            args.save_strategy == IntervalStrategy.STEPS
-            and args.save_steps > 0
-            and state.global_step % args.save_steps == 0
+            args.save_strategy == IntervalStrategy.STEPS and
+            args.save_steps > 0 and
+            state.global_step % args.save_steps == 0
         ):
             control.should_save = True
 
@@ -508,8 +508,8 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                                 if start == end:
                                     continue
 
-                                input_ids = input_ids_all[start : end + 1]
-                                labels = labels_all[start : end + 1]
+                                input_ids = input_ids_all[start: end + 1]
+                                labels = labels_all[start: end + 1]
 
                                 tokens_without_loss = labels == IGNORE_INDEX
                                 tokens_with_loss = labels != IGNORE_INDEX
@@ -550,7 +550,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                             prompt_token_ids_list, prediction_all_tokens
                         ):
                             prediction_without_prompt_tokens = prediction_tokens[
-                                len(prompt_token_ids) :
+                                len(prompt_token_ids):
                             ]
                             prediction_without_prompt_tokens_list.append(
                                 prediction_without_prompt_tokens
@@ -679,8 +679,8 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                             if start == end:
                                 continue
 
-                            input_ids = input_ids_all[start : end + 1]
-                            labels = labels_all[start : end + 1]
+                            input_ids = input_ids_all[start: end + 1]
+                            labels = labels_all[start: end + 1]
 
                             tokens_without_loss = labels == IGNORE_INDEX
                             tokens_with_loss = labels != IGNORE_INDEX
@@ -696,7 +696,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                             completion_token_ids_list.append(completion_token_ids)
 
                             pred_step_token_ids = logits_to_tokens(
-                                logits[start : end + 1]
+                                logits[start: end + 1]
                             )[tokens_with_loss]
                             pred_step_token_ids_list.append(pred_step_token_ids)
 
@@ -724,7 +724,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         prompt_token_ids_list, prediction_all_tokens
                     ):
                         prediction_without_prompt_tokens = prediction_tokens[
-                            len(prompt_token_ids) :
+                            len(prompt_token_ids):
                         ]
                         prediction_without_prompt_tokens_list.append(
                             prediction_without_prompt_tokens
@@ -753,7 +753,9 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         ].append(pred_step_text)
                         row_index += 1
                 if logger == "wandb":
-                    wandb.run.log({f"{name} - Predictions vs Ground Truth": pd.DataFrame(table_data)})  # type: ignore[attr-defined]
+                    # type: ignore[attr-defined]
+                    wandb.run.log(
+                        {f"{name} - Predictions vs Ground Truth": pd.DataFrame(table_data)})
                 elif logger == "mlflow" and is_mlflow_available():
                     import mlflow
 
@@ -868,3 +870,28 @@ class GCCallback(TrainerCallback):
     ):
         torch.cuda.empty_cache()
         gc.collect()
+
+
+def colab_inference_post_train_callback(trainer: Trainer):
+    class ColabCallback(TrainerCallback):
+        """Callback to prep model for inference on Google Colab"""
+
+        def __init__(self, cfg):
+            self.gpu_name = torch.cuda.get_device_name(0)
+            self.cfg = cfg
+
+        def on_train_end(
+            self, args, state, control, **kwargs
+        ):  # pylint: disable=unused-argument
+            """
+            handle T4 gpu, we need to convert attention to eager for inference
+            """
+            if "Tesla T4" in self.gpu_name and self.cfg.xformers_attention:
+                trainer.model.config._attn_implementation = (  # pylint: disable=protected-access
+                    "eager"
+                )
+            trainer.model.gradient_checkpointing_disable()
+            trainer.model.config.use_cache = True
+            trainer.model.eval()
+
+    return ColabCallback

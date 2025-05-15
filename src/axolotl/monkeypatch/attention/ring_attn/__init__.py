@@ -4,7 +4,6 @@
 # flake8: noqa
 
 from .patch import (
-    RingAttnFunc,
     get_ring_attn_group,
     register_ring_attn,
     set_ring_attn_group,

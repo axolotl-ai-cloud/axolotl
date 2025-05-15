@@ -1,6 +1,6 @@
 """Pydantic models for training hyperparameters"""
 
-import logging
+from axolotl.utils.logging import get_logger
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -9,7 +9,7 @@ from transformers.training_args import OptimizerNames
 
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class LrGroup(BaseModel):
@@ -75,8 +75,10 @@ class HyperparametersConfig(BaseModel):
     lr_groups: list[LrGroup] | None = None
 
     adam_epsilon: float | None = None
+    adam_epsilon2: float | None = None
     adam_beta1: float | None = None
     adam_beta2: float | None = None
+    adam_beta3: float | None = None
     max_grad_norm: float | None = None
     num_epochs: float = Field(default=1.0)
 

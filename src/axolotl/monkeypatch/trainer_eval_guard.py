@@ -3,13 +3,13 @@ fix for FSDP2 evals when using torch.compile
 """
 
 import inspect
-import logging
+from axolotl.utils.logging import get_logger
 
 from transformers import Trainer
 
 from axolotl.monkeypatch.utils import detab_code
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 ORIGINAL_TRAINER_CODE = """
     model.eval()
@@ -66,9 +66,9 @@ def patch_evaluation_loop_for_fsdp2():
             items_to_import.append(item)
 
     exec(  # pylint: disable=exec-used  # nosec B102
-        "from transformers.trainer import ("
-        + ", ".join(x for x in items_to_import)
-        + ")",
+        "from transformers.trainer import (" +
+        ", ".join(x for x in items_to_import) +
+        ")",
         globals(),
     )
     exec(evaluation_loop, globals())  # pylint: disable=exec-used  # nosec B102

@@ -2,7 +2,7 @@
 
 # copied from https://github.com/lm-sys/FastChat/blob/main/fastchat/train/llama_flash_attn_monkey_patch.py
 
-import logging
+from axolotl.utils.logging import get_logger
 import warnings
 from typing import List, Optional, Tuple, Union
 
@@ -41,7 +41,7 @@ except ImportError:
     )
 
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
 
 
 def is_xformers_available() -> bool:
@@ -493,7 +493,7 @@ def flashattn_forward(
             # the attention_mask should be the same as the key_padding_mask
             key_padding_mask=attention_mask,
             query_padding_mask=(
-                attention_mask[:, -query_states.size(1) :]
+                attention_mask[:, -query_states.size(1):]
                 if attention_mask is not None
                 else None
             ),
@@ -536,7 +536,7 @@ def flashattn_forward(
                 kvpacked=True,
                 key_padding_mask=attention_mask,
                 query_padding_mask=(
-                    attention_mask[:, -query_states.size(1) :]
+                    attention_mask[:, -query_states.size(1):]
                     if attention_mask is not None
                     else None
                 ),
@@ -612,7 +612,7 @@ def generate_qkv(
             q, query_padding_mask
         )
 
-        output_pad_fn = lambda output_unpad: pad_input(  # noqa: E731
+        def output_pad_fn(output_unpad): return pad_input(  # noqa: E731
             output_unpad, indices_q, batch_size, seqlen_q
         )
 
@@ -627,7 +627,7 @@ def generate_qkv(
         )
         max_seqlen_q = seqlen_q
 
-        output_pad_fn = lambda output_unpad: rearrange(  # noqa: E731
+        def output_pad_fn(output_unpad): return rearrange(  # noqa: E731
             output_unpad, "(b s) h d -> b s h d", b=batch_size
         )
 
