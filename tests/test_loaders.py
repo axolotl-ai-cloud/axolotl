@@ -1,4 +1,4 @@
-"""Module for testing models utils file."""
+"""Module for `axolotl.loaders`."""
 
 from unittest.mock import MagicMock, patch
 
@@ -12,7 +12,7 @@ from axolotl.utils.dict import DictDefault
 
 
 class TestModelsUtils:
-    """Testing module for models utils."""
+    """Testing module for `axolotl.loaders`."""
 
     def setup_method(self) -> None:
         # load config
@@ -50,7 +50,8 @@ class TestModelsUtils:
         device_map = self.cfg.device_map
         if is_torch_mps_available():
             device_map = "mps"
-        self.model_loader.set_device_map_config()
+        # pylint: disable=protected-access
+        self.model_loader._set_device_map_config()
         if is_deepspeed_zero3_enabled():
             assert "device_map" not in self.model_loader.model_kwargs
         else:
@@ -97,7 +98,8 @@ class TestModelsUtils:
         self.cfg.gptq = gptq
         self.cfg.adapter = adapter
 
-        self.model_loader.set_quantization_config()
+        # pylint: disable=protected-access
+        self.model_loader._set_quantization_config()
         if "quantization_config" in self.model_loader.model_kwargs or self.cfg.gptq:
             assert not (
                 hasattr(self.model_loader.model_kwargs, "load_in_8bit")

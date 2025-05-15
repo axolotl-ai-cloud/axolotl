@@ -77,7 +77,7 @@ class TestLoadModelUtils:
             inference=False,
             reference_model=True,
         )
-        self.model_loader.convert_embedding_modules_dtype(
+        self.model_loader._convert_embedding_modules_dtype(
             embedding_modules, dist_dtype, before_kbit_train_or_finetune
         )
         for name, module in self.model_loader.model.named_modules():

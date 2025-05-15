@@ -472,6 +472,16 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
+    def check_sample_packing_with_s2attn(cls, data):
+        if data.get("sample_packing") and data.get("s2_attention"):
+            raise ValueError(
+                "Received `sample_packing=true` and `s2_attention=true`; however, \
+                shifted-sparse attention does not currently support sample packing."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_batch_flattening_fa(cls, data):
         if data.get("batch_flattening"):
             batch_flattening_auto = data.get("batch_flattening") == "auto"
