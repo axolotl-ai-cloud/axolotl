@@ -259,10 +259,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["group_by_length"] = self.cfg.group_by_length
         training_arguments_kwargs["curriculum_sampling"] = self.cfg.curriculum_sampling
 
-        training_arguments_kwargs["embedding_lr"] = self.cfg.embedding_lr
-        training_arguments_kwargs["embedding_lr_scale"] = self.cfg.embedding_lr_scale
-        training_arguments_kwargs["lr_groups"] = self.cfg.lr_groups
-
         training_arguments_kwargs["sample_packing"] = bool(self.cfg.sample_packing)
         training_arguments_kwargs["multipack_real_batches"] = (
             not self.cfg.flash_attention or self.cfg.multipack_real_batches
@@ -322,17 +318,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.neftune_noise_alpha
             )
 
-        trainer_kwargs = {}
-
-        training_arguments_kwargs["embedding_lr"] = self.cfg.embedding_lr
-        training_arguments_kwargs["embedding_lr_scale"] = self.cfg.embedding_lr_scale
-
-        training_arguments_kwargs["loraplus_lr_ratio"] = self.cfg.loraplus_lr_ratio
-        training_arguments_kwargs["loraplus_lr_embedding"] = (
-            self.cfg.loraplus_lr_embedding
-        )
-        training_arguments_kwargs["lr_groups"] = self.cfg.lr_groups
-
         if self.cfg.accelerator_config:
             training_arguments_kwargs["accelerator_config"] = (
                 self.cfg.accelerator_config
@@ -390,6 +375,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             data_collator_kwargs["pad_to_multiple_of"] = multiple
 
         trainer_cls = self._get_trainer_cls()
+        trainer_kwargs = {}
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
             trainer_kwargs, trainer_cls
         )
