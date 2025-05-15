@@ -15,6 +15,7 @@ from transformers import (
 )
 from trl.trainer.utils import RewardDataCollatorWithPadding
 
+from axolotl.core.trainer_builder.base import TrainerBuilderBase
 from axolotl.core.trainers import (
     AxolotlMambaTrainer,
     AxolotlPRMTrainer,
@@ -22,7 +23,6 @@ from axolotl.core.trainers import (
     AxolotlTrainer,
     ReLoRATrainer,
 )
-from axolotl.core.trainers.trainer_builder.base import TrainerBuilderBase
 from axolotl.core.training_args import (
     AxolotlPRMConfig,
     AxolotlRewardConfig,

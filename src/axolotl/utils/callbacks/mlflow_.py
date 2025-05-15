@@ -11,7 +11,7 @@ from transformers import TrainerCallback, TrainerControl, TrainerState
 from axolotl.utils.distributed import is_main_process
 
 if TYPE_CHECKING:
-    from axolotl.core.trainer_builder import AxolotlTrainingArguments
+    from axolotl.core.training_args import AxolotlTrainingArguments
 
 LOG = logging.getLogger("axolotl.callbacks")
 

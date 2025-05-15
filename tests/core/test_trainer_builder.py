@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+from axolotl.core.trainer_builder.rl import HFRLTrainerBuilder
+from axolotl.core.trainer_builder.sft import HFCausalTrainerBuilder
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer

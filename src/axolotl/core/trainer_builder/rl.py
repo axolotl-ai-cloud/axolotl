@@ -4,6 +4,7 @@ import inspect
 import logging
 from pathlib import Path
 
+from axolotl.core.trainer_builder.base import TrainerBuilderBase
 from axolotl.core.trainers import (
     AxolotlCPOTrainer,
     AxolotlKTOTrainer,
@@ -12,7 +13,6 @@ from axolotl.core.trainers import (
 from axolotl.core.trainers.dpo import DPOStrategy
 from axolotl.core.trainers.dpo.args import AxolotlDPOConfig
 from axolotl.core.trainers.grpo import GRPOStrategy
-from axolotl.core.trainers.trainer_builder.base import TrainerBuilderBase
 from axolotl.core.training_args import (
     AxolotlCPOConfig,
     AxolotlKTOConfig,
