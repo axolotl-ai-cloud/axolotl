@@ -6,8 +6,8 @@ import tempfile
 import pytest
 import torch
 
+from axolotl.loaders import ModelLoader, load_tokenizer
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import ModelLoader, load_model, load_tokenizer
 
 
 @pytest.fixture(name="temp_dir")
@@ -71,7 +71,7 @@ class TestLoadModelUtils:
     ):
         self.cfg.output_dir = temp_dir
         self.model_loader.tokenizer = load_tokenizer(self.cfg)  # pylint: disable=all
-        self.model_loader.model, _ = load_model(
+        self.model_loader.load(
             self.cfg,
             self.model_loader.tokenizer,
             inference=False,

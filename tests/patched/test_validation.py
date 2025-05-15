@@ -9,11 +9,11 @@ from typing import Optional
 import pytest
 from pydantic import ValidationError
 
+from axolotl.loaders.utils import check_model_config
 from axolotl.utils import is_comet_available
 from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
-from axolotl.utils.models import check_model_config
 from axolotl.utils.schemas.config import AxolotlConfigWCapabilities
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 

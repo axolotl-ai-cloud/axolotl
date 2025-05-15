@@ -1,51 +1,27 @@
-"""Module for models and model loading"""
+"""Model loading functionality via the `ModelLoader` class implementation"""
 
-# pylint: disable=too-many-lines
 import gc
 import importlib
 import logging
 import math
 import os
-import types
 from functools import cached_property
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
-import addict
-import bitsandbytes as bnb
+import peft
 import torch
 import transformers
 import transformers.modeling_utils
 from accelerate import init_empty_weights
-from bitsandbytes.nn import Params4bit
-from peft import (
-    LoftQConfig,
-    PeftConfig,
-    PeftModel,
-    PeftModelForCausalLM,
-    prepare_model_for_kbit_training,
-)
-from torch import nn
+from peft import prepare_model_for_kbit_training
 from transformers import (
-    AddedToken,
-    AutoConfig,
     AutoModelForCausalLM,
     AutoModelForVision2Seq,
-    AutoProcessor,
-    AutoTokenizer,
     AwqConfig,
     BitsAndBytesConfig,
-    Gemma3ForConditionalGeneration,
     GPTQConfig,
-    Llama4ForConditionalGeneration,
-    LlavaForConditionalGeneration,
-    Mistral3ForConditionalGeneration,
-    MllamaForConditionalGeneration,
-    PretrainedConfig,
     PreTrainedModel,
     PreTrainedTokenizerBase,
-    ProcessorMixin,
-    Qwen2_5_VLForConditionalGeneration,
-    Qwen2VLForConditionalGeneration,
 )
 from transformers.integrations.deepspeed import (
     HfTrainerDeepSpeedConfig,
@@ -54,478 +30,59 @@ from transformers.integrations.deepspeed import (
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
 from axolotl.integrations.base import PluginManager
+from axolotl.loaders.adapter import load_adapter, load_lora
+from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
+from axolotl.loaders.utils import (
+    get_linear_embedding_layers,
+    get_module_class_from_name,
+    load_model_config,
+)
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
 )
-from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
-from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
-    barrier,
     get_device_count,
     get_device_type,
-    is_local_main_process,
-    is_main_process,
 )
 from axolotl.utils.gradient_checkpointing import (
     hf_grad_checkpoint_disk_offload_wrapper,
     hf_grad_checkpoint_offload_wrapper,
 )
-from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
 
 LOG = logging.getLogger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
-MULTIMODAL_AUTO_MODEL_MAPPING = {
-    "mllama": MllamaForConditionalGeneration,
-    "llama4": Llama4ForConditionalGeneration,
-    "llava": LlavaForConditionalGeneration,
-    "qwen2_vl": Qwen2VLForConditionalGeneration,
-    "qwen2_5_vl": Qwen2_5_VLForConditionalGeneration,
-    "mistral3": Mistral3ForConditionalGeneration,
-    "gemma3": Gemma3ForConditionalGeneration,
-}
-
-
-# copied from accelerator.FullyShardedDataParallelPlugin
-def get_module_class_from_name(module, name):
-    """
-    Gets a class from a module by its name.
-
-    Args:
-        module (`torch.nn.Module`): The module to get the class from.
-        name (`str`): The name of the class.
-    """
-    modules_children = list(module.children())
-    if module.__class__.__name__ == name:
-        return module.__class__
-
-    if len(modules_children) == 0:
-        return None
-
-    for child_module in modules_children:
-        module_class = get_module_class_from_name(child_module, name)
-        if module_class is not None:
-            return module_class
-
-    return None
-
-
-def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
-    # Set use_cache to False
-    if hasattr(model_config, "use_cache"):
-        model_config.use_cache = False
-
-    if cfg.is_multimodal:
-        # For multimodal configs, use_cache is set in the text_config
-        if hasattr(model_config, "get_text_config"):
-            text_config = model_config.get_text_config()
-            if hasattr(text_config, "use_cache"):
-                text_config.use_cache = False
-        else:
-            raise ValueError(
-                "No text config found for multimodal model. Please raise an Issue with model details."
-            )
-
-        # check if image_size is not set and load image size from model config if available
-        if (
-            cfg.image_size is None
-            and hasattr(model_config, "vision_config")
-            and hasattr(model_config.vision_config, "image_size")
-        ):
-            cfg.image_size = model_config.vision_config.image_size
-            LOG.debug(f"Loaded image size: {cfg.image_size} from model config")
-
-    quant_config_exists = (
-        hasattr(model_config, "quantization_config")
-        and model_config.quantization_config
-    )
-
-    # Detect compressed-tensors config
-    is_compressed_tensors_config = (
-        quant_config_exists
-        and model_config.quantization_config.get("quant_method") == "compressed-tensors"
-    )
-
-    if is_compressed_tensors_config:
-        if model_config.quantization_config.get("config_groups"):
-            LOG.warning(
-                "Found `config_groups` in a compressed-tensors config. "
-                "QAT integration with llmcompressor is not tested."
-            )
-        # Skip further quant checks for compressed-tensors
-        return
-
-    quant_config_method_is_gptq = (
-        quant_config_exists
-        and "quant_method" in model_config.quantization_config
-        and model_config.quantization_config["quant_method"] == "gptq"
-    )
-
-    if cfg.gptq and not quant_config_method_is_gptq:
-        raise ValueError(
-            "model_config.quantization_config is not set or quant_method is not set to gptq. "
-            "Please make sure to point to a GPTQ model."
-        )
-
-    lora_modules_to_save = get_linear_embedding_layers(model_config.model_type)
-    if (
-        cfg.adapter
-        and cfg.tokens
-        and (
-            not cfg.lora_modules_to_save
-            or not all(x in cfg.lora_modules_to_save for x in lora_modules_to_save)
-        )
-    ):
-        lora_modules_to_save = ", ".join(map(lambda x: f"`{x}`", lora_modules_to_save))
-        raise ValueError(
-            f"`lora_modules_to_save` not properly set when adding new tokens. Please include [{lora_modules_to_save}] in `lora_modules_to_save`."
-        )
-
-
-def load_model_config(cfg):
-    model_config_name = cfg.base_model_config or cfg.base_model
-    if not model_config_name and cfg.tokenizer_config:
-        model_config_name = cfg.tokenizer_config
-    trust_remote_code = cfg.trust_remote_code is True
-    config_kwargs = {}
-    if cfg.revision_of_model:
-        config_kwargs["revision"] = cfg.revision_of_model
-    if cfg.num_labels:
-        # num_labels is used to initialize classifier models
-        config_kwargs["num_labels"] = cfg.num_labels
-    try:
-        model_config = AutoConfig.from_pretrained(
-            model_config_name,
-            trust_remote_code=trust_remote_code,
-            **config_kwargs,
-        )
-    except ValueError as err:
-        if "mamba" in model_config_name:
-            return addict.Dict(
-                {
-                    "model_type": "mamba",
-                }
-            )
-        raise err
-
-    if cfg.overrides_of_model_config:
-        for key, val in cfg.overrides_of_model_config.items():
-            setattr(model_config, key, val)
-
-    check_model_config(cfg, model_config)
-
-    return model_config
-
-
-def modify_tokenizer_files(
-    tokenizer_path: str, token_mappings: Dict[int, str], output_dir: str
-) -> str:
-    """
-    Modify tokenizer files to replace added_tokens strings, save to output directory, and return the path to the modified tokenizer.
-
-    This only works with reserved tokens that were added to the tokenizer, not tokens already part of the vocab.
-
-    Args:
-        tokenizer_path: Path or name of the original tokenizer
-        token_mappings: Dict mapping {token_id (int): new_token_string}
-        output_dir: Directory to save the modified tokenizer
-
-    Returns:
-        Path to the modified tokenizer directory
-
-    Ref: https://github.com/huggingface/transformers/issues/27974#issuecomment-1854188941
-    """
-
-    import json
-
-    # Create the tokenizer directory in output_dir if it doesn't exist
-    tokenizer_dir = os.path.join(output_dir, "tokenizer")
-    os.makedirs(tokenizer_dir, exist_ok=True)
-
-    if is_local_main_process():  # pylint: disable=too-many-nested-blocks
-        # Load the tokenizer
-        temp_tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, use_fast=True)
-
-        # Save the tokenizer to the output directory
-        temp_tokenizer.save_pretrained(tokenizer_dir)
-
-        # Get the token IDs and map them to their new values
-        token_id_mappings = {
-            int(token_id): new_value for token_id, new_value in token_mappings.items()
-        }
-
-        # 1. Update tokenizer_config.json - added_tokens_decoder
-        config_path = os.path.join(tokenizer_dir, "tokenizer_config.json")
-        if os.path.exists(config_path):
-            with open(config_path, "r", encoding="utf-8") as f:
-                config_data = json.load(f)
-
-            # Update added_tokens_decoder
-            if "added_tokens_decoder" in config_data:
-                for token_id, new_value in token_id_mappings.items():
-                    token_id_str = str(token_id)
-                    if token_id_str in config_data["added_tokens_decoder"]:
-                        config_data["added_tokens_decoder"][token_id_str][
-                            "content"
-                        ] = new_value
-                    else:
-                        raise ValueError(
-                            f"Token ID {token_id_str} not found in added_tokens_decoder"
-                        )
-
-            # Write the updated config back
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(config_data, f, indent=2)
-
-        # 2. Update tokenizer.json - added_tokens
-        tokenizer_path = os.path.join(tokenizer_dir, "tokenizer.json")
-        if os.path.exists(tokenizer_path):
-            with open(tokenizer_path, "r", encoding="utf-8") as f:
-                tokenizer_data = json.load(f)
-
-            # Update added_tokens
-            if "added_tokens" in tokenizer_data:
-                for token_id, new_value in token_id_mappings.items():
-                    for i, token_entry in enumerate(tokenizer_data["added_tokens"]):
-                        if token_entry["id"] == token_id:
-                            tokenizer_data["added_tokens"][i]["content"] = new_value
-                            break
-                    else:
-                        # Reaching this section means the token_id was not found in tokenizer.json added_tokens
-                        raise ValueError(
-                            f"Token ID {token_id} not found in added_tokens"
-                        )
-            if "model" in tokenizer_data and "vocab" in tokenizer_data["model"]:
-                for token_id, new_value in token_id_mappings.items():
-                    for entry_val, entry_id in tokenizer_data["model"]["vocab"].items():
-                        if entry_id == token_id:
-                            del tokenizer_data["model"]["vocab"][entry_val]
-                            tokenizer_data["model"]["vocab"][new_value] = token_id
-                            break
-
-            # Write the updated tokenizer data back
-            with open(tokenizer_path, "w", encoding="utf-8") as f:
-                json.dump(tokenizer_data, f, indent=2)
-
-    barrier()
-    return tokenizer_dir
-
-
-def load_tokenizer(cfg):
-    """Load and configure the tokenizer based on the provided config."""
-    model_config = load_model_config(cfg)
-    tokenizer_kwargs = {}
-    use_fast = True  # this is the default
-
-    if cfg.tokenizer_use_fast is not None:
-        use_fast = cfg.tokenizer_use_fast
-    if cfg.tokenizer_legacy is not None:
-        # True is the default w/ https://github.com/huggingface/transformers/pull/25224
-        tokenizer_kwargs["legacy"] = cfg.tokenizer_legacy
-
-    tokenizer_cls = AutoTokenizer
-    if cfg.tokenizer_type:
-        tokenizer_cls = getattr(transformers, cfg.tokenizer_type)
-
-    # Set base tokenizer path
-    tokenizer_path = cfg.tokenizer_config
-
-    # Apply token string overrides if specified
-    if cfg.added_tokens_overrides:
-        # Modify tokenizer files and get path to modified tokenizer
-        tokenizer_path = modify_tokenizer_files(
-            tokenizer_path, cfg.added_tokens_overrides, output_dir=cfg.output_dir
-        )
-
-    tokenizer = tokenizer_cls.from_pretrained(
-        tokenizer_path,
-        trust_remote_code=cfg.trust_remote_code or False,
-        use_fast=use_fast,
-        **tokenizer_kwargs,
-    )
-
-    if (
-        tokenizer.__class__.__name__
-        in [
-            "LlamaTokenizer",
-            "LlamaTokenizerFast",
-            "CodeLlamaTokenizer",
-            "CodeLlamaTokenizerFast",
-        ]
-        and hasattr(tokenizer, "pad_token")
-        and not tokenizer.pad_token
-    ):
-        # set a pad_token, but use eos_token so we don't add a new token
-        tokenizer.pad_token = LLAMA_DEFAULT_EOS_TOKEN
-
-    if tokenizer.__class__.__name__ == "GPTNeoXTokenizerFast":
-        tokenizer.add_special_tokens({"pad_token": "[PAD]"})
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-    # Mistral's official FA implementation requires left padding
-    if cfg.is_mistral_derived_model and cfg.flash_attention and not cfg.sample_packing:
-        tokenizer.padding_side = "left"
-
-    # Qwen base only has single token, so we need to set the special tokens
-    if cfg.is_qwen_derived_model:
-        token_ids = ["bos_token_id", "eos_token_id", "pad_token_id", "unk_token_id"]
-        for attr_name in token_ids:
-            if getattr(tokenizer, attr_name) is None:
-                setattr(tokenizer, attr_name, tokenizer.eod_id)
-
-        token_names = ["bos_token", "eos_token", "pad_token", "unk_token"]
-        for attr_name in token_names:
-            if getattr(tokenizer, attr_name) is None:
-                setattr(tokenizer, attr_name, "<|endoftext|>")
-
-    additional_special_tokens = None
-    if cfg.special_tokens:
-        special_tokens = cfg.special_tokens.to_dict()
-        additional_special_tokens = special_tokens.pop(
-            "additional_special_tokens", None
-        )
-        lora_modules_to_save = get_linear_embedding_layers(model_config.model_type)
-        for k, val in special_tokens.items():
-            # check if new special token is not already in tokenizer and
-            # is adapter training to make sure lora_modules_to_save is set
-            # pylint: disable=too-many-boolean-expressions
-            if (
-                (getattr(tokenizer, k) is None or getattr(tokenizer, k) != val)
-                and (len(tokenizer.encode(val, add_special_tokens=False)) > 2)
-                and cfg.adapter
-                and (
-                    not cfg.lora_modules_to_save
-                    or not all(
-                        x in cfg.lora_modules_to_save for x in lora_modules_to_save
-                    )
-                )
-                and k != "pad_token"
-            ):
-                lora_modules_to_save = ", ".join(
-                    [f"`{x}`" for x in lora_modules_to_save]
-                )
-                raise ValueError(
-                    f"Please set lora_modules_to_save to [{lora_modules_to_save}] when using an adapter and changing the special tokens."
-                )
-
-            tokenizer.add_special_tokens(
-                {k: AddedToken(val, rstrip=False, lstrip=False, normalized=False)}
-            )
-
-        # If we add bos_token and eos_token, we need to update the post processor to
-        # handle them correctly.
-        # https://github.com/huggingface/transformers/pull/24132
-        bos_or_eos_in_special_tokens = (
-            "bos_token" in cfg.special_tokens and "eos_token" in cfg.special_tokens
-        )
-        if (
-            tokenizer.__class__.__name__
-            in (
-                "LlamaTokenizerFast",
-                "CodeLlamaTokenizerFast",
-            )
-            and bos_or_eos_in_special_tokens
-        ):
-            tokenizer.update_post_processor()
-
-    if cfg.tokens:
-        tokenizer.add_tokens(
-            [
-                AddedToken(token, rstrip=False, lstrip=False, normalized=False)
-                for token in cfg.tokens
-            ]
-        )
-
-    # Additional special tokens are a List, and need to be treated differently than regular special
-    # tokens. We add them after we have called `add_tokens` in case these additional special tokens
-    # are new tokens.
-    #
-    # Usage:
-    #
-    # ```py
-    # special_tokens:
-    #   additional_special_tokens: ["<|im_start|>", "<|im_end|>"]
-    # ```
-    if additional_special_tokens is not None:
-        tokenizer.add_special_tokens(
-            {"additional_special_tokens": additional_special_tokens}
-        )
-
-    if is_main_process(use_environ=True):
-        LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
-        LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
-        LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
-        LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
-
-    if cfg.chat_template:
-        chat_template_string = get_chat_template_from_config(
-            cfg=cfg,
-            tokenizer=tokenizer,
-        )
-        if cfg.default_system_message and cfg.chat_template == "chatml":
-            chat_template_string = chat_template_string.replace(
-                "You are a helpful assistant.", cfg.default_system_message
-            )
-
-        tokenizer.chat_template = chat_template_string
-    else:
-        LOG.info(
-            "No Chat template selected. Consider adding a chat template for easier inference."
-        )
-    return tokenizer
-
-
-def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
-    processor_kwargs: Dict[str, Any] = {}  # do we actually need this?
-
-    processor_cls = AutoProcessor
-    if cfg.processor_type:
-        processor_cls = getattr(transformers, cfg.processor_type)
-
-    processor = processor_cls.from_pretrained(
-        cfg.processor_config,
-        trust_remote_code=cfg.trust_remote_code or False,
-        tokenizer=tokenizer,
-        **processor_kwargs,
-    )
-
-    # Attempt to load image size from processor if available
-    if (
-        cfg.image_size is None
-        and hasattr(processor, "size")
-        and any(dim in processor.size for dim in ["width", "height"])
-    ):
-        im_width = None
-        im_height = None
-        if "width" in processor.size:
-            im_width = processor.size["width"]
-        if "height" in processor.size:
-            im_height = processor.size["height"]
-
-        # If both width and height are set, use a tuple
-        if im_width is not None and im_height is not None:
-            cfg.image_size = (im_width, im_height)
-        # If only width is set, use as integer
-        elif im_width is not None:
-            cfg.image_size = im_width
-        # If only height is set, use as integer
-        elif im_height is not None:
-            cfg.image_size = im_height
-
-        LOG.debug(f"Loaded image size: {cfg.image_size} from processor")
-
-    return processor
-
 
 class ModelLoader:
-    """
-    ModelLoader: managing all the config and monkey patches while loading model
+    """Manages model configuration, initialization and application of patches during
+    model loading.
+
+    This class orchestrates the entire process of loading a model from configuration to
+    final preparation. It handles device mapping, quantization, attention mechanisms,
+    adapter integration, and various optimizations.
+
+    The loading process includes:
+        - Loading and validating model configuration
+        - Applying monkey patches for optimizations / fixes
+        - Setting up device mapping (including multi-GPU configurations)
+        - Configuring quantization
+        - Setting attention mechanisms (Flash Attention, SDPA, etc.)
+        - Loading and initializing the model
+        - Applying adapters (LoRA, QLoRA, etc.)
+
+    Attributes:
+        model: The loaded model instance (available after load() is called).
+        model_kwargs: Dictionary of keyword arguments passed to model initialization.
+        base_model: Name or path of the base model to load.
+        model_type: Type of model to load (e.g., "AutoModelForCausalLM").
+        model_config: Configuration object for the model.
+        auto_model_loader: HuggingFace class used for loading the model (default: AutoModelForCausalLM).
     """
 
     def __init__(
@@ -533,30 +90,40 @@ class ModelLoader:
         cfg: DictDefault,
         tokenizer: PreTrainedTokenizerBase,
         *,
-        processor: ProcessorMixin = None,  # pylint: disable=unused-argument
         inference: bool = False,
         reference_model: bool = False,
         **kwargs,  # pylint: disable=unused-argument
     ) -> None:
+        """Initializes the ModelLoader with configuration and components.
+
+        Args:
+            cfg: Configuration dictionary with model and training settings.
+            tokenizer: Tokenizer instance associated with the model.
+            processor: Optional processor for multimodal models. Defaults to None.
+            inference: Whether the model is being loaded for inference mode.
+                Defaults to False.
+            reference_model: Whether this is a reference model (used in setups
+                like DPO training). Defaults to False.
+            **kwargs: Additional keyword arguments (ignored).
+        """
         self.cfg = cfg
         self.tokenizer = tokenizer
         self.inference: bool = inference
         self.reference_model: bool = reference_model
 
-        # init model kwargs
-        self.model_kwargs: Dict[str, Any] = {}
+        # Init model kwargs
+        self.model_kwargs: dict[str, Any] = {}
         if cfg.overrides_of_model_kwargs:
             for key, val in cfg.overrides_of_model_kwargs.items():
                 self.model_kwargs[key] = val
 
-        # init model
+        # Init model
         self.model: PreTrainedModel
         self.base_model = cfg.base_model
         self.model_type = cfg.type_of_model
 
-        # init model config
+        # Init model config
         self.model_config = load_model_config(cfg)
-
         self.auto_model_loader = AutoModelForCausalLM  # pylint: disable=invalid-name
 
     def apply_patches(self) -> None:
@@ -1171,9 +738,7 @@ class ModelLoader:
             self.model.config.eos_token_id = self.tokenizer.eos_token_id
 
     def set_z3_leaf_modules(self) -> None:
-        from deepspeed.utils import (  # pylint: disable=no-name-in-module
-            set_z3_leaf_modules,
-        )
+        from deepspeed.utils import set_z3_leaf_modules
 
         if self.cfg.model_config_type in MOE_ARCH_BLOCK:
             moe_blocks = MOE_ARCH_BLOCK[self.cfg.model_config_type]
@@ -1260,7 +825,7 @@ class ModelLoader:
 
             apply_lora_kernel_patches(self.model, self.cfg)
 
-    def load_model(self) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
+    def load(self) -> tuple[transformers.PreTrainedModel, peft.PeftConfig | None]:
         self.apply_patches()
         self.set_auto_model_loader()
         self.set_device_map_config()
@@ -1270,16 +835,13 @@ class ModelLoader:
         self.set_attention_config()
 
         qlora_fsdp = self.cfg.fsdp and self.cfg.adapter == "qlora"
-        skip_move_to_device = False
+        skip_move_to_device = self.build_model(qlora_fsdp)
+        PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
 
-        try:
-            skip_move_to_device = self.build_model(qlora_fsdp)
-            PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
-        except Exception as err:  # pylint: disable=broad-exception-caught
-            LOG.exception(err)
-            raise err
-
-        if isinstance(self.model, (PeftModel, PeftModelForCausalLM)) and not qlora_fsdp:
+        if (
+            isinstance(self.model, (peft.PeftModel, peft.PeftModelForCausalLM))
+            and not qlora_fsdp
+        ):
             self.model = self.model.merge_and_unload()
 
         embeddings_len = (
@@ -1305,7 +867,7 @@ class ModelLoader:
 
         self.adjust_model_config()
 
-        # log device memory usage
+        # Log device memory usage
         if hasattr(self.model, "device") and self.model.device.type in (
             "cuda",
             "mps",
@@ -1313,11 +875,11 @@ class ModelLoader:
         ):
             log_gpu_memory_usage(LOG, "after model load", self.model.device)
 
-        # make sure these are fp32 per Ramesh et al. (2021)
+        # Make sure these are fp32 per Ramesh et al. (2021)
         embedding_modules = get_linear_embedding_layers(self.cfg.model_config_type)
         if not self.cfg.fsdp:
-            # we don't run this during FSDP because this will leave mixed
-            # float and bfloat16 dtypes in the model which FSDP doesn't like
+            # We don't run this during FSDP because this will leave mixed and bfloat16
+            # dtypes in the model which FSDP doesn't like
             if self.cfg.load_in_4bit and self.cfg.embeddings_skip_upcast:
                 embedding_modules = []
             self.convert_embedding_modules_dtype(
@@ -1359,13 +921,12 @@ class ModelLoader:
 
         PLUGIN_MANAGER.pre_lora_load(self.cfg, self.model)
 
-        # ---------------------------------------------------------
-        #  load lora or adapter
-        # ---------------------------------------------------------
+        # Load LoRA or adapter
         lora_config = None
         if not self.reference_model or self.cfg.lora_model_dir:
-            # if we're not loading the reference model, then we're loading the model for training
-            # then the dpo trainer doesn't want the peft model loaded over it, it just wants the lora/peft config
+            # If we're not loading the reference model, then we're loading the model
+            # for training. Then, the DPO trainer doesn't want the PEFT model loaded
+            # over it, it just wants the LoRA / PEFT config.
             if (
                 self.cfg.adapter
                 and self.cfg.rl in [RLType.DPO, RLType.IPO, RLType.KTO]
@@ -1379,25 +940,21 @@ class ModelLoader:
                     self.model, self.cfg, self.cfg.adapter
                 )
 
-        # ---------------------------------------------------------
-        #  put model to accelerator
-        # ---------------------------------------------------------
+        # Place model on accelerator
         if (
             self.cfg.ddp
             and not self.cfg.load_in_8bit
             and not (self.cfg.rl and self.cfg.load_in_4bit)
             and not skip_move_to_device
         ):
-            # TODO revaldate this conditional
+            # TODO: validate this conditional
             self.model.to(f"{str(get_device_type())}:{self.cfg.local_rank}")
 
         if get_device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) == 1:
             setattr(self.model, "is_parallelizable", True)
             setattr(self.model, "model_parallel", True)
 
-        # ---------------------------------------------------------
-        #  parameters that require gradient updates
-        # ---------------------------------------------------------
+        # Parameters that require gradient updates
         requires_grad = []
         for name, param in self.model.named_parameters(recurse=True):
             if param.requires_grad:
@@ -1422,227 +979,3 @@ class ModelLoader:
 
         PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
         return self.model, lora_config
-
-
-def load_model(
-    cfg: DictDefault,
-    tokenizer: PreTrainedTokenizerBase,
-    *,
-    processor: ProcessorMixin = None,  # pylint: disable=unused-argument
-    inference: bool = False,
-    reference_model: bool = False,
-    **kwargs,  # pylint: disable=unused-argument
-) -> Tuple[PreTrainedModel, Optional[PeftConfig]]:
-    """
-    Load a model for a given configuration and tokenizer.
-    """
-    model_loader = ModelLoader(
-        cfg,
-        tokenizer,
-        processor=processor,
-        inference=inference,
-        reference_model=reference_model,
-        **kwargs,
-    )
-    return model_loader.load_model()
-
-
-def load_adapter(model, cfg, adapter, inference=False):
-    # type: (PreTrainedModel, DictDefault, Optional[str], bool) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
-
-    if adapter is None:
-        return model, None
-    if hasattr(model, "enable_input_require_grads"):
-        model.enable_input_require_grads()
-    if adapter in ["lora", "qlora"]:
-        model, lora_config = load_lora(model, cfg, inference=inference)
-        PLUGIN_MANAGER.post_lora_load(cfg, model)
-        return model, lora_config
-    if adapter == "llama-adapter":
-        model, lora_config = load_llama_adapter(model, cfg)
-        PLUGIN_MANAGER.post_lora_load(cfg, model)
-        return model, lora_config
-
-    raise NotImplementedError(f"{adapter} peft adapter not available")
-
-
-def load_llama_adapter(model, cfg):
-    # type: (PreTrainedModel, DictDefault) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
-    from peft import AdaptionPromptConfig, get_peft_model
-
-    peft_config = AdaptionPromptConfig(
-        adapter_layers=cfg.peft_adapter.layers,  # layers (L)
-        adapter_len=cfg.peft_adapter.len,  # prompt length (K)
-        task_type="CAUSAL_LM",
-    )
-
-    if cfg.lora_model_dir:
-        LOG.debug("Loading pretrained PEFT - llama_adapter")
-        model = PeftModel.from_pretrained(
-            model,
-            cfg.lora_model_dir,
-            torch_dtype=torch.float16,
-        )
-    else:
-        model = get_peft_model(model, peft_config)
-
-    model.print_trainable_parameters()
-
-    return model, peft_config
-
-
-def find_all_linear_names(model):
-    cls = (bnb.nn.Linear4bit, bnb.nn.Linear8bitLt, torch.nn.Linear)
-    lora_module_names = set()
-    for name, module in model.named_modules():
-        if (
-            isinstance(module, cls)
-            or "Linear" in module.__class__.__name__
-            and module.__class__.__name__ not in ("LlamaLinearScalingRotaryEmbedding",)
-        ):
-            names = name.split(".")
-            lora_module_names.add(names[0] if len(names) == 1 else names[-1])
-
-    embedding_modules = get_linear_embedding_layers(model.config.model_type)
-    output_embedding = embedding_modules[1]
-    if output_embedding in lora_module_names:  # needed for 16-bit
-        lora_module_names.remove(output_embedding)
-
-    return list(lora_module_names)
-
-
-def setup_quantized_meta_for_peft(model: nn.Module):
-    """Replaces `quant_state.to` with a dummy function to prevent PEFT from moving `quant_state` to meta device"""
-
-    def temp_to_method(self, *args, **kwargs):  # pylint: disable=unused-argument
-        return self
-
-    for param in model.parameters():
-        if isinstance(param, Params4bit):
-            param.quant_state._orig_to = (  # pylint: disable=protected-access
-                param.quant_state.to
-            )
-            param.quant_state.to = types.MethodType(temp_to_method, param.quant_state)
-
-
-def setup_quantized_peft_meta_for_training(model: nn.Module):
-    """Replaces dummy `quant_state.to` method with the original function to allow training to continue"""
-    for param in model.parameters():
-        if isinstance(param, Params4bit) and hasattr(param.quant_state, "_orig_to"):
-            param.quant_state.to = (
-                param.quant_state._orig_to  # pylint: disable=protected-access
-            )
-            param.quant_state._orig_to = None  # pylint: disable=protected-access
-
-
-def load_lora(model, cfg, inference=False, config_only=False):
-    # type: (PreTrainedModel, DictDefault, bool, bool) -> Tuple[Optional[PreTrainedModel], Optional[PeftConfig]]
-
-    from peft import LoraConfig, get_peft_model
-
-    lora_target_modules = cfg.lora_target_modules or []
-
-    if cfg.lora_target_linear:
-        linear_names = find_all_linear_names(model)
-        LOG.info(f"found linear modules: {repr(sorted(linear_names))}")
-        lora_target_modules_as_list = (
-            lora_target_modules
-            if isinstance(lora_target_modules, list)
-            else [lora_target_modules]
-        )
-        lora_target_modules = list(set(lora_target_modules_as_list + linear_names))
-
-    lora_config_kwargs = {}
-    loftq_bits = cfg.peft and cfg.peft.loftq_config and cfg.peft.loftq_config.loftq_bits
-    if loftq_bits:
-        lora_config_kwargs["loftq_config"] = LoftQConfig(loftq_bits=loftq_bits)
-        lora_config_kwargs["init_lora_weights"] = "loftq"
-    if cfg.peft_init_lora_weights:
-        lora_config_kwargs["init_lora_weights"] = cfg.peft_init_lora_weights
-    if cfg.peft_use_dora:
-        lora_config_kwargs["use_dora"] = cfg.peft_use_dora
-        LOG.info("Initializing LoRA weights using dora. This might take longer.")
-    if cfg.peft_use_rslora:
-        lora_config_kwargs["use_rslora"] = cfg.peft_use_rslora
-    if cfg.peft_layer_replication:
-        lora_config_kwargs["layer_replication"] = cfg.peft_layer_replication
-
-    lora_config = LoraConfig(
-        r=cfg.lora_r,
-        lora_alpha=cfg.lora_alpha,
-        target_modules=lora_target_modules,
-        layers_to_transform=cfg.peft_layers_to_transform,
-        layers_pattern=cfg.peft_layers_pattern,
-        lora_dropout=cfg.lora_dropout,
-        fan_in_fan_out=cfg.lora_fan_in_fan_out,
-        modules_to_save=cfg.lora_modules_to_save if cfg.lora_modules_to_save else None,
-        bias="none",
-        task_type="CAUSAL_LM",
-        **lora_config_kwargs,
-    )
-
-    if config_only:
-        return None, lora_config
-
-    rank = int(os.environ.get("LOCAL_RANK", 0))
-
-    if (
-        cfg.fsdp
-        and cfg.adapter
-        and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-        and rank != 0
-    ):
-        setup_quantized_meta_for_peft(model)
-
-    if cfg.lora_model_dir:
-        LOG.debug("Loading pretrained PEFT - LoRA")
-        model_kwargs: Any = {}
-        if cfg.lora_on_cpu:
-            model_kwargs["max_memory"] = {"cpu": "256GiB"}
-            model_kwargs["device_map"] = {"": "cpu"}
-        model = PeftModel.from_pretrained(
-            model,
-            cfg.lora_model_dir,
-            is_trainable=(not inference),
-            **model_kwargs,
-        )
-    else:
-        model = get_peft_model(model, lora_config)
-
-    if rank == 0:
-        try:
-            model.print_trainable_parameters()
-        except AttributeError as exc:
-            LOG.warning(
-                "Exception caught during model.print_trainable_parameters(): %s", exc
-            )
-    elif (
-        cfg.fsdp
-        and cfg.adapter
-        and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-        and rank != 0
-    ):
-        setup_quantized_peft_meta_for_training(model)
-
-    return model, lora_config
-
-
-def ensure_dtype(model, dtype=torch.bfloat16):
-    for name, module in model.named_modules():
-        weight_mismatch = False
-        bias_mismatch = False
-        try:
-            weight_mismatch = module.weight.dtype != dtype
-        except AttributeError:
-            pass
-        try:
-            bias_mismatch = module.bias.dtype != dtype
-        except AttributeError:
-            pass
-
-        if weight_mismatch:
-            print(f"Converting module {name}.weight: {module.weight.dtype} -> {dtype}")
-        if bias_mismatch:
-            print(f"Converting module {name}.bias: {module.bias.dtype} -> {dtype}")
-        if weight_mismatch or bias_mismatch:
-            module.to(dtype)
