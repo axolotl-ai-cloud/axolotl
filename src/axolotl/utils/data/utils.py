@@ -17,6 +17,8 @@ from axolotl.utils.trainer import truncate_or_drop_long_seq
 
 LOG = logging.getLogger(__name__)
 
+DEFAULT_SEQUENCE_LEN_OVERFLOW_HANDLING = "drop"
+
 
 class RetryStrategy(Enum):
     """
