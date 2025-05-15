@@ -161,6 +161,18 @@ def deduplicate_and_log_datasets(
 
 
 def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
+    """
+    Processes a dataset to handle sequences exceeding a configured maximum length by either truncating or dropping them.
+    
+    If the dataset lacks an "input_ids" column, the function returns the dataset unchanged. The handling mode is determined by the configuration parameter "sequence_len_overflow_handling", defaulting to "drop". In "truncate" mode, sequences longer than the maximum length are truncated; in "drop" mode, such sequences are removed from the dataset. The function logs information about sequence lengths and the number of samples affected when applicable.
+    
+    Args:
+        dataset: The Huggingface Dataset to process.
+        cfg: Configuration object specifying sequence length parameters and handling mode.
+    
+    Returns:
+        The processed dataset with long sequences either truncated or dropped according to the configuration.
+    """
     if "input_ids" not in dataset.column_names:
         LOG.warning(
             "Dataset does not contain 'input_ids' column. Skip drop long seq. This is expected for RewardModeling."

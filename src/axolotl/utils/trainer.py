@@ -207,10 +207,18 @@ def add_length(sample):
 
 def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2):
     """
-    Drop samples whose sequence length is either too long (> sequence_len)
-    or too short (< min_sequence_len).
-
-    Works for both single-example (list[int]) or batched (list[list[int]]).
+    Determines whether samples should be kept based on sequence length constraints.
+    
+    For a single example or a batch, returns True (or a list of booleans) if each sequence's length is within the specified range; otherwise, returns False (or a list with False for out-of-range sequences).
+    
+    Args:
+        sample: A dictionary containing "input_ids" as a list of ints or a list of lists of ints.
+        sequence_len: Maximum allowed sequence length (inclusive).
+        min_sequence_len: Minimum allowed sequence length (inclusive).
+    
+    Returns:
+        True if the single example is within the length range, False otherwise.
+        For batched input, returns a list of booleans indicating which sequences are within the range.
     """
     min_sequence_len = min_sequence_len or 2
 
@@ -239,17 +247,18 @@ def truncate_or_drop_long_seq(
     sample, sequence_len=2048, min_sequence_len=2, handling="drop"
 ):
     """
-    Either drop or truncate samples whose sequence length is either too long (> sequence_len)
-    or too short (< min_sequence_len).
-
-    If handling is "drop":
-        - Samples that are too short or too long will be dropped
-    If handling is "truncate":
-        - Samples that are too short will still be dropped
-        - Samples that are too long will be truncated to sequence_len
-
-    Works for both single-example (list[int]) or batched (list[list[int]]).
-    Returns either a boolean/list of booleans (for drop mode) or the modified sample (for truncate mode).
+    Drops or truncates samples based on sequence length constraints.
+    
+    If handling is "drop", returns a boolean or list of booleans indicating whether each sample's sequence length is within the specified range. If handling is "truncate", returns the sample with sequences longer than sequence_len truncated and sequences shorter than min_sequence_len omitted. Supports both single-example and batched inputs.
+    
+    Args:
+        sample: A dictionary containing at least an "input_ids" field, representing either a single sequence or a batch of sequences.
+        sequence_len: Maximum allowed sequence length.
+        min_sequence_len: Minimum allowed sequence length.
+        handling: "drop" to filter out samples outside the range, "truncate" to truncate long sequences.
+    
+    Returns:
+        In "drop" mode, a boolean or list of booleans indicating which samples to keep. In "truncate" mode, the modified sample with sequences truncated as needed.
     """
     min_sequence_len = min_sequence_len or 2
     result = None
@@ -344,6 +353,11 @@ def truncate_or_drop_long_seq(
 
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
+    """
+    Prepares training and evaluation datasets for sample packing and model-specific requirements.
+    
+    Removes unnecessary columns based on model type, filters out samples with no trainable tokens, and optionally adds length or position ID columns for sample packing or PoSE techniques. Returns the processed training and evaluation datasets.
+    """
     drop_attn_mask = cfg.model_config_type in ["mamba", "gemma3"]
     if drop_attn_mask:
         LOG.info("dropping attention_mask column")
@@ -485,6 +499,21 @@ def process_pretraining_datasets_for_packing(
     handling="drop",
 ):
     # Define the function to use for handling sequences based on the mode
+    """
+    Processes a pretraining dataset by truncating or dropping sequences based on length.
+    
+    Depending on the handling mode, sequences longer than `sequence_len` are either truncated or dropped, and sequences shorter than `min_sequence_len` are dropped. Optionally adds position IDs and removes the attention mask column.
+    
+    Args:
+        train_dataset: The dataset to process.
+        sequence_len: Maximum allowed sequence length.
+        skip_position_ids: If False, adds position IDs to each sample.
+        drop_attention_mask: If True, removes the attention mask column.
+        handling: "drop" to remove long sequences, "truncate" to truncate them.
+    
+    Returns:
+        The processed dataset with sequences handled according to the specified mode.
+    """
     seq_handler_fn = partial(
         truncate_or_drop_long_seq,
         sequence_len=sequence_len,

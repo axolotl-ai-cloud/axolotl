@@ -14,11 +14,19 @@ class TestTruncateOrDropLongSeq(unittest.TestCase):
 
     def setUp(self):
         # Example sequence length settings
+        """
+        Sets up default sequence length parameters for the test cases.
+        """
         self.sequence_len = 10
         self.min_sequence_len = 3
 
     def test_drop_mode_single(self):
-        """Test drop mode with single examples."""
+        """
+        Verifies that 'drop' mode correctly filters single sequence examples based on length.
+        
+        Tests that sequences shorter than the minimum, longer than the maximum, or empty are dropped,
+        while sequences within the valid length range are kept.
+        """
         handler = partial(
             truncate_or_drop_long_seq,
             sequence_len=self.sequence_len,
@@ -43,7 +51,11 @@ class TestTruncateOrDropLongSeq(unittest.TestCase):
         self.assertFalse(handler(sample_empty))
 
     def test_truncate_mode_single(self):
-        """Test truncate mode with single examples."""
+        """
+        Tests that 'truncate_or_drop_long_seq' correctly truncates or preserves single examples in "truncate" mode.
+        
+        Verifies that sequences longer than the maximum length are truncated, while sequences that are too short, empty, or within the valid range remain unchanged.
+        """
         handler = partial(
             truncate_or_drop_long_seq,
             sequence_len=self.sequence_len,
@@ -83,7 +95,11 @@ class TestTruncateOrDropLongSeq(unittest.TestCase):
         self.assertEqual(result_empty, sample_empty)  # Unchanged
 
     def test_drop_mode_batched(self):
-        """Test drop mode with batched examples."""
+        """
+        Tests that the "drop" handling mode correctly filters batched input sequences based on length constraints.
+        
+        Verifies that sequences shorter than the minimum length, longer than the maximum length, or empty are dropped (returns False), while sequences within the valid range are kept (returns True).
+        """
         handler = partial(
             truncate_or_drop_long_seq,
             sequence_len=self.sequence_len,
@@ -103,7 +119,13 @@ class TestTruncateOrDropLongSeq(unittest.TestCase):
         self.assertEqual(handler(sample), expected)
 
     def test_truncate_mode_batched(self):
-        """Test truncate mode with batched examples."""
+        """
+        Tests that batched examples are correctly truncated in "truncate" mode.
+        
+        Verifies that sequences in both "input_ids" and "labels" longer than the maximum
+        allowed length are truncated, while sequences that are too short or empty remain
+        unchanged.
+        """
         handler = partial(
             truncate_or_drop_long_seq,
             sequence_len=self.sequence_len,

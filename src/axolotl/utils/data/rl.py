@@ -85,6 +85,25 @@ def drop_long_rl_seq(
     sequence_len,
     handling="drop",  # Use the default handling mode
 ):
+    """
+    Handles samples exceeding a maximum sequence length for various RL dataset types by either truncating or dropping them.
+    
+    Depending on the RL type and the `handling` mode, this function either truncates response fields to fit within the specified sequence length or determines whether the sample should be dropped. For DPO, IPO, ORPO, and SIMPO types, both "chosen" and "rejected" responses are considered; for KTO, the "completion" is considered. For GRPO, samples are always retained. If truncation is not possible (e.g., the prompt alone exceeds the limit), the sample is returned unchanged for mapping, or dropped during filtering.
+    
+    Args:
+        sample: A dictionary representing a single dataset sample.
+        rl: The RLType indicating the dataset type.
+        tokenizer: The tokenizer used to compute token lengths and perform truncation.
+        sequence_len: The maximum allowed sequence length.
+        handling: Specifies how to handle overlong sequences ("drop" or "truncate").
+    
+    Returns:
+        For "truncate": The modified sample with responses truncated as needed, or the original sample if truncation is not possible.
+        For "drop": True if the sample fits within the sequence length, otherwise False.
+    
+    Raises:
+        ValueError: If required keys are missing for the specified RL type, or if the RL type is unknown.
+    """
     result = None
 
     if rl in (RLType.DPO, RLType.IPO, RLType.ORPO, RLType.SIMPO):
@@ -210,6 +229,17 @@ def drop_long_rl_seq(
 
 
 def load_prepare_preference_datasets(cfg):
+    """
+    Loads, preprocesses, and prepares preference datasets for RL training and evaluation.
+    
+    This function orchestrates the loading, transformation, sequence length handling, optional deduplication, and caching of datasets for Direct Preference Optimization (DPO) and related RL types. It supports configurable handling of overlong sequences (dropping or truncating), applies dataset-specific transformations, and manages train/validation/test splits as needed.
+    
+    Args:
+        cfg: Configuration object specifying dataset sources, RL type, tokenizer, sequence length, and processing options.
+    
+    Returns:
+        A tuple containing the prepared training and evaluation datasets.
+    """
     def load_split(dataset_cfgs, _cfg):
         split_datasets: List[Any] = []
         use_auth_token = _cfg.hf_use_auth_token

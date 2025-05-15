@@ -251,6 +251,22 @@ def encode_packed_pretraining(
     # pylint: disable=duplicate-code
     # tokenize all the examples
     # rows get split with stride (overlap)
+    """
+    Encodes and packs input examples into fixed-length batches for pretraining with optional multipack attention.
+    
+    Wraps and processes input examples into a dataset, applies sequence packing with configurable overflow handling, and batches the data using a multipack sampler. Each batch is collated and features are aggregated into lists keyed by feature name.
+    
+    Args:
+        collate_fn: Function to collate individual feature dictionaries into batch tensors.
+        ds_wrapper: Callable that wraps a Hugging Face Dataset for further processing.
+        examples: Dictionary of input examples to encode and pack.
+        max_seq_length: Maximum sequence length for each packed sequence.
+        batch_size: Number of sequences to pack per batch.
+        multipack_attn: If True, enables multipack attention and drops attention masks.
+    
+    Returns:
+        Dictionary where each key is a feature name and each value is a list of packed feature tensors.
+    """
     train_dataset = ds_wrapper(Dataset.from_dict(examples))[0]
 
     train_dataset = process_pretraining_datasets_for_packing(
