@@ -375,6 +375,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         trainer_cls = self._get_trainer_cls()
         trainer_kwargs = {}
+
+        # Pop optimizer_cls_and_kwargs to trainer_kwargs
+        if "optimizer_cls_and_kwargs" in training_arguments_kwargs:
+            trainer_kwargs["optimizer_cls_and_kwargs"] = training_arguments_kwargs.pop(
+                "optimizer_cls_and_kwargs"
+            )
+
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
             trainer_kwargs, trainer_cls
         )
