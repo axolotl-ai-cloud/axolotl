@@ -16,7 +16,7 @@ feedback. Various methods include, but not limited to:
 - [Identity Preference Optimization (IPO)](#ipo)
 - [Kahneman-Tversky Optimization (KTO)](#kto)
 - [Odds Ratio Preference Optimization (ORPO)](#orpo)
-- Proximal Policy Optimization (PPO) (not yet supported in axolotl)
+- Proximal Policy Optimization (PPO) (not yet supported in axolotl, if you're interested in contributing, please reach out!)
 
 
 ## RLHF using Axolotl
@@ -582,7 +582,20 @@ datasets:
 
 To see other examples of custom reward functions, please see [TRL GRPO Docs](https://github.com/huggingface/trl/blob/main/docs/source/grpo_trainer.md#using-a-custom-reward-function).
 
-To see description of the configs, please see [TRLConfig](https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/config/models/input/v0_4_1/trl.py).
+To see all configs, please see [TRLConfig](https://github.com/axolotl-ai-cloud/axolotl/blob/v0.9.2/src/axolotl/utils/schemas/trl.py).
+
+#### GRPO with DAPO/Dr. GRPO loss
+
+The DAPO paper and subsequently Dr. GRPO paper proposed an alternative loss function for GRPO to remediate the penalty in longer responses.
+
+```yaml
+trl:
+  loss_type: dr_grpo
+  # Normalizes loss based on max completion length (default: 256)
+  max_completion_length:
+```
+
+For more information, see [GRPO docs](https://huggingface.co/docs/trl/v0.17.0/en/grpo_trainer#loss-types).
 
 ### SimPO
 
