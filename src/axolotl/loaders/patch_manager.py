@@ -208,12 +208,15 @@ class PatchManager:
             and (self.cfg.flash_attention or self.cfg.flex_attention)
             and self.cfg.sample_packing
         ):
+            # Get automap config if it exists
+            auto_map_config = None
+            if isinstance(self.model_config, dict) and "auto_map" in self.model_config:
+                auto_map_config = self.model_config["auto_map"]
+            elif hasattr(self.model_config, "auto_map"):
+                auto_map_config = self.model_config.auto_map
+
             # Determine if the model has remote code
-            if "auto_map" in self.model_config:
-                try:
-                    auto_map_config = self.model_config["auto_map"]
-                except TypeError:
-                    auto_map_config = self.model_config.auto_map
+            if auto_map_config is not None:
                 has_remote_code = "AutoModelForCausalLM" in auto_map_config
             else:
                 has_remote_code = False

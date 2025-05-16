@@ -142,7 +142,7 @@ def load_model_config(cfg: DictDefault) -> transformers.PretrainedConfig | addic
         cfg: Dictionary mapping `axolotl` config keys to values.
 
     Returns:
-        A configured model configuration object (AutoConfig instance), or a simple
+        A configured model configuration object (`AutoConfig` instance), or a simple
             dictionary configuration for special cases like Mamba models.
 
     Raises:
