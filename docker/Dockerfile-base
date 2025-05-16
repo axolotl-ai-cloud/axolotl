@@ -38,6 +38,11 @@ RUN git lfs install --skip-repo && \
     # The base image ships with `pydantic==1.8.2` which is not working
     pip3 install -U --no-cache-dir pydantic==1.10.10
 
-RUN if [ "$PYTORCH_VERSION" = "2.7.0" ] ; then \
+RUN if [ "$TORCH_CUDA_ARCH_LIST" = "9.0+PTX" ] ; then \
+        git clone https://github.com/Dao-AILab/flash-attention.git; \
+        git checkout v2.7.4.post1; \
+        cd flash-attention/hopper; \
+        FLASH_ATTENTION_DISABLE_SM80=TRUE FLASH_ATTENTION_DISABLE_FP8=TRUE MAX_JOBS=128 python setup.py install; \
+    elif if [ "$PYTORCH_VERSION" = "2.7.0" ] ; then \
         pip3 install flash-attn==2.7.4.post1; \
     fi
