@@ -1,11 +1,17 @@
-"""
-Ring attention group registration and flash attention patching.
+"""Ring attention group registration and flash attention patching.
 
 Make use of the `ring-flash-attn` (https://github.com/zhuzilin/ring-flash-attention)
 package, specifically the `hf_adapter.substitute_hf_flash_attn` function to patch in
 their sequence parallel version of Flash Attention 2.
+
+We also provide some patches for accelerate functions to prepare the dataloader for
+sequence parallelism training.
 """
 
+import inspect
+import re
+
+import accelerate
 import torch
 import torch.distributed as dist
 from accelerate.logging import get_logger
@@ -132,11 +138,6 @@ def update_ring_attn_params(position_ids: torch.Tensor | None):
 
 
 def patch_prepare_data_loader():
-    import inspect
-    import re
-
-    import accelerate.data_loader
-
     # Get the current function source code
     original_source = inspect.getsource(accelerate.data_loader.prepare_data_loader)
 
@@ -174,7 +175,9 @@ def patch_prepare_data_loader():
 
     # Create a new function from the patched source
     namespace = {}
-    exec(patched_source, accelerate.data_loader.__dict__, namespace)
+    exec(  # pylint: disable=exec-used  # nosec B102
+        patched_source, accelerate.data_loader.__dict__, namespace
+    )
     patched_function = namespace["prepare_data_loader"]
 
     # Replace the original function with the patched one
@@ -182,11 +185,6 @@ def patch_prepare_data_loader():
 
     # Now the prepare_data_loader function has been patched and will use your updated code
     print("Successfully patched accelerate.data_loader.prepare_data_loader")
-
-
-import accelerate.accelerator
-import torch
-import torch.distributed as dist
 
 
 def patch_prepare_device_mesh(sequence_parallel_degree):
@@ -203,26 +201,27 @@ def patch_prepare_device_mesh(sequence_parallel_degree):
         """
         if self.state.torch_tp_plugin:
             return self.state.torch_tp_plugin.torch_device_mesh
-        elif (
+        if (
             self.distributed_type == accelerate.accelerator.DistributedType.DEEPSPEED
             and hasattr(self.state, "ds_device_mesh")
         ):
             return self.state.ds_device_mesh
-        else:
-            # Create device mesh with sequence parallelism
-            world_size = dist.get_world_size()
-            mesh_shape = (
-                world_size // sequence_parallel_degree,
-                sequence_parallel_degree,
-            )
-            device_ids = list(range(world_size))
-            return dist.DeviceMesh(
-                "cuda",
-                torch.tensor(device_ids).reshape(mesh_shape),
-                mesh_dim_names=["dp", "sp"],
-            )
+
+        # Create device mesh with sequence parallelism
+        world_size = dist.get_world_size()
+        mesh_shape = (
+            world_size // sequence_parallel_degree,
+            sequence_parallel_degree,
+        )
+        device_ids = list(range(world_size))
+        return dist.DeviceMesh(
+            "cuda",
+            torch.tensor(device_ids).reshape(mesh_shape),
+            mesh_dim_names=["dp", "sp"],
+        )
 
     # Replace the original method with our new method
+    # pylint: disable=protected-access
     accelerate.accelerator.Accelerator._prepare_device_mesh = _prepare_device_mesh
 
     print(
