@@ -1,6 +1,7 @@
 """Module for Axolotl trainer sequence parallelism manager and utilities"""
 
 import functools
+import inspect
 
 import torch
 import torch.distributed as dist
@@ -206,12 +207,24 @@ class SequenceParallelContextManager:
     def __enter__(self):
         # Forward pre-hook to apply sequence parallelism
         def sequence_parallel_pre_hook(_, args, kwargs):
-            # Apply sequence parallelism to kwargs and get original sequence length and padding info
-            kwargs, self.original_seq_len, self.pad_len = (
-                self.apply_sequence_parallelism(batch=kwargs)
+            # Get parameter names from the model's forward function
+            forward_params = list(
+                inspect.signature(self.models[0].forward).parameters.keys()
             )
 
-            return args, kwargs
+            # Map args to their parameter names
+            updated_kwargs = kwargs.copy()
+            for i, arg in enumerate(args):
+                if i < len(forward_params):
+                    param_name = forward_params[i]
+                    updated_kwargs[param_name] = arg
+
+            # Apply sequence parallelism to updated kwargs
+            updated_kwargs, self.original_seq_len, self.pad_len = (
+                self.apply_sequence_parallelism(updated_kwargs)
+            )
+
+            return (), updated_kwargs
 
         # Forward post-hook to gather outputs
         def sequence_parallel_post_hook(_, __, output: ModelOutput) -> ModelOutput:

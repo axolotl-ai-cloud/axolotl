@@ -1,11 +1,16 @@
-"""
-Ring attention group registration and flash attention patching.
+"""Ring attention group registration and flash attention patching.
 
 Make use of the `ring-flash-attn` (https://github.com/zhuzilin/ring-flash-attention)
 package, specifically the `hf_adapter.substitute_hf_flash_attn` function to patch in
 their sequence parallel version of Flash Attention 2.
+
+We also provide some patches for accelerate functions to prepare the dataloader for
+sequence parallelism training.
 """
 
+import inspect
+
+import accelerate
 import torch
 import torch.distributed as dist
 from accelerate.logging import get_logger
@@ -18,24 +23,41 @@ LOG = get_logger(__name__)
 
 RING_ATTN_GROUP = None
 
+ORIGINAL_PREPARE_DATALOADER_CODE = """            submesh_fsdp_size = 1
+        submesh_dp_size = 1
+        submesh_tp_size = 1
+        if "tp" in torch_device_mesh.mesh_dim_names:
+            submesh_tp_size = torch_device_mesh["tp"].size()
+        if "dp" in torch_device_mesh.mesh_dim_names:
+            submesh_dp_size = torch_device_mesh["dp"].size()
+        if "fsdp" in torch_device_mesh.mesh_dim_names:
+            submesh_fsdp_size = torch_device_mesh["fsdp"].size()
+        process_index = process_index // submesh_tp_size
+        num_processes = submesh_fsdp_size * submesh_dp_size"""
+
+NEW_PREPARE_DATALOADER_CODE = """            submesh_fsdp_size = 1
+        submesh_dp_size = 1
+        submesh_tp_size = 1
+        submesh_sp_size = 1
+        if "sp" in torch_device_mesh.mesh_dim_names:
+            submesh_sp_size = torch_device_mesh["sp"].size()
+        if "tp" in torch_device_mesh.mesh_dim_names:
+            submesh_tp_size = torch_device_mesh["tp"].size()
+        if "dp" in torch_device_mesh.mesh_dim_names:
+            submesh_dp_size = torch_device_mesh["dp"].size()
+        if "fsdp" in torch_device_mesh.mesh_dim_names:
+            submesh_fsdp_size = torch_device_mesh["fsdp"].size()
+        process_index = process_index // (submesh_tp_size * submesh_sp_size)
+        num_processes = submesh_fsdp_size * submesh_dp_size"""
+
 
 def get_ring_attn_group() -> dist.ProcessGroup:
-    """
-    Getter for ring attention group on this rank.
-
-    Returns:
-        The process group for ring attention for this rank.
-    """
+    """Getter for ring attention group on this rank."""
     return RING_ATTN_GROUP
 
 
 def set_ring_attn_group(ring_attn_group: dist.ProcessGroup | None):
-    """
-    Setter for ring attention group on this rank.
-
-    Args:
-        Process group for ring attention.
-    """
+    """Setter for ring attention group on this rank."""
     global RING_ATTN_GROUP  # pylint: disable=global-statement
     RING_ATTN_GROUP = ring_attn_group
 
@@ -45,8 +67,7 @@ def register_ring_attn(
     heads_k_stride: int | None,
     ring_attn_func: RingAttnFunc | None,
 ):
-    """
-    Create ring attention group and substitute flash attn with ring flash attn.
+    """Create ring attention group and substitute flash attn with ring flash attn.
 
     Args:
         sequence_parallel_degree: Sequence parallelism factor.
@@ -56,17 +77,14 @@ def register_ring_attn(
             packing is enabled, it must be a `varlen` function; otherwise, it must be a
             `batch` function.
     """
-    if get_ring_attn_group() is not None:
-        LOG.info("Ring attention already registered, exiting early...")
-        return
-
-    LOG.info(
-        "Enabling ring attention sequence parallelism: "
-        f"each sequence will be processed across {sequence_parallel_degree} GPUs"
-    )
-
     rank = dist.get_rank()
     world_size = dist.get_world_size()
+
+    if rank == 0:
+        LOG.info(
+            "Enabling ring attention sequence parallelism: "
+            f"each sequence will be processed across {sequence_parallel_degree} GPUs"
+        )
 
     assert sequence_parallel_degree <= world_size, (
         f"sequence_parallel_degree ({sequence_parallel_degree}) "
@@ -129,3 +147,68 @@ def update_ring_attn_params(position_ids: torch.Tensor | None):
     cu_seqlens, _ = get_cu_seqlens_from_pos_ids(position_ids)
     cu_seqlens = cu_seqlens.squeeze().to(device=torch.cuda.current_device())
     update_ring_flash_attn_params(cu_seqlens, get_ring_attn_group())
+
+
+def patch_prepare_data_loader():
+    """Patch `accelerate.data_loader.prepare_data_loader` to respect the SP degree."""
+    # Get the current function source code
+    original_source = inspect.getsource(accelerate.data_loader.prepare_data_loader)
+
+    # Create the patched source code
+    patched_source = original_source.replace(
+        ORIGINAL_PREPARE_DATALOADER_CODE, NEW_PREPARE_DATALOADER_CODE
+    )
+
+    # Create a new function from the patched source
+    namespace = {}
+    exec(  # pylint: disable=exec-used  # nosec B102
+        patched_source, accelerate.data_loader.__dict__, namespace
+    )
+    patched_function = namespace["prepare_data_loader"]
+
+    # Replace the original function with the patched one
+    accelerate.data_loader.prepare_data_loader = patched_function
+    print("Successfully patched accelerate.data_loader.prepare_data_loader")
+
+
+def patch_prepare_device_mesh(sequence_parallel_degree: int):
+    """Patches the `Accelerator._prepare_device_mesh` method to create a device mesh
+    that includes sequence parallelism with the specified degree.
+
+    Args:
+        sequence_parallel_degree (int): The degree of sequence parallelism to use.
+    """
+
+    def _prepare_device_mesh(self):
+        """Prepare the device mesh for distributed training. The dataloader will
+        determine how to load data based on the device mesh.
+        """
+        if self.state.torch_tp_plugin:
+            return self.state.torch_tp_plugin.torch_device_mesh
+        if (
+            self.distributed_type == accelerate.accelerator.DistributedType.DEEPSPEED
+            and hasattr(self.state, "ds_device_mesh")
+        ):
+            return self.state.ds_device_mesh
+
+        # Create device mesh with sequence parallelism
+        world_size = dist.get_world_size()
+        mesh_shape = (
+            world_size // sequence_parallel_degree,
+            sequence_parallel_degree,
+        )
+        device_ids = list(range(world_size))
+        return dist.DeviceMesh(
+            "cuda",
+            torch.tensor(device_ids).reshape(mesh_shape),
+            mesh_dim_names=["dp", "sp"],
+        )
+
+    # Replace the original method with our new method
+    # pylint: disable=protected-access
+    accelerate.accelerator.Accelerator._prepare_device_mesh = _prepare_device_mesh
+
+    print(
+        "Successfully patched Accelerator._prepare_device_mesh "
+        f"with sequence_parallel_degree={sequence_parallel_degree}"
+    )
