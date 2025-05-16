@@ -7,24 +7,16 @@ from typing import Optional, Tuple, Union
 import torch
 from transformers.cache_utils import Cache
 from transformers.models.gemma3.modeling_gemma3 import (
-    _CONFIG_FOR_DOC,
-    GEMMA3_INPUTS_DOCSTRING,
     Gemma3CausalLMOutputWithPast,
     logger,
 )
 from transformers.utils import (
-    add_start_docstrings_to_model_forward,
     is_torchdynamo_compiling,
-    replace_return_docstrings,
 )
 from transformers.utils.deprecation import deprecate_kwarg
 
 
 @deprecate_kwarg("num_logits_to_keep", version="4.50", new_name="logits_to_keep")
-@add_start_docstrings_to_model_forward(GEMMA3_INPUTS_DOCSTRING)
-@replace_return_docstrings(
-    output_type=Gemma3CausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC
-)
 def new_forward(
     self,
     input_ids: torch.LongTensor = None,
