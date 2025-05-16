@@ -343,6 +343,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.kd_top_k_before_softmax
             )
 
+        trainer_kwargs = {}
+
+        # Pop optimizer_cls_and_kwargs to trainer_kwargs
+        if "optimizer_cls_and_kwargs" in training_arguments_kwargs:
+            trainer_kwargs["optimizer_cls_and_kwargs"] = training_arguments_kwargs.pop(
+                "optimizer_cls_and_kwargs"
+            )
+
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
         elif self.cfg.process_reward_model:
@@ -374,13 +382,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             data_collator_kwargs["pad_to_multiple_of"] = multiple
 
         trainer_cls = self._get_trainer_cls()
-        trainer_kwargs = {}
-
-        # Pop optimizer_cls_and_kwargs to trainer_kwargs
-        if "optimizer_cls_and_kwargs" in training_arguments_kwargs:
-            trainer_kwargs["optimizer_cls_and_kwargs"] = training_arguments_kwargs.pop(
-                "optimizer_cls_and_kwargs"
-            )
 
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
             trainer_kwargs, trainer_cls
