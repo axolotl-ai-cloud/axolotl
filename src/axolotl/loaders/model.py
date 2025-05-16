@@ -127,8 +127,13 @@ class ModelLoader:
 
     @cached_property
     def has_flash_attn(self) -> bool:
-        """Check if flash attention is installed"""
+        """Check if flash attention is installed."""
         return importlib.util.find_spec("flash_attn") is not None
+
+    @cached_property
+    def qlora_fsdp(self):
+        """Property that determines if FSDP with QLoRA is enabled."""
+        return self.cfg.fsdp and self.cfg.adapter == "qlora"
 
     def load(self) -> tuple[transformers.PreTrainedModel, peft.PeftConfig | None]:
         """Load and prepare the model with all configurations and patches.
@@ -137,16 +142,16 @@ class ModelLoader:
             A tuple with the loaded model and its LoRA configuration (if applicable).
         """
         # Initial setup and patches
+        self.patch_manager.apply_pre_model_load_patches()
         self._apply_pre_model_load_setup()
 
         # Build the model
         PLUGIN_MANAGER.pre_model_load(self.cfg)
-        qlora_fsdp = self.cfg.fsdp and self.cfg.adapter == "qlora"
-        skip_move_to_device = self._build_model(qlora_fsdp)
+        skip_move_to_device = self._build_model()
         PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
 
         # Post-build model configuration
-        self._apply_post_model_load_setup(qlora_fsdp)
+        self._apply_post_model_load_setup()
 
         # Load adapters (LoRA, etc.)
         PLUGIN_MANAGER.pre_lora_load(self.cfg, self.model)
@@ -155,13 +160,13 @@ class ModelLoader:
 
         # Apply remaining patches and finalize
         self._apply_post_lora_load_setup(skip_move_to_device)
+        self.patch_manager.apply_post_model_load_patches(self.model)
         PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
 
         return self.model, lora_config
 
     def _apply_pre_model_load_setup(self):
         """Apply patches and setup configurations before model loading."""
-        self.patch_manager.apply_pre_model_load_patches()
         self._set_auto_model_loader()
         self._set_device_map_config()
         if self.cfg.revision_of_model:
@@ -169,19 +174,19 @@ class ModelLoader:
         self._set_quantization_config()
         self._set_attention_config()
 
-    def _apply_post_model_load_setup(self, qlora_fsdp):
+    def _apply_post_model_load_setup(self):
         """Configure the model after it has been loaded."""
         # Handle PeftModel if needed
         if (
             isinstance(self.model, (peft.PeftModel, peft.PeftModelForCausalLM))
-            and not qlora_fsdp
+            and not self.qlora_fsdp
         ):
             self.model = self.model.merge_and_unload()
 
         self._resize_token_embeddings()
         self._adjust_model_config()
         self._log_memory_usage()
-        self._configure_embedding_dtypes(qlora_fsdp)
+        self._configure_embedding_dtypes()
 
     def _resize_token_embeddings(self):
         """Resize token embeddings if needed."""
@@ -215,7 +220,7 @@ class ModelLoader:
         ):
             log_gpu_memory_usage(LOG, "after model load", self.model.device)
 
-    def _configure_embedding_dtypes(self, qlora_fsdp):
+    def _configure_embedding_dtypes(self):
         """Configure embedding module dtypes."""
         # Get embedding modules
         embedding_modules = get_linear_embedding_layers(self.cfg.model_config_type)
@@ -246,7 +251,7 @@ class ModelLoader:
                 )
 
         # Prepare model for quantization
-        self._prepare_model_for_quantization(qlora_fsdp)
+        self._prepare_model_for_quantization()
 
         # Convert dtypes if needed
         should_convert = (
@@ -254,7 +259,7 @@ class ModelLoader:
             # we need to convert them back to fp16/bf16 for flash-attn compatibility.
             (
                 (needs_fa2_dtype or self.cfg.flash_attention or self.cfg.flex_attention)
-                and not qlora_fsdp
+                and not self.qlora_fsdp
             )
             # CCE requires embedding layers to be in fp16/bf16 for backward pass
             or self.cfg.cut_cross_entropy
@@ -291,8 +296,8 @@ class ModelLoader:
 
         return lora_config
 
-    def _setup_model_parallelism(self, skip_move_to_device):
-        """Set up model parallelism and device placement."""
+    def _apply_post_lora_load_setup(self, skip_move_to_device: bool):
+        """Apply final optimizations and patches."""
         # Place model on accelerator
         if (
             self.cfg.ddp
@@ -307,19 +312,11 @@ class ModelLoader:
             setattr(self.model, "is_parallelizable", True)
             setattr(self.model, "model_parallel", True)
 
-    def _log_gradient_parameters(self):
-        """Log parameters that require gradient updates."""
-        requires_grad = []
-        for name, param in self.model.named_parameters(recurse=True):
-            if param.requires_grad:
-                requires_grad.append(f"{name}: {param.requires_grad}")
-        if len(requires_grad) == 0:
+        if not any(
+            param.requires_grad
+            for _, param in self.model.named_parameters(recurse=True)
+        ):
             LOG.warning("There are no parameters that require gradient updates")
-
-    def _apply_post_lora_load_setup(self, skip_move_to_device: bool):
-        """Apply final optimizations and patches."""
-        self._setup_model_parallelism(skip_move_to_device)
-        self._log_gradient_parameters()
 
         if self.cfg.flash_optimum:
             from optimum.bettertransformer import BetterTransformer
@@ -328,9 +325,6 @@ class ModelLoader:
 
         if self.cfg.adapter is not None:
             log_gpu_memory_usage(LOG, "after adapters", self.model.device)
-
-        # Apply model-specific patches that require the model instance
-        self.model = self.patch_manager.apply_post_model_load_patches(self.model)
 
         for _ in range(3):
             gc.collect()
@@ -510,45 +504,44 @@ class ModelLoader:
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True
 
-    def _build_model(self, qlora_fsdp) -> bool:
+    def _configure_zero3_memory_efficient_loading(self):
+        """Set the deepspeed config to load the model into RAM first before moving
+        to VRAM.
+
+        We need to return `hf_ds_cfg` as it needs to exist before model loading.
+        """
+        hf_ds_cfg = None
+
+        if os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3":
+            hf_ds_cfg = HfTrainerDeepSpeedConfig(self.cfg.deepspeed)
+            hf_ds_cfg.fill_match(
+                "train_micro_batch_size_per_gpu", self.cfg.micro_batch_size
+            )
+            hf_ds_cfg.fill_match(
+                "gradient_accumulation_steps", self.cfg.gradient_accumulation_steps
+            )
+            hf_ds_cfg.fill_match(
+                "train_batch_size",
+                int(os.getenv("WORLD_SIZE", "1"))
+                * self.cfg.micro_batch_size
+                * self.cfg.gradient_accumulation_steps,
+            )
+            if "device_map" in self.model_kwargs:
+                del self.model_kwargs["device_map"]
+
+            transformers.modeling_utils.is_deepspeed_zero3_enabled = lambda: True
+            transformers.integrations.deepspeed.is_deepspeed_zero3_enabled = (
+                lambda: True
+            )
+
+        return hf_ds_cfg
+
+    def _build_model(self) -> bool:
         """Load model, with load strategy depending on config"""
-
-        def _configure_zero3_memory_efficient_loading():
-            """Set the deepspeed config to load the model into RAM first before moving
-            to VRAM.
-
-            We need to return `hf_ds_cfg` as it needs to exist before model loading.
-            """
-            hf_ds_cfg = None
-
-            if os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3":
-                hf_ds_cfg = HfTrainerDeepSpeedConfig(self.cfg.deepspeed)
-                hf_ds_cfg.fill_match(
-                    "train_micro_batch_size_per_gpu", self.cfg.micro_batch_size
-                )
-                hf_ds_cfg.fill_match(
-                    "gradient_accumulation_steps", self.cfg.gradient_accumulation_steps
-                )
-                hf_ds_cfg.fill_match(
-                    "train_batch_size",
-                    int(os.getenv("WORLD_SIZE", "1"))
-                    * self.cfg.micro_batch_size
-                    * self.cfg.gradient_accumulation_steps,
-                )
-                if "device_map" in self.model_kwargs:
-                    del self.model_kwargs["device_map"]
-
-                transformers.modeling_utils.is_deepspeed_zero3_enabled = lambda: True
-                transformers.integrations.deepspeed.is_deepspeed_zero3_enabled = (
-                    lambda: True
-                )
-
-            return hf_ds_cfg
-
         skip_move_to_device = False
         if (  # pylint: disable=condition-evals-to-constant)
             (self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
-            and not qlora_fsdp
+            and not self.qlora_fsdp
             and False
         ):
             # TODO: Can we eliminate this branch?
@@ -560,7 +553,7 @@ class ModelLoader:
             )
             skip_move_to_device = True
         elif (
-            qlora_fsdp
+            self.qlora_fsdp
             and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
             and (
                 self.cfg.model_config_type == "dbrx"
@@ -593,7 +586,7 @@ class ModelLoader:
                 if "device_map" in self.model_kwargs:
                     del self.model_kwargs["device_map"]
 
-            _configure_zero3_memory_efficient_loading()
+            self._configure_zero3_memory_efficient_loading()
 
             # Load model with random initialization if specified
             if self.cfg.random_init_weights:
@@ -681,7 +674,7 @@ class ModelLoader:
                     if "device_map" in self.model_kwargs:
                         del self.model_kwargs["device_map"]
 
-                _ = _configure_zero3_memory_efficient_loading()
+                self._configure_zero3_memory_efficient_loading()
 
                 self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
@@ -736,7 +729,7 @@ class ModelLoader:
                 ],
             )
 
-    def _prepare_model_for_quantization(self, qlora_fsdp: bool):
+    def _prepare_model_for_quantization(self):
         """Prepare loaded model for quantization."""
         skip_prepare_model_for_kbit_training = False
         if self.cfg.model_config_type == "qwen" and self.cfg.adapter == "lora":
@@ -752,7 +745,7 @@ class ModelLoader:
             skip_prepare_model_for_kbit_training = True
 
         if (
-            qlora_fsdp
+            self.qlora_fsdp
             or (self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
             or is_deepspeed_zero3_enabled()
         ):
