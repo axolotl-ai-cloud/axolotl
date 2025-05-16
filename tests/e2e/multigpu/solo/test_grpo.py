@@ -166,7 +166,6 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
 """
             )
 
-    @pytest.mark.skip(reason="flaky test")
     @pytest.mark.parametrize(
         "num_gpus",
         [1, 2],
@@ -231,8 +230,6 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             "NCCL_P2P_LEVEL": "LOC",
             **current_env,
             "CUDA_VISIBLE_DEVICES": "1",
-            "VLLM_DISABLE_COMPILE_CACHE": "1",
-            # "VLLM_USE_V1": "0",
         }
         vllm_process = start_vllm(
             cfg.base_model,
@@ -266,7 +263,6 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
         finally:
             recursive_kill(vllm_process)
 
-    @pytest.mark.skip(reason="flaky test")
     @pytest.mark.parametrize(
         "num_gpus",
         [1, 2],
@@ -325,8 +321,6 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
             "NCCL_P2P_LEVEL": "LOC",  # nccl can be brittle, assume P2P isn't reliable
             **current_env,
             "CUDA_VISIBLE_DEVICES": "1",
-            "VLLM_DISABLE_COMPILE_CACHE": "1",
-            # "VLLM_USE_V1": "0",
         }
         vllm_process = start_vllm(
             cfg.base_model,
