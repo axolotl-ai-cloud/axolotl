@@ -1,7 +1,8 @@
-"""
-Test suite for functions in the axolotl.utils.data.utils module, focusing on the deduplicate_and_log_datasets function.
+"""Test suite for functions in the `axolotl.utils.data.utils` module, focusing on the
+`deduplicate_and_log_datasets` function.
 
-Additionally, this test suite includes tests for functions that indirectly call deduplicate_and_log_datasets during the execution of the preprocess command.
+Additionally, this test suite includes tests for functions that indirectly call
+`deduplicate_and_log_datasets` during the execution of the preprocess command.
 """
 
 import hashlib
@@ -11,20 +12,19 @@ from unittest.mock import patch
 import pytest
 from datasets import Dataset
 
+from axolotl.loaders import load_processor, load_tokenizer
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.data import prepare_dataset
 from axolotl.utils.data.rl import load_prepare_preference_datasets
 from axolotl.utils.data.utils import deduplicate_and_log_datasets
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import load_processor, load_tokenizer
 
 from tests.constants import ALPACA_MESSAGES_CONFIG_REVISION
 from tests.hf_offline_utils import enable_hf_offline
 
 
 def verify_deduplication(actual_dataset, expected_dataset, dataset_name):
-    """
-    Validates deduplication results and size consistency.
+    """Validates deduplication results and size consistency.
 
     Parameters:
     - actual_dataset: Deduplicated dataset.
@@ -49,9 +49,7 @@ def verify_deduplication(actual_dataset, expected_dataset, dataset_name):
 
 
 class TestDeduplicateIndividualFunctions(unittest.TestCase):
-    """
-    test class for deduplication function in data utils
-    """
+    """Test class for deduplication function in data utils"""
 
     def setUp(self):
         # Sample data with duplicates
@@ -248,7 +246,7 @@ class TestDeduplicateRLDataset:
         # pylint: disable=duplicate-code
         with (
             patch("axolotl.utils.data.rl.load_dataset_w_config") as mock_load_dataset,
-            patch("axolotl.utils.models.load_tokenizer") as mock_load_tokenizer,
+            patch("axolotl.loaders.load_tokenizer") as mock_load_tokenizer,
         ):
             # Set up the mock to return different values on successive calls
             mock_load_dataset.side_effect = [
@@ -272,7 +270,7 @@ class TestDeduplicateRLDataset:
         # pylint: disable=duplicate-code
         with (
             patch("axolotl.utils.data.rl.load_dataset_w_config") as mock_load_dataset,
-            patch("axolotl.utils.models.load_tokenizer") as mock_load_tokenizer,
+            patch("axolotl.loaders.load_tokenizer") as mock_load_tokenizer,
         ):
             # Set up the mock to return different values on successive calls
             mock_load_dataset.side_effect = [
@@ -411,7 +409,7 @@ class TestDeduplicateNonRL(unittest.TestCase):
 
 
 class TestWrongCollisions(unittest.TestCase):
-    """Creating mock datasets for testing wrong collisions"""
+    """Creating mock datasets for testing wrong collisions."""
 
     def setUp(self):
         self.train_data = {"text": ["sample 5", "sample 6"], "label": [1, 2]}

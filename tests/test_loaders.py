@@ -1,18 +1,18 @@
-"""Module for testing models utils file."""
+"""Module for `axolotl.loaders`."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from transformers import BitsAndBytesConfig, PreTrainedTokenizerBase
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.utils.import_utils import is_torch_mps_available
 
+from axolotl.loaders import ModelLoader
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import ModelLoader, load_model
 
 
 class TestModelsUtils:
-    """Testing module for models utils."""
+    """Testing module for `axolotl.loaders`."""
 
     def setup_method(self) -> None:
         # load config
@@ -50,7 +50,8 @@ class TestModelsUtils:
         device_map = self.cfg.device_map
         if is_torch_mps_available():
             device_map = "mps"
-        self.model_loader.set_device_map_config()
+        # pylint: disable=protected-access
+        self.model_loader._set_device_map_config()
         if is_deepspeed_zero3_enabled():
             assert "device_map" not in self.model_loader.model_kwargs
         else:
@@ -58,29 +59,6 @@ class TestModelsUtils:
 
         # check torch_dtype
         assert self.cfg.torch_dtype == self.model_loader.model_kwargs["torch_dtype"]
-
-    def test_cfg_throws_error_with_s2_attention_and_sample_packing(self):
-        cfg = DictDefault(
-            {
-                "s2_attention": True,
-                "sample_packing": True,
-                "base_model": "",
-                "model_type": "AutoModelForCausalLM",
-            }
-        )
-
-        # Mock out call to HF hub
-        with patch(
-            "axolotl.utils.models.load_model_config"
-        ) as mocked_load_model_config:
-            mocked_load_model_config.return_value = {}
-            with pytest.raises(ValueError) as exc:
-                # Should error before hitting tokenizer, so we pass in an empty str
-                load_model(cfg, tokenizer="")  # type: ignore
-            assert (
-                "shifted-sparse attention does not currently support sample packing"
-                in str(exc.value)
-            )
 
     @pytest.mark.parametrize("adapter", ["lora", "qlora", None])
     @pytest.mark.parametrize("load_in_8bit", [True, False])
@@ -99,7 +77,8 @@ class TestModelsUtils:
         self.cfg.gptq = gptq
         self.cfg.adapter = adapter
 
-        self.model_loader.set_quantization_config()
+        # pylint: disable=protected-access
+        self.model_loader._set_quantization_config()
         if "quantization_config" in self.model_loader.model_kwargs or self.cfg.gptq:
             assert not (
                 hasattr(self.model_loader.model_kwargs, "load_in_8bit")

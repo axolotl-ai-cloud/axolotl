@@ -9,11 +9,11 @@ from typing import Optional
 import pytest
 from pydantic import ValidationError
 
+from axolotl.loaders.utils import check_model_config
 from axolotl.utils import is_comet_available
 from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
-from axolotl.utils.models import check_model_config
 from axolotl.utils.schemas.config import AxolotlConfigWCapabilities
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
@@ -1214,6 +1214,20 @@ class TestValidation(BaseValidation):
         _ = validate_config(
             cfg, capabilities=capabilities, env_capabilities=env_capabilities
         )
+
+    def test_cfg_throws_error_with_s2_attention_and_sample_packing(self, minimal_cfg):
+        test_cfg = DictDefault(
+            {
+                "s2_attention": True,
+                "sample_packing": True,
+            }
+            | minimal_cfg
+        )
+        with pytest.raises(
+            ValidationError,
+            match=r".*shifted-sparse attention does not currently support sample packing*",
+        ):
+            validate_config(test_cfg)
 
 
 class TestTorchCompileValidation(BaseValidation):
