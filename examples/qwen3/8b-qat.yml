@@ -13,15 +13,13 @@ liger_glu_activation: true
 liger_rms_norm: true
 liger_layer_norm: true
 
-pretraining_dataset:
-  - path: allenai/c4
-    name: en
-    split: train
-    type: pretrain
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
 
-output_dir: ./outputs/out
+output_dir: ./outputs/qat_alpaca2k_int84
 
-sequence_len: 1024
+sequence_len: 2048
 
 sample_packing: true
 flex_attention: true
@@ -33,14 +31,14 @@ flex_attn_compile_kwargs:
 
 qat:
   activation_dtype: int8
-  weight_dtype: int8
+  weight_dtype: int4
   group_size: 256
   fake_quant_after_n_steps: 1000
 
-wandb_project:
+wandb_project: qat
 wandb_entity:
 wandb_watch:
-wandb_name:
+wandb_name: qat_alpaca2k_int84
 wandb_log_model:
 
 gradient_accumulation_steps: 1
@@ -49,7 +47,7 @@ max_steps: 2000
 optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 2e-5
-# save_only_model: true
+save_only_model: true
 bf16: true
 tf32: true
 
@@ -58,7 +56,7 @@ logging_steps: 1
 
 warmup_steps: 10
 eval_strategy: "no"
-saves_per_epoch: 0
+save_strategy: "no"
 weight_decay: 0.0
 fsdp:
   - full_shard

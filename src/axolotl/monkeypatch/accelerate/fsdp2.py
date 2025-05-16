@@ -141,9 +141,9 @@ def get_state_dict(self, model, unwrap=True):
                         "Deepspeed TP requires deepspeed >= 0.16.4, Please update DeepSpeed via `pip install deepspeed -U`."
                     )
                 state_dict = (
-                    model._consolidated_16bit_state_dict()
+                    model._consolidated_16bit_state_dict()  # pylint: disable=protected-access
                     if tp_sharding
-                    else model._zero3_consolidated_16bit_state_dict()
+                    else model._zero3_consolidated_16bit_state_dict()  # pylint: disable=protected-access
                 )
             else:
                 raise ValueError(
@@ -159,15 +159,13 @@ def get_state_dict(self, model, unwrap=True):
                 self.unwrap_model(model).state_dict()
             )
     elif self.is_fsdp2:
+        # https://github.com/pytorch/torchtune/blob/main/torchtune/training/_distributed.py#L465
         state_dict = {}
         sharded_state_dict = model.state_dict()
         for param_name, param in sharded_state_dict.items():
             if param.is_cpu:
                 param = param.to(torch.device("cuda"))
 
-            if torch.distributed.get_rank() == 0:
-                if not hasattr(param, "full_tensor"):
-                    breakpoint()
             param = param.full_tensor()
             if torch.distributed.get_rank() == 0:
                 state_dict[param_name] = param.cpu()

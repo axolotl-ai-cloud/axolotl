@@ -6,10 +6,9 @@ import logging
 from pathlib import Path
 from typing import Union
 
-from transformers import AutoModelForCausalLM, AutoTokenizer
-
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
+from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.quantization import TorchIntDType, quantize_model_for_ptq
 
 LOG = logging.getLogger(__name__)
@@ -56,31 +55,30 @@ def do_quantize(
     output_dir = cli_args.get("output_dir") or cfg.output_dir
 
     LOG.info(f"Loading model from {model_path}...")
-    model = AutoModelForCausalLM.from_pretrained(model_path)
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    tokenizer = load_tokenizer(cfg)
+    model, _ = load_model(cfg, tokenizer)
 
     LOG.info(
         f"Quantizing model with configuration: \n"
-        f"weight_dtype: {weight_dtype}\n"
-        f"activation_dtype: {activation_dtype}\n"
-        f"group_size: {group_size}\n"
-        f"quantize_embedding: {quantize_embedding}"
+        f"\tweight_dtype: {weight_dtype}\n"
+        f"\tactivation_dtype: {activation_dtype}\n"
+        f"\tgroup_size: {group_size}\n"
+        f"\tquantize_embedding: {quantize_embedding}"
     )
 
     quantize_model_for_ptq(
         model, weight_dtype, group_size, activation_dtype, quantize_embedding
     )
 
-    if cfg.local_rank == 0:
-        LOG.info(f"Saving quantized model to: {str(Path(output_dir) / 'quantized')}...")
-        model.save_pretrained(
-            str(Path(output_dir) / "quantized"),
-            safe_serialization=False,
-            progressbar=True,
-        )
-        tokenizer.save_pretrained(
-            str(Path(output_dir) / "quantized"),
-            safe_serialization=False,
-            progressbar=True,
-        )
+    LOG.info(f"Saving quantized model to: {str(Path(output_dir) / 'quantized')}...")
+    model.save_pretrained(
+        str(Path(output_dir) / "quantized"),
+        safe_serialization=False,
+        progressbar=True,
+    )
+    tokenizer.save_pretrained(
+        str(Path(output_dir) / "quantized"),
+        safe_serialization=False,
+        progressbar=True,
+    )
     LOG.info(f"Quantized model saved to: {str(Path(output_dir) / 'quantized')}...")

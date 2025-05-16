@@ -6,6 +6,7 @@ import logging
 
 import torch
 from torch import nn
+from torchao.core.config import AOBaseConfig
 from torchao.quantization import quantize_
 from torchao.quantization.qat import (
     FakeQuantizeConfig,
@@ -30,9 +31,24 @@ def get_ptq_config(
     weight_dtype: TorchIntDType,
     activation_dtype: TorchIntDType | None = None,
     group_size: int | None = None,
-):
+) -> AOBaseConfig:
+    """
+    This function is used to build a post-training quantization config.
+
+    Args:
+        weight_dtype: The dtype to use for weight quantization.
+        activation_dtype: The dtype to use for activation quantization.
+        group_size: The group size to use for weight quantization.
+
+    Returns:
+        The post-training quantization config.
+
+    Raises:
+        ValueError: If the activation dtype is not specified and the weight dtype is not int8 or int4,
+            or if the group size is not specified for int8 or int4 weight only quantization.
+    """
     if activation_dtype is None:
-        if "u" in weight_dtype.name:
+        if not weight_dtype.value.is_signed:
             return UIntXWeightOnlyConfig(
                 dtype=weight_dtype.value,
                 group_size=group_size,
@@ -63,7 +79,7 @@ def get_ptq_config(
     )
 
 
-def quantize_model_for_qat(
+def prepare_model_for_qat(
     model,
     weight_dtype: TorchIntDType,
     group_size: int,
@@ -71,9 +87,10 @@ def quantize_model_for_qat(
     quantize_embedding: bool = False,
 ):
     """
-    This function is used to quantize a model for QAT.
-    It swaps the model's linear layers with fake quantized linear layers.
-    If `quantize_embedding` is True, it will also swap the model's embedding weights with fake quantized embedding weights.
+    This function is used to prepare a model for QAT by swapping the model's linear
+    layers with fake quantized linear layers, and optionally the embedding weights with
+    fake quantized embedding weights.
+
     Args:
         model: The model to quantize.
         weight_dtype: The dtype to use for weight quantization.
@@ -81,8 +98,6 @@ def quantize_model_for_qat(
         activation_dtype: The dtype to use for activation quantization.
         quantize_embedding: Whether to quantize the model's embedding weights.
 
-    Returns:
-        The quantized model.
     Raises:
         ValueError: If the activation/weight dtype combination is invalid.
     """
@@ -91,10 +106,11 @@ def quantize_model_for_qat(
             dtype=activation_dtype.value, granularity="per_token", is_symmetric=False
         )
     weight_config = FakeQuantizeConfig(dtype=weight_dtype.value, group_size=group_size)
-    quantize_config = IntXQuantizationAwareTrainingConfig(
+    linear_quantize_config = IntXQuantizationAwareTrainingConfig(
         activation_config=None if activation_dtype is None else activation_config,
         weight_config=weight_config,
     )
+    quantize_(model, linear_quantize_config)
     if quantize_embedding:
         # activation fake quantization is not supported for embedding layers
         embedding_quantize_config = IntXQuantizationAwareTrainingConfig(
@@ -106,7 +122,6 @@ def quantize_model_for_qat(
             embedding_quantize_config,
             filter_fn=lambda m, _: isinstance(m, torch.nn.Embedding),
         )
-    quantize_(model, quantize_config)
 
 
 def quantize_model_for_ptq(
@@ -116,12 +131,25 @@ def quantize_model_for_ptq(
     activation_dtype: TorchIntDType | None = None,
     quantize_embedding: bool | None = None,
 ):
-    ptq_config = get_ptq_config(
+    """
+    This function is used to quantize a model for post-training quantization.
+    It swaps the model's linear layers with fake quantized linear layers.
+    If `quantize_embedding` is True, it will also swap the model's embedding weights with fake quantized embedding weights.
+
+    Args:
+        model: The model to quantize.
+        weight_dtype: The dtype to use for weight quantization.
+        group_size: The group size to use for weight quantization.
+        activation_dtype: The dtype to use for activation quantization.
+        quantize_embedding: Whether to quantize the model's embedding weights.
+
+    """
+    linear_ptq_config = get_ptq_config(
         weight_dtype=weight_dtype,
         activation_dtype=activation_dtype,
         group_size=group_size,
     )
-    quantize_(model, ptq_config)
+    quantize_(model, linear_ptq_config)
     if quantize_embedding:
         embedding_quantize_config = get_ptq_config(
             weight_dtype=weight_dtype,
@@ -137,11 +165,17 @@ def quantize_model_for_ptq(
 
 def convert_qat_model_for_ptq(
     model,
-    weight_dtype: TorchIntDType,
-    group_size: int,
-    activation_dtype: TorchIntDType | None = None,
+    *,
     quantize_embedding: bool | None = None,
 ):
+    """
+    This function is used to convert a swap fake-quantized modules in a model
+    which has been trained with QAT back to the original modules, ready for PTQ.
+
+    Args:
+        model: The model to convert.
+        quantize_embedding: Whether to quantize the model's embedding weights.
+    """
     if quantize_embedding:
 
         def filter_fn(m, _):

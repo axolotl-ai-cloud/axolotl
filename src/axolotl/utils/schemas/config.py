@@ -127,9 +127,7 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "streaming dataset to use for pretraining"},
     )
-    dataset_processes: int | None = Field(
-        default=min(32, os.cpu_count())
-    )  # type: ignore[type-var]
+    dataset_processes: int | None = Field(default=min(32, os.cpu_count() or 1))
     dataset_exact_deduplication: bool | None = None
     dataset_keep_in_memory: bool | None = None
     dataloader_pin_memory: bool | None = None

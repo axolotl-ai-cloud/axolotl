@@ -16,6 +16,7 @@ quartodoc:
         - datasets
         - convert
         - prompt_tokenizers
+        - qat
         - logging_config
         - core.trainer_builder
         - core.training_args
@@ -43,6 +44,7 @@ quartodoc:
         - cli.vllm_serve
         - cli.cloud.base
         - cli.cloud.modal_
+        - cli.quantize
     - title: Trainers
       desc: Training implementations
       contents:
@@ -125,6 +127,7 @@ quartodoc:
         - utils.data.pretraining
         - utils.data.sft
         - utils.gradient_checkpointing.unsloth
+        - utils.quantization
     - title: Schemas
       desc: Pydantic data models for Axolotl config
       contents:
@@ -174,7 +177,7 @@ quartodoc:
         - utils.callbacks.lisa
         - utils.callbacks.mlflow_
         - utils.callbacks.comet_
-
+        - utils.callbacks.qat
 website:
   title: "Axolotl"
   description: "We make fine-tuning accessible, scalable, and fun"

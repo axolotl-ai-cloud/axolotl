@@ -26,8 +26,8 @@ from axolotl.utils.callbacks.qat import QATCallback
 from axolotl.utils.quantization import (
     convert_qat_model_for_ptq,
     get_ptq_config,
+    prepare_model_for_qat,
     quantize_model_for_ptq,
-    quantize_model_for_qat,
 )
 from axolotl.utils.schemas.enums import TorchIntDType
 from axolotl.utils.schemas.quantization import QATConfig
@@ -121,10 +121,10 @@ class TestQuantization:
     )
     @pytest.mark.parametrize("group_size", [4, 8])
     @pytest.mark.parametrize("quantize_embedding", [False, True])
-    def test_quantize_model_for_qat(
+    def test_prepare_model_for_qat(
         self, model, weight_dtype, activation_dtype, group_size, quantize_embedding
     ):
-        quantize_model_for_qat(
+        prepare_model_for_qat(
             model, weight_dtype, group_size, activation_dtype, quantize_embedding
         )
         if quantize_embedding:
@@ -213,7 +213,7 @@ class TestQuantizationCallback:
             fake_quant_after_n_steps=100,
         )
 
-        quantize_model_for_qat(
+        prepare_model_for_qat(
             model,
             cfg.weight_dtype,
             cfg.group_size,
@@ -258,7 +258,7 @@ class TestQuantizationCallback:
             fake_quant_after_n_steps=None,
         )
 
-        quantize_model_for_qat(
+        prepare_model_for_qat(
             model,
             cfg.weight_dtype,
             cfg.group_size,
@@ -295,7 +295,7 @@ class TestConvertQATModelForPTQ:
         )
 
         # quantize model for qat
-        quantize_model_for_qat(
+        prepare_model_for_qat(
             model,
             config.weight_dtype,
             config.group_size,

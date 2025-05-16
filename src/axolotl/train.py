@@ -241,10 +241,7 @@ def save_trained_model(
         LOG.info("Processing QAT model for saving...")
         convert_qat_model_for_ptq(
             model,
-            cfg.qat.weight_dtype,
-            cfg.qat.group_size,
-            cfg.qat.activation_dtype,
-            cfg.qat.quantize_embedding,
+            quantize_embedding=cfg.qat.quantize_embedding,
         )
         LOG.info(
             "QAT modules have been converted for PTQ. Please ensure you quantize "

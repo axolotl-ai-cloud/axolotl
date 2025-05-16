@@ -1,6 +1,4 @@
-"""
-QAT Callback for HF Causal Trainer
-"""
+"""QAT Callback for HF Causal Trainer"""
 
 import logging
 from functools import partial

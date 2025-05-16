@@ -1376,9 +1376,9 @@ class ModelLoader:
         #  apply torchao quantization config
         # ---------------------------------------------------------
         if self.cfg.qat:
-            from axolotl.utils.quantization import quantize_model_for_qat
+            from axolotl.utils.quantization import prepare_model_for_qat
 
-            quantize_model_for_qat(
+            prepare_model_for_qat(
                 self.model,
                 self.cfg.qat.weight_dtype,
                 self.cfg.qat.group_size,
