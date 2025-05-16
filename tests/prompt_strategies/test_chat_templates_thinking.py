@@ -2,8 +2,6 @@
 Tests for splitting reasoning/thinking from content into separate field
 """
 
-import logging
-
 import pytest
 from datasets import Dataset
 from transformers import AutoTokenizer
@@ -14,9 +12,9 @@ from axolotl.prompt_strategies.chat_template import (
 from axolotl.utils.dict import DictDefault
 
 from tests.hf_offline_utils import enable_hf_offline
+from axolotl.utils.logging import get_logger
 
-logging.basicConfig(level=logging.DEBUG)
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
 
 
 @pytest.fixture(name="messages_w_reasoning")

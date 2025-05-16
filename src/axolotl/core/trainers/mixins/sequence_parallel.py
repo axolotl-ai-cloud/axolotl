@@ -1,22 +1,18 @@
 """Module for Axolotl trainer sequence parallelism mixin"""
 
-<<<<<<< Updated upstream
-=======
 import functools
 from axolotl.utils.logging import get_logger
 
 import torch
->>>>>>> Stashed changes
 import torch.distributed as dist
 from datasets import Dataset
 from torch.utils.data import DistributedSampler, Sampler
+from axolotl.utils.schemas.enums import RingAttnFunc
 
 from axolotl.monkeypatch.attention.ring_attn import (
     get_ring_attn_group,
 )
 
-<<<<<<< Updated upstream
-=======
 LOG = get_logger(__name__)
 
 
@@ -79,7 +75,6 @@ def apply_sequence_parallelism(
 
     return batch
 
->>>>>>> Stashed changes
 
 class SequenceParallelMixin:
     """

@@ -2,12 +2,8 @@
 Multipack Batch Sampler - An efficient batch sampler for packing variable-length sequences
 into fixed-capacity batches to optimize memory usage and training throughput.
 """
-<<<<<<< Updated upstream
-
 import logging
-=======
 from axolotl.utils.logging import get_logger
->>>>>>> Stashed changes
 import math
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import cpu_count, get_context
@@ -19,13 +15,7 @@ from torch.utils.data import BatchSampler, Sampler, SequentialSampler
 
 from axolotl.utils.distributed import reduce_and_broadcast
 
-<<<<<<< Updated upstream
-LOG = logging.getLogger(__name__)
-=======
 LOG = get_logger(__name__)
-
->>>>>>> Stashed changes
-LOG.setLevel(logging.INFO)
 
 
 @numba.njit
@@ -164,23 +154,6 @@ def pack_parallel(
         max_bins = len(group_lengths)  # Allow as many bins as items in the group
         tasks.append((group_lengths, i, bin_capacity, max_bins, bin_size, safe_mode))
 
-<<<<<<< Updated upstream
-    # Process groups in parallel
-    all_bins = []
-
-    mp_ctx = None
-    if mp_start_method:
-        try:
-            mp_ctx = get_context(mp_start_method)
-        except ValueError:
-            LOG.warning(
-                f"Failed to get multiprocessing context '{mp_start_method}'. "
-                f"Falling back to default. Available: {get_context().get_all_start_methods()}"
-            )
-            mp_ctx = (
-                None  # Fallback to default context if specified one is not available
-            )
-=======
         while right - left > 1:
             mid = (left + right) // 2
             if ffd_check(lengths[start_index: start_index + mid], c, n):
@@ -195,7 +168,6 @@ def pack_parallel(
         assert len(batch) <= n
         if len(batch) < n:
             break
->>>>>>> Stashed changes
 
     if num_processes == 1:
         LOG.debug("Using single process for pack_parallel, running sequentially.")
@@ -343,18 +315,12 @@ class MultipackBatchSampler(BatchSampler):
         if self._batches is not None:
             return self._batches
 
-<<<<<<< Updated upstream
-        # Get indices from the sampler
-        indices = [  # pylint: disable=unnecessary-comprehension
-            idx for idx in self.sampler
-=======
         batches = [
             [
                 [indices[b_idx] for b_idx in batch]
                 for batch in batches[i: i + self.batch_size]
             ]
             for i in range(0, len(batches), self.batch_size)
->>>>>>> Stashed changes
         ]
 
         # Get lengths of the selected sequences

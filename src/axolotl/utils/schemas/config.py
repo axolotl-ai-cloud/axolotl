@@ -459,18 +459,10 @@ class AxolotlInputConfig(
     @classmethod
     def check_sample_packing_wo_flash(cls, data):
         if (
-<<<<<<< Updated upstream
-            data.get("sample_packing")
-            and not data.get("flash_attention")
-            and not data.get("sdp_attention")
-            and not data.get("flex_attention")
-            and not data.get("xformers_attention")
-=======
             data.get("sample_packing") and
             not data.get("flash_attention") and
             not data.get("sdp_attention") and
             not data.get("flex_attention")
->>>>>>> Stashed changes
         ):
             LOG.warning(
                 "sample_packing without flash, sdp, xformers or flex attention does not handle cross sample decontamination."
@@ -1173,17 +1165,10 @@ class AxolotlInputConfig(
     @classmethod
     def check_grpo_liger_sequence_parallel(cls, data):
         if (
-<<<<<<< Updated upstream
-            data.get("rl") == "grpo"
-            and data.get("trl", {})
-            and data.get("trl").get("use_liger_loss")
-            and data.get("sequence_parallel_degree", 1) > 1
-=======
             data.get("rl") == "grpo" and
             data.get("trl", {}) and
             data.get("trl").get("use_liger_loss") and
             data.get("adapter")
->>>>>>> Stashed changes
         ):
             raise ValueError("GRPO + SP + Liger not currently supported")
         return data

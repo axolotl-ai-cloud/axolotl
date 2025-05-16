@@ -20,11 +20,7 @@ from axolotl.utils.distributed import is_main_process, zero_first
 from axolotl.utils.models import load_tokenizer
 from axolotl.utils.schemas.enums import RLType
 
-<<<<<<< Updated upstream
-LOG = logging.getLogger(__name__)
-=======
 LOG = get_logger(__name__)
->>>>>>> Stashed changes
 
 
 def _get_path(ds_hash, cfg):
@@ -214,24 +210,6 @@ def load_prepare_preference_datasets(cfg):
 
                 # ensure we end up with the same fingerprint by doing rank0 first and being able to cache
                 to_hash_train = (
-<<<<<<< Updated upstream
-                    train_dataset._fingerprint  # pylint: disable=protected-access
-                    + "|"
-                    + str(cfg.val_set_size)
-                    + "|"
-                    + "train"
-                    + "|"
-                    + str(seed)
-                )
-                to_hash_test = (
-                    train_dataset._fingerprint  # pylint: disable=protected-access
-                    + "|"
-                    + str(cfg.val_set_size)
-                    + "|"
-                    + "test"
-                    + "|"
-                    + str(seed)
-=======
                     train_dataset._fingerprint +  # pylint: disable=protected-access
                     "|" +
                     str(cfg.val_set_size) +
@@ -248,7 +226,6 @@ def load_prepare_preference_datasets(cfg):
                     "test" +
                     "|" +
                     str(cfg.seed or 42)
->>>>>>> Stashed changes
                 )
                 train_fingerprint = md5(to_hash_train)
                 test_fingerprint = md5(to_hash_test)

@@ -463,24 +463,6 @@ def load_prepare_datasets(
 
         # ensure we end up with the same fingerprint by doing rank0 first and being able to cache
         to_hash_train = (
-<<<<<<< Updated upstream
-            dataset._fingerprint  # pylint: disable=protected-access
-            + "|"
-            + str(val_set_size)
-            + "|"
-            + "train"
-            + "|"
-            + str(seed)
-        )
-        to_hash_test = (
-            dataset._fingerprint  # pylint: disable=protected-access
-            + "|"
-            + str(val_set_size)
-            + "|"
-            + "test"
-            + "|"
-            + str(seed)
-=======
             dataset._fingerprint +  # pylint: disable=protected-access
             "|" +
             str(val_set_size) +
@@ -497,7 +479,6 @@ def load_prepare_datasets(
             "test" +
             "|" +
             str(cfg.seed or 42)
->>>>>>> Stashed changes
         )
         train_fingerprint = md5(to_hash_train)
         test_fingerprint = md5(to_hash_test)

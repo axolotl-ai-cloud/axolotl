@@ -80,24 +80,12 @@ def load_datasets(
         preprocess_iterable=preprocess_iterable,
     )
 
-<<<<<<< Updated upstream
-    if (  # pylint: disable=too-many-boolean-expressions
-        cli_args
-        and (
-            cli_args.debug
-            or cfg.debug
-            or cli_args.debug_text_only
-            or int(cli_args.debug_num_examples) > 0
-        )
-    ) or debug:
-=======
     if cli_args and (
         cli_args.debug or
         cfg.debug or
         cli_args.debug_text_only or
         int(cli_args.debug_num_examples) > 0
     ):
->>>>>>> Stashed changes
         LOG.info("check_dataset_labels...")
 
         num_examples = cli_args.debug_num_examples if cli_args else 1
