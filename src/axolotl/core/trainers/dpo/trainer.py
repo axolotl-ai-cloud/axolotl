@@ -22,9 +22,7 @@ if is_sagemaker_mp_enabled():
 
 
 class AxolotlDPOTrainer(RngLoaderMixin, SchedulerMixin, DPOTrainer):
-    """
-    Extend the base DPOTrainer for axolotl helpers
-    """
+    """Extend the base DPOTrainer for axolotl helpers."""
 
     tag_names = ["axolotl", "dpo"]
 
@@ -69,8 +67,9 @@ class AxolotlDPOTrainer(RngLoaderMixin, SchedulerMixin, DPOTrainer):
     @wraps(DPOTrainer.push_to_hub)
     def push_to_hub(self, *args, **kwargs) -> str:
         """
-        Overwrite the `push_to_hub` method in order to force-add the tags when pushing the
-        model on the Hub. Please refer to `~transformers.Trainer.push_to_hub` for more details.
+        Overwrite the `push_to_hub` method in order to force-add the tags when pushing
+        the model on the Hub. Please refer to `~transformers.Trainer.push_to_hub`
+        for more details.
         """
         kwargs = sanitize_kwargs_for_ds_tagging(
             dataset_tags=self.dataset_tags, kwargs=kwargs
