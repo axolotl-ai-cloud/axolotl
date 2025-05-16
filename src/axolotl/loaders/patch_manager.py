@@ -7,7 +7,7 @@ import importlib.util
 import logging
 from functools import cached_property
 
-from transformers import PreTrainedConfig, PreTrainedModel
+from transformers import PretrainedConfig, PreTrainedModel
 
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import (
@@ -28,7 +28,7 @@ class PatchManager:
     """Manages the application of patches during the model loading process."""
 
     def __init__(
-        self, cfg: DictDefault, model_config: PreTrainedConfig, inference: bool = False
+        self, cfg: DictDefault, model_config: PretrainedConfig, inference: bool = False
     ):
         """Initialize the `PatchManager`.
 
