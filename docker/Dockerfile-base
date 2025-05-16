@@ -45,6 +45,6 @@ RUN if [ "$TORCH_CUDA_ARCH_LIST" = "9.0+PTX" ] ; then \
         cd hopper; \
         FLASH_ATTENTION_DISABLE_SM80=TRUE FLASH_ATTENTION_DISABLE_FP8=TRUE MAX_JOBS=128 python setup.py install; \
         cd ../..; \
-    elif[ "$PYTORCH_VERSION" = "2.7.0" ] ; then \
+    elif [ "$PYTORCH_VERSION" = "2.7.0" ] ; then \
         pip3 install flash-attn==2.7.4.post1; \
     fi
