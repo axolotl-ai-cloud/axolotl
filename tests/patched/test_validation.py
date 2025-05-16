@@ -1215,6 +1215,20 @@ class TestValidation(BaseValidation):
             cfg, capabilities=capabilities, env_capabilities=env_capabilities
         )
 
+    def test_cfg_throws_error_with_s2_attention_and_sample_packing(self, minimal_cfg):
+        test_cfg = DictDefault(
+            {
+                "s2_attention": True,
+                "sample_packing": True,
+            }
+            | minimal_cfg
+        )
+        with pytest.raises(
+            ValidationError,
+            match=r".*shifted-sparse attention does not currently support sample packing*",
+        ):
+            validate_config(test_cfg)
+
 
 class TestTorchCompileValidation(BaseValidation):
     """

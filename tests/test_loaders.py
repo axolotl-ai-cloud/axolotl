@@ -1,6 +1,6 @@
 """Module for `axolotl.loaders`."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from transformers import BitsAndBytesConfig, PreTrainedTokenizerBase
@@ -59,27 +59,6 @@ class TestModelsUtils:
 
         # check torch_dtype
         assert self.cfg.torch_dtype == self.model_loader.model_kwargs["torch_dtype"]
-
-    def test_cfg_throws_error_with_s2_attention_and_sample_packing(self):
-        cfg = DictDefault(
-            {
-                "s2_attention": True,
-                "sample_packing": True,
-                "base_model": "",
-                "model_type": "AutoModelForCausalLM",
-            }
-        )
-
-        # Mock out call to HF hub
-        with patch("axolotl.loaders.load_model_config") as mocked_load_model_config:
-            mocked_load_model_config.return_value = {}
-            with pytest.raises(ValueError) as exc:
-                # Should error before hitting tokenizer, so we pass in an empty str
-                ModelLoader(cfg, tokenizer="").load()  # type: ignore
-            assert (
-                "shifted-sparse attention does not currently support sample packing"
-                in str(exc.value)
-            )
 
     @pytest.mark.parametrize("adapter", ["lora", "qlora", None])
     @pytest.mark.parametrize("load_in_8bit", [True, False])
