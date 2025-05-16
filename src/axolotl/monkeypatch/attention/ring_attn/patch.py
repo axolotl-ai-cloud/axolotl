@@ -9,7 +9,6 @@ sequence parallelism training.
 """
 
 import inspect
-import re
 
 import accelerate
 import torch
@@ -24,24 +23,41 @@ LOG = get_logger(__name__)
 
 RING_ATTN_GROUP = None
 
+ORIGINAL_PREPARE_DATALOADER_CODE = """            submesh_fsdp_size = 1
+        submesh_dp_size = 1
+        submesh_tp_size = 1
+        if "tp" in torch_device_mesh.mesh_dim_names:
+            submesh_tp_size = torch_device_mesh["tp"].size()
+        if "dp" in torch_device_mesh.mesh_dim_names:
+            submesh_dp_size = torch_device_mesh["dp"].size()
+        if "fsdp" in torch_device_mesh.mesh_dim_names:
+            submesh_fsdp_size = torch_device_mesh["fsdp"].size()
+        process_index = process_index // submesh_tp_size
+        num_processes = submesh_fsdp_size * submesh_dp_size"""
+
+NEW_PREPARE_DATALOADER_CODE = """            submesh_fsdp_size = 1
+        submesh_dp_size = 1
+        submesh_tp_size = 1
+        submesh_sp_size = 1
+        if "sp" in torch_device_mesh.mesh_dim_names:
+            submesh_sp_size = torch_device_mesh["sp"].size()
+        if "tp" in torch_device_mesh.mesh_dim_names:
+            submesh_tp_size = torch_device_mesh["tp"].size()
+        if "dp" in torch_device_mesh.mesh_dim_names:
+            submesh_dp_size = torch_device_mesh["dp"].size()
+        if "fsdp" in torch_device_mesh.mesh_dim_names:
+            submesh_fsdp_size = torch_device_mesh["fsdp"].size()
+        process_index = process_index // (submesh_tp_size * submesh_sp_size)
+        num_processes = submesh_fsdp_size * submesh_dp_size"""
+
 
 def get_ring_attn_group() -> dist.ProcessGroup:
-    """
-    Getter for ring attention group on this rank.
-
-    Returns:
-        The process group for ring attention for this rank.
-    """
+    """Getter for ring attention group on this rank."""
     return RING_ATTN_GROUP
 
 
 def set_ring_attn_group(ring_attn_group: dist.ProcessGroup | None):
-    """
-    Setter for ring attention group on this rank.
-
-    Args:
-        Process group for ring attention.
-    """
+    """Setter for ring attention group on this rank."""
     global RING_ATTN_GROUP  # pylint: disable=global-statement
     RING_ATTN_GROUP = ring_attn_group
 
@@ -51,8 +67,7 @@ def register_ring_attn(
     heads_k_stride: int | None,
     ring_attn_func: RingAttnFunc | None,
 ):
-    """
-    Create ring attention group and substitute flash attn with ring flash attn.
+    """Create ring attention group and substitute flash attn with ring flash attn.
 
     Args:
         sequence_parallel_degree: Sequence parallelism factor.
@@ -62,17 +77,14 @@ def register_ring_attn(
             packing is enabled, it must be a `varlen` function; otherwise, it must be a
             `batch` function.
     """
-    if get_ring_attn_group() is not None:
-        LOG.info("Ring attention already registered, exiting early...")
-        return
-
-    LOG.info(
-        "Enabling ring attention sequence parallelism: "
-        f"each sequence will be processed across {sequence_parallel_degree} GPUs"
-    )
-
     rank = dist.get_rank()
     world_size = dist.get_world_size()
+
+    if rank == 0:
+        LOG.info(
+            "Enabling ring attention sequence parallelism: "
+            f"each sequence will be processed across {sequence_parallel_degree} GPUs"
+        )
 
     assert sequence_parallel_degree <= world_size, (
         f"sequence_parallel_degree ({sequence_parallel_degree}) "
@@ -138,40 +150,20 @@ def update_ring_attn_params(position_ids: torch.Tensor | None):
 
 
 def patch_prepare_data_loader():
+    """Patch `accelerate.data_loader.prepare_data_loader` to respect the SP degree."""
+    if dist.get_rank() == 0:
+        import ipdb
+
+        ipdb.set_trace()
+    dist.barrier()
+
     # Get the current function source code
     original_source = inspect.getsource(accelerate.data_loader.prepare_data_loader)
 
-    # Define the pattern to look for (the code block you want to replace)
-    pattern = r"""            submesh_fsdp_size = 1
-                submesh_dp_size = 1
-                submesh_tp_size = 1
-                if "tp" in torch_device_mesh\.mesh_dim_names:
-                    submesh_tp_size = torch_device_mesh\["tp"\]\.size\(\)
-                if "dp" in torch_device_mesh\.mesh_dim_names:
-                    submesh_dp_size = torch_device_mesh\["dp"\]\.size\(\)
-                if "fsdp" in torch_device_mesh\.mesh_dim_names:
-                    submesh_fsdp_size = torch_device_mesh\["fsdp"\]\.size\(\)
-                process_index = process_index // submesh_tp_size
-                num_processes = submesh_fsdp_size \* submesh_dp_size"""
-
-    # Define the replacement code
-    replacement = """            submesh_fsdp_size = 1
-                submesh_dp_size = 1
-                submesh_tp_size = 1
-                submesh_sp_size = 1
-                if "sp" in torch_device_mesh.mesh_dim_names:
-                    submesh_sp_size = torch_device_mesh["sp"].size()
-                if "tp" in torch_device_mesh.mesh_dim_names:
-                    submesh_tp_size = torch_device_mesh["tp"].size()
-                if "dp" in torch_device_mesh.mesh_dim_names:
-                    submesh_dp_size = torch_device_mesh["dp"].size()
-                if "fsdp" in torch_device_mesh.mesh_dim_names:
-                    submesh_fsdp_size = torch_device_mesh["fsdp"].size()
-                process_index = process_index // (submesh_tp_size * submesh_sp_size)
-                num_processes = submesh_fsdp_size * submesh_dp_size"""
-
     # Create the patched source code
-    patched_source = re.sub(pattern, replacement, original_source)
+    patched_source = original_source.replace(
+        ORIGINAL_PREPARE_DATALOADER_CODE, NEW_PREPARE_DATALOADER_CODE
+    )
 
     # Create a new function from the patched source
     namespace = {}
@@ -182,12 +174,10 @@ def patch_prepare_data_loader():
 
     # Replace the original function with the patched one
     accelerate.data_loader.prepare_data_loader = patched_function
-
-    # Now the prepare_data_loader function has been patched and will use your updated code
     print("Successfully patched accelerate.data_loader.prepare_data_loader")
 
 
-def patch_prepare_device_mesh(sequence_parallel_degree):
+def patch_prepare_device_mesh(sequence_parallel_degree: int):
     """Patches the `Accelerator._prepare_device_mesh` method to create a device mesh
     that includes sequence parallelism with the specified degree.
 
@@ -225,5 +215,6 @@ def patch_prepare_device_mesh(sequence_parallel_degree):
     accelerate.accelerator.Accelerator._prepare_device_mesh = _prepare_device_mesh
 
     print(
-        f"Successfully patched Accelerator._prepare_device_mesh with sequence_parallel_degree={sequence_parallel_degree}"
+        "Successfully patched Accelerator._prepare_device_mesh "
+        f"with sequence_parallel_degree={sequence_parallel_degree}"
     )
