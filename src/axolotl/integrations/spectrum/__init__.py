@@ -17,7 +17,7 @@ Spectrum Plugin to automatically generate unfrozen parameters based on SNR data.
 """
 
 import json
-import logging
+from axolotl.utils.logging import get_logger
 
 import requests
 

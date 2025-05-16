@@ -2,9 +2,9 @@
 
 import importlib
 import inspect
-import logging
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl.prompt_strategies.messages")
+LOG = get_logger(__name__)
 
 
 def load(tokenizer, cfg, ds_cfg, processor=None):

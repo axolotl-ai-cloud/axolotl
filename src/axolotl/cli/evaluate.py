@@ -1,6 +1,6 @@
 """CLI to run evaluation on a model."""
 
-import logging
+from axolotl.utils.logging import get_logger
 import os
 from pathlib import Path
 from typing import Union
@@ -18,7 +18,7 @@ from axolotl.evaluate import evaluate
 from axolotl.utils import patch_optimized_env
 from axolotl.utils.dict import DictDefault
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def do_evaluate(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:

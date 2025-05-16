@@ -3,7 +3,7 @@ Sparse Finetuning plugin for Axolotl — enables handling of sparse neural netwo
 by maintaining masks for zero weights during training.
 """
 
-import logging
+from axolotl.utils.logging import get_logger
 from functools import wraps
 from typing import Any, Callable, Concatenate, ParamSpec, TypeVar
 
@@ -20,7 +20,7 @@ from axolotl.integrations.base import BasePlugin
 P = ParamSpec("P")  # Params for generic function signatures
 R = TypeVar("R")  # Return type for generic function signatures
 
-LOG = logging.getLogger("axolotl.integrations.llm_compressor")
+LOG = get_logger(__name__)
 
 
 class LLMCompressorCallbackHandler(TrainerCallback):

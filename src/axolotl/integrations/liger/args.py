@@ -15,12 +15,12 @@
 """
 Module for handling LIGER input arguments.
 """
-import logging
+from axolotl.utils.logging import get_logger
 from typing import Optional
 
 from pydantic import BaseModel, model_validator
 
-LOG = logging.getLogger("axolotl.integrations.liger.args")
+LOG = get_logger(__name__)
 
 
 class LigerArgs(BaseModel):

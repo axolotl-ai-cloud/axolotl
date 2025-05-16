@@ -1,11 +1,11 @@
 """Pydantic models for deprecated and remapped configuration parameters"""
 
-import logging
+from axolotl.utils.logging import get_logger
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class DeprecatedParameters(BaseModel):

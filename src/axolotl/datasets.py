@@ -1,6 +1,6 @@
 """Module containing Dataset functionality"""
 
-import logging
+from axolotl.utils.logging import get_logger
 import os
 from typing import List, Optional, Union
 
@@ -15,7 +15,7 @@ from .prompt_tokenizers import PromptTokenizingStrategy
 # let's check to ensure we don't truncate an item in the middle, we'll use
 # the collators later on to pad the datasets
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
 
 
 class TokenizedPromptDataset(Dataset):
@@ -54,8 +54,8 @@ class TokenizedPromptDataset(Dataset):
             map_kwargs["batch_size"] = 1_000
 
         if (
-            hasattr(self.prompt_tokenizer, "filter_rows")
-            and self.prompt_tokenizer.filter_rows
+            hasattr(self.prompt_tokenizer, "filter_rows") and
+            self.prompt_tokenizer.filter_rows
         ):
             dataset = dataset.filter(
                 self.prompt_tokenizer.filter_rows,

@@ -1,14 +1,14 @@
 """Module containing PromptTokenizingStrategy and Prompter classes"""
 
 import abc
-import logging
+from axolotl.utils.logging import get_logger
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from transformers import BatchEncoding, PreTrainedTokenizer
 
 from axolotl.prompters import Prompter
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
 
 IGNORE_INDEX = -100
 LLAMA_DEFAULT_PAD_TOKEN = "<pad>"  # nosec
@@ -79,9 +79,9 @@ class PromptTokenizingStrategy(abc.ABC):
             return empty
 
         if (
-            result["input_ids"][-1] != self.tokenizer.eos_token_id
-            and len(result["input_ids"]) < self.max_length
-            and add_eos_token
+            result["input_ids"][-1] != self.tokenizer.eos_token_id and
+            len(result["input_ids"]) < self.max_length and
+            add_eos_token
         ):
             result["input_ids"].append(self.tokenizer.eos_token_id)
             result["attention_mask"].append(1)
@@ -300,9 +300,9 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
             return_tensors=None,
         )
         if (
-            result["input_ids"][-1] != self.tokenizer.eos_token_id
-            and len(result["input_ids"]) < self.sequence_len
-            and add_eos_token
+            result["input_ids"][-1] != self.tokenizer.eos_token_id and
+            len(result["input_ids"]) < self.sequence_len and
+            add_eos_token
         ):
             result["input_ids"].append(self.tokenizer.eos_token_id)
             result["attention_mask"].append(1)
@@ -353,11 +353,11 @@ def parse_tokenized_to_result(
 
     input_ids = res["input_ids"]
     input_len = len(input_ids)
-    result["input_ids"][current_len : current_len + input_len] = input_ids
-    result["attention_mask"][current_len : current_len + input_len] = [
+    result["input_ids"][current_len: current_len + input_len] = input_ids
+    result["attention_mask"][current_len: current_len + input_len] = [
         1 if x != pad_token_id else 0 for x in input_ids
     ]
-    result["labels"][current_len : current_len + input_len] = labels
+    result["labels"][current_len: current_len + input_len] = labels
     current_len += input_len
 
     return result, current_len

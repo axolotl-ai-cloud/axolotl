@@ -1,11 +1,11 @@
 """Module for wandb utilities"""
 
-import logging
+from axolotl.utils.logging import get_logger
 import os
 
 from axolotl.utils.dict import DictDefault
 
-LOG = logging.getLogger("axolotl.utils.comet_")
+LOG = get_logger(__name__)
 
 COMET_ENV_MAPPING_OVERRIDE = {
     "comet_mode": "COMET_START_MODE",

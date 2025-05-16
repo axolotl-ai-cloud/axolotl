@@ -3,13 +3,13 @@ allow adding additional kwargs to Accelerator init
 """
 
 import inspect
-import logging
+from axolotl.utils.logging import get_logger
 
 from transformers import Trainer
 
 from axolotl.monkeypatch.utils import detab_code
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 ORIGINAL_TRAINER_CODE = """
     # create accelerator object
@@ -70,9 +70,9 @@ def patch_create_accelerate_code_for_fp8():
             items_to_import.append(item)
 
     exec(  # pylint: disable=exec-used  # nosec B102
-        "from transformers.trainer import ("
-        + ", ".join(x for x in items_to_import)
-        + ")",
+        "from transformers.trainer import (" +
+        ", ".join(x for x in items_to_import) +
+        ")",
         globals(),
     )
     exec(create_code, globals())  # pylint: disable=exec-used  # nosec B102

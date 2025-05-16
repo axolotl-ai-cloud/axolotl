@@ -20,7 +20,7 @@ To create a new plugin, you need to inherit from the BasePlugin class and implem
 """
 import collections
 import importlib
-import logging
+from axolotl.utils.logging import get_logger
 from typing import OrderedDict
 
 import torch

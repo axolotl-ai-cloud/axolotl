@@ -2,7 +2,7 @@
 
 # pylint: disable=redefined-outer-name
 
-import logging
+from axolotl.utils.logging import get_logger
 import os
 import subprocess  # nosec B404
 import tempfile

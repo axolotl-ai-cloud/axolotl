@@ -2,11 +2,11 @@
 monkeypatch for Trainer _get_learning_rate method
 """
 
-import logging
+from axolotl.utils.logging import get_logger
 
 import torch
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 # TODO remove this patch once https://github.com/huggingface/transformers/pull/37881 is included in a release

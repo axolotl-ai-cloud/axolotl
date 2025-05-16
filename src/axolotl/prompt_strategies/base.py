@@ -3,9 +3,9 @@ module for base dataset transform strategies
 """
 
 import importlib
-import logging
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
 
 
 def load(strategy, cfg, module_base=None, **kwargs):
