@@ -74,7 +74,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-8ef56b68f8fa1e9d2ba328e99e439f80.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-ce762b396f898894284bb8eeee180359.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-2288ecdcbf81d2ab6432743cedd71d9a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -456,8 +456,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#sec-common-tasks" id="toc-sec-common-tasks" class="nav-link" data-scroll-target="#sec-common-tasks"><span class="header-section-number">4</span> Common Tasks</a>
   <ul class="collapse">
   <li><a href="#sec-testing" id="toc-sec-testing" class="nav-link" data-scroll-target="#sec-testing"><span class="header-section-number">4.1</span> Testing Your Model</a></li>
-  <li><a href="#sec-preprocessing" id="toc-sec-preprocessing" class="nav-link" data-scroll-target="#sec-preprocessing"><span class="header-section-number">4.2</span> Preprocessing Data</a></li>
-  <li><a href="#sec-ui" id="toc-sec-ui" class="nav-link" data-scroll-target="#sec-ui"><span class="header-section-number">4.3</span> Using a UI</a></li>
+  <li><a href="#sec-ui" id="toc-sec-ui" class="nav-link" data-scroll-target="#sec-ui"><span class="header-section-number">4.2</span> Using a UI</a></li>
+  <li><a href="#sec-preprocessing" id="toc-sec-preprocessing" class="nav-link" data-scroll-target="#sec-preprocessing"><span class="header-section-number">4.3</span> Preprocessing Data</a></li>
+  <li><a href="#sec-merging-lora" id="toc-sec-merging-lora" class="nav-link" data-scroll-target="#sec-merging-lora"><span class="header-section-number">4.4</span> Merging LoRA weights</a></li>
   </ul></li>
   <li><a href="#sec-next-steps" id="toc-sec-next-steps" class="nav-link" data-scroll-target="#sec-next-steps"><span class="header-section-number">5</span> Next Steps</a></li>
   </ul>
@@ -577,7 +578,7 @@ the <code>alpaca</code> dataset format, which has the following format:</p>
 <p>Please see our <a href="dataset-formats">Dataset Formats</a> for more dataset formats and how to
 format them.</p>
 <ol start="2" type="1">
-<li>Prepare your JSONL data in the specified format (in this case, the expected `alpaca
+<li>Prepare your JSONL data in the specified format (in this case, the expected <code>alpaca</code>
 format):</li>
 </ol>
 <div class="sourceCode" id="cb6"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"instruction"</span><span class="fu">:</span> <span class="st">"Classify this text"</span><span class="fu">,</span> <span class="dt">"input"</span><span class="fu">:</span> <span class="st">"I love this!"</span><span class="fu">,</span> <span class="dt">"output"</span><span class="fu">:</span> <span class="st">"positive"</span><span class="fu">}</span></span>
@@ -589,20 +590,43 @@ format):</li>
 </section>
 <section id="sec-common-tasks" class="level2" data-number="4">
 <h2 data-number="4" class="anchored" data-anchor-id="sec-common-tasks"><span class="header-section-number">4</span> Common Tasks</h2>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The same yaml file is used for training, inference, and merging.</p>
+</div>
+</div>
 <section id="sec-testing" class="level3" data-number="4.1">
 <h3 data-number="4.1" class="anchored" data-anchor-id="sec-testing"><span class="header-section-number">4.1</span> Testing Your Model</h3>
 <p>After training, test your model:</p>
 <div class="sourceCode" id="cb8"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> inference my_training.yml <span class="at">--lora-model-dir</span><span class="op">=</span><span class="st">"./outputs/lora-out"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>More details can be found in <a href="../docs/inference.html">Inference</a>.</p>
 </section>
-<section id="sec-preprocessing" class="level3" data-number="4.2">
-<h3 data-number="4.2" class="anchored" data-anchor-id="sec-preprocessing"><span class="header-section-number">4.2</span> Preprocessing Data</h3>
-<p>For large datasets, preprocess first:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> preprocess my_training.yml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</section>
-<section id="sec-ui" class="level3" data-number="4.3">
-<h3 data-number="4.3" class="anchored" data-anchor-id="sec-ui"><span class="header-section-number">4.3</span> Using a UI</h3>
+<section id="sec-ui" class="level3" data-number="4.2">
+<h3 data-number="4.2" class="anchored" data-anchor-id="sec-ui"><span class="header-section-number">4.2</span> Using a UI</h3>
 <p>Launch a Gradio interface:</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> inference my_training.yml <span class="at">--lora-model-dir</span><span class="op">=</span><span class="st">"./outputs/lora-out"</span> <span class="at">--gradio</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb9"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> inference my_training.yml <span class="at">--lora-model-dir</span><span class="op">=</span><span class="st">"./outputs/lora-out"</span> <span class="at">--gradio</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="sec-preprocessing" class="level3" data-number="4.3">
+<h3 data-number="4.3" class="anchored" data-anchor-id="sec-preprocessing"><span class="header-section-number">4.3</span> Preprocessing Data</h3>
+<p>For large datasets, preprocess first:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> preprocess my_training.yml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Please make sure to set <code>dataset_prepared_path:</code> in your config to set the path to save the prepared dataset.</p>
+<p>More details can be found in <a href="../docs/dataset_preprocessing.html">Dataset Preprocessing</a>.</p>
+</section>
+<section id="sec-merging-lora" class="level3" data-number="4.4">
+<h3 data-number="4.4" class="anchored" data-anchor-id="sec-merging-lora"><span class="header-section-number">4.4</span> Merging LoRA weights</h3>
+<p>To merge the LoRA weights back into the base model, run:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> merge-lora my_training.yml <span class="at">--lora-model-dir</span><span class="op">=</span><span class="st">"./outputs/lora-out"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>The merged model will be saved in the <code>{output_dir}/merged</code> directory.</p>
+<p>More details can be found in <a href="../docs/inference.html#sec-merging">Merging LoRA weights</a>.</p>
 </section>
 </section>
 <section id="sec-next-steps" class="level2" data-number="5">
@@ -617,6 +641,7 @@ format):</li>
 <p>Check our other guides for details on these topics:</p>
 <ul>
 <li><a href="../docs/config.html">Configuration Guide</a> - Full configuration options</li>
+<li><a href="dataset-loading.qmd">Dataset Loading</a> - Loading datasets from various sources</li>
 <li><a href="dataset-formats">Dataset Formats</a> - Working with different data formats</li>
 <li><a href="../docs/multi-gpu.html">Multi-GPU Training</a></li>
 <li><a href="../docs/multi-node.html">Multi-Node Training</a></li>
