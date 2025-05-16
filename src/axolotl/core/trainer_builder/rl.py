@@ -134,6 +134,13 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
     def build(self, total_num_steps):
         training_args = self.build_training_arguments(total_num_steps)
         trainer_kwargs = {}
+
+        # Pop optimizer_cls_and_kwargs to trainer_kwargs
+        if "optimizer_cls_and_kwargs" in training_args:
+            trainer_kwargs["optimizer_cls_and_kwargs"] = training_args.pop(
+                "optimizer_cls_and_kwargs"
+            )
+
         if self.cfg.rl is RLType.IPO:
             if self.cfg.dpo_label_smoothing:
                 trainer_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
