@@ -211,6 +211,34 @@ class ModelLoader:
         else:
             self.model.tie_weights()
 
+    def _adjust_model_config(self):
+        if (
+            hasattr(self.model, "config")
+            and hasattr(self.model.config, "max_position_embeddings")
+            and self.model.config.max_position_embeddings
+            and self.cfg.sequence_len > self.model.config.max_position_embeddings
+        ):
+            LOG.warning(
+                f"increasing model.config.max_position_embeddings from {self.model.config.max_position_embeddings} to {self.cfg.sequence_len}"
+            )
+            self.model.config.max_position_embeddings = self.cfg.sequence_len
+
+        if (
+            hasattr(self.model, "config")
+            and hasattr(self.model.config, "bos_token_id")
+            and self.model.config.bos_token_id
+            and self.model.config.bos_token_id != self.tokenizer.bos_token_id
+        ):
+            self.model.config.bos_token_id = self.tokenizer.bos_token_id
+
+        if (
+            hasattr(self.model, "config")
+            and hasattr(self.model.config, "eos_token_id")
+            and self.model.config.eos_token_id
+            and self.model.config.eos_token_id != self.tokenizer.eos_token_id
+        ):
+            self.model.config.eos_token_id = self.tokenizer.eos_token_id
+
     def _log_memory_usage(self):
         """Log device memory usage after model load."""
         if hasattr(self.model, "device") and self.model.device.type in (
@@ -250,7 +278,6 @@ class ModelLoader:
                     gradient_checkpointing_kwargs=self.cfg.gradient_checkpointing_kwargs
                 )
 
-        # Prepare model for quantization
         self._prepare_model_for_quantization()
 
         # Convert dtypes if needed
@@ -537,7 +564,7 @@ class ModelLoader:
         return hf_ds_cfg
 
     def _build_model(self) -> bool:
-        """Load model, with load strategy depending on config"""
+        """Load model, with load strategy depending on config."""
         skip_move_to_device = False
         if (  # pylint: disable=condition-evals-to-constant)
             (self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
@@ -687,34 +714,6 @@ class ModelLoader:
 
         return skip_move_to_device
 
-    def _adjust_model_config(self):
-        if (
-            hasattr(self.model, "config")
-            and hasattr(self.model.config, "max_position_embeddings")
-            and self.model.config.max_position_embeddings
-            and self.cfg.sequence_len > self.model.config.max_position_embeddings
-        ):
-            LOG.warning(
-                f"increasing model.config.max_position_embeddings from {self.model.config.max_position_embeddings} to {self.cfg.sequence_len}"
-            )
-            self.model.config.max_position_embeddings = self.cfg.sequence_len
-
-        if (
-            hasattr(self.model, "config")
-            and hasattr(self.model.config, "bos_token_id")
-            and self.model.config.bos_token_id
-            and self.model.config.bos_token_id != self.tokenizer.bos_token_id
-        ):
-            self.model.config.bos_token_id = self.tokenizer.bos_token_id
-
-        if (
-            hasattr(self.model, "config")
-            and hasattr(self.model.config, "eos_token_id")
-            and self.model.config.eos_token_id
-            and self.model.config.eos_token_id != self.tokenizer.eos_token_id
-        ):
-            self.model.config.eos_token_id = self.tokenizer.eos_token_id
-
     def _set_z3_leaf_modules(self):
         from deepspeed.utils import set_z3_leaf_modules
 
@@ -763,7 +762,10 @@ class ModelLoader:
             )
 
     def _convert_embedding_modules_dtype(
-        self, embedding_modules, dist_dtype, before_kbit_train_or_finetune
+        self,
+        embedding_modules: list[str],
+        dist_dtype: torch.dtype,
+        before_kbit_train_or_finetune: bool,
     ):
         for name, module in self.model.named_modules():
             if "norm" in name:
