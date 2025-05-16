@@ -151,12 +151,6 @@ def update_ring_attn_params(position_ids: torch.Tensor | None):
 
 def patch_prepare_data_loader():
     """Patch `accelerate.data_loader.prepare_data_loader` to respect the SP degree."""
-    if dist.get_rank() == 0:
-        import ipdb
-
-        ipdb.set_trace()
-    dist.barrier()
-
     # Get the current function source code
     original_source = inspect.getsource(accelerate.data_loader.prepare_data_loader)
 
