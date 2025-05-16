@@ -681,7 +681,11 @@ class ModelLoader:
             patch_self_attn_lora(self.cfg)
 
         if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
-            from axolotl.monkeypatch.attention.ring_attn import register_ring_attn
+            from axolotl.monkeypatch.attention.ring_attn import (
+                patch_prepare_data_loader,
+                patch_prepare_device_mesh,
+                register_ring_attn,
+            )
 
             # Initialize ring attn for sequence parallelism. This must be done after
             # model init but before the first forward pass, since it modifies flash
@@ -690,6 +694,10 @@ class ModelLoader:
                 sequence_parallel_degree=self.cfg.sequence_parallel_degree,
                 heads_k_stride=self.cfg.heads_k_stride,
                 ring_attn_func=self.cfg.ring_attn_func,
+            )
+            patch_prepare_data_loader()
+            patch_prepare_device_mesh(
+                sequence_parallel_degree=self.cfg.sequence_parallel_degree
             )
 
     def patch_attention(self) -> None:

@@ -129,3 +129,102 @@ def update_ring_attn_params(position_ids: torch.Tensor | None):
     cu_seqlens, _ = get_cu_seqlens_from_pos_ids(position_ids)
     cu_seqlens = cu_seqlens.squeeze().to(device=torch.cuda.current_device())
     update_ring_flash_attn_params(cu_seqlens, get_ring_attn_group())
+
+
+def patch_prepare_data_loader():
+    import inspect
+    import re
+
+    import accelerate.data_loader
+
+    # Get the current function source code
+    original_source = inspect.getsource(accelerate.data_loader.prepare_data_loader)
+
+    # Define the pattern to look for (the code block you want to replace)
+    pattern = r"""            submesh_fsdp_size = 1
+                submesh_dp_size = 1
+                submesh_tp_size = 1
+                if "tp" in torch_device_mesh\.mesh_dim_names:
+                    submesh_tp_size = torch_device_mesh\["tp"\]\.size\(\)
+                if "dp" in torch_device_mesh\.mesh_dim_names:
+                    submesh_dp_size = torch_device_mesh\["dp"\]\.size\(\)
+                if "fsdp" in torch_device_mesh\.mesh_dim_names:
+                    submesh_fsdp_size = torch_device_mesh\["fsdp"\]\.size\(\)
+                process_index = process_index // submesh_tp_size
+                num_processes = submesh_fsdp_size \* submesh_dp_size"""
+
+    # Define the replacement code
+    replacement = """            submesh_fsdp_size = 1
+                submesh_dp_size = 1
+                submesh_tp_size = 1
+                submesh_sp_size = 1
+                if "sp" in torch_device_mesh.mesh_dim_names:
+                    submesh_sp_size = torch_device_mesh["sp"].size()
+                if "tp" in torch_device_mesh.mesh_dim_names:
+                    submesh_tp_size = torch_device_mesh["tp"].size()
+                if "dp" in torch_device_mesh.mesh_dim_names:
+                    submesh_dp_size = torch_device_mesh["dp"].size()
+                if "fsdp" in torch_device_mesh.mesh_dim_names:
+                    submesh_fsdp_size = torch_device_mesh["fsdp"].size()
+                process_index = process_index // (submesh_tp_size * submesh_sp_size)
+                num_processes = submesh_fsdp_size * submesh_dp_size"""
+
+    # Create the patched source code
+    patched_source = re.sub(pattern, replacement, original_source)
+
+    # Create a new function from the patched source
+    namespace = {}
+    exec(patched_source, accelerate.data_loader.__dict__, namespace)
+    patched_function = namespace["prepare_data_loader"]
+
+    # Replace the original function with the patched one
+    accelerate.data_loader.prepare_data_loader = patched_function
+
+    # Now the prepare_data_loader function has been patched and will use your updated code
+    print("Successfully patched accelerate.data_loader.prepare_data_loader")
+
+
+import accelerate.accelerator
+import torch
+import torch.distributed as dist
+
+
+def patch_prepare_device_mesh(sequence_parallel_degree):
+    """Patches the `Accelerator._prepare_device_mesh` method to create a device mesh
+    that includes sequence parallelism with the specified degree.
+
+    Args:
+        sequence_parallel_degree (int): The degree of sequence parallelism to use.
+    """
+
+    def _prepare_device_mesh(self):
+        """Prepare the device mesh for distributed training. The dataloader will
+        determine how to load data based on the device mesh.
+        """
+        if self.state.torch_tp_plugin:
+            return self.state.torch_tp_plugin.torch_device_mesh
+        elif (
+            self.distributed_type == accelerate.accelerator.DistributedType.DEEPSPEED
+            and hasattr(self.state, "ds_device_mesh")
+        ):
+            return self.state.ds_device_mesh
+        else:
+            # Create device mesh with sequence parallelism
+            world_size = dist.get_world_size()
+            mesh_shape = (
+                world_size // sequence_parallel_degree,
+                sequence_parallel_degree,
+            )
+            device_ids = list(range(world_size))
+            return dist.DeviceMesh(
+                "cuda",
+                torch.tensor(device_ids).reshape(mesh_shape),
+                mesh_dim_names=["dp", "sp"],
+            )
+
+    # Replace the original method with our new method
+    accelerate.accelerator.Accelerator._prepare_device_mesh = _prepare_device_mesh
+
+    print(
+        f"Successfully patched Accelerator._prepare_device_mesh with sequence_parallel_degree={sequence_parallel_degree}"
+    )
