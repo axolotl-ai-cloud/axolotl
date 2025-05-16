@@ -47,7 +47,7 @@ from axolotl.utils.distributed import (
     get_device_count,
     get_device_type,
 )
-from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
+from axolotl.utils.model_shard_quant import load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
 
 LOG = logging.getLogger(__name__)
@@ -566,20 +566,7 @@ class ModelLoader:
     def _build_model(self) -> bool:
         """Load model, with load strategy depending on config."""
         skip_move_to_device = False
-        if (  # pylint: disable=condition-evals-to-constant)
-            (self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
-            and not self.qlora_fsdp
-            and False
-        ):
-            # TODO: Can we eliminate this branch?
-            self.model = load_sharded_model(
-                self.base_model,
-                self.model_config,
-                self.cfg,
-                torch_dtype=self.cfg.torch_dtype,
-            )
-            skip_move_to_device = True
-        elif (
+        if (
             self.qlora_fsdp
             and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
             and (
@@ -657,8 +644,8 @@ class ModelLoader:
 
             self.model_kwargs["dtype"] = self.model_kwargs["torch_dtype"]
             self.model_kwargs["device"] = torch.cuda.current_device()
-            del self.model_kwargs["torch_dtype"]
-            del self.model_kwargs["device_map"]
+            self.model_kwargs.pop("torch_dtype", None)
+            self.model_kwargs.pop("device_map", None)
 
             self.model = MambaLMHeadModel.from_pretrained(
                 self.base_model,
