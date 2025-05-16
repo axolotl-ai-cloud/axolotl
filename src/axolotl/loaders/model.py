@@ -203,8 +203,8 @@ class ModelLoader:
             )
         ):
             resize_kwargs = {}
-            if self.cfg.mean_resizing_embeddings is not None and not (
-                self.model_config.model_type == "llava"
+            if self.cfg.mean_resizing_embeddings is not None and (
+                self.model_config.model_type != "llava"
             ):
                 resize_kwargs["mean_resizing"] = self.cfg.mean_resizing_embeddings
             self.model.resize_token_embeddings(embeddings_len, **resize_kwargs)
@@ -336,8 +336,8 @@ class ModelLoader:
             self.model.to(f"{str(get_device_type())}:{self.cfg.local_rank}")
 
         if get_device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) == 1:
-            setattr(self.model, "is_parallelizable", True)
-            setattr(self.model, "model_parallel", True)
+            self.model.is_parallelizable = True
+            self.model.model_parallel = True
 
         if not any(
             param.requires_grad
@@ -575,9 +575,9 @@ class ModelLoader:
             )
         ):
             quant_storage = self.cfg.torch_dtype
-            quantization_config = hasattr(
-                self.model_config, "quantization_config"
-            ) and getattr(self.model_config, "quantization_config")
+            quantization_config = getattr(
+                self.model_config, "quantization_config", None
+            )
             quantization_config = (
                 quantization_config or self.model_kwargs["quantization_config"]
             )
@@ -763,6 +763,5 @@ class ModelLoader:
                 if self.model_config.model_type == "btlm":
                     # don't upcast lm_head for btlm
                     continue
-            if any(m in name for m in embedding_modules):
-                if hasattr(module, "weight"):
-                    module.to(dist_dtype)
+            if any(m in name for m in embedding_modules) and hasattr(module, "weight"):
+                module.to(dist_dtype)
