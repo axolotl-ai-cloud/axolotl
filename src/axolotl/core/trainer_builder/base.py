@@ -408,7 +408,7 @@ class TrainerBuilderBase(abc.ABC):
 
                 beta1 = training_args_kwargs.get("adam_beta1", 0.9)
                 beta2 = training_args_kwargs.get("adam_beta2", 0.999)
-                beta3 = training_args_kwargs.get("adam_beta2", 0.9999)
+                beta3 = training_args_kwargs.get("adam_beta3", 0.9999)
                 eps1 = training_args_kwargs.get("adam_epsilon", 1e-30)
                 eps2 = training_args_kwargs.get("adam_epsilon2", 1e-16)
                 adam_kwargs["betas"] = (beta1, beta2, beta3)
