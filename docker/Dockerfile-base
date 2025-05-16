@@ -40,9 +40,11 @@ RUN git lfs install --skip-repo && \
 
 RUN if [ "$TORCH_CUDA_ARCH_LIST" = "9.0+PTX" ] ; then \
         git clone https://github.com/Dao-AILab/flash-attention.git; \
+        cd flash-attention; \
         git checkout v2.7.4.post1; \
-        cd flash-attention/hopper; \
+        cd hopper; \
         FLASH_ATTENTION_DISABLE_SM80=TRUE FLASH_ATTENTION_DISABLE_FP8=TRUE MAX_JOBS=128 python setup.py install; \
-    elif if [ "$PYTORCH_VERSION" = "2.7.0" ] ; then \
+        cd ../..; \
+    elif[ "$PYTORCH_VERSION" = "2.7.0" ] ; then \
         pip3 install flash-attn==2.7.4.post1; \
     fi
