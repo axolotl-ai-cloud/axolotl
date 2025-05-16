@@ -9,6 +9,10 @@ sequence parallelism training.
 """
 
 import inspect
+<<<<<<< HEAD:src/axolotl/monkeypatch/ring_attn/patch.py
+=======
+import re
+>>>>>>> b1a213827 (lint):src/axolotl/monkeypatch/attention/ring_attn/patch.py
 
 import accelerate
 import torch
