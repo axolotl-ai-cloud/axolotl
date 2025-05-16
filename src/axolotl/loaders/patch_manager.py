@@ -5,14 +5,16 @@ Applies pre- and post-model load patches for various fixes and optimizations.
 
 import importlib.util
 import logging
+from functools import cached_property
 
-from transformers import PreTrainedModel
+from transformers import PreTrainedConfig, PreTrainedModel
 
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
 )
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.gradient_checkpointing import (
     hf_grad_checkpoint_disk_offload_wrapper,
     hf_grad_checkpoint_offload_wrapper,
@@ -25,25 +27,27 @@ PLUGIN_MANAGER = PluginManager.get_instance()
 class PatchManager:
     """Manages the application of patches during the model loading process."""
 
-    def __init__(self, cfg, model_config, inference=False):
+    def __init__(
+        self, cfg: DictDefault, model_config: PreTrainedConfig, inference: bool = False
+    ):
         """Initialize the `PatchManager`.
 
         Args:
-            cfg: Configuration dictionary with model and training settings
-            model_config: Configuration object for the model
-            inference: Whether the model is being loaded for inference mode
+            cfg: Configuration dictionary with model and training settings.
+            model_config: Configuration object for the model.
+            inference: Whether the model is being loaded for inference mode.
         """
         self.cfg = cfg
         self.model_config = model_config
         self.inference = inference
 
-    @property
+    @cached_property
     def has_flash_attn(self) -> bool:
-        """Check if flash attention is installed"""
+        """Check if flash attention is installed."""
         return importlib.util.find_spec("flash_attn") is not None
 
     def apply_pre_model_load_patches(self):
-        """Apply pre-model load patches based on config"""
+        """Apply pre-model load patches based on config."""
         self._apply_flash_attention_patches()
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
@@ -53,15 +57,14 @@ class PatchManager:
         self._apply_flash_attention_peft_patches()
         self._apply_gradient_checkpointing_patches()
         self._patch_attention()
-        self._check_attention_compatibility()
         self._apply_multipack_patches()
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
         self._apply_unsloth_self_attention_patch()
         self._apply_sequence_parallel_patches()
 
-    def apply_post_model_load_patches(self, model: PreTrainedModel) -> PreTrainedModel:
-        """Apply patches that require the model instance"""
+    def apply_post_model_load_patches(self, model: PreTrainedModel):
+        """Apply patches that require the model instance."""
         if self.cfg.unsloth_lora_mlp:
             from axolotl.monkeypatch.unsloth_ import integrate_lora_mlp_patch
 
@@ -86,10 +89,8 @@ class PatchManager:
 
             apply_lora_kernel_patches(model, self.cfg)
 
-        return model
-
     def _apply_flash_attention_patches(self):
-        """Apply patches related to Flash Attention"""
+        """Apply patches related to Flash Attention."""
         if self.cfg.xformers_attention and self.cfg.sample_packing:
             from axolotl.monkeypatch.attention import patch_xformers_attn_over_fa2
 
@@ -198,14 +199,6 @@ class PatchManager:
                 sequence_parallel_degree=self.cfg.sequence_parallel_degree,
                 heads_k_stride=self.cfg.heads_k_stride,
                 ring_attn_func=self.cfg.ring_attn_func,
-            )
-
-    def _check_attention_compatibility(self):
-        """Check for incompatible attention configurations."""
-        if self.cfg.sample_packing and self.cfg.s2_attention:
-            raise ValueError(
-                "Received `sample_packing=true` and `s2_attention=true`; however, \
-                shifted-sparse attention does not currently support sample packing."
             )
 
     def _apply_multipack_patches(self):
