@@ -42,14 +42,15 @@ class BasePlugin:
         register(cfg): Registers the plugin with the given configuration.
         load_datasets(cfg): Loads and preprocesses the dataset for training.
         pre_model_load(cfg): Performs actions before the model is loaded.
-        post_model_build(cfg: DictDefault, model: PreTrainedModel): Performs actions after the model is loaded, but before LoRA adapters are applied.
-        pre_lora_load(cfg: DictDefault, model: PreTrainedModel): Performs actions before LoRA weights are loaded.
-        post_lora_load(cfg: DictDefault, model: PreTrainedModel): Performs actions after LoRA weights are loaded.
-        post_model_load(cfg: DictDefault, model: PreTrainedModel): Performs actions after the model is loaded, inclusive of any adapters.
+        post_model_build(cfg, model): Performs actions after the model is loaded, but before LoRA adapters are applied.
+        pre_lora_load(cfg, model): Performs actions before LoRA weights are loaded.
+        post_lora_load(cfg, model): Performs actions after LoRA weights are loaded.
+        post_model_build(cfg, model): Performs actions after the model is built/loaded, but before any adapters are applied.
+        post_model_load(cfg, model): Performs actions after the model is loaded, inclusive of any adapters.
         post_trainer_create(cfg, trainer): Performs actions after the trainer is created.
         create_optimizer(cfg, trainer): Creates and returns an optimizer for training.
         create_lr_scheduler(cfg, trainer, optimizer, num_training_steps): Creates and returns a learning rate scheduler.
-        add_callbacks_pre_trainer(cfg: DictDefault, model: PreTrainedModel): Adds callbacks to the trainer before training.
+        add_callbacks_pre_trainer(cfg, model): Adds callbacks to the trainer before training.
         add_callbacks_post_trainer(cfg, trainer): Adds callbacks to the trainer after training.
     """
 
@@ -215,8 +216,8 @@ class BasePlugin:
         self, cfg: DictDefault, trainer: Trainer
     ) -> list[Callable]:
         """
-        Adds callbacks to the trainer after creating the trainer.
-        This is useful for callbacks that require access to the model or trainer.
+        Adds callbacks to the trainer after creating the trainer. This is useful for
+        callbacks that require access to the model or trainer.
 
         Args:
             cfg: The configuration for the plugin.
