@@ -58,6 +58,8 @@ class TestLoadModelUtils:
             ModelLoader(
                 cfg=self.cfg,
                 tokenizer="",
+                inference=False,
+                reference_model=True,
             )
         )
 
@@ -71,12 +73,7 @@ class TestLoadModelUtils:
     ):
         self.cfg.output_dir = temp_dir
         self.model_loader.tokenizer = load_tokenizer(self.cfg)  # pylint: disable=all
-        self.model_loader.load(
-            self.cfg,
-            self.model_loader.tokenizer,
-            inference=False,
-            reference_model=True,
-        )
+        self.model_loader.load()
         self.model_loader._convert_embedding_modules_dtype(
             embedding_modules, dist_dtype, before_kbit_train_or_finetune
         )
