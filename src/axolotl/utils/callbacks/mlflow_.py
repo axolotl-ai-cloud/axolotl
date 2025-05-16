@@ -1,7 +1,7 @@
 """MLFlow module for trainer callbacks"""
 
-import os
 import logging
+import os
 from shutil import copyfile
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING
@@ -15,6 +15,11 @@ if TYPE_CHECKING:
     from axolotl.core.trainer_builder import AxolotlTrainingArguments
 
 LOG = logging.getLogger("axolotl.callbacks")
+
+
+def should_log_artifacts() -> bool:
+    truths = ["TRUE", "1", "YES"]
+    return os.getenv("HF_MLFLOW_LOG_ARTIFACTS", "FALSE").upper() in truths
 
 
 class SaveAxolotlConfigtoMlflowCallback(TrainerCallback):
@@ -33,7 +38,7 @@ class SaveAxolotlConfigtoMlflowCallback(TrainerCallback):
     ):
         if is_main_process():
             try:
-                if os.getenv("HF_MLFLOW_LOG_ARTIFACTS", "FALSE").upper() in ["TRUE", "1", "YES"]:
+                if should_log_artifacts():
                     with NamedTemporaryFile(
                         mode="w", delete=False, suffix=".yml", prefix="axolotl_config_"
                     ) as temp_file:
@@ -43,7 +48,9 @@ class SaveAxolotlConfigtoMlflowCallback(TrainerCallback):
                             "The Axolotl config has been saved to the MLflow artifacts."
                         )
                 else:
-                    LOG.info("Skipping logging artifacts to MLflow (hf_mlflow_log_artifacts is false)")
+                    LOG.info(
+                        "Skipping logging artifacts to MLflow (hf_mlflow_log_artifacts is false)"
+                    )
             except (FileNotFoundError, ConnectionError) as err:
                 LOG.warning(f"Error while saving Axolotl config to MLflow: {err}")
         return control
