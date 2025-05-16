@@ -633,7 +633,9 @@ weight_decay:
 # adamw hyperparams
 adam_beta1:
 adam_beta2:
+adam_beta3:  # only used for CAME Optimizer
 adam_epsilon:
+adam_epsilon2:  # only used for CAME Optimizer
 # Gradient clipping max norm
 max_grad_norm:
 
