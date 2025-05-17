@@ -44,7 +44,7 @@ from axolotl.utils.schemas.model import (
 )
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
-from axolotl.utils.schemas.quantization import QATConfig
+from axolotl.utils.schemas.quantization import PTQConfig, QATConfig
 from axolotl.utils.schemas.training import HyperparametersConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.vllm import VllmConfig
@@ -92,6 +92,7 @@ class AxolotlInputConfig(
         default_factory=lambda: VllmConfig(),  # pylint: disable=unnecessary-lambda
     )
     qat: QATConfig | None = None
+    quantization: PTQConfig | None = None
     reward_model: bool | None = None
     process_reward_model: bool | None = None
     num_labels: int | None = None

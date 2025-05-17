@@ -1337,9 +1337,7 @@ class ModelLoader:
                 (needs_fa2_dtype or self.cfg.flash_attention or self.cfg.flex_attention)
                 and not qlora_fsdp
             )
-            or
-            # Cut cross entropy requires embedding layers to be in fp16/bf16 for backward pass
-            self.cfg.cut_cross_entropy
+            or self.cfg.cut_cross_entropy  # Cut cross entropy requires embedding layers to be in fp16/bf16 for backward pass
         )
 
         if should_convert:

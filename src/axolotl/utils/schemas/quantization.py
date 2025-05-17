@@ -53,3 +53,11 @@ class PTQConfig(BaseModel):
         default=None, description="Quantize embedding"
     )
     group_size: int | None = Field(default=32, description="Group size")
+
+    @field_validator("activation_dtype", "weight_dtype", mode="before")
+    @classmethod
+    def validate_dtype(cls, v: Any) -> TorchIntDType | None:
+        if v == "int4":
+            return TorchIntDType.int4
+        if v == "int8":
+            return TorchIntDType.int8

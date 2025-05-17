@@ -16,6 +16,7 @@ from torchao.quantization.qat import (
 from torchao.quantization.quant_api import (
     Int4DynamicActivationInt4WeightConfig,
     Int4WeightOnlyConfig,
+    Int8DynamicActivationInt4WeightConfig,
     Int8DynamicActivationInt8WeightConfig,
     Int8WeightOnlyConfig,
     UIntXWeightOnlyConfig,
@@ -74,6 +75,8 @@ def get_ptq_config(
         return Int4DynamicActivationInt4WeightConfig()
     if activation_dtype == TorchIntDType.int8 and weight_dtype == TorchIntDType.int8:
         return Int8DynamicActivationInt8WeightConfig()
+    if activation_dtype == TorchIntDType.int8 and weight_dtype == TorchIntDType.int4:
+        return Int8DynamicActivationInt4WeightConfig()
     raise ValueError(
         f"Invalid activation/weight dtype combination: {activation_dtype}/{weight_dtype}"
     )

@@ -6,9 +6,11 @@ import logging
 from pathlib import Path
 from typing import Union
 
+from transformers import AutoModelForCausalLM
+
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
-from axolotl.utils.models import load_model, load_tokenizer
+from axolotl.utils.models import load_tokenizer
 from axolotl.utils.quantization import TorchIntDType, quantize_model_for_ptq
 
 LOG = logging.getLogger(__name__)
@@ -28,6 +30,7 @@ def do_quantize(
     print_axolotl_text_art()
 
     cfg = load_cfg(config)
+
     if cfg.qat:
         quantize_cfg = cfg.qat
         model_path = cfg.output_dir
@@ -56,7 +59,7 @@ def do_quantize(
 
     LOG.info(f"Loading model from {model_path}...")
     tokenizer = load_tokenizer(cfg)
-    model, _ = load_model(cfg, tokenizer)
+    model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto")
 
     LOG.info(
         f"Quantizing model with configuration: \n"
