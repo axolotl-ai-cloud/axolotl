@@ -1,5 +1,5 @@
-ARG CUDA_VERSION="11.8.0"
-ARG CUDNN_VERSION="8"
+ARG CUDA_VERSION="12.4.1"
+ARG CUDNN_VERSION=""
 ARG UBUNTU_VERSION="22.04"
 ARG MAX_JOBS=4
 
@@ -7,9 +7,9 @@ FROM nvidia/cuda:$CUDA_VERSION-cudnn$CUDNN_VERSION-devel-ubuntu$UBUNTU_VERSION A
 
 ENV PATH="/root/miniconda3/bin:${PATH}"
 
-ARG PYTHON_VERSION="3.10"
-ARG PYTORCH_VERSION="2.1.2"
-ARG CUDA="118"
+ARG PYTHON_VERSION="3.11"
+ARG PYTORCH_VERSION="2.5.1"
+ARG CUDA="124"
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
 
 ENV PYTHON_VERSION=$PYTHON_VERSION
@@ -43,7 +43,7 @@ RUN if [ "$TORCH_CUDA_ARCH_LIST" = "9.0+PTX" ] ; then \
         cd flash-attention; \
         git checkout v2.7.4.post1; \
         cd hopper; \
-        FLASH_ATTENTION_DISABLE_SM80=TRUE MAX_JOBS=16 python setup.py install; \
+        FLASH_ATTENTION_DISABLE_SM80=TRUE MAX_JOBS=${MAX_JOBS} python setup.py install; \
         cd ../..; \
     elif [ "$PYTORCH_VERSION" = "2.7.0" ] ; then \
         pip3 install flash-attn==2.7.4.post1; \
