@@ -425,6 +425,11 @@ lora_mlp_kernel: true
 lora_qkv_kernel: true
 lora_o_kernel: true
 
+# Chunked Cross Entropy
+# See: `src/axolotl/monkeypatch/loss/chunked.py`
+chunked_cross_entropy:  # Optional[bool]. Whether to use chunked cross entropy.
+chunked_cross_entropy_num_chunks:  # Optional[int] = 8. Number of chunks to use for chunked cross entropy.
+
 # LoRA+ hyperparameters
 # For more details about the following options, see:
 # https://arxiv.org/abs/2402.12354  and `src/axolotl/core/train_builder.py`
