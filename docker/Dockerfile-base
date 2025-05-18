@@ -28,7 +28,7 @@ ENV PATH="/root/miniconda3/envs/py${PYTHON_VERSION}/bin:${PATH}"
 
 WORKDIR /workspace
 
-RUN python3 -m pip install --upgrade pip && pip3 install -U packaging==23.2 setuptools==75.8.0 wheel && \
+RUN python3 -m pip install --upgrade pip && pip3 install -U packaging==23.2 setuptools==75.8.0 wheel curl && \
     python3 -m pip install --no-cache-dir -U torch==${PYTORCH_VERSION}+cu${CUDA} torchvision --extra-index-url https://download.pytorch.org/whl/cu$CUDA && \
     python3 -m pip install --no-cache-dir "causal_conv1d @ git+https://github.com/Dao-AILab/causal-conv1d.git@main" && \
     python3 -m pip install --no-cache-dir "mamba_ssm @ git+https://github.com/state-spaces/mamba.git@main"
@@ -39,9 +39,9 @@ RUN git lfs install --skip-repo && \
     pip3 install -U --no-cache-dir pydantic==1.10.10
 
 RUN if [ "$TORCH_CUDA_ARCH_LIST" = "9.0+PTX" ] ; then \
-        curl -L -O https://d1dttdx32dkk5p.cloudfront.net/fa3/cu${CUDA}/torch-${PYTORCH_VERSION}/flash_attn-3.0.0b1-cp311-cp311-linux_x86_64.whl; \
-        pip3 install --no-cache-dir flash_attn-3.0.0b1-cp311-cp311-linux_x86_64.whl; \
-        rm flash_attn-3.0.0b1-cp311-cp311-linux_x86_64.whl; \
+        curl -L -O https://d1dttdx32dkk5p.cloudfront.net/fa3/cu${CUDA}/torch-${PYTORCH_VERSION}/flash_attn_interface-3.0.0b1-cp311-cp311-linux_x86_64.whl; \
+        pip3 install --no-cache-dir flash_attn_interface-3.0.0b1-cp311-cp311-linux_x86_64.whl; \
+        rm flash_attn_interface-3.0.0b1-cp311-cp311-linux_x86_64.whl; \
     elif [ "$PYTORCH_VERSION" = "2.7.0" ] ; then \
         pip3 install flash-attn==2.7.4.post1; \
     fi
