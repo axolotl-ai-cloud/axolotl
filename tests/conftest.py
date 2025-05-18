@@ -458,6 +458,7 @@ def cleanup_monkeypatches():
         ("transformers.trainer",),
         ("transformers", ["Trainer"]),
         ("transformers.loss.loss_utils",),
+        ("transformers.modeling_flash_attention_utils",),
     ]
     for module_name_tuple in modules_to_reset:
         module_name = module_name_tuple[0]

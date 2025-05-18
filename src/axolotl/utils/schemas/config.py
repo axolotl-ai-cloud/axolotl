@@ -233,6 +233,7 @@ class AxolotlInputConfig(
     flash_attn_fuse_qkv: bool | None = None
     flash_attn_fuse_mlp: bool | None = None
     flash_optimum: bool | None = None
+    use_flash_attention_3: Literal["auto"] | bool | None = "auto"
 
     eager_attention: bool | None = None
 
