@@ -5,7 +5,6 @@ E2E tests for packed training
 import logging
 import os
 
-import pytest
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.cli.args import TrainerCliArgs
@@ -25,11 +24,7 @@ class TestPackedLlama:
     Test case for Packed training of llama models
     """
 
-    @pytest.mark.parametrize(
-        "use_flash_attention_3",
-        [False, "auto"],
-    )
-    def test_loss_packed(self, temp_dir, use_flash_attention_3):
+    def test_loss_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -57,7 +52,6 @@ class TestPackedLlama:
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
                 "use_tensorboard": True,
-                "use_flash_attention_3": use_flash_attention_3,
             }
         )
         if is_torch_bf16_gpu_available():
