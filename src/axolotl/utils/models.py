@@ -644,10 +644,16 @@ class ModelLoader:
 
                 def flash_attn_func_v3_wrapper(*args, **kwargs):
                     kwargs.pop("dropout_p", None)
+                    if "softmax_scale" in kwargs and len(args) >= 4:
+                        # if softmax_scale is provided, then the 3rd position is dropout_p that we need to drop
+                        args = (*args[:3],) + args[4:]
                     return flash_attn_func_v3(*args, **kwargs)[0]
 
                 def flash_attn_varlen_func_v3_wrapper(*args, **kwargs):
                     kwargs.pop("dropout_p", None)
+                    if "softmax_scale" in kwargs and len(args) >= 4:
+                        # if softmax_scale is provided, then the 3rd position is dropout_p that we need to drop
+                        args = (*args[:3],) + args[4:]
                     return flash_attn_varlen_func_v3(*args, **kwargs)[0]
 
                 transformers.modeling_flash_attention_utils.flash_attn_func = (
