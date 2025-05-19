@@ -150,11 +150,20 @@ def update_ring_attn_params(position_ids: torch.Tensor | None):
 
 
 def patch_prepare_data_loader():
-    """Patch `accelerate.data_loader.prepare_data_loader` to respect the SP degree."""
-    # Get the current function source code
-    original_source = inspect.getsource(accelerate.data_loader.prepare_data_loader)
+    """Patch `accelerate.data_loader.prepare_data_loader` to respect the SP degree.
 
-    # Create the patched source code
+    Raies:
+        RuntimeError: If source code to patch does not exist.
+    """
+    original_fn = accelerate.data_loader.prepare_data_loader
+    original_source = inspect.getsource(original_fn)
+
+    if ORIGINAL_PREPARE_DATALOADER_CODE not in original_source:
+        raise RuntimeError(
+            "SP patch failed - target snippet not found. "
+            "Check accelerate's version or update the patch."
+        )
+
     patched_source = original_source.replace(
         ORIGINAL_PREPARE_DATALOADER_CODE, NEW_PREPARE_DATALOADER_CODE
     )
@@ -166,9 +175,8 @@ def patch_prepare_data_loader():
     )
     patched_function = namespace["prepare_data_loader"]
 
-    # Replace the original function with the patched one
     accelerate.data_loader.prepare_data_loader = patched_function
-    print("Successfully patched accelerate.data_loader.prepare_data_loader")
+    LOG.info("Patched accelerate.data_loader.prepare_data_loader for SP support")
 
 
 def patch_prepare_device_mesh(sequence_parallel_degree: int):
@@ -208,7 +216,7 @@ def patch_prepare_device_mesh(sequence_parallel_degree: int):
     # pylint: disable=protected-access
     accelerate.accelerator.Accelerator._prepare_device_mesh = _prepare_device_mesh
 
-    print(
+    LOG.info(
         "Successfully patched Accelerator._prepare_device_mesh "
         f"with sequence_parallel_degree={sequence_parallel_degree}"
     )

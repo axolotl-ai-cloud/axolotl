@@ -94,10 +94,13 @@ Your Axolotl YAML config should contain the following lines:
 
 ```{.yaml}
 sequence_parallel_degree: 4  # Split each sequence into 4 parts, one per GPU
-flash_attention: true  # Required with sequence parallelism
 
 # Optional; strides across the key dimension. Larger values use more memory but will make training faster.
 heads_k_stride: 1
+
+# Optional; one of "varlen_llama3" or "batch_ring". Defaults to
+# "varlen_llama3" when `sample_packing: true`, and "batch_ring" otherwise.
+ring_attn_func:
 ```
 
 See our [dedicated guide](sequence_parallelism.qmd) for more details.

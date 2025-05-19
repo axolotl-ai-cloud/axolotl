@@ -212,19 +212,20 @@ class SequenceParallelContextManager:
                 inspect.signature(self.models[0].forward).parameters.keys()
             )
 
-            # Map args to their parameter names
             updated_kwargs = kwargs.copy()
             for i, arg in enumerate(args):
                 if i < len(forward_params):
-                    param_name = forward_params[i]
-                    updated_kwargs[param_name] = arg
+                    updated_kwargs[forward_params[i]] = arg
+
+            # Any excess positional arguments are kept as-is
+            remaining_args = args[len(forward_params) :]
 
             # Apply sequence parallelism to updated kwargs
             updated_kwargs, self.original_seq_len, self.pad_len = (
                 self.apply_sequence_parallelism(updated_kwargs)
             )
 
-            return (), updated_kwargs
+            return remaining_args, updated_kwargs
 
         # Forward post-hook to gather outputs
         def sequence_parallel_post_hook(_, __, output: ModelOutput) -> ModelOutput:

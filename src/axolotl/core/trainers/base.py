@@ -115,8 +115,8 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
 
     def _get_train_sampler(self) -> Sampler | None:
         """
-        Helper method to get the sampler for training. Handles cases for sequence
-        parallelism, sample packing, and curriculum sampling (sequential).
+        Helper method to get the sampler for training. Handles cases for sample packing
+        and curriculum sampling (sequential).
 
         Returns:
             If the dataset is non-empty, a sampler is returned, the type of which
@@ -144,8 +144,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
 
     def _get_eval_sampler(self, eval_dataset: Dataset | None = None) -> Sampler | None:
         """
-        Helper method to get the sampler for evaluation. Handles sequence parallelism
-        and sample packing cases.
+        Helper method to get the sampler for evaluation. Handles sample packing case.
 
         Returns:
             If the dataset is non-empty, a sampler is returned, the type of which
@@ -268,7 +267,6 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
 
             return dataloader
 
-        # Handle sample packing or sequence parallelism
         if self.args.sample_packing and self.args.eval_sample_packing is not False:
             # Get appropriate data collator
             self.data_collator = (  # pylint: disable=attribute-defined-outside-init
