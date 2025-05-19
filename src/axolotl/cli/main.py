@@ -2,7 +2,6 @@
 
 # pylint: disable=redefined-outer-name
 
-from axolotl.utils.logging import get_logger
 import os
 import subprocess  # nosec B404
 import tempfile
@@ -30,7 +29,10 @@ from axolotl.cli.utils import (
 )
 from axolotl.integrations.lm_eval.cli import lm_eval
 from axolotl.utils import patch_optimized_env
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.config import AxolotlInputConfig
+
+LOG = get_logger(__name__)
 
 
 @click.group()
@@ -176,7 +178,7 @@ def train(
 
                     do_cli(config=cfg_file, **kwargs)
         except subprocess.CalledProcessError as exc:
-            logging.error(f"Failed to train/fine-tune config '{cfg_file}': {exc}")
+            LOG.error(f"Failed to train/fine-tune config '{cfg_file}': {exc}")
             if not sweep:
                 raise exc
 

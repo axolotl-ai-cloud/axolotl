@@ -2,7 +2,6 @@
 Bradley-Terry model with chat template prompt strategy.
 """
 
-from axolotl.utils.logging import get_logger
 from typing import Any, Dict, Optional
 
 from axolotl.prompt_strategies.chat_template import (
@@ -10,10 +9,11 @@ from axolotl.prompt_strategies.chat_template import (
     ChatTemplateStrategy,
 )
 from axolotl.utils.chat_templates import get_chat_template_from_config
+from axolotl.utils.logging import get_logger
 
 # Configure the logger
 LOG = get_logger(__name__)
-LOG.setLevel(logging.INFO)
+LOG.setLevel("INFO")
 
 
 class BTChatTemplateStrategy(ChatTemplateStrategy):

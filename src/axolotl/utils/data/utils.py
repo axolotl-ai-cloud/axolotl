@@ -162,7 +162,6 @@ def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
     if "input_ids" not in dataset.column_names:
         LOG.warning(
             "Dataset does not contain 'input_ids' column. Skip drop long seq. This is expected for RewardModeling.",
-            main_process_only=True,
         )
         return dataset
 
@@ -177,12 +176,10 @@ def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
         min_input_len = np.min(ds_lengths)
         LOG.info(
             f"min_input_len: {min_input_len}",
-            main_process_only=True,
         )
         max_input_len = np.max(ds_lengths)
         LOG.info(
             f"max_input_len: {max_input_len}",
-            main_process_only=True,
         )
     except AttributeError:
         pass
@@ -213,7 +210,6 @@ def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
         if dropped:
             LOG.warning(
                 f"Dropped {dropped} long samples from dataset",
-                main_process_only=True,
             )
 
     return dataset

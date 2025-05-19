@@ -17,13 +17,15 @@ Spectrum Plugin to automatically generate unfrozen parameters based on SNR data.
 """
 
 import json
-from axolotl.utils.logging import get_logger
 
 import requests
 
 from axolotl.integrations.base import BasePlugin
+from axolotl.utils.logging import get_logger
 
 from .args import SpectrumArgs  # pylint: disable=unused-import. # noqa: F401
+
+LOG = get_logger(__name__)
 
 
 def _generate_unfrozen_params_yaml(snr_data, top_fraction=0.5):
@@ -83,17 +85,17 @@ class SpectrumPlugin(BasePlugin):
         except FileNotFoundError:
             pass
         except Exception as exc:  # pylint: disable=broad-exception-caught
-            logging.warning(f"Failed to read SNR data from {snr_path}: {exc}")
+            LOG.warning(f"Failed to read SNR data from {snr_path}: {exc}")
 
         if not snr_data:
             try:
                 snr_data = requests.get(snr_url, timeout=60).json()
             except requests.exceptions.RequestException as exc:
-                logging.warning(f"Failed to fetch SNR data from {snr_url}: {exc}")
+                LOG.warning(f"Failed to fetch SNR data from {snr_url}: {exc}")
                 return
             # also catch json parsing errors
             except json.JSONDecodeError as exc:
-                logging.warning(f"Failed to parse SNR data from {snr_url}: {exc}")
+                LOG.warning(f"Failed to parse SNR data from {snr_url}: {exc}")
                 return
 
         unfrozen_parameters = _generate_unfrozen_params_yaml(

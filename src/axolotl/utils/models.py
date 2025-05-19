@@ -140,7 +140,6 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
             cfg.image_size = model_config.vision_config.image_size
             LOG.debug(
                 f"Loaded image size: {cfg.image_size} from model config",
-                main_process_only=True,
             )
 
     quant_config_exists = (
@@ -159,7 +158,6 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
             LOG.warning(
                 "Found `config_groups` in a compressed-tensors config. "
                 "QAT integration with llmcompressor is not tested.",
-                main_process_only=True,
             )
         # Skip further quant checks for compressed-tensors
         return
@@ -527,7 +525,6 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
 
         LOG.debug(
             f"Loaded image size: {cfg.image_size} from processor",
-            main_process_only=True,
         )
 
     return processor
@@ -771,7 +768,6 @@ class ModelLoader:
                 if self.cfg.device not in ["mps", "cpu"] and not self.inference:
                     LOG.info(
                         "patching with flash attention for sample packing",
-                        main_process_only=True,
                     )
                     replace_llama_attn_with_flash_attn(
                         packed=True,
@@ -781,7 +777,6 @@ class ModelLoader:
             elif self.cfg.s2_attention:
                 LOG.info(
                     "patching w/ flash-enabled, shifted-sparse attention",
-                    main_process_only=True,
                 )
                 replace_llama_attn_with_flash_attn(
                     packed=False,
@@ -809,7 +804,6 @@ class ModelLoader:
 
             LOG.info(
                 "patching llama _prepare_4d_causal_attention_mask*",
-                main_process_only=True,
             )
             hijack_llama_prepare_4d_mask()
         elif self.cfg.s2_attention:
@@ -893,7 +887,6 @@ class ModelLoader:
             if not hasattr(self.model_config, "quantization_config"):
                 LOG.warning(
                     "model config does not contain quantization_config information",
-                    main_process_only=True,
                 )
             else:
                 if self.cfg.gptq_disable_exllama is not None:
@@ -1183,7 +1176,6 @@ class ModelLoader:
         ):
             LOG.warning(
                 f"increasing model.config.max_position_embeddings from {self.model.config.max_position_embeddings} to {self.cfg.sequence_len}",
-                main_process_only=True,
             )
             self.model.config.max_position_embeddings = self.cfg.sequence_len
 
@@ -1249,7 +1241,6 @@ class ModelLoader:
         ):
             LOG.info(
                 "converting PEFT model w/ prepare_model_for_kbit_training",
-                main_process_only=True,
             )
             self.model = prepare_model_for_kbit_training(
                 self.model, use_gradient_checkpointing=self.cfg.gradient_checkpointing
@@ -1382,7 +1373,9 @@ class ModelLoader:
                 (needs_fa2_dtype or self.cfg.flash_attention or self.cfg.flex_attention)
                 and not qlora_fsdp
             )
-            or self.cfg.cut_cross_entropy  # Cut cross entropy requires embedding layers to be in fp16/bf16 for backward pass
+            or
+            # Cut cross entropy requires embedding layers to be in fp16/bf16 for backward pass
+            self.cfg.cut_cross_entropy
         )
 
         if should_convert:
@@ -1443,7 +1436,6 @@ class ModelLoader:
         if len(requires_grad) == 0:
             LOG.warning(
                 "there are no parameters that require gradient updates",
-                main_process_only=True,
             )
 
         if self.cfg.flash_optimum:
@@ -1587,7 +1579,6 @@ def load_lora(model, cfg, inference=False, config_only=False):
         linear_names = find_all_linear_names(model)
         LOG.info(
             f"found linear modules: {repr(sorted(linear_names))}",
-            main_process_only=True,
         )
         lora_target_modules_as_list = (
             lora_target_modules
@@ -1607,7 +1598,6 @@ def load_lora(model, cfg, inference=False, config_only=False):
         lora_config_kwargs["use_dora"] = cfg.peft_use_dora
         LOG.info(
             "Initializing LoRA weights using dora. This might take longer.",
-            main_process_only=True,
         )
     if cfg.peft_use_rslora:
         lora_config_kwargs["use_rslora"] = cfg.peft_use_rslora
@@ -1663,7 +1653,6 @@ def load_lora(model, cfg, inference=False, config_only=False):
             LOG.warning(
                 "Exception caught during model.print_trainable_parameters(): %s",
                 exc,
-                main_process_only=True,
             )
     elif (
         cfg.fsdp

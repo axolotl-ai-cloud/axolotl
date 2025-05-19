@@ -1,16 +1,23 @@
-"""
-tests for chat_template prompt strategy
-"""
+"""Module for testing chat message internals."""
 
-# pylint: disable=duplicate-code
-import logging
+import os
 import unittest
 
+from transformers import AutoTokenizer
+
+from axolotl.core.chat.messages import (
+    ChatFormattedChats,
+    Chats,
+    MessageContents,
+    MessageContentTypes,
+    MessageRoles,
+    Messages,
+)
 from axolotl.prompt_strategies.messages.chat import load
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
-logging.basicConfig(level=logging.DEBUG)
-LOG = logging.getLogger("axolotl")
+LOG = get_logger("axolotl")
 
 
 class TestMessagesChatLlama3:

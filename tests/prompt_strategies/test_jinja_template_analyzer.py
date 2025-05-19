@@ -1,15 +1,16 @@
-"""
-tests for jinja_template_analyzer
-"""
+"""Module for testing jinja template analyzer."""
 
-import logging
+import os
 
 import pytest
 
-from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnalyzer
+from axolotl.prompt_strategies.jinja_template_analyzer import (
+    PromptComponentStatus,
+    PromptTemplateAnalyzer,
+)
+from axolotl.utils.logging import get_logger
 
-logging.basicConfig(level=logging.DEBUG)
-LOG = logging.getLogger("axolotl")
+LOG = get_logger("axolotl")
 
 
 class TestJinjaTemplateAnalyzer:
@@ -80,7 +81,7 @@ class TestJinjaTemplateAnalyzer:
         LOG.info("Testing nested property access")
 
         template = """{{ user.profile.name }}{{ user.settings['preference'] }}"""
-        analyzer = JinjaTemplateAnalyzer(template)
+        analyzer = PromptTemplateAnalyzer(template)
         variables = analyzer.get_template_variables()
 
         assert "user" in variables
@@ -99,7 +100,7 @@ class TestJinjaTemplateAnalyzer:
             {% endfor %}
         {% endfor %}
         """
-        analyzer = JinjaTemplateAnalyzer(template)
+        analyzer = PromptTemplateAnalyzer(template)
         analysis = analyzer.analyze_template()
 
         assert analysis["items"]["is_iterated"]
@@ -115,7 +116,7 @@ class TestJinjaTemplateAnalyzer:
             {{ debug_info }}
         {% endif %}
         """
-        analyzer = JinjaTemplateAnalyzer(template)
+        analyzer = PromptTemplateAnalyzer(template)
         analysis = analyzer.analyze_template()
 
         assert analysis["user"]["is_conditional"]
@@ -132,7 +133,7 @@ class TestJinjaTemplateAnalyzer:
         {{ messages | length > 0 and messages[0].content }}
         {{ data['key'].nested['value'] }}
         """
-        analyzer = JinjaTemplateAnalyzer(template)
+        analyzer = PromptTemplateAnalyzer(template)
         variables = analyzer.get_template_variables()
 
         assert "user" in variables

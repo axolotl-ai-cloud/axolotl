@@ -2,8 +2,8 @@
 Multipack Batch Sampler - An efficient batch sampler for packing variable-length sequences
 into fixed-capacity batches to optimize memory usage and training throughput.
 """
+
 import logging
-from axolotl.utils.logging import get_logger
 import math
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import cpu_count, get_context
@@ -14,8 +14,10 @@ import numpy as np
 from torch.utils.data import BatchSampler, Sampler, SequentialSampler
 
 from axolotl.utils.distributed import reduce_and_broadcast
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+LOG.setLevel(logging.INFO)
 
 
 @numba.njit
@@ -77,11 +79,15 @@ def pack_group(
     Returns:
         List of bins, where each bin contains indices of sequences assigned to it
     """
+    # Get sorting indices and sort lengths in descending order
+    indices = np.argsort(sequence_lengths)[::-1]
+    sorted_lengths = sequence_lengths[indices]
+
     bins_remaining_space: list = []  # Tracks remaining capacity in each bin
     bins_assigned_sequences: list = []  # Tracks sequence indices assigned to each bin
 
-    for seq_id, size in enumerate(sequence_lengths):
-        global_idx = seq_id + group_offset
+    for seq_id, size in enumerate(sorted_lengths):
+        global_idx = indices[seq_id] + group_offset
 
         # Try to place sequence in existing bins
         add_new_bin = True
@@ -125,7 +131,6 @@ def pack_parallel(
     bin_size: int,
     num_processes: int | None = None,
     safe_mode: bool = True,
-    mp_start_method: str | None = "spawn",
 ):
     """
     Pack sequences into bins using parallel processing
@@ -137,9 +142,7 @@ def pack_parallel(
         bin_size: Maximum number of bins to use
         num_processes: Number of parallel processes to use
         safe_mode: If True, use a more conservative packing approach
-        mp_start_method: Multiprocessing start method ('fork', 'spawn', 'forkserver').
-                         'spawn' is often safer with Numba/PyTorch.
-                         Set to None to use system default.
+
     Returns:
         List of bins, where each bin contains indices of sequences assigned to it
     """
@@ -154,34 +157,11 @@ def pack_parallel(
         max_bins = len(group_lengths)  # Allow as many bins as items in the group
         tasks.append((group_lengths, i, bin_capacity, max_bins, bin_size, safe_mode))
 
-        while right - left > 1:
-            mid = (left + right) // 2
-            if ffd_check(lengths[start_index: start_index + mid], c, n):
-                left = mid
-            else:
-                right = mid
-
-        # use length l
-        batch = ffd_with_result(
-            lengths[start_index: start_index + left], c, start_index
-        )
-        assert len(batch) <= n
-        if len(batch) < n:
-            break
-
-    if num_processes == 1:
-        LOG.debug("Using single process for pack_parallel, running sequentially.")
-        for task_args in tasks:
-            group_bins = _process_group(task_args)
+    # Process groups in parallel
+    all_bins = []
+    with ProcessPoolExecutor(max_workers=num_processes) as executor:
+        for group_bins in executor.map(_process_group, tasks):
             all_bins.extend(group_bins)
-    else:
-        # Use ProcessPoolExecutor only if num_processes > 1
-        # Pass mp_context if available
-        with ProcessPoolExecutor(
-            max_workers=num_processes, mp_context=mp_ctx
-        ) as executor:
-            for group_bins in executor.map(_process_group, tasks):
-                all_bins.extend(group_bins)
 
     return all_bins
 
@@ -315,12 +295,9 @@ class MultipackBatchSampler(BatchSampler):
         if self._batches is not None:
             return self._batches
 
-        batches = [
-            [
-                [indices[b_idx] for b_idx in batch]
-                for batch in batches[i: i + self.batch_size]
-            ]
-            for i in range(0, len(batches), self.batch_size)
+        # Get indices from the sampler
+        indices = [  # pylint: disable=unnecessary-comprehension
+            idx for idx in self.sampler
         ]
 
         # Get lengths of the selected sequences

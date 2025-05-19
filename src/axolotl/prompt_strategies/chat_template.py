@@ -2,7 +2,6 @@
 HF Chat Templates prompt strategy
 """
 
-from axolotl.utils.logging import get_logger
 from collections import defaultdict
 from typing import Any, Dict, List, Set, Union
 
@@ -13,11 +12,12 @@ from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnaly
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import get_chat_template_from_config
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import DatasetConfig
 
 # Configure the logger
 LOG = get_logger(__name__)
-LOG.setLevel(logging.INFO)
+LOG.setLevel("INFO")
 
 
 class ChatTemplatePrompter(Prompter):
@@ -179,8 +179,8 @@ class ChatTemplatePrompter(Prompter):
                 -1,
             )
             if (
-                end_token < len(token_offsets) - 1 and
-                token_offsets[end_token + 1][0] < end_offset
+                end_token < len(token_offsets) - 1
+                and token_offsets[end_token + 1][0] < end_offset
             ):
                 end_token += 1
 
@@ -277,8 +277,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             # Check if the eos_token is in the chat_template or as a variable `eos_token`
             # Note: we check for `eos_token` in the string, but it could possibly not be a variable
             if (
-                self.tokenizer.eos_token not in self.prompter.chat_template and
-                "eos_token" not in self.prompter.chat_template
+                self.tokenizer.eos_token not in self.prompter.chat_template
+                and "eos_token" not in self.prompter.chat_template
             ):
                 LOG.warning(
                     f"EOS token '{self.tokenizer.eos_token}' not found in chat_template. Please check if your template/EOS token is correct."
@@ -314,8 +314,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         # If eos_token is in eot_tokens and conflict between train_on_eos and train_on_eot, raise an error
         if (
-            self.tokenizer.eos_token in self.eot_tokens and
-            self.train_on_eos != self.train_on_eot
+            self.tokenizer.eos_token in self.eot_tokens
+            and self.train_on_eos != self.train_on_eot
         ):
             raise ValueError(
                 "Conflict between train_on_eos and train_on_eot. eos_token is in eot_tokens and train_on_eos != train_on_eot"
@@ -365,11 +365,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
     def _tokenize_single_prompt(self, prompt: dict) -> Dict[str, List[int]]:
         # Old simple legacy behavior that works reliably.
         if (
-            not self.roles_to_train and
-            not self.train_on_eos and
-            not self.train_on_eot and
-            not self.prompter.message_field_training and  # type: ignore
-            not self.prompter.message_field_training_detail  # type: ignore
+            not self.roles_to_train
+            and not self.train_on_eos
+            and not self.train_on_eot
+            and not self.prompter.message_field_training  # type: ignore
+            and not self.prompter.message_field_training_detail  # type: ignore
         ):
             turns = self.get_conversation_thread(prompt)
             images = self.get_images(prompt)
@@ -379,10 +379,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 images=images,
             )
             tokenized_res = self.prompter.build_prompt(
-                turns, images=images)  # type: ignore
+                turns, images=images
+            )  # type: ignore
             tokenized_prompt = {}
             if isinstance(tokenized_res, list):
-                input_ids = prompt_ids + tokenized_res[len(prompt_ids):]
+                input_ids = prompt_ids + tokenized_res[len(prompt_ids) :]
                 tokenized_prompt["input_ids"] = input_ids
                 tokenized_prompt["attention_mask"] = [1] * len(input_ids)
             else:
@@ -538,10 +539,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         # mistral/gemma3 does not output message if it contains only system message
         if (
-            turn_idx == 0 and
-            turns[0].get("role") == "system" and
-            (
-                "mistral" in self.tokenizer.name_or_path.lower() or
+            turn_idx == 0
+            and turns[0].get("role") == "system"
+            and (
+                "mistral" in self.tokenizer.name_or_path.lower()
+                or
                 # gemma3 uses gemma tokenizer
                 "gemma" in self.tokenizer.name_or_path.lower()
             )
@@ -618,8 +620,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             prompt[self.prompter.field_messages][0]
         )
         if (
-            possible_sys_turn["role"] != "system" and
-            self.prompter.field_system in prompt
+            possible_sys_turn["role"] != "system"
+            and self.prompter.field_system in prompt
         ):
             turn = {"role": "system", "content": prompt[self.prompter.field_system]}
             turns.append(turn)
@@ -677,12 +679,12 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                     t_end_idx = content.find(tpair[1])
 
                     # get the thinking content
-                    thinking_content = content[t_start_idx + len(tpair[0]): t_end_idx]
+                    thinking_content = content[t_start_idx + len(tpair[0]) : t_end_idx]
                     transformed_message["reasoning_content"] = thinking_content.strip()
 
                     # take remainder of the content
                     # strip whitespace from beginning of the remainder (thinking tokens)
-                    remainder = content[t_end_idx + len(tpair[1]):].lstrip()
+                    remainder = content[t_end_idx + len(tpair[1]) :].lstrip()
 
                     # check if the content pair is in the remainder
                     cpair_found = False
@@ -694,7 +696,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
                             # get the content content
                             content_content = remainder[
-                                c_start_idx + len(cpair[0]): c_end_idx
+                                c_start_idx + len(cpair[0]) : c_end_idx
                             ]
                             transformed_message["content"] = content_content.strip()
                             cpair_found = True

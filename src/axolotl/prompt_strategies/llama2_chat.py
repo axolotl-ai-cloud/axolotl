@@ -24,12 +24,14 @@ For a custom system message, the first "from" can be "system" (followed by alter
 Important: Don't use "special_tokens:" in your config.yml if you are not sure what you are doing!
 """
 
-from axolotl.utils.logging import get_logger
 from dataclasses import dataclass, field
 from typing import Generator, List, Sequence
 
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.prompters import ALTERNATING_ASSERTION_FAILED_ROLE, IGNORE_TOKEN_ID
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 @dataclass
@@ -121,7 +123,7 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
             instruction_len = len(self.tokenizer(parts[0]).input_ids) - 1
 
             # Ignore the user instructions
-            target[cur_len - 1: cur_len + instruction_len] = IGNORE_TOKEN_ID
+            target[cur_len - 1 : cur_len + instruction_len] = IGNORE_TOKEN_ID
             cur_len += turn_len + 2  # due to length of role token
 
         target[cur_len:] = IGNORE_TOKEN_ID
@@ -129,7 +131,7 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
         if cur_len < self.sequence_len:
             if cur_len != total_len:
                 target[:] = IGNORE_TOKEN_ID
-                logging.warning(
+                LOG.warning(
                     f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
                     f" (ignored)"
                 )

@@ -19,11 +19,11 @@ Liger Kernel is the collection of Triton-native kernels for LLM Training.
 It is designed to be performant, correct, and light-weight.
 """
 import inspect
-from axolotl.utils.logging import get_logger
 import sys
 
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils.distributed import is_main_process
+from axolotl.utils.logging import get_logger
 
 from .args import LigerArgs  # pylint: disable=unused-import. # noqa: F401
 from .utils import patch_with_compile_disable
@@ -124,9 +124,9 @@ class LigerPlugin(BasePlugin):
             if cfg.liger_rope:
                 # The DeepseekV2 version of RoPE is different than upstream LLaMA.
                 # See https://github.com/linkedin/Liger-Kernel/issues/129#issuecomment-2313763528
-                logging.warning("Fused liger_rope is not supported for DeepseekV2.")
+                LOG.warning("Fused liger_rope is not supported for DeepseekV2.")
             if cfg.liger_glu_activation:
-                logging.warning("liger_glu_activation is not supported for DeepseekV2.")
+                LOG.warning("liger_glu_activation is not supported for DeepseekV2.")
             if cfg.liger_rms_norm:
                 modeling_mod.DeepseekV2RMSNorm = LigerRMSNorm
             if cfg.liger_glu_activation:
@@ -176,6 +176,6 @@ class LigerPlugin(BasePlugin):
                 layer_norm=cfg.liger_layer_norm,
             )
         else:
-            logging.warning(
+            LOG.warning(
                 f"Unsupported model config type: {cfg.model_config_type}. Liger not applied."
             )

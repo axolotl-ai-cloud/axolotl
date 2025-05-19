@@ -80,10 +80,11 @@ def is_main_process(use_environ=False):
     Returns:
     - bool: `True` if the current process is the main process, `False` otherwise.
     """
-    if use_environ:
-        return os.environ.get("LOCAL_RANK", "0") == "0"
     if not is_distributed():
         return True
+    if use_environ:
+        return os.environ.get("LOCAL_RANK", "0") == "0"
+
     return dist.get_rank() == 0
 
 

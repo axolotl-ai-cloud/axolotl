@@ -1,26 +1,21 @@
-"""Module for testing prompt tokenizers."""
+"""Testing for prompt_tokenizers.py"""
 
-import json
-import logging
-from pathlib import Path
+import unittest
 
-from axolotl.prompt_strategies.alpaca_chat import NoSystemPrompter
-from axolotl.prompt_strategies.alpaca_w_system import (
-    InstructionWSystemPromptTokenizingStrategy,
-    SystemDataPrompter,
+import pytest
+from transformers import AutoTokenizer
+
+from axolotl.prompt_strategies.alpaca import AlpacaPrompter
+from axolotl.prompt_tokenizers import (
+    AlpacaPromptTokenizingStrategy,
+    InstructionPromptTokenizingStrategy,
+    PromptTokenizingStrategy,
+    ShareGPTPromptTokenizingStrategy,
 )
-from axolotl.prompt_strategies.llama2_chat import (
-    Llama2ChatPrompter,
-    LLama2ChatTokenizingStrategy,
-)
-from axolotl.prompt_strategies.orpo.chat_template import load
-from axolotl.prompt_tokenizers import AlpacaPromptTokenizingStrategy
-from axolotl.prompters import AlpacaPrompter, PromptStyle
-from axolotl.utils.dict import DictDefault
+from axolotl.prompters import AlpacaInstructionPrompter, PromptStyle, ShareGPTPrompter
+from axolotl.utils.logging import get_logger
 
-from tests.hf_offline_utils import enable_hf_offline
-
-LOG = logging.getLogger("axolotl")
+LOG = get_logger("axolotl")
 
 test_data = {
     "multi_turn_sys": {
@@ -61,7 +56,7 @@ class TestPromptTokenizationStrategies:
     Test class for prompt tokenization strategies.
     """
 
-    @enable_hf_offline
+    @pytest.mark.enable_hf_offline
     def test_no_sys_prompt(self, tokenizer_huggyllama_w_special_tokens):
         """
         tests the interface between the user and assistant parts
@@ -83,7 +78,7 @@ class TestPromptTokenizationStrategies:
         assert example["labels"][world_idx] == 3186
         assert example["labels"][world_idx - 1] == -100
 
-    @enable_hf_offline
+    @pytest.mark.enable_hf_offline
     def test_alpaca(self, tokenizer_huggyllama_w_special_tokens):
         """
         tests the interface between the user and assistant parts
@@ -108,7 +103,7 @@ class TestInstructionWSystemPromptTokenizingStrategy:
     Test class for prompt tokenization strategies with sys prompt from the dataset
     """
 
-    @enable_hf_offline
+    @pytest.mark.enable_hf_offline
     def test_system_alpaca(self, tokenizer_huggyllama_w_special_tokens):
         prompter = SystemDataPrompter(PromptStyle.CHAT.value)
         strat = InstructionWSystemPromptTokenizingStrategy(
@@ -139,7 +134,7 @@ class Llama2ChatTokenizationTest:
     Test class for prompt tokenization strategies with sys prompt from the dataset
     """
 
-    @enable_hf_offline
+    @pytest.mark.enable_hf_offline
     def test_llama2_chat_integration(self, tokenizer_llama2_7b):
         with open(
             Path(__file__).parent / "fixtures/conversation.json", encoding="utf-8"
@@ -213,7 +208,7 @@ If a question does not make any sense, or is not factually coherent, explain why
 class OrpoTokenizationTest:
     """test case for the ORPO tokenization"""
 
-    @enable_hf_offline
+    @pytest.mark.enable_hf_offline
     def test_orpo_integration(
         self,
         tokenizer_mistral_7b_instruct_chatml,

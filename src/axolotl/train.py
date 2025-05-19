@@ -2,7 +2,6 @@
 
 import importlib
 import inspect
-import logging
 import os
 import signal
 import sys
@@ -42,7 +41,7 @@ try:
 except ImportError:
     BetterTransformer = None
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def setup_model_and_tokenizer(

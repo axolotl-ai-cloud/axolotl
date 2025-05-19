@@ -392,9 +392,9 @@ def process_pretraining_datasets_for_packing(
 
 def calculate_total_num_steps(cfg, train_dataset, update=True):
     if (
-        not cfg.total_num_tokens and
-        not cfg.skip_prepare_dataset and
-        not cfg.reward_model
+        not cfg.total_num_tokens
+        and not cfg.skip_prepare_dataset
+        and not cfg.reward_model
     ):
         total_num_tokens = np.sum(
             train_dataset.select_columns("input_ids")
@@ -402,17 +402,19 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             .apply(len)
             .values
         )
-        LOG.debug(f"total_num_tokens: {total_num_tokens:_}", main_process_only=True)
+        LOG.debug(
+            f"total_num_tokens: {total_num_tokens:_}",
+        )
         if update:
             cfg.total_num_tokens = total_num_tokens
 
     skip_estimates = cfg.model_config_type == "mamba"
 
     if (
-        not skip_estimates and
-        not cfg.total_supervised_tokens and
-        not cfg.skip_prepare_dataset and
-        not cfg.reward_model
+        not skip_estimates
+        and not cfg.total_supervised_tokens
+        and not cfg.skip_prepare_dataset
+        and not cfg.reward_model
     ):
         total_supervised_tokens = (
             train_dataset.data.column("labels")
@@ -422,7 +424,6 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         )
         LOG.debug(
             f"`total_supervised_tokens: {total_supervised_tokens:_}`",
-            main_process_only=True,
         )
         if update:
             cfg.total_supervised_tokens = total_supervised_tokens
@@ -436,20 +437,19 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 # match count to len est in dataloader
                 int(
                     math.floor(
-                        0.99 *
-                        cfg.total_num_tokens /
-                        cfg.sample_packing_eff_est /
-                        cfg.sequence_len //
-                        cfg.batch_size
-                    ) -
-                    1
-                ) *
-                cfg.num_epochs *
-                cfg.sequence_parallel_degree
+                        0.99
+                        * cfg.total_num_tokens
+                        / cfg.sample_packing_eff_est
+                        / cfg.sequence_len
+                        // cfg.batch_size
+                    )
+                    - 1
+                )
+                * cfg.num_epochs
+                * cfg.sequence_parallel_degree
             )
             LOG.debug(
                 f"total_num_tokens: {cfg.total_num_tokens:_}, total_num_steps: {total_num_steps:_}",
-                main_process_only=True,
             )
         else:
             if cfg.flash_attention and not cfg.multipack_real_batches:
@@ -478,7 +478,9 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 batch_sampler=sampler,
             )
             data_loader_len = len(data_loader) * cfg.micro_batch_size // cfg.batch_size
-            LOG.debug(f"data_loader_len: {data_loader_len}", main_process_only=True)
+            LOG.debug(
+                f"data_loader_len: {data_loader_len}",
+            )
             # FIXME: is there a bug here somewhere? the total num steps depends
             # on the agreed on value for sample_packing_eff_est
             total_num_steps = int(
@@ -502,18 +504,19 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 cfg.sample_packing_eff_est = sample_packing_eff_est
             LOG.debug(
                 f"sample_packing_eff_est: {cfg.sample_packing_eff_est}",
-                main_process_only=True,
             )
     else:
         total_num_steps = int(
             math.ceil(
-                len(train_dataset) *
-                cfg.num_epochs *
-                cfg.sequence_parallel_degree /
-                cfg.batch_size
+                len(train_dataset)
+                * cfg.num_epochs
+                * cfg.sequence_parallel_degree
+                / cfg.batch_size
             )
         )
-    LOG.debug(f"total_num_steps: {total_num_steps}", main_process_only=True)
+    LOG.debug(
+        f"total_num_steps: {total_num_steps}",
+    )
     return total_num_steps
 
 
@@ -637,9 +640,9 @@ def setup_trainer(
             on the provided parameters.
     """
     if (
-        cfg.torch_compile and
-        cfg.fsdp_config and
-        str(cfg.fsdp_config.fsdp_version) == "2"
+        cfg.torch_compile
+        and cfg.fsdp_config
+        and str(cfg.fsdp_config.fsdp_version) == "2"
     ):
         patch_evaluation_loop_for_fsdp2()
     if cfg.rl:
