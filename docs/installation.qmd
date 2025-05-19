@@ -37,6 +37,36 @@ installed) in order not to clobber it, and so that we set the correct version of
 dependencies that are specific to the PyTorch version or other installed
 co-dependencies.
 
+### uv Installation {#sec-uv}
+
+Install uv if not already installed
+```{.bash}
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+```
+
+Choose your CUDA version to use with PyTorch; e.g. `cu124`, `cu126`, `cu128`,
+then create the venv and activate
+```{.bash}
+export UV_TORCH_BACKEND=cu126
+uv venv --no-project --relocatable
+source .venv/bin/activate
+```
+
+Install PyTorch
+```{.bash}
+uv pip install packaging setuptools wheel
+uv pip install torch==2.6.0
+uv pip install awscli pydantic
+```
+
+Install axolotl from PyPi
+```{.bash}
+uv pip install --no-build-isolation axolotl[deepspeed,flash-attn]
+# optionally install with vLLM if you're using torch==2.6.0 and want to train w/ GRPO
+uv pip install --no-build-isolation axolotl[deepspeed,flash-attn,vllm]
+```
+
 ### Edge/Development Build {#sec-edge-build}
 
 For the latest features between releases:
