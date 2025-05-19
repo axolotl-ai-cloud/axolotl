@@ -681,27 +681,6 @@ class ModelLoader:
 
             patch_self_attn_lora(self.cfg)
 
-        if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
-            from axolotl.monkeypatch.ring_attn import (
-                patch_prepare_data_loader,
-                patch_prepare_device_mesh,
-                register_ring_attn,
-            )
-
-            # Initialize ring attn for sequence parallelism. This must be done after
-            # model init but before the first forward pass, since it modifies flash
-            # attn to use ring comm for SP training across multiple GPUs.
-            if get_ring_attn_group() is None:  # If already set, this is already patched
-                register_ring_attn(
-                    sequence_parallel_degree=self.cfg.sequence_parallel_degree,
-                    heads_k_stride=self.cfg.heads_k_stride,
-                    ring_attn_func=self.cfg.ring_attn_func,
-                )
-                patch_prepare_data_loader()
-                patch_prepare_device_mesh(
-                    sequence_parallel_degree=self.cfg.sequence_parallel_degree
-                )
-
     def patch_attention(self) -> None:
         if hasattr(self.model_config, "model_type"):
             if self.model_config.model_type == "mllama" and self.cfg.flash_attention:
