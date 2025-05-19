@@ -32,7 +32,6 @@ Tags examples:
 - `main-base-py3.11-cu126-2.7.0`
 - `main-base-py3.11-cu124-2.6.0`
 - `main-base-py3.11-cu124-2.5.1`
-- `main-base-py3.11-cu124-2.4.1`
 
 ## Main
 
@@ -73,12 +72,10 @@ Tags examples:
 - `main-py3.11-cu126-2.7.0`
 - `main-py3.11-cu124-2.6.0`
 - `main-py3.11-cu124-2.5.1`
-- `main-py3.11-cu124-2.4.1`
 - `main-latest`
 - `main-20250303-py3.11-cu124-2.6.0`
 - `main-20250303-py3.11-cu124-2.5.1`
-- `main-20250303-py3.11-cu124-2.4.1`
-- `0.7.1`
+- `0.9.2`
 
 ## Cloud
 
