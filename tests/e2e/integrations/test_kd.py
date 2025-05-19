@@ -92,6 +92,12 @@ class TestKnowledgeDistillation:
         check_tensorboard(
             temp_dir + "/runs", "train/loss", 1.2, "Train Loss (%s) is too high"
         )
+        check_tensorboard(
+            temp_dir + "/runs", "train/loss", 0.0, "Train Loss is too low", lt=False
+        )
+        check_tensorboard(
+            temp_dir + "/runs", "train/grad_norm", 8.0, "Train grad norm is too high"
+        )
 
     @pytest.mark.parametrize(
         "load_in_8bit",
@@ -122,4 +128,10 @@ class TestKnowledgeDistillation:
         assert (Path(temp_dir) / "adapter_model.safetensors").exists()
         check_tensorboard(
             temp_dir + "/runs", "train/loss", 1.2, "Train Loss (%s) is too high"
+        )
+        check_tensorboard(
+            temp_dir + "/runs", "train/loss", 0.0, "Train Loss is too low", lt=False
+        )
+        check_tensorboard(
+            temp_dir + "/runs", "train/grad_norm", 8.0, "Train grad norm is too high"
         )
