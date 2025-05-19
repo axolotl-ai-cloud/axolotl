@@ -210,7 +210,7 @@ class AxolotlTrainingMixins:
     )
 
     kd_top_k_before_softmax: Optional[bool] = field(
-        default=None,
+        default=False,
         metadata={
             "help": "Whether to apply top_k_before_softmax to the logits when using KD"
         },
