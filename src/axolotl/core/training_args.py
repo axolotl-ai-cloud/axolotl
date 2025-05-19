@@ -227,6 +227,19 @@ class AxolotlTrainingMixins:
         },
     )
 
+    adam_beta3: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "The beta3 hyperparameter used in some optimizers such as CAME"
+        },
+    )
+    adam_epsilon2: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "The epsilon2 hyperparameter used in some optimizers such as CAME"
+        },
+    )
+
     # multi-modal section
 
     image_size: int | tuple[int, int] | None = field(

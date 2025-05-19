@@ -14,22 +14,12 @@ from cut_cross_entropy.transformers.utils import (
 )
 from torch.nn import CrossEntropyLoss
 from transformers.models.qwen2_vl.modeling_qwen2_vl import (
-    _CONFIG_FOR_DOC,
-    QWEN2_VL_INPUTS_DOCSTRING,
     Qwen2VLCausalLMOutputWithPast,
-)
-from transformers.utils import (
-    add_start_docstrings_to_model_forward,
-    replace_return_docstrings,
 )
 
 _PATCH_OPTS: PatchOptions | None = None
 
 
-@add_start_docstrings_to_model_forward(QWEN2_VL_INPUTS_DOCSTRING)
-@replace_return_docstrings(
-    output_type=Qwen2VLCausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC
-)
 def cce_forward_multimodal(
     self,
     input_ids: Optional[torch.LongTensor] = None,

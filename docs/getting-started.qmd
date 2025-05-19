@@ -104,7 +104,7 @@ the `alpaca` dataset format, which has the following format:
 Please see our [Dataset Formats](dataset-formats) for more dataset formats and how to
 format them.
 
-2. Prepare your JSONL data in the specified format (in this case, the expected `alpaca
+2. Prepare your JSONL data in the specified format (in this case, the expected `alpaca`
 format):
 
 ```json
@@ -120,12 +120,28 @@ axolotl train my_training.yml
 
 ## Common Tasks {#sec-common-tasks}
 
+::: {.callout-tip}
+
+The same yaml file is used for training, inference, and merging.
+
+:::
+
 ### Testing Your Model {#sec-testing}
 
 After training, test your model:
 
 ```bash
 axolotl inference my_training.yml --lora-model-dir="./outputs/lora-out"
+```
+
+More details can be found in [Inference](inference.qmd).
+
+### Using a UI {#sec-ui}
+
+Launch a Gradio interface:
+
+```bash
+axolotl inference my_training.yml --lora-model-dir="./outputs/lora-out" --gradio
 ```
 
 ### Preprocessing Data {#sec-preprocessing}
@@ -136,13 +152,21 @@ For large datasets, preprocess first:
 axolotl preprocess my_training.yml
 ```
 
-### Using a UI {#sec-ui}
+Please make sure to set `dataset_prepared_path: ` in your config to set the path to save the prepared dataset.
 
-Launch a Gradio interface:
+More details can be found in [Dataset Preprocessing](dataset_preprocessing.qmd).
+
+### Merging LoRA weights {#sec-merging-lora}
+
+To merge the LoRA weights back into the base model, run:
 
 ```bash
-axolotl inference my_training.yml --lora-model-dir="./outputs/lora-out" --gradio
+axolotl merge-lora my_training.yml --lora-model-dir="./outputs/lora-out"
 ```
+
+The merged model will be saved in the `{output_dir}/merged` directory.
+
+More details can be found in [Merging LoRA weights](inference.qmd#sec-merging).
 
 ## Next Steps {#sec-next-steps}
 
@@ -156,6 +180,7 @@ Now that you have the basics, you might want to:
 Check our other guides for details on these topics:
 
 - [Configuration Guide](config.qmd) - Full configuration options
+- [Dataset Loading](dataset-loading.qmd) - Loading datasets from various sources
 - [Dataset Formats](dataset-formats) - Working with different data formats
 - [Multi-GPU Training](multi-gpu.qmd)
 - [Multi-Node Training](multi-node.qmd)
