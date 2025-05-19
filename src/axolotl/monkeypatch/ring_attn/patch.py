@@ -149,7 +149,6 @@ def update_ring_attn_params(position_ids: torch.Tensor | None):
 
 
 def patch_prepare_data_loader():
-<<<<<<< HEAD:src/axolotl/monkeypatch/ring_attn/patch.py
     """Patch `accelerate.data_loader.prepare_data_loader` to respect the SP degree.
 
     Raies:
@@ -163,11 +162,6 @@ def patch_prepare_data_loader():
             "SP patch failed - target snippet not found. "
             "Check accelerate's version or update the patch."
         )
-=======
-    """Patch `accelerate.data_loader.prepare_data_loader` to respect the SP degree."""
-    # Get the current function source code
-    original_source = inspect.getsource(accelerate.data_loader.prepare_data_loader)
->>>>>>> 720506a00 (update to support DPO quirk):src/axolotl/monkeypatch/attention/ring_attn/patch.py
 
     patched_source = original_source.replace(
         ORIGINAL_PREPARE_DATALOADER_CODE, NEW_PREPARE_DATALOADER_CODE
