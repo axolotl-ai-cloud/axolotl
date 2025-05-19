@@ -83,6 +83,7 @@ class AxolotlInputConfig(
     # optionally shrink the embeddings when the tokenizer vocab size is smaller
     shrink_embeddings: bool | None = None
     embeddings_skip_upcast: bool | None = None
+    random_init_weights: bool | None = None
 
     rl: RLType | None = None
     trl: TRLConfig | None = Field(
