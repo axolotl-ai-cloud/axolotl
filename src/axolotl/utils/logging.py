@@ -2,9 +2,11 @@
 logging helpers to only log on main process
 """
 
-import os
-from axolotl.utils.distributed import is_main_process
 import logging
+import os
+
+from axolotl.utils.distributed import is_main_process
+
 
 # Adapted from Accelerate
 # https://github.com/huggingface/accelerate/blob/main/src/accelerate/logging.py
@@ -16,7 +18,7 @@ class MultiProcessAdapter(logging.LoggerAdapter):
     @staticmethod
     def _should_log(main_process_only):
         return not main_process_only or (
-            main_process_only and is_main_process(use_environ=True)
+            main_process_only and is_main_process(use_environ=False)
         )
 
     def log(self, level, msg, *args, **kwargs):

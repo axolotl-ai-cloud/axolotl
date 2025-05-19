@@ -459,13 +459,13 @@ def load_tokenizer(cfg):
         )
 
     LOG.debug(
-        f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}", main_process_only=True
+        f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}",
     )
     LOG.debug(
-        f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}", main_process_only=True
+        f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}",
     )
     LOG.debug(
-        f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}", main_process_only=True
+        f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}",
     )
 
     if cfg.chat_template:
@@ -795,7 +795,9 @@ class ModelLoader:
                 hijack_llama_attention,
             )
 
-            LOG.info("patching with xformers attention", main_process_only=True)
+            LOG.info(
+                "patching with xformers attention",
+            )
             hijack_llama_attention()
         elif self.cfg.sample_packing:
             from axolotl.monkeypatch.llama_patch_multipack import (
@@ -1098,11 +1100,15 @@ class ModelLoader:
                 )
 
                 if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
-                    LOG.info("patching with SwiGLU", main_process_only=True)
+                    LOG.info(
+                        "patching with SwiGLU",
+                    )
                     replace_llama_mlp_with_swiglu(self.model)
 
                 if self.cfg.flash_attn_fuse_qkv:
-                    LOG.info("patching with fused QKV", main_process_only=True)
+                    LOG.info(
+                        "patching with fused QKV",
+                    )
                     replace_llama_qkv_with_fused(self.model)
         elif self.model_type == "MambaLMHeadModel":
             # FIXME this is janky at best and hacked together to make it work
@@ -1303,7 +1309,9 @@ class ModelLoader:
             skip_move_to_device = self.build_model(qlora_fsdp)
             PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
         except Exception as err:  # pylint: disable=broad-exception-caught
-            LOG.exception(err, main_process_only=True)
+            LOG.exception(
+                err,
+            )
             raise err
 
         if isinstance(self.model, (PeftModel, PeftModelForCausalLM)) and not qlora_fsdp:
@@ -1380,7 +1388,8 @@ class ModelLoader:
 
         if should_convert:
             LOG.info(
-                "Converting modules to %s", self.cfg.torch_dtype, main_process_only=True
+                "Converting modules to %s",
+                self.cfg.torch_dtype,
             )
             self.convert_embedding_modules_dtype(
                 embedding_modules=embedding_modules,
@@ -1510,7 +1519,9 @@ def load_llama_adapter(model, cfg):
     )
 
     if cfg.lora_model_dir:
-        LOG.debug("Loading pretrained PEFT - llama_adapter", main_process_only=True)
+        LOG.debug(
+            "Loading pretrained PEFT - llama_adapter",
+        )
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
@@ -1632,7 +1643,9 @@ def load_lora(model, cfg, inference=False, config_only=False):
         setup_quantized_meta_for_peft(model)
 
     if cfg.lora_model_dir:
-        LOG.debug("Loading pretrained PEFT - LoRA", main_process_only=True)
+        LOG.debug(
+            "Loading pretrained PEFT - LoRA",
+        )
         model_kwargs: Any = {}
         if cfg.lora_on_cpu:
             model_kwargs["max_memory"] = {"cpu": "256GiB"}
