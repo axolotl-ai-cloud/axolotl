@@ -421,6 +421,7 @@ def temp_dir():
 
 @pytest.fixture(scope="function", autouse=True)
 def cleanup_monkeypatches():
+    import transformers.modeling_flash_attention_utils
     from transformers import Trainer
     from transformers.models.llama.modeling_llama import (  # LlamaFlashAttention2,
         LlamaAttention,
@@ -434,6 +435,19 @@ def cleanup_monkeypatches():
         Trainer._inner_training_loop  # pylint: disable=protected-access
     )
     original_trainer_training_step = Trainer.training_step
+    original_fa_func = None
+    original_fa_varlen_func = None
+    if (
+        importlib.util.find_spec("flash_attn")
+        and hasattr(transformers.modeling_flash_attention_utils, "flash_attn_func")
+        and hasattr(
+            transformers.modeling_flash_attention_utils, "flash_attn_varlen_func"
+        )
+    ):
+        original_fa_func = transformers.modeling_flash_attention_utils.flash_attn_func
+        original_fa_varlen_func = (
+            transformers.modeling_flash_attention_utils.flash_attn_varlen_func
+        )
     # monkey patches can happen inside the tests
     yield
     # Reset LlamaFlashAttention2 forward
@@ -444,6 +458,11 @@ def cleanup_monkeypatches():
         original_trainer_inner_training_loop
     )
     Trainer.training_step = original_trainer_training_step
+    if original_fa_func:
+        transformers.modeling_flash_attention_utils.flash_attn_func = original_fa_func
+        transformers.modeling_flash_attention_utils.flash_attn_varlen_func = (
+            original_fa_varlen_func
+        )
 
     # Reset other known monkeypatches
     modules_to_reset: list[tuple[str, list[str]]] = [
@@ -458,6 +477,7 @@ def cleanup_monkeypatches():
         ("transformers.trainer",),
         ("transformers", ["Trainer"]),
         ("transformers.loss.loss_utils",),
+        ("transformers.modeling_flash_attention_utils",),
     ]
     for module_name_tuple in modules_to_reset:
         module_name = module_name_tuple[0]

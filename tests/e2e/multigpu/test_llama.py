@@ -101,7 +101,13 @@ class TestMultiGPULlama:
         "gradient_accumulation_steps",
         [1, 2],
     )
-    def test_lora_ddp_packed(self, temp_dir, gradient_accumulation_steps):
+    @pytest.mark.parametrize(
+        "use_flash_attention_3",
+        [False, "auto"],
+    )
+    def test_lora_ddp_packed(
+        self, temp_dir, gradient_accumulation_steps, use_flash_attention_3
+    ):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -138,6 +144,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "use_flash_attention_3": use_flash_attention_3,
             }
         )
 

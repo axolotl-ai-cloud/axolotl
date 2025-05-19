@@ -629,6 +629,49 @@ class ModelLoader:
             )
 
         if self.cfg.flash_attention:
+            use_fa3 = False
+            if self.cfg.use_flash_attention_3 is True:
+                use_fa3 = True
+            elif self.cfg.use_flash_attention_3 == "auto":
+                if torch.cuda.get_device_capability() >= (9, 0):
+                    # FA3 is only available on Hopper GPUs and newer
+                    use_fa3 = True
+                if not importlib.util.find_spec("flash_attn_interface"):
+                    use_fa3 = False
+            if use_fa3 and not importlib.util.find_spec("flash_attn_interface"):
+                # this can happen when use_flash_attention_3 is explicity set to True
+                # and flash_attn_interface is not installed
+                raise ModuleNotFoundError(
+                    "Please install the flash_attn_interface library to use Flash Attention 3.x"
+                )
+            if use_fa3 and importlib.util.find_spec("flash_attn_interface") is not None:
+                from flash_attn_interface import flash_attn_func as flash_attn_func_v3
+                from flash_attn_interface import (
+                    flash_attn_varlen_func as flash_attn_varlen_func_v3,
+                )
+
+                def flash_attn_func_v3_wrapper(*args, **kwargs):
+                    kwargs.pop("dropout_p", None)
+                    if "softmax_scale" in kwargs and len(args) >= 4:
+                        # if softmax_scale is provided, then the 3rd position is dropout_p that we need to drop
+                        args = (*args[:3],) + args[4:]
+                    return flash_attn_func_v3(*args, **kwargs)[0]
+
+                def flash_attn_varlen_func_v3_wrapper(*args, **kwargs):
+                    kwargs.pop("dropout_p", None)
+                    if "softmax_scale" in kwargs and len(args) >= 4:
+                        # if softmax_scale is provided, then the 3rd position is dropout_p that we need to drop
+                        args = (*args[:3],) + args[4:]
+                    return flash_attn_varlen_func_v3(*args, **kwargs)[0]
+
+                transformers.modeling_flash_attention_utils.flash_attn_func = (
+                    flash_attn_func_v3_wrapper
+                )
+                transformers.modeling_flash_attention_utils.flash_attn_varlen_func = (
+                    flash_attn_varlen_func_v3_wrapper
+                )
+                LOG.info("Switched to Flash Attention v3")
+
             self.patch_attention()
 
         if self.cfg.sample_packing and self.cfg.s2_attention:
@@ -699,6 +742,7 @@ class ModelLoader:
 
                 patch_mllama()
 
+            # TODO deprecate soon
             if self.model_config.model_type == "btlm":
                 from axolotl.monkeypatch.btlm_attn_hijack_flash import (
                     replace_btlm_attn_with_flash_attn,
@@ -706,6 +750,7 @@ class ModelLoader:
 
                 replace_btlm_attn_with_flash_attn(self.cfg.base_model)
 
+            # TODO deprecate soon
             if (
                 self.model_config.model_type == "stablelm_epoch"
                 and self.cfg.sample_packing

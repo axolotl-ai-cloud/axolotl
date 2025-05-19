@@ -1,5 +1,5 @@
-ARG CUDA_VERSION="11.8.0"
-ARG CUDNN_VERSION="8"
+ARG CUDA_VERSION="12.4.1"
+ARG CUDNN_VERSION=""
 ARG UBUNTU_VERSION="22.04"
 ARG MAX_JOBS=4
 
@@ -7,16 +7,16 @@ FROM nvidia/cuda:$CUDA_VERSION-cudnn$CUDNN_VERSION-devel-ubuntu$UBUNTU_VERSION A
 
 ENV PATH="/root/miniconda3/bin:${PATH}"
 
-ARG PYTHON_VERSION="3.10"
-ARG PYTORCH_VERSION="2.1.2"
-ARG CUDA="118"
+ARG PYTHON_VERSION="3.11"
+ARG PYTORCH_VERSION="2.5.1"
+ARG CUDA="124"
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
 
 ENV PYTHON_VERSION=$PYTHON_VERSION
 ENV TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST
 
 RUN apt-get update \
-    && apt-get install -y wget git build-essential ninja-build git-lfs libaio-dev pkg-config && rm -rf /var/lib/apt/lists/* \
+    && apt-get install -y wget git build-essential ninja-build git-lfs libaio-dev pkg-config curl && rm -rf /var/lib/apt/lists/* \
     && wget \
     https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
     && mkdir /root/.conda \
@@ -38,6 +38,10 @@ RUN git lfs install --skip-repo && \
     # The base image ships with `pydantic==1.8.2` which is not working
     pip3 install -U --no-cache-dir pydantic==1.10.10
 
-RUN if [ "$PYTORCH_VERSION" = "2.7.0" ] ; then \
+RUN if [ "$TORCH_CUDA_ARCH_LIST" = "9.0+PTX" ] ; then \
+        curl -L -O https://d1dttdx32dkk5p.cloudfront.net/fa3/cu${CUDA}/torch-${PYTORCH_VERSION}/flash_attn_3-3.0.0b1-cp311-cp311-linux_x86_64.whl; \
+        pip3 install --no-cache-dir flash_attn_3-3.0.0b1-cp311-cp311-linux_x86_64.whl; \
+        rm flash_attn_3-3.0.0b1-cp311-cp311-linux_x86_64.whl; \
+    elif [ "$PYTORCH_VERSION" = "2.7.0" ] ; then \
         pip3 install flash-attn==2.7.4.post1; \
     fi

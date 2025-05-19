@@ -32,21 +32,25 @@ jobs:
             pytorch: 2.6.0
             axolotl_extras: vllm
             num_gpus: 2
-            nightly_build: "true"
+          - cuda: 126
+            cuda_version: 12.6.3
+            python_version: "3.11"
+            pytorch: 2.6.0
+            axolotl_extras:
+            suffix: "-hopper"
+            num_gpus: 2
           - cuda: 124
             cuda_version: 12.4.1
             python_version: "3.11"
             pytorch: 2.5.1
             axolotl_extras:
             num_gpus: 2
-            nightly_build: "true"
           - cuda: 126
             cuda_version: 12.6.3
             python_version: "3.11"
             pytorch: 2.7.0
             axolotl_extras:
             num_gpus: 2
-            nightly_build: "true"
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
     steps:
@@ -68,7 +72,6 @@ jobs:
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
-          echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
           echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |

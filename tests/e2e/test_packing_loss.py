@@ -4,7 +4,6 @@ E2E tests for packed training
 
 import logging
 import os
-import unittest
 
 from transformers.utils import is_torch_bf16_gpu_available
 
@@ -14,18 +13,17 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_tensorboard, with_temp_dir
+from .utils import check_tensorboard
 
 LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
-class TestPackedLlama(unittest.TestCase):
+class TestPackedLlama:
     """
     Test case for Packed training of llama models
     """
 
-    @with_temp_dir
     def test_loss_packed(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
