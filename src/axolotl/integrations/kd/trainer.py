@@ -92,7 +92,7 @@ class AxolotlKDTrainer(AxolotlTrainer):
             )
         else:
             loss_kd = self.kd_loss_fn(
-                # shift_logits,
+                shift_logits,
                 target_token_ids_for_loss,
                 target_logprobs_for_loss,
                 target_mask_for_loss,
