@@ -170,7 +170,7 @@ def _handle_bradley_terry_dataset(
     )
 
     if not prompt_tokenizer:
-        return _handle_unhandled_dataset_type(config_dataset.type)
+        _handle_unhandled_dataset_type(config_dataset.type)
 
     dataset_prompter = UnsupportedPrompter()
     dataset_wrapper = wrap_dataset_for_tokenized_prompt(
@@ -229,7 +229,7 @@ def _handle_loaded_strategy(
 
 def _handle_unhandled_dataset_type(
     dataset_type: str,
-) -> tuple[Dataset | IterableDataset, Prompter | None]:
+):
     """Handle an unhandled dataset type by raising an error."""
     suffix = ""
     if ":load_" in dataset_type:
