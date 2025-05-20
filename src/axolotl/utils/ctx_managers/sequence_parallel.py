@@ -11,12 +11,10 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.utils import ModelOutput
 
 from axolotl.monkeypatch.ring_attn.patch import (
+    get_ring_attn_group,
     patch_prepare_data_loader,
     patch_prepare_device_mesh,
     register_ring_attn,
-)
-from axolotl.monkeypatch.ring_attn.patch import (
-    get_ring_attn_group,
     update_ring_attn_params,
 )
 from axolotl.utils.schemas.enums import RingAttnFunc
