@@ -122,7 +122,7 @@ def register_ring_attn(
             process_group=get_ring_attn_group(), heads_k_stride=heads_k_stride or 1
         )
     elif ring_attn_func is RingAttnFunc.BATCH_RING:
-        from axolotl.monkeypatch.attention.ring_attn.adapters.batch import (
+        from axolotl.monkeypatch.ring_attn.adapters.batch import (
             substitute_hf_flash_attn,
         )
 
