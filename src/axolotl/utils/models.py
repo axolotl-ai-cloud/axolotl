@@ -55,11 +55,11 @@ from transformers.integrations.deepspeed import (
 from axolotl.common.architectures import MOE_ARCH_BLOCK
 from axolotl.integrations.base import PluginManager
 from axolotl.models.mamba import fix_mamba_attn_for_loss
-from axolotl.monkeypatch.attention.ring_attn.patch import get_ring_attn_group
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
 )
+from axolotl.monkeypatch.ring_attn.patch import get_ring_attn_group
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.chat_templates import get_chat_template_from_config
@@ -682,7 +682,7 @@ class ModelLoader:
             patch_self_attn_lora(self.cfg)
 
         if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
-            from axolotl.monkeypatch.attention.ring_attn import (
+            from axolotl.monkeypatch.ring_attn import (
                 patch_prepare_data_loader,
                 patch_prepare_device_mesh,
                 register_ring_attn,

@@ -10,7 +10,7 @@ from torch.utils.hooks import RemovableHandle
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.utils import ModelOutput
 
-from axolotl.monkeypatch.attention.ring_attn.patch import (
+from axolotl.monkeypatch.ring_attn.patch import (
     get_ring_attn_group,
     update_ring_attn_params,
 )
