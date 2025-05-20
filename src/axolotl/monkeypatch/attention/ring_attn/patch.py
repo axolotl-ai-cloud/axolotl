@@ -37,16 +37,16 @@ ORIGINAL_PREPARE_DATALOADER_CODE = """            submesh_fsdp_size = 1
 NEW_PREPARE_DATALOADER_CODE = """            submesh_fsdp_size = 1
             submesh_dp_size = 1
             submesh_tp_size = 1
-            submesh_sp_size = 1
-            if "sp" in torch_device_mesh.mesh_dim_names:
-                submesh_sp_size = torch_device_mesh["sp"].size()
+            submesh_cp_size = 1
+            if "cp" in torch_device_mesh.mesh_dim_names:
+                submesh_cp_size = torch_device_mesh["cp"].size()
             if "tp" in torch_device_mesh.mesh_dim_names:
                 submesh_tp_size = torch_device_mesh["tp"].size()
             if "dp" in torch_device_mesh.mesh_dim_names:
                 submesh_dp_size = torch_device_mesh["dp"].size()
             if "fsdp" in torch_device_mesh.mesh_dim_names:
                 submesh_fsdp_size = torch_device_mesh["fsdp"].size()
-            process_index = process_index // (submesh_tp_size * submesh_sp_size)"""
+            process_index = process_index // (submesh_tp_size * submesh_cp_size)"""
 
 
 def get_ring_attn_group() -> dist.ProcessGroup:
@@ -204,10 +204,13 @@ def patch_prepare_device_mesh(sequence_parallel_degree: int):
             sequence_parallel_degree,
         )
         device_ids = list(range(world_size))
+
+        # Note that we use "cp" instead of "sp" to match the PyTorch native "context
+        # parallelism" implementation naming
         return dist.DeviceMesh(
             "cuda",
             torch.tensor(device_ids).reshape(mesh_shape),
-            mesh_dim_names=["dp", "sp"],
+            mesh_dim_names=("dp", "cp"),
         )
 
     # Replace the original method with our new method
