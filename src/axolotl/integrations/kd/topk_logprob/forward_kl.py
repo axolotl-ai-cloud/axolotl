@@ -258,6 +258,7 @@ class ChunkedTopKKDLoss(nn.Module):
         target_logprobs: torch.Tensor,  # [B, seq_len, K]
         target_mask: torch.Tensor,  # [B, seq_len, K]
         num_items_in_batch: int = -1,  # optional batch size for normalization
+        top_k_before_softmax: int = 0,  # optional top-k before softmax for teacher logits
     ) -> torch.Tensor:
 
         # 1. Split along the "token" dimension (dim=1).
@@ -284,6 +285,7 @@ class ChunkedTopKKDLoss(nn.Module):
                 target_mask=msk_chunk,
                 num_items_in_batch=-1,  # ensure per-chunk averaging by valid tokens
                 kd_temperature=self.kd_temperature,
+                top_k_before_softmax=top_k_before_softmax,
             )
 
             # kd_loss returns an average over the chunk's valid tokens.
