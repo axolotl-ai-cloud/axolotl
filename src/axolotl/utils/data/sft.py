@@ -144,7 +144,7 @@ def _prepare_pretraining_dataset(
     return train_dataset, eval_dataset, cfg.max_steps, []
 
 
-def _extract_pretraining_config(cfg: DictDefault) -> dict:
+def _extract_pretraining_config(cfg: DictDefault) -> DictDefault:
     """Extract pretraining configuration from the main config."""
     if isinstance(cfg.pretraining_dataset, list) and isinstance(
         cfg.pretraining_dataset[0], dict
@@ -268,7 +268,7 @@ def load_tokenized_prepared_datasets(
         dataset = _try_load_prepared(cfg, prepared_dataset_path)
 
     # If not found on disk or skipping prepared dataset, load and process raw datasets
-    prompters = []
+    prompters: list[Prompter] = []
     if dataset is None:
         dataset, prompters = _load_and_process_raw_datasets(
             cfg,
@@ -403,7 +403,7 @@ def _load_and_process_single_dataset(
     seed: int,
     processor: ProcessorMixin | None = None,
     preprocess_iterable: bool = False,
-) -> tuple[Dataset, Prompter]:
+) -> tuple[Dataset | IterableDataset, Prompter | None]:
     """Load and process a single dataset based on the passed config."""
     # Load the dataset
     dataset = load_dataset_with_config(

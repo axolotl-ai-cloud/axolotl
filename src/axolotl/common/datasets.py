@@ -1,6 +1,7 @@
 """Dataset loading utilities."""
 
 import logging
+import math
 import random
 from dataclasses import dataclass
 
@@ -9,8 +10,10 @@ from datasets import Dataset
 import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
 from axolotl.cli.args import PreprocessCliArgs, TrainerCliArgs
 from axolotl.utils.data import prepare_dataset
+from axolotl.utils.data.rl import load_prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_processor, load_tokenizer
+from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.tokenization import check_dataset_labels
 
 LOG = logging.getLogger(__name__)
@@ -80,6 +83,51 @@ def load_datasets(
         LOG.info("printing prompters...")
         for prompter in prompters:
             LOG.info(prompter)
+
+    return TrainDatasetMeta(
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        total_num_steps=total_num_steps,
+    )
+
+
+def load_preference_datasets(
+    *,
+    cfg: DictDefault,
+    cli_args: PreprocessCliArgs | TrainerCliArgs,
+) -> TrainDatasetMeta:
+    """Loads one or more training or evaluation datasets for RL training using paired
+    preference data, calling `axolotl.utils.data.rl.load_prepare_preference_datasets`.
+    Optionally, logs out debug information.
+
+    Args:
+        cfg: Dictionary mapping `axolotl` config keys to values.
+        cli_args: Command-specific CLI arguments.
+
+    Returns:
+        Dataclass with fields for training and evaluation datasets and the computed
+        `total_num_steps`.
+    """
+    train_dataset, eval_dataset = load_prepare_preference_datasets(cfg)
+
+    total_num_steps: int | None = None
+    if cfg.rl is not RLType.GRPO:
+        total_num_steps = int(
+            math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
+        )
+
+    if cli_args.debug or cfg.debug:
+        LOG.info("check_dataset_labels...")
+
+        tokenizer = load_tokenizer(cfg)
+        train_samples = sample_dataset(train_dataset, cli_args.debug_num_examples)
+        check_dataset_labels(
+            dataset=train_samples,
+            tokenizer=tokenizer,
+            num_examples=cli_args.debug_num_examples,
+            text_only=cli_args.debug_text_only,
+            rl_mode=True,
+        )
 
     return TrainDatasetMeta(
         train_dataset=train_dataset,

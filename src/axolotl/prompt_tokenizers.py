@@ -4,6 +4,7 @@ import abc
 import logging
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
+from datasets import Dataset
 from transformers import BatchEncoding, PreTrainedTokenizer
 
 from axolotl.prompters import Prompter
@@ -27,6 +28,16 @@ class DatasetWrappingStrategy(abc.ABC):
     """
     Abstract class for wrapping datasets for Chat Messages
     """
+
+    @abc.abstractmethod
+    def wrap_dataset(
+        self,
+        dataset,
+        process_count: int | None = None,
+        keep_in_memory: bool | None = False,
+        **kwargs,
+    ) -> Dataset:
+        pass
 
 
 class PromptTokenizingStrategy(abc.ABC):
