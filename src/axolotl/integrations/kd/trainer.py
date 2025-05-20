@@ -18,7 +18,7 @@ KD trainer
 
 from axolotl.core.trainers.base import AxolotlTrainer
 
-from .topk_logprob.forward_kl import ChunkedTopKKDLoss, topk_kd_loss_with_zscore
+from .topk_logprob.forward_kl import ChunkedTopKKDLoss
 
 
 class AxolotlKDTrainer(AxolotlTrainer):
@@ -80,24 +80,13 @@ class AxolotlKDTrainer(AxolotlTrainer):
         target_token_ids_for_loss = target_token_ids[..., 1:, :].contiguous()
         target_mask_for_loss = target_mask[..., 1:, :].contiguous()
 
-        if self.args.kd_zscore_base_temp:
-            loss_kd = topk_kd_loss_with_zscore(
-                shift_logits,
-                target_token_ids_for_loss,
-                target_logprobs_for_loss,
-                target_mask_for_loss,
-                kd_temperature=self.args.kd_temperature,
-                zscore_base_temp=self.args.kd_zscore_base_temp,
-                num_items_in_batch=num_items_in_batch,
-            )
-        else:
-            loss_kd = self.kd_loss_fn(
-                shift_logits,
-                target_token_ids_for_loss,
-                target_logprobs_for_loss,
-                target_mask_for_loss,
-                num_items_in_batch=num_items_in_batch,
-            )
+        loss_kd = self.kd_loss_fn(
+            shift_logits,
+            target_token_ids_for_loss,
+            target_logprobs_for_loss,
+            target_mask_for_loss,
+            num_items_in_batch=num_items_in_batch,
+        )
 
         if self.args.kd_ce_alpha > 0:
             kd_alpha = self.args.kd_alpha

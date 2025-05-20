@@ -31,4 +31,3 @@ class KDArgs(BaseModel):
     )
     kd_alpha: Optional[float] = None  # loss coefficient for KD loss
     kd_temperature: Optional[float] = None  # temperature for sampling during KD
-    kd_zscore_base_temp: Optional[float] = None  # base temperature for zscore scaling

@@ -202,13 +202,6 @@ class AxolotlTrainingMixins:
         },
     )
 
-    kd_zscore_base_temp: Optional[float] = field(
-        default=None,
-        metadata={
-            "help": "the base temperature parameter for KL divergence with z-score when using KD"
-        },
-    )
-
     sequence_parallel_degree: Optional[int] = field(
         default=1,
         metadata={"help": "The number of workers to use in sequence parallelism"},
