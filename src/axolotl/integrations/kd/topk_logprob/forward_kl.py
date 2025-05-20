@@ -61,7 +61,6 @@ def loss(
     target_mask: torch.Tensor,
     num_items_in_batch: int = -1,  # Use -1 to indicate "None"
     kd_temperature: float = 1.0,
-    top_k_before_softmax: int = 0,
 ) -> torch.Tensor:
     """
     A KD loss function that is TorchScript-friendly.
@@ -78,8 +77,6 @@ def loss(
         num_items_in_batch (int, optional): The number of items in the batch.
         kd_temperature (float, optional): The temperature for KD.
             Default: 1.0
-        top_k_before_softmax (int, optional): Flag of whether to apply softmax before gathering student top-k logits
-            Default: 0
     """
 
     target_logprobs = target_logprobs.float()
@@ -89,46 +86,24 @@ def loss(
     # student_logits shape:   [B, student_seq_len, vocab_size]
     teacher_seq_len = target_token_ids.shape[1]
 
-    if top_k_before_softmax:
-        # Slice student logits to match teacher-provided sequence length
-        student_logits_for_kd = student_logits[
-            :, :teacher_seq_len, :
-        ]  # [B, teacher_seq_len, vocab_size]
+    # Slice student logits to match teacher-provided sequence length
+    student_logits_for_kd = (
+        student_logits[:, :teacher_seq_len, :] / kd_temperature
+    )  # [B, teacher_seq_len, vocab_size]
 
-        # Gather student logits for teacher's top-K tokens
-        student_logits_topk = torch.gather(
-            student_logits_for_kd, dim=-1, index=target_token_ids
-        )  # [B, teacher_seq_len, K]
+    # keep in full precision for numerical stability of loss
+    student_logits_for_kd = student_logits_for_kd.float()
 
-        student_logits_topk = student_logits_topk.float()
+    # Gather student logits for teacher's top-K tokens
+    student_logits_topk = torch.gather(
+        student_logits_for_kd, dim=-1, index=target_token_ids
+    )  # [B, teacher_seq_len, K]
 
-        # Apply KD temperature to student’s logits
-        if kd_temperature != 1.0:
-            student_logits_topk = student_logits_topk / kd_temperature
+    # Compute logsumexp across full vocabulary
+    student_lse = torch.logsumexp(student_logits_for_kd, dim=-1, keepdim=True)
 
-        # Convert student top-k logits to logprobs
-        student_logprobs_topk = student_logits_topk - torch.logsumexp(
-            student_logits_topk, dim=-1, keepdim=True
-        )  # [B, teacher_seq_len, K]
-    else:
-        # Slice student logits to match teacher-provided sequence length
-        student_logits_for_kd = (
-            student_logits[:, :teacher_seq_len, :] / kd_temperature
-        )  # [B, teacher_seq_len, vocab_size]
-
-        # keep in full precision for numerical stability of loss
-        student_logits_for_kd = student_logits_for_kd.float()
-
-        # Gather student logits for teacher's top-K tokens
-        student_logits_topk = torch.gather(
-            student_logits_for_kd, dim=-1, index=target_token_ids
-        )  # [B, teacher_seq_len, K]
-
-        # Compute logsumexp across full vocabulary
-        student_lse = torch.logsumexp(student_logits_for_kd, dim=-1, keepdim=True)
-
-        #  Convert just the top-k logits to logprobs
-        student_logprobs_topk = student_logits_topk - student_lse
+    #  Convert just the top-k logits to logprobs
+    student_logprobs_topk = student_logits_topk - student_lse
 
     # Convert teacher_mask to boolean for indexing
     # In TorchScript, .bool() is sometimes unsupported, so we do:
@@ -243,7 +218,7 @@ class ChunkedTopKKDLoss(nn.Module):
     A wrapper that chunks (splits) the student and teacher outputs along the time dimension
     to reduce peak memory usage when upcasting from bf16 to fp32, especially for large vocabularies.
 
-    Usage is analogous to ForwardKLWithChunkedOutputLoss but adapted to your top-K teacher logprobs.
+    Usage is analogous to ForwardKLWithChunkedOutputLoss but adapted to top-K teacher logprobs.
     """
 
     def __init__(self, num_output_chunks: int = 8, kd_temperature: float = 1.0):
@@ -258,7 +233,6 @@ class ChunkedTopKKDLoss(nn.Module):
         target_logprobs: torch.Tensor,  # [B, seq_len, K]
         target_mask: torch.Tensor,  # [B, seq_len, K]
         num_items_in_batch: int = -1,  # optional batch size for normalization
-        top_k_before_softmax: int = 0,  # optional top-k before softmax for teacher logits
     ) -> torch.Tensor:
 
         # 1. Split along the "token" dimension (dim=1).
@@ -285,7 +259,6 @@ class ChunkedTopKKDLoss(nn.Module):
                 target_mask=msk_chunk,
                 num_items_in_batch=-1,  # ensure per-chunk averaging by valid tokens
                 kd_temperature=self.kd_temperature,
-                top_k_before_softmax=top_k_before_softmax,
             )
 
             # kd_loss returns an average over the chunk's valid tokens.
