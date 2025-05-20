@@ -424,11 +424,21 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
             LOG.debug(f"Should train: {should_train}")
 
+            # turn not trainable, skip having to find the turn indices
+            if not should_train:
+                if index == len(turns) - 1:
+                    LOG.warning(
+                        "Last turn is not trainable, skipping having to find the turn indices. "
+                        "This may cause incorrect last EOT/EOS token to be unmasked."
+                    )
+
+                continue
+
             turn_start_idx, turn_end_idx = self.find_turn(turns=turns, turn_idx=index)
 
             LOG.debug(f"Turn indices: start={turn_start_idx}, end={turn_end_idx}")
 
-            if should_train and turn_start_idx != -1 and turn_end_idx != -1:
+            if turn_start_idx != -1 and turn_end_idx != -1:
                 if train_detail:
                     token_offsets = self.prompter.get_offsets_for_train_detail(  # type: ignore
                         content, train_detail
