@@ -793,10 +793,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["kd_zscore_base_temp"] = (
                 self.cfg.kd_zscore_base_temp
             )
-        if self.cfg.kd_top_k_before_softmax is not None:
-            training_arguments_kwargs["kd_top_k_before_softmax"] = (
-                self.cfg.kd_top_k_before_softmax
-            )
 
         training_arguments_kwargs["sequence_parallel_degree"] = (
             self.cfg.sequence_parallel_degree

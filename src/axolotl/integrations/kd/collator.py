@@ -47,6 +47,10 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
     position_pad_token_id: int = 0
     return_tensors: str = "pt"
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tokenizer.deprecation_warnings["Asking-to-pad-a-fast-tokenizer"] = True
+
     def __call__(self, features, return_tensors=None):
         if return_tensors is None:
             return_tensors = self.return_tensors
