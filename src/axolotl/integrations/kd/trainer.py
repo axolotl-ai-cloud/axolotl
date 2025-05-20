@@ -18,14 +18,20 @@ KD trainer
 
 from axolotl.core.trainers.base import AxolotlTrainer
 
-from .topk_logprob.forward_kl import loss as topk_kd_loss
-from .topk_logprob.forward_kl import topk_kd_loss_with_zscore
+from .topk_logprob.forward_kl import ChunkedTopKKDLoss, topk_kd_loss_with_zscore
 
 
 class AxolotlKDTrainer(AxolotlTrainer):
     """
     Custom trainer subclass for Knowledge Distillation (KD)
     """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.model_accepts_loss_kwargs = True
+        self.kd_loss_fn = ChunkedTopKKDLoss(
+            num_output_chunks=8, kd_temperature=self.args.kd_temperature
+        )
 
     def _set_signature_columns_if_needed(self):
         super()._set_signature_columns_if_needed()
@@ -85,14 +91,14 @@ class AxolotlKDTrainer(AxolotlTrainer):
                 num_items_in_batch=num_items_in_batch,
             )
         else:
-            loss_kd = topk_kd_loss(
-                shift_logits,
+            loss_kd = self.kd_loss_fn(
+                # shift_logits,
                 target_token_ids_for_loss,
                 target_logprobs_for_loss,
                 target_mask_for_loss,
                 num_items_in_batch=num_items_in_batch,
                 kd_temperature=self.args.kd_temperature,
-                top_k_before_softmax=1 if self.args.kd_top_k_before_softmax else 0,
+                # top_k_before_softmax=1 if self.args.kd_top_k_before_softmax else 0,
             )
 
         if self.args.kd_ce_alpha > 0:
