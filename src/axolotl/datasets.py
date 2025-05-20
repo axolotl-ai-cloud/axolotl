@@ -1,7 +1,6 @@
 """Module containing Dataset functionality"""
 
 import os
-from typing import List, Optional, Union
 
 import torch
 from datasets import Dataset, IterableDataset
@@ -33,8 +32,8 @@ class TokenizedPromptDataset(Dataset):
         self,
         prompt_tokenizer: PromptTokenizingStrategy,
         dataset: Dataset,
-        process_count: Optional[int] = None,
-        keep_in_memory: Optional[bool] = False,
+        process_count: int | None = None,
+        keep_in_memory: bool | None = False,
         **kwargs,
     ):
         self.prompt_tokenizer = prompt_tokenizer
@@ -76,14 +75,14 @@ class TokenizedPromptDataset(Dataset):
 
 def wrap_dataset_for_tokenized_prompt(
     prompt_tokenizer: PromptTokenizingStrategy,
-    dataset: Union[Dataset, IterableDataset],
+    dataset: Dataset | IterableDataset,
     **kwargs,
 ):
     if isinstance(dataset, IterableDataset):
         map_kwargs = {}
         if prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True
-        features = dataset.features.keys()
+        features = list(dataset.features.keys())
         return dataset.map(
             prompt_tokenizer.tokenize_prompt,
             remove_columns=features,
@@ -94,12 +93,13 @@ def wrap_dataset_for_tokenized_prompt(
 
 # TODO this isn't the best since it can't interleave datasets
 class ConstantLengthDataset(IterableDataset):
-    """
-    Iterable dataset that returns constant length chunks of tokens from stream of text files.
-        Args:
-            tokenizer (Tokenizer): The processor used for processing the data.
-            dataset (dataset.Dataset): Dataset with text files.
-            seq_length (int): Length of token sequences to return.
+    """Iterable dataset that returns constant length chunks of tokens from stream of
+    text files.
+
+    Args:
+        tokenizer: The processor used for processing the data.
+        dataset: Dataset with text files.
+        seq_length: Length of token sequences to return.
     """
 
     def __init__(  # pylint: disable=super-init-not-called
@@ -110,7 +110,7 @@ class ConstantLengthDataset(IterableDataset):
     ):
         self.tokenizer = tokenizer
         self.concat_token_id = tokenizer.eos_token_id
-        self.datasets: List[IterableDataset] = datasets
+        self.datasets: list[IterableDataset] = datasets
         self.seq_length = seq_length
 
         vocab_size = len(tokenizer.get_vocab())

@@ -53,8 +53,8 @@ def setup_model_and_tokenizer(
 ) -> tuple[
     PreTrainedModel, PreTrainedTokenizer, PeftConfig | None, ProcessorMixin | None
 ]:
-    """
-    Load the tokenizer, processor (for multimodal models), and model based on configuration.
+    """Load the tokenizer, processor (for multimodal models), and model based on
+    configuration.
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
