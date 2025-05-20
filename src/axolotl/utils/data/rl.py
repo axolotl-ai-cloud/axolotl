@@ -1,24 +1,31 @@
-"""data handling specific to DPO"""
+"""Data handling specific to RL trainers."""
 
 import inspect
 from functools import partial
+import math
 from pathlib import Path
-from typing import Any, List, Union
+from typing import Any, List, Literal, Union
 
 import yaml
 from datasets import Dataset, DatasetDict, concatenate_datasets, load_from_disk
 
+from axolotl.cli.args import PreprocessCliArgs, TrainerCliArgs
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.loaders import load_tokenizer
+from axolotl.common.datasets import TrainDatasetMeta, sample_dataset
 from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.prompt_strategies.kto import load as load_kto
 from axolotl.prompt_strategies.orpo import load as load_orpo
-from axolotl.utils.data.shared import datasets_w_name_generator, load_dataset_w_config
+from axolotl.utils.data.shared import (
+    datasets_with_name_generator,
+    load_dataset_with_config,
+)
 from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
+from axolotl.utils.tokenization import check_dataset_labels
 
 LOG = get_logger(__name__)
 
@@ -50,7 +57,7 @@ def _load_preprocessed_ds(cfg, sub_cfg):
     return dataset
 
 
-def _save_preprocessed_ds(cfg, sub_cfg, dataset):
+def _save_preprocessed_dataset(cfg, sub_cfg, dataset):
     ds_hash = md5(yaml.dump(sub_cfg, Dumper=yaml.Dumper))
     prepared_ds_path = _get_path(ds_hash, cfg)
 
@@ -123,89 +130,89 @@ def drop_long_rl_seq(
     raise ValueError("Unknown RL type")
 
 
-def load_prepare_preference_datasets(cfg):
-    def load_split(dataset_cfgs, _cfg):
-        split_datasets: List[Any] = []
-        use_auth_token = _cfg.hf_use_auth_token
-        for config_dataset in datasets_w_name_generator(dataset_cfgs):
-            ds: Union[Dataset, DatasetDict] = load_dataset_w_config(
-                config_dataset, use_auth_token, streaming=False
-            )
-            split_datasets.append(ds)
+def load_split(cfg: DictDefault, split: Literal["train", "test"]):
+    datasets = cfg.datasets if split == "train" else cfg.test_datasets
+    split_datasets: List[Any] = []
 
-        tokenizer = load_tokenizer(cfg)
+    for config_dataset in datasets_with_name_generator(datasets):
+        ds: Union[Dataset, DatasetDict] = load_dataset_with_config(
+            config_dataset, cfg.hf_use_auth_token, streaming=False
+        )
+        split_datasets.append(ds)
 
-        for i, data_set in enumerate(split_datasets):
-            _type = dataset_cfgs[i]["type"]
-            if _type:
-                if isinstance(_type, DictDefault):
-                    _type = "user_defined.default"
-                if _cfg.rl is RLType.ORPO:
-                    ds_transform_fn = load_orpo(_type, _cfg, dataset_idx=i)
-                elif _cfg.rl is RLType.KTO:
-                    ds_transform_fn = load_kto(_type, _cfg, dataset_idx=i)
-                else:
-                    ds_transform_fn = load_dpo(_type, _cfg, dataset_idx=i)
+    tokenizer = load_tokenizer(cfg)
 
-                map_kwargs = {}
-                if isinstance(ds_transform_fn, tuple):
-                    ds_transform_fn, map_kwargs = ds_transform_fn
-                split_datasets[i] = map_dataset(
-                    cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs
-                )
-            elif _cfg.rl is RLType.KTO:
-                ds_transform_fn = load_kto(_type, _cfg, dataset_idx=i)
-                map_kwargs = {}
-                if isinstance(ds_transform_fn, tuple):
-                    ds_transform_fn, map_kwargs = ds_transform_fn
-                split_datasets[i] = map_dataset(
-                    cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs
-                )
+    for i, data_set in enumerate(split_datasets):
+        _type = datasets[i]["type"]
+        if _type:
+            if isinstance(_type, DictDefault):
+                _type = "user_defined.default"
+            if cfg.rl is RLType.ORPO:
+                ds_transform_fn = load_orpo(_type, cfg, dataset_idx=i)
+            elif cfg.rl is RLType.KTO:
+                ds_transform_fn = load_kto(_type, cfg, dataset_idx=i)
             else:
-                # If no `type` is provided, assume the dataset is already in the expected format with
-                # "prompt", "chosen" and "rejected" already preprocessed
-                split_datasets[i] = data_set
+                ds_transform_fn = load_dpo(_type, cfg, dataset_idx=i)
 
-            if not cfg.skip_prepare_dataset:
-                drop_long = partial(
-                    drop_long_rl_seq,
-                    rl=_cfg.rl,
-                    tokenizer=tokenizer,
-                    sequence_len=cfg.sequence_len,
-                )
+            map_kwargs = {}
+            if isinstance(ds_transform_fn, tuple):
+                ds_transform_fn, map_kwargs = ds_transform_fn
+            split_datasets[i] = map_dataset(
+                cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs
+            )
+        elif cfg.rl is RLType.KTO:
+            ds_transform_fn = load_kto(_type, cfg, dataset_idx=i)
+            map_kwargs = {}
+            if isinstance(ds_transform_fn, tuple):
+                ds_transform_fn, map_kwargs = ds_transform_fn
+            split_datasets[i] = map_dataset(
+                cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs
+            )
+        else:
+            # If no `type` is provided, assume the dataset is already in the expected format with
+            # "prompt", "chosen" and "rejected" already preprocessed
+            split_datasets[i] = data_set
 
-                prior_len = len(split_datasets[i])
-                split_datasets[i] = split_datasets[i].filter(
-                    drop_long,
-                    num_proc=cfg.dataset_processes,
-                    load_from_cache_file=not cfg.is_preprocess,
-                    desc="Dropping Long Sequences",
-                )
-                dropped = prior_len - len(split_datasets[i])
-                if dropped:
-                    LOG.warning(
-                        f"Dropped {dropped} long samples from dataset index {i}"
-                    )
+        if not cfg.skip_prepare_dataset:
+            drop_long = partial(
+                drop_long_rl_seq,
+                rl=cfg.rl,
+                tokenizer=tokenizer,
+                sequence_len=cfg.sequence_len,
+            )
 
-        combined_datasets = concatenate_datasets(split_datasets)
-        combined_datasets = combined_datasets.shuffle(seed=cfg.seed or 42)
+            prior_len = len(split_datasets[i])
+            split_datasets[i] = split_datasets[i].filter(
+                drop_long,
+                num_proc=cfg.dataset_processes,
+                load_from_cache_file=not cfg.is_preprocess,
+                desc="Dropping Long Sequences",
+            )
+            dropped = prior_len - len(split_datasets[i])
+            if dropped:
+                LOG.warning(f"Dropped {dropped} long samples from dataset index {i}")
 
-        return combined_datasets
+    combined_datasets = concatenate_datasets(split_datasets)
+    combined_datasets = combined_datasets.shuffle(seed=cfg.seed or 42)
 
+    return combined_datasets
+
+
+def load_prepare_preference_datasets(cfg: DictDefault) -> tuple[Dataset, Dataset]:
     with zero_first(is_main_process()):
         train_is_preprocessed = False
         eval_is_preprocessed = False
         if train_dataset := _load_preprocessed_ds(cfg, cfg.datasets):
             train_is_preprocessed = True
         else:
-            train_dataset = load_split(cfg.datasets, cfg)
+            train_dataset = load_split(cfg, split="train")
 
         eval_dataset = None
         if cfg.test_datasets:
             if eval_dataset := _load_preprocessed_ds(cfg, cfg.test_datasets):
                 eval_is_preprocessed = True
             else:
-                eval_dataset = load_split(cfg.test_datasets, cfg)
+                eval_dataset = load_split(cfg, split="test")
         if not eval_dataset:
             if cfg.val_set_size:
                 seed = cfg.seed if cfg.seed is not None else 42
@@ -231,20 +238,20 @@ def load_prepare_preference_datasets(cfg):
                 )
                 train_fingerprint = md5(to_hash_train)
                 test_fingerprint = md5(to_hash_test)
-                ds_w_test_split = train_dataset.train_test_split(
+                dataset_with_test_split = train_dataset.train_test_split(
                     test_size=cfg.val_set_size,
                     seed=seed,
                     shuffle=False,
                     train_new_fingerprint=train_fingerprint,
                     test_new_fingerprint=test_fingerprint,
                 )
-                eval_dataset = ds_w_test_split["test"]
-                train_dataset = ds_w_test_split["train"]
+                train_dataset = dataset_with_test_split["train"]
+                eval_dataset = dataset_with_test_split["test"]
 
         if not train_is_preprocessed:
-            _save_preprocessed_ds(cfg, cfg.datasets, train_dataset)
+            _save_preprocessed_dataset(cfg, cfg.datasets, train_dataset)
         if eval_dataset and not eval_is_preprocessed:
-            _save_preprocessed_ds(cfg, cfg.test_datasets, eval_dataset)
+            _save_preprocessed_dataset(cfg, cfg.test_datasets, eval_dataset)
 
     if cfg.dataset_exact_deduplication:
         train_dataset, eval_dataset, _ = deduplicate_and_log_datasets(
@@ -252,3 +259,49 @@ def load_prepare_preference_datasets(cfg):
         )
 
     return train_dataset, eval_dataset
+
+
+def load_preference_datasets(
+    *,
+    cfg: DictDefault,
+    cli_args: PreprocessCliArgs | TrainerCliArgs,
+) -> TrainDatasetMeta:
+    """
+    Loads one or more training or evaluation datasets for RL training using paired
+    preference data, calling `axolotl.utils.data.rl.load_prepare_preference_datasets`.
+    Optionally, logs out debug information.
+
+    Args:
+        cfg: Dictionary mapping `axolotl` config keys to values.
+        cli_args: Command-specific CLI arguments.
+
+    Returns:
+        Dataclass with fields for training and evaluation datasets and the computed
+        `total_num_steps`.
+    """
+    train_dataset, eval_dataset = load_prepare_preference_datasets(cfg)
+
+    total_num_steps: int | None = None
+    if cfg.rl is not RLType.GRPO:
+        total_num_steps = int(
+            math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
+        )
+
+    if cli_args.debug or cfg.debug:
+        LOG.info("check_dataset_labels...")
+
+        tokenizer = load_tokenizer(cfg)
+        train_samples = sample_dataset(train_dataset, cli_args.debug_num_examples)
+        check_dataset_labels(
+            dataset=train_samples,
+            tokenizer=tokenizer,
+            num_examples=cli_args.debug_num_examples,
+            text_only=cli_args.debug_text_only,
+            rl_mode=True,
+        )
+
+    return TrainDatasetMeta(
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        total_num_steps=total_num_steps,
+    )
