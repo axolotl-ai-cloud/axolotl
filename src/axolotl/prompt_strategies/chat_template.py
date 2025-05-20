@@ -29,12 +29,13 @@ class ChatTemplatePrompter(Prompter):
         chat_template: str,
         processor=None,
         max_length=2048,
-        message_property_mappings: Dict[str, str] | None = None,
+        message_property_mappings: dict[str, str] | None = None,
         message_field_training: str | None = None,
         message_field_training_detail: str | None = None,
         field_messages: str = "messages",
         field_system: str = "system",
-        roles: Dict[str, List[str]] | None = None,
+        roles: dict[str, list[str]] | None = None,
+        chat_template_kwargs: dict[str, Any] | None = None,
         drop_system_message: bool = False,
     ):
         # check if message_property_mappings is None or empty dict
@@ -68,6 +69,7 @@ class ChatTemplatePrompter(Prompter):
         self.tokenizer = tokenizer
         self.processor: ProcessorMixin | None = processor
         self.chat_template = chat_template
+        self.chat_template_kwargs = chat_template_kwargs or {}
         self.max_length = max_length
         self.drop_system_message = drop_system_message
 
@@ -85,6 +87,7 @@ class ChatTemplatePrompter(Prompter):
                 chat_template=self.chat_template,
                 tokenize=False,
                 add_generation_prompt=add_generation_prompt,
+                **self.chat_template_kwargs,
             )
             batch = self.processor(
                 text=text,
@@ -103,6 +106,7 @@ class ChatTemplatePrompter(Prompter):
             conversation,
             add_generation_prompt=add_generation_prompt,
             chat_template=self.chat_template,
+            **self.chat_template_kwargs,
         )
 
     def get_offsets_for_train_detail(
@@ -763,6 +767,7 @@ class StrategyLoader:
         prompter_params = {
             "tokenizer": tokenizer,
             "chat_template": chat_template_string,
+            "chat_template_kwargs": cfg.get("chat_template_kwargs", {}),
             "message_property_mappings": dataset_config.get(
                 "message_property_mappings", {}
             ),

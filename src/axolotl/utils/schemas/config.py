@@ -310,6 +310,7 @@ class AxolotlInputConfig(
         | Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")]
     ) | None = None
     chat_template_jinja: str | None = None
+    chat_template_kwargs: dict[str, Any] | None = None
     eot_tokens: list[str] | None = None
     default_system_message: str | None = None
 
