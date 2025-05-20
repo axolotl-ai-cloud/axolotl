@@ -433,6 +433,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                     LOG.warning(
                         "Last turn is not trainable, skipping having to find the turn indices. "
                         "This may cause incorrect last EOT/EOS token to be unmasked."
+                        "This is likely a dataset design issue. Please ensure last turn is trainable."
                     )
 
                 continue
