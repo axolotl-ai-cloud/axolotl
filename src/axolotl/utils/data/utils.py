@@ -1,4 +1,4 @@
-"""data handling helpers"""
+"""Data handling helpers"""
 
 import functools
 import hashlib
@@ -19,9 +19,7 @@ LOG = logging.getLogger(__name__)
 
 
 class RetryStrategy(Enum):
-    """
-    Enum for retry strategies.
-    """
+    """Enum for retry strategies."""
 
     CONSTANT = 1
     LINEAR = 2

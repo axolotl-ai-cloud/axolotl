@@ -5,53 +5,32 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import Literal
 
 from datasets import (
     Dataset,
     DatasetDict,
     IterableDataset,
-    Sequence,
-    Value,
     concatenate_datasets,
     load_dataset,
     load_from_disk,
 )
-from transformers import PreTrainedTokenizerBase
+from transformers import PreTrainedTokenizer, ProcessorMixin
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
-from axolotl.datasets import TokenizedPromptDataset, wrap_dataset_for_tokenized_prompt
-from axolotl.prompt_strategies import load
-from axolotl.prompt_strategies.bradley_terry import load as bradley_terry_load
-from axolotl.prompt_tokenizers import (
-    AlpacaMultipleChoicePromptTokenizingStrategy,
-    AlpacaPromptTokenizingStrategy,
-    AlpacaReflectionPTStrategy,
-    DatasetWrappingStrategy,
-    GPTeacherPromptTokenizingStrategy,
-    JeopardyPromptTokenizingStrategy,
-    OpenAssistantPromptTokenizingStrategy,
-    SummarizeTLDRPromptTokenizingStrategy,
-)
-from axolotl.prompters import (
-    AlpacaPrompter,
-    GPTeacherPrompter,
-    JeopardyPrompter,
-    MultipleChoiceConcisePrompter,
-    MultipleChoiceExplainPrompter,
-    Prompter,
-    ReflectAlpacaPrompter,
-    SummarizeTLDRPrompter,
-    UnsupportedPrompter,
-)
+from axolotl.prompters import Prompter
 from axolotl.utils.data.pretraining import wrap_pretraining_dataset
-from axolotl.utils.data.shared import datasets_w_name_generator, load_dataset_w_config
+from axolotl.utils.data.shared import (
+    datasets_with_name_generator,
+    load_dataset_with_config,
+)
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
     drop_long_seq_in_dataset,
     md5,
     retry_on_request_exceptions,
 )
+from axolotl.utils.data.wrappers import get_dataset_wrapper
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_local_main_process, zero_first
 from axolotl.utils.trainer import (
@@ -63,114 +42,58 @@ LOG = logging.getLogger(__name__)
 
 
 @retry_on_request_exceptions(max_retries=3, delay=5)
-def prepare_dataset(cfg, tokenizer, processor=None, preprocess_iterable=None):
-    prompters = []
-    if not cfg.pretraining_dataset:
-        with zero_first(is_local_main_process()):
-            if cfg.test_datasets:
-                train_dataset, _, prompters = load_prepare_datasets(
-                    tokenizer,
-                    cfg,
-                    DEFAULT_DATASET_PREPARED_PATH,
-                    split="train",
-                    processor=processor,
-                    preprocess_iterable=preprocess_iterable,
-                )
-                _, eval_dataset, _ = load_prepare_datasets(
-                    tokenizer,
-                    cfg,
-                    DEFAULT_DATASET_PREPARED_PATH,
-                    split="test",
-                    processor=processor,
-                    preprocess_iterable=preprocess_iterable,
-                )
-            else:
-                train_dataset, eval_dataset, prompters = load_prepare_datasets(
-                    tokenizer,
-                    cfg,
-                    DEFAULT_DATASET_PREPARED_PATH,
-                    processor=processor,
-                    preprocess_iterable=preprocess_iterable,
-                )
-    else:
-        # Load streaming dataset if pretraining_dataset is given
-        path = cfg.pretraining_dataset
-        split = "train"
-        name = None
-        data_files = None
-        skip = 0
-        if isinstance(cfg.pretraining_dataset, list) and isinstance(
-            cfg.pretraining_dataset[0], dict
-        ):
-            path = cfg.pretraining_dataset[0]["path"]
-            name = cfg.pretraining_dataset[0]["name"]
-            skip = cfg.pretraining_dataset[0]["skip"]
-            if "split" in cfg.pretraining_dataset[0]:
-                split = cfg.pretraining_dataset[0]["split"]
+def prepare_dataset(
+    cfg: DictDefault,
+    tokenizer: PreTrainedTokenizer,
+    processor: ProcessorMixin | None = None,
+    preprocess_iterable: bool = False,
+):
+    """Prepare training and evaluation datasets based on configuration.
 
-            data_files = cfg.pretraining_dataset[0].get("data_files")
+    Args:
+        cfg: Dictionary mapping `axolotl` config keys to values.
+        tokenizer: Tokenizer to use for processing texts.
+        processor: Optional processor for multimodal datasets.
+        preprocess_iterable: Whether to use iterable preprocessing.
 
-        ds_wrapper_partial = functools.partial(
-            get_dataset_wrapper,
-            cfg.pretraining_dataset[0],
+    Returns:
+        Tuple of (train_dataset, eval_dataset, total_steps, prompters).
+    """
+    if cfg.pretraining_dataset:
+        return _prepare_pretraining_dataset(
+            cfg, tokenizer, processor, preprocess_iterable
+        )
+    return _prepare_standard_dataset(cfg, tokenizer, processor, preprocess_iterable)
+
+
+def _prepare_standard_dataset(
+    cfg: DictDefault,
+    tokenizer: PreTrainedTokenizer,
+    processor: ProcessorMixin | None,
+    preprocess_iterable: bool,
+):
+    """Prepare standard (non-pretraining) datasets."""
+    with zero_first(is_local_main_process()):
+        # Always load training dataset
+        train_dataset, eval_dataset, prompters = load_prepare_datasets(
             tokenizer,
             cfg,
-            cfg.pretraining_dataset[0]["type"] or "pretrain",
+            split="train",
+            processor=processor,
+            preprocess_iterable=preprocess_iterable,
         )
 
-        # when letting accelerator dispatch batches from the main process, we don't need to load the dataset from
-        # other ranks, we just need to present a fake dataset
-        if (
-            cfg.accelerator_config
-            and cfg.accelerator_config.dispatch_batches
-            and not is_local_main_process()
-        ):
-            with tempfile.NamedTemporaryFile(mode="w+", delete=False) as f:
-                f.write("text\n")
-                f.write("lorem ipsum dolor sit amet\n")
-                # rewind the file pointer to the beginning so we can read it again
-                f.seek(0)
-                iter_ds = load_dataset(
-                    "csv", data_files=f.name, split="train", streaming=True
-                )
-        else:
-            iter_ds = load_dataset(
-                path, streaming=True, split=split, name=name, data_files=data_files
-            )
-
-        if skip:
-            LOG.info(f"Skipping {skip} samples from the dataset")
-            iter_ds = iter_ds.skip(skip)
-        train_dataset = wrap_pretraining_dataset(
-            iter_ds,
-            tokenizer,
-            cfg,
-            ds_wrapper_partial,
-            max_tokens=cfg.sequence_len,
-            batch_size=cfg.micro_batch_size,
-            seed=cfg.seed if cfg.seed is not None else 42,
-            buffer_size=cfg.pretrain_multipack_buffer_size or 10_000,
-        )
-        # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
-        train_dataset = train_dataset.with_format("torch")
-
-        # Load eval dataset (non-streaming) if specified
-        eval_dataset = None
+        # Conditionally override eval_dataset if test data exists
         if cfg.test_datasets:
             _, eval_dataset, _ = load_prepare_datasets(
                 tokenizer,
                 cfg,
-                DEFAULT_DATASET_PREPARED_PATH,
                 split="test",
                 processor=processor,
                 preprocess_iterable=preprocess_iterable,
             )
 
-        if cfg.dataset_exact_deduplication:
-            LOG.info("Deduplication not available for pretrained datasets")
-
-        return train_dataset, eval_dataset, cfg.max_steps, prompters
-
+    # Validate sample packing configuration for evaluation
     if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
         total_eval_steps = calculate_total_num_steps(cfg, eval_dataset, update=False)
         if total_eval_steps == 0:
@@ -178,6 +101,7 @@ def prepare_dataset(cfg, tokenizer, processor=None, preprocess_iterable=None):
                 "eval dataset split is too small for sample_packing. You should set `eval_sample_packing: False`. "
             )
 
+    # Calculate total number of training steps
     if cfg.max_steps:
         total_num_steps = min(
             calculate_total_num_steps(cfg, train_dataset), cfg.max_steps
@@ -189,214 +113,440 @@ def prepare_dataset(cfg, tokenizer, processor=None, preprocess_iterable=None):
     return train_dataset, eval_dataset, total_num_steps, prompters
 
 
-def load_tokenized_prepared_datasets(
-    tokenizer,
-    cfg,
-    default_dataset_prepared_path,
-    split="train",
-    processor=None,
-    preprocess_iterable: Optional[bool] = None,
-) -> Tuple[DatasetDict, List[Prompter]]:
-    cfg_datasets = cfg.test_datasets if split == "test" else cfg.datasets
-    tokenizer_name = cfg.tokenizer_config
+def _prepare_pretraining_dataset(
+    cfg: DictDefault,
+    tokenizer: PreTrainedTokenizer,
+    processor: ProcessorMixin | None,
+    preprocess_iterable: bool,
+):
+    """Prepare dataset for pretraining mode."""
+    # Extract pretraining dataset configuration
+    pretraining_config = _extract_pretraining_config(cfg)
 
-    ds_hash = str(
-        md5(
-            (
-                str(cfg.sequence_len)
-                + "@"
-                + str(cfg.sample_packing)
-                + "@"
-                + str(cfg.eval_sample_packing)
-                + "@"
-                + str(cfg.group_by_length)
-                + "@"
-                + str(cfg.kd_temperature or 1.0)
-                + "|".join(
-                    sorted(
-                        [
-                            f"{d.path}:{d.type}:{d.shards}:{d.conversation}:{d.split}:{d.temperature or 1.0}"
-                            for d in cfg_datasets
-                        ]
-                    )
-                )
-                + "|"
-                + tokenizer_name
-            )
+    # Load streaming dataset for training
+    train_dataset = _load_streaming_dataset(pretraining_config, cfg, tokenizer)
+
+    # Load evaluation dataset if specified
+    eval_dataset = None
+    if cfg.test_datasets:
+        _, eval_dataset, _ = load_prepare_datasets(
+            tokenizer,
+            cfg,
+            split="test",
+            processor=processor,
+            preprocess_iterable=preprocess_iterable,
         )
-    )
-    prepared_ds_path = (
-        Path(cfg.dataset_prepared_path) / ds_hash
-        if cfg.dataset_prepared_path
-        else Path(default_dataset_prepared_path) / ds_hash
-    )
-    dataset = None
-    prompters = []
-    use_auth_token = cfg.hf_use_auth_token
-    try:
-        if cfg.push_dataset_to_hub:
-            LOG.info(
-                f"Attempting to load prepared dataset from Huggingface hub at {cfg.push_dataset_to_hub} (version {ds_hash})..."
-            )
-            dataset = load_dataset(
-                cfg.push_dataset_to_hub,
-                ds_hash,
-                token=use_auth_token,
-            )
-            dataset = dataset[split]
-    except Exception:  # pylint: disable=broad-except # nosec
-        pass
 
-    # pylint: disable=duplicate-code
-    if dataset:
-        # This is for the case where we already loaded a pretokenized dataset from the hub
-        ...
-    elif (
-        cfg.dataset_prepared_path
-        and any(prepared_ds_path.glob("*"))
-        and not cfg.is_preprocess
-        and not cfg.skip_prepare_dataset
+    if cfg.dataset_exact_deduplication:
+        LOG.info("Deduplication not available for pretrained datasets")
+
+    # For pretraining, we return max_steps directly from config
+    return train_dataset, eval_dataset, cfg.max_steps, []
+
+
+def _extract_pretraining_config(cfg: DictDefault) -> dict:
+    """Extract pretraining configuration from the main config."""
+    if isinstance(cfg.pretraining_dataset, list) and isinstance(
+        cfg.pretraining_dataset[0], dict
     ):
-        LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
-        dataset = load_from_disk(str(prepared_ds_path))
-        LOG.info("Prepared dataset loaded from disk...")
+        config = cfg.pretraining_dataset[0]
+        return DictDefault(
+            {
+                "path": config["path"],
+                "name": config["name"],
+                "skip": config["skip"],
+                "split": config.get("split", "train"),
+                "data_files": config.get("data_files"),
+                "type": config.get("type", "pretrain"),
+            }
+        )
+    # Simple string path case
+    return DictDefault(
+        {
+            "path": cfg.pretraining_dataset,
+            "name": None,
+            "skip": 0,
+            "split": "train",
+            "data_files": None,
+            "type": "pretrain",
+        }
+    )
+
+
+def _load_streaming_dataset(
+    pretraining_config: DictDefault, cfg: DictDefault, tokenizer: PreTrainedTokenizer
+):
+    """Load and prepare a streaming dataset for pretraining."""
+    # Create dataset wrapper partial function
+    dataset_wrapper_partial = functools.partial(
+        get_dataset_wrapper,
+        config_dataset=pretraining_config,
+        tokenizer=tokenizer,
+        cfg=cfg,
+        dataset_base_type=pretraining_config["type"],
+    )
+
+    # Load the actual dataset
+    if (
+        cfg.accelerator_config
+        and cfg.accelerator_config.dispatch_batches
+        and not is_local_main_process()
+    ):
+        iter_dataset = _create_placeholder_dataset()
     else:
-        if cfg.push_dataset_to_hub:
-            LOG.info("Unable to find prepared dataset in Huggingface hub")
-        if cfg.is_preprocess:
-            LOG.info(
-                f"Skipping prepared dataset in {prepared_ds_path} for pre-processing..."
-            )
-        else:
-            LOG.info(f"Unable to find prepared dataset in {prepared_ds_path}")
-        LOG.info("Loading raw datasets...")
-        if not cfg.is_preprocess:
-            LOG.warning(
-                "Processing datasets during training can lead to VRAM instability. Please pre-process your dataset."
-            )
+        iter_dataset = load_dataset(
+            pretraining_config["path"],
+            streaming=True,
+            split=pretraining_config["split"],
+            name=pretraining_config["name"],
+            data_files=pretraining_config["data_files"],
+        )
 
-        if cfg.seed:
-            seed = cfg.seed
-        else:
-            LOG.info("No seed provided, using default seed of 42")
-            seed = 42
+    # Apply skip if specified
+    if pretraining_config["skip"]:
+        LOG.info(f"Skipping {pretraining_config['skip']} samples from the dataset")
+        iter_dataset = iter_dataset.skip(pretraining_config["skip"])
 
-        datasets = []
+    # Wrap the dataset for pretraining
+    train_dataset = wrap_pretraining_dataset(
+        iter_dataset,
+        tokenizer,
+        cfg,
+        dataset_wrapper_partial,
+        max_tokens=cfg.sequence_len,
+        batch_size=cfg.micro_batch_size,
+        seed=cfg.seed if cfg.seed is not None else 42,
+        buffer_size=cfg.pretrain_multipack_buffer_size or 10_000,
+    )
 
-        streaming_ds = False
-        if preprocess_iterable:
-            streaming_ds = True
-        # pylint: disable=invalid-name
-        for config_dataset in datasets_w_name_generator(cfg_datasets):
-            ds: Union[Dataset, DatasetDict] = load_dataset_w_config(
-                config_dataset, use_auth_token, streaming=streaming_ds
-            )
+    # Format for PyTorch
+    return train_dataset.with_format("torch")
 
-            d_base_type = d_prompt_style = None
-            d_type = config_dataset.type
-            if isinstance(d_type, str):
-                d_type_split = d_type.split(":")
-                d_base_type = d_type_split[0]
-                d_prompt_style = d_type_split[1] if len(d_type_split) > 1 else None
 
-            if isinstance(ds, DatasetDict):
-                if config_dataset.split and config_dataset.split in ds:
-                    ds = ds[config_dataset.split]
-                elif split in ds:
-                    ds = ds[split]
-                else:
-                    raise ValueError(
-                        f"no {split} split found for dataset {config_dataset.path}, you may specify a split with 'split: `"
-                    )
+def _create_placeholder_dataset():
+    """Create a minimal placeholder dataset for non-main processes."""
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False) as f:
+        f.write("text\n")
+        f.write("lorem ipsum dolor sit amet\n")
+        f.seek(0)
+        return load_dataset("csv", data_files=f.name, split="train", streaming=True)
 
-            # support for using a subset of the data
-            if config_dataset.shards:
-                shards_idx = config_dataset.get("shards_idx", 0)
-                ds = ds.shuffle(seed=seed).shard(
-                    num_shards=config_dataset.shards, index=shards_idx
-                )
 
-            dataset_wrapper, dataset_prompter = get_dataset_wrapper(
-                config_dataset=config_dataset,
-                tokenizer=tokenizer,
-                cfg=cfg,
-                d_base_type=d_base_type,
-                dataset=ds,
-                d_prompt_style=d_prompt_style,
-                processor=processor,
-            )
-            datasets.append(dataset_wrapper)
-            prompters.append(dataset_prompter)
+def load_tokenized_prepared_datasets(
+    tokenizer: PreTrainedTokenizer,
+    cfg: DictDefault,
+    split: Literal["train", "test"] = "train",
+    processor: ProcessorMixin | None = None,
+    preprocess_iterable: bool = False,
+) -> tuple[Dataset | DatasetDict, list[Prompter]]:
+    """Load or create tokenized and prepared datasets for training or testing.
 
-        if len(datasets) == 1:
-            dataset = datasets[0]
-        else:
-            LOG.info("merging datasets")
-            dataset = concatenate_datasets(datasets)
+    Args:
+        tokenizer: Tokenizer for processing text.
+        cfg: Configuration object.
+        split: Dataset split to load ('train' or 'test').
+        processor: Optional processor for multimodal datasets.
+        preprocess_iterable: Whether to use iterable preprocessing.
 
-        if len(datasets) > 1:
-            if cfg.shuffle_merged_datasets:
-                LOG.debug("shuffle merged datasets")
-                dataset = dataset.shuffle(seed=seed)
-            else:
-                LOG.debug("NOT shuffling merged datasets")
+    Returns:
+        Tuple of (dataset, prompters list).
+    """
+    # Select correct dataset configuration based on split
+    cfg_datasets = cfg.test_datasets if split == "test" else cfg.datasets
 
-        if not cfg.skip_prepare_dataset:
-            dataset = drop_long_seq_in_dataset(dataset, cfg)
+    # Generate dataset hash for caching
+    dataset_hash = _generate_dataset_hash(cfg, cfg_datasets, tokenizer.name_or_path)
 
-            if cfg.sample_packing:
-                dataset, _ = process_datasets_for_packing(cfg, dataset, None)
+    # Determine prepared dataset path
+    prepared_dataset_path = _get_prepared_dataset_path(cfg, dataset_hash)
 
-        if cfg.local_rank == 0 and not cfg.skip_prepare_dataset:
-            LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
-            if isinstance(dataset, IterableDataset):
-                num_workers = cfg.dataset_processes
+    # Try loading from hub if push_dataset_to_hub is configured
+    dataset = _try_load_from_hub(cfg, dataset_hash, split)
 
-                def gen_from_iter_ds(_ds, worker_id: List[int], num_workers: List[int]):
-                    """Generator function to correctly splice the dataset for each worker"""
-                    for i, item in enumerate(_ds):
-                        if i % num_workers[0] == worker_id[0]:
-                            yield item
+    # If not found on hub, try loading from disk
+    if dataset is None:
+        dataset = _try_load_prepared(cfg, prepared_dataset_path)
 
-                ds_from_iter = Dataset.from_generator(
-                    functools.partial(gen_from_iter_ds, dataset),
-                    features=dataset.features,
-                    num_proc=num_workers,
-                    split=split,
-                    gen_kwargs={
-                        "worker_id": list(range(num_workers)),
-                        "num_workers": [num_workers] * num_workers,
-                    },
-                )
-                ds_from_iter.save_to_disk(str(prepared_ds_path))
-            else:
-                os.makedirs(prepared_ds_path, exist_ok=True)
-                dataset.save_to_disk(str(prepared_ds_path))
-            if cfg.push_dataset_to_hub:
-                LOG.info(
-                    f"Pushing merged prepared dataset to Huggingface hub at {cfg.push_dataset_to_hub} (version {ds_hash})..."
-                )
-                dataset.push_to_hub(
-                    cfg.push_dataset_to_hub,
-                    ds_hash,
-                    private=True,
-                )
+    # If not found on disk or skipping prepared dataset, load and process raw datasets
+    prompters = []
+    if dataset is None:
+        dataset, prompters = _load_and_process_raw_datasets(
+            cfg,
+            cfg_datasets,
+            tokenizer,
+            split,
+            prepared_dataset_path,
+            processor,
+            preprocess_iterable,
+        )
 
     return dataset, prompters
 
 
+def _generate_dataset_hash(
+    cfg: DictDefault, cfg_datasets: list, tokenizer_name: str
+) -> str:
+    """Generate a hash to uniquely identify a dataset configuration."""
+    config_str = (
+        f"{cfg.sequence_len}@{cfg.sample_packing}@{cfg.eval_sample_packing}@"
+        f"{cfg.group_by_length}@{cfg.kd_temperature or 1.0}|"
+        f"{'|'.join(sorted([f'{d.path}:{d.type}:{d.shards}:{d.conversation}:{d.split}:{d.temperature or 1.0}' for d in cfg_datasets]))}"
+        f"|{tokenizer_name}"
+    )
+    return str(md5(config_str))
+
+
+def _get_prepared_dataset_path(cfg: DictDefault, dataset_hash: str) -> Path:
+    """Get the path where the prepared dataset should be stored."""
+    if cfg.dataset_prepared_path:
+        return Path(cfg.dataset_prepared_path) / dataset_hash
+    return Path(DEFAULT_DATASET_PREPARED_PATH) / dataset_hash
+
+
+def _try_load_from_hub(
+    cfg: DictDefault, dataset_hash: str, split: str
+) -> Dataset | None:
+    """Try to load the prepared dataset from HuggingFace Hub."""
+    if not cfg.push_dataset_to_hub:
+        return None
+
+    try:
+        LOG.info(
+            "Attempting to load prepared dataset from HuggingFace Hub at "
+            f"{cfg.push_dataset_to_hub} (version {dataset_hash})..."
+        )
+        dataset = load_dataset(
+            cfg.push_dataset_to_hub,
+            dataset_hash,
+            token=cfg.hf_use_auth_token,
+        )
+        return dataset[split]
+    except Exception:  # pylint: disable=broad-except # nosec
+        LOG.info("Unable to find prepared dataset in HuggingFace Hub")
+        return None
+
+
+def _try_load_prepared(
+    cfg: DictDefault, prepared_ds_path: Path
+) -> Dataset | DatasetDict | None:
+    """Try to load the prepared dataset from disk."""
+    if cfg.is_preprocess:
+        LOG.info(
+            f"Skipping prepared dataset in {prepared_ds_path} for pre-processing..."
+        )
+        return None
+
+    if (
+        cfg.dataset_prepared_path
+        and any(prepared_ds_path.glob("*"))
+        and not cfg.skip_prepare_dataset
+    ):
+        LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
+        dataset = load_from_disk(str(prepared_ds_path))
+        return dataset
+
+    LOG.info(f"Unable to find prepared dataset in {prepared_ds_path}")
+    return None
+
+
+def _load_and_process_raw_datasets(
+    cfg: DictDefault,
+    cfg_datasets: list,
+    tokenizer: PreTrainedTokenizer,
+    split: str,
+    prepared_ds_path: Path,
+    processor: ProcessorMixin | None = None,
+    preprocess_iterable: bool = False,
+) -> tuple[Dataset, list[Prompter]]:
+    """Load, process, merge, and save raw datasets."""
+    LOG.info("Loading raw datasets...")
+    if not cfg.is_preprocess:
+        LOG.warning(
+            "Processing datasets during training can lead to VRAM instability. Please "
+            "pre-process your dataset."
+        )
+
+    # Use provided seed or default to 42
+    seed = cfg.seed if cfg.seed else 42
+    if not cfg.seed:
+        LOG.info("No seed provided, using default seed of 42")
+
+    # Load and process individual datasets
+    datasets = []
+    prompters = []
+    for config_dataset in datasets_with_name_generator(cfg_datasets):
+        dataset_wrapper, dataset_prompter = _load_and_process_single_dataset(
+            config_dataset, cfg, tokenizer, split, seed, processor, preprocess_iterable
+        )
+        datasets.append(dataset_wrapper)
+        prompters.append(dataset_prompter)
+
+    # Merge datasets if needed
+    dataset = _merge_datasets(datasets, cfg, seed)
+
+    # Apply additional processing if not skipping dataset preparation
+    if not cfg.skip_prepare_dataset:
+        dataset = _apply_additional_processing(dataset, cfg)
+
+    # Save the prepared dataset if we're the main process and not skipping preparation
+    if cfg.local_rank == 0 and not cfg.skip_prepare_dataset:
+        _save_prepared_dataset(dataset, prepared_ds_path, cfg, split)
+
+    return dataset, prompters
+
+
+def _load_and_process_single_dataset(
+    config_dataset: DictDefault,
+    cfg: DictDefault,
+    tokenizer: PreTrainedTokenizer,
+    split: str,
+    seed: int,
+    processor: ProcessorMixin | None = None,
+    preprocess_iterable: bool = False,
+) -> tuple[Dataset, Prompter]:
+    """Load and process a single dataset based on the passed config."""
+    # Load the dataset
+    dataset = load_dataset_with_config(
+        config_dataset, cfg.hf_use_auth_token, streaming=preprocess_iterable
+    )
+
+    # Parse dataset type
+    d_base_type, d_prompt_style = _parse_dataset_type(config_dataset.type)
+
+    # Select the appropriate split
+    if isinstance(dataset, DatasetDict):
+        if config_dataset.split and config_dataset.split in dataset:
+            dataset = dataset[config_dataset.split]
+        elif split in dataset:
+            dataset = dataset[split]
+        else:
+            raise ValueError(
+                f"no {split} split found for dataset {config_dataset.path}, you may "
+                "specify a split with 'split: ...'"
+            )
+
+    # Apply sharding if configured
+    if config_dataset.shards:
+        shards_idx = config_dataset.get("shards_idx", 0)
+        dataset = dataset.shuffle(seed=seed).shard(
+            num_shards=config_dataset.shards, index=shards_idx
+        )
+
+    # Apply dataset wrapper
+    dataset_wrapper, dataset_prompter = get_dataset_wrapper(
+        config_dataset=config_dataset,
+        tokenizer=tokenizer,
+        cfg=cfg,
+        dataset_base_type=d_base_type,
+        dataset=dataset,
+        dataset_prompt_style=d_prompt_style,
+        processor=processor,
+    )
+
+    return dataset_wrapper, dataset_prompter
+
+
+def _parse_dataset_type(d_type: str) -> tuple[str | None, str | None]:
+    """Parse the dataset type string into base type and prompt style."""
+    if not isinstance(d_type, str):
+        return None, None
+
+    d_type_split = d_type.split(":")
+    d_base_type = d_type_split[0]
+    d_prompt_style = d_type_split[1] if len(d_type_split) > 1 else None
+
+    return d_base_type, d_prompt_style
+
+
+def _merge_datasets(datasets: list[Dataset], cfg: DictDefault, seed: int) -> Dataset:
+    """Merge multiple datasets into one."""
+    if len(datasets) == 1:
+        return datasets[0]
+
+    LOG.info("Merging datasets")
+    merged_dataset = concatenate_datasets(datasets)
+
+    if cfg.shuffle_merged_datasets:
+        LOG.debug("Shuffle merged datasets")
+        merged_dataset = merged_dataset.shuffle(seed=seed)
+    else:
+        LOG.debug("NOT shuffling merged datasets")
+
+    return merged_dataset
+
+
+def _apply_additional_processing(dataset: Dataset, cfg: DictDefault) -> Dataset:
+    """Apply additional processing to the dataset."""
+    # Remove examples with sequences that are too long
+    dataset = drop_long_seq_in_dataset(dataset, cfg)
+
+    # Apply sample packing if configured
+    if cfg.sample_packing:
+        dataset, _ = process_datasets_for_packing(cfg, dataset, None)
+
+    return dataset
+
+
+def _save_prepared_dataset(
+    dataset: Dataset, prepared_ds_path: Path, cfg: DictDefault, split: str
+) -> None:
+    """Save the prepared dataset to disk and optionally push to Hub."""
+    LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
+
+    if isinstance(dataset, IterableDataset):
+        _save_iterable_dataset(dataset, prepared_ds_path, cfg, split)
+    else:
+        os.makedirs(prepared_ds_path, exist_ok=True)
+        dataset.save_to_disk(str(prepared_ds_path))
+
+    # Push to Hub if configured
+    if cfg.push_dataset_to_hub:
+        dataset_hash = prepared_ds_path.name
+        LOG.info(
+            f"Pushing merged prepared dataset to Huggingface hub at {cfg.push_dataset_to_hub} (version {dataset_hash})..."
+        )
+        dataset.push_to_hub(
+            cfg.push_dataset_to_hub,
+            dataset_hash,
+            private=True,
+        )
+
+
+def _save_iterable_dataset(
+    dataset: IterableDataset, prepared_ds_path: Path, cfg: DictDefault, split: str
+) -> None:
+    """Save an IterableDataset to disk by converting it to a regular Dataset."""
+    num_workers = cfg.dataset_processes
+
+    def gen_from_iter_ds(_ds, worker_id: list[int], num_workers: list[int]):
+        """Generator function to correctly splice the dataset for each worker"""
+        for i, item in enumerate(_ds):
+            if i % num_workers[0] == worker_id[0]:
+                yield item
+
+    ds_from_iter = Dataset.from_generator(
+        functools.partial(gen_from_iter_ds, dataset),
+        features=dataset.features,
+        num_proc=num_workers,
+        split=split,
+        gen_kwargs={
+            "worker_id": list(range(num_workers)),
+            "num_workers": [num_workers] * num_workers,
+        },
+    )
+    ds_from_iter.save_to_disk(str(prepared_ds_path))
+
+
 def load_prepare_datasets(
-    tokenizer: PreTrainedTokenizerBase,
-    cfg,
-    default_dataset_prepared_path,
-    split="train",
-    processor=None,
-    preprocess_iterable: Optional[bool] = False,
-) -> Tuple[Dataset, Dataset, List[Prompter]]:
+    tokenizer: PreTrainedTokenizer,
+    cfg: DictDefault,
+    split: Literal["train", "test"] = "train",
+    processor: ProcessorMixin | None = None,
+    preprocess_iterable: bool = False,
+) -> tuple[Dataset, Dataset, list[Prompter]]:
     dataset, prompters = load_tokenized_prepared_datasets(
         tokenizer,
         cfg,
-        default_dataset_prepared_path,
         split=split,
         processor=processor,
         preprocess_iterable=preprocess_iterable,
@@ -463,206 +613,5 @@ def load_prepare_datasets(
         else:
             train_dataset = dataset
         eval_dataset = None
+
     return train_dataset, eval_dataset, prompters
-
-
-def get_dataset_wrapper(
-    config_dataset,
-    tokenizer,
-    cfg,
-    d_base_type,
-    dataset,
-    d_prompt_style=None,
-    processor=None,  # pylint: disable=unused-argument
-):
-    dataset_wrapper = None
-    dataset_prompter = None
-
-    ds_kwargs = {
-        "process_count": cfg.dataset_processes,
-        "keep_in_memory": cfg.dataset_keep_in_memory is True,
-    }
-
-    LOG.info(
-        f"Loading dataset: {config_dataset['path']} with base_type: {d_base_type} and prompt_style: {d_prompt_style}"
-    )
-
-    if (
-        isinstance(dataset, Dataset)
-        and "input_ids" in dataset.features
-        and "attention_mask" in dataset.features
-        and "labels" in dataset.features
-    ):
-        # dataset is already tokenized, just drop it straight in
-        dataset_prompter = UnsupportedPrompter()
-        dataset_wrapper = dataset
-    elif isinstance(config_dataset.type, DictDefault):
-        ds_strategy = load(
-            "user_defined", tokenizer, cfg, config_dataset.type.to_dict()
-        )
-        dataset_prompter = UnsupportedPrompter()
-        dataset_wrapper = wrap_dataset_for_tokenized_prompt(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-    elif cfg.skip_prepare_dataset:
-        dataset_wrapper = dataset
-    elif ds_strategy := config_dataset.type.startswith(
-        "bradley_terry"
-    ) and bradley_terry_load(
-        config_dataset.type.split(".", 1)[1], tokenizer, cfg, config_dataset
-    ):
-        dataset_prompter = UnsupportedPrompter()
-        dataset_wrapper = wrap_dataset_for_tokenized_prompt(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-    elif config_dataset.type.startswith("stepwise_supervised"):
-        dataset_prompter = UnsupportedPrompter()
-        ds_strategy = load(config_dataset.type, tokenizer, cfg, config_dataset)
-        # we need to explicitly cast boolean labels to int
-        # for compatibility with how trl's PRMTrainer works
-        dataset = dataset.cast_column("labels", Sequence(Value("int64")))
-        dataset_wrapper = TokenizedPromptDataset(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-    elif ds_strategy := load(
-        config_dataset.type, tokenizer, cfg, config_dataset, processor=processor
-    ):
-        if isinstance(ds_strategy, DatasetWrappingStrategy):
-            dataset_wrapper = ds_strategy.wrap_dataset(dataset, **ds_kwargs)
-        else:
-            dataset_prompter = UnsupportedPrompter()
-            dataset_wrapper = wrap_dataset_for_tokenized_prompt(
-                ds_strategy,
-                dataset,
-                **ds_kwargs,
-            )
-    elif d_base_type == "alpaca":
-        dataset_prompter = AlpacaPrompter(d_prompt_style)
-        ds_strategy = AlpacaPromptTokenizingStrategy(
-            dataset_prompter,
-            tokenizer,
-            cfg.train_on_inputs,
-            cfg.sequence_len,
-        )
-        ds_wrapper = wrap_dataset_for_tokenized_prompt(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-        dataset_wrapper = ds_wrapper
-    elif d_base_type == "explainchoice":
-        dataset_prompter = MultipleChoiceExplainPrompter(d_prompt_style)
-        ds_strategy = AlpacaMultipleChoicePromptTokenizingStrategy(
-            dataset_prompter,
-            tokenizer,
-            cfg.train_on_inputs,
-            cfg.sequence_len,
-        )
-        ds_wrapper = wrap_dataset_for_tokenized_prompt(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-        dataset_wrapper = ds_wrapper
-    elif d_base_type == "concisechoice":
-        dataset_prompter = MultipleChoiceConcisePrompter(d_prompt_style)
-        ds_strategy = AlpacaMultipleChoicePromptTokenizingStrategy(
-            dataset_prompter,
-            tokenizer,
-            cfg.train_on_inputs,
-            cfg.sequence_len,
-        )
-        ds_wrapper = wrap_dataset_for_tokenized_prompt(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-        dataset_wrapper = ds_wrapper
-    elif d_base_type == "summarizetldr":
-        dataset_prompter = SummarizeTLDRPrompter(d_prompt_style)
-        ds_strategy = SummarizeTLDRPromptTokenizingStrategy(
-            dataset_prompter,
-            tokenizer,
-            cfg.train_on_inputs,
-            cfg.sequence_len,
-        )
-        ds_wrapper = wrap_dataset_for_tokenized_prompt(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-        dataset_wrapper = ds_wrapper
-    elif d_base_type == "jeopardy":
-        dataset_prompter = JeopardyPrompter(d_prompt_style)
-        ds_strategy = JeopardyPromptTokenizingStrategy(
-            dataset_prompter,
-            tokenizer,
-            cfg.train_on_inputs,
-            cfg.sequence_len,
-        )
-        ds_wrapper = wrap_dataset_for_tokenized_prompt(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-        dataset_wrapper = ds_wrapper
-    elif d_base_type == "oasst":
-        dataset_prompter = AlpacaPrompter(d_prompt_style)
-        ds_strategy = OpenAssistantPromptTokenizingStrategy(
-            dataset_prompter,
-            tokenizer,
-            cfg.train_on_inputs,
-            cfg.sequence_len,
-        )
-        ds_wrapper = wrap_dataset_for_tokenized_prompt(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-        dataset_wrapper = ds_wrapper
-    elif d_base_type == "gpteacher":
-        dataset_prompter = GPTeacherPrompter(d_prompt_style)
-        ds_strategy = GPTeacherPromptTokenizingStrategy(
-            dataset_prompter,
-            tokenizer,
-            cfg.train_on_inputs,
-            cfg.sequence_len,
-        )
-        ds_wrapper = wrap_dataset_for_tokenized_prompt(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-        dataset_wrapper = ds_wrapper
-    elif d_base_type == "reflection":
-        dataset_prompter = ReflectAlpacaPrompter(d_prompt_style)
-        ds_strategy = AlpacaReflectionPTStrategy(
-            dataset_prompter,
-            tokenizer,
-            cfg.train_on_inputs,
-            cfg.sequence_len,
-        )
-        ds_wrapper = wrap_dataset_for_tokenized_prompt(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-        dataset_wrapper = ds_wrapper
-    else:
-        suffix = ""
-        if ":load_" in config_dataset.type:
-            suffix = f" Did you mean {config_dataset.type.replace(':load_', '.load_')}?"
-        LOG.error(
-            f"unhandled prompt tokenization strategy: {config_dataset.type}. {suffix}"
-        )
-        raise ValueError(
-            f"unhandled prompt tokenization strategy: {config_dataset.type} {suffix}"
-        )
-
-    return dataset_wrapper, dataset_prompter
