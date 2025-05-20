@@ -1166,6 +1166,11 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         return training_args
 
     def build(self, total_num_steps):
+        """
+        Builds and returns a reinforcement learning trainer instance configured for the specified RL strategy.
+        
+        Depending on the RL type in the configuration, selects and instantiates the appropriate trainer class with all necessary arguments, datasets, callbacks, and optional plugin overrides. Handles special settings for label smoothing, PEFT, precomputed reference log probabilities, tokenizer or processing class, and distributed training. Ensures model data types for FSDP if enabled, applies post-creation hooks and callbacks, and returns the fully constructed trainer.
+        """
         training_args = self.build_training_arguments(total_num_steps)
         trainer_kwargs = {}
         if self.cfg.rl is RLType.IPO:
