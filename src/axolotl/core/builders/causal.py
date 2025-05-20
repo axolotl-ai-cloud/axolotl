@@ -320,10 +320,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["kd_alpha"] = self.cfg.kd_alpha
         if self.cfg.kd_temperature is not None:
             training_arguments_kwargs["kd_temperature"] = self.cfg.kd_temperature
-        if self.cfg.kd_zscore_base_temp is not None:
-            training_arguments_kwargs["kd_zscore_base_temp"] = (
-                self.cfg.kd_zscore_base_temp
-            )
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig

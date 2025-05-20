@@ -194,13 +194,6 @@ class AxolotlTrainingMixins:
         },
     )
 
-    kd_zscore_base_temp: Optional[float] = field(
-        default=None,
-        metadata={
-            "help": "the base temperature parameter for KL divergence with z-score when using KD"
-        },
-    )
-
     adam_beta3: Optional[float] = field(
         default=None,
         metadata={
