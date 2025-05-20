@@ -793,10 +793,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["kd_zscore_base_temp"] = (
                 self.cfg.kd_zscore_base_temp
             )
-        if self.cfg.kd_top_k_before_softmax is not None:
-            training_arguments_kwargs["kd_top_k_before_softmax"] = (
-                self.cfg.kd_top_k_before_softmax
-            )
 
         training_arguments_kwargs["sequence_parallel_degree"] = (
             self.cfg.sequence_parallel_degree
@@ -917,6 +913,16 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             collator = RewardDataCollatorWithPadding
             if "max_length" in kwargs:
                 kwargs.pop("max_length")
+        elif self.cfg.kd_trainer:
+            from axolotl.integrations.kd.collator import (
+                DataCollatorForKD,
+                KDBatchSamplerDataCollatorForSeq2Seq,
+            )
+
+            if self.cfg.sample_packing and use_batch_sampler_collator:
+                collator = KDBatchSamplerDataCollatorForSeq2Seq
+            else:
+                collator = DataCollatorForKD
         elif use_batch_sampler_collator:
             if self.cfg.flex_attention:
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
@@ -944,16 +950,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 collator_args.pop(0)
                 kwargs.pop("pad_to_multiple_of", None)
                 kwargs.pop("padding", None)
-            elif self.cfg.kd_trainer:
-                from axolotl.integrations.kd.collator import (
-                    DataCollatorForKD,
-                    KDBatchSamplerDataCollatorForSeq2Seq,
-                )
-
-                if self.cfg.sample_packing:
-                    collator = KDBatchSamplerDataCollatorForSeq2Seq
-                else:
-                    collator = DataCollatorForKD
             else:
                 collator = DataCollatorForSeq2Seq
 

@@ -47,6 +47,10 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
     position_pad_token_id: int = 0
     return_tensors: str = "pt"
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tokenizer.deprecation_warnings["Asking-to-pad-a-fast-tokenizer"] = True
+
     def __call__(self, features, return_tensors=None):
         if return_tensors is None:
             return_tensors = self.return_tensors
@@ -209,7 +213,9 @@ class KDBatchSamplerDataCollatorForSeq2Seq(DataCollatorForKD):
         #    We want to produce a single "merged" feature dict for each sub-batch.
         out_features = [{} for _ in features]
 
-        for i, sub_features in enumerate(features):
+        for i, sub_features in enumerate(  # pylint: disable=too-many-nested-blocks
+            features
+        ):
             # sub_features is a list of dicts, each dict = one sequence’s features
             # We'll merge them into out_features[i].
             #
@@ -243,10 +249,17 @@ class KDBatchSamplerDataCollatorForSeq2Seq(DataCollatorForKD):
                     # For example, input_ids or labels are often arrays.
                     arrays = []
                     for feat in sub_features:
-                        if field_name in feat:
+                        if field_name in feat and isinstance(
+                            feat[field_name], (list, torch.Tensor)
+                        ):
+                            if isinstance(
+                                feat[field_name][0], (dict, str)
+                            ):  # pylint: disable=too-many-nested-blocks
+                                continue
                             arr = np.array(feat[field_name])
                             arrays.append(arr)
-                    out_features[i][field_name] = np.concatenate(arrays)
+                    if arrays:
+                        out_features[i][field_name] = np.concatenate(arrays)
 
         # 3) Now call the parent collator, which will do:
         #    - padding of labels/position_ids
