@@ -2,17 +2,14 @@
 
 import inspect
 from functools import partial
-import math
 from pathlib import Path
 from typing import Any, List, Literal, Union
 
 import yaml
 from datasets import Dataset, DatasetDict, concatenate_datasets, load_from_disk
 
-from axolotl.cli.args import PreprocessCliArgs, TrainerCliArgs
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.loaders import load_tokenizer
-from axolotl.common.datasets import TrainDatasetMeta, sample_dataset
 from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.prompt_strategies.kto import load as load_kto
 from axolotl.prompt_strategies.orpo import load as load_orpo
@@ -25,7 +22,6 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
-from axolotl.utils.tokenization import check_dataset_labels
 
 LOG = get_logger(__name__)
 
@@ -259,49 +255,3 @@ def load_prepare_preference_datasets(cfg: DictDefault) -> tuple[Dataset, Dataset
         )
 
     return train_dataset, eval_dataset
-
-
-def load_preference_datasets(
-    *,
-    cfg: DictDefault,
-    cli_args: PreprocessCliArgs | TrainerCliArgs,
-) -> TrainDatasetMeta:
-    """
-    Loads one or more training or evaluation datasets for RL training using paired
-    preference data, calling `axolotl.utils.data.rl.load_prepare_preference_datasets`.
-    Optionally, logs out debug information.
-
-    Args:
-        cfg: Dictionary mapping `axolotl` config keys to values.
-        cli_args: Command-specific CLI arguments.
-
-    Returns:
-        Dataclass with fields for training and evaluation datasets and the computed
-        `total_num_steps`.
-    """
-    train_dataset, eval_dataset = load_prepare_preference_datasets(cfg)
-
-    total_num_steps: int | None = None
-    if cfg.rl is not RLType.GRPO:
-        total_num_steps = int(
-            math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
-        )
-
-    if cli_args.debug or cfg.debug:
-        LOG.info("check_dataset_labels...")
-
-        tokenizer = load_tokenizer(cfg)
-        train_samples = sample_dataset(train_dataset, cli_args.debug_num_examples)
-        check_dataset_labels(
-            dataset=train_samples,
-            tokenizer=tokenizer,
-            num_examples=cli_args.debug_num_examples,
-            text_only=cli_args.debug_text_only,
-            rl_mode=True,
-        )
-
-    return TrainDatasetMeta(
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        total_num_steps=total_num_steps,
-    )
