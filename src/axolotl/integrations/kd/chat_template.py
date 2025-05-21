@@ -183,13 +183,124 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
         return tokenized_prompt
 
 
+class ChatTemplateStrategyWithKDv2(ChatTemplateStrategyWithKD):
+    """
+    Strat for datasets with complete structured KD logprob data
+    """
+
+    def transform_logprobs(self, sample):
+        """
+        Transform logprobs to target format for KD training
+        """
+        # pylint: disable=duplicate-code
+
+        logprobs = sample.pop(self.logprobs_field)
+        target_seq_len = len(logprobs)
+        input_seq_len = len(sample["input_ids"])
+        input_padding_len = input_seq_len - target_seq_len
+        # get non-zero top-k (prune None logprobs from vllm data step)
+        top_k_vals = [
+            len(logprobs[i])
+            for i in range(len(logprobs))
+            if logprobs[i] is not None and len(logprobs[i])
+        ]
+        max_top_k = max(set(top_k_vals), key=top_k_vals.count)
+        min_top_k = min(set(top_k_vals), key=top_k_vals.count)
+        top_k = min(max_top_k, min_top_k)
+        if top_k == 0:
+            raise ValueError("No non-zero top-k logprobs found.")
+
+        target_logprobs = []
+        target_token_ids = []
+        target_mask = []
+
+        if input_padding_len < 0:
+            # logprobs is longer than target_seq_len,
+            # so we need to slice from the left/beginning of logprobs
+            logprobs = logprobs[:-input_seq_len]
+            input_padding_len = 0
+            # target_seq_len = input_seq_len
+
+        # truncate the second dimension of the logprobs to top_k
+        logprobs = [row[:top_k] for row in logprobs]
+
+        # fill with -inf for padding_len tokens for top_k tokens
+        # extend target_logprobs with a padding_len x top_k 2D list filled with -inf
+
+        # we shift for causal models in the trainer, so start the range from 0
+        for _ in range(0, input_padding_len):
+            target_logprobs.append([-float("inf")] * top_k)
+            target_token_ids.append(list(range(top_k)))
+            target_mask.append([0] * top_k)
+
+        for position in range(input_padding_len, input_seq_len):
+            if sample["labels"][position] == -100:
+                target_mask.append([0] * top_k)
+            else:
+                target_mask.append([1] * top_k)
+
+        for token_pos_logprobs, pos_target_token_ids in zip(
+            logprobs, sample["target_token_ids"]
+        ):
+            # Convert to a tensor for easier manipulation
+            position_logprobs_tensor = torch.tensor(
+                token_pos_logprobs, dtype=torch.float
+            )
+
+            # Now we have distribution at T1 in log form, i.e. log p_{T1}(k).
+            # Next, re-scale to T2 = self.kd_temperature via exponent-based trick
+            # p_{T2}(k) = [p_{T1}(k)]^(T1 / T2) / Z
+            #
+            # Convert from log to probability
+            teacher_probs_t1 = position_logprobs_tensor.exp()
+            # normalize probabilities to sum to 1 in case they aren't already
+            teacher_probs_t1_sum = teacher_probs_t1.sum(dim=0, keepdim=True)
+            if teacher_probs_t1_sum > 1e-9:
+                teacher_probs_t1 = teacher_probs_t1 / teacher_probs_t1_sum
+            if self.kd_temperature != self.gen_temperature:
+                # Exponentiate by factor (T1 / T2)
+                exponent = self.gen_temperature / self.kd_temperature
+                teacher_probs_t2 = teacher_probs_t1**exponent
+            else:
+                teacher_probs_t2 = teacher_probs_t1
+            # Re-normalize
+            teacher_probs_t2 = teacher_probs_t2 / teacher_probs_t2.sum(
+                dim=0, keepdim=True
+            )
+            # Convert back to log
+            position_logprobs_tensor = torch.log(teacher_probs_t2)
+
+            # Now we have log p_{teacher, T2}(k) stored in position_logprobs_tensor
+            position_logprobs_scaled = position_logprobs_tensor.tolist()
+
+            target_logprobs.append(position_logprobs_scaled)
+            target_token_ids.append(pos_target_token_ids)
+
+        # Update sample with transformed logprobs
+        sample["target_logprobs"] = target_logprobs
+        sample["target_token_ids"] = target_token_ids
+        sample["target_mask"] = target_mask
+
+        return sample
+
+    def _tokenize_single_prompt(self, prompt):
+        logprobs = prompt.pop(self.logprobs_field)
+        target_token_ids = prompt.pop("target_token_ids")
+        tokenized_prompt = super()._tokenize_single_prompt(prompt)
+        tokenized_prompt[self.logprobs_field] = logprobs
+        tokenized_prompt["target_token_ids"] = target_token_ids
+        tokenized_prompt = self.transform_logprobs(tokenized_prompt)
+
+        return tokenized_prompt
+
+
 class KDStrategyLoader(StrategyLoader):
     """
     Load ChatTemplateStrategy with KD support using StrategyLoader.
     """
 
     def _get_strategy_cls(self):
-        return ChatTemplateStrategyWithKD
+        return ChatTemplateStrategyWithKDv2
 
     def _get_strategy_params(self, cfg, ds_cfg: Dict[str, Any]):
         strategy_params = super()._get_strategy_params(cfg, ds_cfg)

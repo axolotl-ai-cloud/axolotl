@@ -34,3 +34,8 @@ class KDPlugin(BasePlugin):
 
             return AxolotlKDTrainer
         return None
+
+    def pre_model_load(self, cfg):
+        from .kernels.liger import apply_kernel_to_qwen2
+
+        apply_kernel_to_qwen2()
