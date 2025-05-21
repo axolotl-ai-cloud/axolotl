@@ -3,11 +3,11 @@ models.
 """
 
 import gc
-import importlib
 import logging
 import math
 import os
 from functools import cached_property
+from importlib.util import find_spec
 from typing import Any
 
 import peft
@@ -15,7 +15,7 @@ import torch
 import transformers
 import transformers.modeling_utils
 from accelerate import init_empty_weights
-from peft import prepare_model_for_kbit_training
+from peft import PeftConfig, prepare_model_for_kbit_training
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForVision2Seq,
@@ -123,19 +123,23 @@ class ModelLoader:
         self.auto_model_loader = AutoModelForCausalLM  # pylint: disable=invalid-name
 
         # Initialize the patch manager
-        self.patch_manager = PatchManager(cfg, self.model_config, inference)
+        self.patch_manager = PatchManager(
+            cfg=cfg,
+            model_config=self.model_config,
+            inference=inference,
+        )
 
     @cached_property
     def has_flash_attn(self) -> bool:
         """Check if flash attention is installed."""
-        return importlib.util.find_spec("flash_attn") is not None
+        return find_spec("flash_attn") is not None
 
     @cached_property
     def qlora_fsdp(self):
         """Property that determines if FSDP with QLoRA is enabled."""
         return self.cfg.fsdp and self.cfg.adapter == "qlora"
 
-    def load(self) -> tuple[transformers.PreTrainedModel, peft.PeftConfig | None]:
+    def load(self) -> tuple[PreTrainedModel, PeftConfig | None]:
         """Load and prepare the model with all configurations and patches.
 
         Returns:
@@ -219,7 +223,8 @@ class ModelLoader:
             and self.cfg.sequence_len > self.model.config.max_position_embeddings
         ):
             LOG.warning(
-                f"increasing model.config.max_position_embeddings from {self.model.config.max_position_embeddings} to {self.cfg.sequence_len}"
+                "increasing model.config.max_position_embeddings from "
+                f"{self.model.config.max_position_embeddings} to {self.cfg.sequence_len}"
             )
             self.model.config.max_position_embeddings = self.cfg.sequence_len
 
@@ -622,22 +627,6 @@ class ModelLoader:
                     config=self.model_config,
                     **self.model_kwargs,
                 )
-
-            # TODO(MengqingCao): split these patches seperately
-            if self.cfg.flash_attention and not self.inference:
-                from axolotl.monkeypatch.llama_attn_hijack_flash import (
-                    is_xformers_swiglu_available,
-                    replace_llama_mlp_with_swiglu,
-                    replace_llama_qkv_with_fused,
-                )
-
-                if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
-                    LOG.info("patching with SwiGLU")
-                    replace_llama_mlp_with_swiglu(self.model)
-
-                if self.cfg.flash_attn_fuse_qkv:
-                    LOG.info("patching with fused QKV")
-                    replace_llama_qkv_with_fused(self.model)
         elif self.model_type == "MambaLMHeadModel":
             # FIXME this is janky at best and hacked together to make it work
             MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name

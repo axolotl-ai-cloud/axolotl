@@ -5,8 +5,7 @@ from typing import Type
 
 import addict
 import torch
-import transformers
-from transformers import AutoConfig, PreTrainedModel
+from transformers import AutoConfig, PretrainedConfig, PreTrainedModel
 
 from axolotl.utils.dict import DictDefault
 
@@ -16,8 +15,8 @@ LOG = logging.getLogger(__name__)
 def get_module_class_from_name(
     module: torch.nn.Module, name: str
 ) -> Type[torch.nn.Module] | None:
-    """
-    Gets a class from a module by its name. Copied from `accelerate.utils.dataclasses`.
+    """Gets a class from a module by its name. Copied from
+    `accelerate.utils.dataclasses`.
 
     Args:
         module: The module to get the class from.
@@ -41,7 +40,7 @@ def get_module_class_from_name(
     return None
 
 
-def check_model_config(cfg: DictDefault, model_config: transformers.PretrainedConfig):
+def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
     """Validates and adjusts model config based on `axolotl` config.
 
     This function performs several important checks and adjustments:
@@ -132,7 +131,7 @@ def check_model_config(cfg: DictDefault, model_config: transformers.PretrainedCo
         )
 
 
-def load_model_config(cfg: DictDefault) -> transformers.PretrainedConfig | addict.Dict:
+def load_model_config(cfg: DictDefault) -> PretrainedConfig | addict.Dict:
     """Loads and configures a model configuration from HuggingFace or local sources.
 
     This function determines the appropriate model config source, loads it, applies any
@@ -183,9 +182,7 @@ def load_model_config(cfg: DictDefault) -> transformers.PretrainedConfig | addic
     return model_config
 
 
-def ensure_dtype(
-    model: PreTrainedModel, dtype: torch.dtype = torch.bfloat16
-) -> PreTrainedModel:
+def ensure_dtype(model: PreTrainedModel, dtype: torch.dtype = torch.bfloat16):
     """Ensures all modules in the model are converted to the specified data type."""
     for name, module in model.named_modules():
         weight_mismatch = False

@@ -7,6 +7,7 @@ import importlib.util
 import logging
 from functools import cached_property
 
+import addict
 from transformers import PretrainedConfig, PreTrainedModel
 
 from axolotl.integrations.base import PluginManager
@@ -28,7 +29,10 @@ class PatchManager:
     """Manages the application of patches during the model loading process."""
 
     def __init__(
-        self, cfg: DictDefault, model_config: PretrainedConfig, inference: bool = False
+        self,
+        cfg: DictDefault,
+        model_config: PretrainedConfig | addict.Dict,
+        inference: bool = False,
     ):
         """Initialize the `PatchManager`.
 
@@ -65,29 +69,9 @@ class PatchManager:
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
-        if self.cfg.unsloth_lora_mlp:
-            from axolotl.monkeypatch.unsloth_ import integrate_lora_mlp_patch
-
-            integrate_lora_mlp_patch(model)
-
-        if self.cfg.unsloth_lora_qkv or self.cfg.unsloth_lora_o:
-            from axolotl.monkeypatch.unsloth_ import integrate_lora_patch
-
-            integrate_lora_patch(model, self.cfg)
-
-        if self.cfg.unsloth_rope:
-            from axolotl.monkeypatch.unsloth_ import integrate_rope_embeddings
-
-            integrate_rope_embeddings()
-
-        if (
-            self.cfg.lora_mlp_kernel
-            or self.cfg.lora_qkv_kernel
-            or self.cfg.lora_o_kernel
-        ):
-            from axolotl.monkeypatch.lora_kernels import apply_lora_kernel_patches
-
-            apply_lora_kernel_patches(model, self.cfg)
+        self._apply_llama_flash_attn_patches(model)
+        self._apply_unsloth_patches(model)
+        self._apply_lora_kernel_patch(model)
 
     def _apply_flash_attention_patches(self):
         """Apply patches related to Flash Attention."""
@@ -320,7 +304,7 @@ class PatchManager:
             hijack_llama_attention,
         )
 
-        LOG.info("patching with xformers attention")
+        LOG.info("Patching with xformers attention...")
         hijack_llama_attention()
 
     def _patch_llama_sample_packing(self):
@@ -329,11 +313,11 @@ class PatchManager:
             hijack_llama_prepare_4d_mask,
         )
 
-        LOG.info("patching llama _prepare_4d_causal_attention_mask*")
+        LOG.info("Patching llama _prepare_4d_causal_attention_mask*...")
         hijack_llama_prepare_4d_mask()
 
     def _patch_llama_derived_model(self):
-        """Modify all llama derived models in one block"""
+        """Modify all llama derived models in one block."""
         if self.cfg.is_llama_derived_model and not (
             self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
             and (self.cfg.flash_attention or self.cfg.flex_attention)
@@ -351,3 +335,54 @@ class PatchManager:
                 raise NotImplementedError(
                     "Shifted-sparse attention not currently implemented without flash attention."
                 )
+
+    def _apply_llama_flash_attn_patches(self, model):
+        """Apply LLaMA-specific flash attention patches."""
+        if (
+            self.model_config.model_type in ["llama", "llama4"]
+            and not self.cfg.trust_remote_code
+            and not self.cfg.gptq
+        ):
+            # TODO(MengqingCao): split these patches seperately
+            if self.cfg.flash_attention and not self.inference:
+                from axolotl.monkeypatch.llama_attn_hijack_flash import (
+                    is_xformers_swiglu_available,
+                    replace_llama_mlp_with_swiglu,
+                    replace_llama_qkv_with_fused,
+                )
+
+                if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
+                    LOG.info("Patching with SwiGLU...")
+                    replace_llama_mlp_with_swiglu(model)
+
+                if self.cfg.flash_attn_fuse_qkv:
+                    LOG.info("Patching with fused QKV...")
+                    replace_llama_qkv_with_fused(model)
+
+    def _apply_unsloth_patches(self, model):
+        """Apply unsloth optimization patches."""
+        if self.cfg.unsloth_lora_mlp:
+            from axolotl.monkeypatch.unsloth_ import integrate_lora_mlp_patch
+
+            integrate_lora_mlp_patch(peft_model=model)
+
+        if self.cfg.unsloth_lora_qkv or self.cfg.unsloth_lora_o:
+            from axolotl.monkeypatch.unsloth_ import integrate_lora_patch
+
+            integrate_lora_patch(peft_model=model, cfg=self.cfg)
+
+        if self.cfg.unsloth_rope:
+            from axolotl.monkeypatch.unsloth_ import integrate_rope_embeddings
+
+            integrate_rope_embeddings()
+
+    def _apply_lora_kernel_patch(self, model):
+        """Apply LoRA kernel patches."""
+        if (
+            self.cfg.lora_mlp_kernel
+            or self.cfg.lora_qkv_kernel
+            or self.cfg.lora_o_kernel
+        ):
+            from axolotl.monkeypatch.lora_kernels import apply_lora_kernel_patches
+
+            apply_lora_kernel_patches(model=model, cfg=self.cfg)
