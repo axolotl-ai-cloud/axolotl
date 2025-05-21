@@ -177,13 +177,23 @@ class PatchManager:
     def _apply_sequence_parallel_patches(self):
         """Apply sequence parallelism patches if configured."""
         if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
-            from axolotl.monkeypatch.attention.ring_attn import register_ring_attn
-
-            register_ring_attn(
-                sequence_parallel_degree=self.cfg.sequence_parallel_degree,
-                heads_k_stride=self.cfg.heads_k_stride,
-                ring_attn_func=self.cfg.ring_attn_func,
+            from axolotl.monkeypatch.ring_attn import (
+                get_ring_attn_group,
+                patch_prepare_data_loader,
+                patch_prepare_device_mesh,
+                register_ring_attn,
             )
+
+            if get_ring_attn_group() is None:  # If already set, this is already patched
+                register_ring_attn(
+                    sequence_parallel_degree=self.cfg.sequence_parallel_degree,
+                    heads_k_stride=self.cfg.heads_k_stride,
+                    ring_attn_func=self.cfg.ring_attn_func,
+                )
+                patch_prepare_data_loader()
+                patch_prepare_device_mesh(
+                    sequence_parallel_degree=self.cfg.sequence_parallel_degree
+                )
 
     def _apply_multipack_patches(self):
         """Apply multipack patches if necessary."""
