@@ -9,7 +9,6 @@ sequence parallelism training.
 """
 
 import inspect
-import re
 
 import accelerate
 import torch
@@ -52,6 +51,8 @@ NEW_PREPARE_DATALOADER_CODE = """            submesh_fsdp_size = 1
 
 def get_ring_attn_group() -> dist.ProcessGroup:
     """Getter for ring attention group on this rank."""
+    if RING_ATTN_GROUP is None:
+        raise RuntimeError("register_ring_attn() not yet called")
     return RING_ATTN_GROUP
 
 
