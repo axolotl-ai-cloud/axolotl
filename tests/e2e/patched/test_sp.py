@@ -84,16 +84,16 @@ class TestRingAttention:
     def test_get_ring_attn_group_no_registration(
         self, mock_world_size, mock_rank, partial_state
     ):
-        """Test that get_ring_attn_group returns None when no group has been registered."""
+        """Test that get_ring_attn_group raises RuntimeError when no group has been registered."""
         # Setup mocks
         mock_world_size.return_value = 4
         mock_rank.return_value = 0
 
-        # Get the group without registration
-        group = get_ring_attn_group()
-
-        # Verify that None was returned
-        assert group is None
+        # Verify that RuntimeError is raised when no group is registered
+        with pytest.raises(
+            RuntimeError, match="register_ring_attn\\(\\) not yet called"
+        ):
+            get_ring_attn_group()
 
     @patch("torch.distributed.new_group")
     @patch("torch.distributed.get_rank")
