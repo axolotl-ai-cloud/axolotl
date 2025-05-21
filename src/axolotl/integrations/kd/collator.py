@@ -56,6 +56,7 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
             return_tensors = self.return_tensors
 
         padding_side = self.tokenizer.padding_side
+        max_len = 0
 
         # Pad labels and position_ids first
         for feature_name, pad_token_id in [
@@ -106,7 +107,9 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
                 target_mask_list.append(f.pop("target_mask"))
 
             # Determine max lengths
-            max_teacher_seq_len = max(len(seq) for seq in target_logprobs_list)
+            max_teacher_seq_len = max_len or max(
+                len(seq) for seq in target_logprobs_list
+            )
             max_k = max(len(seq_k) for seq in target_logprobs_list for seq_k in seq)
 
             padded_target_logprobs = []
