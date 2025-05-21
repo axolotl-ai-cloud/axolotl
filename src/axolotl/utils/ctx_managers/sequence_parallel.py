@@ -1,6 +1,7 @@
 """Module for Axolotl trainer sequence parallelism manager and utilities"""
 
 import functools
+import inspect
 
 import torch
 import torch.distributed as dist
@@ -9,7 +10,7 @@ from torch.utils.hooks import RemovableHandle
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.utils import ModelOutput
 
-from axolotl.monkeypatch.attention.ring_attn.patch import (
+from axolotl.monkeypatch.ring_attn.patch import (
     get_ring_attn_group,
     update_ring_attn_params,
 )
@@ -206,12 +207,25 @@ class SequenceParallelContextManager:
     def __enter__(self):
         # Forward pre-hook to apply sequence parallelism
         def sequence_parallel_pre_hook(_, args, kwargs):
-            # Apply sequence parallelism to kwargs and get original sequence length and padding info
-            kwargs, self.original_seq_len, self.pad_len = (
-                self.apply_sequence_parallelism(batch=kwargs)
+            # Get parameter names from the model's forward function
+            forward_params = list(
+                inspect.signature(self.models[0].forward).parameters.keys()
             )
 
-            return args, kwargs
+            updated_kwargs = kwargs.copy()
+            for i, arg in enumerate(args):
+                if i < len(forward_params):
+                    updated_kwargs[forward_params[i]] = arg
+
+            # Any excess positional arguments are kept as-is
+            remaining_args = args[len(forward_params) :]
+
+            # Apply sequence parallelism to updated kwargs
+            updated_kwargs, self.original_seq_len, self.pad_len = (
+                self.apply_sequence_parallelism(updated_kwargs)
+            )
+
+            return remaining_args, updated_kwargs
 
         # Forward post-hook to gather outputs
         def sequence_parallel_post_hook(_, __, output: ModelOutput) -> ModelOutput:

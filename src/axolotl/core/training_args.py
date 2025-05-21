@@ -9,8 +9,6 @@ from PIL.Image import Resampling
 from transformers import TrainingArguments
 from trl import CPOConfig, KTOConfig, ORPOConfig, PRMConfig, RewardConfig
 
-from axolotl.utils.schemas.enums import RingAttnFunc
-
 
 @dataclass
 class AxolotlTrainingMixins:
@@ -213,17 +211,6 @@ class AxolotlTrainingMixins:
         default=None,
         metadata={
             "help": "Whether to apply top_k_before_softmax to the logits when using KD"
-        },
-    )
-
-    sequence_parallel_degree: Optional[int] = field(
-        default=1,
-        metadata={"help": "The number of workers to use in sequence parallelism"},
-    )
-    ring_attn_func: Optional[RingAttnFunc] = field(
-        default=None,
-        metadata={
-            "help": "The ring-flash-attn function to use in sequence parallelism"
         },
     )
 
