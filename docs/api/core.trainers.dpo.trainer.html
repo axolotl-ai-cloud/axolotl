@@ -478,7 +478,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.core.trainers.dpo.trainer.AxolotlDPOTrainer">AxolotlDPOTrainer</a></td>
-<td>Extend the base DPOTrainer for axolotl helpers</td>
+<td>Extend the base DPOTrainer for axolotl helpers.</td>
 </tr>
 </tbody>
 </table>
@@ -490,7 +490,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    dataset_tags<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
 <span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Extend the base DPOTrainer for axolotl helpers</p>
+<p>Extend the base DPOTrainer for axolotl helpers.</p>
 <section id="methods" class="level4">
 <h4 class="anchored" data-anchor-id="methods">Methods</h4>
 <table class="caption-top table">
@@ -502,33 +502,17 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.core.trainers.dpo.trainer.AxolotlDPOTrainer.evaluation_loop">evaluation_loop</a></td>
-<td>Overriding built-in evaluation loop to store metrics for each batch.</td>
-</tr>
-<tr class="even">
 <td><a href="#axolotl.core.trainers.dpo.trainer.AxolotlDPOTrainer.push_to_hub">push_to_hub</a></td>
-<td>Overwrite the <code>push_to_hub</code> method in order to force-add the tags when pushing the</td>
+<td>Overwrite the <code>push_to_hub</code> method in order to force-add the tags when pushing</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.core.trainers.dpo.trainer.AxolotlDPOTrainer.evaluation_loop" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.dpo.trainer.AxolotlDPOTrainer.evaluation_loop">evaluation_loop</h5>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.dpo.trainer.AxolotlDPOTrainer.evaluation_loop(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    dataloader,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    description,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    prediction_loss_only<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    ignore_keys<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    metric_key_prefix<span class="op">=</span><span class="st">'eval'</span>,</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Overriding built-in evaluation loop to store metrics for each batch.
-Prediction/evaluation loop, shared by <code>Trainer.evaluate()</code> and <code>Trainer.predict()</code>.</p>
-<p>Works both with or without labels.</p>
-</section>
 <section id="axolotl.core.trainers.dpo.trainer.AxolotlDPOTrainer.push_to_hub" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.core.trainers.dpo.trainer.AxolotlDPOTrainer.push_to_hub">push_to_hub</h5>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.dpo.trainer.AxolotlDPOTrainer.push_to_hub(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Overwrite the <code>push_to_hub</code> method in order to force-add the tags when pushing the
-model on the Hub. Please refer to <code>~transformers.Trainer.push_to_hub</code> for more details.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.dpo.trainer.AxolotlDPOTrainer.push_to_hub(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Overwrite the <code>push_to_hub</code> method in order to force-add the tags when pushing
+the model on the Hub. Please refer to <code>~transformers.Trainer.push_to_hub</code>
+for more details.</p>
 
 
 </section>

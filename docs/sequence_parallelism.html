@@ -520,7 +520,7 @@ through a ring communication pattern.</p>
 <ol type="1">
 <li>Each sequence is divided into equal chunks across the GPUs in a sequence parallel group</li>
 <li>The data collator handles the chunking of input_ids, attention_mask, labels, and position_ids</li>
-<li>Position IDs are adjusted to maintain proper relative positions, especially for packed sequences</li>
+<li>Position IDs are adjusted to maintain proper relative positions</li>
 <li>The trainer uses special ring communication patterns for attention operations</li>
 </ol>
 </section>
@@ -551,11 +551,13 @@ through a ring communication pattern.</p>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co">...</span></span>
 <span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co">sequence_parallel_degree: 4  # Split each sequence into 4 parts, one per GPU</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co">flash_attention: true  # Required with sequence parallelism</span></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; strides across the key dimension. Larger values use more memory but should make training faster.</span></span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="co">heads_k_stride: 1</span></span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="co">...</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; strides across the key dimension. Larger values use more memory but should make training faster.</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="co">heads_k_stride: 1</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; one of "varlen_llama3" or "batch_ring". Defaults to</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="co"># "varlen_llama3" when `sample_packing: true`, and "batch_ring" otherwise.</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="co">ring_attn_func:</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="co">...</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>This will train the Llama 3 8B model with 8K context length, with each sequence split
 into 2 subsequences of length 4096 across 2 GPUs.</p>
 </section>
