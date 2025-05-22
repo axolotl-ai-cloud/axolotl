@@ -22,7 +22,6 @@ import inspect
 import sys
 
 from axolotl.integrations.base import BasePlugin
-from axolotl.utils.distributed import is_main_process
 from axolotl.utils.logging import get_logger
 
 from .args import LigerArgs  # pylint: disable=unused-import. # noqa: F401
@@ -85,10 +84,10 @@ class LigerPlugin(BasePlugin):
                 kwargs["geglu"] = cfg.liger_glu_activation
             elif "swiglu" in liger_fn_sig.parameters:
                 kwargs["swiglu"] = cfg.liger_glu_activation
-            if is_main_process(use_environ=True):
-                LOG.info(
-                    f"Applying LIGER to {cfg.model_config_type} with kwargs: {kwargs}"
-                )
+            LOG.info(
+                f"Applying LIGER to {cfg.model_config_type} with kwargs: {kwargs}",
+                use_environ=True,
+            )
             apply_liger_fn(**kwargs)
         elif cfg.model_config_type == "jamba":
             from transformers.models.jamba import modeling_jamba

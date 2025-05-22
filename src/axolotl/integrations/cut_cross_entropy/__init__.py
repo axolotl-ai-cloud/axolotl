@@ -24,7 +24,6 @@ import torch
 
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils import get_pytorch_version
-from axolotl.utils.distributed import is_main_process
 from axolotl.utils.logging import get_logger
 
 from .args import CutCrossEntropyArgs  # pylint: disable=unused-import. # noqa: F401
@@ -76,10 +75,10 @@ class CutCrossEntropyPlugin(BasePlugin):
                 cce_patch,
             )
 
-            if is_main_process(use_environ=True):
-                LOG.info(
-                    f"Applying Cut Cross Entropy to model type: {cfg.model_config_type}"
-                )
+            LOG.info(
+                f"Applying Cut Cross Entropy to model type: {cfg.model_config_type}",
+                use_environ=True,
+            )
 
             # The patch checks model_type internally
             cce_patch(cfg.model_config_type)

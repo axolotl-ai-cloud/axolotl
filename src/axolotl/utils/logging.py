@@ -18,16 +18,19 @@ class MultiProcessAdapter(logging.LoggerAdapter):
     """
 
     @staticmethod
-    def _should_log(main_process_only):
+    def _should_log(main_process_only, use_environ):
         return not main_process_only or (
-            main_process_only and is_main_process(use_environ=False)
+            main_process_only and is_main_process(use_environ=use_environ)
         )
 
     def log(self, level, msg, *args, **kwargs):
+        use_environ = kwargs.pop("use_environ", False)
         main_process_only = kwargs.pop("main_process_only", True)
         kwargs.setdefault("stacklevel", 2)
 
-        if self.isEnabledFor(level) and self._should_log(main_process_only):
+        if self.isEnabledFor(level) and self._should_log(
+            main_process_only, use_environ
+        ):
             msg, kwargs = self.process(msg, kwargs)
             self.logger.log(level, msg, *args, **kwargs)
 
