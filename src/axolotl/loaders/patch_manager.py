@@ -65,7 +65,6 @@ class PatchManager:
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
         self._apply_unsloth_self_attention_patch()
-        self._apply_sequence_parallel_patches()
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
@@ -175,27 +174,6 @@ class PatchManager:
             from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
 
             patch_self_attn_lora(self.cfg)
-
-    def _apply_sequence_parallel_patches(self):
-        """Apply sequence parallelism patches if configured."""
-        if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
-            from axolotl.monkeypatch.ring_attn import (
-                get_ring_attn_group,
-                patch_prepare_data_loader,
-                patch_prepare_device_mesh,
-                register_ring_attn,
-            )
-
-            if get_ring_attn_group() is None:  # If already set, this is already patched
-                register_ring_attn(
-                    sequence_parallel_degree=self.cfg.sequence_parallel_degree,
-                    heads_k_stride=self.cfg.heads_k_stride,
-                    ring_attn_func=self.cfg.ring_attn_func,
-                )
-                patch_prepare_data_loader()
-                patch_prepare_device_mesh(
-                    sequence_parallel_degree=self.cfg.sequence_parallel_degree
-                )
 
     def _apply_multipack_patches(self):
         """Apply multipack patches if necessary."""
