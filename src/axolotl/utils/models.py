@@ -1377,13 +1377,12 @@ class ModelLoader:
         should_convert = (
             # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
             # convert them back to fp16/bf16 for flash-attn compatibility.
+            # Cut cross entropy requires embedding layers to be in fp16/bf16 for backward pass
             (
                 (needs_fa2_dtype or self.cfg.flash_attention or self.cfg.flex_attention)
                 and not qlora_fsdp
             )
-            or
-            # Cut cross entropy requires embedding layers to be in fp16/bf16 for backward pass
-            self.cfg.cut_cross_entropy
+            or self.cfg.cut_cross_entropy
         )
 
         if should_convert:

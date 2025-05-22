@@ -3,7 +3,6 @@ Multipack Batch Sampler - An efficient batch sampler for packing variable-length
 into fixed-capacity batches to optimize memory usage and training throughput.
 """
 
-import logging
 import math
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import cpu_count, get_context
@@ -17,7 +16,6 @@ from axolotl.utils.distributed import reduce_and_broadcast
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
-LOG.setLevel(logging.INFO)
 
 
 @numba.njit
@@ -79,15 +77,11 @@ def pack_group(
     Returns:
         List of bins, where each bin contains indices of sequences assigned to it
     """
-    # Get sorting indices and sort lengths in descending order
-    indices = np.argsort(sequence_lengths)[::-1]
-    sorted_lengths = sequence_lengths[indices]
-
     bins_remaining_space: list = []  # Tracks remaining capacity in each bin
     bins_assigned_sequences: list = []  # Tracks sequence indices assigned to each bin
 
-    for seq_id, size in enumerate(sorted_lengths):
-        global_idx = indices[seq_id] + group_offset
+    for seq_id, size in enumerate(sequence_lengths):
+        global_idx = seq_id + group_offset
 
         # Try to place sequence in existing bins
         add_new_bin = True
@@ -131,6 +125,7 @@ def pack_parallel(
     bin_size: int,
     num_processes: int | None = None,
     safe_mode: bool = True,
+    mp_start_method: str | None = "spawn",
 ):
     """
     Pack sequences into bins using parallel processing
@@ -142,7 +137,9 @@ def pack_parallel(
         bin_size: Maximum number of bins to use
         num_processes: Number of parallel processes to use
         safe_mode: If True, use a more conservative packing approach
-
+        mp_start_method: Multiprocessing start method ('fork', 'spawn', 'forkserver').
+                         'spawn' is often safer with Numba/PyTorch.
+                         Set to None to use system default.
     Returns:
         List of bins, where each bin contains indices of sequences assigned to it
     """
@@ -159,9 +156,33 @@ def pack_parallel(
 
     # Process groups in parallel
     all_bins = []
-    with ProcessPoolExecutor(max_workers=num_processes) as executor:
-        for group_bins in executor.map(_process_group, tasks):
+
+    mp_ctx = None
+    if mp_start_method:
+        try:
+            mp_ctx = get_context(mp_start_method)
+        except ValueError:
+            LOG.warning(
+                f"Failed to get multiprocessing context '{mp_start_method}'. "
+                f"Falling back to default. Available: {get_context().get_all_start_methods()}"
+            )
+            mp_ctx = (
+                None  # Fallback to default context if specified one is not available
+            )
+
+    if num_processes == 1:
+        LOG.debug("Using single process for pack_parallel, running sequentially.")
+        for task_args in tasks:
+            group_bins = _process_group(task_args)
             all_bins.extend(group_bins)
+    else:
+        # Use ProcessPoolExecutor only if num_processes > 1
+        # Pass mp_context if available
+        with ProcessPoolExecutor(
+            max_workers=num_processes, mp_context=mp_ctx
+        ) as executor:
+            for group_bins in executor.map(_process_group, tasks):
+                all_bins.extend(group_bins)
 
     return all_bins
 
