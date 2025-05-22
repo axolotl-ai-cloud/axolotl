@@ -109,13 +109,15 @@ class PatchManager:
 
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
-        if self.cfg.model_config_type == "llama4":
-            if self.cfg.llama4_linearized_experts:
-                from axolotl.monkeypatch.models.llama4.modeling import (
-                    patch_llama4_linearized_modeling,
-                )
+        if (
+            self.cfg.model_config_type == "llama4"
+            and self.cfg.llama4_linearized_experts
+        ):
+            from axolotl.monkeypatch.models.llama4.modeling import (
+                patch_llama4_linearized_modeling,
+            )
 
-                patch_llama4_linearized_modeling()
+            patch_llama4_linearized_modeling()
 
         if self.cfg.model_config_type == "gemma3":
             from axolotl.monkeypatch.gemma3 import (
@@ -352,22 +354,23 @@ class PatchManager:
             self.model_config.model_type in ["llama", "llama4"]
             and not self.cfg.trust_remote_code
             and not self.cfg.gptq
+            and self.cfg.flash_attention
+            and not self.inference
         ):
             # TODO(MengqingCao): split these patches seperately
-            if self.cfg.flash_attention and not self.inference:
-                from axolotl.monkeypatch.llama_attn_hijack_flash import (
-                    is_xformers_swiglu_available,
-                    replace_llama_mlp_with_swiglu,
-                    replace_llama_qkv_with_fused,
-                )
+            from axolotl.monkeypatch.llama_attn_hijack_flash import (
+                is_xformers_swiglu_available,
+                replace_llama_mlp_with_swiglu,
+                replace_llama_qkv_with_fused,
+            )
 
-                if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
-                    LOG.info("Patching with SwiGLU...")
-                    replace_llama_mlp_with_swiglu(model)
+            if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
+                LOG.info("Patching with SwiGLU...")
+                replace_llama_mlp_with_swiglu(model)
 
-                if self.cfg.flash_attn_fuse_qkv:
-                    LOG.info("Patching with fused QKV...")
-                    replace_llama_qkv_with_fused(model)
+            if self.cfg.flash_attn_fuse_qkv:
+                LOG.info("Patching with fused QKV...")
+                replace_llama_qkv_with_fused(model)
 
     def _apply_unsloth_patches(self, model):
         """Apply unsloth optimization patches."""

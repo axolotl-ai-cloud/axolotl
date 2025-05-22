@@ -1,5 +1,6 @@
 """Utilities for axolotl.loaders module"""
 
+import contextlib
 import logging
 from typing import Type
 
@@ -164,14 +165,14 @@ def load_model_config(cfg: DictDefault) -> PretrainedConfig | addict.Dict:
             trust_remote_code=trust_remote_code,
             **config_kwargs,
         )
-    except ValueError as err:
+    except ValueError as error:
         if "mamba" in model_config_name:
             return addict.Dict(
                 {
                     "model_type": "mamba",
                 }
             )
-        raise err
+        raise error
 
     if cfg.overrides_of_model_config:
         for key, val in cfg.overrides_of_model_config.items():
@@ -186,15 +187,12 @@ def ensure_dtype(model: PreTrainedModel, dtype: torch.dtype = torch.bfloat16):
     """Ensures all modules in the model are converted to the specified data type."""
     for name, module in model.named_modules():
         weight_mismatch = False
-        bias_mismatch = False
-        try:
+        with contextlib.suppress(AttributeError):
             weight_mismatch = module.weight.dtype != dtype
-        except AttributeError:
-            pass
-        try:
+
+        bias_mismatch = False
+        with contextlib.suppress(AttributeError):
             bias_mismatch = module.bias.dtype != dtype
-        except AttributeError:
-            pass
 
         if weight_mismatch:
             print(f"Converting module {name}.weight: {module.weight.dtype} -> {dtype}")
