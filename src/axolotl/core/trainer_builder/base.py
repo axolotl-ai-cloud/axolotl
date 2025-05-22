@@ -480,7 +480,9 @@ class TrainerBuilderBase(abc.ABC):
         for arg in [
             "adam_beta1",
             "adam_beta2",
+            "adam_beta3",
             "adam_epsilon",
+            "adam_epsilon2",
             "max_grad_norm",
             "dataloader_num_workers",
             "dataloader_pin_memory",
