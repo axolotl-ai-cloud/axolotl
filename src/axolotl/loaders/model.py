@@ -15,7 +15,7 @@ import torch
 import transformers
 import transformers.modeling_utils
 from accelerate import init_empty_weights
-from peft import PeftConfig, prepare_model_for_kbit_training
+from peft import PeftConfig, PeftMixedModel, PeftModel, prepare_model_for_kbit_training
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForVision2Seq,
@@ -114,7 +114,7 @@ class ModelLoader:
                 self.model_kwargs[key] = val
 
         # Init model
-        self.model: PreTrainedModel
+        self.model: PreTrainedModel | PeftModel | PeftMixedModel
         self.base_model = cfg.base_model
         self.model_type = cfg.type_of_model
 
@@ -305,7 +305,7 @@ class ModelLoader:
                 before_kbit_train_or_finetune=False,
             )
 
-    def _load_adapters(self):
+    def _load_adapters(self) -> PeftConfig | None:
         """Load LoRA or other adapters."""
         # Load LoRA or adapter
         lora_config = None
@@ -618,9 +618,7 @@ class ModelLoader:
                         config=self.model_config,
                     )
                 else:
-                    self.model = self.auto_model_loader(
-                        config=self.model_config,
-                    )
+                    self.model = self.auto_model_loader(config=self.model_config)
             else:
                 self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,

@@ -13,6 +13,7 @@ from peft import (
     LoftQConfig,
     LoraConfig,
     PeftConfig,
+    PeftMixedModel,
     PeftModel,
     get_peft_model,
 )
@@ -73,7 +74,7 @@ def load_lora(
     cfg: DictDefault,
     inference: bool = False,
     config_only: bool = False,
-) -> tuple[PreTrainedModel | None, PeftConfig | None]:
+) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]:
     lora_target_modules = cfg.lora_target_modules or []
 
     if cfg.lora_target_linear:
@@ -166,24 +167,24 @@ def load_adapter(
     cfg: DictDefault,
     adapter: str | None,
     inference: bool = False,
-) -> tuple[PreTrainedModel, PeftConfig | None]:
+) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel, PeftConfig | None]:
     if adapter is None:
         return model, None
     if hasattr(model, "enable_input_require_grads"):
         model.enable_input_require_grads()
     if adapter in ["lora", "qlora"]:
-        model, lora_config = load_lora(model, cfg, inference=inference)
-        return model, lora_config
+        peft_model, lora_config = load_lora(model, cfg, inference=inference)
+        return peft_model, lora_config
     if adapter == "llama-adapter":
-        model, lora_config = load_llama_adapter(model, cfg)
-        return model, lora_config
+        peft_model, lora_config = load_llama_adapter(model, cfg)
+        return peft_model, lora_config
 
     raise NotImplementedError(f"{adapter} PEFT adapter not available")
 
 
 def load_llama_adapter(
     model: PreTrainedModel, cfg: DictDefault
-) -> tuple[PreTrainedModel, PeftConfig]:
+) -> tuple[PeftModel | PeftMixedModel, PeftConfig]:
     peft_config = AdaptionPromptConfig(
         adapter_layers=cfg.peft_adapter.layers,  # layers (L)
         adapter_len=cfg.peft_adapter.len,  # prompt length (K)
@@ -192,14 +193,14 @@ def load_llama_adapter(
 
     if cfg.lora_model_dir:
         LOG.debug("Loading pretrained PEFT - llama_adapter")
-        model = PeftModel.from_pretrained(
+        peft_model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
             torch_dtype=torch.float16,
         )
     else:
-        model = get_peft_model(model, peft_config)
+        peft_model = get_peft_model(model, peft_config)
 
-    model.print_trainable_parameters()
+    peft_model.print_trainable_parameters()
 
-    return model, peft_config
+    return peft_model, peft_config
