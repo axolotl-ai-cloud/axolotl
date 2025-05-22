@@ -31,7 +31,8 @@ class ModelInputConfig(BaseModel):
     def hint_trust_remote_code(cls, trust_remote_code):
         if trust_remote_code:
             LOG.warning(
-                "`trust_remote_code` is set to true. Please make sure that you reviewed the remote code/model."
+                "`trust_remote_code` is set to true. Please make sure that you reviewed the remote code/model.",
+                use_environ=True,
             )
         return trust_remote_code
 
