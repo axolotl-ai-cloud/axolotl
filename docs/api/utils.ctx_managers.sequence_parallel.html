@@ -664,7 +664,8 @@ from the full gradient tensor.</p>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    sequence_parallel_degree,</span>
 <span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    gradient_accumulation_steps,</span>
 <span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    ring_attn_func,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    heads_k_stride,</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Context manager for sequence parallelism operations.</p>
 <p>This class provides a context that will automatically apply sequence parallelism
 during model forward passes using a pre-forward hook, and gather outputs from
@@ -673,10 +674,10 @@ across the sequence parallelism group using a post-forward hook.</p>
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-2">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 20%">
-<col style="width: 13%">
-<col style="width: 56%">
-<col style="width: 8%">
+<col style="width: 17%">
+<col style="width: 11%">
+<col style="width: 64%">
+<col style="width: 7%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -711,32 +712,14 @@ across the sequence parallelism group using a post-forward hook.</p>
 <td>Which ring attention function to use. Currently unused.</td>
 <td><em>required</em></td>
 </tr>
-</tbody>
-</table>
-</section>
-<section id="methods-1" class="level4">
-<h4 class="anchored" data-anchor-id="methods-1">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
 <tr class="odd">
-<td><a href="#axolotl.utils.ctx_managers.sequence_parallel.SequenceParallelContextManager.gather_outputs">gather_outputs</a></td>
-<td>Gather sharded outputs from all ranks and reconstruct the full tensor.</td>
+<td>heads_k_stride</td>
+<td>int | None</td>
+<td>Sequence parallelism K head stride size. Passed through to <code>varlen_llama3</code> <code>ring_flash_attn</code> implementation.</td>
+<td><em>required</em></td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.utils.ctx_managers.sequence_parallel.SequenceParallelContextManager.gather_outputs" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.ctx_managers.sequence_parallel.SequenceParallelContextManager.gather_outputs">gather_outputs</h5>
-<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.ctx_managers.sequence_parallel.SequenceParallelContextManager.gather_outputs(</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    output,</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Gather sharded outputs from all ranks and reconstruct the full tensor.</p>
-</section>
 </section>
 </section>
 </section>
@@ -758,13 +741,13 @@ across the sequence parallelism group using a post-forward hook.</p>
 </table>
 <section id="axolotl.utils.ctx_managers.sequence_parallel.apply_sequence_parallelism" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.ctx_managers.sequence_parallel.apply_sequence_parallelism">apply_sequence_parallelism</h3>
-<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.ctx_managers.sequence_parallel.apply_sequence_parallelism(</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    batch,</span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    local_rank,</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    local_world_size,</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    gradient_accumulation_steps,</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    ring_attn_func,</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.ctx_managers.sequence_parallel.apply_sequence_parallelism(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    batch,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    local_rank,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    local_world_size,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    gradient_accumulation_steps,</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    ring_attn_func,</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Apply sequence parallelism slicing to a batch.</p>
 <p>Special handling is implemented for integer logits_to_keep, which indicates
 to only keep the last N tokens in the sequence during generation.</p>
