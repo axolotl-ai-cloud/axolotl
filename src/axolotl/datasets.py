@@ -19,13 +19,13 @@ LOG = get_logger(__name__)
 
 
 class TokenizedPromptDataset(Dataset):
-    """
-    Dataset that returns tokenized prompts from a stream of text files.
-        Args:
-            prompt_tokenizer (PromptTokenizingStrategy): The prompt tokenizing method for processing the data.
-            dataset (dataset.Dataset): Dataset with text files.
-            process_count (int): Number of processes to use for tokenizing.
-            keep_in_memory (bool): Whether to keep the tokenized dataset in memory.
+    """Dataset that returns tokenized prompts from a stream of text files.
+
+    Args:
+        prompt_tokenizer (PromptTokenizingStrategy): The prompt tokenizing method for processing the data.
+        dataset (dataset.Dataset): Dataset with text files.
+        process_count (int): Number of processes to use for tokenizing.
+        keep_in_memory (bool): Whether to keep the tokenized dataset in memory.
     """
 
     def __init__(  # pylint: disable=super-init-not-called
