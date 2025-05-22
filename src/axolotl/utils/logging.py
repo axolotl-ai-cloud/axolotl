@@ -32,7 +32,7 @@ class MultiProcessAdapter(logging.LoggerAdapter):
             main_process_only, use_environ
         ):
             msg, kwargs = self.process(msg, kwargs)
-            self.logger.log(level, "BOOOO", *args, **kwargs)
+            self.logger.log(level, f"use_environ: {use_environ}", *args, **kwargs)
             self.logger.log(level, msg, *args, **kwargs)
 
     @functools.lru_cache(maxsize=10)
