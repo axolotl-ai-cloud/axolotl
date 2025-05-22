@@ -323,8 +323,11 @@ class TestApplySequenceParallelism:
             lambda **kwargs: None,
         )
 
-    def test_world_size_one(self, sequence_parallel_batch):
+    @patch("axolotl.monkeypatch.ring_attn.patch.get_ring_attn_group")
+    def test_world_size_one(self, mock_get_ring_attn_group, sequence_parallel_batch):
         """Test that function returns original batch when world size is 1."""
+        mock_get_ring_attn_group.return_value = 0
+
         result, _, _ = apply_sequence_parallelism(
             batch=sequence_parallel_batch,
             local_rank=0,
@@ -336,8 +339,11 @@ class TestApplySequenceParallelism:
         # Should return the original batch unchanged
         assert result == sequence_parallel_batch
 
-    def test_batch_ring_rank0(self, sequence_parallel_batch):
+    @patch("axolotl.monkeypatch.ring_attn.patch.get_ring_attn_group")
+    def test_batch_ring_rank0(self, mock_get_ring_attn_group, sequence_parallel_batch):
         """Test BATCH_RING sharding for rank 0 in a 2-process group."""
+        mock_get_ring_attn_group.return_value = 0
+
         batch = sequence_parallel_batch
         seq_len = batch["input_ids"].size(1)
 
@@ -359,8 +365,11 @@ class TestApplySequenceParallelism:
             result["position_ids"], batch["position_ids"][:, : seq_len // 2]
         )
 
-    def test_batch_ring_rank1(self, sequence_parallel_batch):
+    @patch("axolotl.monkeypatch.ring_attn.patch.get_ring_attn_group")
+    def test_batch_ring_rank1(self, mock_get_ring_attn_group, sequence_parallel_batch):
         """Test BATCH_RING sharding for rank 1 in a 2-process group."""
+        mock_get_ring_attn_group.return_value = 0
+
         batch = sequence_parallel_batch
         seq_len = batch["input_ids"].size(1)
         original_input_ids = batch["input_ids"].clone()
@@ -419,8 +428,13 @@ class TestApplySequenceParallelism:
     #         assert torch.equal(result_rank0["input_ids"], rank0_expected)
     #         assert torch.equal(result_rank1["input_ids"], rank1_expected)
 
-    def test_partial_application(self, sequence_parallel_batch):
+    @patch("axolotl.monkeypatch.ring_attn.patch.get_ring_attn_group")
+    def test_partial_application(
+        self, mock_get_ring_attn_group, sequence_parallel_batch
+    ):
         """Test that we can create a partially applied version of the function."""
+        mock_get_ring_attn_group.return_value = 0
+
         batch = sequence_parallel_batch
         original_input_ids = batch["input_ids"].clone()
 
