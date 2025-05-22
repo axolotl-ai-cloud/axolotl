@@ -16,8 +16,8 @@ LOG = logging.getLogger(__name__)
 def get_module_class_from_name(
     module: torch.nn.Module, name: str
 ) -> Type[torch.nn.Module] | None:
-    """Gets a class from a module by its name. Copied from
-    `accelerate.utils.dataclasses`.
+    """Gets a class from a module by its name. Copied from `accelerate.utils.dataclasses`
+    (https://github.com/huggingface/accelerate/blob/main/src/accelerate/utils/dataclasses.py#L2805).
 
     Args:
         module: The module to get the class from.
