@@ -421,6 +421,10 @@ class TrainerBuilderBase(abc.ABC):
                 adam_kwargs["eps"] = (eps1, eps2)
 
                 optimizer_kwargs.update(adam_kwargs)
+            else:
+                raise ValueError(
+                    f"Unhandled optimizer: {self.cfg.optimizer}. Please raise an Issue."
+                )
 
             # Parse any additional optimizer args from config
             if self.cfg.optim_args:
