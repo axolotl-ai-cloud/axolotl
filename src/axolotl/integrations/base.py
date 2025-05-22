@@ -150,6 +150,18 @@ class BasePlugin:
             class: The class for the trainer.
         """
 
+    def get_collator_cls(self, cfg, is_eval=False):  # pylint: disable=unused-argument):
+        """
+        Returns a custom class for the collator.
+
+        Args:
+            cfg (dict): The global axolotl configuration.
+            is_eval (bool): Whether this is an eval split.
+
+        Returns:
+            class: The class for the collator.
+        """
+
     def post_trainer_create(self, cfg, trainer):  # pylint: disable=unused-argument
         """
         Performs actions after the trainer is created.
@@ -469,6 +481,23 @@ class PluginManager:
             trainer_cls = plugin.get_trainer_cls(cfg)
             if trainer_cls is not None:
                 return trainer_cls
+        return None
+
+    def get_collator_cls(self, cfg, is_eval=False):
+        """
+        Calls the get_collator_cls method of all registered plugins and returns the first non-None collator class.
+
+        Parameters:
+        cfg (dict): The configuration for the plugins.
+        is_eval (bool): Whether this is an eval split.
+
+        Returns:
+        object: The collator class, or None if none was found.
+        """
+        for plugin in self.plugins.values():
+            collator_cls = plugin.get_collator_cls(cfg, is_eval=is_eval)
+            if collator_cls is not None:
+                return collator_cls
         return None
 
     def post_trainer_create(self, cfg, trainer):

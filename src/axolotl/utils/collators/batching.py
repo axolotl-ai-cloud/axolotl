@@ -1,7 +1,7 @@
 """Data collators for axolotl to pad labels and position_ids for packed sequences"""
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, List
 
 import numpy as np
 from transformers import PreTrainedTokenizerBase
@@ -161,7 +161,7 @@ class V2BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
 
     def __call__(self, features, return_tensors=None):
         if not isinstance(features[0], list):
-            features = [features]
+            features: List[List[dict]] = [features]
         out_features = [{} for _ in features]
         for i, features_ in enumerate(features):
             for feature in features_[0].keys():

@@ -305,8 +305,6 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
             grad_inputs_list.append(grad_input_chunk)
 
         grad_inputs_combined = torch.cat(grad_inputs_list, dim=0)
-        print("grad_inputs_combined")
-        print(grad_inputs_combined.shape)
         ctx.save_for_backward(grad_inputs_combined, grad_weight_acc, grad_bias_acc)
 
         # For matching None returns in backward for non-tensor/non-grad_requiring inputs
