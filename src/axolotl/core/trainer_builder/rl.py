@@ -247,4 +247,4 @@ class HFPPOTrainerBuilder(TrainerBuilderBase):
 
     def build(self, total_num_steps):
         # build PPOConfig
-        pass
+        raise NotImplementedError("PPO trainer builder is not implemented yet.")
