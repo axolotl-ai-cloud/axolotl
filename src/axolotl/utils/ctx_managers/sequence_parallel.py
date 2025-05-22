@@ -12,6 +12,9 @@ from transformers.utils import ModelOutput
 
 from axolotl.monkeypatch.ring_attn.patch import (
     get_ring_attn_group,
+    patch_prepare_data_loader,
+    patch_prepare_device_mesh,
+    register_ring_attn,
     update_ring_attn_params,
 )
 from axolotl.utils.schemas.enums import RingAttnFunc
@@ -169,6 +172,8 @@ class SequenceParallelContextManager:
         sequence_parallel_degree: Number of processes to split sequences over.
         gradient_accumulation_steps: Number of steps to accumulate gradients over.
         ring_attn_func: Which ring attention function to use. Currently unused.
+        heads_k_stride: Sequence parallelism K head stride size. Passed through to
+            `varlen_llama3` `ring_flash_attn` implementation.
     """
 
     def __init__(
@@ -177,14 +182,17 @@ class SequenceParallelContextManager:
         sequence_parallel_degree: int,
         gradient_accumulation_steps: int,
         ring_attn_func: RingAttnFunc,
+        heads_k_stride: int | None,
     ):
         self.models = models
         self.sequence_parallel_degree = sequence_parallel_degree
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.ring_attn_func = ring_attn_func
-        self.process_group = get_ring_attn_group()
+        self.heads_k_stride = heads_k_stride
+        self._register_ring_attn()
 
-        # Initialize sequence parallel group details
+        # Set distributed info for local rank
+        self.process_group = get_ring_attn_group()
         self.local_rank = dist.get_rank(self.process_group)
         self.local_world_size = dist.get_world_size(self.process_group)
 
@@ -205,6 +213,33 @@ class SequenceParallelContextManager:
         )
 
     def __enter__(self):
+        self._register_model_hooks()
+
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Remove all hooks
+        for handle in self.hook_handles:
+            handle.remove()
+        self.hook_handles = []
+
+        # TODO(djsaunde): Un-patch attention and accelerate functions (low priority)
+
+    def _register_ring_attn(self):
+        # Initialize ring attn for sequence parallelism
+        register_ring_attn(
+            sequence_parallel_degree=self.sequence_parallel_degree,
+            heads_k_stride=self.heads_k_stride,
+            ring_attn_func=self.ring_attn_func,
+        )
+
+        # Patches for accelerate functionality
+        patch_prepare_data_loader()
+        patch_prepare_device_mesh(
+            sequence_parallel_degree=self.sequence_parallel_degree
+        )
+
+    def _register_model_hooks(self):
         # Forward pre-hook to apply sequence parallelism
         def sequence_parallel_pre_hook(_, args, kwargs):
             # Get parameter names from the model's forward function
@@ -230,7 +265,7 @@ class SequenceParallelContextManager:
         # Forward post-hook to gather outputs
         def sequence_parallel_post_hook(_, __, output: ModelOutput) -> ModelOutput:
             # Gather the sharded outputs
-            output = self.gather_outputs(output)
+            output = self._gather_outputs(output)
 
             # Remove padding if it was added
             if self.pad_len > 0:
@@ -253,15 +288,7 @@ class SequenceParallelContextManager:
                 model.register_forward_hook(sequence_parallel_post_hook)
             )
 
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        # Remove all hooks
-        for handle in self.hook_handles:
-            handle.remove()
-        self.hook_handles = []
-
-    def gather_outputs(self, output: CausalLMOutputWithPast) -> CausalLMOutputWithPast:
+    def _gather_outputs(self, output: CausalLMOutputWithPast) -> CausalLMOutputWithPast:
         """Gather sharded outputs from all ranks and reconstruct the full tensor."""
         for key, value in output.items():
             if isinstance(value, torch.Tensor) and value.dim() > 1:
