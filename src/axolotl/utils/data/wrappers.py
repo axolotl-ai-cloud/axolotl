@@ -5,9 +5,7 @@ from typing import Any, cast
 
 from datasets import (
     Dataset,
-    DatasetDict,
     IterableDataset,
-    IterableDatasetDict,
     Sequence,
     Value,
 )
@@ -46,7 +44,7 @@ LOG = logging.getLogger(__name__)
 
 # pylint: disable=too-many-return-statements
 def get_dataset_wrapper(
-    config_dataset: DictDefault,
+    dataset_config: DictDefault,
     tokenizer: PreTrainedTokenizer,
     cfg: DictDefault,
     dataset_base_type: str | None,
@@ -58,7 +56,7 @@ def get_dataset_wrapper(
     configuration.
 
     Args:
-        config_dataset: Configuration for the dataset.
+        dataset_config: Configuration for the dataset.
         tokenizer: Tokenizer to use for processing text.
         cfg: Global configuration object.
         dataset_base_type: The base type of the dataset.
@@ -76,7 +74,7 @@ def get_dataset_wrapper(
     }
 
     LOG.info(
-        f"Loading dataset: {config_dataset['path']} with base_type: "
+        f"Loading dataset: {dataset_config['path']} with base_type: "
         f"{dataset_base_type} and prompt_style: {dataset_prompt_style}"
     )
 
@@ -85,9 +83,9 @@ def get_dataset_wrapper(
         return dataset, UnsupportedPrompter()
 
     # Custom dataset type definition
-    if isinstance(config_dataset.type, DictDefault):
+    if isinstance(dataset_config.type, DictDefault):
         return _handle_custom_dataset_type(
-            config_dataset, tokenizer, cfg, dataset, dataset_kwargs
+            dataset_config, tokenizer, cfg, dataset, dataset_kwargs
         )
 
     # Skip preparation if configured
@@ -95,23 +93,23 @@ def get_dataset_wrapper(
         return dataset, None
 
     # Bradley-Terry dataset
-    if config_dataset.type.startswith("bradley_terry"):
+    if dataset_config.type.startswith("bradley_terry"):
         return _handle_bradley_terry_dataset(
-            config_dataset, tokenizer, cfg, dataset, dataset_kwargs
+            dataset_config, tokenizer, cfg, dataset, dataset_kwargs
         )
 
     # Stepwise supervised dataset
-    if config_dataset.type.startswith("stepwise_supervised"):
+    if dataset_config.type.startswith("stepwise_supervised"):
         return _handle_stepwise_supervised_dataset(
-            config_dataset, tokenizer, cfg, dataset, dataset_kwargs
+            dataset_config, tokenizer, cfg, dataset, dataset_kwargs
         )
 
-    # Try to load dataset strategy from registry
-    prompt_tokenizer = load(
-        config_dataset.type, tokenizer, cfg, config_dataset, processor=processor
+    # Try to load prompt tokenizer / dataset wrapper strategy from registry
+    dataset_strategy = load(
+        dataset_config.type, tokenizer, cfg, dataset_config, processor=processor
     )
-    if prompt_tokenizer:
-        return _handle_loaded_strategy(prompt_tokenizer, dataset, dataset_kwargs)
+    if dataset_strategy:
+        return _handle_loaded_strategy(dataset_strategy, dataset, dataset_kwargs)
 
     # Known dataset types with specific handling
     if dataset_base_type in DATASET_HANDLERS:
@@ -119,12 +117,17 @@ def get_dataset_wrapper(
         return handler(dataset_prompt_style, tokenizer, cfg, dataset, dataset_kwargs)
 
     # Unhandled dataset type
-    return _handle_unhandled_dataset_type(config_dataset.type)
+    ds_type = dataset_config.type
+    suffix = ""
+    if ":load_" in ds_type:
+        suffix = f" Did you mean {ds_type.replace(':load_', '.load_')}?"
+
+    error_message = f"unhandled prompt tokenization strategy: {ds_type}. {suffix}"
+    LOG.error(error_message)
+    raise ValueError(error_message)
 
 
-def _is_dataset_already_tokenized(
-    dataset: Dataset | IterableDataset | DatasetDict | IterableDatasetDict,
-) -> bool:
+def _is_dataset_already_tokenized(dataset: Dataset | IterableDataset) -> bool:
     """Check if the dataset is already tokenized."""
     return (
         isinstance(dataset, Dataset)
@@ -135,20 +138,20 @@ def _is_dataset_already_tokenized(
 
 
 def _handle_custom_dataset_type(
-    config_dataset: DictDefault,
+    dataset_config: DictDefault,
     tokenizer: PreTrainedTokenizer,
     cfg: DictDefault,
     dataset: Dataset | IterableDataset,
     dataset_kwargs: dict[str, Any],
 ) -> tuple[Dataset | IterableDataset, Prompter]:
     """Handle a custom dataset type defined in the configuration."""
-    prompt_tokenizer = cast(
+    dataset_strategy = cast(
         PromptTokenizingStrategy,
-        load("user_defined", tokenizer, cfg, config_dataset.type.to_dict()),
+        load("user_defined", tokenizer, cfg, dataset_config.type.to_dict()),
     )
     dataset_prompter = UnsupportedPrompter()
     dataset_wrapper = wrap_dataset_for_tokenized_prompt(
-        prompt_tokenizer,
+        dataset_strategy,
         dataset,
         **dataset_kwargs,
     )
@@ -156,25 +159,29 @@ def _handle_custom_dataset_type(
 
 
 def _handle_bradley_terry_dataset(
-    config_dataset: DictDefault,
+    dataset_config: DictDefault,
     tokenizer: PreTrainedTokenizer,
     cfg: DictDefault,
     dataset: Dataset | IterableDataset,
     dataset_kwargs: dict[str, Any],
 ) -> tuple[Dataset | IterableDataset, Prompter | None]:
     """Handle a Bradley-Terry dataset."""
-    bt_type = config_dataset.type.split(".", 1)[1]
-    prompt_tokenizer = cast(
-        PromptTokenizingStrategy | None,
-        bradley_terry_load(bt_type, tokenizer, cfg, config_dataset),
-    )
+    bt_type = dataset_config.type.split(".", 1)[1]
+    dataset_strategy = bradley_terry_load(bt_type, tokenizer, cfg, dataset_config)
 
-    if not prompt_tokenizer:
-        _handle_unhandled_dataset_type(config_dataset.type)
+    if not dataset_strategy:
+        ds_type = dataset_config.type
+        suffix = ""
+        if ":load_" in ds_type:
+            suffix = f" Did you mean {ds_type.replace(':load_', '.load_')}?"
+
+        error_message = f"unhandled prompt tokenization strategy: {ds_type}. {suffix}"
+        LOG.error(error_message)
+        raise ValueError(error_message)
 
     dataset_prompter = UnsupportedPrompter()
     dataset_wrapper = wrap_dataset_for_tokenized_prompt(
-        prompt_tokenizer,
+        dataset_strategy,
         dataset,
         **dataset_kwargs,
     )
@@ -183,7 +190,7 @@ def _handle_bradley_terry_dataset(
 
 
 def _handle_stepwise_supervised_dataset(
-    config_dataset: DictDefault,
+    dataset_config: DictDefault,
     tokenizer: PreTrainedTokenizer,
     cfg: DictDefault,
     dataset: Dataset | IterableDataset,
@@ -191,10 +198,7 @@ def _handle_stepwise_supervised_dataset(
 ) -> tuple[Dataset | IterableDataset, Prompter]:
     """Handle a stepwise supervised dataset."""
     dataset_prompter = UnsupportedPrompter()
-    prompt_tokenizer = cast(
-        PromptTokenizingStrategy,
-        load(config_dataset.type, tokenizer, cfg, config_dataset),
-    )
+    dataset_strategy = load(dataset_config.type, tokenizer, cfg, dataset_config)
 
     # We need to explicitly cast boolean labels to int
     # for compatibility with how trl's PRMTrainer works
@@ -202,7 +206,7 @@ def _handle_stepwise_supervised_dataset(
         dataset = dataset.cast_column("labels", Sequence(Value("int64")))
 
     dataset_wrapper = TokenizedPromptDataset(
-        prompt_tokenizer,
+        dataset_strategy,
         dataset,
         **dataset_kwargs,
     )
@@ -210,34 +214,21 @@ def _handle_stepwise_supervised_dataset(
 
 
 def _handle_loaded_strategy(
-    prompt_tokenizer: PromptTokenizingStrategy | DatasetWrappingStrategy,
+    dataset_strategy: PromptTokenizingStrategy | DatasetWrappingStrategy,
     dataset: Dataset | IterableDataset,
     dataset_kwargs: dict[str, Any],
 ) -> tuple[Dataset | IterableDataset, Prompter | None]:
     """Handle a dataset with a strategy loaded from the registry."""
-    if isinstance(prompt_tokenizer, DatasetWrappingStrategy):
-        return prompt_tokenizer.wrap_dataset(dataset, **dataset_kwargs), None
+    if isinstance(dataset_strategy, DatasetWrappingStrategy):
+        return dataset_strategy.wrap_dataset(dataset, **dataset_kwargs), None
 
     dataset_prompter = UnsupportedPrompter()
     dataset_wrapper = wrap_dataset_for_tokenized_prompt(
-        prompt_tokenizer,
+        dataset_strategy,
         dataset,
         **dataset_kwargs,
     )
     return dataset_wrapper, dataset_prompter
-
-
-def _handle_unhandled_dataset_type(
-    dataset_type: str,
-):
-    """Handle an unhandled dataset type by raising an error."""
-    suffix = ""
-    if ":load_" in dataset_type:
-        suffix = f" Did you mean {dataset_type.replace(':load_', '.load_')}?"
-
-    error_message = f"unhandled prompt tokenization strategy: {dataset_type}. {suffix}"
-    LOG.error(error_message)
-    raise ValueError(error_message)
 
 
 def _handle_alpaca_dataset(
@@ -249,14 +240,14 @@ def _handle_alpaca_dataset(
 ) -> tuple[Dataset | IterableDataset, Prompter]:
     """Handle an Alpaca dataset."""
     dataset_prompter = AlpacaPrompter(dataset_prompt_style)
-    prompt_tokenizer = AlpacaPromptTokenizingStrategy(
+    dataset_strategy = AlpacaPromptTokenizingStrategy(
         dataset_prompter,
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
     )
     dataset_wrapper = wrap_dataset_for_tokenized_prompt(
-        prompt_tokenizer,
+        dataset_strategy,
         dataset,
         **dataset_kwargs,
     )
@@ -272,14 +263,14 @@ def _handle_explainchoice_dataset(
 ) -> tuple[Dataset | IterableDataset, Prompter]:
     """Handle an ExplainChoice dataset."""
     dataset_prompter = MultipleChoiceExplainPrompter(dataset_prompt_style)
-    prompt_tokenizer = AlpacaMultipleChoicePromptTokenizingStrategy(
+    dataset_strategy = AlpacaMultipleChoicePromptTokenizingStrategy(
         dataset_prompter,
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
     )
     dataset_wrapper = wrap_dataset_for_tokenized_prompt(
-        prompt_tokenizer,
+        dataset_strategy,
         dataset,
         **dataset_kwargs,
     )
@@ -295,14 +286,14 @@ def _handle_concisechoice_dataset(
 ) -> tuple[Dataset | IterableDataset, Prompter]:
     """Handle a ConciseChoice dataset."""
     dataset_prompter = MultipleChoiceConcisePrompter(dataset_prompt_style)
-    prompt_tokenizer = AlpacaMultipleChoicePromptTokenizingStrategy(
+    dataset_strategy = AlpacaMultipleChoicePromptTokenizingStrategy(
         dataset_prompter,
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
     )
     dataset_wrapper = wrap_dataset_for_tokenized_prompt(
-        prompt_tokenizer,
+        dataset_strategy,
         dataset,
         **dataset_kwargs,
     )
@@ -318,14 +309,14 @@ def _handle_summarizetldr_dataset(
 ) -> tuple[Dataset | IterableDataset, Prompter]:
     """Handle a SummarizeTLDR dataset."""
     dataset_prompter = SummarizeTLDRPrompter(dataset_prompt_style)
-    prompt_tokenizer = SummarizeTLDRPromptTokenizingStrategy(
+    dataset_strategy = SummarizeTLDRPromptTokenizingStrategy(
         dataset_prompter,
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
     )
     dataset_wrapper = wrap_dataset_for_tokenized_prompt(
-        prompt_tokenizer,
+        dataset_strategy,
         dataset,
         **dataset_kwargs,
     )
@@ -341,14 +332,14 @@ def _handle_jeopardy_dataset(
 ) -> tuple[Dataset | IterableDataset, Prompter]:
     """Handle a Jeopardy dataset."""
     dataset_prompter = JeopardyPrompter(dataset_prompt_style)
-    prompt_tokenizer = JeopardyPromptTokenizingStrategy(
+    dataset_strategy = JeopardyPromptTokenizingStrategy(
         dataset_prompter,
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
     )
     dataset_wrapper = wrap_dataset_for_tokenized_prompt(
-        prompt_tokenizer,
+        dataset_strategy,
         dataset,
         **dataset_kwargs,
     )
@@ -364,14 +355,14 @@ def _handle_oasst_dataset(
 ) -> tuple[Dataset | IterableDataset, Prompter]:
     """Handle an OpenAssistant dataset."""
     dataset_prompter = AlpacaPrompter(dataset_prompt_style)
-    prompt_tokenizer = OpenAssistantPromptTokenizingStrategy(
+    dataset_strategy = OpenAssistantPromptTokenizingStrategy(
         dataset_prompter,
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
     )
     dataset_wrapper = wrap_dataset_for_tokenized_prompt(
-        prompt_tokenizer,
+        dataset_strategy,
         dataset,
         **dataset_kwargs,
     )
@@ -387,14 +378,14 @@ def _handle_gpteacher_dataset(
 ) -> tuple[Dataset | IterableDataset, Prompter]:
     """Handle a GPTeacher dataset."""
     dataset_prompter = GPTeacherPrompter(dataset_prompt_style)
-    prompt_tokenizer = GPTeacherPromptTokenizingStrategy(
+    dataset_strategy = GPTeacherPromptTokenizingStrategy(
         dataset_prompter,
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
     )
     dataset_wrapper = wrap_dataset_for_tokenized_prompt(
-        prompt_tokenizer,
+        dataset_strategy,
         dataset,
         **dataset_kwargs,
     )
@@ -410,14 +401,14 @@ def _handle_reflection_dataset(
 ) -> tuple[Dataset | IterableDataset, Prompter]:
     """Handle a Reflection dataset."""
     dataset_prompter = ReflectAlpacaPrompter(dataset_prompt_style)
-    prompt_tokenizer = AlpacaReflectionPTStrategy(
+    dataset_strategy = AlpacaReflectionPTStrategy(
         dataset_prompter,
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
     )
     dataset_wrapper = wrap_dataset_for_tokenized_prompt(
-        prompt_tokenizer,
+        dataset_strategy,
         dataset,
         **dataset_kwargs,
     )

@@ -1,6 +1,4 @@
-"""
-Test dataset loading under various conditions.
-"""
+"""Test dataset loading under various conditions."""
 
 import shutil
 import tempfile
@@ -12,8 +10,8 @@ from datasets import Dataset
 from huggingface_hub import snapshot_download
 from transformers import PreTrainedTokenizer
 
-from axolotl.utils.data import load_tokenized_prepared_datasets
 from axolotl.utils.data.rl import load_prepare_preference_datasets
+from axolotl.utils.data.sft import _load_tokenized_prepared_datasets
 from axolotl.utils.dict import DictDefault
 
 from tests.constants import (
@@ -63,7 +61,9 @@ class TestDatasetPreparation:
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(tokenizer, cfg, prepared_path)
+            dataset, _ = _load_tokenized_prepared_datasets(
+                tokenizer, cfg, prepared_path
+            )
 
             assert len(dataset) == 2000
             assert "input_ids" in dataset.features
@@ -107,7 +107,9 @@ class TestDatasetPreparation:
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(tokenizer, cfg, prepared_path)
+            dataset, _ = _load_tokenized_prepared_datasets(
+                tokenizer, cfg, prepared_path
+            )
 
             assert len(dataset) == 2000
             assert "input_ids" in dataset.features
@@ -136,7 +138,9 @@ class TestDatasetPreparation:
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(tokenizer, cfg, prepared_path)
+            dataset, _ = _load_tokenized_prepared_datasets(
+                tokenizer, cfg, prepared_path
+            )
 
             assert len(dataset) == 1
             assert "input_ids" in dataset.features
@@ -171,7 +175,9 @@ class TestDatasetPreparation:
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(tokenizer, cfg, prepared_path)
+            dataset, _ = _load_tokenized_prepared_datasets(
+                tokenizer, cfg, prepared_path
+            )
 
             assert len(dataset) == 1
             assert "input_ids" in dataset.features
@@ -206,7 +212,9 @@ class TestDatasetPreparation:
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(tokenizer, cfg, prepared_path)
+            dataset, _ = _load_tokenized_prepared_datasets(
+                tokenizer, cfg, prepared_path
+            )
 
             assert len(dataset) == 1
             assert "input_ids" in dataset.features
@@ -235,7 +243,9 @@ class TestDatasetPreparation:
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(tokenizer, cfg, prepared_path)
+            dataset, _ = _load_tokenized_prepared_datasets(
+                tokenizer, cfg, prepared_path
+            )
 
             assert len(dataset) == 1
             assert "input_ids" in dataset.features
@@ -264,7 +274,9 @@ class TestDatasetPreparation:
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(tokenizer, cfg, prepared_path)
+            dataset, _ = _load_tokenized_prepared_datasets(
+                tokenizer, cfg, prepared_path
+            )
 
             assert len(dataset) == 1
             assert "input_ids" in dataset.features
@@ -315,7 +327,9 @@ class TestDatasetPreparation:
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(tokenizer, cfg, prepared_path)
+            dataset, _ = _load_tokenized_prepared_datasets(
+                tokenizer, cfg, prepared_path
+            )
 
             assert len(dataset) == 2000
             assert "input_ids" in dataset.features
@@ -394,7 +408,7 @@ class TestDatasetPreparation:
                     dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff
                 )
 
-                dataset, _ = load_tokenized_prepared_datasets(
+                dataset, _ = _load_tokenized_prepared_datasets(
                     tokenizer, cfg, prepared_path
                 )
 
@@ -431,7 +445,9 @@ class TestDatasetPreparation:
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(tokenizer, cfg, prepared_path)
+            dataset, _ = _load_tokenized_prepared_datasets(
+                tokenizer, cfg, prepared_path
+            )
 
             assert len(dataset) == 2000
             assert "input_ids" in dataset.features

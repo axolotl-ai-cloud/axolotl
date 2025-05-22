@@ -1,5 +1,6 @@
 """Data handling helpers"""
 
+import contextlib
 import functools
 import hashlib
 import logging
@@ -105,12 +106,12 @@ def deduplicate_dataset(
 
 def deduplicate_and_log_datasets(
     *,
-    train_dataset: Dataset = None,
-    eval_dataset: Dataset = None,
-    dataset: Dataset = None,
-) -> tuple[Dataset, Dataset, Dataset]:
-    """
-    Deduplicates train, eval, and an optional dataset if provided, logging original and new sizes.
+    train_dataset: Dataset | None = None,
+    eval_dataset: Dataset | None = None,
+    dataset: Dataset | None = None,
+) -> tuple[Dataset | None, Dataset | None, Dataset | None]:
+    """Deduplicates train, eval, and an optional dataset if provided, logging original
+    and new sizes.
 
     Returns:
         tuple: Deduplicated train, eval, and additional datasets.
@@ -159,7 +160,8 @@ def deduplicate_and_log_datasets(
 def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
     if "input_ids" not in dataset.column_names:
         LOG.warning(
-            "Dataset does not contain 'input_ids' column. Skip drop long seq. This is expected for RewardModeling."
+            "Dataset does not contain 'input_ids' column. Skip drop long seq. This is "
+            "expected for reward modeling."
         )
         return dataset
 
@@ -169,20 +171,14 @@ def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
         min_sequence_len=cfg.min_sample_len,
     )
 
-    try:
+    with contextlib.suppress(AttributeError):
         ds_lengths = get_dataset_lengths(dataset, from_arrow=True)
         min_input_len = np.min(ds_lengths)
         LOG.info(f"min_input_len: {min_input_len}")
         max_input_len = np.max(ds_lengths)
         LOG.info(f"max_input_len: {max_input_len}")
-    except AttributeError:
-        pass
 
-    try:
-        prior_len = len(dataset)
-    except TypeError:
-        # handle iterable datasets case
-        prior_len = None
+    prior_len = len(dataset) if hasattr(dataset, "__len__") else None
 
     filter_map_kwargs = {}
     if not isinstance(dataset, IterableDataset):

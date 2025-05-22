@@ -4,7 +4,7 @@ import inspect
 import logging
 from functools import partial
 from pathlib import Path
-from typing import Any, List, Literal, Union
+from typing import Any, List, Literal
 
 import yaml
 from datasets import Dataset, DatasetDict, concatenate_datasets, load_from_disk
@@ -129,9 +129,9 @@ def load_split(cfg: DictDefault, split: Literal["train", "test"]):
     datasets = cfg.datasets if split == "train" else cfg.test_datasets
     split_datasets: List[Any] = []
 
-    for config_dataset in datasets_with_name_generator(datasets):
-        ds: Union[Dataset, DatasetDict] = load_dataset_with_config(
-            config_dataset, cfg.hf_use_auth_token, streaming=False
+    for dataset_config in datasets_with_name_generator(datasets):
+        ds: Dataset | DatasetDict = load_dataset_with_config(
+            dataset_config, cfg.hf_use_auth_token, streaming=False
         )
         split_datasets.append(ds)
 
@@ -165,7 +165,7 @@ def load_split(cfg: DictDefault, split: Literal["train", "test"]):
             )
         else:
             # If no `type` is provided, assume the dataset is already in the expected format with
-            # "prompt", "chosen" and "rejected" already preprocessed
+            # "prompt", "chosen", and "rejected" already preprocessed
             split_datasets[i] = data_set
 
         if not cfg.skip_prepare_dataset:
