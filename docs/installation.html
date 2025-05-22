@@ -518,6 +518,19 @@ Important
 <p>Follow the instructions at: <a href="https://pytorch.org/get-started/locally/">https://pytorch.org/get-started/locally/</a></p>
 </div>
 </div>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Important
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>For Blackwell GPUs, please use Pytorch 2.7.0 and CUDA 12.8.</p>
+</div>
+</div>
 <section id="sec-pypi" class="level3" data-number="2.1">
 <h3 data-number="2.1" class="anchored" data-anchor-id="sec-pypi"><span class="header-section-number">2.1</span> PyPI Installation (Recommended)</h3>
 <div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">-U</span> packaging setuptools wheel ninja</span>
@@ -556,6 +569,19 @@ Advanced Docker Configuration
 <span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--mount</span> type=bind,src=<span class="st">"</span><span class="va">${PWD}</span><span class="st">"</span>,target=/workspace/axolotl <span class="dt">\</span></span>
 <span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">-v</span> <span class="va">${HOME}</span>/.cache/huggingface:/root/.cache/huggingface <span class="dt">\</span></span>
 <span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>  axolotlai/axolotl:main-latest</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</div>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Important
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>For Blackwell GPUs, please use <code>axolotlai/axolotl:main-py3.11-cu128-2.7.0</code> or the cloud variant <code>axolotlai/axolotl-cloud:main-py3.11-cu128-2.7.0</code>.</p>
 </div>
 </div>
 <p>Please refer to the <a href="../docs/docker.html">Docker documentation</a> for more information on the different Docker images that are available.</p>

@@ -494,6 +494,19 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 <p>This section describes the different Docker images that are released by AxolotlAI at <a href="https://hub.docker.com/u/axolotlai">Docker Hub</a>.</p>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Important
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>For Blackwell GPUs, please use the tags with Pytorch 2.7.0 and CUDA 12.8.</p>
+</div>
+</div>
 <section id="base" class="level2">
 <h2 class="anchored" data-anchor-id="base">Base</h2>
 <p>The base image is the most minimal image that can install Axolotl. It is based on the <code>nvidia/cuda</code> image. It includes python, torch, git, git-lfs, awscli, pydantic, and more.</p>
