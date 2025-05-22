@@ -429,18 +429,15 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ]
         ]
         collator_args = [self.tokenizer]
-        if self.cfg.reward_model:
-            collator = RewardDataCollatorWithPadding
-        elif self.cfg.kd_trainer:
-            from axolotl.integrations.kd.collator import (
-                DataCollatorForKD,
-                KDBatchSamplerDataCollatorForSeq2Seq,
-            )
 
-            if self.cfg.sample_packing and use_batch_sampler_collator:
-                collator = KDBatchSamplerDataCollatorForSeq2Seq
-            else:
-                collator = DataCollatorForKD
+        if self.cfg.plugins:
+            plugin_manager = PluginManager.get_instance()
+            collator_cls = plugin_manager.get_collator_cls(self.cfg, is_eval=is_eval)
+
+        if collator_cls:
+            pass
+        elif self.cfg.reward_model:
+            collator = RewardDataCollatorWithPadding
         elif use_batch_sampler_collator:
             # Use V2BatchSamplerDataCollatorForSeq2Seq for flex attention,
             # supported multipack models, or non-flash-attention llama
