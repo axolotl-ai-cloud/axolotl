@@ -465,8 +465,6 @@ class TrainerBuilderBase(abc.ABC):
             "save_only_model",
             "include_tokens_per_second",
             "weight_decay",
-            "sequence_parallel_degree",
-            "ring_attn_func",
             "seed",
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:

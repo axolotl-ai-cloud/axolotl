@@ -540,7 +540,7 @@ train_on_inputs: false
 # Note that training loss may have an oscillating pattern with this enabled.
 group_by_length: false
 
-# Whether to use gradient checkpointing. Available options are: true, false, "offload".
+# Whether to use gradient checkpointing. Available options are: true, false, "offload", "offload_disk".
 # https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing
 gradient_checkpointing: false
 # additional kwargs to pass to the trainer for gradient checkpointing
@@ -634,7 +634,9 @@ weight_decay:
 # adamw hyperparams
 adam_beta1:
 adam_beta2:
+adam_beta3:  # only used for CAME Optimizer
 adam_epsilon:
+adam_epsilon2:  # only used for CAME Optimizer
 # Gradient clipping max norm
 max_grad_norm:
 

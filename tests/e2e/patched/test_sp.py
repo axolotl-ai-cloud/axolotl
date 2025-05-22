@@ -10,7 +10,7 @@ import pytest
 import torch
 from accelerate.state import PartialState
 
-from axolotl.monkeypatch.attention.ring_attn import (
+from axolotl.monkeypatch.ring_attn import (
     get_ring_attn_group,
     register_ring_attn,
     set_ring_attn_group,
@@ -313,13 +313,13 @@ class TestApplySequenceParallelism:
 
         # Mock the process group
         monkeypatch.setattr(
-            "axolotl.monkeypatch.attention.ring_attn.get_ring_attn_group",
+            "axolotl.monkeypatch.ring_attn.get_ring_attn_group",
             MagicMock,
         )
 
         # Mock update_ring_attn_params
         monkeypatch.setattr(
-            "axolotl.monkeypatch.attention.ring_attn.update_ring_attn_params",
+            "axolotl.monkeypatch.ring_attn.update_ring_attn_params",
             lambda **kwargs: None,
         )
 

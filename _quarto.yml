@@ -62,7 +62,6 @@ quartodoc:
         - core.trainers.mixins.optimizer
         - core.trainers.mixins.rng_state_loader
         - core.trainers.mixins.scheduler
-        - core.trainers.mixins.sequence_parallel
     - title: Context Managers
       desc: Context managers for altering trainer behaviors
       contents:
@@ -141,7 +140,8 @@ quartodoc:
         - utils.optimizers.adopt
         - utils.data.pretraining
         - utils.data.sft
-        - utils.gradient_checkpointing.unsloth
+        - utils.gradient_checkpointing.offload_cpu
+        - utils.gradient_checkpointing.offload_disk
     - title: Schemas
       desc: Pydantic data models for Axolotl config
       contents:

@@ -59,6 +59,7 @@ from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
 )
+from axolotl.monkeypatch.ring_attn.patch import get_ring_attn_group
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.chat_templates import get_chat_template_from_config
@@ -70,7 +71,10 @@ from axolotl.utils.distributed import (
     is_local_main_process,
     is_main_process,
 )
-from axolotl.utils.gradient_checkpointing import hf_grad_checkpoint_offload_wrapper
+from axolotl.utils.gradient_checkpointing import (
+    hf_grad_checkpoint_disk_offload_wrapper,
+    hf_grad_checkpoint_offload_wrapper,
+)
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
@@ -620,6 +624,10 @@ class ModelLoader:
 
         if self.cfg.gradient_checkpointing in ["unsloth", "offload"]:
             transformers.modeling_utils.checkpoint = hf_grad_checkpoint_offload_wrapper
+        if self.cfg.gradient_checkpointing == "offload_disk":
+            transformers.modeling_utils.checkpoint = (
+                hf_grad_checkpoint_disk_offload_wrapper
+            )
 
         if self.cfg.flash_attention:
             self.patch_attention()
@@ -674,16 +682,25 @@ class ModelLoader:
             patch_self_attn_lora(self.cfg)
 
         if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
-            from axolotl.monkeypatch.attention.ring_attn import register_ring_attn
+            from axolotl.monkeypatch.ring_attn import (
+                patch_prepare_data_loader,
+                patch_prepare_device_mesh,
+                register_ring_attn,
+            )
 
             # Initialize ring attn for sequence parallelism. This must be done after
             # model init but before the first forward pass, since it modifies flash
             # attn to use ring comm for SP training across multiple GPUs.
-            register_ring_attn(
-                sequence_parallel_degree=self.cfg.sequence_parallel_degree,
-                heads_k_stride=self.cfg.heads_k_stride,
-                ring_attn_func=self.cfg.ring_attn_func,
-            )
+            if get_ring_attn_group() is None:  # If already set, this is already patched
+                register_ring_attn(
+                    sequence_parallel_degree=self.cfg.sequence_parallel_degree,
+                    heads_k_stride=self.cfg.heads_k_stride,
+                    ring_attn_func=self.cfg.ring_attn_func,
+                )
+                patch_prepare_data_loader()
+                patch_prepare_device_mesh(
+                    sequence_parallel_degree=self.cfg.sequence_parallel_degree
+                )
 
     def patch_attention(self) -> None:
         if hasattr(self.model_config, "model_type"):

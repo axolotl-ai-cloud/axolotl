@@ -3,7 +3,6 @@
 # pylint: disable=too-many-lines,duplicate-code,protected-access,no-member
 
 import warnings
-from contextlib import nullcontext
 from typing import Any
 
 import datasets
@@ -14,7 +13,7 @@ from accelerate.utils import (
     broadcast_object_list,
     gather,
     gather_object,
-    is_peft_model,
+    is_peft_available,
 )
 from datasets import Dataset, IterableDataset
 from torch import nn
@@ -30,15 +29,13 @@ from transformers import (
     TrainerCallback,
 )
 from transformers.trainer_utils import seed_worker
-from transformers.utils import is_peft_available
 from trl import GRPOTrainer
 from trl.data_utils import (
     apply_chat_template,
     is_conversational,
     maybe_apply_chat_template,
 )
-from trl.extras.profiling import profiling_context, profiling_decorator
-from trl.import_utils import is_deepspeed_available
+from trl.extras.profiling import profiling_context
 from trl.models import unwrap_model_for_generation
 from trl.trainer.grpo_config import GRPOConfig
 from trl.trainer.grpo_trainer import RewardFunc, nanstd
@@ -46,67 +43,17 @@ from trl.trainer.utils import pad
 
 from axolotl.core.trainers.grpo.sampler import SequenceParallelRepeatRandomSampler
 from axolotl.core.trainers.mixins import RngLoaderMixin, SchedulerMixin
-from axolotl.monkeypatch.attention.ring_attn.patch import get_ring_attn_group
+from axolotl.monkeypatch.ring_attn.patch import get_ring_attn_group
 
 if is_peft_available():
     # pylint: disable=unused-import
     from peft import PeftConfig
-
-if is_deepspeed_available():
-    import deepspeed
 
 
 class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
     """Extend the base GRPOTrainer for axolotl helpers"""
 
     _tag_names = ["trl", "grpo", "axolotl"]
-
-    @profiling_decorator
-    def _move_model_to_vllm(self):
-        # For DeepSpeed ZeRO-3, we need to gather all parameters before operations
-        deepspeed_plugin = self.accelerator.state.deepspeed_plugin
-        zero_stage_3 = deepspeed_plugin is not None and deepspeed_plugin.zero_stage == 3
-        gather_if_zero3 = (
-            deepspeed.zero.GatheredParameters if zero_stage_3 else nullcontext
-        )
-
-        if is_peft_model(self.model):
-            # With PEFT and DeepSpeed ZeRO Stage 3, we must gather the full model at once before merging, as merging
-            # adapters in a sharded manner is not supported.
-            with gather_if_zero3(list(self.model.parameters())):
-                self.model.merge_adapter()
-
-                # Update vLLM weights while parameters are gathered
-                for name, param in self.model.named_parameters():
-                    # When using PEFT, we need to recover the original parameter name and discard some parameters
-                    name = (
-                        name.removeprefix("base_model.model.")
-                        .removeprefix("base_model.model.")
-                        .replace(".base_layer", "")
-                    )
-                    if self.model.prefix in name:
-                        continue
-                    # When module to save, remove its prefix and discard the original module
-                    if "original_module" in name:
-                        continue
-                    name = name.replace("modules_to_save.default.", "")
-
-                    if self.accelerator.is_main_process:
-                        self.vllm_client.update_named_param(name, param.data)
-
-                # Unmerge adapters while parameters are still gathered
-                self.model.unmerge_adapter()
-                # Parameters will automatically be repartitioned when exiting the context
-        else:
-            # For non-PEFT models, simply gather and update each parameter individually.
-            for name, param in self.model.named_parameters():
-                with gather_if_zero3([param]):
-                    if self.accelerator.is_main_process:
-                        self.vllm_client.update_named_param(name, param.data)
-
-        # Reset cache on main process
-        if self.accelerator.is_main_process:
-            self.vllm_client.reset_prefix_cache()
 
 
 class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):

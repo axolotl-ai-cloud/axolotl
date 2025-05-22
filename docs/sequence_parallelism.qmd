@@ -41,7 +41,7 @@ When sequence parallelism is enabled:
 
 1. Each sequence is divided into equal chunks across the GPUs in a sequence parallel group
 2. The data collator handles the chunking of input_ids, attention_mask, labels, and position_ids
-3. Position IDs are adjusted to maintain proper relative positions, especially for packed sequences
+3. Position IDs are adjusted to maintain proper relative positions
 4. The trainer uses special ring communication patterns for attention operations
 
 ## Requirements
@@ -67,9 +67,11 @@ sequence_len: 8192
 ...
 
 sequence_parallel_degree: 4  # Split each sequence into 4 parts, one per GPU
-flash_attention: true  # Required with sequence parallelism
 # Optional; strides across the key dimension. Larger values use more memory but should make training faster.
 heads_k_stride: 1
+# Optional; one of "varlen_llama3" or "batch_ring". Defaults to
+# "varlen_llama3" when `sample_packing: true`, and "batch_ring" otherwise.
+ring_attn_func:
 
 ...
 ```
