@@ -8,6 +8,7 @@ import logging
 from functools import cached_property
 
 import addict
+import transformers
 from transformers import PretrainedConfig, PreTrainedModel
 
 from axolotl.integrations.base import PluginManager
@@ -16,10 +17,6 @@ from axolotl.monkeypatch.multipack import (
     patch_for_multipack,
 )
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.gradient_checkpointing import (
-    hf_grad_checkpoint_disk_offload_wrapper,
-    hf_grad_checkpoint_offload_wrapper,
-)
 
 LOG = logging.getLogger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
@@ -146,11 +143,15 @@ class PatchManager:
     def _apply_gradient_checkpointing_patches(self):
         """Apply patches for gradient checkpointing."""
         if self.cfg.gradient_checkpointing in ["unsloth", "offload"]:
-            import transformers
+            from axolotl.monkeypatch.gradient_checkpointing import (
+                hf_grad_checkpoint_offload_wrapper,
+            )
 
             transformers.modeling_utils.checkpoint = hf_grad_checkpoint_offload_wrapper
         if self.cfg.gradient_checkpointing == "offload_disk":
-            import transformers
+            from axolotl.monkeypatch.gradient_checkpointing import (
+                hf_grad_checkpoint_disk_offload_wrapper,
+            )
 
             transformers.modeling_utils.checkpoint = (
                 hf_grad_checkpoint_disk_offload_wrapper
