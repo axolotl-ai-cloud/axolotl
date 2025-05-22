@@ -27,10 +27,9 @@ class MultiProcessAdapter(logging.LoggerAdapter):
         main_process_only = kwargs.pop("main_process_only", True)
         kwargs.setdefault("stacklevel", 2)
 
-        if self.isEnabledFor(level):
-            if self._should_log(main_process_only):
-                msg, kwargs = self.process(msg, kwargs)
-                self.logger.log(level, msg, *args, **kwargs)
+        if self.isEnabledFor(level) and self._should_log(main_process_only):
+            msg, kwargs = self.process(msg, kwargs)
+            self.logger.log(level, msg, *args, **kwargs)
 
     @functools.lru_cache(maxsize=10)
     def warning_once(self, *args, **kwargs):
