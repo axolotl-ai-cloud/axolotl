@@ -2,9 +2,9 @@
 Grokfast plugin for Axolotl
 """
 
-from axolotl.utils.logging import get_logger
-
 from transformers.trainer_callback import TrainerCallback
+
+from axolotl.utils.logging import get_logger
 
 from ..base import BasePlugin
 from .args import GrokfastArgs  # pylint: disable=unused-import. # noqa: F401

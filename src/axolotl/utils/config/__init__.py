@@ -1,7 +1,6 @@
 """Module for working with config dicts"""
 
 import json
-from axolotl.utils.logging import get_logger
 import os
 from typing import Optional
 
@@ -13,6 +12,7 @@ from axolotl.integrations.base import PluginManager
 from axolotl.integrations.config import merge_input_args
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 from axolotl.utils.models import MULTIMODAL_AUTO_MODEL_MAPPING, load_model_config
 from axolotl.utils.schemas.config import (
     AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
@@ -158,15 +158,15 @@ def normalize_config(cfg):
     )
 
     cfg.is_multimodal = (
-        hasattr(model_config, "model_type") and
-        model_config.model_type in MULTIMODAL_AUTO_MODEL_MAPPING or
-        any(
+        hasattr(model_config, "model_type")
+        and model_config.model_type in MULTIMODAL_AUTO_MODEL_MAPPING
+        or any(
             multimodal_name in cfg.base_model.lower()
             for multimodal_name in [
                 "pixtral",
             ]
-        ) or
-        cfg.is_multimodal
+        )
+        or cfg.is_multimodal
     )
     if cfg.is_multimodal:
         cfg.processor_config = (
@@ -178,46 +178,46 @@ def normalize_config(cfg):
     # figure out if the model is llama
     cfg.is_llama_derived_model = (
         (
-            hasattr(model_config, "model_type") and
-            model_config.model_type in ["llama", "mllama_text_model"]
-        ) or
-        cfg.is_llama_derived_model or
-        "llama" in cfg.base_model.lower() or
-        (cfg.type_of_model and "llama" in cfg.type_of_model.lower())
+            hasattr(model_config, "model_type")
+            and model_config.model_type in ["llama", "mllama_text_model"]
+        )
+        or cfg.is_llama_derived_model
+        or "llama" in cfg.base_model.lower()
+        or (cfg.type_of_model and "llama" in cfg.type_of_model.lower())
     )
 
     # figure out if the model is falcon
     cfg.is_falcon_derived_model = (
         (
-            hasattr(model_config, "model_type") and
-            model_config.model_type
+            hasattr(model_config, "model_type")
+            and model_config.model_type
             in [
                 "falcon",
                 "RefinedWebModel",
                 "RefinedWeb",
             ]
-        ) or
-        cfg.is_falcon_derived_model or
-        "falcon" in cfg.base_model.lower() or
-        (cfg.type_of_model and "rwforcausallm" in cfg.type_of_model.lower())
+        )
+        or cfg.is_falcon_derived_model
+        or "falcon" in cfg.base_model.lower()
+        or (cfg.type_of_model and "rwforcausallm" in cfg.type_of_model.lower())
     )
 
     cfg.is_mistral_derived_model = (
         (
-            hasattr(model_config, "model_type") and
-            model_config.model_type
+            hasattr(model_config, "model_type")
+            and model_config.model_type
             in [
                 "mistral",
             ]
-        ) or
-        cfg.is_mistral_derived_model or
-        "mistral" in cfg.base_model.lower().split("/")[-1] or
-        (cfg.type_of_model and "mistral" in cfg.type_of_model.lower())
+        )
+        or cfg.is_mistral_derived_model
+        or "mistral" in cfg.base_model.lower().split("/")[-1]
+        or (cfg.type_of_model and "mistral" in cfg.type_of_model.lower())
     )
 
     cfg.is_qwen_derived_model = (
-        hasattr(model_config, "model_type") and
-        model_config.model_type
+        hasattr(model_config, "model_type")
+        and model_config.model_type
         in [
             "qwen",
         ]
@@ -227,10 +227,10 @@ def normalize_config(cfg):
         cfg.pretraining_dataset = [cfg.pretraining_dataset]
 
     if (
-        cfg.gradient_checkpointing and
-        cfg.unfrozen_parameters is None and
-        cfg.gradient_checkpointing_kwargs is None and
-        cfg.rl is None
+        cfg.gradient_checkpointing
+        and cfg.unfrozen_parameters is None
+        and cfg.gradient_checkpointing_kwargs is None
+        and cfg.rl is None
     ):
         cfg.gradient_checkpointing_kwargs = {"use_reentrant": True}
 
@@ -246,8 +246,8 @@ def normalize_cfg_datasets(cfg):
         if cfg.datasets:
             for idx, ds_cfg in enumerate(cfg.datasets):
                 if (
-                    ds_cfg.type in ["orpo.chat_template", "chat_template"] and
-                    not ds_cfg.chat_template
+                    ds_cfg.type in ["orpo.chat_template", "chat_template"]
+                    and not ds_cfg.chat_template
                 ):
                     LOG.info(
                         f"updating dataset {ds_cfg.path} with `chat_template: {cfg.chat_template}` to match your chat_template"

@@ -4,7 +4,6 @@ import concurrent.futures
 import dataclasses
 import hashlib
 import json
-from axolotl.utils.logging import get_logger
 from functools import wraps
 from pathlib import Path
 from types import NoneType
@@ -21,6 +20,7 @@ from transformers import (
 )
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 from axolotl.utils.models import load_model, load_processor, load_tokenizer
 
 LOG = get_logger(__name__)

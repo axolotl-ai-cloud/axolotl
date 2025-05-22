@@ -10,9 +10,9 @@ from axolotl.prompt_strategies.chat_template import (
     load,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
 from tests.hf_offline_utils import enable_hf_offline
-from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 

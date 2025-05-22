@@ -1,7 +1,6 @@
 """data handling specific to pretraining"""
 
 import functools
-from axolotl.utils.logging import get_logger
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional
 
@@ -11,6 +10,7 @@ from torch.utils.data import RandomSampler
 from transformers import PreTrainedTokenizerBase
 
 from axolotl.utils.collators import PretrainingBatchSamplerDataCollatorForSeq2Seq
+from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.trainer import process_pretraining_datasets_for_packing
 

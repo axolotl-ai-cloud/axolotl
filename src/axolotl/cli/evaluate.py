@@ -1,6 +1,5 @@
 """CLI to run evaluation on a model."""
 
-from axolotl.utils.logging import get_logger
 import os
 from pathlib import Path
 from typing import Union
@@ -17,6 +16,7 @@ from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.evaluate import evaluate
 from axolotl.utils import patch_optimized_env
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 

@@ -2,9 +2,9 @@
 monkeypatch for Trainer _get_learning_rate method
 """
 
-from axolotl.utils.logging import get_logger
-
 import torch
+
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 

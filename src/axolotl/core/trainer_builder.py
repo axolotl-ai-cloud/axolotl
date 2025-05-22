@@ -19,7 +19,6 @@ import abc
 import importlib
 import importlib.util
 import inspect
-from axolotl.utils.logging import get_logger
 import math
 import os
 import sys
@@ -86,6 +85,7 @@ from axolotl.utils.collators import (
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
+from axolotl.utils.logging import get_logger
 from axolotl.utils.models import ensure_dtype
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers, RLType
 
@@ -246,8 +246,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             callbacks.append(ReLoRACallback(self.cfg))
 
         if (
-            hasattr(self.model, "use_bettertransformer") and
-            self.model.use_bettertransformer is True
+            hasattr(self.model, "use_bettertransformer")
+            and self.model.use_bettertransformer is True
         ):
             callbacks.append(SaveBetterTransformerModelCallback())
 
@@ -264,9 +264,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             )
             callbacks.append(LogPredictionCallback(self.cfg))
         if (
-            self.cfg.use_mlflow and
-            is_mlflow_available() and
-            self.cfg.eval_table_size > 0
+            self.cfg.use_mlflow
+            and is_mlflow_available()
+            and self.cfg.eval_table_size > 0
         ):
             LogPredictionCallback = log_prediction_callback_factory(
                 trainer, self.tokenizer, "mlflow"
@@ -526,16 +526,16 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         )
         training_arguments_kwargs["load_best_model_at_end"] = (
             (
-                self.cfg.load_best_model_at_end is not False or
-                self.cfg.early_stopping_patience
-            ) and
-            (
-                (not self.cfg.test_datasets and self.cfg.val_set_size > 0) or
-                (self.cfg.test_datasets and self.cfg.val_set_size == 0)
-            ) and
-            self.cfg.save_steps and
-            self.cfg.eval_steps and
-            self.cfg.save_steps % self.cfg.eval_steps == 0
+                self.cfg.load_best_model_at_end is not False
+                or self.cfg.early_stopping_patience
+            )
+            and (
+                (not self.cfg.test_datasets and self.cfg.val_set_size > 0)
+                or (self.cfg.test_datasets and self.cfg.val_set_size == 0)
+            )
+            and self.cfg.save_steps
+            and self.cfg.eval_steps
+            and self.cfg.save_steps % self.cfg.eval_steps == 0
         ) or False
 
         # handle ddp
@@ -857,8 +857,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         else:
             trainer_kwargs["tokenizer"] = self.tokenizer
         if (
-            not (trainer_cls in [AxolotlRewardTrainer, AxolotlPRMTrainer]) and
-            self.cfg.datasets is not None
+            not (trainer_cls in [AxolotlRewardTrainer, AxolotlPRMTrainer])
+            and self.cfg.datasets is not None
         ):
             trainer_kwargs["dataset_tags"] = [
                 d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
@@ -888,8 +888,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
     ):
         if training_args.pretraining:
             if (
-                self.cfg.pretraining_sample_concatenation is False or
-                self.cfg.micro_batch_size > 1
+                self.cfg.pretraining_sample_concatenation is False
+                or self.cfg.micro_batch_size > 1
             ):
                 return DataCollatorForSeq2Seq(self.tokenizer, **kwargs)
             return None
@@ -923,8 +923,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             elif self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
             elif (
-                self.cfg.model_config_type in ["llama"] and
-                self.cfg.flash_attention is not True
+                self.cfg.model_config_type in ["llama"]
+                and self.cfg.flash_attention is not True
             ):
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
             else:

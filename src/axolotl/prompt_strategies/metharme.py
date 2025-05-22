@@ -1,10 +1,10 @@
 """Module containing the MetharmenPromptTokenizingStrategy and MetharmePrompter class"""
 
-from axolotl.utils.logging import get_logger
 from typing import Tuple
 
 from axolotl.prompt_tokenizers import InstructionPromptTokenizingStrategy
 from axolotl.prompters import AlpacaPrompter
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 

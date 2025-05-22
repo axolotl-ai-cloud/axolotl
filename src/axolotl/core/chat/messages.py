@@ -9,10 +9,6 @@ from typing import Any, Callable, List, Optional, Union
 from pydantic import BaseModel
 from transformers import PreTrainedTokenizer
 
-from axolotl.utils.logging import get_logger
-
-LOG = get_logger(__name__)
-
 
 class MessageRoles(str, Enum):
     """
@@ -160,7 +156,6 @@ class Messages(BaseModel):
                         len(input_ids) : len(input_ids) + len(pending_input_ids)
                     ]
                     if new_pending_inputs != pending_input_ids:
-                        # LOG.warning("tokenization mismatch from concatenation.")
                         pending_input_ids = new_pending_inputs
                     input_ids.extend(pending_input_ids)
                     if pending_weight:

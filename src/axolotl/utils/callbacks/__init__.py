@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import gc
 import json
-from axolotl.utils.logging import get_logger
 import os
 import traceback
 from shutil import copyfile
@@ -43,6 +42,7 @@ from axolotl.utils.distributed import (
     is_main_process,
     zero_first,
 )
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.config import AxolotlInputConfig
 
 if TYPE_CHECKING:
@@ -86,9 +86,9 @@ class SaveBetterTransformerModelCallback(
     ):
         # Save
         if (
-            args.save_strategy == IntervalStrategy.STEPS and
-            args.save_steps > 0 and
-            state.global_step % args.save_steps == 0
+            args.save_strategy == IntervalStrategy.STEPS
+            and args.save_steps > 0
+            and state.global_step % args.save_steps == 0
         ):
             control.should_save = True
 
@@ -508,8 +508,8 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                                 if start == end:
                                     continue
 
-                                input_ids = input_ids_all[start: end + 1]
-                                labels = labels_all[start: end + 1]
+                                input_ids = input_ids_all[start : end + 1]
+                                labels = labels_all[start : end + 1]
 
                                 tokens_without_loss = labels == IGNORE_INDEX
                                 tokens_with_loss = labels != IGNORE_INDEX
@@ -550,7 +550,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                             prompt_token_ids_list, prediction_all_tokens
                         ):
                             prediction_without_prompt_tokens = prediction_tokens[
-                                len(prompt_token_ids):
+                                len(prompt_token_ids) :
                             ]
                             prediction_without_prompt_tokens_list.append(
                                 prediction_without_prompt_tokens
@@ -679,8 +679,8 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                             if start == end:
                                 continue
 
-                            input_ids = input_ids_all[start: end + 1]
-                            labels = labels_all[start: end + 1]
+                            input_ids = input_ids_all[start : end + 1]
+                            labels = labels_all[start : end + 1]
 
                             tokens_without_loss = labels == IGNORE_INDEX
                             tokens_with_loss = labels != IGNORE_INDEX
@@ -696,7 +696,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                             completion_token_ids_list.append(completion_token_ids)
 
                             pred_step_token_ids = logits_to_tokens(
-                                logits[start: end + 1]
+                                logits[start : end + 1]
                             )[tokens_with_loss]
                             pred_step_token_ids_list.append(pred_step_token_ids)
 
@@ -724,7 +724,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         prompt_token_ids_list, prediction_all_tokens
                     ):
                         prediction_without_prompt_tokens = prediction_tokens[
-                            len(prompt_token_ids):
+                            len(prompt_token_ids) :
                         ]
                         prediction_without_prompt_tokens_list.append(
                             prediction_without_prompt_tokens
@@ -755,7 +755,12 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                 if logger == "wandb":
                     # type: ignore[attr-defined]
                     wandb.run.log(
-                        {f"{name} - Predictions vs Ground Truth": pd.DataFrame(table_data)})
+                        {
+                            f"{name} - Predictions vs Ground Truth": pd.DataFrame(
+                                table_data
+                            )
+                        }
+                    )
                 elif logger == "mlflow" and is_mlflow_available():
                     import mlflow
 

@@ -1,8 +1,8 @@
 """Pydantic models for model input / output, etc. configuration"""
 
-from axolotl.utils.logging import get_logger
-
 from pydantic import BaseModel, Field, field_validator
+
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 

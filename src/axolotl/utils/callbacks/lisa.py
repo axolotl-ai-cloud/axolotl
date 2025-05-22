@@ -6,12 +6,13 @@ Arxiv: https://arxiv.org/abs/2403.17919
 License: Apache 2.0
 """
 
-from axolotl.utils.logging import get_logger
 from functools import reduce
 from typing import TYPE_CHECKING
 
 import numpy as np
 from transformers import TrainerCallback
+
+from axolotl.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from axolotl.core.trainer_builder import AxolotlTrainer

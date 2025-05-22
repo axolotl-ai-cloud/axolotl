@@ -2,9 +2,9 @@
 
 import importlib
 import inspect
-from axolotl.utils.logging import get_logger
 
 from axolotl.prompt_strategies.user_defined import UserDefinedDatasetConfig
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 

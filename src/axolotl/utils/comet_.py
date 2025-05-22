@@ -1,9 +1,9 @@
 """Module for wandb utilities"""
 
-from axolotl.utils.logging import get_logger
 import os
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 

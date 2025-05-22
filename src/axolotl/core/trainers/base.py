@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-from axolotl.utils.logging import get_logger
 import os
 from collections import defaultdict
 from functools import wraps
@@ -35,6 +34,7 @@ from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
     sanitize_kwargs_for_tagging,
 )
+from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger(__name__)
@@ -231,8 +231,8 @@ class AxolotlTrainer(
         dataloader = DataLoader(dataset, **dataloader_params)
 
         if self.args.sample_packing and (
-            (not is_eval and not self.args.pretraining) or
-            (is_eval and self.args.eval_sample_packing is not False)
+            (not is_eval and not self.args.pretraining)
+            or (is_eval and self.args.eval_sample_packing is not False)
         ):
             self.accelerator.even_batches = False
 
@@ -289,9 +289,9 @@ class AxolotlTrainer(
 
         # Handle sample packing or sequence parallelism
         if (
-            self.args.sample_packing and
-            self.args.eval_sample_packing is not False or
-            self.args.sequence_parallel_degree > 1
+            self.args.sample_packing
+            and self.args.eval_sample_packing is not False
+            or self.args.sequence_parallel_degree > 1
         ):
             # Get appropriate data collator
             self.data_collator = (  # pylint: disable=attribute-defined-outside-init
@@ -560,8 +560,8 @@ class AxolotlTrainer(
 
         if self.is_fsdp_enabled:
             if (
-                "limit_all_gathers" in self.args.fsdp_config and
-                self.args.fsdp_config["limit_all_gathers"]
+                "limit_all_gathers" in self.args.fsdp_config
+                and self.args.fsdp_config["limit_all_gathers"]
             ):
                 self.accelerator.state.fsdp_plugin.limit_all_gathers = True
 

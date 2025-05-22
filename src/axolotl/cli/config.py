@@ -1,7 +1,6 @@
 """Configuration loading and processing."""
 
 import json
-from axolotl.utils.logging import get_logger
 import os
 import tempfile
 from pathlib import Path
@@ -22,6 +21,7 @@ from axolotl.utils.config import (
     validate_config,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars

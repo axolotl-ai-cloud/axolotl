@@ -1,6 +1,5 @@
 """MLFlow module for trainer callbacks"""
 
-from axolotl.utils.logging import get_logger
 import os
 from shutil import copyfile
 from tempfile import NamedTemporaryFile
@@ -10,6 +9,7 @@ import mlflow
 from transformers import TrainerCallback, TrainerControl, TrainerState
 
 from axolotl.utils.distributed import is_main_process
+from axolotl.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from axolotl.core.trainer_builder import AxolotlTrainingArguments

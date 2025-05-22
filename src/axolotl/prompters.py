@@ -1,10 +1,11 @@
 """Module containing prompters"""
 
-from axolotl.utils.logging import get_logger
 from enum import Enum
 from typing import Generator, Optional, Union
 
 from colorama import Fore
+
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 IGNORE_TOKEN_ID = -100
@@ -193,12 +194,12 @@ class ReflectAlpacaPrompter(Prompter):
     def match_prompt_style(self):
         if self.prompt_style == PromptStyle.INSTRUCT.value:
             self.prompt_input = (
-                self.system_prompt +
-                "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n"
+                self.system_prompt
+                + "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n"
             )
             self.prompt_no_input = (
-                self.system_no_input_prompt +
-                "### Instruction:\n{instruction}\n\n### Response:\n"
+                self.system_no_input_prompt
+                + "### Instruction:\n{instruction}\n\n### Response:\n"
             )
             self.agent_label = "### Thought:\n{output}\n\n### Agent Reflection:\n{reflection}\n\n### Final Response:\n{corrected}"
             self.response_split = "### Final Response:"

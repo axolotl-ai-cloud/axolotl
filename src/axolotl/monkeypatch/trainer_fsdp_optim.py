@@ -3,11 +3,11 @@ fix for FSDP optimizer save in trainer w 4.47.0
 """
 
 import inspect
-from axolotl.utils.logging import get_logger
 
 from transformers import Trainer
 
 from axolotl.monkeypatch.utils import detab_code
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
@@ -69,9 +69,9 @@ def patch_training_loop_for_fsdp():
             items_to_import.append(item)
 
     exec(  # pylint: disable=exec-used  # nosec B102
-        "from transformers.trainer import (" +
-        ", ".join(x for x in items_to_import) +
-        ")",
+        "from transformers.trainer import ("
+        + ", ".join(x for x in items_to_import)
+        + ")",
         globals(),
     )
     exec(training_loop, globals())  # pylint: disable=exec-used  # nosec B102

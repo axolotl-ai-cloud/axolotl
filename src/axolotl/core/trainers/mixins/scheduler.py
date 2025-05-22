@@ -1,12 +1,11 @@
 """Module for Axolotl trainer scheduler mixin"""
 
-from axolotl.utils.logging import get_logger
-
 import torch
 from torch.optim.lr_scheduler import LRScheduler, OneCycleLR
 from transformers.trainer import Trainer
 
 from axolotl.integrations.base import PluginManager
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schedulers import (
     RexLR,
     get_cosine_schedule_with_min_lr,
@@ -36,13 +35,13 @@ class SchedulerMixin(Trainer):
             optimizer (torch.optim.Optimizer): The training optimizer
         """
         use_cosine_quadratic = (
-            self.args.lr_scheduler_type == "cosine" and
-            self.args.lr_quadratic_warmup is True
+            self.args.lr_scheduler_type == "cosine"
+            and self.args.lr_quadratic_warmup is True
         )
 
         use_cosine_min_lr = (
-            self.args.lr_scheduler_type == "cosine" and
-            self.args.cosine_min_lr_ratio is not None
+            self.args.lr_scheduler_type == "cosine"
+            and self.args.cosine_min_lr_ratio is not None
         )
 
         # fmt: off

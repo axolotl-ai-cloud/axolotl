@@ -3,8 +3,9 @@ This module provides functionality for selecting chat templates based on user ch
 These templates are used for formatting messages in a conversation.
 """
 
-from axolotl.utils.logging import get_logger
 from typing import TYPE_CHECKING, Any, Dict, Optional
+
+from axolotl.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from transformers import PreTrainedTokenizerBase
@@ -93,7 +94,7 @@ def get_chat_template(
             return tokenizer.chat_template  # type: ignore
 
         user_choice = user_choice[
-            len(_DEFAULT_FALLBACK_CHATML_TEMPLATE_CHOICE_PREFIX):
+            len(_DEFAULT_FALLBACK_CHATML_TEMPLATE_CHOICE_PREFIX) :
         ]
         LOG.warning(
             f"No chat template found on tokenizer, falling back to {user_choice}. It is recommended to set --train_on_inputs to True for the model to learn this chat template."

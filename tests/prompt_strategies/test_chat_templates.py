@@ -12,7 +12,6 @@ from axolotl.prompt_strategies.chat_template import (
 from axolotl.prompters import IGNORE_TOKEN_ID
 from axolotl.utils.chat_templates import get_chat_template
 from axolotl.utils.dict import DictDefault
-
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)

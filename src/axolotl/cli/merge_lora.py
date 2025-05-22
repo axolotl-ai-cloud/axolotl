@@ -1,6 +1,5 @@
 """CLI to merge a trained LoRA into a base model."""
 
-from axolotl.utils.logging import get_logger
 from pathlib import Path
 from typing import Union
 
@@ -13,6 +12,7 @@ from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 

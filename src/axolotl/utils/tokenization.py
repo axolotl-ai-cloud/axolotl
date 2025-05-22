@@ -1,8 +1,8 @@
 """Module for tokenization utilities"""
 
-from axolotl.utils.logging import get_logger
-
 from termcolor import colored
+
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 

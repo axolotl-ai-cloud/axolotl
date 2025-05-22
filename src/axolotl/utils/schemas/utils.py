@@ -40,8 +40,8 @@ def handle_legacy_message_fields_logic(data: dict) -> dict:
             f"Example: message_property_mappings: {{role: {data['message_field_role']}}}"
         )
         if (
-            "role" in data["message_property_mappings"] and
-            data["message_property_mappings"]["role"] != data["message_field_role"]
+            "role" in data["message_property_mappings"]
+            and data["message_property_mappings"]["role"] != data["message_field_role"]
         ):
             raise ValueError(
                 f"Conflicting message role fields: message_field_role='{data['message_field_role']}' "
@@ -60,9 +60,9 @@ def handle_legacy_message_fields_logic(data: dict) -> dict:
             f"Example: message_property_mappings: {{content: {data['message_field_content']}}}"
         )
         if (
-            "content" in data["message_property_mappings"] and
-            data["message_property_mappings"]["content"] !=
-            data["message_field_content"]
+            "content" in data["message_property_mappings"]
+            and data["message_property_mappings"]["content"]
+            != data["message_field_content"]
         ):
             raise ValueError(
                 f"Conflicting message content fields: message_field_content='{data['message_field_content']}' "

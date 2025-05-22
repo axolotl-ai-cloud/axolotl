@@ -1,6 +1,5 @@
 """CLI to run preprocessing of a dataset."""
 
-from axolotl.utils.logging import get_logger
 import warnings
 from pathlib import Path
 from typing import Union
@@ -20,6 +19,7 @@ from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.integrations.base import PluginManager
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 from axolotl.utils.trainer import disable_datasets_caching
 
 LOG = get_logger(__name__)
@@ -39,10 +39,10 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
 
     if not cfg.dataset_prepared_path:
         msg = (
-            Fore.RED +
-            "preprocess CLI called without dataset_prepared_path set, " +
-            f"using default path: {DEFAULT_DATASET_PREPARED_PATH}" +
-            Fore.RESET
+            Fore.RED
+            + "preprocess CLI called without dataset_prepared_path set, "
+            + f"using default path: {DEFAULT_DATASET_PREPARED_PATH}"
+            + Fore.RESET
         )
         LOG.warning(msg)
         cfg.dataset_prepared_path = DEFAULT_DATASET_PREPARED_PATH
@@ -73,9 +73,9 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
                 # fmt: on
 
     LOG.info(
-        Fore.GREEN +
-        f"Success! Preprocessed data path: `dataset_prepared_path: {cfg.dataset_prepared_path}`" +
-        Fore.RESET
+        Fore.GREEN
+        + f"Success! Preprocessed data path: `dataset_prepared_path: {cfg.dataset_prepared_path}`"
+        + Fore.RESET
     )
 
 

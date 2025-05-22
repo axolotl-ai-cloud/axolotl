@@ -2,10 +2,11 @@
 monkeypatch for accelerate fsdp2 fix when modifying ordereddict during interation
 """
 
-from axolotl.utils.logging import get_logger
 import sys
 
 import torch
+
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 

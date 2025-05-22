@@ -6,7 +6,6 @@ See https://github.com/huggingface/transformers/pull/37162
 TODO: Remove when upstream added PR to release
 """
 
-from axolotl.utils.logging import get_logger
 import os
 import random
 
@@ -16,6 +15,8 @@ from transformers import Trainer, is_torch_npu_available
 from transformers.trainer import safe_globals
 from transformers.trainer_pt_utils import set_rng_state_for_device
 from transformers.training_args import ParallelMode
+
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 

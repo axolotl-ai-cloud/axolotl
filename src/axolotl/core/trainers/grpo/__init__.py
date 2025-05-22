@@ -3,7 +3,6 @@
 import importlib
 import inspect
 from typing import Any
-from axolotl.utils.logging import get_logger
 
 from trl.trainer.grpo_trainer import RewardFunc
 
@@ -13,6 +12,7 @@ from axolotl.core.trainers.grpo.trainer import (
     AxolotlGRPOTrainer,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.trl import TRLConfig
 
 LOG = get_logger(__name__)

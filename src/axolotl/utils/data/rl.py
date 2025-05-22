@@ -1,7 +1,6 @@
 """data handling specific to DPO"""
 
 import inspect
-from axolotl.utils.logging import get_logger
 from functools import partial
 from pathlib import Path
 from typing import Any, List, Union
@@ -17,6 +16,7 @@ from axolotl.utils.data.shared import datasets_w_name_generator, load_dataset_w_
 from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
+from axolotl.utils.logging import get_logger
 from axolotl.utils.models import load_tokenizer
 from axolotl.utils.schemas.enums import RLType
 
@@ -40,9 +40,9 @@ def _load_preprocessed_ds(cfg, sub_cfg):
 
     # pylint: disable=duplicate-code
     if (
-        cfg.dataset_prepared_path and
-        any(prepared_ds_path.glob("*")) and
-        not cfg.is_preprocess
+        cfg.dataset_prepared_path
+        and any(prepared_ds_path.glob("*"))
+        and not cfg.is_preprocess
     ):
         LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
         dataset = load_from_disk(str(prepared_ds_path))
@@ -211,22 +211,22 @@ def load_prepare_preference_datasets(cfg):
 
                 # ensure we end up with the same fingerprint by doing rank0 first and being able to cache
                 to_hash_train = (
-                    train_dataset._fingerprint +  # pylint: disable=protected-access
-                    "|" +
-                    str(cfg.val_set_size) +
-                    "|" +
-                    "train" +
-                    "|" +
-                    str(cfg.seed or 42)
+                    train_dataset._fingerprint  # pylint: disable=protected-access
+                    + "|"
+                    + str(cfg.val_set_size)
+                    + "|"
+                    + "train"
+                    + "|"
+                    + str(cfg.seed or 42)
                 )
                 to_hash_test = (
-                    train_dataset._fingerprint +  # pylint: disable=protected-access
-                    "|" +
-                    str(cfg.val_set_size) +
-                    "|" +
-                    "test" +
-                    "|" +
-                    str(cfg.seed or 42)
+                    train_dataset._fingerprint  # pylint: disable=protected-access
+                    + "|"
+                    + str(cfg.val_set_size)
+                    + "|"
+                    + "test"
+                    + "|"
+                    + str(cfg.seed or 42)
                 )
                 train_fingerprint = md5(to_hash_train)
                 test_fingerprint = md5(to_hash_test)

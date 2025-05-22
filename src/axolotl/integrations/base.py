@@ -24,7 +24,6 @@ from typing import OrderedDict
 
 import torch
 from torch.optim.lr_scheduler import LRScheduler
-from transformers.trainer_utils import SchedulerType
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger

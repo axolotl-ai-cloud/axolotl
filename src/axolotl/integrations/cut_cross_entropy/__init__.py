@@ -19,13 +19,13 @@ Cut Cross Entropy is an optimized implementation of cross entropy loss
 from Apple's ML team.
 """
 import importlib
-from axolotl.utils.logging import get_logger
 
 import torch
 
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils import get_pytorch_version
 from axolotl.utils.distributed import is_main_process
+from axolotl.utils.logging import get_logger
 
 from .args import CutCrossEntropyArgs  # pylint: disable=unused-import. # noqa: F401
 

@@ -508,8 +508,6 @@ def get_dataset_wrapper(
 
     LOG.info(
         f"Loading dataset: {config_dataset['path']} with base_type: {d_base_type} and prompt_style: {d_prompt_style}"
-      
-      
     )
 
     if (

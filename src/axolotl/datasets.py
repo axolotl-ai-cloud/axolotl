@@ -1,11 +1,12 @@
 """Module containing Dataset functionality"""
 
-from axolotl.utils.logging import get_logger
 import os
 from typing import List, Optional, Union
 
 import torch
 from datasets import Dataset, IterableDataset
+
+from axolotl.utils.logging import get_logger
 
 from .prompt_tokenizers import PromptTokenizingStrategy
 
@@ -54,8 +55,8 @@ class TokenizedPromptDataset(Dataset):
             map_kwargs["batch_size"] = 1_000
 
         if (
-            hasattr(self.prompt_tokenizer, "filter_rows") and
-            self.prompt_tokenizer.filter_rows
+            hasattr(self.prompt_tokenizer, "filter_rows")
+            and self.prompt_tokenizer.filter_rows
         ):
             dataset = dataset.filter(
                 self.prompt_tokenizer.filter_rows,

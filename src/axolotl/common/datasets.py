@@ -1,6 +1,5 @@
 """Dataset loading utilities."""
 
-from axolotl.utils.logging import get_logger
 import math
 import random
 from dataclasses import dataclass
@@ -13,6 +12,7 @@ from axolotl.cli.args import PreprocessCliArgs, TrainerCliArgs
 from axolotl.utils.data import prepare_dataset
 from axolotl.utils.data.rl import load_prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 from axolotl.utils.models import load_processor, load_tokenizer
 from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.tokenization import check_dataset_labels
@@ -67,10 +67,10 @@ def load_datasets(
     tokenizer = load_tokenizer(cfg)
     processor = load_processor(cfg, tokenizer=tokenizer) if cfg.processor_type else None
     preprocess_iterable = (
-        cli_args and
-        hasattr(cli_args, "iterable") and
-        cli_args.iterable is not None and
-        cli_args.iterable
+        cli_args
+        and hasattr(cli_args, "iterable")
+        and cli_args.iterable is not None
+        and cli_args.iterable
     )
 
     train_dataset, eval_dataset, total_num_steps, prompters = prepare_dataset(
@@ -81,10 +81,10 @@ def load_datasets(
     )
 
     if cli_args and (
-        cli_args.debug or
-        cfg.debug or
-        cli_args.debug_text_only or
-        int(cli_args.debug_num_examples) > 0
+        cli_args.debug
+        or cfg.debug
+        or cli_args.debug_text_only
+        or int(cli_args.debug_num_examples) > 0
     ):
         LOG.info("check_dataset_labels...")
 

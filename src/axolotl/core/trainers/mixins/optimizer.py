@@ -1,13 +1,12 @@
 """Module for Axolotl trainer optimizer mixin"""
 
-from axolotl.utils.logging import get_logger
-
 from peft.optimizers import create_loraplus_optimizer
 from torch import nn
 from transformers.trainer import Trainer
 from transformers.utils import is_sagemaker_mp_enabled
 
 from axolotl.integrations.base import BaseOptimizerFactory
+from axolotl.utils.logging import get_logger
 
 if is_sagemaker_mp_enabled():
     import smdistributed.modelparallel.torch as smp
@@ -107,20 +106,20 @@ class OptimizerMixin(Trainer):
 
     def create_optimizer(self):
         if (
-            self.args.loraplus_lr_ratio is None and
-            self.args.embedding_lr_scale is None and
-            self.args.embedding_lr is None and
-            self.args.lr_groups is None and
-            self.optimizer_cls_and_kwargs is None
+            self.args.loraplus_lr_ratio is None
+            and self.args.embedding_lr_scale is None
+            and self.args.embedding_lr is None
+            and self.args.lr_groups is None
+            and self.optimizer_cls_and_kwargs is None
         ):
             return super().create_optimizer()
 
         opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
 
         if (
-            not self.optimizer and
-            self.optimizer_cls_and_kwargs is not None and
-            issubclass(self.optimizer_cls_and_kwargs[0], BaseOptimizerFactory)
+            not self.optimizer
+            and self.optimizer_cls_and_kwargs is not None
+            and issubclass(self.optimizer_cls_and_kwargs[0], BaseOptimizerFactory)
         ):
             optimizer_factory_cls, optimizer_kwargs = self.optimizer_cls_and_kwargs
             self.optimizer = optimizer_factory_cls()(

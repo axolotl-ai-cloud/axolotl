@@ -2,7 +2,6 @@
 
 # pylint: disable=duplicate-code
 
-from axolotl.utils.logging import get_logger
 from functools import partial
 from typing import List, Optional, Tuple, Union
 
@@ -28,6 +27,7 @@ from transformers.models.mistral.modeling_mistral import (
 )
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
@@ -165,8 +165,8 @@ def flashattn_forward(
     )
 
     use_sliding_windows = (
-        getattr(self.config, "sliding_window") is not None and
-        kv_seq_len > self.config.sliding_window
+        getattr(self.config, "sliding_window") is not None
+        and kv_seq_len > self.config.sliding_window
     )
 
     if use_sliding_windows:
@@ -177,8 +177,8 @@ def flashattn_forward(
     if past_key_value is not None:
         # Activate slicing cache only if the config has a value `sliding_windows` attribute
         if (
-            hasattr(self.config, "sliding_window") and
-            kv_seq_len > self.config.sliding_window
+            hasattr(self.config, "sliding_window")
+            and kv_seq_len > self.config.sliding_window
         ):
             slicing_tokens = kv_seq_len - self.config.sliding_window
 
@@ -248,7 +248,7 @@ def flashattn_forward(
             # the attention_mask should be the same as the key_padding_mask
             key_padding_mask=attention_mask,
             query_padding_mask=(
-                attention_mask[:, -query_states.size(1):]
+                attention_mask[:, -query_states.size(1) :]
                 if attention_mask is not None
                 else None
             ),
@@ -293,7 +293,7 @@ def flashattn_forward(
                 kvpacked=True,
                 key_padding_mask=attention_mask,
                 query_padding_mask=(
-                    attention_mask[:, -query_states.size(1):]
+                    attention_mask[:, -query_states.size(1) :]
                     if attention_mask is not None
                     else None
                 ),
@@ -359,9 +359,10 @@ def generate_qkv(
             q, query_padding_mask
         )
 
-        def output_pad_fn(output_unpad): return pad_input(  # noqa: E731
-            output_unpad, indices_q, batch_size, seqlen_q
-        )
+        def output_pad_fn(output_unpad):
+            return pad_input(  # noqa: E731
+                output_unpad, indices_q, batch_size, seqlen_q
+            )
 
     else:
         q_unpad = rearrange(q, "b s h d -> (b s) h d")
@@ -374,9 +375,10 @@ def generate_qkv(
         )
         max_seqlen_q = seqlen_q
 
-        def output_pad_fn(output_unpad): return rearrange(  # noqa: E731
-            output_unpad, "(b s) h d -> b s h d", b=batch_size
-        )
+        def output_pad_fn(output_unpad):
+            return rearrange(  # noqa: E731
+                output_unpad, "(b s) h d -> b s h d", b=batch_size
+            )
 
     if key_padding_mask is not None:
         k_unpad, _, cu_seqlens_k, max_seqlen_k = unpad_input(k, key_padding_mask)

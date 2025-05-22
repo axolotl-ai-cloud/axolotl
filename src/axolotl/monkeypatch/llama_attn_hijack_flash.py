@@ -2,7 +2,6 @@
 
 # copied from https://github.com/lm-sys/FastChat/blob/main/fastchat/train/llama_flash_attn_monkey_patch.py
 
-from axolotl.utils.logging import get_logger
 import warnings
 from typing import List, Optional, Tuple, Union
 
@@ -25,6 +24,7 @@ from transformers.models.llama.modeling_llama import (
 )
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids, set_module_name
+from axolotl.utils.logging import get_logger
 
 try:
     from flash_attn.flash_attn_interface import (  # pylint: disable=ungrouped-imports
@@ -493,7 +493,7 @@ def flashattn_forward(
             # the attention_mask should be the same as the key_padding_mask
             key_padding_mask=attention_mask,
             query_padding_mask=(
-                attention_mask[:, -query_states.size(1):]
+                attention_mask[:, -query_states.size(1) :]
                 if attention_mask is not None
                 else None
             ),
@@ -536,7 +536,7 @@ def flashattn_forward(
                 kvpacked=True,
                 key_padding_mask=attention_mask,
                 query_padding_mask=(
-                    attention_mask[:, -query_states.size(1):]
+                    attention_mask[:, -query_states.size(1) :]
                     if attention_mask is not None
                     else None
                 ),
@@ -612,9 +612,10 @@ def generate_qkv(
             q, query_padding_mask
         )
 
-        def output_pad_fn(output_unpad): return pad_input(  # noqa: E731
-            output_unpad, indices_q, batch_size, seqlen_q
-        )
+        def output_pad_fn(output_unpad):
+            return pad_input(  # noqa: E731
+                output_unpad, indices_q, batch_size, seqlen_q
+            )
 
     else:
         q_unpad = rearrange(q, "b s h d -> (b s) h d")
@@ -627,9 +628,10 @@ def generate_qkv(
         )
         max_seqlen_q = seqlen_q
 
-        def output_pad_fn(output_unpad): return rearrange(  # noqa: E731
-            output_unpad, "(b s) h d -> b s h d", b=batch_size
-        )
+        def output_pad_fn(output_unpad):
+            return rearrange(  # noqa: E731
+                output_unpad, "(b s) h d -> b s h d", b=batch_size
+            )
 
     if key_padding_mask is not None:
         k_unpad, _, cu_seqlens_k, max_seqlen_k = unpad_input(k, key_padding_mask)

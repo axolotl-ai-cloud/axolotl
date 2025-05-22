@@ -1,12 +1,13 @@
 """Various checks for Axolotl CLI."""
 
-from axolotl.utils.logging import get_logger
 import os
 from pathlib import Path
 
 from accelerate.commands.config import config_args
 from huggingface_hub import HfApi
 from huggingface_hub.utils import LocalTokenNotFoundError
+
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
