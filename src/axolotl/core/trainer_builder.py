@@ -911,7 +911,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             collator_cls = plugin_manager.get_collator_cls(self.cfg, is_eval=is_eval)
 
         if collator_cls:
-            pass
+            collator = collator_cls
         elif self.cfg.reward_model:
             collator = RewardDataCollatorWithPadding
             if "max_length" in kwargs:
