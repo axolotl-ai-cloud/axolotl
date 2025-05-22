@@ -126,9 +126,7 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "streaming dataset to use for pretraining"},
     )
-    dataset_processes: int | None = Field(
-        default=min(32, os.cpu_count())
-    )  # type: ignore[type-var]
+    dataset_processes: int | None = Field(default=min(32, os.cpu_count()))  # type: ignore[type-var]
     dataset_exact_deduplication: bool | None = None
     dataset_keep_in_memory: bool | None = None
     dataloader_pin_memory: bool | None = None
@@ -464,6 +462,7 @@ class AxolotlInputConfig(
             and not data.get("flash_attention")
             and not data.get("sdp_attention")
             and not data.get("flex_attention")
+            and not data.get("xformers_attention")
         ):
             LOG.warning(
                 "sample_packing without flash, sdp, xformers or flex attention does not handle cross sample decontamination."
@@ -1169,7 +1168,7 @@ class AxolotlInputConfig(
             data.get("rl") == "grpo"
             and data.get("trl", {})
             and data.get("trl").get("use_liger_loss")
-            and data.get("adapter")
+            and data.get("sequence_parallel_degree", 1) > 1
         ):
             raise ValueError("GRPO + SP + Liger not currently supported")
         return data

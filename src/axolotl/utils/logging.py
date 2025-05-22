@@ -32,7 +32,7 @@ class MultiProcessAdapter(logging.LoggerAdapter):
                 msg, kwargs = self.process(msg, kwargs)
                 self.logger.log(level, msg, *args, **kwargs)
 
-    @functools.lru_cache(None)
+    @functools.lru_cache(maxsize=10)
     def warning_once(self, *args, **kwargs):
         """
         This method is identical to `logger.warning()`, but will emit the warning with the same message only once
