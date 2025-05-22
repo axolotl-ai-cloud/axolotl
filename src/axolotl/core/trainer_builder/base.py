@@ -452,10 +452,12 @@ class TrainerBuilderBase(abc.ABC):
                     optim_args = self.cfg.optim_args
                 training_args_kwargs["optim_args"] = optim_args
 
-            if self.cfg.optimizer == "adamw_anyprecision":
-                if Path(self.cfg.torchdistx_path).exists():
-                    sys.path.append(self.cfg.torchdistx_path)
-                    importlib.import_module("torchdistx")
+            if (
+                self.cfg.optimizer == "adamw_anyprecision"
+                and Path(self.cfg.torchdistx_path).exists()
+            ):
+                sys.path.append(self.cfg.torchdistx_path)
+                importlib.import_module("torchdistx")
 
         if self.cfg.optim_target_modules:
             training_args_kwargs["optim_target_modules"] = self.cfg.optim_target_modules
