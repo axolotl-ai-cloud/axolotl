@@ -16,7 +16,6 @@
 
 import abc
 import importlib
-import importlib.util
 import logging
 import sys
 from abc import abstractmethod
