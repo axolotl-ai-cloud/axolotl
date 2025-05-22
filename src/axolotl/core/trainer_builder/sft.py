@@ -145,6 +145,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
     def build(self, total_num_steps):
         training_arguments_kwargs = self._set_base_training_args(total_num_steps)
 
+        trainer_kwargs = {}
+
+        # Pop optimizer_cls_and_kwargs to trainer_kwargs
+        if "optimizer_cls_and_kwargs" in trainer_kwargs:
+            trainer_kwargs["optimizer_cls_and_kwargs"] = training_arguments_kwargs.pop(
+                "optimizer_cls_and_kwargs"
+            )
+
         if self.cfg.fsdp:
             training_arguments_kwargs["fsdp"] = self.cfg.fsdp
             if self.cfg.fsdp_config:
@@ -322,16 +330,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["kd_top_k_before_softmax"] = (
                 self.cfg.kd_top_k_before_softmax
             )
-
-        trainer_kwargs = {}
-
-        # Pop optimizer_cls_and_kwargs to trainer_kwargs
-        if hasattr(training_arguments_kwargs, "optimizer_cls_and_kwargs"):
-            trainer_kwargs["optimizer_cls_and_kwargs"] = getattr(
-                training_arguments_kwargs, "optimizer_cls_and_kwargs"
-            )
-            # prevent duplication downstream
-            delattr(training_arguments_kwargs, "optimizer_cls_and_kwargs")
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
