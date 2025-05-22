@@ -798,11 +798,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.kd_top_k_before_softmax
             )
 
-        training_arguments_kwargs["sequence_parallel_degree"] = (
-            self.cfg.sequence_parallel_degree
-        )
-        training_arguments_kwargs["ring_attn_func"] = self.cfg.ring_attn_func
-
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
         elif self.cfg.process_reward_model:
@@ -1082,10 +1077,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.use_wandb:
             training_args_kwargs["run_name"] = self.cfg.wandb_name
-
-        training_args_kwargs["sequence_parallel_degree"] = (
-            self.cfg.sequence_parallel_degree
-        )
 
         training_args_cls = None
         blocklist_args_kwargs = []
