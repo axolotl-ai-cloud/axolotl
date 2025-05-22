@@ -125,7 +125,7 @@ def choose_config(path: Path) -> str:
         LOG.info(f"Using default YAML file '{yaml_files[0]}'", use_environ=True)
         return str(yaml_files[0])
 
-    LOG.info("Choose a YAML file:")
+    LOG.info("Choose a YAML file:", use_environ=True)
     for idx, file in enumerate(yaml_files):
         LOG.info(f"{idx + 1}. {file}", use_environ=True)
 
