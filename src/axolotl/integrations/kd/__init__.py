@@ -36,6 +36,6 @@ class KDPlugin(BasePlugin):
         return None
 
     def pre_model_load(self, cfg):
-        from .kernels.liger import apply_kernel_to_qwen2
+        from .kernels.models import apply_kernel
 
-        apply_kernel_to_qwen2()
+        apply_kernel(cfg.model_config_type)
