@@ -2,6 +2,7 @@
 
 import importlib
 import inspect
+import logging
 import types
 from typing import Generator, Tuple, Type
 
@@ -317,7 +318,7 @@ def apply_lora_kernel_patches(
 
     # This needs to be reset after patching
     original_level = LOG.getEffectiveLevel()
-    LOG.setLevel("INFO")
+    LOG.setLevel(logging.INFO)
 
     # Choose activation based on model type
     activation = None
