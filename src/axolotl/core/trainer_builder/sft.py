@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 from typing import Type, Union
 
-import torch
 import transformers
 from transformers import (
     DataCollatorWithFlattening,
@@ -52,11 +51,6 @@ from axolotl.utils.collators import (
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
-
-try:
-    import torch._dynamo  # pylint: disable=ungrouped-imports
-except ImportError:
-    pass
 
 LOG = logging.getLogger(__name__)
 
@@ -194,20 +188,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             )
         if self.cfg.greater_is_better:
             training_arguments_kwargs["greater_is_better"] = self.cfg.greater_is_better
-
-        if self.cfg.torch_compile and getattr(torch, "_dynamo", None):
-            torch._dynamo.config.suppress_errors = (  # pylint: disable=protected-access
-                True
-            )
-            training_arguments_kwargs["torch_compile"] = self.cfg.torch_compile
-            if self.cfg.torch_compile_backend:
-                training_arguments_kwargs["torch_compile_backend"] = (
-                    self.cfg.torch_compile_backend
-                )
-            if self.cfg.torch_compile_mode:
-                training_arguments_kwargs["torch_compile_mode"] = (
-                    self.cfg.torch_compile_mode
-                )
 
         # DDP Config
         if self.cfg.ddp_timeout:
@@ -464,13 +444,15 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.reward_model:
             collator = RewardDataCollatorWithPadding
         elif use_batch_sampler_collator:
-            if self.cfg.flex_attention:
-                collator = V2BatchSamplerDataCollatorForSeq2Seq
-            elif self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
-                collator = V2BatchSamplerDataCollatorForSeq2Seq
-            elif (
-                self.cfg.model_config_type in ["llama"]
-                and self.cfg.flash_attention is not True
+            # Use V2BatchSamplerDataCollatorForSeq2Seq for flex attention,
+            # supported multipack models, or non-flash-attention llama
+            if (
+                self.cfg.flex_attention
+                or self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
+                or (
+                    self.cfg.model_config_type in ["llama"]
+                    and self.cfg.flash_attention is not True
+                )
             ):
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
             else:

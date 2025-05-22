@@ -20,9 +20,11 @@ import importlib.util
 import logging
 import sys
 from abc import abstractmethod
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Dict
 
+import torch
 from transformers import (
     TrainerCallback,
 )
@@ -39,6 +41,9 @@ from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
 LOG = logging.getLogger(__name__)
+
+with suppress(ImportError):
+    import torch._dynamo  # pylint: disable=ungrouped-imports
 
 
 class TrainerBuilderBase(abc.ABC):
@@ -451,5 +456,18 @@ class TrainerBuilderBase(abc.ABC):
 
         if self.cfg.optim_target_modules:
             training_args_kwargs["optim_target_modules"] = self.cfg.optim_target_modules
+
+        # torch compile
+        if self.cfg.torch_compile and getattr(torch, "_dynamo", None):
+            torch._dynamo.config.suppress_errors = (  # pylint: disable=protected-access
+                True
+            )
+            training_args_kwargs["torch_compile"] = self.cfg.torch_compile
+            if self.cfg.torch_compile_backend:
+                training_args_kwargs["torch_compile_backend"] = (
+                    self.cfg.torch_compile_backend
+                )
+            if self.cfg.torch_compile_mode:
+                training_args_kwargs["torch_compile_mode"] = self.cfg.torch_compile_mode
 
         return training_args_kwargs
