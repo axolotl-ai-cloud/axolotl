@@ -156,7 +156,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if blocklist_key in training_args_kwargs:
                 del training_args_kwargs[blocklist_key]
 
-        training_args_kwargs["num_train_epochs"] = self.cfg.num_epochs
         training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
             logging_first_step=True,
             **training_args_kwargs,

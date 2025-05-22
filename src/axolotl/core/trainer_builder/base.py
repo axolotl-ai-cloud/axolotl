@@ -304,6 +304,8 @@ class TrainerBuilderBase(abc.ABC):
 
         training_args_kwargs["max_steps"] = self.cfg.max_steps or total_num_steps or -1
 
+        training_args_kwargs["num_train_epochs"] = self.cfg.num_epochs
+
         # max_length is not used in CausalTrainer
         if self.cfg.reward_model or self.cfg.rl:
             training_args_kwargs["max_length"] = self.cfg.sequence_len

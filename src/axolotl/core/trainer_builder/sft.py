@@ -148,7 +148,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         trainer_kwargs = {}
 
         # Pop optimizer_cls_and_kwargs to trainer_kwargs
-        if "optimizer_cls_and_kwargs" in trainer_kwargs:
+        if "optimizer_cls_and_kwargs" in training_arguments_kwargs:
             trainer_kwargs["optimizer_cls_and_kwargs"] = training_arguments_kwargs.pop(
                 "optimizer_cls_and_kwargs"
             )
@@ -219,7 +219,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["eval_accumulation_steps"] = (
             self.cfg.gradient_accumulation_steps
         )
-        training_arguments_kwargs["num_train_epochs"] = self.cfg.num_epochs
 
         training_arguments_kwargs["load_best_model_at_end"] = (
             (
