@@ -400,7 +400,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 **data_collator_kwargs,
             )
         sig = inspect.signature(trainer_cls)
-        if "processing_class" in sig.parameters.keys():
+        if "processing_class" in sig.parameters:
             trainer_kwargs["processing_class"] = self.tokenizer
         else:
             trainer_kwargs["tokenizer"] = self.tokenizer

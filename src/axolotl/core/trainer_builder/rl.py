@@ -197,7 +197,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         trainer_cls, trainer_cls_args = self._get_trainer_cls(trainer_kwargs)
 
         sig = inspect.signature(trainer_cls)
-        if "tokenizer" in sig.parameters.keys():
+        if "tokenizer" in sig.parameters:
             trainer_kwargs["tokenizer"] = self.tokenizer
         else:
             trainer_kwargs["processing_class"] = self.tokenizer
