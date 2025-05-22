@@ -1,12 +1,12 @@
 """Unit tests for axolotl.core.trainer_builder"""
 
-from axolotl.utils.schemas.enums import RLType
 import pytest
 
 from axolotl.core.trainer_builder import HFRLTrainerBuilder
 from axolotl.loaders import ModelLoader, load_tokenizer
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.schemas.enums import RLType
 
 
 @pytest.fixture(name="cfg")
