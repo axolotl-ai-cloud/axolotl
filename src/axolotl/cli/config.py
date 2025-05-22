@@ -67,7 +67,8 @@ def check_remote_config(config: Union[str, Path]) -> Union[str, Path]:
             # Log a warning but do not raise an error; JSON is technically valid YAML.
             # This can happen when you forget to point to a raw GitHub link.
             LOG.warning(
-                f"Warning: The content of the file at {config} is JSON, which is technically valid YAML but might not be intended."
+                f"Warning: The content of the file at {config} is JSON, which is technically valid YAML but might not be intended.",
+                use_environ=True,
             )
         except json.JSONDecodeError:
             # If it's not valid JSON, verify it's valid YAML
@@ -75,7 +76,8 @@ def check_remote_config(config: Union[str, Path]) -> Union[str, Path]:
                 yaml.safe_load(content)
             except yaml.YAMLError as err:
                 raise ValueError(
-                    f"Failed to parse the content at {config} as YAML: {err}"
+                    f"Failed to parse the content at {config} as YAML: {err}",
+                    use_environ=True,
                 ) from err
 
         # Write the content to a file if it's valid YAML (or JSON treated as YAML)
@@ -83,7 +85,8 @@ def check_remote_config(config: Union[str, Path]) -> Union[str, Path]:
         with open(output_path, "wb") as file:
             file.write(content)
         LOG.info(
-            f"Using the following config obtained from {config}: \n\n{content.decode('utf-8')}\n"
+            f"Using the following config obtained from {config}: \n\n{content.decode('utf-8')}\n",
+            use_environ=True,
         )
         return output_path
 
@@ -119,12 +122,12 @@ def choose_config(path: Path) -> str:
         )
 
     if len(yaml_files) == 1:
-        print(f"Using default YAML file '{yaml_files[0]}'")
+        LOG.info(f"Using default YAML file '{yaml_files[0]}'", use_environ=True)
         return str(yaml_files[0])
 
-    print("Choose a YAML file:")
+    LOG.info("Choose a YAML file:")
     for idx, file in enumerate(yaml_files):
-        print(f"{idx + 1}. {file}")
+        LOG.info(f"{idx + 1}. {file}", use_environ=True)
 
     chosen_file = None
     while chosen_file is None:
@@ -133,9 +136,12 @@ def choose_config(path: Path) -> str:
             if 1 <= choice <= len(yaml_files):
                 chosen_file = str(yaml_files[choice - 1])
             else:
-                print("Invalid choice. Please choose a number from the list.")
+                LOG.info(
+                    "Invalid choice. Please choose a number from the list.",
+                    use_environ=True,
+                )
         except ValueError:
-            print("Invalid input. Please enter a number.")
+            LOG.info("Invalid input. Please enter a number.", use_environ=True)
 
     return chosen_file
 
