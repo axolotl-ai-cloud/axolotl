@@ -29,11 +29,11 @@ if TYPE_CHECKING:
     from s3fs import S3FileSystem
 
 
-def get_dataset_type(dataset_config: DictDefault):
+def get_dataset_type(dataset_config: DictDefault) -> str:
     """Get the dataset type from the path if it's not specified."""
     dataset_type = "json"
-    if dataset_config.dataset_type:
-        dataset_type = dataset_config.dataset_type
+    if dataset_config.ds_type:
+        dataset_type = dataset_config.ds_type
     elif ".parquet" in dataset_config.path:
         dataset_type = "parquet"
     elif ".arrow" in dataset_config.path:
@@ -216,6 +216,7 @@ def _load_from_local_path(
     if local_path.is_dir():
         if dataset_config.data_files:
             dataset_type = get_dataset_type(dataset_config)
+            print(dataset_type, dataset_config)
             return load_dataset(
                 dataset_type,
                 data_files=dataset_config.data_files,
@@ -224,15 +225,14 @@ def _load_from_local_path(
         try:
             return load_from_disk(dataset_config.path)
         except FileNotFoundError:
-            return load_dataset(
-                dataset_config.path, streaming=False, **load_dataset_kwargs
-            )
+            load_dataset_kwargs["streaming"] = False
+            return load_dataset(dataset_config.path, **load_dataset_kwargs)
     elif local_path.is_file():
         dataset_type = get_dataset_type(dataset_config)
+        load_dataset_kwargs["streaming"] = False
         return load_dataset(
             dataset_type,
             data_files=dataset_config.path,
-            streaming=False,
             **load_dataset_kwargs,
         )
     else:
