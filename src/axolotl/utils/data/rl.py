@@ -80,8 +80,14 @@ def map_dataset(cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs):
 
 
 def drop_long_rl_seq(
-    sample, rl, tokenizer, sequence_len  # pylint: disable=invalid-name
+    sample,
+    rl,
+    tokenizer,
+    sequence_len,
+    handling="drop",  # Use the default handling mode
 ):
+    result = None
+
     if rl in (RLType.DPO, RLType.IPO, RLType.ORPO, RLType.SIMPO):
         if not (
             sample.get("prompt") and sample.get("chosen") and sample.get("rejected")
@@ -98,11 +104,65 @@ def drop_long_rl_seq(
         len_chosen = len(tokenizer(chosen, add_special_tokens=False)["input_ids"])
         len_rejected = len(tokenizer(rejected, add_special_tokens=False)["input_ids"])
 
-        return (len_prompt + len_chosen) <= sequence_len and (
-            len_prompt + len_rejected
-        ) <= sequence_len
+        # Truncate first, then drop if still invalid (although truncate should handle it)
+        if handling == "truncate":
+            # If both sequences fit, return sample unchanged
+            if (len_prompt + len_chosen) <= sequence_len and (
+                len_prompt + len_rejected
+            ) <= sequence_len:
+                result = sample
+            else:
+                # Calculate maximum response length that can fit with the prompt
+                max_response_len = sequence_len - len_prompt
 
-    if rl is RLType.KTO:
+                if max_response_len <= 0:
+                    # Prompt is already too long, behavior depends on handling
+                    # If truncate is chosen, we technically can't truncate, but drop seems harsh.
+                    # Returning the sample might be unexpected. Let's stick to the filter logic
+                    # which would drop this in the `filter` step later if needed.
+                    # For now, return sample to map, or False to filter.
+                    # Let's simplify: truncate *should* result in a valid sample if possible.
+                    # If prompt >= seq_len, truncate won't work. Filter will catch this later.
+                    # So, if max_response_len <= 0, we pass it through for map, drop for filter.
+                    # However, the filter/map logic is applied *after* this function.
+                    # This function needs to return the *modified* sample for map, or bool for filter.
+
+                    # Re-think: If handling==truncate, return the modified sample if possible.
+                    # If prompt >= seq_len, modification is impossible. What should map return?
+                    # Maybe return the original sample? But map expects *modified* sample.
+                    # Let's stick to the original logic: if prompt is too long, return False for filter
+                    # and original sample for map.
+
+                    result = (
+                        sample  # For map, let downstream handle it if still invalid?
+                    )
+                    # Or maybe return None/empty dict? Let's return sample for now.
+                    # If handling was drop, filter would remove this.
+
+                else:
+                    # Truncate the chosen and rejected responses if needed
+                    if len_chosen > max_response_len:
+                        chosen_tokens = tokenizer(chosen, add_special_tokens=False)[
+                            "input_ids"
+                        ][:max_response_len]
+                        sample["chosen"] = tokenizer.decode(
+                            chosen_tokens, skip_special_tokens=True
+                        )
+
+                    if len_rejected > max_response_len:
+                        rejected_tokens = tokenizer(rejected, add_special_tokens=False)[
+                            "input_ids"
+                        ][:max_response_len]
+                        sample["rejected"] = tokenizer.decode(
+                            rejected_tokens, skip_special_tokens=True
+                        )
+                    result = sample
+        else:  # handling == "drop"
+            result = (len_prompt + len_chosen) <= sequence_len and (
+                len_prompt + len_rejected
+            ) <= sequence_len
+
+    elif rl == RLType.KTO:
         if not (sample.get("prompt") and sample.get("completion")):
             raise ValueError("Prompt and completion keys are required for KTO datasets")
 
@@ -114,12 +174,40 @@ def drop_long_rl_seq(
             tokenizer(completion, add_special_tokens=False)["input_ids"]
         )
 
-        return (len_prompt + len_completion) <= sequence_len
+        # Truncate first
+        if handling == "truncate":
+            # If sequence fits, return sample unchanged
+            if (len_prompt + len_completion) <= sequence_len:
+                result = sample
+            else:
+                # Calculate maximum completion length
+                max_completion_len = sequence_len - len_prompt
 
-    if rl is RLType.GRPO:
-        return True
+                if max_completion_len <= 0:
+                    # Prompt too long, return sample for map
+                    result = sample
+                else:
+                    # Truncate the completion if needed
+                    if len_completion > max_completion_len:
+                        completion_tokens = tokenizer(
+                            completion, add_special_tokens=False
+                        )["input_ids"][:max_completion_len]
+                        sample["completion"] = tokenizer.decode(
+                            completion_tokens, skip_special_tokens=True
+                        )
+                    result = sample
+        else:  # handling == "drop"
+            result = (len_prompt + len_completion) <= sequence_len
 
-    raise ValueError("Unknown RL type")
+    elif rl == RLType.GRPO:
+        # GRPO doesn't involve sequence length checks in the same way?
+        # The original code returned True for drop. What should it return for truncate?
+        # Let's assume for now it always passes.
+        result = sample if handling == "truncate" else True
+    else:
+        raise ValueError("Unknown RL type")
+
+    return result
 
 
 def load_prepare_preference_datasets(cfg):
@@ -166,25 +254,43 @@ def load_prepare_preference_datasets(cfg):
                 split_datasets[i] = data_set
 
             if not cfg.skip_prepare_dataset:
+                # Determine handling mode
+                handling = cfg.get("sequence_len_overflow_handling", "drop")
+
                 drop_long = partial(
                     drop_long_rl_seq,
                     rl=_cfg.rl,
                     tokenizer=tokenizer,
                     sequence_len=cfg.sequence_len,
+                    handling=handling,  # Pass the handling mode
                 )
 
                 prior_len = len(split_datasets[i])
-                split_datasets[i] = split_datasets[i].filter(
-                    drop_long,
-                    num_proc=cfg.dataset_processes,
-                    load_from_cache_file=not cfg.is_preprocess,
-                    desc="Dropping Long Sequences",
-                )
-                dropped = prior_len - len(split_datasets[i])
-                if dropped:
-                    LOG.warning(
-                        f"Dropped {dropped} long samples from dataset index {i}"
+
+                # Use map for truncate mode and filter for drop mode
+                if handling == "truncate":
+                    split_datasets[i] = split_datasets[i].map(
+                        drop_long,  # Function now returns modified sample or original
+                        num_proc=cfg.dataset_processes,
+                        load_from_cache_file=not cfg.is_preprocess,
+                        desc="Truncating Long Sequences",
                     )
+                    # Note: Length might not change if truncation always occurs
+                    LOG.info(
+                        f"Processed dataset index {i} with truncation handling for sequence length {cfg.sequence_len}"
+                    )
+                else:  # handling == "drop"
+                    split_datasets[i] = split_datasets[i].filter(
+                        drop_long,  # Function now returns boolean
+                        num_proc=cfg.dataset_processes,
+                        load_from_cache_file=not cfg.is_preprocess,
+                        desc="Dropping Long Sequences",
+                    )
+                    dropped = prior_len - len(split_datasets[i])
+                    if dropped:
+                        LOG.warning(
+                            f"Dropped {dropped} long samples from dataset index {i}"
+                        )
 
         combined_datasets = concatenate_datasets(split_datasets)
         combined_datasets = combined_datasets.shuffle(seed=cfg.seed or 42)

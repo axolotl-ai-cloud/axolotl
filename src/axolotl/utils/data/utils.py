@@ -13,9 +13,11 @@ from datasets import Dataset, IterableDataset
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.samplers.utils import get_dataset_lengths
-from axolotl.utils.trainer import drop_long_seq
+from axolotl.utils.trainer import truncate_or_drop_long_seq
 
 LOG = logging.getLogger(__name__)
+
+DEFAULT_SEQUENCE_LEN_OVERFLOW_HANDLING = "drop"
 
 
 class RetryStrategy(Enum):
@@ -165,10 +167,15 @@ def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
         )
         return dataset
 
-    drop_long = functools.partial(
-        drop_long_seq,
+    # Get the handling method from config, default to "drop" for backward compatibility
+    handling = cfg.get("sequence_len_overflow_handling", "drop")
+
+    # Use the new function with the specified handling mode
+    seq_handler = functools.partial(
+        truncate_or_drop_long_seq,
         sequence_len=cfg.sequence_len,
         min_sequence_len=cfg.min_sample_len,
+        handling=handling,
     )
 
     try:
@@ -193,17 +200,31 @@ def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
 
     drop_long_kwargs = {}
     if filter_map_kwargs:
-        drop_long_kwargs["desc"] = "Dropping Long Sequences"
+        if handling == "truncate":
+            drop_long_kwargs["desc"] = "Truncating Long Sequences"
+        else:  # handling == "drop"
+            drop_long_kwargs["desc"] = "Dropping Long Sequences"
 
-    dataset = dataset.filter(
-        drop_long,
-        batched=True,
-        **filter_map_kwargs,
-        **drop_long_kwargs,
-    )
-    if prior_len:
-        dropped = prior_len - len(dataset)
-        if dropped:
-            LOG.warning(f"Dropped {dropped} long samples from dataset")
+    if handling == "truncate":
+        # Use map for truncate mode
+        dataset = dataset.map(
+            seq_handler,
+            batched=True,
+            **filter_map_kwargs,
+            **drop_long_kwargs,
+        )
+        LOG.info(f"Truncated long samples in dataset to {cfg.sequence_len} tokens")
+    else:  # handling == "drop"
+        # Use filter for drop mode
+        dataset = dataset.filter(
+            seq_handler,
+            batched=True,
+            **filter_map_kwargs,
+            **drop_long_kwargs,
+        )
+        if prior_len:
+            dropped = prior_len - len(dataset)
+            if dropped:
+                LOG.warning(f"Dropped {dropped} long samples from dataset")
 
     return dataset
