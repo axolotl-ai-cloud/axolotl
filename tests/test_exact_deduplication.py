@@ -245,7 +245,9 @@ class TestDeduplicateRLDataset:
 
         # pylint: disable=duplicate-code
         with (
-            patch("axolotl.utils.data.rl.load_dataset_w_config") as mock_load_dataset,
+            patch(
+                "axolotl.utils.data.rl.load_dataset_with_config"
+            ) as mock_load_dataset,
             patch("axolotl.loaders.load_tokenizer") as mock_load_tokenizer,
         ):
             # Set up the mock to return different values on successive calls
@@ -269,7 +271,9 @@ class TestDeduplicateRLDataset:
     ):
         # pylint: disable=duplicate-code
         with (
-            patch("axolotl.utils.data.rl.load_dataset_w_config") as mock_load_dataset,
+            patch(
+                "axolotl.utils.data.rl.load_dataset_with_config"
+            ) as mock_load_dataset,
             patch("axolotl.loaders.load_tokenizer") as mock_load_tokenizer,
         ):
             # Set up the mock to return different values on successive calls
