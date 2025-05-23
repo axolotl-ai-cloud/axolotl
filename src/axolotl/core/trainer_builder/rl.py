@@ -179,9 +179,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 "optimizer_cls_and_kwargs"
             )
 
-        if self.cfg.rl is RLType.IPO:
-            if self.cfg.dpo_label_smoothing:
-                trainer_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
+        if self.cfg.rl is RLType.IPO and self.cfg.dpo_label_smoothing:
+            trainer_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
         if self.eval_dataset:
             trainer_kwargs["eval_dataset"] = self.eval_dataset
         if self.cfg.adapter and self.peft_config:
