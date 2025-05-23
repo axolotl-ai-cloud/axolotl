@@ -227,10 +227,6 @@ class TrainerBuilderBase(abc.ABC):
         training_args_kwargs["lr_scheduler_kwargs"] = (
             self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
         )
-        training_args_kwargs["cosine_min_lr_ratio"] = self.cfg.cosine_min_lr_ratio
-        training_args_kwargs["cosine_constant_lr_ratio"] = (
-            self.cfg.cosine_constant_lr_ratio
-        )
 
         # Handle custom optimizer
         custom_supported_optimizers = [opt.value for opt in CustomSupportedOptimizers]
@@ -444,11 +440,15 @@ class TrainerBuilderBase(abc.ABC):
 
         # set arg into trainer_args_kwargs with same name if value not None
         for arg in [
+            # optim/scheduler
             "adam_beta1",
             "adam_beta2",
             "adam_beta3",
             "adam_epsilon",
             "adam_epsilon2",
+            "cosine_min_lr_ratio",
+            "cosine_constant_lr_ratio",
+            # trainer
             "max_grad_norm",
             "dataloader_num_workers",
             "dataloader_pin_memory",

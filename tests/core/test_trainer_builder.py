@@ -216,6 +216,7 @@ class TestHFRLTrainerBuilder:
         assert training_arguments.lr_scheduler_type == "cosine"
         assert training_arguments.warmup_steps == 10
         assert training_arguments.cosine_min_lr_ratio == 0.1
+        assert training_arguments.cosine_constant_lr_ratio == 0.2
 
         # Other settings
         assert training_arguments.dataloader_num_workers == 1
