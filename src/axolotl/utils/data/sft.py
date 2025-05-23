@@ -4,6 +4,7 @@ import functools
 import logging
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -15,6 +16,7 @@ from datasets import (
     load_dataset,
     load_from_disk,
 )
+from filelock import FileLock
 from transformers import PreTrainedTokenizer, ProcessorMixin
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
@@ -22,6 +24,7 @@ from axolotl.prompters import Prompter
 from axolotl.utils.data.pretraining import wrap_pretraining_dataset
 from axolotl.utils.data.shared import (
     datasets_with_name_generator,
+    generate_split_fingerprints,
     load_dataset_with_config,
 )
 from axolotl.utils.data.utils import (
@@ -32,7 +35,7 @@ from axolotl.utils.data.utils import (
 )
 from axolotl.utils.data.wrappers import get_dataset_wrapper
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import is_local_main_process, zero_first
+from axolotl.utils.distributed import is_local_main_process
 from axolotl.utils.trainer import (
     calculate_total_num_steps,
     process_datasets_for_packing,
@@ -42,7 +45,7 @@ LOG = logging.getLogger(__name__)
 
 
 @retry_on_request_exceptions(max_retries=3, delay=5)
-def prepare_dataset(
+def prepare_datasets(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizer,
     processor: ProcessorMixin | None = None,
@@ -73,25 +76,56 @@ def _prepare_standard_dataset(
     preprocess_iterable: bool,
 ) -> tuple[Dataset, Dataset, int, list[Prompter | None]]:
     """Prepare standard (non-pretraining) datasets."""
-    with zero_first(is_local_main_process()):
-        # Always load training dataset
-        train_dataset, eval_dataset, prompters = _load_prepare_datasets(
-            tokenizer,
-            cfg,
-            split="train",
-            processor=processor,
-            preprocess_iterable=preprocess_iterable,
-        )
+    dataset_prepared_path = cfg.dataset_prepared_path or DEFAULT_DATASET_PREPARED_PATH
+    lock_file_path = Path(dataset_prepared_path) / "datasets_prep.lock"
 
-        # Overwrite eval_dataset if test data exists
-        if cfg.test_datasets:
-            _, eval_dataset, _ = _load_prepare_datasets(
+    # The rank that acquires the lock first does the data preprocessing
+    with FileLock(str(lock_file_path)):
+        ready_flag_path = Path(dataset_prepared_path) / "datasets_ready.flag"
+
+        if not ready_flag_path.exists():
+            # Always load training dataset
+            train_dataset, eval_dataset, prompters = _load_prepare_datasets(
                 tokenizer,
                 cfg,
-                split="test",
+                split="train",
                 processor=processor,
                 preprocess_iterable=preprocess_iterable,
             )
+
+            # Overwrite eval_dataset if test data exists
+            if cfg.test_datasets:
+                _, eval_dataset, _ = _load_prepare_datasets(
+                    tokenizer,
+                    cfg,
+                    split="test",
+                    processor=processor,
+                    preprocess_iterable=preprocess_iterable,
+                )
+
+            ready_flag_path.touch()
+        else:
+            # Other ranks: wait and then load
+            while not ready_flag_path.exists():
+                time.sleep(1)
+
+            # Load the prepared datasets
+            train_dataset, eval_dataset, prompters = _load_prepare_datasets(
+                tokenizer,
+                cfg,
+                split="train",
+                processor=processor,
+                preprocess_iterable=preprocess_iterable,
+            )
+
+            if cfg.test_datasets:
+                _, eval_dataset, _ = _load_prepare_datasets(
+                    tokenizer,
+                    cfg,
+                    split="test",
+                    processor=processor,
+                    preprocess_iterable=preprocess_iterable,
+                )
 
     # Validate sample packing configuration for evaluation
     if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
@@ -621,11 +655,11 @@ def _handle_test_split(
 def _create_train_validation_split(
     dataset: Dataset, cfg: DictDefault, val_set_size: int | float
 ) -> tuple[Dataset, Dataset]:
-    """Create train/validation split with consistent fingerprinting."""
+    """Create train / validation split with consistent fingerprinting."""
     seed = cfg.seed if cfg.seed is not None else 42
 
     # Generate consistent fingerprints for caching
-    train_fingerprint, test_fingerprint = _generate_split_fingerprints(
+    train_fingerprint, test_fingerprint = generate_split_fingerprints(
         dataset, val_set_size, seed
     )
 
@@ -643,18 +677,3 @@ def _create_train_validation_split(
     )
 
     return split_dataset["train"], split_dataset["test"]
-
-
-def _generate_split_fingerprints(
-    dataset: Dataset, val_set_size: int | float, seed: int
-) -> tuple[str, str]:
-    """Generate consistent fingerprints for train/test splits."""
-    fingerprint = dataset._fingerprint  # pylint: disable=protected-access
-
-    train_hash_input = f"{fingerprint}|{val_set_size}|train|{seed}"
-    test_hash_input = f"{fingerprint}|{val_set_size}|test|{seed}"
-
-    train_fingerprint = md5(train_hash_input)
-    test_fingerprint = md5(test_hash_input)
-
-    return train_fingerprint, test_fingerprint
