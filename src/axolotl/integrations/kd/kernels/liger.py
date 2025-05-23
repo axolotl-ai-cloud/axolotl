@@ -20,7 +20,6 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
         target_token_ids_chunk: torch.Tensor,  # [chunk_size, top_k]
         target_logprobs_chunk: torch.Tensor,  # [chunk_size, top_k], already temp-scaled and normalized logprobs
         target_mask_chunk: torch.Tensor,  # [chunk_size, top_k]
-        temperature: float,
     ) -> torch.Tensor:
         """
         Compute Top-K KL divergence loss for a chunk.
@@ -29,15 +28,15 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
             target_token_ids_chunk: Top-k teacher token IDs. Shape: (N, K).
             target_logprobs_chunk: Top-k teacher log probabilities (temp-scaled, normalized). Shape: (N, K).
             target_mask_chunk: Mask for valid top-k tokens. Shape: (N, K).
-            temperature: Temperature used for scaling.
         Returns:
             Sum of KL divergence losses for the chunk.
         """
-        student_logits_temp_scaled = student_logits_temp_scaled.float()
+        student_logits_temp_scaled = (  # [chunk_size, vocab_size]
+            student_logits_temp_scaled.float()
+        )
         target_logprobs_chunk = target_logprobs_chunk.float()
 
         # Gather student logits for the top-k teacher token IDs
-        # student_logits_temp_scaled: [chunk_size, vocab_size]
         # target_token_ids_chunk: [chunk_size, top_k]
         # student_logits_topk_temp_scaled: [chunk_size, top_k]
         student_logits_topk_temp_scaled = torch.gather(
@@ -71,9 +70,6 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
             target_logprobs_valid - student_logprobs_topk_valid
         )
         kd_loss = kd_loss_per_token.sum()
-
-        if temperature != 1.0:
-            kd_loss = kd_loss * (temperature**2)
 
         return kd_loss
 
