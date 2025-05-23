@@ -129,8 +129,8 @@ quartodoc:
         - monkeypatch.attention.mllama
         - monkeypatch.data.batch_dataset_fetcher
         - monkeypatch.mixtral
-        - gradient_checkpointing.offload_cpu
-        - gradient_checkpointing.offload_disk
+        - monkeypatch.gradient_checkpointing.offload_cpu
+        - monkeypatch.gradient_checkpointing.offload_disk
     - title: Utils
       desc: Utility functions
       contents:

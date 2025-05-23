@@ -39,31 +39,39 @@ if TYPE_CHECKING:
 class BasePlugin:
     """Base class for all plugins. Defines the interface for plugin methods.
 
-    Methods:
-        register(cfg): Registers the plugin with the given configuration.
-        load_datasets(cfg): Loads and preprocesses the dataset for training.
-        pre_model_load(cfg): Performs actions before the model is loaded.
-        post_model_build(cfg, model): Performs actions after the model is loaded, but
+    A plugin is a reusable, modular, and self-contained piece of code that extends
+    the functionality of Axolotl. Plugins can be used to integrate third-party models,
+    modify the training process, or add new features.
+
+    To create a new plugin, you need to inherit from the BasePlugin class and
+    implement the required methods.
+
+    Note:
+        Plugin methods include:
+        - register(cfg): Registers the plugin with the given configuration.
+        - load_datasets(cfg): Loads and preprocesses the dataset for training.
+        - pre_model_load(cfg): Performs actions before the model is loaded.
+        - post_model_build(cfg, model): Performs actions after the model is loaded, but
             before LoRA adapters are applied.
-        pre_lora_load(cfg, model): Performs actions before LoRA weights are loaded.
-        post_lora_load(cfg, model): Performs actions after LoRA weights are loaded.
-        post_model_load(cfg, model): Performs actions after the model is loaded,
+        - pre_lora_load(cfg, model): Performs actions before LoRA weights are loaded.
+        - post_lora_load(cfg, model): Performs actions after LoRA weights are loaded.
+        - post_model_load(cfg, model): Performs actions after the model is loaded,
             inclusive of any adapters.
-        post_trainer_create(cfg, trainer): Performs actions after the trainer is
+        - post_trainer_create(cfg, trainer): Performs actions after the trainer is
             created.
-        create_optimizer(cfg, trainer): Creates and returns an optimizer for training.
-        create_lr_scheduler(cfg, trainer, optimizer, num_training_steps): Creates and
+        - create_optimizer(cfg, trainer): Creates and returns an optimizer for training.
+        - create_lr_scheduler(cfg, trainer, optimizer, num_training_steps): Creates and
             returns a learning rate scheduler.
-        add_callbacks_pre_trainer(cfg, model): Adds callbacks to the trainer before
+        - add_callbacks_pre_trainer(cfg, model): Adds callbacks to the trainer before
             training.
-        add_callbacks_post_trainer(cfg, trainer): Adds callbacks to the trainer after
+        - add_callbacks_post_trainer(cfg, trainer): Adds callbacks to the trainer after
             training.
     """
 
     def __init__(self):
         """Initializes the BasePlugin."""
 
-    def register(self, cfg):  # pylint: disable=unused-argument
+    def register(self, cfg: DictDefault):  # pylint: disable=unused-argument
         """Registers the plugin with the given configuration.
 
         Args:
@@ -275,10 +283,11 @@ class PluginManager:
     Attributes:
         plugins: A list of loaded plugins.
 
-    Methods:
-        get_instance(): Static method to get the singleton instance of `PluginManager`.
-        register(plugin_name: str): Registers a new plugin by its name.
-        pre_model_load(cfg): Calls the pre_model_load method of all registered plugins.
+    Note:
+        Key methods include:
+        - get_instance(): Static method to get the singleton instance of `PluginManager`.
+        - register(plugin_name: str): Registers a new plugin by its name.
+        - pre_model_load(cfg): Calls the pre_model_load method of all registered plugins.
     """
 
     plugins: OrderedDict[str, BasePlugin] = collections.OrderedDict()
@@ -534,7 +543,6 @@ class PluginManager:
 
         Args:
             cfg: The configuration for the plugins.
-            model: The loaded model.
         """
         for plugin in self.plugins.values():
             plugin.post_train_unload(cfg)
