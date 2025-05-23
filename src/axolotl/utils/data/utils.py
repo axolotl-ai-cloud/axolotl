@@ -114,7 +114,7 @@ def deduplicate_and_log_datasets(
     and new sizes.
 
     Returns:
-        tuple: Deduplicated train, eval, and additional datasets.
+        Deduplicated train, eval, and additional datasets.
     """
     seen_hashes: dict[str, list[int]] = {}
 

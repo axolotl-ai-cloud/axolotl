@@ -9,8 +9,8 @@ from datasets import Dataset
 import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
 from axolotl.cli.args import PreprocessCliArgs, TrainerCliArgs
 from axolotl.loaders import load_processor, load_tokenizer
-from axolotl.utils.data import prepare_dataset
-from axolotl.utils.data.rl import load_prepare_preference_datasets
+from axolotl.utils.data import prepare_datasets
+from axolotl.utils.data.rl import prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
@@ -55,7 +55,7 @@ def load_datasets(
     processor = load_processor(cfg, tokenizer=tokenizer) if cfg.processor_type else None
     preprocess_iterable = getattr(cli_args, "iterable", False)
 
-    train_dataset, eval_dataset, total_num_steps, prompters = prepare_dataset(
+    train_dataset, eval_dataset, total_num_steps, prompters = prepare_datasets(
         cfg,
         tokenizer,
         processor=processor,
@@ -97,7 +97,7 @@ def load_preference_datasets(
     cli_args: PreprocessCliArgs | TrainerCliArgs,
 ) -> TrainDatasetMeta:
     """Loads one or more training or evaluation datasets for RL training using paired
-    preference data, calling `axolotl.utils.data.rl.load_prepare_preference_datasets`.
+    preference data, calling `axolotl.utils.data.rl.prepare_preference_dataset`.
     Optionally, logs out debug information.
 
     Args:
@@ -108,7 +108,7 @@ def load_preference_datasets(
         Dataclass with fields for training and evaluation datasets and the computed
         `total_num_steps`.
     """
-    train_dataset, eval_dataset = load_prepare_preference_datasets(cfg)
+    train_dataset, eval_dataset = prepare_preference_datasets(cfg)
 
     total_num_steps: int | None = None
     if cfg.rl is not RLType.GRPO:

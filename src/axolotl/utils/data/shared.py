@@ -20,6 +20,7 @@ from huggingface_hub.errors import (
     RevisionNotFoundError,
 )
 
+from axolotl.utils.data.utils import md5
 from axolotl.utils.dict import DictDefault
 
 if TYPE_CHECKING:
@@ -321,3 +322,18 @@ def _load_from_data_files(
         raise ValueError("data_files must be either a string or list of strings")
 
     return load_dataset("json", data_files=file_path, **load_dataset_kwargs)
+
+
+def generate_split_fingerprints(
+    dataset: Dataset, val_set_size: int | float, seed: int
+) -> tuple[str, str]:
+    """Generate consistent fingerprints for train/test splits."""
+    fingerprint = dataset._fingerprint  # pylint: disable=protected-access
+
+    train_hash_input = f"{fingerprint}|{val_set_size}|train|{seed}"
+    test_hash_input = f"{fingerprint}|{val_set_size}|test|{seed}"
+
+    train_fingerprint = md5(train_hash_input)
+    test_fingerprint = md5(test_hash_input)
+
+    return train_fingerprint, test_fingerprint
