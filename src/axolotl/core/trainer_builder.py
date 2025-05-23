@@ -908,10 +908,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.plugins:
             plugin_manager = PluginManager.get_instance()
-            collator_cls = plugin_manager.get_collator_cls(self.cfg, is_eval=is_eval)
+            collator_cls_and_kwargs = plugin_manager.get_collator_cls_and_kwargs(
+                self.cfg, is_eval=is_eval
+            )
 
-        if collator_cls:
-            collator = collator_cls
+        if collator_cls_and_kwargs:
+            collator = collator_cls_and_kwargs[0]
+            if kwargs and isinstance(kwargs, dict):
+                kwargs.update(collator_cls_and_kwargs[1])
         elif self.cfg.reward_model:
             collator = RewardDataCollatorWithPadding
             if "max_length" in kwargs:

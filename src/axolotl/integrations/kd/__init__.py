@@ -35,9 +35,9 @@ class KDPlugin(BasePlugin):
             return AxolotlKDTrainer
         return None
 
-    def get_collator_cls(self, cfg, is_eval=False):
+    def get_collator_cls_and_kwargs(self, cfg, is_eval=False):
         if not cfg.kd_trainer:
-            return None
+            return None, None
 
         from .collator import DataCollatorForKD, KDBatchSamplerDataCollatorForSeq2Seq
 
@@ -48,8 +48,8 @@ class KDPlugin(BasePlugin):
             use_batch_sampler_collator = True
 
         if use_batch_sampler_collator:
-            return KDBatchSamplerDataCollatorForSeq2Seq
-        return DataCollatorForKD
+            return KDBatchSamplerDataCollatorForSeq2Seq, {}
+        return DataCollatorForKD, {}
 
     def pre_model_load(self, cfg):
         from .kernels.models import apply_kernel
