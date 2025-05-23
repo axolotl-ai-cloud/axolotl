@@ -7,7 +7,7 @@ import unittest
 import pytest
 
 from axolotl.prompt_strategies.dpo import load as load_dpo
-from axolotl.utils.data.rl import load_prepare_preference_datasets
+from axolotl.utils.data.rl import prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
 
 from tests.hf_offline_utils import enable_hf_offline
@@ -55,7 +55,7 @@ class TestDPOChatml:
         # test that dpo.load works
         load_dpo("chatml", cfg)
         # now actually load the datasets with the strategy
-        train_ds, _ = load_prepare_preference_datasets(cfg)
+        train_ds, _ = prepare_preference_datasets(cfg)
         assert train_ds[0]["prompt"].startswith("<|im_start|>")
         assert train_ds[0]["prompt"].endswith("<|im_start|>assistant\n")
         assert "chosen" in train_ds[0]

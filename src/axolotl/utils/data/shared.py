@@ -1,11 +1,18 @@
-"""
-dataset loading shared utils
-"""
+"""Dataset loading shared utils."""
+
+from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Generator
 
-from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
+from datasets import (
+    Dataset,
+    DatasetDict,
+    IterableDataset,
+    IterableDatasetDict,
+    load_dataset,
+    load_from_disk,
+)
 from huggingface_hub import hf_hub_download, snapshot_download
 from huggingface_hub.errors import (
     HFValidationError,
@@ -13,78 +20,135 @@ from huggingface_hub.errors import (
     RevisionNotFoundError,
 )
 
+from axolotl.utils.data.utils import md5
 from axolotl.utils.dict import DictDefault
 
-
-def get_ds_type(config_dataset: DictDefault):
-    """
-    Get the dataset type from the path if it's not specified
-    """
-    ds_type = "json"
-    if config_dataset.ds_type:
-        ds_type = config_dataset.ds_type
-    elif ".parquet" in config_dataset.path:
-        ds_type = "parquet"
-    elif ".arrow" in config_dataset.path:
-        ds_type = "arrow"
-    elif ".csv" in config_dataset.path:
-        ds_type = "csv"
-    elif ".txt" in config_dataset.path:
-        ds_type = "text"
-    return ds_type
+if TYPE_CHECKING:
+    from adlfs import AzureBlobFileSystem
+    from gcsfs import GCSFileSystem
+    from ocifs import OCIFileSystem
+    from s3fs import S3FileSystem
 
 
-def datasets_w_name_generator(dataset_configs: list[DictDefault]):
-    """
-    Yields dataset configs handling multiple names or preprocess_shards
+def get_dataset_type(dataset_config: DictDefault) -> str:
+    """Get the dataset type from the path if it's not specified."""
+    dataset_type = "json"
+    if dataset_config.ds_type:
+        dataset_type = dataset_config.ds_type
+    elif ".parquet" in dataset_config.path:
+        dataset_type = "parquet"
+    elif ".arrow" in dataset_config.path:
+        dataset_type = "arrow"
+    elif ".csv" in dataset_config.path:
+        dataset_type = "csv"
+    elif ".txt" in dataset_config.path:
+        dataset_type = "text"
+
+    return dataset_type
+
+
+def datasets_with_name_generator(
+    dataset_configs: list[DictDefault],
+) -> Generator[DictDefault, None, None]:
+    """Yields expanded dataset configurations based on multiple names or preprocessing
+    shards.
+
+    When a dataset config has a list of names, it yields separate configs for each
+    name. When a dataset config specifies preprocessing shards, it yields configs for
+    each shard.
 
     Args:
-        dataset_configs: list of dataset configs (equivalent to cfg.datasets)
+        dataset_configs: List of dataset configuration objects.
+
+    Yields:
+        Individual dataset configurations, expanded as needed for names or shards.
     """
-    for dataset in dataset_configs:
-        if dataset.name and isinstance(dataset.name, list):
-            # load_dataset doesn't properly handle multiple named configurations
-            # at the same time for a given dataset
-            for name in dataset.name:
-                yield DictDefault({**dataset, "name": name})
-        elif dataset.preprocess_shards and not dataset.shards:
-            for shard in range(dataset.preprocess_shards):
+    for config in dataset_configs:
+        if config.name and isinstance(config.name, list):
+            for name in config.name:
+                yield DictDefault({**config, "name": name})
+        elif config.preprocess_shards and not config.shards:
+            for shard_idx in range(config.preprocess_shards):
                 yield DictDefault(
                     {
-                        **dataset,
-                        "shards": dataset.preprocess_shards,
-                        "shards_idx": shard,
+                        **config,
+                        "shards": config.preprocess_shards,
+                        "shards_idx": shard_idx,
                     }
                 )
         else:
-            yield dataset
+            yield config
 
 
-def load_dataset_w_config(
-    config_dataset: DictDefault, use_auth_token: bool, streaming=False
-) -> Union[Dataset, DatasetDict]:
-    """
-    Load a dataset from a config
+def load_dataset_with_config(
+    dataset_config: DictDefault, use_auth_token: bool, streaming=False
+) -> Dataset | IterableDataset:
+    """Load a dataset from a config. Handles datasets that are stored locally, in the
+    HuggingFace Hub, in a remote filesystem (S3, GCS, Azure, OCI), a URL, or
+    `data_files`.
 
     Args:
-        config_dataset: single dataset config
-        use_auth_token: whether to use HF auth token
-        streaming: whether to stream the dataset
+        dataset_config: Single dataset config.
+        use_auth_token: Whether to use HF auth token.
+        streaming: Whether to stream the dataset.
+
+    Returns:
+        Loaded dataset.
     """
-    # pylint: disable=invalid-name
-    ds: Optional[Union[Dataset, DatasetDict]] = None  # pylint: disable=invalid-name
-    ds_from_hub = False
+    # Set up common kwargs for dataset loading
+    load_dataset_kwargs = {
+        "split": dataset_config.split if dataset_config.split else None,
+        "name": dataset_config.name,
+        "streaming": streaming,
+        "trust_remote_code": dataset_config.trust_remote_code,
+    }
+
+    # First check if it's a local path
+    if Path(dataset_config.path).exists():
+        return _load_from_local_path(dataset_config, load_dataset_kwargs)
+
+    # Check if it's a HuggingFace dataset
+    is_hub_dataset = _check_if_hub_dataset(dataset_config, use_auth_token)
+
+    # Check if it's a cloud storage path and get appropriate filesystem
+    remote_fs, storage_options = _get_remote_filesystem(dataset_config.path)
+    is_cloud_dataset = False
+    if remote_fs:
+        try:
+            is_cloud_dataset = remote_fs.exists(dataset_config.path)
+        except (FileNotFoundError, ConnectionError):
+            pass
+
+    # Load from appropriate source
+    if is_hub_dataset:
+        return _load_from_hub(dataset_config, use_auth_token, load_dataset_kwargs)
+    if is_cloud_dataset and remote_fs:
+        return _load_from_cloud(
+            dataset_config, remote_fs, storage_options, load_dataset_kwargs
+        )
+    if dataset_config.path.startswith("https://"):
+        return _load_from_url(dataset_config, storage_options, load_dataset_kwargs)
+    if dataset_config.data_files:
+        return _load_from_data_files(dataset_config, load_dataset_kwargs)
+
+    raise ValueError(
+        f"The dataset could not be loaded. This could be due to a misconfigured dataset path "
+        f"({dataset_config.path}). Try double-check your path / name / data_files. "
+        f"This is not caused by the dataset type."
+    )
+
+
+def _check_if_hub_dataset(dataset_config: DictDefault, use_auth_token: bool) -> bool:
+    """Check if a dataset exists on the HuggingFace Hub."""
     try:
-        # this is just a basic check to see if the path is a
-        # valid HF dataset that's loadable
         snapshot_download(
-            repo_id=config_dataset.path,
+            repo_id=dataset_config.path,
             repo_type="dataset",
             token=use_auth_token,
-            revision=config_dataset.revision,
+            revision=dataset_config.revision,
             ignore_patterns=["*"],
         )
-        ds_from_hub = True
+        return True
     except (
         RepositoryNotFoundError,
         RevisionNotFoundError,
@@ -93,198 +157,183 @@ def load_dataset_w_config(
         HFValidationError,
         ValueError,
     ):
-        pass
+        return False
 
-    ds_from_cloud = False
-    storage_options: dict = {}
-    remote_file_system = None
-    if config_dataset.path.startswith("s3://"):
+
+def _get_remote_filesystem(
+    path: str,
+) -> tuple[
+    S3FileSystem | GCSFileSystem | AzureBlobFileSystem | OCIFileSystem | None, dict
+]:
+    """Get the appropriate filesystem for a remote path."""
+    if path.startswith("s3://"):
         try:
-            import s3fs  # type: ignore
+            import s3fs
+
+            storage_options = {"anon": False}
+            return s3fs.S3FileSystem(**storage_options), storage_options
         except ImportError as exc:
             raise ImportError("s3:// paths require s3fs to be installed") from exc
 
-        # Reads env, credentials from ~/.aws/credentials, or IAM metadata provider
-        # https://s3fs.readthedocs.io/en/latest/index.html?highlight=storage_options#credentials
-        storage_options = {"anon": False}
-        remote_file_system = s3fs.S3FileSystem(**storage_options)
-    elif config_dataset.path.startswith("gs://") or config_dataset.path.startswith(
-        "gcs://"
-    ):
+    elif path.startswith(("gs://", "gcs://")):
         try:
-            import gcsfs  # type: ignore
+            import gcsfs
+
+            storage_options = {"token": None}  # type: ignore
+            return gcsfs.GCSFileSystem(**storage_options), storage_options
         except ImportError as exc:
             raise ImportError(
                 "gs:// or gcs:// paths require gcsfs to be installed"
             ) from exc
 
-        # gcsfs will use default credentials from the environment else anon
-        # https://gcsfs.readthedocs.io/en/latest/#credentials
-        storage_options = {"token": None}
-        remote_file_system = gcsfs.GCSFileSystem(**storage_options)
-    elif (
-        config_dataset.path.startswith("adl://")
-        or config_dataset.path.startswith("abfs://")
-        or config_dataset.path.startswith("az://")
-    ):
+    elif path.startswith(("adl://", "abfs://", "az://")):
         try:
             import adlfs
+
+            storage_options = {"anon": False}
+            return adlfs.AzureBlobFileSystem(**storage_options), storage_options
         except ImportError as exc:
             raise ImportError(
                 "adl:// or abfs:// paths require adlfs to be installed"
             ) from exc
 
-        # # Ensure you have the following environment variables set:
-        # # Gen 1
-        # storage_options = {
-        #     "tenant_id": AZURE_STORAGE_TENANT_ID,
-        #     "client_id": AZURE_STORAGE_CLIENT_ID,
-        #     "client_secret": AZURE_STORAGE_CLIENT_SECRET,
-        # }
-        # # Gen 2
-        # storage_options = {
-        #     "account_name": AZURE_STORAGE_ACCOUNT_NAME,
-        #     "account_key": AZURE_STORAGE_ACCOUNT_KEY,
-        # }
-
-        # Reads env
-        # https://github.com/fsspec/adlfs?tab=readme-ov-file#setting-credentials
-        storage_options = {"anon": False}
-        remote_file_system = adlfs.AzureBlobFileSystem(**storage_options)
-    elif config_dataset.path.startswith("oci://"):
+    elif path.startswith("oci://"):
         try:
             import ocifs
+
+            return ocifs.OCIFileSystem(**storage_options), storage_options
         except ImportError as exc:
             raise ImportError("oci:// paths require ocifs to be installed") from exc
 
-        # https://ocifs.readthedocs.io/en/latest/getting-connected.html#Using-Environment-Variables
-        remote_file_system = ocifs.OCIFileSystem(**storage_options)
+    return None, {}
 
-    try:
-        if remote_file_system and remote_file_system.exists(config_dataset.path):
-            ds_from_cloud = True
-    except (FileNotFoundError, ConnectionError):
-        pass
 
-    # gather extra args from the config
-    load_ds_kwargs = {}
-    if config_dataset.split:
-        load_ds_kwargs["split"] = config_dataset.split
+def _load_from_local_path(
+    dataset_config: DictDefault, load_dataset_kwargs: dict
+) -> Dataset | IterableDataset | DatasetDict | IterableDatasetDict:
+    """Load a dataset from a local path."""
+    local_path = Path(dataset_config.path)
+
+    if local_path.is_dir():
+        if dataset_config.data_files:
+            dataset_type = get_dataset_type(dataset_config)
+            print(dataset_type, dataset_config)
+            return load_dataset(
+                dataset_type,
+                data_files=dataset_config.data_files,
+                **load_dataset_kwargs,
+            )
+        try:
+            return load_from_disk(dataset_config.path)
+        except FileNotFoundError:
+            load_dataset_kwargs["streaming"] = False
+            return load_dataset(dataset_config.path, **load_dataset_kwargs)
+    elif local_path.is_file():
+        dataset_type = get_dataset_type(dataset_config)
+        load_dataset_kwargs["streaming"] = False
+        return load_dataset(
+            dataset_type,
+            data_files=dataset_config.path,
+            **load_dataset_kwargs,
+        )
     else:
-        load_ds_kwargs["split"] = None
-
-    # prefer local dataset, even if hub exists
-    local_path = Path(config_dataset.path)
-    if local_path.exists():
-        if local_path.is_dir():
-            if config_dataset.data_files:
-                ds_type = get_ds_type(config_dataset)
-                ds = load_dataset(  # pylint: disable=invalid-name
-                    ds_type,
-                    name=config_dataset.name,
-                    data_files=config_dataset.data_files,
-                    streaming=streaming,
-                    **load_ds_kwargs,
-                )
-            else:
-                try:
-                    ds = load_from_disk(
-                        config_dataset.path
-                    )  # pylint: disable=invalid-name
-                except FileNotFoundError:
-                    ds = load_dataset(
-                        config_dataset.path,
-                        name=config_dataset.name,
-                        streaming=False,
-                        **load_ds_kwargs,
-                    )
-        elif local_path.is_file():
-            ds_type = get_ds_type(config_dataset)
-
-            ds = load_dataset(  # pylint: disable=invalid-name
-                ds_type,
-                name=config_dataset.name,
-                data_files=config_dataset.path,
-                streaming=False,
-                **load_ds_kwargs,
-            )
-        else:
-            raise ValueError(
-                "unhandled dataset load: local path exists, but is neither a directory or a file"
-            )
-    elif ds_from_hub:
-        ds = load_dataset(
-            config_dataset.path,
-            name=config_dataset.name,
-            streaming=streaming,
-            data_files=config_dataset.data_files,
-            token=use_auth_token,
-            revision=config_dataset.revision,
-            trust_remote_code=config_dataset.trust_remote_code,
-            **load_ds_kwargs,
-        )
-    elif ds_from_cloud and remote_file_system:
-        if remote_file_system.isdir(config_dataset.path):
-            ds = load_from_disk(
-                config_dataset.path,
-                storage_options=storage_options,
-            )
-        elif remote_file_system.isfile(config_dataset.path):
-            ds_type = get_ds_type(config_dataset)
-            ds = load_dataset(
-                ds_type,
-                name=config_dataset.name,
-                data_files=config_dataset.path,
-                streaming=streaming,
-                storage_options=storage_options,
-                trust_remote_code=config_dataset.trust_remote_code,
-                **load_ds_kwargs,
-            )
-    elif config_dataset.path.startswith("https://"):
-        ds_type = get_ds_type(config_dataset)
-        ds = load_dataset(
-            ds_type,
-            name=config_dataset.name,
-            data_files=config_dataset.path,
-            streaming=streaming,
-            storage_options=storage_options,
-            trust_remote_code=config_dataset.trust_remote_code,
-            **load_ds_kwargs,
-        )
-    elif config_dataset.data_files:
-        fp: str | list[str] | None = None
-        if isinstance(config_dataset.data_files, str):
-            fp = hf_hub_download(
-                repo_id=config_dataset.path,
-                repo_type="dataset",
-                filename=config_dataset.data_files,
-                revision=config_dataset.revision,
-            )
-        elif isinstance(config_dataset.data_files, list):
-            fp = []
-            for file in config_dataset.data_files:
-                fp.append(
-                    hf_hub_download(
-                        repo_id=config_dataset.path,
-                        repo_type="dataset",
-                        filename=file,
-                        revision=config_dataset.revision,
-                    )
-                )
-        else:
-            raise ValueError("data_files must be either a string or list of strings")
-        ds = load_dataset(
-            "json",
-            name=config_dataset.name,
-            data_files=fp,
-            streaming=streaming,
-            **load_ds_kwargs,
-        )
-    if not ds:
         raise ValueError(
-            "The dataset could not be loaded. This could be due to a misconfigured dataset path "
-            f"({config_dataset.path}). Try double-check your path / name / data_files. "
-            "This is not caused by the dataset type."
+            "Unhandled dataset load: local path exists, but is neither a directory or a file"
         )
 
-    return ds
+
+def _load_from_hub(
+    dataset_config: DictDefault, use_auth_token: bool, load_dataset_kwargs: dict
+) -> Dataset | IterableDataset | DatasetDict | IterableDatasetDict:
+    """Load a dataset from the HuggingFace Hub."""
+    return load_dataset(
+        dataset_config.path,
+        data_files=dataset_config.data_files,
+        token=use_auth_token,
+        revision=dataset_config.revision,
+        **load_dataset_kwargs,
+    )
+
+
+def _load_from_cloud(
+    dataset_config: DictDefault,
+    remote_fs: "S3FileSystem | GCSFileSystem | AzureBlobFileSystem | OCIFileSystem",
+    storage_options: dict,
+    load_dataset_kwargs: dict,
+) -> Dataset | IterableDataset | DatasetDict | IterableDatasetDict:
+    """Load a dataset from cloud storage."""
+    if remote_fs.isdir(dataset_config.path):
+        return load_from_disk(
+            dataset_config.path,
+            storage_options=storage_options,
+        )
+
+    if remote_fs.isfile(dataset_config.path):
+        dataset_type = get_dataset_type(dataset_config)
+        return load_dataset(
+            dataset_type,
+            data_files=dataset_config.path,
+            storage_options=storage_options,
+            **load_dataset_kwargs,
+        )
+
+    raise ValueError(
+        f"Cloud path {dataset_config.path} is neither a directory nor a file"
+    )
+
+
+def _load_from_url(
+    dataset_config: DictDefault, storage_options: dict, load_dataset_kwargs: dict
+) -> Dataset | IterableDataset | DatasetDict | IterableDatasetDict:
+    """Load a dataset from a URL."""
+    dataset_type = get_dataset_type(dataset_config)
+    return load_dataset(
+        dataset_type,
+        data_files=dataset_config.path,
+        storage_options=storage_options,
+        **load_dataset_kwargs,
+    )
+
+
+def _load_from_data_files(
+    dataset_config: DictDefault, load_dataset_kwargs: dict
+) -> Dataset | IterableDataset | DatasetDict | IterableDatasetDict:
+    """Load a dataset from data files."""
+    file_path = None
+
+    if isinstance(dataset_config.data_files, str):
+        file_path = hf_hub_download(
+            repo_id=dataset_config.path,
+            repo_type="dataset",
+            filename=dataset_config.data_files,
+            revision=dataset_config.revision,
+        )
+    elif isinstance(dataset_config.data_files, list):
+        file_path = [
+            hf_hub_download(
+                repo_id=dataset_config.path,
+                repo_type="dataset",
+                filename=file,
+                revision=dataset_config.revision,
+            )
+            for file in dataset_config.data_files
+        ]
+    else:
+        raise ValueError("data_files must be either a string or list of strings")
+
+    return load_dataset("json", data_files=file_path, **load_dataset_kwargs)
+
+
+def generate_split_fingerprints(
+    dataset: Dataset, val_set_size: int | float, seed: int
+) -> tuple[str, str]:
+    """Generate consistent fingerprints for train/test splits."""
+    fingerprint = dataset._fingerprint  # pylint: disable=protected-access
+
+    train_hash_input = f"{fingerprint}|{val_set_size}|train|{seed}"
+    test_hash_input = f"{fingerprint}|{val_set_size}|test|{seed}"
+
+    train_fingerprint = md5(train_hash_input)
+    test_fingerprint = md5(test_hash_input)
+
+    return train_fingerprint, test_fingerprint

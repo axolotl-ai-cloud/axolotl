@@ -1,6 +1,4 @@
-"""
-E2E tests for lora llama
-"""
+"""E2E tests for lora llama"""
 
 import logging
 import os

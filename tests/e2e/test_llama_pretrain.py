@@ -1,8 +1,5 @@
-"""
-E2E tests for llama pretrain
-"""
+"""E2E tests for llama pretrain"""
 
-import logging
 import os
 
 import pytest
@@ -15,14 +12,11 @@ from axolotl.utils.dict import DictDefault
 
 from .utils import check_model_output_exists, check_tensorboard
 
-LOG = logging.getLogger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 
 class TestPretrainLlama:
-    """
-    Test case for Llama models w pretraining
-    """
+    """Test case for Llama models w pretraining"""
 
     @pytest.mark.parametrize(
         "sample_packing",

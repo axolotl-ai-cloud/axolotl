@@ -533,7 +533,7 @@ class ModelLoader:
         cfg: DictDefault,
         tokenizer: PreTrainedTokenizerBase,
         *,
-        processor: ProcessorMixin = None,  # pylint: disable=unused-argument
+        processor: ProcessorMixin | None = None,  # pylint: disable=unused-argument
         inference: bool = False,
         reference_model: bool = False,
         **kwargs,  # pylint: disable=unused-argument
@@ -1428,7 +1428,7 @@ def load_model(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizerBase,
     *,
-    processor: ProcessorMixin = None,  # pylint: disable=unused-argument
+    processor: ProcessorMixin | None = None,
     inference: bool = False,
     reference_model: bool = False,
     **kwargs,  # pylint: disable=unused-argument
