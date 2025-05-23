@@ -125,7 +125,6 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
                 target_token_ids_chunk,
                 target_logprobs_chunk,
                 target_mask_chunk,
-                temperature=temperature,
             )
 
         loss = weight_hard_loss * ce_loss + weight_soft_loss * soft_loss
