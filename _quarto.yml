@@ -129,6 +129,8 @@ quartodoc:
         - monkeypatch.attention.mllama
         - monkeypatch.data.batch_dataset_fetcher
         - monkeypatch.mixtral
+        - gradient_checkpointing.offload_cpu
+        - gradient_checkpointing.offload_disk
     - title: Utils
       desc: Utility functions
       contents:
@@ -145,8 +147,6 @@ quartodoc:
         - utils.optimizers.adopt
         - utils.data.pretraining
         - utils.data.sft
-        - utils.gradient_checkpointing.offload_cpu
-        - utils.gradient_checkpointing.offload_disk
     - title: Schemas
       desc: Pydantic data models for Axolotl config
       contents:
