@@ -54,6 +54,15 @@ quartodoc:
         - core.trainers.grpo.trainer
         - core.trainers.grpo.sampler
         - core.trainers.utils
+    - title: Model Loading
+      desc: Functionality for loading and patching models, tokenizers, etc.
+      contents:
+        - loaders.model
+        - loaders.tokenizer
+        - loaders.processor
+        - loaders.adapter
+        - loaders.patch_manager
+        - loaders.constants
     - title: Mixins
       desc: Mixin classes for augmenting trainers
       contents:
@@ -123,11 +132,9 @@ quartodoc:
     - title: Utils
       desc: Utility functions
       contents:
-        - utils.models
         - utils.tokenization
         - utils.chat_templates
         - utils.lora
-        - utils.lora_embeddings
         - utils.model_shard_quant
         - utils.bench
         - utils.freeze
