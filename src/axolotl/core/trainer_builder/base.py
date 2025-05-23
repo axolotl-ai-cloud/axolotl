@@ -217,7 +217,7 @@ class TrainerBuilderBase(abc.ABC):
             training_args_kwargs["bf16"] = self.cfg.bf16 or self.cfg.bfloat16
 
     def _configure_optimizer_and_scheduler(self, training_args_kwargs):
-        if self.cfg.lr_scheduler in ["one_cycle", "log_sweep", "rex"]:
+        if self.cfg.lr_scheduler in ["one_cycle", "rex"]:
             training_args_kwargs["lr_scheduler_type"] = "cosine"
             training_args_kwargs["alternate_lr_scheduler_type"] = self.cfg.lr_scheduler
         else:
