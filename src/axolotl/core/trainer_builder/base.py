@@ -237,8 +237,8 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.optimizer in custom_supported_optimizers:
             # Common optimizer kwargs
             optimizer_kwargs = {
-                "lr": training_args_kwargs.get("learning_rate"),
-                "weight_decay": training_args_kwargs.get("weight_decay"),
+                "lr": training_args_kwargs["learning_rate"],
+                "weight_decay": training_args_kwargs["weight_decay"],
             }
 
             # Adam-specific kwargs
