@@ -1,15 +1,15 @@
 """Pydantic models for training hyperparameters"""
 
-import logging
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 from transformers import SchedulerType
 from transformers.training_args import OptimizerNames
 
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class LrGroup(BaseModel):

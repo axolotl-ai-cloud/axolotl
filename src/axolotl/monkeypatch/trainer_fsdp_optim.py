@@ -3,13 +3,13 @@ fix for FSDP optimizer save in trainer w 4.47.0
 """
 
 import inspect
-import logging
 
 from transformers import Trainer
 
 from axolotl.monkeypatch.utils import detab_code
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl.monkeypatch.trainer_fsdp_save")
+LOG = get_logger(__name__)
 
 ORIGINAL_TRAINER_CODE = """
 

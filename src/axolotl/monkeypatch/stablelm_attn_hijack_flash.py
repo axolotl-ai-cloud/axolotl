@@ -32,11 +32,11 @@ from flash_attn.flash_attn_interface import (  # pylint: disable=ungrouped-impor
 from torch import nn
 from transformers import AutoConfig, AutoModelForCausalLM
 from transformers.modeling_outputs import BaseModelOutputWithPast
-from transformers.utils import logging
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
+from axolotl.utils.logging import get_logger
 
-logger = logging.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 def replace_stablelm_attn_with_flash_attn(model_name="stabilityai/stablelm-3b-4e1t"):

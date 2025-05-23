@@ -3,7 +3,6 @@
 # pylint: disable=too-many-lines
 import gc
 import importlib
-import logging
 import math
 import os
 import types
@@ -68,17 +67,17 @@ from axolotl.utils.distributed import (
     get_device_count,
     get_device_type,
     is_local_main_process,
-    is_main_process,
 )
 from axolotl.utils.gradient_checkpointing import (
     hf_grad_checkpoint_disk_offload_wrapper,
     hf_grad_checkpoint_offload_wrapper,
 )
+from axolotl.utils.logging import get_logger
 from axolotl.utils.lora_embeddings import get_linear_embedding_layers
 from axolotl.utils.model_shard_quant import load_sharded_model, load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 MULTIMODAL_AUTO_MODEL_MAPPING = {
@@ -139,7 +138,9 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
             and hasattr(model_config.vision_config, "image_size")
         ):
             cfg.image_size = model_config.vision_config.image_size
-            LOG.debug(f"Loaded image size: {cfg.image_size} from model config")
+            LOG.debug(
+                f"Loaded image size: {cfg.image_size} from model config",
+            )
 
     quant_config_exists = (
         hasattr(model_config, "quantization_config")
@@ -156,7 +157,7 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
         if model_config.quantization_config.get("config_groups"):
             LOG.warning(
                 "Found `config_groups` in a compressed-tensors config. "
-                "QAT integration with llmcompressor is not tested."
+                "QAT integration with llmcompressor is not tested.",
             )
         # Skip further quant checks for compressed-tensors
         return
@@ -457,11 +458,15 @@ def load_tokenizer(cfg):
             {"additional_special_tokens": additional_special_tokens}
         )
 
-    if is_main_process(use_environ=True):
-        LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
-        LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
-        LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
-        LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
+    LOG.debug(
+        f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}",
+    )
+    LOG.debug(
+        f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}",
+    )
+    LOG.debug(
+        f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}",
+    )
 
     if cfg.chat_template:
         chat_template_string = get_chat_template_from_config(
@@ -518,7 +523,9 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
         elif im_height is not None:
             cfg.image_size = im_height
 
-        LOG.debug(f"Loaded image size: {cfg.image_size} from processor")
+        LOG.debug(
+            f"Loaded image size: {cfg.image_size} from processor",
+        )
 
     return processor
 
@@ -1150,7 +1157,7 @@ class ModelLoader:
             and self.cfg.sequence_len > self.model.config.max_position_embeddings
         ):
             LOG.warning(
-                f"increasing model.config.max_position_embeddings from {self.model.config.max_position_embeddings} to {self.cfg.sequence_len}"
+                f"increasing model.config.max_position_embeddings from {self.model.config.max_position_embeddings} to {self.cfg.sequence_len}",
             )
             self.model.config.max_position_embeddings = self.cfg.sequence_len
 
@@ -1276,7 +1283,9 @@ class ModelLoader:
             skip_move_to_device = self.build_model(qlora_fsdp)
             PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
         except Exception as err:  # pylint: disable=broad-exception-caught
-            LOG.exception(err)
+            LOG.exception(
+                err,
+            )
             raise err
 
         if isinstance(self.model, (PeftModel, PeftModelForCausalLM)) and not qlora_fsdp:
@@ -1342,15 +1351,16 @@ class ModelLoader:
         should_convert = (
             # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so we need to
             # convert them back to fp16/bf16 for flash-attn compatibility.
+            # Cut cross entropy requires embedding layers to be in fp16/bf16 for backward pass
             (
                 (needs_fa2_dtype or self.cfg.flash_attention or self.cfg.flex_attention)
                 and not qlora_fsdp
             )
-            or self.cfg.cut_cross_entropy  # Cut cross entropy requires embedding layers to be in fp16/bf16 for backward pass
+            or self.cfg.cut_cross_entropy
         )
 
         if should_convert:
-            LOG.info("Converting modules to %s", self.cfg.torch_dtype)
+            LOG.info(f"Converting modules to {self.cfg.torch_dtype}")
             self.convert_embedding_modules_dtype(
                 embedding_modules=embedding_modules,
                 dist_dtype=self.cfg.torch_dtype,
@@ -1544,7 +1554,9 @@ def load_lora(model, cfg, inference=False, config_only=False):
 
     if cfg.lora_target_linear:
         linear_names = find_all_linear_names(model)
-        LOG.info(f"found linear modules: {repr(sorted(linear_names))}")
+        LOG.info(
+            f"found linear modules: {repr(sorted(linear_names))}",
+        )
         lora_target_modules_as_list = (
             lora_target_modules
             if isinstance(lora_target_modules, list)
@@ -1614,7 +1626,8 @@ def load_lora(model, cfg, inference=False, config_only=False):
             model.print_trainable_parameters()
         except AttributeError as exc:
             LOG.warning(
-                "Exception caught during model.print_trainable_parameters(): %s", exc
+                "Exception caught during model.print_trainable_parameters(): %s",
+                exc,
             )
     elif (
         cfg.fsdp

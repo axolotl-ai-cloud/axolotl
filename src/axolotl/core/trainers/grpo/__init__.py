@@ -2,7 +2,6 @@
 
 import importlib
 import inspect
-import logging
 from typing import Any
 
 from trl.trainer.grpo_trainer import RewardFunc
@@ -13,9 +12,10 @@ from axolotl.core.trainers.grpo.trainer import (
     AxolotlGRPOTrainer,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.trl import TRLConfig
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class GRPOStrategy:

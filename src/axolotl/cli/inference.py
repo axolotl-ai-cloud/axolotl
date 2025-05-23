@@ -1,7 +1,6 @@
 """CLI to run inference on a trained model."""
 
 import importlib
-import logging
 import sys
 from pathlib import Path
 from threading import Thread
@@ -22,8 +21,9 @@ from axolotl.utils.chat_templates import (
     get_chat_template_from_config,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def get_multi_line_input() -> str:

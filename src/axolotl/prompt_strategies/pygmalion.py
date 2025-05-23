@@ -1,7 +1,6 @@
 """Module containing the PygmalionPromptTokenizingStrategy and PygmalionPrompter class"""
 
 import copy
-import logging
 from collections import defaultdict
 from typing import Generator, List, Tuple
 
@@ -10,8 +9,9 @@ from axolotl.prompt_tokenizers import (
     parse_tokenized_to_result,
     tokenize_prompt_default,
 )
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
 
 IGNORE_TOKEN_ID = -100
 

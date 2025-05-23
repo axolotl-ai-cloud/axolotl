@@ -2,7 +2,6 @@
 
 import importlib
 import inspect
-import logging
 import os
 import signal
 import sys
@@ -32,6 +31,7 @@ from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContext
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
+from axolotl.utils.logging import get_logger
 from axolotl.utils.models import load_model, load_processor, load_tokenizer
 from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.trainer import setup_trainer
@@ -41,7 +41,7 @@ try:
 except ImportError:
     BetterTransformer = None
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def setup_model_and_tokenizer(

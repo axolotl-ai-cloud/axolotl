@@ -3,7 +3,6 @@ Multipack Batch Sampler - An efficient batch sampler for packing variable-length
 into fixed-capacity batches to optimize memory usage and training throughput.
 """
 
-import logging
 import math
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import cpu_count, get_context
@@ -14,9 +13,9 @@ import numpy as np
 from torch.utils.data import BatchSampler, Sampler, SequentialSampler
 
 from axolotl.utils.distributed import reduce_and_broadcast
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
-LOG.setLevel(logging.INFO)
+LOG = get_logger(__name__)
 
 
 @numba.njit

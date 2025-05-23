@@ -22,7 +22,7 @@ from axolotl.utils.distributed import reduce_and_broadcast
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
-LOG = get_logger("axolotl")
+LOG = get_logger(__name__)
 
 
 @torch.jit.script
@@ -402,7 +402,9 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             .apply(len)
             .values
         )
-        LOG.debug(f"total_num_tokens: {total_num_tokens:_}", main_process_only=True)
+        LOG.debug(
+            f"total_num_tokens: {total_num_tokens:_}",
+        )
         if update:
             cfg.total_num_tokens = total_num_tokens
 
@@ -422,7 +424,6 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         )
         LOG.debug(
             f"`total_supervised_tokens: {total_supervised_tokens:_}`",
-            main_process_only=True,
         )
         if update:
             cfg.total_supervised_tokens = total_supervised_tokens
@@ -449,7 +450,6 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             )
             LOG.debug(
                 f"total_num_tokens: {cfg.total_num_tokens:_}, total_num_steps: {total_num_steps:_}",
-                main_process_only=True,
             )
         else:
             if cfg.flash_attention and not cfg.multipack_real_batches:
@@ -478,7 +478,9 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 batch_sampler=sampler,
             )
             data_loader_len = len(data_loader) * cfg.micro_batch_size // cfg.batch_size
-            LOG.debug(f"data_loader_len: {data_loader_len}", main_process_only=True)
+            LOG.debug(
+                f"data_loader_len: {data_loader_len}",
+            )
             # FIXME: is there a bug here somewhere? the total num steps depends
             # on the agreed on value for sample_packing_eff_est
             total_num_steps = int(
@@ -502,7 +504,6 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 cfg.sample_packing_eff_est = sample_packing_eff_est
             LOG.debug(
                 f"sample_packing_eff_est: {cfg.sample_packing_eff_est}",
-                main_process_only=True,
             )
     else:
         total_num_steps = int(
@@ -513,7 +514,9 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 / cfg.batch_size
             )
         )
-    LOG.debug(f"total_num_steps: {total_num_steps}", main_process_only=True)
+    LOG.debug(
+        f"total_num_steps: {total_num_steps}",
+    )
     return total_num_steps
 
 

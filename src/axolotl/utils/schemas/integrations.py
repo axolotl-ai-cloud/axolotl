@@ -1,11 +1,12 @@
 """Pydantic models for Axolotl integrations"""
 
-import logging
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-LOG = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 class MLFlowConfig(BaseModel):

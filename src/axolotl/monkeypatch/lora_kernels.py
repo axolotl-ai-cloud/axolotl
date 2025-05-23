@@ -7,7 +7,6 @@ import types
 from typing import Generator, Tuple, Type
 
 import torch
-from accelerate.logging import get_logger
 from peft import PeftModelForCausalLM
 from torch import nn
 from transformers import AutoConfig
@@ -20,6 +19,7 @@ from axolotl.kernels.lora import (
 )
 from axolotl.monkeypatch.utils import detab_code
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 

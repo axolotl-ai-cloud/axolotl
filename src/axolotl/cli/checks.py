@@ -1,6 +1,5 @@
 """Various checks for Axolotl CLI."""
 
-import logging
 import os
 from pathlib import Path
 
@@ -8,7 +7,9 @@ from accelerate.commands.config import config_args
 from huggingface_hub import HfApi
 from huggingface_hub.utils import LocalTokenNotFoundError
 
-LOG = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 def check_accelerate_default_config() -> None:

@@ -1,6 +1,5 @@
 """CLI to run preprocessing of a dataset."""
 
-import logging
 import warnings
 from pathlib import Path
 from typing import Union
@@ -20,9 +19,10 @@ from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.integrations.base import PluginManager
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 from axolotl.utils.trainer import disable_datasets_caching
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:

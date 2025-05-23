@@ -2,7 +2,6 @@
 
 # pylint: disable=too-many-lines
 
-import logging
 import os
 from typing import Annotated, Any, Literal
 
@@ -18,6 +17,7 @@ from pydantic import (
 )
 from transformers.utils.import_utils import is_torch_npu_available
 
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
     DPODataset,
@@ -48,7 +48,7 @@ from axolotl.utils.schemas.training import HyperparametersConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.vllm import VllmConfig
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__, use_environ=True)
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
 
@@ -1207,7 +1207,7 @@ class AxolotlInputConfig(
                 "Please note that logged losses may differ slightly to the non-SP "
                 "losses due to transformers Trainer implementation details. "
                 "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
-                "for more details."
+                "for more details.",
             )
 
         return self
@@ -1282,7 +1282,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             # https://github.com/pytorch/pytorch/blob/1b03423526536b5f3d35bdfa95ccc6197556cf9b/test/test_transformers.py#L2440-L2450
             LOG.warning(
                 "sample_packing & torch sdpa with bf16 is unsupported may results in 0.0 loss. "
-                "This may work on H100s."
+                "This may work on H100s.",
             )
 
         return data

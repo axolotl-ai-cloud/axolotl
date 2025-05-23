@@ -15,12 +15,13 @@
 """
 Module for handling Cut Cross Entropy input arguments.
 """
-import logging
 from typing import Optional
 
 from pydantic import BaseModel, model_validator
 
-LOG = logging.getLogger("axolotl.integrations.cut_cross_entropy.args")
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 class CutCrossEntropyArgs(BaseModel):

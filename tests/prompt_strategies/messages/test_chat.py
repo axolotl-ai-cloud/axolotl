@@ -3,14 +3,13 @@ tests for chat_template prompt strategy
 """
 
 # pylint: disable=duplicate-code
-import logging
 import unittest
 
 from axolotl.prompt_strategies.messages.chat import load
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
-logging.basicConfig(level=logging.DEBUG)
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__, log_level="DEBUG")
 
 
 class TestMessagesChatLlama3:

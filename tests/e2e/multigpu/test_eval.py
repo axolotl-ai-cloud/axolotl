@@ -2,7 +2,6 @@
 E2E tests for multigpu eval
 """
 
-import logging
 import os
 from pathlib import Path
 
@@ -11,10 +10,11 @@ from accelerate.test_utils import execute_subprocess_async
 from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
 from ..utils import check_tensorboard
 
-LOG = logging.getLogger("axolotl.tests.e2e.multigpu")
+LOG = get_logger("axolotl.tests.e2e.multigpu")
 os.environ["WANDB_DISABLED"] = "true"
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent

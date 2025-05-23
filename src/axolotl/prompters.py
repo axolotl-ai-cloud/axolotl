@@ -1,12 +1,13 @@
 """Module containing prompters"""
 
-import logging
 from enum import Enum
 from typing import Generator, Optional, Union
 
 from colorama import Fore
 
-LOG = logging.getLogger("axolotl")
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 IGNORE_TOKEN_ID = -100
 REPR_TEMPLATE = "\n<start>\n" + Fore.CYAN + "{full_prompt}" + Fore.RESET + "\n<end>\n"
 

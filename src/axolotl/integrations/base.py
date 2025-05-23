@@ -20,13 +20,15 @@ To create a new plugin, you need to inherit from the BasePlugin class and implem
 """
 import collections
 import importlib
-import logging
 from typing import OrderedDict
 
 import torch
 from torch.optim.lr_scheduler import LRScheduler
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 class BasePlugin:
@@ -345,12 +347,12 @@ class PluginManager:
         ImportError: If the plugin module cannot be imported.
         """
         try:
-            logging.info(f"Attempting to load plugin: {plugin_name}")
+            LOG.info(f"Attempting to load plugin: {plugin_name}")
             plugin = load_plugin(plugin_name)
             self.plugins[plugin_name] = plugin
-            logging.info(f"Plugin loaded successfully: {plugin_name}")
+            LOG.info(f"Plugin loaded successfully: {plugin_name}")
         except ImportError:
-            logging.error(f"Failed to load plugin: {plugin_name}")
+            LOG.error(f"Failed to load plugin: {plugin_name}")
 
     def get_input_args(self):
         """

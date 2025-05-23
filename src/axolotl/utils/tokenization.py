@@ -1,10 +1,10 @@
 """Module for tokenization utilities"""
 
-import logging
-
 from termcolor import colored
 
-LOG = logging.getLogger("axolotl")
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 def check_dataset_labels(

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import gc
 import json
-import logging
 import os
 import traceback
 from shutil import copyfile
@@ -43,6 +42,7 @@ from axolotl.utils.distributed import (
     is_main_process,
     zero_first,
 )
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.config import AxolotlInputConfig
 
 if TYPE_CHECKING:
@@ -50,7 +50,7 @@ if TYPE_CHECKING:
 
 
 IGNORE_INDEX = -100
-LOG = logging.getLogger("axolotl.callbacks")
+LOG = get_logger(__name__)
 
 
 class EvalFirstStepCallback(
@@ -753,7 +753,14 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         ].append(pred_step_text)
                         row_index += 1
                 if logger == "wandb":
-                    wandb.run.log({f"{name} - Predictions vs Ground Truth": pd.DataFrame(table_data)})  # type: ignore[attr-defined]
+                    # type: ignore[attr-defined]
+                    wandb.run.log(
+                        {
+                            f"{name} - Predictions vs Ground Truth": pd.DataFrame(
+                                table_data
+                            )
+                        }
+                    )
                 elif logger == "mlflow" and is_mlflow_available():
                     import mlflow
 
