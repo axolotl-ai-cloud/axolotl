@@ -40,7 +40,7 @@ def load_datasets(
     cli_args: PreprocessCliArgs | TrainerCliArgs,
 ) -> TrainDatasetMeta:
     """Loads one or more training or evaluation datasets, calling
-    `axolotl.utils.data.prepare_dataset`. Optionally, logs out debug information.
+    `axolotl.utils.data.prepare_datasets`. Optionally, logs out debug information.
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
@@ -96,7 +96,7 @@ def load_preference_datasets(
     cli_args: PreprocessCliArgs | TrainerCliArgs,
 ) -> TrainDatasetMeta:
     """Loads one or more training or evaluation datasets for RL training using paired
-    preference data, calling `axolotl.utils.data.rl.prepare_preference_dataset`.
+    preference data, calling `axolotl.utils.data.rl.prepare_preference_datasets`.
     Optionally, logs out debug information.
 
     Args:
