@@ -11,11 +11,11 @@ class TestImports(unittest.TestCase):
     """
 
     def test_import_causal_trainer(self):
-        from axolotl.core.trainer_builder import (  # pylint: disable=unused-import  # noqa: F401
+        from axolotl.core.trainer_builder.sft import (  # pylint: disable=unused-import  # noqa: F401
             HFCausalTrainerBuilder,
         )
 
     def test_import_rl_trainer(self):
-        from axolotl.core.trainer_builder import (  # pylint: disable=unused-import  # noqa: F401
+        from axolotl.core.trainer_builder.rl import (  # pylint: disable=unused-import  # noqa: F401
             HFRLTrainerBuilder,
         )

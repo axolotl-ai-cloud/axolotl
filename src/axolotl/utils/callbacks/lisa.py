@@ -14,7 +14,7 @@ import numpy as np
 from transformers import TrainerCallback
 
 if TYPE_CHECKING:
-    from axolotl.core.trainer_builder import AxolotlTrainer
+    from axolotl.core.trainers import AxolotlTrainer
 
 LOG = logging.getLogger("axolotl.callbacks.lisa")
 

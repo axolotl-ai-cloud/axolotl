@@ -17,7 +17,9 @@ quartodoc:
         - convert
         - prompt_tokenizers
         - logging_config
-        - core.trainer_builder
+        - core.trainer_builder.base
+        - core.trainer_builder.sft
+        - core.trainer_builder.rl
         - core.training_args
         - core.chat.messages
         - core.chat.format.chatml

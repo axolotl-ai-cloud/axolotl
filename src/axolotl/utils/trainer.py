@@ -16,7 +16,8 @@ from datasets import IterableDataset, disable_caching, enable_caching
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+from axolotl.core.trainer_builder.rl import HFRLTrainerBuilder
+from axolotl.core.trainer_builder.sft import HFCausalTrainerBuilder
 from axolotl.monkeypatch.trainer_eval_guard import patch_evaluation_loop_for_fsdp2
 from axolotl.utils.distributed import reduce_and_broadcast
 from axolotl.utils.environment import check_cuda_p2p_ib_support
