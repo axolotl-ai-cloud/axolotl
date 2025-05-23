@@ -86,10 +86,6 @@ def loss(
     kd_loss_per_token = teacher_probs * (target_logprobs - student_logprobs_topk)
     kd_loss = kd_loss_per_token.sum()
 
-    # Multiply by T^2 (classical KD scaling)
-    if kd_temperature != 1.0:
-        kd_loss = kd_loss * (kd_temperature**2)
-
     # Normalize by number of items (if provided) or by valid tokens
     if num_items_in_batch > 0:
         kd_loss = kd_loss / float(num_items_in_batch)
