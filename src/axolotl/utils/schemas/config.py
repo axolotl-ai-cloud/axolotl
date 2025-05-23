@@ -182,6 +182,7 @@ class AxolotlInputConfig(
         default=False
     )
     gradient_checkpointing_kwargs: dict[str, Any] | None = None
+    activation_memory_budget: float | None = None
 
     unfrozen_parameters: list[str] | None = None
 

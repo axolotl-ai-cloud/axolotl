@@ -521,6 +521,11 @@ def train(
     """
     print_axolotl_text_art()
 
+    if cfg.activation_memory_budget is not None:
+        torch._functorch.config.activation_memory_budget = (  # pylint: disable=protected-access
+            cfg.activation_memory_budget
+        )
+
     # Setup model, tokenizer, (causal or RLHF) trainer, etc.
     (
         trainer,
