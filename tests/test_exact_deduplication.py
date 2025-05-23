@@ -14,8 +14,8 @@ from datasets import Dataset
 
 from axolotl.loaders import load_processor, load_tokenizer
 from axolotl.utils.config import normalize_config, validate_config
-from axolotl.utils.data import prepare_dataset
-from axolotl.utils.data.rl import load_prepare_preference_datasets
+from axolotl.utils.data import prepare_datasets
+from axolotl.utils.data.rl import prepare_preference_datasets
 from axolotl.utils.data.utils import deduplicate_and_log_datasets
 from axolotl.utils.dict import DictDefault
 
@@ -257,7 +257,7 @@ class TestDeduplicateRLDataset:
             ]
             mock_load_tokenizer.return_value = tokenizer_huggyllama
 
-            train_dataset, _ = load_prepare_preference_datasets(cfg)
+            train_dataset, _ = prepare_preference_datasets(cfg)
 
             # Verify that the dataset has been deduplicated
             assert len(train_dataset) == 1800, "Dataset was not properly deduplicated"
@@ -285,7 +285,7 @@ class TestDeduplicateRLDataset:
 
             cfg.dataset_exact_deduplication = False
             # Load the dataset without deduplication
-            train_dataset, _ = load_prepare_preference_datasets(cfg)
+            train_dataset, _ = prepare_preference_datasets(cfg)
 
             # Verify that the dataset retains duplicates
             assert (
@@ -339,7 +339,7 @@ class TestDeduplicateNonRL(unittest.TestCase):
         )
 
         # Prepare dataset using the prepare_dataset function
-        train_dataset, _, _, _ = prepare_dataset(
+        train_dataset, _, _, _ = prepare_datasets(
             self.cfg_1,
             tokenizer,
             processor=processor,
@@ -366,7 +366,7 @@ class TestDeduplicateNonRL(unittest.TestCase):
         )
 
         # Prepare dataset using the prepare_dataset function
-        _, eval_dataset, _, _ = prepare_dataset(
+        _, eval_dataset, _, _ = prepare_datasets(
             self.cfg_1,
             tokenizer,
             processor=processor,
@@ -393,7 +393,7 @@ class TestDeduplicateNonRL(unittest.TestCase):
         )
 
         # Prepare dataset using the prepare_dataset function
-        train_dataset, eval_dataset, _, _ = prepare_dataset(
+        train_dataset, eval_dataset, _, _ = prepare_datasets(
             self.cfg_1,
             tokenizer,
             processor=processor,
