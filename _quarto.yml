@@ -55,7 +55,7 @@ quartodoc:
         - core.trainers.grpo.sampler
         - core.trainers.utils
     - title: Model Loading
-      desc: Training implementations
+      desc: Functionality for loading and patching models, tokenizers, etc.
       contents:
         - loaders.model
         - loaders.tokenizer
