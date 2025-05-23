@@ -50,7 +50,9 @@ class MultiProcessAdapter(logging.LoggerAdapter):
         self.warning(*args, **kwargs)
 
 
-def get_logger(name: str, log_level: str | None = None, use_environ: bool = False):
+def get_logger(
+    name: str, log_level: str | None = None, use_environ: bool = False
+) -> MultiProcessAdapter:
     if log_level is None:
         log_level = os.environ.get("AXOLOTL_LOG_LEVEL", None)
     logger = logging.getLogger(name)

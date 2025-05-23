@@ -133,9 +133,7 @@ def choose_config(path: Path) -> str:
             if 1 <= choice <= len(yaml_files):
                 chosen_file = str(yaml_files[choice - 1])
             else:
-                LOG.info(
-                    "Invalid choice. Please choose a number from the list.",
-                )
+                LOG.info("Invalid choice. Please choose a number from the list.")
         except ValueError:
             LOG.info("Invalid input. Please enter a number.")
 

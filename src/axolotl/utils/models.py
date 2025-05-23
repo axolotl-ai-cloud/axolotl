@@ -776,18 +776,14 @@ class ModelLoader:
 
             if self.cfg.sample_packing:
                 if self.cfg.device not in ["mps", "cpu"] and not self.inference:
-                    LOG.info(
-                        "patching with flash attention for sample packing",
-                    )
+                    LOG.info("patching with flash attention for sample packing")
                     replace_llama_attn_with_flash_attn(
                         packed=True,
                         cross_entropy=self.cfg.flash_attn_cross_entropy,
                         rms_norm=self.cfg.flash_attn_rms_norm,
                     )
             elif self.cfg.s2_attention:
-                LOG.info(
-                    "patching w/ flash-enabled, shifted-sparse attention",
-                )
+                LOG.info("patching w/ flash-enabled, shifted-sparse attention")
                 replace_llama_attn_with_flash_attn(
                     packed=False,
                     cross_entropy=self.cfg.flash_attn_cross_entropy,
@@ -805,18 +801,14 @@ class ModelLoader:
                 hijack_llama_attention,
             )
 
-            LOG.info(
-                "patching with xformers attention",
-            )
+            LOG.info("patching with xformers attention")
             hijack_llama_attention()
         elif self.cfg.sample_packing:
             from axolotl.monkeypatch.llama_patch_multipack import (
                 hijack_llama_prepare_4d_mask,
             )
 
-            LOG.info(
-                "patching llama _prepare_4d_causal_attention_mask*",
-            )
+            LOG.info("patching llama _prepare_4d_causal_attention_mask*")
             hijack_llama_prepare_4d_mask()
         elif self.cfg.s2_attention:
             raise NotImplementedError(
@@ -898,7 +890,7 @@ class ModelLoader:
         if self.cfg.gptq:
             if not hasattr(self.model_config, "quantization_config"):
                 LOG.warning(
-                    "model config does not contain quantization_config information",
+                    "model config does not contain quantization_config information"
                 )
             else:
                 if self.cfg.gptq_disable_exllama is not None:
@@ -1110,15 +1102,11 @@ class ModelLoader:
                 )
 
                 if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
-                    LOG.info(
-                        "patching with SwiGLU",
-                    )
+                    LOG.info("patching with SwiGLU")
                     replace_llama_mlp_with_swiglu(self.model)
 
                 if self.cfg.flash_attn_fuse_qkv:
-                    LOG.info(
-                        "patching with fused QKV",
-                    )
+                    LOG.info("patching with fused QKV")
                     replace_llama_qkv_with_fused(self.model)
         elif self.model_type == "MambaLMHeadModel":
             # FIXME this is janky at best and hacked together to make it work
@@ -1255,9 +1243,7 @@ class ModelLoader:
             and self.cfg.adapter in ["lora", "qlora"]
             and (self.cfg.load_in_8bit or self.cfg.load_in_4bit)
         ):
-            LOG.info(
-                "converting PEFT model w/ prepare_model_for_kbit_training",
-            )
+            LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
             self.model = prepare_model_for_kbit_training(
                 self.model, use_gradient_checkpointing=self.cfg.gradient_checkpointing
             )
@@ -1396,10 +1382,7 @@ class ModelLoader:
         )
 
         if should_convert:
-            LOG.info(
-                "Converting modules to %s",
-                self.cfg.torch_dtype,
-            )
+            LOG.info(f"Converting modules to {self.cfg.torch_dtype}")
             self.convert_embedding_modules_dtype(
                 embedding_modules=embedding_modules,
                 dist_dtype=self.cfg.torch_dtype,
@@ -1452,9 +1435,7 @@ class ModelLoader:
             if param.requires_grad:
                 requires_grad.append(f"{name}: {param.requires_grad}")
         if len(requires_grad) == 0:
-            LOG.warning(
-                "there are no parameters that require gradient updates",
-            )
+            LOG.warning("there are no parameters that require gradient updates")
 
         if self.cfg.flash_optimum:
             from optimum.bettertransformer import BetterTransformer
@@ -1528,9 +1509,7 @@ def load_llama_adapter(model, cfg):
     )
 
     if cfg.lora_model_dir:
-        LOG.debug(
-            "Loading pretrained PEFT - llama_adapter",
-        )
+        LOG.debug("Loading pretrained PEFT - llama_adapter")
         model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
@@ -1616,9 +1595,7 @@ def load_lora(model, cfg, inference=False, config_only=False):
         lora_config_kwargs["init_lora_weights"] = cfg.peft_init_lora_weights
     if cfg.peft_use_dora:
         lora_config_kwargs["use_dora"] = cfg.peft_use_dora
-        LOG.info(
-            "Initializing LoRA weights using dora. This might take longer.",
-        )
+        LOG.info("Initializing LoRA weights using dora. This might take longer.")
     if cfg.peft_use_rslora:
         lora_config_kwargs["use_rslora"] = cfg.peft_use_rslora
     if cfg.peft_layer_replication:
@@ -1652,9 +1629,7 @@ def load_lora(model, cfg, inference=False, config_only=False):
         setup_quantized_meta_for_peft(model)
 
     if cfg.lora_model_dir:
-        LOG.debug(
-            "Loading pretrained PEFT - LoRA",
-        )
+        LOG.debug("Loading pretrained PEFT - LoRA")
         model_kwargs: Any = {}
         if cfg.lora_on_cpu:
             model_kwargs["max_memory"] = {"cpu": "256GiB"}

@@ -133,9 +133,7 @@ def patch_self_attn_lora():
     )
     exec(self_attn_forward, globals())  # pylint: disable=exec-used  # nosec B102
     self_attn_lora_patched = True
-    LOG.info(
-        "patching unsloth attn lora",
-    )
+    LOG.info("patching unsloth attn lora")
     LlamaFlashAttention2.forward = (
         unsloth_attn_forward  # pylint: disable=undefined-variable  # noqa: F821
     )
@@ -155,9 +153,7 @@ def integrate_rope_embeddings():
     ):
         return fast_rope_embedding(q, k, cos, sin)
 
-    LOG.info(
-        "patching unsloth RoPE embeddings",
-    )
+    LOG.info("patching unsloth RoPE embeddings")
     transformers.models.llama.modeling_llama.apply_rotary_pos_emb = apply_rotary_pos_emb
 
 

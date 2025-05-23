@@ -923,7 +923,7 @@ class AxolotlInputConfig(
             # Recomputed values for the following tensors have different metadata
             # than during the forward pass.
             LOG.warning(
-                "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values",
+                "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values"
             )
         return data
 
@@ -944,7 +944,7 @@ class AxolotlInputConfig(
             and data.get("eval_strategy") is None
         ):
             LOG.info(
-                "explicitly setting `eval_strategy` from the `evaluation_strategy`",
+                "explicitly setting `eval_strategy` from the `evaluation_strategy`"
             )
             data["eval_strategy"] = data.get("evaluation_strategy")
         return data
@@ -1253,7 +1253,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if self.capabilities.bf16:
             if not self.bf16 and not self.bfloat16:
                 LOG.info(
-                    "bf16 support detected, but not enabled for this configuration.",
+                    "bf16 support detected, but not enabled for this configuration."
                 )
         else:
             if (
