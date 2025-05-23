@@ -27,7 +27,7 @@ from axolotl.utils.logging import get_logger
 from .args import LigerArgs  # pylint: disable=unused-import. # noqa: F401
 from .utils import patch_with_compile_disable
 
-LOG = get_logger(__name__)
+LOG = get_logger(__name__, use_environ=True)
 
 
 class LigerPlugin(BasePlugin):
@@ -86,7 +86,6 @@ class LigerPlugin(BasePlugin):
                 kwargs["swiglu"] = cfg.liger_glu_activation
             LOG.info(
                 f"Applying LIGER to {cfg.model_config_type} with kwargs: {kwargs}",
-                use_environ=True,
             )
             apply_liger_fn(**kwargs)
         elif cfg.model_config_type == "jamba":

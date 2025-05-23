@@ -48,7 +48,7 @@ from axolotl.utils.schemas.training import HyperparametersConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.vllm import VllmConfig
 
-LOG = get_logger(__name__)
+LOG = get_logger(__name__, use_environ=True)
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
 
@@ -923,7 +923,7 @@ class AxolotlInputConfig(
             # Recomputed values for the following tensors have different metadata
             # than during the forward pass.
             LOG.warning(
-                "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values"
+                "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values",
             )
         return data
 
@@ -944,7 +944,7 @@ class AxolotlInputConfig(
             and data.get("eval_strategy") is None
         ):
             LOG.info(
-                "explicitly setting `eval_strategy` from the `evaluation_strategy`"
+                "explicitly setting `eval_strategy` from the `evaluation_strategy`",
             )
             data["eval_strategy"] = data.get("evaluation_strategy")
         return data
@@ -1207,7 +1207,7 @@ class AxolotlInputConfig(
                 "Please note that logged losses may differ slightly to the non-SP "
                 "losses due to transformers Trainer implementation details. "
                 "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
-                "for more details."
+                "for more details.",
             )
 
         return self
@@ -1253,7 +1253,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if self.capabilities.bf16:
             if not self.bf16 and not self.bfloat16:
                 LOG.info(
-                    "bf16 support detected, but not enabled for this configuration."
+                    "bf16 support detected, but not enabled for this configuration.",
                 )
         else:
             if (
@@ -1282,7 +1282,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             # https://github.com/pytorch/pytorch/blob/1b03423526536b5f3d35bdfa95ccc6197556cf9b/test/test_transformers.py#L2440-L2450
             LOG.warning(
                 "sample_packing & torch sdpa with bf16 is unsupported may results in 0.0 loss. "
-                "This may work on H100s."
+                "This may work on H100s.",
             )
 
         return data

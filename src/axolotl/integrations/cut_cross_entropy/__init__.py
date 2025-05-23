@@ -28,7 +28,7 @@ from axolotl.utils.logging import get_logger
 
 from .args import CutCrossEntropyArgs  # pylint: disable=unused-import. # noqa: F401
 
-LOG = get_logger(__name__)
+LOG = get_logger(__name__, use_environ=True)
 
 _CCE_INSTALL_MESSAGE = (
     "Please install cut_cross_entropy with transformers support using "
@@ -77,7 +77,6 @@ class CutCrossEntropyPlugin(BasePlugin):
 
             LOG.info(
                 f"Applying Cut Cross Entropy to model type: {cfg.model_config_type}",
-                use_environ=True,
             )
 
             # The patch checks model_type internally

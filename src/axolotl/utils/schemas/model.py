@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from axolotl.utils.logging import get_logger
 
-LOG = get_logger(__name__)
+LOG = get_logger(__name__, use_environ=True)
 
 
 class ModelInputConfig(BaseModel):
@@ -32,7 +32,6 @@ class ModelInputConfig(BaseModel):
         if trust_remote_code:
             LOG.warning(
                 "`trust_remote_code` is set to true. Please make sure that you reviewed the remote code/model.",
-                use_environ=True,
             )
         return trust_remote_code
 
