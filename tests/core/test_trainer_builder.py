@@ -347,20 +347,19 @@ class TestTrainerClsPlugin:
     TestCase class for trainer builder with plugin
     """
 
-    def test_trainer_cls_is_not_none_with_plugin(self, cfg, model, tokenizer):
+    def test_trainer_cls_is_not_none_with_plugin(self, kto_cfg, model, tokenizer):
         """
         Test that the trainer cls is not none with plugin
 
         Fixes #2693
         """
-        cfg.plugins = ["axolotl.integrations.liger.LigerPlugin"]
-        cfg.rl = RLType.KTO
+        kto_cfg.plugins = ["axolotl.integrations.liger.LigerPlugin"]
 
         # Expected AttributeError as we don't pass regular model configs to RL trainer builder
         # If it throws `TypeError: None is not a callable object`, trainer_cls could be None
         with pytest.raises(
             AttributeError, match=r".*'tuple' object has no attribute 'config'.*"
         ):
-            builder = HFRLTrainerBuilder(cfg, model, tokenizer)
+            builder = HFRLTrainerBuilder(kto_cfg, model, tokenizer)
 
             builder.build(100)
