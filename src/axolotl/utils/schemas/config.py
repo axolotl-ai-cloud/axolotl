@@ -1082,6 +1082,19 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
+    def check_activation_memory_budget_w_compile(cls, data):
+        if data.get("activation_memory_budget") is not None and not data.get(
+            "torch_compile"
+        ):
+            LOG.warning(
+                "activation_memory_budget is enabled, but torch_compile is not set. "
+                "Automatically setting torch_compile to true."
+            )
+            data["torch_compile"] = True
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_npu_config(cls, data):
         if is_torch_npu_available():
             # check attention config
