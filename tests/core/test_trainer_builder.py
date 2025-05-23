@@ -340,3 +340,27 @@ class TestHFCausalTrainerBuilder:
         # SFT specific
         assert training_arguments.sample_packing is False
         assert training_arguments.eval_sample_packing is False
+
+
+class TestTrainerClsPlugin:
+    """
+    TestCase class for trainer builder with plugin
+    """
+
+    def test_trainer_cls_is_not_none_with_plugin(self, cfg, model, tokenizer):
+        """
+        Test that the trainer cls is not none with plugin
+
+        Fixes #2693
+        """
+        cfg.plugins = ["axolotl.integrations.liger.LigerPlugin"]
+        cfg.rl = RLType.KTO
+
+        # Expected AttributeError as we don't pass regular model configs to RL trainer builder
+        # If it throws `TypeError: None is not a callable object`, trainer_cls could be None
+        with pytest.raises(
+            AttributeError, match=r".*'tuple' object has no attribute 'config'.*"
+        ):
+            builder = HFRLTrainerBuilder(cfg, model, tokenizer)
+
+            builder.build(100)
