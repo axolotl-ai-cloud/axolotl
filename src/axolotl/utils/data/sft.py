@@ -74,58 +74,45 @@ def _prepare_standard_dataset(
     tokenizer: PreTrainedTokenizer,
     processor: ProcessorMixin | None,
     preprocess_iterable: bool,
-) -> tuple[Dataset, Dataset, int, list[Prompter | None]]:
+) -> tuple[Dataset, Dataset | None, int, list[Prompter | None]]:
     """Prepare standard (non-pretraining) datasets."""
-    dataset_prepared_path = cfg.dataset_prepared_path or DEFAULT_DATASET_PREPARED_PATH
-    lock_file_path = Path(dataset_prepared_path) / "datasets_prep.lock"
 
-    # The rank that acquires the lock first does the data preprocessing
-    with FileLock(str(lock_file_path)):
-        ready_flag_path = Path(dataset_prepared_path) / "datasets_ready.flag"
+    def _load_datasets():
+        # Always load training dataset
+        train_dataset, eval_dataset, prompters = _load_prepare_datasets(
+            tokenizer,
+            cfg,
+            split="train",
+            processor=processor,
+            preprocess_iterable=preprocess_iterable,
+        )
 
-        if not ready_flag_path.exists():
-            # Always load training dataset
-            train_dataset, eval_dataset, prompters = _load_prepare_datasets(
+        # Overwrite eval_dataset if test data exists
+        if cfg.test_datasets:
+            _, eval_dataset, _ = _load_prepare_datasets(
                 tokenizer,
                 cfg,
-                split="train",
+                split="test",
                 processor=processor,
                 preprocess_iterable=preprocess_iterable,
             )
 
-            # Overwrite eval_dataset if test data exists
-            if cfg.test_datasets:
-                _, eval_dataset, _ = _load_prepare_datasets(
-                    tokenizer,
-                    cfg,
-                    split="test",
-                    processor=processor,
-                    preprocess_iterable=preprocess_iterable,
-                )
+        return train_dataset, eval_dataset, prompters
 
+    dataset_prepared_path = cfg.dataset_prepared_path or DEFAULT_DATASET_PREPARED_PATH
+    lock_file_path = Path(dataset_prepared_path) / "datasets_prep.lock"
+    ready_flag_path = Path(dataset_prepared_path) / "datasets_ready.flag"
+
+    # The rank that acquires the lock first does the data preprocessing
+    with FileLock(str(lock_file_path)):
+        if not ready_flag_path.exists():
+            train_dataset, eval_dataset, prompters = _load_datasets()
             ready_flag_path.touch()
         else:
             # Other ranks: wait and then load
             while not ready_flag_path.exists():
                 time.sleep(1)
-
-            # Load the prepared datasets
-            train_dataset, eval_dataset, prompters = _load_prepare_datasets(
-                tokenizer,
-                cfg,
-                split="train",
-                processor=processor,
-                preprocess_iterable=preprocess_iterable,
-            )
-
-            if cfg.test_datasets:
-                _, eval_dataset, _ = _load_prepare_datasets(
-                    tokenizer,
-                    cfg,
-                    split="test",
-                    processor=processor,
-                    preprocess_iterable=preprocess_iterable,
-                )
+            train_dataset, eval_dataset, prompters = _load_datasets()
 
     # Validate sample packing configuration for evaluation
     if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
