@@ -20,8 +20,9 @@ from transformers import (
     ProcessorMixin,
 )
 
+from axolotl.loaders import load_processor, load_tokenizer
+from axolotl.loaders.model import ModelLoader
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import load_model, load_processor, load_tokenizer
 
 LOG = logging.getLogger(__name__)
 
@@ -318,7 +319,8 @@ def load_model_and_tokenizer(
     tokenizer = load_tokenizer(cfg)
 
     LOG.info("loading model...")
-    model, _ = load_model(cfg, tokenizer, inference=inference)
+    model_loader = ModelLoader(cfg, tokenizer, inference=inference)
+    model, _ = model_loader.load()
 
     processor = None
     if cfg.is_multimodal:

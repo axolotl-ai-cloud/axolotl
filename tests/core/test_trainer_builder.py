@@ -1,13 +1,11 @@
-"""
-unit tests for axolotl.core.trainer_builder
-"""
+"""Unit tests for axolotl.core.trainer_builder"""
 
 import pytest
 
 from axolotl.core.trainer_builder import HFRLTrainerBuilder
+from axolotl.loaders import ModelLoader, load_tokenizer
 from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.schemas.enums import RLType
 
 
@@ -50,7 +48,7 @@ def fixture_tokenizer(cfg):
 
 @pytest.fixture(name="model")
 def fixture_model(cfg, tokenizer):
-    return load_model(cfg, tokenizer)
+    return ModelLoader(cfg, tokenizer).load()
 
 
 class TestHFRLTrainerBuilder:

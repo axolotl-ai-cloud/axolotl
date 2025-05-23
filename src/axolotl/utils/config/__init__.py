@@ -11,9 +11,10 @@ from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.integrations.base import PluginManager
 from axolotl.integrations.config import merge_input_args
+from axolotl.loaders import MULTIMODAL_AUTO_MODEL_MAPPING
+from axolotl.loaders.utils import load_model_config
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import MULTIMODAL_AUTO_MODEL_MAPPING, load_model_config
 from axolotl.utils.schemas.config import (
     AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
 )
