@@ -202,6 +202,8 @@ website:
   description: "We make fine-tuning accessible, scalable, and fun"
   favicon: favicon.jpg
 
+  google-analytics: "G-9KYCVJBNMQ"
+
   navbar:
     logo: image/axolotl_logo_digital_white.svg
     title: false
