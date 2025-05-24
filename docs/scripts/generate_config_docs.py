@@ -257,6 +257,7 @@ class QuartoGenerator:
             category_desc = category_config.get("description", "")
 
             qmd_lines.extend([f"## {category}", "", category_desc, ""])
+            qmd_lines.append("```yaml")
 
             for field_name in sorted(fields):
                 if field_name not in properties:
@@ -269,36 +270,16 @@ class QuartoGenerator:
                 description = field_info.get("description", "")
                 default = field_info.get("default")
 
-                # Field header
-                qmd_lines.append(f"### `{field_name}`")
-                qmd_lines.append("")
-
-                # Type and requirement info
-                type_info = f"**Type:** `{field_type}`"
-                if is_required:
-                    type_info += " *(required)*"
-                qmd_lines.append(type_info)
-                qmd_lines.append("")
-
-                # Description
                 if description:
-                    qmd_lines.append(description)
-                    qmd_lines.append("")
-
-                # Default value
+                    qmd_lines.append(f"# {description}")
+                line = f"{field_name}: {field_type}"
                 if default is not None:
-                    qmd_lines.append(f"**Default:** `{default}`")
-                    qmd_lines.append("")
+                    line += f" = {default}"
+                if is_required:
+                    line += " (required)"
+                qmd_lines.append(line)
 
-                # YAML example
-                yaml_example = self._get_yaml_example(field_name, field_info)
-                if yaml_example:
-                    qmd_lines.extend(
-                        ["**Example:**", "```yaml", yaml_example, "```", ""]
-                    )
-
-                qmd_lines.append("---")
-                qmd_lines.append("")
+            qmd_lines.append("```")
 
         return "\n".join(qmd_lines)
 

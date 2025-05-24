@@ -18,2265 +18,459 @@ description: A complete list of all configuration options.
 
 Basic model setup and tokenizer configuration
 
-### `base_model`
-
-**Type:** `string` *(required)*
-
-**Example:**
 ```yaml
-base_model: ./llama-7b-hf
+base_model: string (required)
+base_model_config: string | None
+model_type: string | None
+tokenizer_config: string | None
+tokenizer_legacy: boolean | None
+# transformers tokenizer class
+tokenizer_type: string | None
+tokenizer_use_fast: boolean | None
+trust_remote_code: boolean | None
 ```
-
----
-
-### `base_model_config`
-
-**Type:** `string | None`
-
----
-
-### `model_type`
-
-**Type:** `string | None`
-
-**Example:**
-```yaml
-model_type: AutoModelForCausalLM
-```
-
----
-
-### `tokenizer_config`
-
-**Type:** `string | None`
-
----
-
-### `tokenizer_legacy`
-
-**Type:** `boolean | None`
-
----
-
-### `tokenizer_type`
-
-**Type:** `string | None`
-
-transformers tokenizer class
-
-**Example:**
-```yaml
-tokenizer_type: AutoTokenizer
-```
-
----
-
-### `tokenizer_use_fast`
-
-**Type:** `boolean | None`
-
----
-
-### `trust_remote_code`
-
-**Type:** `boolean | None`
-
----
-
 ## Training Hyperparameters
 
 Core training settings and optimization parameters
 
-### `gradient_accumulation_steps`
-
-**Type:** `integer | None`
-
-**Default:** `1`
-
-**Example:**
 ```yaml
-gradient_accumulation_steps: 1
+gradient_accumulation_steps: integer | None = 1
+learning_rate: string | number (required)
+lr_scheduler: SchedulerType | string | string | None = cosine
+# Maximum number of iterations to train for. It precedes num_epochs which means that if both are set, num_epochs will not be guaranteed. e.g., when 1 epoch is 1000 steps => `num_epochs: 2` and `max_steps: 100` will train for 100 steps
+max_steps: integer | None
+# per gpu micro batch size for training
+micro_batch_size: integer | None = 1
+num_epochs: number = 1.0
+optimizer: OptimizerNames | CustomSupportedOptimizers | None = adamw_torch_fused
+# Warmup ratio. Cannot use with warmup_steps
+warmup_ratio: number | None
+# Number of warmup steps. Cannot use with warmup_ratio
+warmup_steps: integer | None
+weight_decay: number | None = 0.0
 ```
-
----
-
-### `learning_rate`
-
-**Type:** `string | number` *(required)*
-
-**Example:**
-```yaml
-learning_rate: 3.0e-05
-```
-
----
-
-### `lr_scheduler`
-
-**Type:** `SchedulerType | string | string | None`
-
-**Default:** `cosine`
-
-**Example:**
-```yaml
-lr_scheduler: cosine
-```
-
----
-
-### `max_steps`
-
-**Type:** `integer | None`
-
-Maximum number of iterations to train for. It precedes num_epochs which means that if both are set, num_epochs will not be guaranteed. e.g., when 1 epoch is 1000 steps => `num_epochs: 2` and `max_steps: 100` will train for 100 steps
-
----
-
-### `micro_batch_size`
-
-**Type:** `integer | None`
-
-per gpu micro batch size for training
-
-**Default:** `1`
-
-**Example:**
-```yaml
-micro_batch_size: 2
-```
-
----
-
-### `num_epochs`
-
-**Type:** `number`
-
-**Default:** `1.0`
-
-**Example:**
-```yaml
-num_epochs: 4
-```
-
----
-
-### `optimizer`
-
-**Type:** `OptimizerNames | CustomSupportedOptimizers | None`
-
-**Default:** `adamw_torch_fused`
-
-**Example:**
-```yaml
-optimizer: adamw_torch_fused
-```
-
----
-
-### `warmup_ratio`
-
-**Type:** `number | None`
-
-Warmup ratio. Cannot use with warmup_steps
-
----
-
-### `warmup_steps`
-
-**Type:** `integer | None`
-
-Number of warmup steps. Cannot use with warmup_ratio
-
-**Example:**
-```yaml
-warmup_steps: 100
-```
-
----
-
-### `weight_decay`
-
-**Type:** `number | None`
-
-**Default:** `0.0`
-
-**Example:**
-```yaml
-weight_decay: 0.0
-```
-
----
-
 ## Dataset Configuration
 
 Dataset loading and preprocessing options
 
-### `datasets`
-
-**Type:** `array | None`
-
-A list of one or more datasets to finetune the model with
-
----
-
-### `pad_to_sequence_len`
-
-**Type:** `boolean | None`
-
-Pad inputs so each step uses constant sized buffers. This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently
-
----
-
-### `sample_packing`
-
-**Type:** `boolean | None`
-
-Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'
-
----
-
-### `sequence_len`
-
-**Type:** `integer`
-
-The maximum length of an input to train with, this should typically be less than 2048 as most models have a token/context limit of 2048
-
-**Default:** `512`
-
-**Example:**
 ```yaml
-sequence_len: 2048
+# A list of one or more datasets to finetune the model with
+datasets: array | None
+# Pad inputs so each step uses constant sized buffers. This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently
+pad_to_sequence_len: boolean | None
+# Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'
+sample_packing: boolean | None
+# The maximum length of an input to train with, this should typically be less than 2048 as most models have a token/context limit of 2048
+sequence_len: integer = 512
+# A list of one or more datasets to eval the model with. You can use either test_datasets, or val_set_size, but not both.
+test_datasets: array | None
+train_on_inputs: boolean | None = False
+# How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc. 0 for no eval.
+val_set_size: number | None = 0.0
 ```
-
----
-
-### `test_datasets`
-
-**Type:** `array | None`
-
-A list of one or more datasets to eval the model with. You can use either test_datasets, or val_set_size, but not both.
-
----
-
-### `train_on_inputs`
-
-**Type:** `boolean | None`
-
-**Default:** `False`
-
-**Example:**
-```yaml
-train_on_inputs: false
-```
-
----
-
-### `val_set_size`
-
-**Type:** `number | None`
-
-How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc. 0 for no eval.
-
-**Default:** `0.0`
-
-**Example:**
-```yaml
-val_set_size: 0.0
-```
-
----
-
 ## LoRA/PEFT Settings
 
 Low-rank adaptation and parameter-efficient fine-tuning
 
-### `adapter`
-
-**Type:** `string | None`
-
----
-
-### `lora_alpha`
-
-**Type:** `integer | None`
-
-**Example:**
 ```yaml
-lora_alpha: 16
+adapter: string | None
+lora_alpha: integer | None
+lora_dropout: number | None = 0.0
+lora_model_dir: string | None
+lora_r: integer | None
+lora_target_linear: boolean | None
+lora_target_modules: string | array | None
 ```
-
----
-
-### `lora_dropout`
-
-**Type:** `number | None`
-
-**Default:** `0.0`
-
-**Example:**
-```yaml
-lora_dropout: 0.05
-```
-
----
-
-### `lora_model_dir`
-
-**Type:** `string | None`
-
----
-
-### `lora_r`
-
-**Type:** `integer | None`
-
-**Example:**
-```yaml
-lora_r: 8
-```
-
----
-
-### `lora_target_linear`
-
-**Type:** `boolean | None`
-
----
-
-### `lora_target_modules`
-
-**Type:** `string | array | None`
-
-**Example:**
-```yaml
-lora_target_modules:
-- q_proj
-- v_proj
-```
-
----
-
 ## Memory & Performance
 
 Memory optimization and performance settings
 
-### `bf16`
-
-**Type:** `string | boolean | None`
-
-Use CUDA bf16. bool or 'full' for `bf16_full_eval`, or 'auto' for automatic detection. require >=ampere
-
-**Default:** `auto`
-
-**Example:**
 ```yaml
-bf16: true
+# Use CUDA bf16. bool or 'full' for `bf16_full_eval`, or 'auto' for automatic detection. require >=ampere
+bf16: string | boolean | None = auto
+# Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention
+flash_attention: boolean | None
+# Use CUDA fp16
+fp16: boolean | None
+# Whether to use gradient checkpointing. Available options are: true, false, 'offload', 'offload_disk'. https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing
+gradient_checkpointing: string | boolean | None = False
+load_in_4bit: boolean | None = False
+load_in_8bit: boolean | None = False
+# Whether to use low_cpu_mem_usage
+low_cpu_mem_usage: boolean | None
+# Use CUDA tf32 - require >=ampere
+tf32: boolean | None
 ```
-
----
-
-### `flash_attention`
-
-**Type:** `boolean | None`
-
-Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention
-
-**Example:**
-```yaml
-flash_attention: true
-```
-
----
-
-### `fp16`
-
-**Type:** `boolean | None`
-
-Use CUDA fp16
-
----
-
-### `gradient_checkpointing`
-
-**Type:** `string | boolean | None`
-
-Whether to use gradient checkpointing. Available options are: true, false, 'offload', 'offload_disk'. https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing
-
-**Default:** `False`
-
-**Example:**
-```yaml
-gradient_checkpointing: true
-```
-
----
-
-### `load_in_4bit`
-
-**Type:** `boolean | None`
-
-**Default:** `False`
-
-**Example:**
-```yaml
-load_in_4bit: false
-```
-
----
-
-### `load_in_8bit`
-
-**Type:** `boolean | None`
-
-**Default:** `False`
-
-**Example:**
-```yaml
-load_in_8bit: true
-```
-
----
-
-### `low_cpu_mem_usage`
-
-**Type:** `boolean | None`
-
-Whether to use low_cpu_mem_usage
-
----
-
-### `tf32`
-
-**Type:** `boolean | None`
-
-Use CUDA tf32 - require >=ampere
-
----
-
 ## Distributed Training
 
 Multi-GPU and distributed training configuration
 
-### `ddp_bucket_cap_mb`
-
-**Type:** `integer | None`
-
-Advanced DDP Arguments - bucket cap in MB
-
----
-
-### `ddp_timeout`
-
-**Type:** `integer | None`
-
-Advanced DDP Arguments - timeout
-
----
-
-### `deepspeed`
-
-**Type:** `string | object | None`
-
-Deepspeed config path. e.g., deepspeed_configs/zero3.json
-
----
-
-### `fsdp`
-
-**Type:** `array | None`
-
-FSDP configuration
-
----
-
-### `fsdp_config`
-
-**Type:** `object | None`
-
-FSDP configuration options
-
----
-
-### `local_rank`
-
-**Type:** `integer | None`
-
-Don't mess with this, it's here for accelerate and torchrun
-
----
-
-### `world_size`
-
-**Type:** `integer | None`
-
----
-
+```yaml
+# Advanced DDP Arguments - bucket cap in MB
+ddp_bucket_cap_mb: integer | None
+# Advanced DDP Arguments - timeout
+ddp_timeout: integer | None
+# Deepspeed config path. e.g., deepspeed_configs/zero3.json
+deepspeed: string | object | None
+# FSDP configuration
+fsdp: array | None
+# FSDP configuration options
+fsdp_config: object | None
+# Don't mess with this, it's here for accelerate and torchrun
+local_rank: integer | None
+world_size: integer | None
+```
 ## Logging & Monitoring
 
 Experiment tracking and monitoring options
 
-### `eval_steps`
-
-**Type:** `integer | number | None`
-
-Leave empty to eval at each epoch, integer for every N steps. float for fraction of total steps
-
----
-
-### `logging_steps`
-
-**Type:** `integer | None`
-
-Logging frequency
-
----
-
-### `output_dir`
-
-**Type:** `string`
-
-**Default:** `./model-out`
-
-**Example:**
 ```yaml
-output_dir: ./completed-model
+# Leave empty to eval at each epoch, integer for every N steps. float for fraction of total steps
+eval_steps: integer | number | None
+# Logging frequency
+logging_steps: integer | None
+output_dir: string = ./model-out
+# Leave empty to save at each epoch, integer for every N steps. float for fraction of total steps
+save_steps: integer | number | None
+wandb_entity: string | None
+wandb_name: string | None
+wandb_project: string | None
+wandb_watch: string | None
 ```
-
----
-
-### `save_steps`
-
-**Type:** `integer | number | None`
-
-Leave empty to save at each epoch, integer for every N steps. float for fraction of total steps
-
----
-
-### `wandb_entity`
-
-**Type:** `string | None`
-
----
-
-### `wandb_name`
-
-**Type:** `string | None`
-
----
-
-### `wandb_project`
-
-**Type:** `string | None`
-
-**Example:**
-```yaml
-wandb_project: my-finetuning-project
-```
-
----
-
-### `wandb_watch`
-
-**Type:** `string | None`
-
----
-
 ## Other Options
 
 
 
-### `accelerator_config`
-
-**Type:** `object | None`
-
----
-
-### `adam_beta1`
-
-**Type:** `number | None`
-
----
-
-### `adam_beta2`
-
-**Type:** `number | None`
-
----
-
-### `adam_beta3`
-
-**Type:** `number | None`
-
----
-
-### `adam_epsilon`
-
-**Type:** `number | None`
-
----
-
-### `adam_epsilon2`
-
-**Type:** `number | None`
-
----
-
-### `added_tokens_overrides`
-
-**Type:** `object | None`
-
-Mapping token_id to new_token_string to override reserved added_tokens in the tokenizer. Only works for tokens that are not part of the base vocab (aka are added_tokens). Can be checked if they exist in tokenizer.json added_tokens.
-
----
-
-### `auto_find_batch_size`
-
-**Type:** `boolean | None`
-
----
-
-### `auto_resume_from_checkpoints`
-
-**Type:** `boolean | None`
-
-If resume_from_checkpoint isn't set and you simply want it to start where it left off. Be careful with this being turned on between different models.
-
----
-
-### `axolotl_config_path`
-
-**Type:** `string | None`
-
----
-
-### `batch_flattening`
-
-**Type:** `string | boolean | None`
-
-Use batch flattening for speedups when not using sample_packing
-
----
-
-### `batch_size`
-
-**Type:** `integer | None`
-
-Total batch size, we do not recommended setting this manually
-
----
-
-### `bench_dataset`
-
-**Type:** `string | None`
-
----
-
-### `bench_split`
-
-**Type:** `string | None`
-
----
-
-### `bfloat16`
-
-**Type:** `boolean | None`
-
-No AMP (automatic mixed precision) - require >=ampere
-
----
-
-### `bnb_config_kwargs`
-
-**Type:** `object | None`
-
----
-
-### `chat_template`
-
-**Type:** `ChatTemplate | string | None`
-
-The name of the chat template to use for training, following values are supported: - tokenizer_default: Uses the chat template that is available in the tokenizer_config.json. If the chat template is not available in the tokenizer, it will raise an error. This is the default value. - alpaca/inst/chatml/gemma/cohere/llama3/phi_3/deepseek_v2/jamba: These chat templates are available in the axolotl codebase at src/axolotl/utils/chat_templates.py - tokenizer_default_fallback_*: where * is the name of the chat template to fallback to. E.g. tokenizer_default_fallback_chatml. This is useful when the chat template is not available in the tokenizer. - jinja: Uses a custom jinja template for the chat template. The custom jinja template should be provided in the chat_template_jinja field. The selected chat template will be saved to the tokenizer_config.json for easier inferencing
-
----
-
-### `chat_template_jinja`
-
-**Type:** `string | None`
-
-Custom jinja template for chat template. This will be only used if chat_template is set to `jinja` or `null` (in which case chat_template is automatically set to `jinja`). Default is null.
-
----
-
-### `cls_model_config`
-
-**Type:** `string | None`
-
----
-
-### `comet_api_key`
-
-**Type:** `string | None`
-
----
-
-### `comet_experiment_config`
-
-**Type:** `object | None`
-
----
-
-### `comet_experiment_key`
-
-**Type:** `string | None`
-
----
-
-### `comet_mode`
-
-**Type:** `string | None`
-
----
-
-### `comet_online`
-
-**Type:** `boolean | None`
-
----
-
-### `comet_project_name`
-
-**Type:** `string | None`
-
----
-
-### `comet_workspace`
-
-**Type:** `string | None`
-
----
-
-### `cosine_constant_lr_ratio`
-
-**Type:** `number | None`
-
----
-
-### `cosine_min_lr_ratio`
-
-**Type:** `number | None`
-
----
-
-### `cpo_alpha`
-
-**Type:** `number | None`
-
-Weight of the BC regularizer
-
----
-
-### `curriculum_sampling`
-
-**Type:** `boolean | None`
-
-Whether to use sequential sampling for curriculum learning
-
----
-
-### `dataloader_drop_last`
-
-**Type:** `boolean | None`
-
----
-
-### `dataloader_num_workers`
-
-**Type:** `integer | None`
-
----
-
-### `dataloader_pin_memory`
-
-**Type:** `boolean | None`
-
----
-
-### `dataloader_prefetch_factor`
-
-**Type:** `integer | None`
-
----
-
-### `dataset_exact_deduplication`
-
-**Type:** `boolean | None`
-
-Deduplicates datasets and test_datasets with identical entries
-
----
-
-### `dataset_keep_in_memory`
-
-**Type:** `boolean | None`
-
-Keep dataset in memory while preprocessing. Only needed if cached dataset is taking too much storage
-
----
-
-### `dataset_prepared_path`
-
-**Type:** `string | None`
-
-Axolotl attempts to save the dataset as an arrow after packing the data together so subsequent training attempts load faster, relative path
-
----
-
-### `dataset_processes`
-
-**Type:** `integer | None`
-
-The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set.
-
-**Default:** `14`
-
-**Example:**
 ```yaml
-dataset_processes: 14
+accelerator_config: object | None
+adam_beta1: number | None
+adam_beta2: number | None
+adam_beta3: number | None
+adam_epsilon: number | None
+adam_epsilon2: number | None
+# Mapping token_id to new_token_string to override reserved added_tokens in the tokenizer. Only works for tokens that are not part of the base vocab (aka are added_tokens). Can be checked if they exist in tokenizer.json added_tokens.
+added_tokens_overrides: object | None
+auto_find_batch_size: boolean | None
+# If resume_from_checkpoint isn't set and you simply want it to start where it left off. Be careful with this being turned on between different models.
+auto_resume_from_checkpoints: boolean | None
+axolotl_config_path: string | None
+# Use batch flattening for speedups when not using sample_packing
+batch_flattening: string | boolean | None
+# Total batch size, we do not recommended setting this manually
+batch_size: integer | None
+bench_dataset: string | None
+bench_split: string | None
+# No AMP (automatic mixed precision) - require >=ampere
+bfloat16: boolean | None
+bnb_config_kwargs: object | None
+# The name of the chat template to use for training, following values are supported: - tokenizer_default: Uses the chat template that is available in the tokenizer_config.json. If the chat template is not available in the tokenizer, it will raise an error. This is the default value. - alpaca/inst/chatml/gemma/cohere/llama3/phi_3/deepseek_v2/jamba: These chat templates are available in the axolotl codebase at src/axolotl/utils/chat_templates.py - tokenizer_default_fallback_*: where * is the name of the chat template to fallback to. E.g. tokenizer_default_fallback_chatml. This is useful when the chat template is not available in the tokenizer. - jinja: Uses a custom jinja template for the chat template. The custom jinja template should be provided in the chat_template_jinja field. The selected chat template will be saved to the tokenizer_config.json for easier inferencing
+chat_template: ChatTemplate | string | None
+# Custom jinja template for chat template. This will be only used if chat_template is set to `jinja` or `null` (in which case chat_template is automatically set to `jinja`). Default is null.
+chat_template_jinja: string | None
+cls_model_config: string | None
+comet_api_key: string | None
+comet_experiment_config: object | None
+comet_experiment_key: string | None
+comet_mode: string | None
+comet_online: boolean | None
+comet_project_name: string | None
+comet_workspace: string | None
+cosine_constant_lr_ratio: number | None
+cosine_min_lr_ratio: number | None
+# Weight of the BC regularizer
+cpo_alpha: number | None
+# Whether to use sequential sampling for curriculum learning
+curriculum_sampling: boolean | None
+dataloader_drop_last: boolean | None
+dataloader_num_workers: integer | None
+dataloader_pin_memory: boolean | None
+dataloader_prefetch_factor: integer | None
+# Deduplicates datasets and test_datasets with identical entries
+dataset_exact_deduplication: boolean | None
+# Keep dataset in memory while preprocessing. Only needed if cached dataset is taking too much storage
+dataset_keep_in_memory: boolean | None
+# Axolotl attempts to save the dataset as an arrow after packing the data together so subsequent training attempts load faster, relative path
+dataset_prepared_path: string | None
+# The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set.
+dataset_processes: integer | None = 14
+# Index of shard to use for whole dataset
+dataset_shard_idx: integer | None
+# Num shards for whole dataset
+dataset_shard_num: integer | None
+ddp: boolean | None
+# Advanced DDP Arguments - broadcast buffers
+ddp_broadcast_buffers: boolean | None
+ddp_find_unused_parameters: boolean | None
+# Changes the default system message. Currently only supports chatml.
+default_system_message: string | None
+device: unknown | None
+# Passed through to transformers when loading the model when launched without accelerate. Use `sequential` when training w/ model parallelism to limit memory
+device_map: unknown | None
+do_bench_eval: boolean | None
+# Whether to run causal language model evaluation for metrics in `eval_causal_lm_metrics`
+do_causal_lm_eval: boolean | None
+dpo_beta: number | None
+dpo_use_logits_to_keep: boolean | None
+# Whether to perform weighting in DPO trainer
+dpo_use_weighting: boolean | None
+eager_attention: boolean | None
+# Stop training after this many evaluation losses have increased in a row. https://huggingface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppingCallback
+early_stopping_patience: integer | None
+embedding_lr: number | None
+embedding_lr_scale: number | None
+# Don't upcast the embeddings to float32 when using PEFT. Useful for low-VRAM GPUs
+embeddings_skip_upcast: boolean | None
+# Custom EOT (End-of-Turn) tokens to mask/unmask during training. These tokens mark the boundaries between conversation turns. For example: ['/INST', '</s>', '[/SYSTEM_PROMPT]']. If not specified, defaults to just the model's eos_token. This is useful for templates that use multiple delimiter tokens.
+eot_tokens: array | None
+# per gpu micro batch size for evals, defaults to value of micro_batch_size
+eval_batch_size: integer | None
+# HF evaluate metrics used during evaluation. Default is ['sacrebleu', 'comet', 'ter', 'chrf', 'perplexity']
+eval_causal_lm_metrics: array | None
+# Total number of tokens generated for predictions sent to wandb. Default is 128
+eval_max_new_tokens: integer | None
+# Set to 'false' if getting errors during eval with sample_packing on
+eval_sample_packing: boolean | None
+# Set to `no` to skip evaluation, `epoch` at end of each epoch, leave empty to infer from `eval_steps`
+eval_strategy: string | None
+# Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
+eval_table_size: integer | None
+# Number of times per epoch to run evals, mutually exclusive with eval_steps
+evals_per_epoch: integer | None
+evaluation_strategy: string | None
+fix_untrained_tokens: integer | array | None
+# Whether to use flash-attention cross entropy implementation - advanced use only
+flash_attn_cross_entropy: boolean | None
+# Whether to fuse part of the MLP into a single operation
+flash_attn_fuse_mlp: boolean | None
+# Whether to fuse QKV into a single operation
+flash_attn_fuse_qkv: boolean | None
+# Whether to use flash-attention rms norm implementation - advanced use only
+flash_attn_rms_norm: boolean | None
+# Whether to use bettertransformers
+flash_optimum: boolean | None
+flex_attention: boolean | None
+flex_attn_compile_kwargs: object | None
+# No AMP (automatic mixed precision)
+float16: boolean | None
+float32: boolean | None
+fp8: boolean | None
+fsdp_final_state_dict_type: string | None
+gc_steps: integer | None
+gptq: boolean | None
+# Limit the memory for all available GPUs to this amount (if an integer, expressed in gigabytes); default: unset
+gpu_memory_limit: integer | string | None
+# Additional kwargs to pass to the trainer for gradient checkpointing
+gradient_checkpointing_kwargs: object | None
+gradio_max_new_tokens: integer | None
+gradio_server_name: string | None
+gradio_server_port: integer | None
+gradio_share: boolean | None
+gradio_temperature: number | None
+gradio_title: string | None
+greater_is_better: boolean | None
+group_by_length: boolean | None
+# Optional; strides across the key dimension. Larger values use more memory but should make training faster. Must evenly divide the number of KV heads in your model.
+heads_k_stride: integer | None
+hf_mlflow_log_artifacts: boolean | None
+# Whether to use hf `use_auth_token` for loading datasets. Useful for fetching private datasets. Required to be true when used in combination with `push_dataset_to_hub`
+hf_use_auth_token: boolean | None
+hub_model_id: string | None
+hub_strategy: string | None
+# The resampling algorithm to use for image resizing. Default is bilinear. Please refer to PIL.Image.Resampling for more details.
+image_resize_algorithm: string | Resampling | None
+# The size of the image to resize to. It can be an integer (resized into padded-square image) or a tuple (width, height).If not provided, we will attempt to load from preprocessor.size, otherwise, images won't be resized.
+image_size: integer | array | None
+# bool of whether to include tokens trainer per second in the training metrics. This iterates over the entire dataset once, so it takes some time.
+include_tokens_per_second: boolean | None
+# Internal use only - Used to identify which the model is based on
+is_falcon_derived_model: boolean | None
+# Internal use only - Used to identify which the model is based on
+is_llama_derived_model: boolean | None
+# Internal use only - Used to identify which the model is based on. Please note that if you set this to true, `padding_side` will be set to 'left' by default
+is_mistral_derived_model: boolean | None
+is_preprocess: boolean | None
+# Internal use only - Used to identify which the model is based on
+is_qwen_derived_model: boolean | None
+# Factor for desirable loss term in KTO loss
+kto_desirable_weight: number | None
+# Factor for undesirable loss term in KTO loss
+kto_undesirable_weight: number | None
+# path under the model to access the layers
+lisa_layers_attribute: string | None = model.layers
+# the number of activate layers in LISA
+lisa_n_layers: integer | None
+# how often to switch layers in LISA
+lisa_step_interval: integer | None
+llama4_linearized_experts: boolean | None
+load_best_model_at_end: boolean | None = False
+lora_fan_in_fan_out: boolean | None
+# Apply custom LoRA autograd functions and activation function Triton kernels for speed and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html
+lora_mlp_kernel: boolean | None
+lora_modules_to_save: array | None
+# Apply custom LoRA autograd functions and activation function Triton kernels for speed and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html
+lora_o_kernel: boolean | None
+lora_on_cpu: boolean | None
+# Apply custom LoRA autograd functions and activation function Triton kernels for speed and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html
+lora_qkv_kernel: boolean | None
+# loraplus learning rate for lora embedding layers.
+loraplus_lr_embedding: number | None = 1e-06
+# loraplus learning rate ratio lr_B / lr_A. Recommended value is 2^4.
+loraplus_lr_ratio: number | None
+# Number of high-loss steps in a row before the trainer aborts (default: 3)
+loss_watchdog_patience: integer | None
+# High loss value, indicating the learning has broken down (a good estimate is ~2 times the loss at the start of training)
+loss_watchdog_threshold: number | None
+lr_div_factor: number | None
+lr_groups: array | None
+lr_quadratic_warmup: boolean | None
+lr_scheduler_kwargs: object | None
+max_grad_norm: number | None
+# Defines the max memory usage per gpu on the system. Passed through to transformers when loading the model.
+max_memory: object | None
+max_packed_sequence_len: integer | None
+# maximum prompt length for RL training
+max_prompt_len: integer = 512
+mean_resizing_embeddings: boolean | None = False
+merge_lora: boolean | None
+metric_for_best_model: string | None
+min_sample_len: integer | None
+mlflow_experiment_name: string | None
+mlflow_run_name: string | None
+mlflow_tracking_uri: string | None
+model_config: object | None
+model_kwargs: object | None
+model_revision: string | None
+multipack_real_batches: boolean | None
+# NEFT https://arxiv.org/abs/2310.05914, set this to a number (paper default is 5) to add noise to embeddings. Currently only supported on Llama and Mistral
+neftune_noise_alpha: number | None
+noisy_embedding_alpha: number | None
+num_labels: integer | None
+# Optional arguments to supply to optimizer.
+optim_args: string | object | None
+# The target modules to optimize, i.e. the module names that you would like to train.
+optim_target_modules: array | string | None
+# Parameter controlling the relative ratio loss weight in the ORPO loss. Passed to `beta` in `ORPOConfig` due to trl mapping.
+orpo_alpha: number | None
+peft: PeftConfig | None
+peft_init_lora_weights: boolean | string | None
+peft_layer_replication: array | None
+peft_layers_pattern: array | None
+peft_layers_to_transform: array | None
+peft_use_dora: boolean | None
+peft_use_rslora: boolean | None
+# Add plugins to extend the pipeline. See `src/axolotl/integrations` for the available plugins or doc below for more details. https://docs.axolotl.ai/docs/custom_integrations.html
+plugins: array | None
+pose_max_context_len: integer | None
+pose_num_chunks: integer | None
+pose_split_on_token_ids: array | None
+preprocess_iterable: boolean | None
+# whether to prevent cross attention for packed sequences during pretraining
+pretrain_multipack_attn: boolean | None = True
+pretrain_multipack_buffer_size: integer | None = 10000
+# Set to HF dataset for type: 'completion' for streaming instead of pre-tokenize
+pretraining_dataset: array | None
+# whether to concatenate samples during pretraining
+pretraining_sample_concatenation: boolean | None
+# Process reward modelling: `True` or `False`
+process_reward_model: boolean | None
+# transformers processor class
+processor_type: string | None
+# Enable the pytorch profiler to capture the first N steps of training to the output_dir. see https://pytorch.org/blog/understanding-gpu-memory-1/ for more information. Snapshots can be visualized @ https://pytorch.org/memory_viz
+profiler_steps: integer | None
+# Push prepared dataset to hub - repo_org/repo_name
+push_dataset_to_hub: string | None
+# load qlora model in sharded format for FSDP using answer.ai technique.
+qlora_sharded_model_loading: boolean | None = False
+ray_num_workers: integer = 1
+ray_run_name: string | None
+relora_anneal_steps: integer | None
+relora_cpu_offload: boolean | None
+relora_prune_ratio: number | None
+relora_steps: integer | None
+relora_warmup_steps: integer | None
+remove_unused_columns: boolean | None
+# Resize the model embeddings when new tokens are added to multiples of 32. This is reported to improve training speed on some models
+resize_token_embeddings_to_32x: boolean | None
+resources_per_worker: dict
+# Resume from a specific checkpoint dir
+resume_from_checkpoint: string | None
+# Reward modelling: `True` or `False`
+reward_model: boolean | None
+# One of 'varlen_llama3', 'batch_ring', 'batch_zigzag', 'batch_stripe'. Defaults to 'varlen_llama3' in the sample packing case, and 'batch_ring' in the non-sample packing case.
+ring_attn_func: RingAttnFunc | None
+# Use RL training: 'dpo', 'ipo', 'kto', 'simpo', 'orpo', 'grpo'
+rl: RLType | None
+# The beta parameter for the RL training
+rl_beta: number | None
+rope_scaling: unknown | None
+# Weighting of NLL term in loss from RPO paper
+rpo_alpha: number | None
+# Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf
+s2_attention: boolean | None
+# The number of samples which can be packed into one sequence. Increase if using a large sequence_len with many short samples.
+sample_packing_bin_size: integer | None = 200
+# You can set these packing optimizations AFTER starting a training at least once. The trainer will provide recommended values for these values.
+sample_packing_eff_est: number | None
+# The number of samples packed at a time. Increasing the following values helps with packing, but usually only slightly (<%1.)
+sample_packing_group_size: integer | None = 100000
+# Whether to pack samples sequentially
+sample_packing_sequentially: boolean | None
+# Save only the model weights, skipping the optimizer. Using this means you can't resume from checkpoints.
+save_only_model: boolean | None = False
+save_safetensors: boolean | None = True
+# Set to `no` to skip checkpoint saves, `epoch` at end of each epoch, `best` when better result is achieved, leave empty to infer from `save_steps`
+save_strategy: string | None
+# Checkpoints saved at a time
+save_total_limit: integer | None
+# Number of times per epoch to save a checkpoint, mutually exclusive with save_steps
+saves_per_epoch: integer | None
+# Whether to use scaled-dot-product attention https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
+sdp_attention: boolean | None
+# Seed for reproducibility
+seed: integer | None
+# Set to a divisor of the number of GPUs available to split sequences into chunks of equal size. Use in long context training to prevent OOM when sequences cannot fit into a single GPU's VRAM. E.g., if 4 GPUs are available, set this value to 2 to split each sequence into two equal-sized subsequences, or set to 4 to split into four equal-sized subsequences. See https://docs.axolotl.ai/docs/sequence_parallelism.html for more details.
+sequence_parallel_degree: integer | None
+# Whether to shrink the embeddings to len(tokenizer). By default, we won't shrink.
+shrink_embeddings: boolean | None
+# If false, the datasets will not be shuffled and will keep their original order in `datasets`. The same applies to the `test_datasets` option and the `pretraining_dataset` option. Default is true.
+shuffle_merged_datasets: boolean | None = True
+# Target reward margin for the SimPO loss
+simpo_gamma: number | None
+skip_prepare_dataset: boolean | None = False
+# Add or change special tokens. If you add tokens here, you don't need to add them to the `tokens` list.
+special_tokens: SpecialTokensConfig | None
+# Allow overwrite yml config using from cli
+strict: boolean | None = False
+# Add extra tokens to the tokenizer
+tokens: array | None
+# Whether to use torch.compile and which backend to use. setting to `auto` will enable torch compile when torch>=2.5.1
+torch_compile: string | boolean | None
+# Backend to use for torch.compile
+torch_compile_backend: string | None
+torch_compile_mode: string | None
+torchdistx_path: string | None
+# Total number of tokens - internal use
+total_num_tokens: integer | None
+total_supervised_tokens: integer | None
+trl: TRLConfig | None
+unfrozen_parameters: array | None
+unsloth_cross_entropy_loss: boolean | None
+unsloth_lora_mlp: boolean | None
+unsloth_lora_o: boolean | None
+unsloth_lora_qkv: boolean | None
+unsloth_rms_norm: boolean | None
+unsloth_rope: boolean | None
+use_comet: boolean | None
+use_mlflow: boolean | None
+use_pose: boolean | None
+use_ray: boolean = False
+# Use tensorboard for logging
+use_tensorboard: boolean | None
+use_wandb: boolean | None
+vllm: VllmConfig | None
+wandb_log_model: string | None
+wandb_mode: string | None
+wandb_run_id: string | None
+# Whether to use xformers attention patch https://github.com/facebookresearch/xformers
+xformers_attention: boolean | None
 ```
-
----
-
-### `dataset_shard_idx`
-
-**Type:** `integer | None`
-
-Index of shard to use for whole dataset
-
----
-
-### `dataset_shard_num`
-
-**Type:** `integer | None`
-
-Num shards for whole dataset
-
----
-
-### `ddp`
-
-**Type:** `boolean | None`
-
----
-
-### `ddp_broadcast_buffers`
-
-**Type:** `boolean | None`
-
-Advanced DDP Arguments - broadcast buffers
-
----
-
-### `ddp_find_unused_parameters`
-
-**Type:** `boolean | None`
-
----
-
-### `default_system_message`
-
-**Type:** `string | None`
-
-Changes the default system message. Currently only supports chatml.
-
----
-
-### `device`
-
-**Type:** `unknown | None`
-
----
-
-### `device_map`
-
-**Type:** `unknown | None`
-
-Passed through to transformers when loading the model when launched without accelerate. Use `sequential` when training w/ model parallelism to limit memory
-
----
-
-### `do_bench_eval`
-
-**Type:** `boolean | None`
-
----
-
-### `do_causal_lm_eval`
-
-**Type:** `boolean | None`
-
-Whether to run causal language model evaluation for metrics in `eval_causal_lm_metrics`
-
----
-
-### `dpo_beta`
-
-**Type:** `number | None`
-
----
-
-### `dpo_use_logits_to_keep`
-
-**Type:** `boolean | None`
-
----
-
-### `dpo_use_weighting`
-
-**Type:** `boolean | None`
-
-Whether to perform weighting in DPO trainer
-
----
-
-### `eager_attention`
-
-**Type:** `boolean | None`
-
----
-
-### `early_stopping_patience`
-
-**Type:** `integer | None`
-
-Stop training after this many evaluation losses have increased in a row. https://huggingface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppingCallback
-
----
-
-### `embedding_lr`
-
-**Type:** `number | None`
-
----
-
-### `embedding_lr_scale`
-
-**Type:** `number | None`
-
----
-
-### `embeddings_skip_upcast`
-
-**Type:** `boolean | None`
-
-Don't upcast the embeddings to float32 when using PEFT. Useful for low-VRAM GPUs
-
----
-
-### `eot_tokens`
-
-**Type:** `array | None`
-
-Custom EOT (End-of-Turn) tokens to mask/unmask during training. These tokens mark the boundaries between conversation turns. For example: ['/INST', '</s>', '[/SYSTEM_PROMPT]']. If not specified, defaults to just the model's eos_token. This is useful for templates that use multiple delimiter tokens.
-
----
-
-### `eval_batch_size`
-
-**Type:** `integer | None`
-
-per gpu micro batch size for evals, defaults to value of micro_batch_size
-
----
-
-### `eval_causal_lm_metrics`
-
-**Type:** `array | None`
-
-HF evaluate metrics used during evaluation. Default is ['sacrebleu', 'comet', 'ter', 'chrf', 'perplexity']
-
----
-
-### `eval_max_new_tokens`
-
-**Type:** `integer | None`
-
-Total number of tokens generated for predictions sent to wandb. Default is 128
-
----
-
-### `eval_sample_packing`
-
-**Type:** `boolean | None`
-
-Set to 'false' if getting errors during eval with sample_packing on
-
----
-
-### `eval_strategy`
-
-**Type:** `string | None`
-
-Set to `no` to skip evaluation, `epoch` at end of each epoch, leave empty to infer from `eval_steps`
-
----
-
-### `eval_table_size`
-
-**Type:** `integer | None`
-
-Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
-
----
-
-### `evals_per_epoch`
-
-**Type:** `integer | None`
-
-Number of times per epoch to run evals, mutually exclusive with eval_steps
-
----
-
-### `evaluation_strategy`
-
-**Type:** `string | None`
-
----
-
-### `fix_untrained_tokens`
-
-**Type:** `integer | array | None`
-
----
-
-### `flash_attn_cross_entropy`
-
-**Type:** `boolean | None`
-
-Whether to use flash-attention cross entropy implementation - advanced use only
-
----
-
-### `flash_attn_fuse_mlp`
-
-**Type:** `boolean | None`
-
-Whether to fuse part of the MLP into a single operation
-
----
-
-### `flash_attn_fuse_qkv`
-
-**Type:** `boolean | None`
-
-Whether to fuse QKV into a single operation
-
----
-
-### `flash_attn_rms_norm`
-
-**Type:** `boolean | None`
-
-Whether to use flash-attention rms norm implementation - advanced use only
-
----
-
-### `flash_optimum`
-
-**Type:** `boolean | None`
-
-Whether to use bettertransformers
-
----
-
-### `flex_attention`
-
-**Type:** `boolean | None`
-
----
-
-### `flex_attn_compile_kwargs`
-
-**Type:** `object | None`
-
----
-
-### `float16`
-
-**Type:** `boolean | None`
-
-No AMP (automatic mixed precision)
-
----
-
-### `float32`
-
-**Type:** `boolean | None`
-
----
-
-### `fp8`
-
-**Type:** `boolean | None`
-
----
-
-### `fsdp_final_state_dict_type`
-
-**Type:** `string | None`
-
----
-
-### `gc_steps`
-
-**Type:** `integer | None`
-
----
-
-### `gptq`
-
-**Type:** `boolean | None`
-
----
-
-### `gpu_memory_limit`
-
-**Type:** `integer | string | None`
-
-Limit the memory for all available GPUs to this amount (if an integer, expressed in gigabytes); default: unset
-
----
-
-### `gradient_checkpointing_kwargs`
-
-**Type:** `object | None`
-
-Additional kwargs to pass to the trainer for gradient checkpointing
-
----
-
-### `gradio_max_new_tokens`
-
-**Type:** `integer | None`
-
----
-
-### `gradio_server_name`
-
-**Type:** `string | None`
-
----
-
-### `gradio_server_port`
-
-**Type:** `integer | None`
-
----
-
-### `gradio_share`
-
-**Type:** `boolean | None`
-
----
-
-### `gradio_temperature`
-
-**Type:** `number | None`
-
----
-
-### `gradio_title`
-
-**Type:** `string | None`
-
----
-
-### `greater_is_better`
-
-**Type:** `boolean | None`
-
----
-
-### `group_by_length`
-
-**Type:** `boolean | None`
-
----
-
-### `heads_k_stride`
-
-**Type:** `integer | None`
-
-Optional; strides across the key dimension. Larger values use more memory but should make training faster. Must evenly divide the number of KV heads in your model.
-
----
-
-### `hf_mlflow_log_artifacts`
-
-**Type:** `boolean | None`
-
----
-
-### `hf_use_auth_token`
-
-**Type:** `boolean | None`
-
-Whether to use hf `use_auth_token` for loading datasets. Useful for fetching private datasets. Required to be true when used in combination with `push_dataset_to_hub`
-
----
-
-### `hub_model_id`
-
-**Type:** `string | None`
-
----
-
-### `hub_strategy`
-
-**Type:** `string | None`
-
----
-
-### `image_resize_algorithm`
-
-**Type:** `string | Resampling | None`
-
-The resampling algorithm to use for image resizing. Default is bilinear. Please refer to PIL.Image.Resampling for more details.
-
----
-
-### `image_size`
-
-**Type:** `integer | array | None`
-
-The size of the image to resize to. It can be an integer (resized into padded-square image) or a tuple (width, height).If not provided, we will attempt to load from preprocessor.size, otherwise, images won't be resized.
-
----
-
-### `include_tokens_per_second`
-
-**Type:** `boolean | None`
-
-bool of whether to include tokens trainer per second in the training metrics. This iterates over the entire dataset once, so it takes some time.
-
----
-
-### `is_falcon_derived_model`
-
-**Type:** `boolean | None`
-
-Internal use only - Used to identify which the model is based on
-
----
-
-### `is_llama_derived_model`
-
-**Type:** `boolean | None`
-
-Internal use only - Used to identify which the model is based on
-
----
-
-### `is_mistral_derived_model`
-
-**Type:** `boolean | None`
-
-Internal use only - Used to identify which the model is based on. Please note that if you set this to true, `padding_side` will be set to 'left' by default
-
----
-
-### `is_preprocess`
-
-**Type:** `boolean | None`
-
----
-
-### `is_qwen_derived_model`
-
-**Type:** `boolean | None`
-
-Internal use only - Used to identify which the model is based on
-
----
-
-### `kto_desirable_weight`
-
-**Type:** `number | None`
-
-Factor for desirable loss term in KTO loss
-
----
-
-### `kto_undesirable_weight`
-
-**Type:** `number | None`
-
-Factor for undesirable loss term in KTO loss
-
----
-
-### `lisa_layers_attribute`
-
-**Type:** `string | None`
-
-path under the model to access the layers
-
-**Default:** `model.layers`
-
-**Example:**
-```yaml
-lisa_layers_attribute: model.layers
-```
-
----
-
-### `lisa_n_layers`
-
-**Type:** `integer | None`
-
-the number of activate layers in LISA
-
----
-
-### `lisa_step_interval`
-
-**Type:** `integer | None`
-
-how often to switch layers in LISA
-
----
-
-### `llama4_linearized_experts`
-
-**Type:** `boolean | None`
-
----
-
-### `load_best_model_at_end`
-
-**Type:** `boolean | None`
-
-**Default:** `False`
-
-**Example:**
-```yaml
-load_best_model_at_end: false
-```
-
----
-
-### `lora_fan_in_fan_out`
-
-**Type:** `boolean | None`
-
----
-
-### `lora_mlp_kernel`
-
-**Type:** `boolean | None`
-
-Apply custom LoRA autograd functions and activation function Triton kernels for speed and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html
-
----
-
-### `lora_modules_to_save`
-
-**Type:** `array | None`
-
----
-
-### `lora_o_kernel`
-
-**Type:** `boolean | None`
-
-Apply custom LoRA autograd functions and activation function Triton kernels for speed and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html
-
----
-
-### `lora_on_cpu`
-
-**Type:** `boolean | None`
-
----
-
-### `lora_qkv_kernel`
-
-**Type:** `boolean | None`
-
-Apply custom LoRA autograd functions and activation function Triton kernels for speed and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html
-
----
-
-### `loraplus_lr_embedding`
-
-**Type:** `number | None`
-
-loraplus learning rate for lora embedding layers.
-
-**Default:** `1e-06`
-
-**Example:**
-```yaml
-loraplus_lr_embedding: 1.0e-06
-```
-
----
-
-### `loraplus_lr_ratio`
-
-**Type:** `number | None`
-
-loraplus learning rate ratio lr_B / lr_A. Recommended value is 2^4.
-
----
-
-### `loss_watchdog_patience`
-
-**Type:** `integer | None`
-
-Number of high-loss steps in a row before the trainer aborts (default: 3)
-
----
-
-### `loss_watchdog_threshold`
-
-**Type:** `number | None`
-
-High loss value, indicating the learning has broken down (a good estimate is ~2 times the loss at the start of training)
-
----
-
-### `lr_div_factor`
-
-**Type:** `number | None`
-
----
-
-### `lr_groups`
-
-**Type:** `array | None`
-
----
-
-### `lr_quadratic_warmup`
-
-**Type:** `boolean | None`
-
----
-
-### `lr_scheduler_kwargs`
-
-**Type:** `object | None`
-
----
-
-### `max_grad_norm`
-
-**Type:** `number | None`
-
----
-
-### `max_memory`
-
-**Type:** `object | None`
-
-Defines the max memory usage per gpu on the system. Passed through to transformers when loading the model.
-
----
-
-### `max_packed_sequence_len`
-
-**Type:** `integer | None`
-
----
-
-### `max_prompt_len`
-
-**Type:** `integer`
-
-maximum prompt length for RL training
-
-**Default:** `512`
-
-**Example:**
-```yaml
-max_prompt_len: 512
-```
-
----
-
-### `mean_resizing_embeddings`
-
-**Type:** `boolean | None`
-
-**Default:** `False`
-
-**Example:**
-```yaml
-mean_resizing_embeddings: false
-```
-
----
-
-### `merge_lora`
-
-**Type:** `boolean | None`
-
----
-
-### `metric_for_best_model`
-
-**Type:** `string | None`
-
----
-
-### `min_sample_len`
-
-**Type:** `integer | None`
-
----
-
-### `mlflow_experiment_name`
-
-**Type:** `string | None`
-
----
-
-### `mlflow_run_name`
-
-**Type:** `string | None`
-
----
-
-### `mlflow_tracking_uri`
-
-**Type:** `string | None`
-
----
-
-### `model_config`
-
-**Type:** `object | None`
-
----
-
-### `model_kwargs`
-
-**Type:** `object | None`
-
----
-
-### `model_revision`
-
-**Type:** `string | None`
-
----
-
-### `multipack_real_batches`
-
-**Type:** `boolean | None`
-
----
-
-### `neftune_noise_alpha`
-
-**Type:** `number | None`
-
-NEFT https://arxiv.org/abs/2310.05914, set this to a number (paper default is 5) to add noise to embeddings. Currently only supported on Llama and Mistral
-
----
-
-### `noisy_embedding_alpha`
-
-**Type:** `number | None`
-
----
-
-### `num_labels`
-
-**Type:** `integer | None`
-
----
-
-### `optim_args`
-
-**Type:** `string | object | None`
-
-Optional arguments to supply to optimizer.
-
----
-
-### `optim_target_modules`
-
-**Type:** `array | string | None`
-
-The target modules to optimize, i.e. the module names that you would like to train.
-
----
-
-### `orpo_alpha`
-
-**Type:** `number | None`
-
-Parameter controlling the relative ratio loss weight in the ORPO loss. Passed to `beta` in `ORPOConfig` due to trl mapping.
-
----
-
-### `peft`
-
-**Type:** `PeftConfig | None`
-
----
-
-### `peft_init_lora_weights`
-
-**Type:** `boolean | string | None`
-
----
-
-### `peft_layer_replication`
-
-**Type:** `array | None`
-
----
-
-### `peft_layers_pattern`
-
-**Type:** `array | None`
-
----
-
-### `peft_layers_to_transform`
-
-**Type:** `array | None`
-
----
-
-### `peft_use_dora`
-
-**Type:** `boolean | None`
-
----
-
-### `peft_use_rslora`
-
-**Type:** `boolean | None`
-
----
-
-### `plugins`
-
-**Type:** `array | None`
-
-Add plugins to extend the pipeline. See `src/axolotl/integrations` for the available plugins or doc below for more details. https://docs.axolotl.ai/docs/custom_integrations.html
-
----
-
-### `pose_max_context_len`
-
-**Type:** `integer | None`
-
----
-
-### `pose_num_chunks`
-
-**Type:** `integer | None`
-
----
-
-### `pose_split_on_token_ids`
-
-**Type:** `array | None`
-
----
-
-### `preprocess_iterable`
-
-**Type:** `boolean | None`
-
----
-
-### `pretrain_multipack_attn`
-
-**Type:** `boolean | None`
-
-whether to prevent cross attention for packed sequences during pretraining
-
-**Default:** `True`
-
-**Example:**
-```yaml
-pretrain_multipack_attn: true
-```
-
----
-
-### `pretrain_multipack_buffer_size`
-
-**Type:** `integer | None`
-
-**Default:** `10000`
-
-**Example:**
-```yaml
-pretrain_multipack_buffer_size: 10000
-```
-
----
-
-### `pretraining_dataset`
-
-**Type:** `array | None`
-
-Set to HF dataset for type: 'completion' for streaming instead of pre-tokenize
-
----
-
-### `pretraining_sample_concatenation`
-
-**Type:** `boolean | None`
-
-whether to concatenate samples during pretraining
-
----
-
-### `process_reward_model`
-
-**Type:** `boolean | None`
-
-Process reward modelling: `True` or `False`
-
----
-
-### `processor_type`
-
-**Type:** `string | None`
-
-transformers processor class
-
----
-
-### `profiler_steps`
-
-**Type:** `integer | None`
-
-Enable the pytorch profiler to capture the first N steps of training to the output_dir. see https://pytorch.org/blog/understanding-gpu-memory-1/ for more information. Snapshots can be visualized @ https://pytorch.org/memory_viz
-
----
-
-### `push_dataset_to_hub`
-
-**Type:** `string | None`
-
-Push prepared dataset to hub - repo_org/repo_name
-
----
-
-### `qlora_sharded_model_loading`
-
-**Type:** `boolean | None`
-
-load qlora model in sharded format for FSDP using answer.ai technique.
-
-**Default:** `False`
-
-**Example:**
-```yaml
-qlora_sharded_model_loading: false
-```
-
----
-
-### `ray_num_workers`
-
-**Type:** `integer`
-
-**Default:** `1`
-
-**Example:**
-```yaml
-ray_num_workers: 1
-```
-
----
-
-### `ray_run_name`
-
-**Type:** `string | None`
-
----
-
-### `relora_anneal_steps`
-
-**Type:** `integer | None`
-
----
-
-### `relora_cpu_offload`
-
-**Type:** `boolean | None`
-
----
-
-### `relora_prune_ratio`
-
-**Type:** `number | None`
-
----
-
-### `relora_steps`
-
-**Type:** `integer | None`
-
----
-
-### `relora_warmup_steps`
-
-**Type:** `integer | None`
-
----
-
-### `remove_unused_columns`
-
-**Type:** `boolean | None`
-
----
-
-### `resize_token_embeddings_to_32x`
-
-**Type:** `boolean | None`
-
-Resize the model embeddings when new tokens are added to multiples of 32. This is reported to improve training speed on some models
-
----
-
-### `resources_per_worker`
-
-**Type:** `dict`
-
----
-
-### `resume_from_checkpoint`
-
-**Type:** `string | None`
-
-Resume from a specific checkpoint dir
-
----
-
-### `reward_model`
-
-**Type:** `boolean | None`
-
-Reward modelling: `True` or `False`
-
----
-
-### `ring_attn_func`
-
-**Type:** `RingAttnFunc | None`
-
-One of 'varlen_llama3', 'batch_ring', 'batch_zigzag', 'batch_stripe'. Defaults to 'varlen_llama3' in the sample packing case, and 'batch_ring' in the non-sample packing case.
-
----
-
-### `rl`
-
-**Type:** `RLType | None`
-
-Use RL training: 'dpo', 'ipo', 'kto', 'simpo', 'orpo', 'grpo'
-
----
-
-### `rl_beta`
-
-**Type:** `number | None`
-
-The beta parameter for the RL training
-
----
-
-### `rope_scaling`
-
-**Type:** `unknown | None`
-
----
-
-### `rpo_alpha`
-
-**Type:** `number | None`
-
-Weighting of NLL term in loss from RPO paper
-
----
-
-### `s2_attention`
-
-**Type:** `boolean | None`
-
-Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf
-
----
-
-### `sample_packing_bin_size`
-
-**Type:** `integer | None`
-
-The number of samples which can be packed into one sequence. Increase if using a large sequence_len with many short samples.
-
-**Default:** `200`
-
-**Example:**
-```yaml
-sample_packing_bin_size: 200
-```
-
----
-
-### `sample_packing_eff_est`
-
-**Type:** `number | None`
-
-You can set these packing optimizations AFTER starting a training at least once. The trainer will provide recommended values for these values.
-
----
-
-### `sample_packing_group_size`
-
-**Type:** `integer | None`
-
-The number of samples packed at a time. Increasing the following values helps with packing, but usually only slightly (<%1.)
-
-**Default:** `100000`
-
-**Example:**
-```yaml
-sample_packing_group_size: 100000
-```
-
----
-
-### `sample_packing_sequentially`
-
-**Type:** `boolean | None`
-
-Whether to pack samples sequentially
-
----
-
-### `save_only_model`
-
-**Type:** `boolean | None`
-
-Save only the model weights, skipping the optimizer. Using this means you can't resume from checkpoints.
-
-**Default:** `False`
-
-**Example:**
-```yaml
-save_only_model: false
-```
-
----
-
-### `save_safetensors`
-
-**Type:** `boolean | None`
-
-**Default:** `True`
-
-**Example:**
-```yaml
-save_safetensors: true
-```
-
----
-
-### `save_strategy`
-
-**Type:** `string | None`
-
-Set to `no` to skip checkpoint saves, `epoch` at end of each epoch, `best` when better result is achieved, leave empty to infer from `save_steps`
-
----
-
-### `save_total_limit`
-
-**Type:** `integer | None`
-
-Checkpoints saved at a time
-
----
-
-### `saves_per_epoch`
-
-**Type:** `integer | None`
-
-Number of times per epoch to save a checkpoint, mutually exclusive with save_steps
-
----
-
-### `sdp_attention`
-
-**Type:** `boolean | None`
-
-Whether to use scaled-dot-product attention https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
-
----
-
-### `seed`
-
-**Type:** `integer | None`
-
-Seed for reproducibility
-
----
-
-### `sequence_parallel_degree`
-
-**Type:** `integer | None`
-
-Set to a divisor of the number of GPUs available to split sequences into chunks of equal size. Use in long context training to prevent OOM when sequences cannot fit into a single GPU's VRAM. E.g., if 4 GPUs are available, set this value to 2 to split each sequence into two equal-sized subsequences, or set to 4 to split into four equal-sized subsequences. See https://docs.axolotl.ai/docs/sequence_parallelism.html for more details.
-
----
-
-### `shrink_embeddings`
-
-**Type:** `boolean | None`
-
-Whether to shrink the embeddings to len(tokenizer). By default, we won't shrink.
-
----
-
-### `shuffle_merged_datasets`
-
-**Type:** `boolean | None`
-
-If false, the datasets will not be shuffled and will keep their original order in `datasets`. The same applies to the `test_datasets` option and the `pretraining_dataset` option. Default is true.
-
-**Default:** `True`
-
-**Example:**
-```yaml
-shuffle_merged_datasets: true
-```
-
----
-
-### `simpo_gamma`
-
-**Type:** `number | None`
-
-Target reward margin for the SimPO loss
-
----
-
-### `skip_prepare_dataset`
-
-**Type:** `boolean | None`
-
-**Default:** `False`
-
-**Example:**
-```yaml
-skip_prepare_dataset: false
-```
-
----
-
-### `special_tokens`
-
-**Type:** `SpecialTokensConfig | None`
-
-Add or change special tokens. If you add tokens here, you don't need to add them to the `tokens` list.
-
----
-
-### `strict`
-
-**Type:** `boolean | None`
-
-Allow overwrite yml config using from cli
-
-**Default:** `False`
-
-**Example:**
-```yaml
-strict: false
-```
-
----
-
-### `tokens`
-
-**Type:** `array | None`
-
-Add extra tokens to the tokenizer
-
----
-
-### `torch_compile`
-
-**Type:** `string | boolean | None`
-
-Whether to use torch.compile and which backend to use. setting to `auto` will enable torch compile when torch>=2.5.1
-
----
-
-### `torch_compile_backend`
-
-**Type:** `string | None`
-
-Backend to use for torch.compile
-
----
-
-### `torch_compile_mode`
-
-**Type:** `string | None`
-
----
-
-### `torchdistx_path`
-
-**Type:** `string | None`
-
----
-
-### `total_num_tokens`
-
-**Type:** `integer | None`
-
-Total number of tokens - internal use
-
----
-
-### `total_supervised_tokens`
-
-**Type:** `integer | None`
-
----
-
-### `trl`
-
-**Type:** `TRLConfig | None`
-
----
-
-### `unfrozen_parameters`
-
-**Type:** `array | None`
-
----
-
-### `unsloth_cross_entropy_loss`
-
-**Type:** `boolean | None`
-
----
-
-### `unsloth_lora_mlp`
-
-**Type:** `boolean | None`
-
----
-
-### `unsloth_lora_o`
-
-**Type:** `boolean | None`
-
----
-
-### `unsloth_lora_qkv`
-
-**Type:** `boolean | None`
-
----
-
-### `unsloth_rms_norm`
-
-**Type:** `boolean | None`
-
----
-
-### `unsloth_rope`
-
-**Type:** `boolean | None`
-
----
-
-### `use_comet`
-
-**Type:** `boolean | None`
-
----
-
-### `use_mlflow`
-
-**Type:** `boolean | None`
-
----
-
-### `use_pose`
-
-**Type:** `boolean | None`
-
----
-
-### `use_ray`
-
-**Type:** `boolean`
-
-**Default:** `False`
-
-**Example:**
-```yaml
-use_ray: false
-```
-
----
-
-### `use_tensorboard`
-
-**Type:** `boolean | None`
-
-Use tensorboard for logging
-
----
-
-### `use_wandb`
-
-**Type:** `boolean | None`
-
----
-
-### `vllm`
-
-**Type:** `VllmConfig | None`
-
----
-
-### `wandb_log_model`
-
-**Type:** `string | None`
-
----
-
-### `wandb_mode`
-
-**Type:** `string | None`
-
----
-
-### `wandb_run_id`
-
-**Type:** `string | None`
-
----
-
-### `xformers_attention`
-
-**Type:** `boolean | None`
-
-Whether to use xformers attention patch https://github.com/facebookresearch/xformers
-
----
