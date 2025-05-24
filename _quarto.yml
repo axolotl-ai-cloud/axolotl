@@ -1,6 +1,6 @@
 project:
   type: website
-  pre-render: scripts/generate_config_docs.py
+  pre-render: docs/scripts/generate_config_docs.py
 
 quartodoc:
   dir: docs/api

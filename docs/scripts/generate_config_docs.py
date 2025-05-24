@@ -213,7 +213,7 @@ class QuartoGenerator:
     def generate_qmd(
         self, model_class: type[BaseModel], title: str | None = None
     ) -> str:
-        """Generate comprehensive Quarto documentation."""
+        """Auto-generate config reference documentation."""
 
         if title is None:
             title = f"{model_class.__name__} Reference"
@@ -228,10 +228,6 @@ class QuartoGenerator:
             f"title: {title}",
             "description: A complete list of all configuration options.",
             "---",
-            "",
-            f"# {title}",
-            "",
-            schema.get("description", "Configuration options for the application."),
             "",
         ]
 
@@ -311,17 +307,13 @@ def main():
     """Example usage of the enhanced generator."""
     generator = QuartoGenerator()
 
-    # You would use this with your actual model:
-    # from your_module import AxolotlInputConfig
-    qmd_content = generator.generate_qmd(
-        AxolotlInputConfig, "Axolotl Configuration Reference"
-    )
+    print("Generating config reference content...")
+    qmd_content = generator.generate_qmd(AxolotlInputConfig, "Config Reference")
 
-    with open("config-reference.qmd", "w", encoding="utf-8") as f:
+    print("Writing to file...")
+    with open("docs/config-reference.qmd", "w", encoding="utf-8") as f:
         f.write(qmd_content)
-
-    print("Enhanced Quarto generator ready!")
-    print("Use generator.generate_qmd(YourModel) to generate documentation.")
+    print("Done!")
 
 
 if __name__ == "__main__":
