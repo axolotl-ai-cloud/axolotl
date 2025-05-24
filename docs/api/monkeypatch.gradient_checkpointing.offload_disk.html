@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>utils.gradient_checkpointing.offload_disk – Axolotl</title>
+<title>monkeypatch.gradient_checkpointing.offload_disk – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -446,12 +446,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.utils.gradient_checkpointing.offload_disk" id="toc-axolotl.utils.gradient_checkpointing.offload_disk" class="nav-link active" data-scroll-target="#axolotl.utils.gradient_checkpointing.offload_disk">utils.gradient_checkpointing.offload_disk</a>
+  <li><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_disk" id="toc-axolotl.monkeypatch.gradient_checkpointing.offload_disk" class="nav-link active" data-scroll-target="#axolotl.monkeypatch.gradient_checkpointing.offload_disk">monkeypatch.gradient_checkpointing.offload_disk</a>
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.utils.gradient_checkpointing.offload_disk.Disco" id="toc-axolotl.utils.gradient_checkpointing.offload_disk.Disco" class="nav-link" data-scroll-target="#axolotl.utils.gradient_checkpointing.offload_disk.Disco">Disco</a></li>
-  <li><a href="#axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager" id="toc-axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager" class="nav-link" data-scroll-target="#axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager">DiskOffloadManager</a></li>
+  <li><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_disk.Disco" id="toc-axolotl.monkeypatch.gradient_checkpointing.offload_disk.Disco" class="nav-link" data-scroll-target="#axolotl.monkeypatch.gradient_checkpointing.offload_disk.Disco">Disco</a></li>
+  <li><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager" id="toc-axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager" class="nav-link" data-scroll-target="#axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager">DiskOffloadManager</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -463,9 +463,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 
-<section id="axolotl.utils.gradient_checkpointing.offload_disk" class="level1">
-<h1>utils.gradient_checkpointing.offload_disk</h1>
-<p><code>utils.gradient_checkpointing.offload_disk</code></p>
+<section id="axolotl.monkeypatch.gradient_checkpointing.offload_disk" class="level1">
+<h1>monkeypatch.gradient_checkpointing.offload_disk</h1>
+<p><code>monkeypatch.gradient_checkpointing.offload_disk</code></p>
 <p>DISCO - DIsk-based Storage and Checkpointing with Optimized prefetching</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
@@ -478,18 +478,18 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.utils.gradient_checkpointing.offload_disk.Disco">Disco</a></td>
+<td><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_disk.Disco">Disco</a></td>
 <td>Disco: DIsk-based Storage and Checkpointing with Optimized prefetching</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager">DiskOffloadManager</a></td>
+<td><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager">DiskOffloadManager</a></td>
 <td>Manages offloaded tensors and handles prefetching in a separate thread.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.utils.gradient_checkpointing.offload_disk.Disco" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.gradient_checkpointing.offload_disk.Disco">Disco</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.gradient_checkpointing.offload_disk.Disco()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.Disco" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.Disco">Disco</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.gradient_checkpointing.offload_disk.Disco()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Disco: DIsk-based Storage and Checkpointing with Optimized prefetching
 Advanced disk-based gradient checkpointer with prefetching.</p>
 <section id="methods" class="level4">
@@ -503,27 +503,30 @@ Advanced disk-based gradient checkpointer with prefetching.</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.utils.gradient_checkpointing.offload_disk.Disco.backward">backward</a></td>
+<td><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_disk.Disco.backward">backward</a></td>
 <td>Backward pass that loads activations from disk with prefetching</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.utils.gradient_checkpointing.offload_disk.Disco.forward">forward</a></td>
+<td><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_disk.Disco.forward">forward</a></td>
 <td>Forward pass that offloads activations to disk asynchronously</td>
 </tr>
 <tr class="odd">
-<td><a href="#axolotl.utils.gradient_checkpointing.offload_disk.Disco.get_instance">get_instance</a></td>
+<td><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_disk.Disco.get_instance">get_instance</a></td>
 <td>Get or create the offload manager</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.utils.gradient_checkpointing.offload_disk.Disco.backward" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.gradient_checkpointing.offload_disk.Disco.backward">backward</h5>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.gradient_checkpointing.offload_disk.Disco.backward(ctx, <span class="op">*</span>grad_outputs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.Disco.backward" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.Disco.backward">backward</h5>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.gradient_checkpointing.offload_disk.Disco.backward(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    ctx,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>grad_outputs,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Backward pass that loads activations from disk with prefetching</p>
 </section>
-<section id="axolotl.utils.gradient_checkpointing.offload_disk.Disco.forward" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.gradient_checkpointing.offload_disk.Disco.forward">forward</h5>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.gradient_checkpointing.offload_disk.Disco.forward(</span>
+<section id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.Disco.forward" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.Disco.forward">forward</h5>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.gradient_checkpointing.offload_disk.Disco.forward(</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    ctx,</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    forward_function,</span>
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    hidden_states,</span>
@@ -534,9 +537,9 @@ Advanced disk-based gradient checkpointer with prefetching.</p>
 <span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Forward pass that offloads activations to disk asynchronously</p>
 </section>
-<section id="axolotl.utils.gradient_checkpointing.offload_disk.Disco.get_instance" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.gradient_checkpointing.offload_disk.Disco.get_instance">get_instance</h5>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.gradient_checkpointing.offload_disk.Disco.get_instance(</span>
+<section id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.Disco.get_instance" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.Disco.get_instance">get_instance</h5>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.gradient_checkpointing.offload_disk.Disco.get_instance(</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    prefetch_size<span class="op">=</span><span class="dv">1</span>,</span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    prefetch_to_gpu<span class="op">=</span><span class="va">True</span>,</span>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    save_workers<span class="op">=</span><span class="dv">4</span>,</span>
@@ -545,9 +548,9 @@ Advanced disk-based gradient checkpointer with prefetching.</p>
 </section>
 </section>
 </section>
-<section id="axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager">DiskOffloadManager</h3>
-<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.gradient_checkpointing.offload_disk.DiskOffloadManager(</span>
+<section id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager">DiskOffloadManager</h3>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager(</span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    prefetch_size<span class="op">=</span><span class="dv">3</span>,</span>
 <span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    prefetch_to_gpu<span class="op">=</span><span class="va">True</span>,</span>
@@ -566,66 +569,68 @@ Includes synchronization to prevent race conditions.</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.cleanup">cleanup</a></td>
+<td><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.cleanup">cleanup</a></td>
 <td>Clean up all temp files and stop prefetch thread with proper synchronization</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.cleanup_tensor">cleanup_tensor</a></td>
+<td><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.cleanup_tensor">cleanup_tensor</a></td>
 <td>Clean up a specific tensor file after it’s been used</td>
 </tr>
 <tr class="odd">
-<td><a href="#axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.load_tensor">load_tensor</a></td>
+<td><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.load_tensor">load_tensor</a></td>
 <td>Load tensor from disk or prefetch cache with proper synchronization</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.save_tensor">save_tensor</a></td>
+<td><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.save_tensor">save_tensor</a></td>
 <td>Save tensor to disk asynchronously and return file path with thread-safe operations</td>
 </tr>
 <tr class="odd">
-<td><a href="#axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.trigger_prefetch">trigger_prefetch</a></td>
+<td><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.trigger_prefetch">trigger_prefetch</a></td>
 <td>Trigger prefetching of the next N tensors with proper synchronization</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.wait_for_save">wait_for_save</a></td>
+<td><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.wait_for_save">wait_for_save</a></td>
 <td>Wait for a tensor to be saved to disk</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.cleanup" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.cleanup">cleanup</h5>
-<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.gradient_checkpointing.offload_disk.DiskOffloadManager.cleanup()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.cleanup" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.cleanup">cleanup</h5>
+<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.cleanup()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Clean up all temp files and stop prefetch thread with proper synchronization</p>
 </section>
-<section id="axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.cleanup_tensor" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.cleanup_tensor">cleanup_tensor</h5>
-<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.gradient_checkpointing.offload_disk.DiskOffloadManager.cleanup_tensor(</span>
+<section id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.cleanup_tensor" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.cleanup_tensor">cleanup_tensor</h5>
+<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.cleanup_tensor(</span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    file_path,</span>
 <span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Clean up a specific tensor file after it’s been used</p>
 </section>
-<section id="axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.load_tensor" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.load_tensor">load_tensor</h5>
-<div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>utils.gradient_checkpointing.offload_disk.DiskOffloadManager.load_tensor(</span>
+<section id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.load_tensor" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.load_tensor">load_tensor</h5>
+<div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.load_tensor(</span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    file_path,</span>
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    target_device<span class="op">=</span><span class="st">'cuda'</span>,</span>
 <span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Load tensor from disk or prefetch cache with proper synchronization</p>
 </section>
-<section id="axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.save_tensor" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.save_tensor">save_tensor</h5>
-<div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>utils.gradient_checkpointing.offload_disk.DiskOffloadManager.save_tensor(tensor)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.save_tensor" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.save_tensor">save_tensor</h5>
+<div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.save_tensor(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    tensor,</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Save tensor to disk asynchronously and return file path with thread-safe operations</p>
 </section>
-<section id="axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.trigger_prefetch" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.trigger_prefetch">trigger_prefetch</h5>
-<div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>utils.gradient_checkpointing.offload_disk.DiskOffloadManager.trigger_prefetch(</span>
+<section id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.trigger_prefetch" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.trigger_prefetch">trigger_prefetch</h5>
+<div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.trigger_prefetch(</span>
 <span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    n<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Trigger prefetching of the next N tensors with proper synchronization</p>
 </section>
-<section id="axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.wait_for_save" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.gradient_checkpointing.offload_disk.DiskOffloadManager.wait_for_save">wait_for_save</h5>
-<div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>utils.gradient_checkpointing.offload_disk.DiskOffloadManager.wait_for_save(</span>
+<section id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.wait_for_save" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.wait_for_save">wait_for_save</h5>
+<div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager.wait_for_save(</span>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    file_path,</span>
 <span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>    timeout<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>

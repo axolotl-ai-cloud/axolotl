@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>utils.lora_embeddings – Axolotl</title>
+<title>loaders.model – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -446,11 +446,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.utils.lora_embeddings" id="toc-axolotl.utils.lora_embeddings" class="nav-link active" data-scroll-target="#axolotl.utils.lora_embeddings">utils.lora_embeddings</a>
+  <li><a href="#axolotl.loaders.model" id="toc-axolotl.loaders.model" class="nav-link active" data-scroll-target="#axolotl.loaders.model">loaders.model</a>
   <ul class="collapse">
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.utils.lora_embeddings.get_linear_embedding_layers" id="toc-axolotl.utils.lora_embeddings.get_linear_embedding_layers" class="nav-link" data-scroll-target="#axolotl.utils.lora_embeddings.get_linear_embedding_layers">get_linear_embedding_layers</a></li>
+  <li><a href="#axolotl.loaders.model.ModelLoader" id="toc-axolotl.loaders.model.ModelLoader" class="nav-link" data-scroll-target="#axolotl.loaders.model.ModelLoader">ModelLoader</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -462,12 +462,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 
-<section id="axolotl.utils.lora_embeddings" class="level1">
-<h1>utils.lora_embeddings</h1>
-<p><code>utils.lora_embeddings</code></p>
-<p>helpers for lora embeddings</p>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<section id="axolotl.loaders.model" class="level1">
+<h1>loaders.model</h1>
+<p><code>loaders.model</code></p>
+<p>Model loader class implementation for loading, configuring, and patching various
+models.</p>
+<section id="classes" class="level2">
+<h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
 <thead>
 <tr class="header">
@@ -477,17 +478,136 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.utils.lora_embeddings.get_linear_embedding_layers">get_linear_embedding_layers</a></td>
-<td>returns the linear embedding layers needed for loras, dependent on the model arch</td>
+<td><a href="#axolotl.loaders.model.ModelLoader">ModelLoader</a></td>
+<td>Manages model configuration, initialization and application of patches during</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.utils.lora_embeddings.get_linear_embedding_layers" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.lora_embeddings.get_linear_embedding_layers">get_linear_embedding_layers</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.lora_embeddings.get_linear_embedding_layers(model_type)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>returns the linear embedding layers needed for loras, dependent on the model arch</p>
+<section id="axolotl.loaders.model.ModelLoader" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.loaders.model.ModelLoader">ModelLoader</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>loaders.model.ModelLoader(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    inference<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    reference_model<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Manages model configuration, initialization and application of patches during
+model loading.</p>
+<p>This class orchestrates the entire process of loading a model from configuration to
+final preparation. It handles device mapping, quantization, attention mechanisms,
+adapter integration, and various optimizations.</p>
+<section id="the-loading-process-includes" class="level4 doc-section doc-section-the-loading-process-includes">
+<h4 class="doc-section doc-section-the-loading-process-includes anchored" data-anchor-id="the-loading-process-includes">The loading process includes</h4>
+<ul>
+<li>Loading and validating model configuration</li>
+<li>Applying monkey patches for optimizations / fixes</li>
+<li>Setting up device mapping (including multi-GPU configurations)</li>
+<li>Configuring quantization</li>
+<li>Setting attention mechanisms (Flash Attention, SDPA, etc.)</li>
+<li>Loading and initializing the model</li>
+<li>Applying adapters (LoRA, QLoRA, etc.)</li>
+</ul>
+</section>
+<section id="attributes" class="level4 doc-section doc-section-attributes">
+<h4 class="doc-section doc-section-attributes anchored" data-anchor-id="attributes">Attributes</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 13%">
+<col style="width: 35%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>model</td>
+<td>PreTrainedModel | PeftModel | PeftMixedModel</td>
+<td>The loaded model instance (available after load() is called).</td>
+</tr>
+<tr class="even">
+<td>model_kwargs</td>
+<td>dict[str, Any]</td>
+<td>Dictionary of keyword arguments passed to model initialization.</td>
+</tr>
+<tr class="odd">
+<td>base_model</td>
+<td></td>
+<td>Name or path of the base model to load.</td>
+</tr>
+<tr class="even">
+<td>model_type</td>
+<td></td>
+<td>Type of model to load (e.g., <code>AutoModelForCausalLM</code>).</td>
+</tr>
+<tr class="odd">
+<td>model_config</td>
+<td></td>
+<td>Configuration object for the model.</td>
+</tr>
+<tr class="even">
+<td>auto_model_loader</td>
+<td></td>
+<td>class used for loading the model (default: <code>AutoModelForCausalLM</code>).</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="methods" class="level4">
+<h4 class="anchored" data-anchor-id="methods">Methods</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.loaders.model.ModelLoader.load">load</a></td>
+<td>Load and prepare the model with all configurations and patches.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.loaders.model.ModelLoader.load" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.loaders.model.ModelLoader.load">load</h5>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>loaders.model.ModelLoader.load()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Load and prepare the model with all configurations and patches.</p>
+<section id="returns" class="level6 doc-section doc-section-returns">
+<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h6>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 6%">
+<col style="width: 35%">
+<col style="width: 58%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td></td>
+<td>tuple[PreTrainedModel, PeftConfig | None]</td>
+<td>A tuple with the loaded model and its LoRA configuration (if applicable).</td>
+</tr>
+</tbody>
+</table>
 
 
+</section>
+</section>
+</section>
 </section>
 </section>
 </section>

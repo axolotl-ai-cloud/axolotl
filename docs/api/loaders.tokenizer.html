@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>index – Axolotl</title>
+<title>loaders.tokenizer – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -19,6 +19,41 @@ ul.task-list li input[type="checkbox"] {
   width: 0.8em;
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
 </style>
 
@@ -411,24 +446,13 @@ ul.task-list li input[type="checkbox"] {
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#api-reference" id="toc-api-reference" class="nav-link active" data-scroll-target="#api-reference">API Reference</a>
+  <li><a href="#axolotl.loaders.tokenizer" id="toc-axolotl.loaders.tokenizer" class="nav-link active" data-scroll-target="#axolotl.loaders.tokenizer">loaders.tokenizer</a>
   <ul class="collapse">
-  <li><a href="#core" id="toc-core" class="nav-link" data-scroll-target="#core">Core</a></li>
-  <li><a href="#cli" id="toc-cli" class="nav-link" data-scroll-target="#cli">CLI</a></li>
-  <li><a href="#trainers" id="toc-trainers" class="nav-link" data-scroll-target="#trainers">Trainers</a></li>
-  <li><a href="#model-loading" id="toc-model-loading" class="nav-link" data-scroll-target="#model-loading">Model Loading</a></li>
-  <li><a href="#mixins" id="toc-mixins" class="nav-link" data-scroll-target="#mixins">Mixins</a></li>
-  <li><a href="#context-managers" id="toc-context-managers" class="nav-link" data-scroll-target="#context-managers">Context Managers</a></li>
-  <li><a href="#prompt-strategies" id="toc-prompt-strategies" class="nav-link" data-scroll-target="#prompt-strategies">Prompt Strategies</a></li>
-  <li><a href="#kernels" id="toc-kernels" class="nav-link" data-scroll-target="#kernels">Kernels</a></li>
-  <li><a href="#monkey-patches" id="toc-monkey-patches" class="nav-link" data-scroll-target="#monkey-patches">Monkey Patches</a></li>
-  <li><a href="#utils" id="toc-utils" class="nav-link" data-scroll-target="#utils">Utils</a></li>
-  <li><a href="#schemas" id="toc-schemas" class="nav-link" data-scroll-target="#schemas">Schemas</a></li>
-  <li><a href="#integrations" id="toc-integrations" class="nav-link" data-scroll-target="#integrations">Integrations</a></li>
-  <li><a href="#common" id="toc-common" class="nav-link" data-scroll-target="#common">Common</a></li>
-  <li><a href="#models" id="toc-models" class="nav-link" data-scroll-target="#models">Models</a></li>
-  <li><a href="#data-processing" id="toc-data-processing" class="nav-link" data-scroll-target="#data-processing">Data Processing</a></li>
-  <li><a href="#callbacks" id="toc-callbacks" class="nav-link" data-scroll-target="#callbacks">Callbacks</a></li>
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.loaders.tokenizer.load_tokenizer" id="toc-axolotl.loaders.tokenizer.load_tokenizer" class="nav-link" data-scroll-target="#axolotl.loaders.tokenizer.load_tokenizer">load_tokenizer</a></li>
+  <li><a href="#axolotl.loaders.tokenizer.modify_tokenizer_files" id="toc-axolotl.loaders.tokenizer.modify_tokenizer_files" class="nav-link" data-scroll-target="#axolotl.loaders.tokenizer.modify_tokenizer_files">modify_tokenizer_files</a></li>
+  </ul></li>
   </ul></li>
   </ul>
 </nav>
@@ -439,697 +463,108 @@ ul.task-list li input[type="checkbox"] {
 
 
 
-<section id="api-reference" class="level1 doc doc-index">
-<h1 class="doc doc-index">API Reference</h1>
-<section id="core" class="level2">
-<h2 class="anchored" data-anchor-id="core">Core</h2>
-<p>Core functionality for training</p>
+<section id="axolotl.loaders.tokenizer" class="level1">
+<h1>loaders.tokenizer</h1>
+<p><code>loaders.tokenizer</code></p>
+<p>Tokenizer loading functionality and associated utils</p>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
 <tbody>
 <tr class="odd">
-<td><a href="../../docs/api/train.html#axolotl.train">train</a></td>
-<td>Prepare and train a model on a dataset. Can also infer from a model or merge lora</td>
+<td><a href="#axolotl.loaders.tokenizer.load_tokenizer">load_tokenizer</a></td>
+<td>Load and configure the tokenizer based on the provided config.</td>
 </tr>
 <tr class="even">
-<td><a href="../../docs/api/evaluate.html#axolotl.evaluate">evaluate</a></td>
-<td>Module for evaluating models.</td>
+<td><a href="#axolotl.loaders.tokenizer.modify_tokenizer_files">modify_tokenizer_files</a></td>
+<td>Modify tokenizer files to replace added_tokens strings, save to output directory,</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.loaders.tokenizer.load_tokenizer" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.loaders.tokenizer.load_tokenizer">load_tokenizer</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>loaders.tokenizer.load_tokenizer(cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Load and configure the tokenizer based on the provided config.</p>
+</section>
+<section id="axolotl.loaders.tokenizer.modify_tokenizer_files" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.loaders.tokenizer.modify_tokenizer_files">modify_tokenizer_files</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>loaders.tokenizer.modify_tokenizer_files(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    tokenizer_path,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    token_mappings,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    output_dir,</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Modify tokenizer files to replace added_tokens strings, save to output directory,
+and return the path to the modified tokenizer.</p>
+<p>This only works with reserved tokens that were added to the tokenizer, not tokens
+already part of the vocab.</p>
+<section id="parameters" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 16%">
+<col style="width: 18%">
+<col style="width: 51%">
+<col style="width: 12%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>tokenizer_path</td>
+<td>str</td>
+<td>Path or name of the original tokenizer</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>token_mappings</td>
+<td>dict[int, str]</td>
+<td>Dict mapping {token_id (int): new_token_string}</td>
+<td><em>required</em></td>
 </tr>
 <tr class="odd">
-<td><a href="../../docs/api/datasets.html#axolotl.datasets">datasets</a></td>
-<td>Module containing Dataset functionality</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/convert.html#axolotl.convert">convert</a></td>
-<td>Module containing File Reader, File Writer, Json Parser, and Jsonl Serializer classes</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/prompt_tokenizers.html#axolotl.prompt_tokenizers">prompt_tokenizers</a></td>
-<td>Module containing PromptTokenizingStrategy and Prompter classes</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/logging_config.html#axolotl.logging_config">logging_config</a></td>
-<td>Common logging module for axolotl</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/core.trainer_builder.html#axolotl.core.trainer_builder">core.trainer_builder</a></td>
-<td>Builder for the training args and trainer</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/core.training_args.html#axolotl.core.training_args">core.training_args</a></td>
-<td>extra axolotl specific training args</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/core.chat.messages.html#axolotl.core.chat.messages">core.chat.messages</a></td>
-<td>internal message representations of chat messages</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/core.chat.format.chatml.html#axolotl.core.chat.format.chatml">core.chat.format.chatml</a></td>
-<td>ChatML transformation functions for MessageContents</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/core.chat.format.llama3x.html#axolotl.core.chat.format.llama3x">core.chat.format.llama3x</a></td>
-<td>Llama 3.x chat formatting functions for MessageContents</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/core.chat.format.shared.html#axolotl.core.chat.format.shared">core.chat.format.shared</a></td>
-<td>shared functions for format transforms</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/core.datasets.chat.html#axolotl.core.datasets.chat">core.datasets.chat</a></td>
-<td>chat dataset module</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/core.datasets.transforms.chat_builder.html#axolotl.core.datasets.transforms.chat_builder">core.datasets.transforms.chat_builder</a></td>
-<td>This module contains a function that builds a transform that takes a row from the dataset and converts it to a Chat.</td>
+<td>output_dir</td>
+<td>str</td>
+<td>Directory to save the modified tokenizer</td>
+<td><em>required</em></td>
 </tr>
 </tbody>
 </table>
 </section>
-<section id="cli" class="level2">
-<h2 class="anchored" data-anchor-id="cli">CLI</h2>
-<p>Command-line interface</p>
+<section id="returns" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
 <table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
 <tbody>
 <tr class="odd">
-<td><a href="../../docs/api/cli.main.html#axolotl.cli.main">cli.main</a></td>
-<td>Click CLI definitions for various axolotl commands.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/cli.train.html#axolotl.cli.train">cli.train</a></td>
-<td>CLI to run training on a model.</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/cli.evaluate.html#axolotl.cli.evaluate">cli.evaluate</a></td>
-<td>CLI to run evaluation on a model.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/cli.args.html#axolotl.cli.args">cli.args</a></td>
-<td>Module for axolotl CLI command arguments.</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/cli.checks.html#axolotl.cli.checks">cli.checks</a></td>
-<td>Various checks for Axolotl CLI.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/cli.config.html#axolotl.cli.config">cli.config</a></td>
-<td>Configuration loading and processing.</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/cli.inference.html#axolotl.cli.inference">cli.inference</a></td>
-<td>CLI to run inference on a trained model.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/cli.merge_lora.html#axolotl.cli.merge_lora">cli.merge_lora</a></td>
-<td>CLI to merge a trained LoRA into a base model.</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/cli.merge_sharded_fsdp_weights.html#axolotl.cli.merge_sharded_fsdp_weights">cli.merge_sharded_fsdp_weights</a></td>
-<td>CLI to merge sharded FSDP model checkpoints into a single combined checkpoint.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/cli.preprocess.html#axolotl.cli.preprocess">cli.preprocess</a></td>
-<td>CLI to run preprocessing of a dataset.</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/cli.sweeps.html#axolotl.cli.sweeps">cli.sweeps</a></td>
-<td>Utilities for handling sweeps over configs for axolotl train CLI command</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/cli.utils.html#axolotl.cli.utils">cli.utils</a></td>
-<td>Utility methods for axolotl CLI.</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/cli.vllm_serve.html#axolotl.cli.vllm_serve">cli.vllm_serve</a></td>
-<td>CLI to start the vllm server for online RL</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/cli.cloud.base.html#axolotl.cli.cloud.base">cli.cloud.base</a></td>
-<td>base class for cloud platforms from cli</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/cli.cloud.modal_.html#axolotl.cli.cloud.modal_">cli.cloud.modal_</a></td>
-<td>Modal Cloud support from CLI</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="trainers" class="level2">
-<h2 class="anchored" data-anchor-id="trainers">Trainers</h2>
-<p>Training implementations</p>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><a href="../../docs/api/core.trainers.base.html#axolotl.core.trainers.base">core.trainers.base</a></td>
-<td>Module for customized trainers</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/core.trainers.trl.html#axolotl.core.trainers.trl">core.trainers.trl</a></td>
-<td>Module for TRL PPO trainer</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/core.trainers.mamba.html#axolotl.core.trainers.mamba">core.trainers.mamba</a></td>
-<td>Module for mamba trainer</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/core.trainers.relora.html#axolotl.core.trainers.relora">core.trainers.relora</a></td>
-<td>Module for ReLoRA trainer</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/core.trainers.dpo.trainer.html#axolotl.core.trainers.dpo.trainer">core.trainers.dpo.trainer</a></td>
-<td>DPO trainer for axolotl</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/core.trainers.grpo.trainer.html#axolotl.core.trainers.grpo.trainer">core.trainers.grpo.trainer</a></td>
-<td>Axolotl GRPO trainers (with and without sequence parallelism handling)</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/core.trainers.grpo.sampler.html#axolotl.core.trainers.grpo.sampler">core.trainers.grpo.sampler</a></td>
-<td>Repeat random sampler (similar to the one implemented in</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/core.trainers.utils.html#axolotl.core.trainers.utils">core.trainers.utils</a></td>
-<td>Utils for Axolotl trainers</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="model-loading" class="level2">
-<h2 class="anchored" data-anchor-id="model-loading">Model Loading</h2>
-<p>Functionality for loading and patching models, tokenizers, etc.</p>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><a href="../../docs/api/loaders.model.html#axolotl.loaders.model">loaders.model</a></td>
-<td>Model loader class implementation for loading, configuring, and patching various</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/loaders.tokenizer.html#axolotl.loaders.tokenizer">loaders.tokenizer</a></td>
-<td>Tokenizer loading functionality and associated utils</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/loaders.processor.html#axolotl.loaders.processor">loaders.processor</a></td>
-<td>Processor loading functionality for multi-modal models</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/loaders.adapter.html#axolotl.loaders.adapter">loaders.adapter</a></td>
-<td>Adapter loading functionality, including LoRA / QLoRA and associated utils</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/loaders.patch_manager.html#axolotl.loaders.patch_manager">loaders.patch_manager</a></td>
-<td>Patch manager class implementation to complement <code>axolotl.loaders.ModelLoader</code>.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/loaders.constants.html#axolotl.loaders.constants">loaders.constants</a></td>
-<td>Shared constants for axolotl.loaders module</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="mixins" class="level2">
-<h2 class="anchored" data-anchor-id="mixins">Mixins</h2>
-<p>Mixin classes for augmenting trainers</p>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><a href="../../docs/api/core.trainers.mixins.optimizer.html#axolotl.core.trainers.mixins.optimizer">core.trainers.mixins.optimizer</a></td>
-<td>Module for Axolotl trainer optimizer mixin</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/core.trainers.mixins.rng_state_loader.html#axolotl.core.trainers.mixins.rng_state_loader">core.trainers.mixins.rng_state_loader</a></td>
-<td>Temporary fix/override for bug in resume from checkpoint</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/core.trainers.mixins.scheduler.html#axolotl.core.trainers.mixins.scheduler">core.trainers.mixins.scheduler</a></td>
-<td>Module for Axolotl trainer scheduler mixin</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="context-managers" class="level2">
-<h2 class="anchored" data-anchor-id="context-managers">Context Managers</h2>
-<p>Context managers for altering trainer behaviors</p>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><a href="../../docs/api/utils.ctx_managers.sequence_parallel.html#axolotl.utils.ctx_managers.sequence_parallel">utils.ctx_managers.sequence_parallel</a></td>
-<td>Module for Axolotl trainer sequence parallelism manager and utilities</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="prompt-strategies" class="level2">
-<h2 class="anchored" data-anchor-id="prompt-strategies">Prompt Strategies</h2>
-<p>Prompt formatting strategies</p>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><a href="../../docs/api/prompt_strategies.base.html#axolotl.prompt_strategies.base">prompt_strategies.base</a></td>
-<td>module for base dataset transform strategies</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/prompt_strategies.chat_template.html#axolotl.prompt_strategies.chat_template">prompt_strategies.chat_template</a></td>
-<td>HF Chat Templates prompt strategy</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/prompt_strategies.alpaca_chat.html#axolotl.prompt_strategies.alpaca_chat">prompt_strategies.alpaca_chat</a></td>
-<td>Module for Alpaca prompt strategy classes</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/prompt_strategies.alpaca_instruct.html#axolotl.prompt_strategies.alpaca_instruct">prompt_strategies.alpaca_instruct</a></td>
-<td>Module loading the AlpacaInstructPromptTokenizingStrategy class</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/prompt_strategies.alpaca_w_system.html#axolotl.prompt_strategies.alpaca_w_system">prompt_strategies.alpaca_w_system</a></td>
-<td>Prompt strategies loader for alpaca instruction datasets with system prompts</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/prompt_strategies.user_defined.html#axolotl.prompt_strategies.user_defined">prompt_strategies.user_defined</a></td>
-<td>User Defined prompts with configuration from the YML config</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/prompt_strategies.llama2_chat.html#axolotl.prompt_strategies.llama2_chat">prompt_strategies.llama2_chat</a></td>
-<td>Prompt Strategy for finetuning Llama2 chat models</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/prompt_strategies.completion.html#axolotl.prompt_strategies.completion">prompt_strategies.completion</a></td>
-<td>Basic completion text</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/prompt_strategies.input_output.html#axolotl.prompt_strategies.input_output">prompt_strategies.input_output</a></td>
-<td>Module for plain input/output prompt pairs</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/prompt_strategies.stepwise_supervised.html#axolotl.prompt_strategies.stepwise_supervised">prompt_strategies.stepwise_supervised</a></td>
-<td>Module for stepwise datasets, typically including a prompt and reasoning traces,</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/prompt_strategies.metharme.html#axolotl.prompt_strategies.metharme">prompt_strategies.metharme</a></td>
-<td>Module containing the MetharmenPromptTokenizingStrategy and MetharmePrompter class</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/prompt_strategies.orcamini.html#axolotl.prompt_strategies.orcamini">prompt_strategies.orcamini</a></td>
-<td>Prompt Strategy for finetuning Orca Mini (v2) models</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/prompt_strategies.pygmalion.html#axolotl.prompt_strategies.pygmalion">prompt_strategies.pygmalion</a></td>
-<td>Module containing the PygmalionPromptTokenizingStrategy and PygmalionPrompter class</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/prompt_strategies.messages.chat.html#axolotl.prompt_strategies.messages.chat">prompt_strategies.messages.chat</a></td>
-<td>Chat dataset wrapping strategy for new internal messages representations</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/prompt_strategies.dpo.chat_template.html#axolotl.prompt_strategies.dpo.chat_template">prompt_strategies.dpo.chat_template</a></td>
-<td>DPO prompt strategies for using tokenizer chat templates.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/prompt_strategies.dpo.llama3.html#axolotl.prompt_strategies.dpo.llama3">prompt_strategies.dpo.llama3</a></td>
-<td>DPO strategies for llama-3 chat template</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/prompt_strategies.dpo.chatml.html#axolotl.prompt_strategies.dpo.chatml">prompt_strategies.dpo.chatml</a></td>
-<td>DPO strategies for chatml</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/prompt_strategies.dpo.zephyr.html#axolotl.prompt_strategies.dpo.zephyr">prompt_strategies.dpo.zephyr</a></td>
-<td>DPO strategies for zephyr</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/prompt_strategies.dpo.user_defined.html#axolotl.prompt_strategies.dpo.user_defined">prompt_strategies.dpo.user_defined</a></td>
-<td>User-defined DPO strategies</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/prompt_strategies.dpo.passthrough.html#axolotl.prompt_strategies.dpo.passthrough">prompt_strategies.dpo.passthrough</a></td>
-<td>DPO prompt strategies passthrough/zero-processing strategy</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/prompt_strategies.kto.llama3.html#axolotl.prompt_strategies.kto.llama3">prompt_strategies.kto.llama3</a></td>
-<td>KTO strategies for llama-3 chat template</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/prompt_strategies.kto.chatml.html#axolotl.prompt_strategies.kto.chatml">prompt_strategies.kto.chatml</a></td>
-<td>KTO strategies for chatml</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/prompt_strategies.kto.user_defined.html#axolotl.prompt_strategies.kto.user_defined">prompt_strategies.kto.user_defined</a></td>
-<td>User-defined KTO strategies</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/prompt_strategies.orpo.chat_template.html#axolotl.prompt_strategies.orpo.chat_template">prompt_strategies.orpo.chat_template</a></td>
-<td>chatml prompt tokenization strategy for ORPO</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/prompt_strategies.bradley_terry.llama3.html#axolotl.prompt_strategies.bradley_terry.llama3">prompt_strategies.bradley_terry.llama3</a></td>
-<td>chatml transforms for datasets with system, input, chosen, rejected to match llama3 chat template</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="kernels" class="level2">
-<h2 class="anchored" data-anchor-id="kernels">Kernels</h2>
-<p>Low-level performance optimizations</p>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><a href="../../docs/api/kernels.lora.html#axolotl.kernels.lora">kernels.lora</a></td>
-<td>Module for definition of Low-Rank Adaptation (LoRA) Triton kernels.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/kernels.geglu.html#axolotl.kernels.geglu">kernels.geglu</a></td>
-<td>Module for definition of GEGLU Triton kernels.</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/kernels.swiglu.html#axolotl.kernels.swiglu">kernels.swiglu</a></td>
-<td>Module for definition of SwiGLU Triton kernels.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/kernels.quantize.html#axolotl.kernels.quantize">kernels.quantize</a></td>
-<td>Dequantization utilities for <code>bitsandbytes</code> integration.</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/kernels.utils.html#axolotl.kernels.utils">kernels.utils</a></td>
-<td>Utilities for <code>axolotl.kernels</code> submodules.</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="monkey-patches" class="level2">
-<h2 class="anchored" data-anchor-id="monkey-patches">Monkey Patches</h2>
-<p>Runtime patches for model optimizations</p>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><a href="../../docs/api/monkeypatch.llama_attn_hijack_flash.html#axolotl.monkeypatch.llama_attn_hijack_flash">monkeypatch.llama_attn_hijack_flash</a></td>
-<td>Flash attention monkey patch for llama model</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/monkeypatch.llama_attn_hijack_xformers.html#axolotl.monkeypatch.llama_attn_hijack_xformers">monkeypatch.llama_attn_hijack_xformers</a></td>
-<td>Directly copied the code from https://raw.githubusercontent.com/oobabooga/text-generation-webui/main/modules/llama_attn_hijack.py and made some adjustments</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/monkeypatch.mistral_attn_hijack_flash.html#axolotl.monkeypatch.mistral_attn_hijack_flash">monkeypatch.mistral_attn_hijack_flash</a></td>
-<td>Flash attention monkey patch for mistral model</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/monkeypatch.multipack.html#axolotl.monkeypatch.multipack">monkeypatch.multipack</a></td>
-<td>multipack patching for v2 of sample packing</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/monkeypatch.relora.html#axolotl.monkeypatch.relora">monkeypatch.relora</a></td>
-<td>Implements the ReLoRA training procedure from https://arxiv.org/abs/2307.05695, minus the initial full fine-tune.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/monkeypatch.llama_expand_mask.html#axolotl.monkeypatch.llama_expand_mask">monkeypatch.llama_expand_mask</a></td>
-<td>expands the binary attention mask per 3.2.2 of https://arxiv.org/pdf/2107.02027.pdf</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/monkeypatch.lora_kernels.html#axolotl.monkeypatch.lora_kernels">monkeypatch.lora_kernels</a></td>
-<td>Module for patching custom LoRA Triton kernels and <code>torch.autograd</code> functions.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/monkeypatch.utils.html#axolotl.monkeypatch.utils">monkeypatch.utils</a></td>
-<td>Shared utils for the monkeypatches</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/monkeypatch.btlm_attn_hijack_flash.html#axolotl.monkeypatch.btlm_attn_hijack_flash">monkeypatch.btlm_attn_hijack_flash</a></td>
-<td>Flash attention monkey patch for cerebras btlm model</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/monkeypatch.llama_patch_multipack.html#axolotl.monkeypatch.llama_patch_multipack">monkeypatch.llama_patch_multipack</a></td>
-<td>Patched LlamaAttention to use torch.nn.functional.scaled_dot_product_attention</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/monkeypatch.stablelm_attn_hijack_flash.html#axolotl.monkeypatch.stablelm_attn_hijack_flash">monkeypatch.stablelm_attn_hijack_flash</a></td>
-<td>PyTorch StableLM Epoch model.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/monkeypatch.trainer_fsdp_optim.html#axolotl.monkeypatch.trainer_fsdp_optim">monkeypatch.trainer_fsdp_optim</a></td>
-<td>fix for FSDP optimizer save in trainer w 4.47.0</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/monkeypatch.transformers_fa_utils.html#axolotl.monkeypatch.transformers_fa_utils">monkeypatch.transformers_fa_utils</a></td>
-<td>see https://github.com/huggingface/transformers/pull/35834</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/monkeypatch.unsloth_.html#axolotl.monkeypatch.unsloth_">monkeypatch.unsloth_</a></td>
-<td>module for patching with unsloth optimizations</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/monkeypatch.attention.mllama.html#axolotl.monkeypatch.attention.mllama">monkeypatch.attention.mllama</a></td>
-<td>Monkeypatch for Vision Llama for FA2 support</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/monkeypatch.data.batch_dataset_fetcher.html#axolotl.monkeypatch.data.batch_dataset_fetcher">monkeypatch.data.batch_dataset_fetcher</a></td>
-<td>monkey patches for the dataset fetcher to handle batches of packed indexes</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/monkeypatch.mixtral.html#axolotl.monkeypatch.mixtral">monkeypatch.mixtral</a></td>
-<td>Patches to support multipack for mixtral</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/monkeypatch.gradient_checkpointing.offload_cpu.html#axolotl.monkeypatch.gradient_checkpointing.offload_cpu">monkeypatch.gradient_checkpointing.offload_cpu</a></td>
-<td>CPU offloaded checkpointing</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/monkeypatch.gradient_checkpointing.offload_disk.html#axolotl.monkeypatch.gradient_checkpointing.offload_disk">monkeypatch.gradient_checkpointing.offload_disk</a></td>
-<td>DISCO - DIsk-based Storage and Checkpointing with Optimized prefetching</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="utils" class="level2">
-<h2 class="anchored" data-anchor-id="utils">Utils</h2>
-<p>Utility functions</p>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><a href="../../docs/api/utils.tokenization.html#axolotl.utils.tokenization">utils.tokenization</a></td>
-<td>Module for tokenization utilities</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/utils.chat_templates.html#axolotl.utils.chat_templates">utils.chat_templates</a></td>
-<td>This module provides functionality for selecting chat templates based on user choices.</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/utils.lora.html#axolotl.utils.lora">utils.lora</a></td>
-<td>module to get the state dict of a merged lora model</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/utils.model_shard_quant.html#axolotl.utils.model_shard_quant">utils.model_shard_quant</a></td>
-<td>module to handle loading model on cpu/meta device for FSDP</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/utils.bench.html#axolotl.utils.bench">utils.bench</a></td>
-<td>Benchmarking and measurement utilities</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/utils.freeze.html#axolotl.utils.freeze">utils.freeze</a></td>
-<td>module to freeze/unfreeze parameters by name</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/utils.trainer.html#axolotl.utils.trainer">utils.trainer</a></td>
-<td>Module containing the Trainer class and related functions</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/utils.schedulers.html#axolotl.utils.schedulers">utils.schedulers</a></td>
-<td>Module for custom LRScheduler class</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/utils.distributed.html#axolotl.utils.distributed">utils.distributed</a></td>
-<td>utility helpers for distributed checks</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/utils.dict.html#axolotl.utils.dict">utils.dict</a></td>
-<td>Module containing the DictDefault class</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/utils.optimizers.adopt.html#axolotl.utils.optimizers.adopt">utils.optimizers.adopt</a></td>
-<td>Copied from https://github.com/iShohei220/adopt</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/utils.data.pretraining.html#axolotl.utils.data.pretraining">utils.data.pretraining</a></td>
-<td>data handling specific to pretraining</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/utils.data.sft.html#axolotl.utils.data.sft">utils.data.sft</a></td>
-<td>data handling specific to SFT</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="schemas" class="level2">
-<h2 class="anchored" data-anchor-id="schemas">Schemas</h2>
-<p>Pydantic data models for Axolotl config</p>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><a href="../../docs/api/utils.schemas.config.html#axolotl.utils.schemas.config">utils.schemas.config</a></td>
-<td>Module with Pydantic models for configuration.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/utils.schemas.model.html#axolotl.utils.schemas.model">utils.schemas.model</a></td>
-<td>Pydantic models for model input / output, etc. configuration</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/utils.schemas.training.html#axolotl.utils.schemas.training">utils.schemas.training</a></td>
-<td>Pydantic models for training hyperparameters</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/utils.schemas.datasets.html#axolotl.utils.schemas.datasets">utils.schemas.datasets</a></td>
-<td>Pydantic models for datasets-related configuration</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/utils.schemas.peft.html#axolotl.utils.schemas.peft">utils.schemas.peft</a></td>
-<td>Pydantic models for PEFT-related configuration</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/utils.schemas.trl.html#axolotl.utils.schemas.trl">utils.schemas.trl</a></td>
-<td>Pydantic models for TRL trainer configuration</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/utils.schemas.multimodal.html#axolotl.utils.schemas.multimodal">utils.schemas.multimodal</a></td>
-<td>Pydantic models for multimodal-related configuration</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/utils.schemas.integrations.html#axolotl.utils.schemas.integrations">utils.schemas.integrations</a></td>
-<td>Pydantic models for Axolotl integrations</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/utils.schemas.enums.html#axolotl.utils.schemas.enums">utils.schemas.enums</a></td>
-<td>Enums for Axolotl input config</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/utils.schemas.utils.html#axolotl.utils.schemas.utils">utils.schemas.utils</a></td>
-<td>Utilities for Axolotl Pydantic models</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="integrations" class="level2">
-<h2 class="anchored" data-anchor-id="integrations">Integrations</h2>
-<p>Third-party integrations and extensions</p>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><a href="../../docs/api/integrations.base.html#axolotl.integrations.base">integrations.base</a></td>
-<td>Base class for all plugins.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/integrations.cut_cross_entropy.args.html#axolotl.integrations.cut_cross_entropy.args">integrations.cut_cross_entropy.args</a></td>
-<td>Module for handling Cut Cross Entropy input arguments.</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/integrations.grokfast.optimizer.html#axolotl.integrations.grokfast.optimizer">integrations.grokfast.optimizer</a></td>
 <td></td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/integrations.kd.trainer.html#axolotl.integrations.kd.trainer">integrations.kd.trainer</a></td>
-<td>KD trainer</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/integrations.liger.args.html#axolotl.integrations.liger.args">integrations.liger.args</a></td>
-<td>Module for handling LIGER input arguments.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/integrations.lm_eval.args.html#axolotl.integrations.lm_eval.args">integrations.lm_eval.args</a></td>
-<td>Module for handling lm eval harness input arguments.</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/integrations.spectrum.args.html#axolotl.integrations.spectrum.args">integrations.spectrum.args</a></td>
-<td>Module for handling Spectrum input arguments.</td>
+<td>str</td>
+<td>Path to the modified tokenizer directory</td>
 </tr>
 </tbody>
 </table>
-</section>
-<section id="common" class="level2">
-<h2 class="anchored" data-anchor-id="common">Common</h2>
-<p>Common utilities and shared functionality</p>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><a href="../../docs/api/common.architectures.html#axolotl.common.architectures">common.architectures</a></td>
-<td>Common architecture specific constants</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/common.const.html#axolotl.common.const">common.const</a></td>
-<td>Various shared constants</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/common.datasets.html#axolotl.common.datasets">common.datasets</a></td>
-<td>Dataset loading utilities.</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="models" class="level2">
-<h2 class="anchored" data-anchor-id="models">Models</h2>
-<p>Custom model implementations</p>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><a href="../../docs/api/models.mamba.modeling_mamba.html#axolotl.models.mamba.modeling_mamba">models.mamba.modeling_mamba</a></td>
-<td></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="data-processing" class="level2">
-<h2 class="anchored" data-anchor-id="data-processing">Data Processing</h2>
-<p>Data processing utilities</p>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><a href="../../docs/api/utils.collators.core.html#axolotl.utils.collators.core">utils.collators.core</a></td>
-<td>basic shared collator constants</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/utils.collators.batching.html#axolotl.utils.collators.batching">utils.collators.batching</a></td>
-<td>Data collators for axolotl to pad labels and position_ids for packed sequences</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/utils.collators.mamba.html#axolotl.utils.collators.mamba">utils.collators.mamba</a></td>
-<td>collators for Mamba</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/utils.collators.mm_chat.html#axolotl.utils.collators.mm_chat">utils.collators.mm_chat</a></td>
-<td>Collators for multi-modal chat messages and packing</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/utils.samplers.multipack.html#axolotl.utils.samplers.multipack">utils.samplers.multipack</a></td>
-<td>Multipack Batch Sampler - An efficient batch sampler for packing variable-length sequences</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="callbacks" class="level2">
-<h2 class="anchored" data-anchor-id="callbacks">Callbacks</h2>
-<p>Training callbacks</p>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><a href="../../docs/api/utils.callbacks.perplexity.html#axolotl.utils.callbacks.perplexity">utils.callbacks.perplexity</a></td>
-<td>callback to calculate perplexity as an evaluation metric.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/utils.callbacks.profiler.html#axolotl.utils.callbacks.profiler">utils.callbacks.profiler</a></td>
-<td>HF Trainer callback for creating pytorch profiling snapshots</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/utils.callbacks.lisa.html#axolotl.utils.callbacks.lisa">utils.callbacks.lisa</a></td>
-<td>module for LISA</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/utils.callbacks.mlflow_.html#axolotl.utils.callbacks.mlflow_">utils.callbacks.mlflow_</a></td>
-<td>MLFlow module for trainer callbacks</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/utils.callbacks.comet_.html#axolotl.utils.callbacks.comet_">utils.callbacks.comet_</a></td>
-<td>Comet module for trainer callbacks</td>
-</tr>
-</tbody>
-</table>
+<p>Ref: https://github.com/huggingface/transformers/issues/27974#issuecomment-1854188941</p>
 
 
+</section>
+</section>
 </section>
 </section>
 

@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>utils.gradient_checkpointing.offload_cpu – Axolotl</title>
+<title>loaders.patch_manager – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -446,11 +446,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.utils.gradient_checkpointing.offload_cpu" id="toc-axolotl.utils.gradient_checkpointing.offload_cpu" class="nav-link active" data-scroll-target="#axolotl.utils.gradient_checkpointing.offload_cpu">utils.gradient_checkpointing.offload_cpu</a>
+  <li><a href="#axolotl.loaders.patch_manager" id="toc-axolotl.loaders.patch_manager" class="nav-link active" data-scroll-target="#axolotl.loaders.patch_manager">loaders.patch_manager</a>
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.utils.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer" id="toc-axolotl.utils.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer" class="nav-link" data-scroll-target="#axolotl.utils.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer">CPU_Offloaded_Gradient_Checkpointer</a></li>
+  <li><a href="#axolotl.loaders.patch_manager.PatchManager" id="toc-axolotl.loaders.patch_manager.PatchManager" class="nav-link" data-scroll-target="#axolotl.loaders.patch_manager.PatchManager">PatchManager</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -462,10 +462,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 
-<section id="axolotl.utils.gradient_checkpointing.offload_cpu" class="level1">
-<h1>utils.gradient_checkpointing.offload_cpu</h1>
-<p><code>utils.gradient_checkpointing.offload_cpu</code></p>
-<p>CPU offloaded checkpointing</p>
+<section id="axolotl.loaders.patch_manager" class="level1">
+<h1>loaders.patch_manager</h1>
+<p><code>loaders.patch_manager</code></p>
+<p>Patch manager class implementation to complement <code>axolotl.loaders.ModelLoader</code>.</p>
+<p>Applies pre- and post-model load patches for various fixes and optimizations.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -477,18 +478,65 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.utils.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer">CPU_Offloaded_Gradient_Checkpointer</a></td>
-<td>Saves VRAM by smartly offloading to RAM.</td>
+<td><a href="#axolotl.loaders.patch_manager.PatchManager">PatchManager</a></td>
+<td>Manages the application of patches during the model loading process.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.utils.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer">CPU_Offloaded_Gradient_Checkpointer</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Saves VRAM by smartly offloading to RAM.
-Tiny hit to performance, since we mask the movement via non blocking calls.</p>
+<section id="axolotl.loaders.patch_manager.PatchManager" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.loaders.patch_manager.PatchManager">PatchManager</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>loaders.patch_manager.PatchManager(<span class="va">self</span>, cfg, model_config, inference<span class="op">=</span><span class="va">False</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Manages the application of patches during the model loading process.</p>
+<section id="attributes" class="level4">
+<h4 class="anchored" data-anchor-id="attributes">Attributes</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.loaders.patch_manager.PatchManager.has_flash_attn">has_flash_attn</a></td>
+<td>Check if flash attention is installed.</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="methods" class="level4">
+<h4 class="anchored" data-anchor-id="methods">Methods</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.loaders.patch_manager.PatchManager.apply_post_model_load_patches">apply_post_model_load_patches</a></td>
+<td>Apply patches that require the model instance.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.loaders.patch_manager.PatchManager.apply_pre_model_load_patches">apply_pre_model_load_patches</a></td>
+<td>Apply pre-model load patches based on config.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.loaders.patch_manager.PatchManager.apply_post_model_load_patches" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.loaders.patch_manager.PatchManager.apply_post_model_load_patches">apply_post_model_load_patches</h5>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>loaders.patch_manager.PatchManager.apply_post_model_load_patches(model)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Apply patches that require the model instance.</p>
+</section>
+<section id="axolotl.loaders.patch_manager.PatchManager.apply_pre_model_load_patches" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.loaders.patch_manager.PatchManager.apply_pre_model_load_patches">apply_pre_model_load_patches</h5>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>loaders.patch_manager.PatchManager.apply_pre_model_load_patches()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Apply pre-model load patches based on config.</p>
 
 
+</section>
+</section>
 </section>
 </section>
 </section>

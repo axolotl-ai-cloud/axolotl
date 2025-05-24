@@ -525,19 +525,19 @@ sequential packing (preserving original sequence order).</p>
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.utils.samplers.multipack.MultipackBatchSampler.efficiency">efficiency</a></td>
-<td>Calculate the packing efficiency (ratio of tokens used to total token slots)</td>
+<td>Calculate the packing efficiency (ratio of tokens used to total token slots).</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.utils.samplers.multipack.MultipackBatchSampler.gather_efficiency">gather_efficiency</a></td>
-<td>Gather and synchronize packing efficiency estimates across all distributed ranks</td>
+<td>Gather and synchronize packing efficiency estimates across all distributed</td>
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.utils.samplers.multipack.MultipackBatchSampler.gather_len_batches">gather_len_batches</a></td>
-<td>Gather and synchronize batch counts across all distributed ranks</td>
+<td>Gather and synchronize batch counts across all distributed ranks. Returns</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.utils.samplers.multipack.MultipackBatchSampler.generate_batches">generate_batches</a></td>
-<td>Generate packed batches for training</td>
+<td>Generate packed batches for training.</td>
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.utils.samplers.multipack.MultipackBatchSampler.set_epoch">set_epoch</a></td>
@@ -548,32 +548,56 @@ sequential packing (preserving original sequence order).</p>
 <section id="axolotl.utils.samplers.multipack.MultipackBatchSampler.efficiency" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.utils.samplers.multipack.MultipackBatchSampler.efficiency">efficiency</h5>
 <div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.samplers.multipack.MultipackBatchSampler.efficiency()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Calculate the packing efficiency (ratio of tokens used to total token slots)
-Higher is better - 1.0 would mean perfect packing with no wasted space</p>
+<p>Calculate the packing efficiency (ratio of tokens used to total token slots).
+Higher is better - 1.0 would mean perfect packing with no wasted space.</p>
 </section>
 <section id="axolotl.utils.samplers.multipack.MultipackBatchSampler.gather_efficiency" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.utils.samplers.multipack.MultipackBatchSampler.gather_efficiency">gather_efficiency</h5>
 <div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.samplers.multipack.MultipackBatchSampler.gather_efficiency()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Gather and synchronize packing efficiency estimates across all distributed ranks
-Returns a conservative efficiency estimate based on the measurements</p>
+<p>Gather and synchronize packing efficiency estimates across all distributed
+ranks.</p>
+<section id="returns" class="level6 doc-section doc-section-returns">
+<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h6>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 10%">
+<col style="width: 10%">
+<col style="width: 79%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td></td>
+<td>float</td>
+<td>A conservative efficiency estimate based on the measurements.</td>
+</tr>
+</tbody>
+</table>
+</section>
 </section>
 <section id="axolotl.utils.samplers.multipack.MultipackBatchSampler.gather_len_batches" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.utils.samplers.multipack.MultipackBatchSampler.gather_len_batches">gather_len_batches</h5>
 <div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.samplers.multipack.MultipackBatchSampler.gather_len_batches(num)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Gather and synchronize batch counts across all distributed ranks
-Returns the minimum number of batches available on any rank</p>
+<p>Gather and synchronize batch counts across all distributed ranks. Returns
+the minimum number of batches available on any rank.</p>
 </section>
 <section id="axolotl.utils.samplers.multipack.MultipackBatchSampler.generate_batches" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.utils.samplers.multipack.MultipackBatchSampler.generate_batches">generate_batches</h5>
 <div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.samplers.multipack.MultipackBatchSampler.generate_batches(set_stats<span class="op">=</span><span class="va">False</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Generate packed batches for training</p>
+<p>Generate packed batches for training.</p>
 <section id="parameters" class="level6 doc-section doc-section-parameters">
 <h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h6>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 15%">
 <col style="width: 11%">
-<col style="width: 57%">
+<col style="width: 58%">
 <col style="width: 15%">
 </colgroup>
 <thead>
@@ -587,20 +611,20 @@ Returns the minimum number of batches available on any rank</p>
 <tbody>
 <tr class="odd">
 <td>set_stats</td>
-<td></td>
-<td>Whether to update efficiency statistics</td>
+<td>bool</td>
+<td>Whether to update efficiency statistics.</td>
 <td><code>False</code></td>
 </tr>
 </tbody>
 </table>
 </section>
-<section id="returns" class="level6 doc-section doc-section-returns">
-<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h6>
+<section id="returns-1" class="level6 doc-section doc-section-returns">
+<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-1">Returns</h6>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 10%">
-<col style="width: 10%">
-<col style="width: 78%">
+<col style="width: 5%">
+<col style="width: 20%">
+<col style="width: 74%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -612,13 +636,8 @@ Returns the minimum number of batches available on any rank</p>
 <tbody>
 <tr class="odd">
 <td></td>
-<td></td>
-<td>List of batches, where each batch contains multiple bins,</td>
-</tr>
-<tr class="even">
-<td></td>
-<td></td>
-<td>and each bin contains multiple sequence indices</td>
+<td>list[list[list[int]]]</td>
+<td>List of batches, where each batch contains multiple bins, and each bin contains multiple sequence indices.</td>
 </tr>
 </tbody>
 </table>
@@ -644,19 +663,19 @@ Returns the minimum number of batches available on any rank</p>
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.utils.samplers.multipack.allocate_sequentially">allocate_sequentially</a></td>
-<td>Sequential allocator that preserves example order</td>
+<td>Sequential allocator that preserves example order.</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.utils.samplers.multipack.ffd_check">ffd_check</a></td>
-<td>First-fit-decreasing bin packing algorithm check</td>
+<td>First-fit-decreasing bin packing algorithm check.</td>
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.utils.samplers.multipack.pack_group">pack_group</a></td>
-<td>Pack a group of sequences into bins using First-Fit Decreasing algorithm</td>
+<td>Pack a group of sequences into bins using First-Fit Decreasing algorithm.</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.utils.samplers.multipack.pack_parallel">pack_parallel</a></td>
-<td>Pack sequences into bins using parallel processing</td>
+<td>Pack sequences into bins using parallel processing.</td>
 </tr>
 </tbody>
 </table>
@@ -668,9 +687,170 @@ Returns the minimum number of batches available on any rank</p>
 <span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    bin_capacity,</span>
 <span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    num_ranks,</span>
 <span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Sequential allocator that preserves example order</p>
+<p>Sequential allocator that preserves example order.</p>
 <section id="parameters-1" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 18%">
+<col style="width: 12%">
+<col style="width: 55%">
+<col style="width: 12%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>sequence_lengths</td>
+<td>np.ndarray</td>
+<td>The lengths of all examples.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>rank</td>
+<td>int</td>
+<td>The current rank (for distributed training).</td>
+<td><em>required</em></td>
+</tr>
+<tr class="odd">
+<td>bin_capacity</td>
+<td>int</td>
+<td>The capacity of each bin (maximum sequence length).</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>num_ranks</td>
+<td>int</td>
+<td>Number of ranks (processes / GPUs).</td>
+<td><em>required</em></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="returns-2" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-2">Returns</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 15%">
+<col style="width: 17%">
+<col style="width: 66%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>rank_batches</td>
+<td>list[list[int]]</td>
+<td>List of batches for the current rank.</td>
+</tr>
+<tr class="even">
+<td>total_tokens_used</td>
+<td>int</td>
+<td>Number of actual example tokens.</td>
+</tr>
+<tr class="odd">
+<td>total_token_slots</td>
+<td>int</td>
+<td>Maximum theoretical number of example tokens (number of bins * bin capacity).</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="axolotl.utils.samplers.multipack.ffd_check" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.samplers.multipack.ffd_check">ffd_check</h3>
+<div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>utils.samplers.multipack.ffd_check(sequence_lengths, bin_capacity, num_bins)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>First-fit-decreasing bin packing algorithm check.</p>
+<p>Checks if sequences with the given lengths could fit in the specified number of
+bins.</p>
+<section id="parameters-2" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-2">Parameters</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 24%">
+<col style="width: 16%">
+<col style="width: 42%">
+<col style="width: 16%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>sequence_lengths</td>
+<td>np.ndarray</td>
+<td>Array of sequence lengths.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>bin_capacity</td>
+<td>int</td>
+<td>Maximum capacity of each bin.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="odd">
+<td>num_bins</td>
+<td>int</td>
+<td>Number of bins available.</td>
+<td><em>required</em></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="returns-3" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-3">Returns</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 10%">
+<col style="width: 10%">
+<col style="width: 78%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td></td>
+<td>bool</td>
+<td><code>True</code> if all sequences can be packed, <code>False</code> otherwise.</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="axolotl.utils.samplers.multipack.pack_group" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.samplers.multipack.pack_group">pack_group</h3>
+<div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>utils.samplers.multipack.pack_group(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    sequence_lengths,</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    group_offset,</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>    bin_capacity,</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>    max_bins,</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>    bin_size,</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>    safe_mode<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Pack a group of sequences into bins using First-Fit Decreasing algorithm.</p>
+<section id="parameters-3" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-3">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 19%">
@@ -690,209 +870,49 @@ Returns the minimum number of batches available on any rank</p>
 <tr class="odd">
 <td>sequence_lengths</td>
 <td>np.ndarray</td>
-<td>The lengths of all examples</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>rank</td>
-<td>int</td>
-<td>The current rank (for distributed training)</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>bin_capacity</td>
-<td>int</td>
-<td>The capacity of each bin (maximum sequence length)</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>num_ranks</td>
-<td>int</td>
-<td>Number of ranks (processes/GPUs)</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-1" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-1">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 18%">
-<col style="width: 7%">
-<col style="width: 74%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>rank_batches</td>
-<td></td>
-<td>List of batches for the current rank</td>
-</tr>
-<tr class="even">
-<td>total_tokens_used</td>
-<td></td>
-<td>Number of actual example tokens</td>
-</tr>
-<tr class="odd">
-<td>total_token_slots</td>
-<td></td>
-<td>Maximum theoretical number of example tokens (number of bins * bin capacity)</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-<section id="axolotl.utils.samplers.multipack.ffd_check" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.samplers.multipack.ffd_check">ffd_check</h3>
-<div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>utils.samplers.multipack.ffd_check(sequence_lengths, bin_capacity, num_bins)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>First-fit-decreasing bin packing algorithm check</p>
-<p>Checks if sequences with the given lengths could fit in the specified number of bins</p>
-<section id="parameters-2" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-2">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 25%">
-<col style="width: 16%">
-<col style="width: 41%">
-<col style="width: 16%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>sequence_lengths</td>
-<td>np.ndarray</td>
-<td>Array of sequence lengths</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>bin_capacity</td>
-<td>int</td>
-<td>Maximum capacity of each bin</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>num_bins</td>
-<td>int</td>
-<td>Number of bins available</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-2" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-2">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 11%">
-<col style="width: 11%">
-<col style="width: 77%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td></td>
-<td>True if all sequences can be packed, False otherwise</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-<section id="axolotl.utils.samplers.multipack.pack_group" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.samplers.multipack.pack_group">pack_group</h3>
-<div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>utils.samplers.multipack.pack_group(</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    sequence_lengths,</span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    group_offset,</span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>    bin_capacity,</span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>    max_bins,</span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>    bin_size,</span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>    safe_mode<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Pack a group of sequences into bins using First-Fit Decreasing algorithm</p>
-<section id="parameters-3" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-3">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 19%">
-<col style="width: 12%">
-<col style="width: 54%">
-<col style="width: 12%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>sequence_lengths</td>
-<td>np.ndarray</td>
-<td>Array of sequence lengths</td>
+<td>Array of sequence lengths.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>group_offset</td>
 <td>int</td>
-<td>Offset to apply to indices when returning results</td>
+<td>Offset to apply to indices when returning results.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
 <td>bin_capacity</td>
 <td>int</td>
-<td>Maximum capacity of each bin</td>
+<td>Maximum capacity of each bin.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>max_bins</td>
 <td>int</td>
-<td>Maximum number of bins to use</td>
+<td>Maximum number of bins to use.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
 <td>bin_size</td>
 <td>int</td>
-<td>Maximum number of sequences per bin</td>
+<td>Maximum number of sequences per bin.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>safe_mode</td>
 <td>bool</td>
-<td>If True, use a more conservative packing approach</td>
+<td>If True, use a more conservative packing approach.</td>
 <td><code>True</code></td>
 </tr>
 </tbody>
 </table>
 </section>
-<section id="returns-3" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-3">Returns</h4>
+<section id="returns-4" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-4">Returns</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 8%">
-<col style="width: 8%">
-<col style="width: 82%">
+<col style="width: 7%">
+<col style="width: 20%">
+<col style="width: 72%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -904,8 +924,8 @@ Returns the minimum number of batches available on any rank</p>
 <tbody>
 <tr class="odd">
 <td></td>
-<td></td>
-<td>List of bins, where each bin contains indices of sequences assigned to it</td>
+<td>list[list[int]]</td>
+<td>List of bins, where each bin contains indices of sequences assigned to it.</td>
 </tr>
 </tbody>
 </table>
@@ -922,7 +942,7 @@ Returns the minimum number of batches available on any rank</p>
 <span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>    safe_mode<span class="op">=</span><span class="va">True</span>,</span>
 <span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>    mp_start_method<span class="op">=</span><span class="st">'spawn'</span>,</span>
 <span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Pack sequences into bins using parallel processing</p>
+<p>Pack sequences into bins using parallel processing.</p>
 <section id="parameters-4" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-4">Parameters</h4>
 <table class="caption-top table">
@@ -944,37 +964,37 @@ Returns the minimum number of batches available on any rank</p>
 <tr class="odd">
 <td>sequence_lengths</td>
 <td>np.ndarray</td>
-<td>Array of sequence lengths</td>
+<td>Array of sequence lengths.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>bin_capacity</td>
 <td>int</td>
-<td>Maximum capacity of each bin as total number of tokens</td>
+<td>Maximum capacity of each bin as total number of tokens.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
 <td>group_size</td>
 <td>int</td>
-<td>Number of sequences to process in each group</td>
+<td>Number of sequences to process in each group.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>bin_size</td>
 <td>int</td>
-<td>Maximum number of bins to use</td>
+<td>Maximum number of bins to use.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
 <td>num_processes</td>
 <td>int | None</td>
-<td>Number of parallel processes to use</td>
+<td>Number of parallel processes to use.</td>
 <td><code>None</code></td>
 </tr>
 <tr class="even">
 <td>safe_mode</td>
 <td>bool</td>
-<td>If True, use a more conservative packing approach</td>
+<td>If True, use a more conservative packing approach.</td>
 <td><code>True</code></td>
 </tr>
 <tr class="odd">
@@ -986,7 +1006,7 @@ Returns the minimum number of batches available on any rank</p>
 </tbody>
 </table>
 <p>Returns:
-List of bins, where each bin contains indices of sequences assigned to it</p>
+List of bins, where each bin contains indices of sequences assigned to it.</p>
 
 
 </section>

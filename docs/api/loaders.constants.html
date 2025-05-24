@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>utils.models – Axolotl</title>
+<title>loaders.constants – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -19,41 +19,6 @@ ul.task-list li input[type="checkbox"] {
   width: 0.8em;
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
-}
-/* CSS for syntax highlighting */
-html { -webkit-text-size-adjust: 100%; }
-pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
-pre > code.sourceCode > span:empty { height: 1.2em; }
-.sourceCode { overflow: visible; }
-code.sourceCode > span { color: inherit; text-decoration: inherit; }
-div.sourceCode { margin: 1em 0; }
-pre.sourceCode { margin: 0; }
-@media screen {
-div.sourceCode { overflow: auto; }
-}
-@media print {
-pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
-}
-pre.numberSource code
-  { counter-reset: source-line 0; }
-pre.numberSource code > span
-  { position: relative; left: -4em; counter-increment: source-line; }
-pre.numberSource code > span > a:first-child::before
-  { content: counter(source-line);
-    position: relative; left: -1em; text-align: right; vertical-align: baseline;
-    border: none; display: inline-block;
-    -webkit-touch-callout: none; -webkit-user-select: none;
-    -khtml-user-select: none; -moz-user-select: none;
-    -ms-user-select: none; user-select: none;
-    padding: 0 4px; width: 4em;
-  }
-pre.numberSource { margin-left: 3em;  padding-left: 4px; }
-div.sourceCode
-  {   }
-@media screen {
-pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
 </style>
 
@@ -446,22 +411,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.utils.models" id="toc-axolotl.utils.models" class="nav-link active" data-scroll-target="#axolotl.utils.models">utils.models</a>
-  <ul class="collapse">
-  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.utils.models.ModelLoader" id="toc-axolotl.utils.models.ModelLoader" class="nav-link" data-scroll-target="#axolotl.utils.models.ModelLoader">ModelLoader</a></li>
-  </ul></li>
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.utils.models.get_module_class_from_name" id="toc-axolotl.utils.models.get_module_class_from_name" class="nav-link" data-scroll-target="#axolotl.utils.models.get_module_class_from_name">get_module_class_from_name</a></li>
-  <li><a href="#axolotl.utils.models.load_model" id="toc-axolotl.utils.models.load_model" class="nav-link" data-scroll-target="#axolotl.utils.models.load_model">load_model</a></li>
-  <li><a href="#axolotl.utils.models.load_tokenizer" id="toc-axolotl.utils.models.load_tokenizer" class="nav-link" data-scroll-target="#axolotl.utils.models.load_tokenizer">load_tokenizer</a></li>
-  <li><a href="#axolotl.utils.models.modify_tokenizer_files" id="toc-axolotl.utils.models.modify_tokenizer_files" class="nav-link" data-scroll-target="#axolotl.utils.models.modify_tokenizer_files">modify_tokenizer_files</a></li>
-  <li><a href="#axolotl.utils.models.setup_quantized_meta_for_peft" id="toc-axolotl.utils.models.setup_quantized_meta_for_peft" class="nav-link" data-scroll-target="#axolotl.utils.models.setup_quantized_meta_for_peft">setup_quantized_meta_for_peft</a></li>
-  <li><a href="#axolotl.utils.models.setup_quantized_peft_meta_for_training" id="toc-axolotl.utils.models.setup_quantized_peft_meta_for_training" class="nav-link" data-scroll-target="#axolotl.utils.models.setup_quantized_peft_meta_for_training">setup_quantized_peft_meta_for_training</a></li>
-  </ul></li>
-  </ul></li>
+  <li><a href="#axolotl.loaders.constants" id="toc-axolotl.loaders.constants" class="nav-link active" data-scroll-target="#axolotl.loaders.constants">loaders.constants</a></li>
   </ul>
 </nav>
     </div>
@@ -471,279 +421,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 
-<section id="axolotl.utils.models" class="level1">
-<h1>utils.models</h1>
-<p><code>utils.models</code></p>
-<p>Module for models and model loading</p>
-<section id="classes" class="level2">
-<h2 class="anchored" data-anchor-id="classes">Classes</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.utils.models.ModelLoader">ModelLoader</a></td>
-<td>ModelLoader: managing all the config and monkey patches while loading model</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.utils.models.ModelLoader" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.models.ModelLoader">ModelLoader</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.models.ModelLoader(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    processor<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    inference<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    reference_model<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>ModelLoader: managing all the config and monkey patches while loading model</p>
-<section id="attributes" class="level4">
-<h4 class="anchored" data-anchor-id="attributes">Attributes</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.utils.models.ModelLoader.has_flash_attn">has_flash_attn</a></td>
-<td>Check if flash attention is installed</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="methods" class="level4">
-<h4 class="anchored" data-anchor-id="methods">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.utils.models.ModelLoader.patch_llama_derived_model">patch_llama_derived_model</a></td>
-<td>Modify all llama derived models in one block</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.models.ModelLoader.patch_loss_llama">patch_loss_llama</a></td>
-<td>Patch loss functions and other optimizations</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.utils.models.ModelLoader.set_attention_config">set_attention_config</a></td>
-<td>sample packing uses custom FA2 patch</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.models.ModelLoader.set_auto_model_loader">set_auto_model_loader</a></td>
-<td>Set self.auto_model_loader. Defaults to <code>transformers.AutoModelForCausalLM</code></td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.utils.models.ModelLoader.patch_llama_derived_model" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.models.ModelLoader.patch_llama_derived_model">patch_llama_derived_model</h5>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.models.ModelLoader.patch_llama_derived_model()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Modify all llama derived models in one block</p>
-</section>
-<section id="axolotl.utils.models.ModelLoader.patch_loss_llama" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.models.ModelLoader.patch_loss_llama">patch_loss_llama</h5>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.models.ModelLoader.patch_loss_llama()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Patch loss functions and other optimizations</p>
-</section>
-<section id="axolotl.utils.models.ModelLoader.set_attention_config" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.models.ModelLoader.set_attention_config">set_attention_config</h5>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.models.ModelLoader.set_attention_config()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>sample packing uses custom FA2 patch</p>
-</section>
-<section id="axolotl.utils.models.ModelLoader.set_auto_model_loader" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.models.ModelLoader.set_auto_model_loader">set_auto_model_loader</h5>
-<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.models.ModelLoader.set_auto_model_loader()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Set self.auto_model_loader. Defaults to <code>transformers.AutoModelForCausalLM</code>
-(set at <code>__init__</code>). When using a multimodal model, <code>self.auto_model_loader</code>
-should be set according to the type of the model.</p>
-</section>
-</section>
-</section>
-</section>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.utils.models.get_module_class_from_name">get_module_class_from_name</a></td>
-<td>Gets a class from a module by its name.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.models.load_model">load_model</a></td>
-<td>Load a model for a given configuration and tokenizer.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.utils.models.load_tokenizer">load_tokenizer</a></td>
-<td>Load and configure the tokenizer based on the provided config.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.models.modify_tokenizer_files">modify_tokenizer_files</a></td>
-<td>Modify tokenizer files to replace added_tokens strings, save to output directory, and return the path to the modified tokenizer.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.utils.models.setup_quantized_meta_for_peft">setup_quantized_meta_for_peft</a></td>
-<td>Replaces <code>quant_state.to</code> with a dummy function to prevent PEFT from moving <code>quant_state</code> to meta device</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.models.setup_quantized_peft_meta_for_training">setup_quantized_peft_meta_for_training</a></td>
-<td>Replaces dummy <code>quant_state.to</code> method with the original function to allow training to continue</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.utils.models.get_module_class_from_name" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.models.get_module_class_from_name">get_module_class_from_name</h3>
-<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.models.get_module_class_from_name(module, name)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Gets a class from a module by its name.</p>
-<section id="parameters" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 10%">
-<col style="width: 25%">
-<col style="width: 47%">
-<col style="width: 16%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>module</td>
-<td><code>torch.nn.Module</code></td>
-<td>The module to get the class from.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>name</td>
-<td><code>str</code></td>
-<td>The name of the class.</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-<section id="axolotl.utils.models.load_model" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.models.load_model">load_model</h3>
-<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.models.load_model(</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    processor<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>    inference<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    reference_model<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Load a model for a given configuration and tokenizer.</p>
-</section>
-<section id="axolotl.utils.models.load_tokenizer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.models.load_tokenizer">load_tokenizer</h3>
-<div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>utils.models.load_tokenizer(cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Load and configure the tokenizer based on the provided config.</p>
-</section>
-<section id="axolotl.utils.models.modify_tokenizer_files" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.models.modify_tokenizer_files">modify_tokenizer_files</h3>
-<div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>utils.models.modify_tokenizer_files(tokenizer_path, token_mappings, output_dir)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Modify tokenizer files to replace added_tokens strings, save to output directory, and return the path to the modified tokenizer.</p>
-<p>This only works with reserved tokens that were added to the tokenizer, not tokens already part of the vocab.</p>
-<section id="parameters-1" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 16%">
-<col style="width: 18%">
-<col style="width: 51%">
-<col style="width: 12%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>tokenizer_path</td>
-<td>str</td>
-<td>Path or name of the original tokenizer</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>token_mappings</td>
-<td>Dict[int, str]</td>
-<td>Dict mapping {token_id (int): new_token_string}</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>output_dir</td>
-<td>str</td>
-<td>Directory to save the modified tokenizer</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>str</td>
-<td>Path to the modified tokenizer directory</td>
-</tr>
-</tbody>
-</table>
-<p>Ref: https://github.com/huggingface/transformers/issues/27974#issuecomment-1854188941</p>
-</section>
-</section>
-<section id="axolotl.utils.models.setup_quantized_meta_for_peft" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.models.setup_quantized_meta_for_peft">setup_quantized_meta_for_peft</h3>
-<div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>utils.models.setup_quantized_meta_for_peft(model)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Replaces <code>quant_state.to</code> with a dummy function to prevent PEFT from moving <code>quant_state</code> to meta device</p>
-</section>
-<section id="axolotl.utils.models.setup_quantized_peft_meta_for_training" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.models.setup_quantized_peft_meta_for_training">setup_quantized_peft_meta_for_training</h3>
-<div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>utils.models.setup_quantized_peft_meta_for_training(model)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Replaces dummy <code>quant_state.to</code> method with the original function to allow training to continue</p>
+<section id="axolotl.loaders.constants" class="level1">
+<h1>loaders.constants</h1>
+<p><code>loaders.constants</code></p>
+<p>Shared constants for axolotl.loaders module</p>
 
 
-</section>
-</section>
 </section>
 
 </main> <!-- /main -->
