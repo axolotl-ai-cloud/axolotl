@@ -22,8 +22,6 @@ Basic model setup and tokenizer configuration
 
 **Type:** `string` *(required)*
 
-No description available.
-
 **Example:**
 ```yaml
 base_model: ./llama-7b-hf
@@ -35,15 +33,11 @@ base_model: ./llama-7b-hf
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `model_type`
 
 **Type:** `string | None`
-
-No description available.
 
 **Example:**
 ```yaml
@@ -56,15 +50,11 @@ model_type: AutoModelForCausalLM
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `tokenizer_legacy`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -85,15 +75,11 @@ tokenizer_type: AutoTokenizer
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `trust_remote_code`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -104,8 +90,6 @@ Core training settings and optimization parameters
 ### `gradient_accumulation_steps`
 
 **Type:** `integer | None`
-
-No description available.
 
 **Default:** `1`
 
@@ -120,8 +104,6 @@ gradient_accumulation_steps: 1
 
 **Type:** `string | number` *(required)*
 
-No description available.
-
 **Example:**
 ```yaml
 learning_rate: 3.0e-05
@@ -132,8 +114,6 @@ learning_rate: 3.0e-05
 ### `lr_scheduler`
 
 **Type:** `SchedulerType | string | string | None`
-
-No description available.
 
 **Default:** `cosine`
 
@@ -171,8 +151,6 @@ micro_batch_size: 2
 
 **Type:** `number`
 
-No description available.
-
 **Default:** `1.0`
 
 **Example:**
@@ -185,8 +163,6 @@ num_epochs: 4
 ### `optimizer`
 
 **Type:** `OptimizerNames | CustomSupportedOptimizers | None`
-
-No description available.
 
 **Default:** `adamw_torch_fused`
 
@@ -221,8 +197,6 @@ warmup_steps: 100
 ### `weight_decay`
 
 **Type:** `number | None`
-
-No description available.
 
 **Default:** `0.0`
 
@@ -288,8 +262,6 @@ A list of one or more datasets to eval the model with. You can use either test_d
 
 **Type:** `boolean | None`
 
-No description available.
-
 **Default:** `False`
 
 **Example:**
@@ -322,15 +294,11 @@ Low-rank adaptation and parameter-efficient fine-tuning
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `lora_alpha`
 
 **Type:** `integer | None`
-
-No description available.
 
 **Example:**
 ```yaml
@@ -342,8 +310,6 @@ lora_alpha: 16
 ### `lora_dropout`
 
 **Type:** `number | None`
-
-No description available.
 
 **Default:** `0.0`
 
@@ -358,15 +324,11 @@ lora_dropout: 0.05
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `lora_r`
 
 **Type:** `integer | None`
-
-No description available.
 
 **Example:**
 ```yaml
@@ -379,15 +341,11 @@ lora_r: 8
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `lora_target_modules`
 
 **Type:** `string | array | None`
-
-No description available.
 
 **Example:**
 ```yaml
@@ -457,8 +415,6 @@ gradient_checkpointing: true
 
 **Type:** `boolean | None`
 
-No description available.
-
 **Default:** `False`
 
 **Example:**
@@ -471,8 +427,6 @@ load_in_4bit: false
 ### `load_in_8bit`
 
 **Type:** `boolean | None`
-
-No description available.
 
 **Default:** `False`
 
@@ -555,8 +509,6 @@ Don't mess with this, it's here for accelerate and torchrun
 
 **Type:** `integer | None`
 
-No description available.
-
 ---
 
 ## Logging & Monitoring
@@ -583,8 +535,6 @@ Logging frequency
 
 **Type:** `string`
 
-No description available.
-
 **Default:** `./model-out`
 
 **Example:**
@@ -606,23 +556,17 @@ Leave empty to save at each epoch, integer for every N steps. float for fraction
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `wandb_name`
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `wandb_project`
 
 **Type:** `string | None`
-
-No description available.
 
 **Example:**
 ```yaml
@@ -635,8 +579,6 @@ wandb_project: my-finetuning-project
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ## Other Options
@@ -647,15 +589,11 @@ No description available.
 
 **Type:** `object | None`
 
-No description available.
-
 ---
 
 ### `adam_beta1`
 
 **Type:** `number | None`
-
-No description available.
 
 ---
 
@@ -663,15 +601,11 @@ No description available.
 
 **Type:** `number | None`
 
-No description available.
-
 ---
 
 ### `adam_beta3`
 
 **Type:** `number | None`
-
-No description available.
 
 ---
 
@@ -679,15 +613,11 @@ No description available.
 
 **Type:** `number | None`
 
-No description available.
-
 ---
 
 ### `adam_epsilon2`
 
 **Type:** `number | None`
-
-No description available.
 
 ---
 
@@ -703,8 +633,6 @@ Mapping token_id to new_token_string to override reserved added_tokens in the to
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `auto_resume_from_checkpoints`
@@ -718,8 +646,6 @@ If resume_from_checkpoint isn't set and you simply want it to start where it lef
 ### `axolotl_config_path`
 
 **Type:** `string | None`
-
-No description available.
 
 ---
 
@@ -743,15 +669,11 @@ Total batch size, we do not recommended setting this manually
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `bench_split`
 
 **Type:** `string | None`
-
-No description available.
 
 ---
 
@@ -766,8 +688,6 @@ No AMP (automatic mixed precision) - require >=ampere
 ### `bnb_config_kwargs`
 
 **Type:** `object | None`
-
-No description available.
 
 ---
 
@@ -791,15 +711,11 @@ Custom jinja template for chat template. This will be only used if chat_template
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `comet_api_key`
 
 **Type:** `string | None`
-
-No description available.
 
 ---
 
@@ -807,15 +723,11 @@ No description available.
 
 **Type:** `object | None`
 
-No description available.
-
 ---
 
 ### `comet_experiment_key`
 
 **Type:** `string | None`
-
-No description available.
 
 ---
 
@@ -823,15 +735,11 @@ No description available.
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `comet_online`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -839,15 +747,11 @@ No description available.
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `comet_workspace`
 
 **Type:** `string | None`
-
-No description available.
 
 ---
 
@@ -855,15 +759,11 @@ No description available.
 
 **Type:** `number | None`
 
-No description available.
-
 ---
 
 ### `cosine_min_lr_ratio`
 
 **Type:** `number | None`
-
-No description available.
 
 ---
 
@@ -887,15 +787,11 @@ Whether to use sequential sampling for curriculum learning
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `dataloader_num_workers`
 
 **Type:** `integer | None`
-
-No description available.
 
 ---
 
@@ -903,15 +799,11 @@ No description available.
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `dataloader_prefetch_factor`
 
 **Type:** `integer | None`
-
-No description available.
 
 ---
 
@@ -974,8 +866,6 @@ Num shards for whole dataset
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `ddp_broadcast_buffers`
@@ -989,8 +879,6 @@ Advanced DDP Arguments - broadcast buffers
 ### `ddp_find_unused_parameters`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -1006,8 +894,6 @@ Changes the default system message. Currently only supports chatml.
 
 **Type:** `unknown | None`
 
-No description available.
-
 ---
 
 ### `device_map`
@@ -1021,8 +907,6 @@ Passed through to transformers when loading the model when launched without acce
 ### `do_bench_eval`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -1038,15 +922,11 @@ Whether to run causal language model evaluation for metrics in `eval_causal_lm_m
 
 **Type:** `number | None`
 
-No description available.
-
 ---
 
 ### `dpo_use_logits_to_keep`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -1062,8 +942,6 @@ Whether to perform weighting in DPO trainer
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `early_stopping_patience`
@@ -1078,15 +956,11 @@ Stop training after this many evaluation losses have increased in a row. https:/
 
 **Type:** `number | None`
 
-No description available.
-
 ---
 
 ### `embedding_lr_scale`
 
 **Type:** `number | None`
-
-No description available.
 
 ---
 
@@ -1166,15 +1040,11 @@ Number of times per epoch to run evals, mutually exclusive with eval_steps
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `fix_untrained_tokens`
 
 **Type:** `integer | array | None`
-
-No description available.
 
 ---
 
@@ -1222,15 +1092,11 @@ Whether to use bettertransformers
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `flex_attn_compile_kwargs`
 
 **Type:** `object | None`
-
-No description available.
 
 ---
 
@@ -1246,15 +1112,11 @@ No AMP (automatic mixed precision)
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `fp8`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -1262,23 +1124,17 @@ No description available.
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `gc_steps`
 
 **Type:** `integer | None`
 
-No description available.
-
 ---
 
 ### `gptq`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -1302,15 +1158,11 @@ Additional kwargs to pass to the trainer for gradient checkpointing
 
 **Type:** `integer | None`
 
-No description available.
-
 ---
 
 ### `gradio_server_name`
 
 **Type:** `string | None`
-
-No description available.
 
 ---
 
@@ -1318,15 +1170,11 @@ No description available.
 
 **Type:** `integer | None`
 
-No description available.
-
 ---
 
 ### `gradio_share`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -1334,15 +1182,11 @@ No description available.
 
 **Type:** `number | None`
 
-No description available.
-
 ---
 
 ### `gradio_title`
 
 **Type:** `string | None`
-
-No description available.
 
 ---
 
@@ -1350,15 +1194,11 @@ No description available.
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `group_by_length`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -1374,8 +1214,6 @@ Optional; strides across the key dimension. Larger values use more memory but sh
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `hf_use_auth_token`
@@ -1390,15 +1228,11 @@ Whether to use hf `use_auth_token` for loading datasets. Useful for fetching pri
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `hub_strategy`
 
 **Type:** `string | None`
-
-No description available.
 
 ---
 
@@ -1453,8 +1287,6 @@ Internal use only - Used to identify which the model is based on. Please note th
 ### `is_preprocess`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -1517,15 +1349,11 @@ how often to switch layers in LISA
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `load_best_model_at_end`
 
 **Type:** `boolean | None`
-
-No description available.
 
 **Default:** `False`
 
@@ -1539,8 +1367,6 @@ load_best_model_at_end: false
 ### `lora_fan_in_fan_out`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -1556,8 +1382,6 @@ Apply custom LoRA autograd functions and activation function Triton kernels for 
 
 **Type:** `array | None`
 
-No description available.
-
 ---
 
 ### `lora_o_kernel`
@@ -1571,8 +1395,6 @@ Apply custom LoRA autograd functions and activation function Triton kernels for 
 ### `lora_on_cpu`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -1627,15 +1449,11 @@ High loss value, indicating the learning has broken down (a good estimate is ~2 
 
 **Type:** `number | None`
 
-No description available.
-
 ---
 
 ### `lr_groups`
 
 **Type:** `array | None`
-
-No description available.
 
 ---
 
@@ -1643,23 +1461,17 @@ No description available.
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `lr_scheduler_kwargs`
 
 **Type:** `object | None`
 
-No description available.
-
 ---
 
 ### `max_grad_norm`
 
 **Type:** `number | None`
-
-No description available.
 
 ---
 
@@ -1674,8 +1486,6 @@ Defines the max memory usage per gpu on the system. Passed through to transforme
 ### `max_packed_sequence_len`
 
 **Type:** `integer | None`
-
-No description available.
 
 ---
 
@@ -1698,8 +1508,6 @@ max_prompt_len: 512
 
 **Type:** `boolean | None`
 
-No description available.
-
 **Default:** `False`
 
 **Example:**
@@ -1713,15 +1521,11 @@ mean_resizing_embeddings: false
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `metric_for_best_model`
 
 **Type:** `string | None`
-
-No description available.
 
 ---
 
@@ -1729,15 +1533,11 @@ No description available.
 
 **Type:** `integer | None`
 
-No description available.
-
 ---
 
 ### `mlflow_experiment_name`
 
 **Type:** `string | None`
-
-No description available.
 
 ---
 
@@ -1745,15 +1545,11 @@ No description available.
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `mlflow_tracking_uri`
 
 **Type:** `string | None`
-
-No description available.
 
 ---
 
@@ -1761,15 +1557,11 @@ No description available.
 
 **Type:** `object | None`
 
-No description available.
-
 ---
 
 ### `model_kwargs`
 
 **Type:** `object | None`
-
-No description available.
 
 ---
 
@@ -1777,15 +1569,11 @@ No description available.
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `multipack_real_batches`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -1801,15 +1589,11 @@ NEFT https://arxiv.org/abs/2310.05914, set this to a number (paper default is 5)
 
 **Type:** `number | None`
 
-No description available.
-
 ---
 
 ### `num_labels`
 
 **Type:** `integer | None`
-
-No description available.
 
 ---
 
@@ -1841,15 +1625,11 @@ Parameter controlling the relative ratio loss weight in the ORPO loss. Passed to
 
 **Type:** `PeftConfig | None`
 
-No description available.
-
 ---
 
 ### `peft_init_lora_weights`
 
 **Type:** `boolean | string | None`
-
-No description available.
 
 ---
 
@@ -1857,15 +1637,11 @@ No description available.
 
 **Type:** `array | None`
 
-No description available.
-
 ---
 
 ### `peft_layers_pattern`
 
 **Type:** `array | None`
-
-No description available.
 
 ---
 
@@ -1873,23 +1649,17 @@ No description available.
 
 **Type:** `array | None`
 
-No description available.
-
 ---
 
 ### `peft_use_dora`
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `peft_use_rslora`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -1905,15 +1675,11 @@ Add plugins to extend the pipeline. See `src/axolotl/integrations` for the avail
 
 **Type:** `integer | None`
 
-No description available.
-
 ---
 
 ### `pose_num_chunks`
 
 **Type:** `integer | None`
-
-No description available.
 
 ---
 
@@ -1921,15 +1687,11 @@ No description available.
 
 **Type:** `array | None`
 
-No description available.
-
 ---
 
 ### `preprocess_iterable`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -1951,8 +1713,6 @@ pretrain_multipack_attn: true
 ### `pretrain_multipack_buffer_size`
 
 **Type:** `integer | None`
-
-No description available.
 
 **Default:** `10000`
 
@@ -2030,8 +1790,6 @@ qlora_sharded_model_loading: false
 
 **Type:** `integer`
 
-No description available.
-
 **Default:** `1`
 
 **Example:**
@@ -2045,15 +1803,11 @@ ray_num_workers: 1
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `relora_anneal_steps`
 
 **Type:** `integer | None`
-
-No description available.
 
 ---
 
@@ -2061,15 +1815,11 @@ No description available.
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `relora_prune_ratio`
 
 **Type:** `number | None`
-
-No description available.
 
 ---
 
@@ -2077,23 +1827,17 @@ No description available.
 
 **Type:** `integer | None`
 
-No description available.
-
 ---
 
 ### `relora_warmup_steps`
 
 **Type:** `integer | None`
 
-No description available.
-
 ---
 
 ### `remove_unused_columns`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -2108,8 +1852,6 @@ Resize the model embeddings when new tokens are added to multiples of 32. This i
 ### `resources_per_worker`
 
 **Type:** `dict`
-
-No description available.
 
 ---
 
@@ -2156,8 +1898,6 @@ The beta parameter for the RL training
 ### `rope_scaling`
 
 **Type:** `unknown | None`
-
-No description available.
 
 ---
 
@@ -2241,8 +1981,6 @@ save_only_model: false
 ### `save_safetensors`
 
 **Type:** `boolean | None`
-
-No description available.
 
 **Default:** `True`
 
@@ -2336,8 +2074,6 @@ Target reward margin for the SimPO loss
 
 **Type:** `boolean | None`
 
-No description available.
-
 **Default:** `False`
 
 **Example:**
@@ -2398,15 +2134,11 @@ Backend to use for torch.compile
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `torchdistx_path`
 
 **Type:** `string | None`
-
-No description available.
 
 ---
 
@@ -2422,15 +2154,11 @@ Total number of tokens - internal use
 
 **Type:** `integer | None`
 
-No description available.
-
 ---
 
 ### `trl`
 
 **Type:** `TRLConfig | None`
-
-No description available.
 
 ---
 
@@ -2438,15 +2166,11 @@ No description available.
 
 **Type:** `array | None`
 
-No description available.
-
 ---
 
 ### `unsloth_cross_entropy_loss`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -2454,15 +2178,11 @@ No description available.
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `unsloth_lora_o`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -2470,15 +2190,11 @@ No description available.
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `unsloth_rms_norm`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -2486,15 +2202,11 @@ No description available.
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `use_comet`
 
 **Type:** `boolean | None`
-
-No description available.
 
 ---
 
@@ -2502,23 +2214,17 @@ No description available.
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `use_pose`
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `use_ray`
 
 **Type:** `boolean`
-
-No description available.
 
 **Default:** `False`
 
@@ -2541,15 +2247,11 @@ Use tensorboard for logging
 
 **Type:** `boolean | None`
 
-No description available.
-
 ---
 
 ### `vllm`
 
 **Type:** `VllmConfig | None`
-
-No description available.
 
 ---
 
@@ -2557,23 +2259,17 @@ No description available.
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `wandb_mode`
 
 **Type:** `string | None`
 
-No description available.
-
 ---
 
 ### `wandb_run_id`
 
 **Type:** `string | None`
-
-No description available.
 
 ---
 

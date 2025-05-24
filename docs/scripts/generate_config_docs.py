@@ -266,7 +266,7 @@ class QuartoGenerator:
                 field_type = self._format_type(field_info)
                 is_required = field_name in required
 
-                description = field_info.get("description", "No description available.")
+                description = field_info.get("description", "")
                 default = field_info.get("default")
 
                 # Field header
@@ -281,8 +281,9 @@ class QuartoGenerator:
                 qmd_lines.append("")
 
                 # Description
-                qmd_lines.append(description)
-                qmd_lines.append("")
+                if description:
+                    qmd_lines.append(description)
+                    qmd_lines.append("")
 
                 # Default value
                 if default is not None:
