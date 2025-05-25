@@ -47,6 +47,16 @@ class KDPlugin(BasePlugin):
         if cfg.eval_sample_packing and is_eval:
             use_batch_sampler_collator = True
 
+        if cfg.kd_online_server_base_url:
+            from .collator_online_teacher import OnlineTeacherCollator
+
+            return OnlineTeacherCollator, {
+                "kd_online_server_base_url": cfg.kd_online_server_base_url,
+                "kd_online_topk": cfg.kd_online_topk,
+                "kd_temperature": cfg.kd_temperature,
+                "kd_online_server": cfg.kd_online_server,
+            }
+
         if use_batch_sampler_collator:
             return KDBatchSamplerDataCollatorForSeq2Seq, {}
         return DataCollatorForKD, {}
