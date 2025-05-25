@@ -231,6 +231,9 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
             "max_new_tokens": 0,
             "skip_special_tokens": False,
             "temperature": self.kd_temperature,
+            "sampling_params": {
+                "max_tokens": 0,
+            },
         }
 
         # Initialize with empty lists, so if API call fails, these are returned.
