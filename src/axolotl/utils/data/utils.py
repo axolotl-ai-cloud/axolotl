@@ -40,6 +40,7 @@ def retry_on_request_exceptions(
                 except (
                     requests.exceptions.ReadTimeout,
                     requests.exceptions.ConnectionError,
+                    requests.exceptions.HTTPError,
                     huggingface_hub.errors.HfHubHTTPError,
                 ) as exc:
                     if attempt < max_retries - 1:

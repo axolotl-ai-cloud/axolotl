@@ -62,12 +62,6 @@ class AxolotlKDTrainer(AxolotlTrainer):
         Subclass and override for custom behavior.
         """
 
-        # target_logprobs = inputs.pop("target_logprobs")
-        # target_token_ids = inputs.pop("target_token_ids")
-        # target_mask = inputs.pop("target_mask")
-
-        # seq_len = target_token_ids.shape[1]
-
         if self.model_accepts_loss_kwargs:
             loss_kwargs = {}
             if num_items_in_batch is not None:
@@ -75,36 +69,3 @@ class AxolotlKDTrainer(AxolotlTrainer):
             inputs = {**inputs, **loss_kwargs}
         outputs = model(**inputs)
         return outputs[0]
-        #
-        # # FIXME: account for tokenizer.padding_side
-        # student_logits = outputs["logits"][:, : seq_len - 1, :].contiguous()
-        #
-        # shift_logits = student_logits.contiguous()
-        # target_logprobs_for_loss = target_logprobs[..., 1:, :].contiguous()
-        # target_token_ids_for_loss = target_token_ids[..., 1:, :].contiguous()
-        # target_mask_for_loss = target_mask[..., 1:, :].contiguous()
-        #
-        # loss_kd = self.kd_loss_fn(
-        #     shift_logits,
-        #     target_token_ids_for_loss,
-        #     target_logprobs_for_loss,
-        #     target_mask_for_loss,
-        #     num_items_in_batch=num_items_in_batch,
-        # )
-        #
-        # if self.args.kd_ce_alpha > 0:
-        #     kd_alpha = self.args.kd_alpha
-        #     loss = self.args.kd_ce_alpha * outputs["loss"] + kd_alpha * loss_kd
-        # else:
-        #     loss = loss_kd
-        # # Save past state if it exists
-        # # TODO: this needs to be fixed and made cleaner later.
-        # if self.args.past_index >= 0:
-        #     self._past = outputs[  # pylint: disable=attribute-defined-outside-init
-        #         self.args.past_index
-        #     ]
-        #
-        # if self.args.average_tokens_across_devices and self.model_accepts_loss_kwargs:
-        #     loss *= self.accelerator.num_processes
-
-        # return (loss, outputs) if return_outputs else loss
