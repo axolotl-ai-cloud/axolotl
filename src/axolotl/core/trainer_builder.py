@@ -305,6 +305,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
     def _get_trainer_cls(self):
         """
         Gets the trainer class for the given configuration.
+        """
         if self.cfg.plugins:
             plugin_manager = PluginManager.get_instance()
             trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
