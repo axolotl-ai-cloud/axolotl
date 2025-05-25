@@ -531,10 +531,11 @@ class PluginManager:
         object: The collator class, or None if none was found.
         """
         for plugin in self.plugins.values():
-            collator_cls, collator_kwargs = plugin.get_collator_cls_and_kwargs(
+            collator = plugin.get_collator_cls_and_kwargs(
                 cfg, is_eval=is_eval
             )
-            if collator_cls is not None:
+            if collator is not None:
+                collator_cls, collator_kwargs = collator
                 return collator_cls, collator_kwargs
         return None
 
