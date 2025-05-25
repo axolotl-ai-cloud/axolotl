@@ -112,7 +112,7 @@ class ProcessingStrategy:
                 )
 
             processed_example = None
-            if "messages" in example:  # OpenAI format
+            if "messages" in example and example['messages'] is not None:  # OpenAI format
                 processed_example = example
             else:  # Legacy format
                 processed_example = convert_legacy_format(example)
@@ -132,7 +132,7 @@ class ProcessingStrategy:
                     break
 
             # if the image key exists, add the image to the first message
-            if image_key is not None:
+            if image_key is not None and processed_example[image_key] is not None:
                 # TODO: check if it's normal to be single image only for common datasets
                 # From observation, it's usually a list of single image but some datasets may have several columns for images
                 # Temporary solution: take the first image and suggest people convert their datasets to use multi-content Messages
