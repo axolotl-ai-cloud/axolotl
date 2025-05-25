@@ -15,7 +15,14 @@
 """
 Plugin args for KD support.
 """
+from enum import Enum
+
 from pydantic import BaseModel
+
+
+class InferenceServerType(str, Enum):
+    vllm = "vllm"
+    sglang = "sglang"
 
 
 class KDArgs(BaseModel):
@@ -31,5 +38,6 @@ class KDArgs(BaseModel):
     kd_temperature: float | None = None  # temperature for sampling during KD
 
     # TODO online kd
-    # kd_online_server_base_url: str | None = None
-    # kd_online_topk: int | None = None
+    kd_online_server_base_url: str | None = None
+    kd_online_topk: int | None = None
+    kd_online_server: InferenceServerType | None = "vllm"
