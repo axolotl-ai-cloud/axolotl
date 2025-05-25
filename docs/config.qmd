@@ -729,6 +729,10 @@ heads_k_stride: 1
 # in the sample packing case, and "batch_ring" in the non-sample packing case.
 ring_attn_func:
 
+# Tensor Parallelism using Deepspeed
+# Set to a divisor of the number of GPUs available to split the model into chunks of equal size
+tensor_parallel_size:
+
 # Path to torch distx for optim 'adamw_anyprecision'
 torchdistx_path:
 
