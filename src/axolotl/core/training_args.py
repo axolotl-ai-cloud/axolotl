@@ -164,12 +164,6 @@ class AxolotlTrainingMixins:
         default=None,
         metadata={"help": "whether to use sequential sampling for curriculum learning"},
     )
-    alternate_optimizer: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "workaround to pass an alternate optimizer to the HF trainer"
-        },
-    )
     alternate_lr_scheduler_type: Optional[str] = field(
         default=None,
         metadata={
