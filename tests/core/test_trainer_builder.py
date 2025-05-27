@@ -485,10 +485,9 @@ def rand_reward_func(prompts, completions) -> list[float]:
             assert isinstance(optim, Muon)
 
         finally:
-            if cfg_string == "grpo_cfg":
-                # remove imported module from path
-                if str(rewards_dir) in sys.path:
-                    sys.path.remove(str(rewards_dir))
+            # remove imported module from path
+            if cfg_string == "grpo_cfg" and str(rewards_dir) in sys.path:
+                sys.path.remove(str(rewards_dir))
 
 
 class TestHFCausalTrainerBuilder:
