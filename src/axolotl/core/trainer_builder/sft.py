@@ -34,7 +34,6 @@ from axolotl.processing_strategies import get_processing_strategy
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
-    GPUStatsCallback,
     LossWatchDogCallback,
     SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
@@ -63,7 +62,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
     def get_callbacks(self):
         callbacks = super().get_callbacks()
-        callbacks.append(GPUStatsCallback(self.cfg))
         callbacks.append(EvalFirstStepCallback())
 
         if self.cfg.relora_steps:
@@ -75,6 +73,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         ):
             callbacks.append(SaveBetterTransformerModelCallback())
 
+        # TODO: check if can move to base class
         if self.cfg.loss_watchdog_threshold is not None:
             callbacks.append(LossWatchDogCallback(self.cfg))
 

@@ -34,6 +34,7 @@ from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
     GCCallback,
+    GPUStatsCallback,
     SaveAxolotlConfigtoWandBCallback,
 )
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
@@ -141,6 +142,8 @@ class TrainerBuilderBase(abc.ABC):
             callbacks.append(
                 SaveAxolotlConfigtoCometCallback(self.cfg.axolotl_config_path)
             )
+
+        callbacks.append(GPUStatsCallback(cfg=self.cfg))
 
         return callbacks
 
