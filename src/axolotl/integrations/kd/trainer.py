@@ -33,6 +33,7 @@ class AxolotlKDTrainer(AxolotlTrainer):
             self.args.kd_ce_alpha,  # hard label loss
             self.args.kd_alpha,  # kd loss
             self.args.kd_temperature,
+            self.args.kd_beta,
             compute_ce_loss=bool(self.args.kd_ce_alpha),
         )
 

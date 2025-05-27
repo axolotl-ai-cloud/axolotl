@@ -15,14 +15,19 @@
 """
 Plugin args for KD support.
 """
+from dataclasses import dataclass
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class InferenceServerType(str, Enum):
-    vllm = "vllm"
-    sglang = "sglang"
+    """
+    Online inferences server types to handle different request args
+    """
+
+    vllm = "vllm"  # pylint: disable=invalid-name
+    sglang = "sglang"  # pylint: disable=invalid-name
 
 
 class KDArgs(BaseModel):
@@ -36,9 +41,29 @@ class KDArgs(BaseModel):
     )
     kd_alpha: float | None = None  # loss coefficient for KD loss
     kd_temperature: float | None = None  # temperature for sampling during KD
+    kd_beta: float | None = None  # beta coefficient for ratio of fwd and reverse KL
 
     # TODO online kd
     kd_online_server_base_url: str | None = None
     kd_online_topk: int | None = None
-    kd_online_server: InferenceServerType | None = "vllm"
+    kd_online_server: InferenceServerType | None = Field(
+        default_factory=lambda: InferenceServerType.vllm
+    )
     kd_online_timeout: int | None = 120
+    kd_temperature_min: float | None = (
+        None  # kd temperature scheduling during online kd
+    )
+
+
+@dataclass
+class KDTrainingArgsMixin:
+    """
+    Additional args for KD training.
+    """
+
+    kd_ce_alpha: float | None = (
+        None  # loss coefficient for cross-entropy loss during KD
+    )
+    kd_alpha: float | None = None  # loss coefficient for KD loss
+    kd_temperature: float | None = None  # temperature for sampling during KD
+    kd_beta: float | None = None  # beta coefficient for ratio of fwd and reverse KL

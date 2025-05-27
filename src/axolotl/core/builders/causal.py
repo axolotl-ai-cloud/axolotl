@@ -149,6 +149,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return AxolotlTrainer
 
     def build(self, total_num_steps):
+        from axolotl.core.training_args import (
+            AxolotlPRMConfig,
+            AxolotlRewardConfig,
+            AxolotlTrainingArguments,
+        )
+
         training_arguments_kwargs, trainer_kwargs = self._set_base_training_args(
             total_num_steps
         )
@@ -317,12 +323,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["image_resize_algorithm"] = (
                 self.cfg.image_resize_algorithm
             )
-        if self.cfg.kd_ce_alpha is not None:
-            training_arguments_kwargs["kd_ce_alpha"] = self.cfg.kd_ce_alpha
-        if self.cfg.kd_alpha is not None:
-            training_arguments_kwargs["kd_alpha"] = self.cfg.kd_alpha
-        if self.cfg.kd_temperature is not None:
-            training_arguments_kwargs["kd_temperature"] = self.cfg.kd_temperature
+
+        if self.cfg.plugins:
+            plugin_manager = PluginManager.get_instance()
+            plugin_training_args = plugin_manager.get_training_args(self.cfg)
+            if plugin_training_args:
+                training_arguments_kwargs.update(plugin_training_args)
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
@@ -403,7 +409,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return trainer
 
     def build_collator(
-        self, training_args: AxolotlTrainingArguments, is_eval=False, **kwargs
+        self,
+        training_args,  # type: "AxolotlTrainingArguments"
+        is_eval=False,
+        **kwargs,
     ):
         if training_args.pretraining:
             if (
