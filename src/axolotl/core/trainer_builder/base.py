@@ -178,7 +178,9 @@ class TrainerBuilderBase(abc.ABC):
         # TODO
         return trainer
 
-    def _configure_warmup_and_logging(self, total_num_steps, training_args_kwargs):
+    def _configure_warmup_and_logging(
+        self, total_num_steps: int, training_args_kwargs: dict
+    ):
         warmup_steps = 0
         warmup_ratio = 0.0
         if self.cfg.warmup_steps:
@@ -208,7 +210,7 @@ class TrainerBuilderBase(abc.ABC):
         training_args_kwargs["warmup_ratio"] = warmup_ratio
         training_args_kwargs["warmup_steps"] = warmup_steps
 
-    def _configure_precision_settings(self, training_args_kwargs):
+    def _configure_precision_settings(self, training_args_kwargs: dict):
         training_args_kwargs["fp16"] = (self.cfg.fp16 and not self.cfg.bf16) or False
         training_args_kwargs["tf32"] = self.cfg.tf32
         if self.cfg.bf16 == "full":
@@ -216,7 +218,7 @@ class TrainerBuilderBase(abc.ABC):
         else:
             training_args_kwargs["bf16"] = self.cfg.bf16 or self.cfg.bfloat16
 
-    def _configure_optimizer_and_scheduler(self, training_args_kwargs, trainer_kwargs):
+    def _configure_scheduler(self, training_args_kwargs: dict):
         if self.cfg.lr_scheduler in ["one_cycle", "rex"]:
             training_args_kwargs["lr_scheduler_type"] = "cosine"
             training_args_kwargs["alternate_lr_scheduler_type"] = self.cfg.lr_scheduler
@@ -228,9 +230,10 @@ class TrainerBuilderBase(abc.ABC):
             self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
         )
 
-        # Handle custom optimizer
-        custom_supported_optimizers = [opt.value for opt in CustomSupportedOptimizers]
-        if self.cfg.optimizer in custom_supported_optimizers:
+    def _configure_optimizer(self, training_args_kwargs: dict, trainer_kwargs: dict):
+        def _configure_custom_optimizer(
+            training_args_kwargs: dict, trainer_kwargs: dict
+        ):
             # Common optimizer kwargs
             optimizer_kwargs = {
                 "lr": training_args_kwargs["learning_rate"],
@@ -322,6 +325,11 @@ class TrainerBuilderBase(abc.ABC):
                 optimizer_cls,
                 optimizer_kwargs,
             )
+
+        # Handle custom optimizer
+        custom_supported_optimizers = [opt.value for opt in CustomSupportedOptimizers]
+        if self.cfg.optimizer in custom_supported_optimizers:
+            _configure_custom_optimizer(training_args_kwargs, trainer_kwargs)
         else:
             # Use transformers' optimizer
             training_args_kwargs["optim"] = self.cfg.optimizer
@@ -343,10 +351,7 @@ class TrainerBuilderBase(abc.ABC):
                 sys.path.append(self.cfg.torchdistx_path)
                 importlib.import_module("torchdistx")
 
-        if self.cfg.optim_target_modules:
-            training_args_kwargs["optim_target_modules"] = self.cfg.optim_target_modules
-
-    def _configure_hub_parameters(self, training_args_kwargs):
+    def _configure_hub_parameters(self, training_args_kwargs: dict):
         if self.cfg.hub_model_id:
             training_args_kwargs["hub_model_id"] = self.cfg.hub_model_id
             training_args_kwargs["push_to_hub"] = True
@@ -356,7 +361,7 @@ class TrainerBuilderBase(abc.ABC):
             if self.cfg.hub_strategy:
                 training_args_kwargs["hub_strategy"] = self.cfg.hub_strategy
 
-    def _configure_save_and_eval_strategy(self, training_args_kwargs):
+    def _configure_save_and_eval_strategy(self, training_args_kwargs: dict):
         # save_strategy and save_steps
         if self.cfg.save_steps:
             training_args_kwargs["save_strategy"] = "steps"
@@ -381,7 +386,7 @@ class TrainerBuilderBase(abc.ABC):
         elif self.cfg.eval_strategy:
             training_args_kwargs["eval_strategy"] = self.cfg.eval_strategy
 
-    def _configure_reporting(self, training_args_kwargs):
+    def _configure_reporting(self, training_args_kwargs: dict):
         report_to = []
         if self.cfg.use_wandb:
             report_to.append("wandb")
@@ -401,7 +406,7 @@ class TrainerBuilderBase(abc.ABC):
         else:
             training_args_kwargs["run_name"] = None
 
-    def _configure_torch_compile(self, training_args_kwargs):
+    def _configure_torch_compile(self, training_args_kwargs: dict):
         if self.cfg.torch_compile and getattr(torch, "_dynamo", None):
             torch._dynamo.config.suppress_errors = (  # pylint: disable=protected-access
                 True
@@ -414,7 +419,7 @@ class TrainerBuilderBase(abc.ABC):
             if self.cfg.torch_compile_mode:
                 training_args_kwargs["torch_compile_mode"] = self.cfg.torch_compile_mode
 
-    def _configure_gradient_checkpointing(self, training_args_kwargs):
+    def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
         if self.cfg.gradient_checkpointing:
             training_args_kwargs["gradient_checkpointing"] = (
                 self.cfg.gradient_checkpointing
@@ -452,6 +457,7 @@ class TrainerBuilderBase(abc.ABC):
             "adam_epsilon2",
             "cosine_min_lr_ratio",
             "cosine_constant_lr_ratio",
+            "optim_target_modules",
             # trainer
             "max_grad_norm",
             "dataloader_num_workers",
@@ -493,7 +499,9 @@ class TrainerBuilderBase(abc.ABC):
 
         self._configure_hub_parameters(training_args_kwargs)
 
-        self._configure_optimizer_and_scheduler(training_args_kwargs, trainer_kwargs)
+        self._configure_scheduler(training_args_kwargs)
+
+        self._configure_optimizer(training_args_kwargs, trainer_kwargs)
 
         self._configure_torch_compile(training_args_kwargs)
 
