@@ -58,6 +58,7 @@ from axolotl.core.training_args import (
     AxolotlTrainingArguments,
 )
 from axolotl.integrations.base import PluginManager
+from axolotl.loaders.utils import ensure_dtype
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback
 from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
@@ -86,7 +87,6 @@ from axolotl.utils.collators import (
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.logging import get_logger
-from axolotl.utils.models import ensure_dtype
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers, RLType
 
 try:
@@ -1195,7 +1195,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.plugins:
             plugin_manager = PluginManager.get_instance()
-            trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
+            temp_trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
+            if temp_trainer_cls is not None:
+                trainer_cls = temp_trainer_cls
 
         sig = inspect.signature(trainer_cls)
         if "tokenizer" in sig.parameters.keys():

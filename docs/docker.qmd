@@ -8,6 +8,10 @@ format:
 
 This section describes the different Docker images that are released by AxolotlAI at [Docker Hub](https://hub.docker.com/u/axolotlai).
 
+::: {.callout-important}
+For Blackwell GPUs, please use the tags with Pytorch 2.7.0 and CUDA 12.8.
+:::
+
 ## Base
 
 The base image is the most minimal image that can install Axolotl. It is based on the `nvidia/cuda` image. It includes python, torch, git, git-lfs, awscli, pydantic, and more.

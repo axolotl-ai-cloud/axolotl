@@ -27,12 +27,16 @@ from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
 )
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.integrations.base import PluginManager
+from axolotl.loaders import (
+    ModelLoader,
+    load_processor,
+    load_tokenizer,
+)
 from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
 from axolotl.utils.logging import get_logger
-from axolotl.utils.models import load_model, load_processor, load_tokenizer
 from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.trainer import setup_trainer
 
@@ -74,7 +78,8 @@ def setup_model_and_tokenizer(
         msg += " and peft_config..."
     LOG.debug(msg)
 
-    model, peft_config = load_model(cfg, tokenizer, processor=processor)
+    model_loader = ModelLoader(cfg, tokenizer, processor=processor)
+    model, peft_config = model_loader.load()
     if model.generation_config is not None:
         model.generation_config.do_sample = True
 
@@ -111,7 +116,8 @@ def setup_reference_model(
             model_ref = None  # explicit setting to None
         else:
             # load the model again for model_ref/baseline
-            model_ref, _ = load_model(cfg, tokenizer, reference_model=True)
+            model_loader = ModelLoader(cfg, tokenizer, reference_model=True)
+            model_ref, _ = model_loader.load()
     return model_ref
 
 
@@ -207,6 +213,7 @@ def execute_training(
                     sequence_parallel_degree=cfg.sequence_parallel_degree,
                     gradient_accumulation_steps=cfg.gradient_accumulation_steps,
                     ring_attn_func=cfg.ring_attn_func,
+                    heads_k_stride=cfg.heads_k_stride,
                 )
             )
 

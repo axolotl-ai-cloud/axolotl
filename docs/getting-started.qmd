@@ -180,7 +180,7 @@ Now that you have the basics, you might want to:
 Check our other guides for details on these topics:
 
 - [Configuration Guide](config.qmd) - Full configuration options
-- [Dataset Loading](dataset-loading.qmd) - Loading datasets from various sources
+- [Dataset Loading](dataset_loading.qmd) - Loading datasets from various sources
 - [Dataset Formats](dataset-formats) - Working with different data formats
 - [Multi-GPU Training](multi-gpu.qmd)
 - [Multi-Node Training](multi-node.qmd)

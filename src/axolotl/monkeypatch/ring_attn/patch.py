@@ -51,6 +51,8 @@ NEW_PREPARE_DATALOADER_CODE = """            submesh_fsdp_size = 1
 
 def get_ring_attn_group() -> dist.ProcessGroup:
     """Getter for ring attention group on this rank."""
+    if RING_ATTN_GROUP is None:
+        raise RuntimeError("register_ring_attn() not yet called")
     return RING_ATTN_GROUP
 
 
@@ -69,8 +71,8 @@ def register_ring_attn(
 
     Args:
         sequence_parallel_degree: Sequence parallelism factor.
-        heads_k_stride: Sequence parallelism K head stride size. Passed
-            through to `ring_flash_attn.substitute_hf_flash_attn`.
+        heads_k_stride: Sequence parallelism K head stride size. Passed through to
+            `varlen_llama3` `ring_flash_attn` implementation.
         ring_attn_func: `ring_flash_attn` ring attention implemention. If sample
             packing is enabled, it must be a `varlen` function; otherwise, it must be a
             `batch` function.

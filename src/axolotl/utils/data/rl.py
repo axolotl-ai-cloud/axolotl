@@ -9,6 +9,7 @@ import yaml
 from datasets import Dataset, DatasetDict, concatenate_datasets, load_from_disk
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
+from axolotl.loaders import load_tokenizer
 from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.prompt_strategies.kto import load as load_kto
 from axolotl.prompt_strategies.orpo import load as load_orpo
@@ -17,7 +18,6 @@ from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
 from axolotl.utils.logging import get_logger
-from axolotl.utils.models import load_tokenizer
 from axolotl.utils.schemas.enums import RLType
 
 LOG = get_logger(__name__)
