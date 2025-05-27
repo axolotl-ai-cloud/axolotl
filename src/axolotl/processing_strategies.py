@@ -1,5 +1,6 @@
 """Module containing ProcessingStrategy classes and its derivative for different MultiModal Model types"""
 
+import logging
 from copy import deepcopy
 from typing import Optional
 
@@ -8,6 +9,8 @@ from PIL.Image import Resampling
 from torch import Tensor
 from transformers import ProcessorMixin
 from transformers.image_utils import load_image
+
+LOG = logging.getLogger(__name__)
 
 
 class ProcessingStrategy:
@@ -112,7 +115,9 @@ class ProcessingStrategy:
                 )
 
             processed_example = None
-            if "messages" in example and example['messages'] is not None:  # OpenAI format
+            if (
+                "messages" in example and example["messages"] is not None
+            ):  # OpenAI format
                 processed_example = example
             else:  # Legacy format
                 processed_example = convert_legacy_format(example)
@@ -136,6 +141,13 @@ class ProcessingStrategy:
                 # TODO: check if it's normal to be single image only for common datasets
                 # From observation, it's usually a list of single image but some datasets may have several columns for images
                 # Temporary solution: take the first image and suggest people convert their datasets to use multi-content Messages
+                if len(processed_example[image_key]) > 0:
+                    LOG.warning(
+                        f"Found {len(processed_example[image_key])} images in a sample. Using the first one."
+                        "If you are using a dataset with multiple images per sample, please convert it to use multi-content Messages."
+                        "See https://docs.axolotl.ai/docs/multimodal.html#dataset-format"
+                    )
+
                 image_value = processed_example[image_key][0]
 
                 # Handle image loading (Image, url, path, base64)
