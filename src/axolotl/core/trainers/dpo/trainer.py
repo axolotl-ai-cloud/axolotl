@@ -5,64 +5,30 @@ from functools import wraps
 from typing import Any, Dict, Union
 
 import torch
-from peft.optimizers import create_loraplus_optimizer
 from torch import nn
-from transformers import Trainer
-from transformers.utils import is_sagemaker_mp_enabled
 from trl import DPOTrainer
 
 from axolotl.core.trainers.mixins import RngLoaderMixin, SchedulerMixin
+from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
 from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
     sanitize_kwargs_for_tagging,
 )
 
-if is_sagemaker_mp_enabled():
-    import smdistributed.modelparallel.torch as smp
 
-
-class AxolotlDPOTrainer(RngLoaderMixin, SchedulerMixin, DPOTrainer):
+class AxolotlDPOTrainer(
+    RngLoaderMixin, SchedulerMixin, OptimizerMixin, OptimizerInitMixin, DPOTrainer
+):
     """Extend the base DPOTrainer for axolotl helpers."""
 
     tag_names = ["axolotl", "dpo"]
 
     def __init__(self, *args, dataset_tags=None, **kwargs):
         super().__init__(*args, **kwargs)
+
         self.dataset_tags = dataset_tags
         self.optimizer = None
         self.model_accepts_loss_kwargs = False
-
-    def create_optimizer(self):
-        # pylint: disable=duplicate-code
-        if self.args.loraplus_lr_ratio is None:
-            return super().create_optimizer()
-
-        opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
-        if self.optimizer is None:  # pylint: disable=access-member-before-definition
-            optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
-                self.args,
-                opt_model,
-            )
-
-            loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
-            if loraplus_lr_ratio:
-                print("Using lora+")
-            loraplus_lr_embedding = getattr(self.args, "loraplus_lr_embedding", None)
-            # pylint: disable=duplicate-code
-            self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
-                opt_model,
-                optimizer_cls,
-                loraplus_lr_ratio=loraplus_lr_ratio,
-                loraplus_lr_embedding=loraplus_lr_embedding,
-                **optimizer_kwargs,
-            )
-
-        if is_sagemaker_mp_enabled():
-            self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
-                self.optimizer
-            )
-
-        return self.optimizer
 
     @wraps(DPOTrainer.push_to_hub)
     def push_to_hub(self, *args, **kwargs) -> str:

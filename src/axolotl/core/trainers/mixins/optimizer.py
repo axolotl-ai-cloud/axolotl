@@ -199,3 +199,20 @@ class OptimizerMixin(Trainer):
             )
 
         return self.optimizer
+
+
+class OptimizerInitMixin:
+    """
+    Mixin to handle common optimizer initialization logic for Trainers (mostly TRL) that do not
+    accept optimizer_cls_and_kwargs as kwarg in constructor.
+    """
+
+    def __init__(self, *args, **kwargs):
+        optimizer_cls_and_kwargs = kwargs.pop("optimizer_cls_and_kwargs", None)
+        super().__init__(*args, **kwargs)
+        if (
+            optimizer_cls_and_kwargs
+            and self.optimizer_cls_and_kwargs is None
+            and self.optimizer is None
+        ):
+            self.optimizer_cls_and_kwargs = optimizer_cls_and_kwargs

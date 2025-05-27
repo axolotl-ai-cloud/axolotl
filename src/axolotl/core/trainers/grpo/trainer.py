@@ -43,6 +43,7 @@ from trl.trainer.utils import pad
 
 from axolotl.core.trainers.grpo.sampler import SequenceParallelRepeatRandomSampler
 from axolotl.core.trainers.mixins import RngLoaderMixin, SchedulerMixin
+from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
 from axolotl.monkeypatch.ring_attn.patch import get_ring_attn_group
 
 if is_peft_available():
@@ -50,7 +51,9 @@ if is_peft_available():
     from peft import PeftConfig
 
 
-class AxolotlGRPOTrainer(RngLoaderMixin, SchedulerMixin, GRPOTrainer):
+class AxolotlGRPOTrainer(
+    RngLoaderMixin, SchedulerMixin, OptimizerMixin, OptimizerInitMixin, GRPOTrainer
+):
     """Extend the base GRPOTrainer for axolotl helpers"""
 
     _tag_names = ["trl", "grpo", "axolotl"]
@@ -77,6 +80,7 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
             torch.optim.Optimizer | None, torch.optim.lr_scheduler.LambdaLR | None
         ] = (None, None),
         peft_config: "PeftConfig | None" = None,
+        optimizer_cls_and_kwargs: tuple[type, dict] | None = None,
     ):
         # First call the superclass constructor with all arguments
         super().__init__(
@@ -90,6 +94,7 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
             callbacks=callbacks,
             optimizers=optimizers,
             peft_config=peft_config,
+            optimizer_cls_and_kwargs=optimizer_cls_and_kwargs,
         )
 
         # Get number of SP groups (number of processes divided by SP degree)

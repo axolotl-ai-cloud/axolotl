@@ -14,6 +14,7 @@ from trl import (
 )
 
 from axolotl.core.trainers.mixins import RngLoaderMixin
+from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
 from axolotl.core.trainers.mixins.scheduler import SchedulerMixin
 
 
@@ -75,7 +76,9 @@ class TRLPPOTrainer(PPOTrainer):
             )
 
 
-class AxolotlORPOTrainer(RngLoaderMixin, SchedulerMixin, ORPOTrainer):
+class AxolotlORPOTrainer(
+    RngLoaderMixin, SchedulerMixin, OptimizerMixin, OptimizerInitMixin, ORPOTrainer
+):
     """
     Extend the base ORPOTrainer for axolotl helpers
     """
@@ -155,7 +158,9 @@ class AxolotlORPOTrainer(RngLoaderMixin, SchedulerMixin, ORPOTrainer):
         return loss, metrics
 
 
-class AxolotlKTOTrainer(RngLoaderMixin, SchedulerMixin, KTOTrainer):
+class AxolotlKTOTrainer(
+    RngLoaderMixin, SchedulerMixin, OptimizerMixin, OptimizerInitMixin, KTOTrainer
+):
     """
     Extend the base KTOTrainer for axolotl helpers
     """
@@ -163,7 +168,9 @@ class AxolotlKTOTrainer(RngLoaderMixin, SchedulerMixin, KTOTrainer):
     tag_names = ["axolotl", "kto"]
 
 
-class AxolotlCPOTrainer(RngLoaderMixin, SchedulerMixin, CPOTrainer):
+class AxolotlCPOTrainer(
+    RngLoaderMixin, SchedulerMixin, OptimizerMixin, OptimizerInitMixin, CPOTrainer
+):
     """
     Extend the base CPOTrainer for axolotl helpers
     """

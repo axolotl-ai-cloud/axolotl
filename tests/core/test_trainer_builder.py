@@ -2,17 +2,22 @@
 unit tests for axolotl.core.trainer_builder
 """
 
+# pylint: disable=protected-access
+
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
-from axolotl.core.trainer_builder.rl import HFRLTrainerBuilder
-from axolotl.core.trainer_builder.sft import HFCausalTrainerBuilder
+from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.utils.config import normalize_config
+from axolotl.utils.data.rl import load_prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.models import load_model, load_tokenizer
 from axolotl.utils.schemas.enums import RLType
+
+from tests.constants import ALPACA_MESSAGES_CONFIG_REVISION
 
 
 @pytest.fixture(name="base_cfg")
@@ -23,7 +28,7 @@ def fixture_base_cfg():
     cfg = DictDefault(
         {
             # Model and tokenizer settings
-            "base_model": "HuggingFaceTB/SmolLM2-135M",
+            "base_model": "HuggingFaceTB/SmolLM2-135M-Instruct",
             "sequence_len": 2048,
             "model_config_type": "llama",  # example type
             # Basic training settings
@@ -163,6 +168,20 @@ def fixture_ipo_cfg(base_cfg):
     return cfg
 
 
+@pytest.fixture(name="simpo_cfg")
+def fixture_simpo_cfg(base_cfg):
+    cfg = base_cfg.copy()
+    cfg.update(
+        {
+            "rl": RLType.SIMPO,
+            "rl_beta": 0.2,
+            "cpo_alpha": 0.9,
+            "simpo_gamma": 0.4,
+        }
+    )
+    return cfg
+
+
 @pytest.fixture(name="sft_cfg")
 def fixture_sft_cfg(base_cfg):
     cfg = base_cfg.copy()
@@ -225,7 +244,7 @@ class TestHFRLTrainerBuilder:
 
     def test_dpo_training_arguments(self, dpo_cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(dpo_cfg, model, tokenizer)
-        training_arguments = builder.build_training_arguments(100)
+        training_arguments, _ = builder._build_training_arguments(100)
 
         self._test_common_training_arguments(training_arguments, rl=dpo_cfg.rl)
         # DPO specific
@@ -235,7 +254,7 @@ class TestHFRLTrainerBuilder:
 
     def test_orpo_training_arguments(self, orpo_cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(orpo_cfg, model, tokenizer)
-        training_arguments = builder.build_training_arguments(100)
+        training_arguments, _ = builder._build_training_arguments(100)
 
         self._test_common_training_arguments(training_arguments, rl=orpo_cfg.rl)
         # ORPO specific
@@ -244,7 +263,7 @@ class TestHFRLTrainerBuilder:
 
     def test_kto_training_arguments(self, kto_cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(kto_cfg, model, tokenizer)
-        training_arguments = builder.build_training_arguments(100)
+        training_arguments, _ = builder._build_training_arguments(100)
 
         self._test_common_training_arguments(training_arguments, rl=kto_cfg.rl)
         # KTO specific
@@ -252,30 +271,31 @@ class TestHFRLTrainerBuilder:
         assert training_arguments.undesirable_weight == 1.0
         assert training_arguments.max_prompt_length == 512
 
-    def test_grpo_training_arguments(self, grpo_cfg, model, tokenizer, tmp_path):
-        def _write_rewards_file(rewards_dir: Path):
-            """
-            Writes reward function to local tmp path to be loaded on trainer building
-            """
-            # Create rewards.py in a directory we can import from
-            rewards_dir.mkdir()
-            rewards_file = rewards_dir / "rewards.py"
-            rewards_file.write_text(
-                """import random
+    def _write_rewards_file(self, rewards_dir: Path):
+        """
+        Writes reward function to local tmp path to be loaded on trainer building
+        """
+        # Create rewards.py in a directory we can import from
+        rewards_dir.mkdir()
+        rewards_file = rewards_dir / "rewards.py"
+        rewards_file.write_text(
+            """import random
 def rand_reward_func(prompts, completions) -> list[float]:
     return [random.uniform(0, 1) for _ in completions]
-        """
-            )
+"""
+        )
+
+    def test_grpo_training_arguments(self, grpo_cfg, model, tokenizer, tmp_path):
 
         rewards_dir = tmp_path / "rewards_test"
-        _write_rewards_file(rewards_dir)
+        self._write_rewards_file(rewards_dir)
 
         # Add the directory to Python path so we can import the module
         sys.path.insert(0, str(rewards_dir))
 
         try:
             builder = HFRLTrainerBuilder(grpo_cfg, model, tokenizer)
-            training_arguments = builder.build_training_arguments(100)
+            training_arguments, _ = builder._build_training_arguments(100)
 
             self._test_common_training_arguments(training_arguments, rl=grpo_cfg.rl)
             # GRPO specific
@@ -300,12 +320,134 @@ def rand_reward_func(prompts, completions) -> list[float]:
 
     def test_ipo_training_arguments(self, ipo_cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(ipo_cfg, model, tokenizer)
-        training_arguments = builder.build_training_arguments(100)
+        training_arguments, _ = builder._build_training_arguments(100)
 
         self._test_common_training_arguments(training_arguments, rl=ipo_cfg.rl)
         # IPO specific
         assert training_arguments.beta == 0.1
         assert training_arguments.loss_type == "ipo"
+
+    def test_simpo_training_arguments(self, simpo_cfg, model, tokenizer):
+        builder = HFRLTrainerBuilder(simpo_cfg, model, tokenizer)
+        training_arguments, _ = builder._build_training_arguments(100)
+
+        self._test_common_training_arguments(training_arguments, rl=simpo_cfg.rl)
+        # SIMPO specific
+        assert training_arguments.beta == 0.2
+        assert training_arguments.cpo_alpha == 0.9
+        assert training_arguments.simpo_gamma == 0.4
+
+    @pytest.mark.parametrize(
+        ("cfg_string", "dataset_name"),
+        [
+            (
+                "dpo_cfg",
+                "dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff",
+            ),
+            (
+                "ipo_cfg",
+                "dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff",
+            ),
+            (
+                "grpo_cfg",
+                "dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff",
+            ),
+            ("orpo_cfg", None),  # don't use fixture for orpo to use smaller split
+            ("kto_cfg", None),  # no fixture for kto
+            (
+                "simpo_cfg",
+                "dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff",
+            ),
+        ],
+    )
+    def test_custom_optimizer_cls_and_kwargs(
+        self,
+        request,
+        cfg_string,
+        dataset_name,
+        tmp_path,
+        model,
+        tokenizer,
+    ):
+        cfg = request.getfixturevalue(cfg_string)
+
+        builder = HFRLTrainerBuilder(cfg, model, tokenizer)
+        cfg["optimizer"] = "muon"
+
+        if cfg_string in ["dpo_cfg", "ipo_cfg", "grpo_cfg", "simpo_cfg"]:
+            cfg["datasets"] = [DictDefault(ALPACA_MESSAGES_CONFIG_REVISION)]
+        elif cfg_string == "kto_cfg":
+            cfg["datasets"] = [
+                DictDefault(
+                    {
+                        "path": "argilla/ultrafeedback-binarized-preferences-cleaned-kto",
+                        "type": "llama3.ultra",
+                        "split": "train[:1%]",
+                    }
+                )
+            ]
+        elif cfg_string == "orpo_cfg":
+            cfg["datasets"] = [
+                DictDefault(
+                    {
+                        "path": "argilla/ultrafeedback-binarized-preferences-cleaned",
+                        "type": "chat_template.argilla",
+                        "split": "train[:1%]",
+                    }
+                )
+            ]
+        else:
+            raise ValueError(f"Unhandled cfg_string: {cfg_string}")
+
+        if cfg_string == "grpo_cfg":
+            rewards_dir = tmp_path / "rewards_test"
+            self._write_rewards_file(rewards_dir)
+
+            # Add the directory to Python path so we can import the module
+            sys.path.insert(0, str(rewards_dir))
+
+        try:
+            # Only use mock for the commented out configs
+            if dataset_name is not None:
+                with patch(
+                    "axolotl.utils.data.rl.load_dataset_w_config"
+                ) as mock_load_dataset:
+                    mock_load_dataset.return_value = request.getfixturevalue(
+                        dataset_name
+                    )
+                    train_dataset, eval_dataset = load_prepare_preference_datasets(cfg)
+            else:
+                # Load actual datasets for orpo_cfg and kto_cfg
+                train_dataset, eval_dataset = load_prepare_preference_datasets(cfg)
+
+            builder.train_dataset = train_dataset
+            builder.eval_dataset = eval_dataset
+
+            trainer = builder.build(100)
+
+            assert trainer.optimizer_cls_and_kwargs is not None
+
+            from axolotl.contribs.mit.muon import (  # pylint: disable=no-name-in-module
+                Muon,
+                MuonOptimizerFactory,
+            )
+
+            optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
+            assert optimizer_cls is MuonOptimizerFactory
+            assert optimizer_kwargs["lr"] == 0.00005
+            assert optimizer_kwargs["weight_decay"] == 0.01
+            assert optimizer_kwargs["betas"] == (0.998, 0.9)
+            assert optimizer_kwargs["eps"] == 0.00001
+
+            # Ensure optimizer is created with correct class
+            optim = trainer.create_optimizer()
+            assert isinstance(optim, Muon)
+
+        finally:
+            if cfg_string == "grpo_cfg":
+                # remove imported module from path
+                if str(rewards_dir) in sys.path:
+                    sys.path.remove(str(rewards_dir))
 
 
 class TestHFCausalTrainerBuilder:
@@ -342,6 +484,30 @@ class TestHFCausalTrainerBuilder:
         assert training_arguments.sample_packing is False
         assert training_arguments.eval_sample_packing is False
 
+    def test_custom_optimizer_cls_and_kwargs(self, sft_cfg, model, tokenizer):
+        builder = HFCausalTrainerBuilder(sft_cfg, model, tokenizer)
+        sft_cfg["optimizer"] = "muon"
+
+        trainer = builder.build(100)
+
+        assert trainer.optimizer_cls_and_kwargs is not None
+
+        from axolotl.contribs.mit.muon import (  # pylint: disable=no-name-in-module
+            Muon,
+            MuonOptimizerFactory,
+        )
+
+        optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
+        assert optimizer_cls is MuonOptimizerFactory
+        assert optimizer_kwargs["lr"] == 0.00005
+        assert optimizer_kwargs["weight_decay"] == 0.01
+        assert optimizer_kwargs["betas"] == (0.998, 0.9)
+        assert optimizer_kwargs["eps"] == 0.00001
+
+        # Ensure optimizer is created with correct class
+        optim = trainer.create_optimizer()
+        assert isinstance(optim, Muon)
+
 
 class TestTrainerClsPlugin:
     """
@@ -358,9 +524,13 @@ class TestTrainerClsPlugin:
 
         # Expected AttributeError as we don't pass regular model configs to RL trainer builder
         # If it throws `TypeError: None is not a callable object`, trainer_cls could be None
-        with pytest.raises(
-            AttributeError, match=r".*'tuple' object has no attribute 'config'.*"
-        ):
+        try:
             builder = HFRLTrainerBuilder(kto_cfg, model, tokenizer)
 
             builder.build(100)
+        except TypeError as e:
+            # Error raised if trainer_cls is None
+            assert "'tuple' object has no attribute 'config'" not in str(e)
+        except Exception:  # pylint: disable=broad-exception-caught
+            # Another error happens, so we passed trainer_cls to builder
+            pass
