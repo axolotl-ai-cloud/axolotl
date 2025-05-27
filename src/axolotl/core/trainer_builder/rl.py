@@ -19,7 +19,7 @@ from axolotl.core.training_args import (
     AxolotlORPOConfig,
 )
 from axolotl.integrations.base import PluginManager
-from axolotl.utils.models import ensure_dtype
+from axolotl.loaders.utils import ensure_dtype
 from axolotl.utils.schemas.enums import RLType
 
 LOG = logging.getLogger(__name__)

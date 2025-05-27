@@ -2,9 +2,9 @@
 tests for loading loras
 """
 
+from axolotl.loaders import ModelLoader, load_tokenizer
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import load_model, load_tokenizer
 
 # pylint: disable=duplicate-code
 minimal_config = DictDefault(
@@ -46,7 +46,7 @@ class TestLoRALoad:
         cfg = validate_config(cfg)
         normalize_config(cfg)
         tokenizer = load_tokenizer(cfg)
-        load_model(cfg, tokenizer)
+        ModelLoader(cfg, tokenizer).load()
 
     def test_load_lora_weights_empty_dropout(self):
         cfg = DictDefault(
@@ -67,4 +67,4 @@ class TestLoRALoad:
         normalize_config(cfg)
         assert cfg.lora_dropout == 0.0
         tokenizer = load_tokenizer(cfg)
-        load_model(cfg, tokenizer)
+        ModelLoader(cfg, tokenizer).load()
