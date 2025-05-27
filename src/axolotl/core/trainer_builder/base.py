@@ -440,11 +440,8 @@ class TrainerBuilderBase(abc.ABC):
         trainer_kwargs: dict[str, Any] = {}
 
         self._configure_warmup_and_logging(total_num_steps, training_args_kwargs)
-
         self._configure_precision_settings(training_args_kwargs)
-
         self._configure_save_and_eval_strategy(training_args_kwargs)
-
         self._configure_gradient_checkpointing(training_args_kwargs)
 
         # set arg into trainer_args_kwargs with same name if value not None
@@ -488,7 +485,6 @@ class TrainerBuilderBase(abc.ABC):
             )
 
         training_args_kwargs["max_steps"] = self.cfg.max_steps or total_num_steps or -1
-
         training_args_kwargs["num_train_epochs"] = self.cfg.num_epochs
 
         # max_length is not used in CausalTrainer
@@ -496,13 +492,9 @@ class TrainerBuilderBase(abc.ABC):
             training_args_kwargs["max_length"] = self.cfg.sequence_len
 
         self._configure_reporting(training_args_kwargs)
-
         self._configure_hub_parameters(training_args_kwargs)
-
         self._configure_scheduler(training_args_kwargs)
-
         self._configure_optimizer(training_args_kwargs, trainer_kwargs)
-
         self._configure_torch_compile(training_args_kwargs)
 
         return training_args_kwargs, trainer_kwargs
