@@ -88,18 +88,6 @@ def kldiv_forward_llama_like(
     )
 
 
-def apply_kernel_to_qwen2():
-    from transformers.models.qwen2 import modeling_qwen2
-
-    modeling_qwen2.Qwen2ForCausalLM.forward = kldiv_forward_llama_like
-
-
-def apply_kernel_to_llama():
-    from transformers.models.llama import modeling_llama
-
-    modeling_llama.LlamaForCausalLM.forward = kldiv_forward_llama_like
-
-
 def apply_kernel(model_type):
     # Dynamically import the module and attention class
     module_path = f"transformers.models.{model_type}.modeling_{model_type}"
