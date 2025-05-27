@@ -242,7 +242,8 @@ def fixture_tokenizer(base_cfg):
 
 @pytest.fixture(name="model")
 def fixture_model(base_cfg, tokenizer):
-    return ModelLoader(base_cfg, tokenizer).load()
+    model, _ = ModelLoader(base_cfg, tokenizer).load()
+    return model
 
 
 class TestHFRLTrainerBuilder:
