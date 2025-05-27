@@ -41,3 +41,4 @@ class KDArgs(BaseModel):
     kd_online_server_base_url: str | None = None
     kd_online_topk: int | None = None
     kd_online_server: InferenceServerType | None = "vllm"
+    kd_online_timeout: int | None = 120
