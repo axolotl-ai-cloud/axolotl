@@ -238,9 +238,9 @@ class TestQuantizationCallback:
 
         # ensure model has been quantized
         assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
-        assert not model.model.embed_tokens.weight_fake_quantizer.enabled
+        assert model.model.embed_tokens.weight_fake_quantizer.enabled
         assert isinstance(model.lm_head, FakeQuantizedLinear)
-        assert not model.lm_head.weight_fake_quantizer.enabled
+        assert model.lm_head.weight_fake_quantizer.enabled
 
         qat_callback = QATCallback(cfg)
 
@@ -251,6 +251,8 @@ class TestQuantizationCallback:
             control=None,
             model=model,
         )
+
+        # quantization should have been disabled
         assert not model.model.embed_tokens.weight_fake_quantizer.enabled
         assert not model.lm_head.weight_fake_quantizer.enabled
 
@@ -261,6 +263,8 @@ class TestQuantizationCallback:
             control=None,
             model=model,
         )
+
+        # quantization should have been enabled
         assert model.model.embed_tokens.weight_fake_quantizer.enabled
         assert model.lm_head.weight_fake_quantizer.enabled
 
@@ -286,9 +290,9 @@ class TestQuantizationCallback:
 
         # ensure model has been quantized
         assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
-        assert not model.model.embed_tokens.weight_fake_quantizer.enabled
+        assert model.model.embed_tokens.weight_fake_quantizer.enabled
         assert isinstance(model.lm_head, FakeQuantizedLinear)
-        assert not model.lm_head.weight_fake_quantizer.enabled
+        assert model.lm_head.weight_fake_quantizer.enabled
 
         qat_callback = QATCallback(cfg)
         # simulate first training step
@@ -298,7 +302,8 @@ class TestQuantizationCallback:
             control=None,
             model=model,
         )
-        # model should be quantized from the get-go
+
+        # quantization should be enabled from the get-go
         assert model.model.embed_tokens.weight_fake_quantizer.enabled
         assert model.lm_head.weight_fake_quantizer.enabled
 
