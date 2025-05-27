@@ -75,8 +75,8 @@ def kldiv_forward_llama_like(
         target_mask,
         true_labels=labels,
     )
-    num_items_in_batch = kwargs.pop("num_items_in_batch", None)
-    if num_items_in_batch is not None:
+    num_items_in_batch = kwargs.pop("num_items_in_batch", -1)
+    if num_items_in_batch is not None and num_items_in_batch > 0:
         loss = loss / num_items_in_batch
 
     return CausalLMOutputWithPast(

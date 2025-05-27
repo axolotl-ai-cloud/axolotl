@@ -12,11 +12,6 @@ from axolotl.core.trainers import (
 from axolotl.core.trainers.dpo import DPOStrategy
 from axolotl.core.trainers.dpo.args import AxolotlDPOConfig
 from axolotl.core.trainers.grpo import GRPOStrategy
-from axolotl.core.training_args import (
-    AxolotlCPOConfig,
-    AxolotlKTOConfig,
-    AxolotlORPOConfig,
-)
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import ensure_dtype
 from axolotl.utils.callbacks.qat import QATCallback
@@ -83,6 +78,12 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         """
         Returns training_args and trainer_kwargs
         """
+        from axolotl.core.training_args import (
+            AxolotlCPOConfig,
+            AxolotlKTOConfig,
+            AxolotlORPOConfig,
+        )
+
         training_args_kwargs, trainer_kwargs = self._set_base_training_args(
             total_num_steps=total_num_steps
         )
@@ -149,6 +150,13 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         for blocklist_key in blocklist_args_kwargs:
             if blocklist_key in training_args_kwargs:
                 del training_args_kwargs[blocklist_key]
+
+
+        if self.cfg.plugins:
+            plugin_manager = PluginManager.get_instance()
+            plugin_training_args = plugin_manager.get_training_args(self.cfg)
+            if plugin_training_args:
+                training_args_kwargs.update(plugin_training_args)
 
         training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
             logging_first_step=True,
