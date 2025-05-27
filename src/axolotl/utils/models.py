@@ -139,9 +139,7 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
             and hasattr(model_config.vision_config, "image_size")
         ):
             cfg.image_size = model_config.vision_config.image_size
-            LOG.debug(
-                f"Loaded image size: {cfg.image_size} from model config",
-            )
+            LOG.debug(f"Loaded image size: {cfg.image_size} from model config")
 
     quant_config_exists = (
         hasattr(model_config, "quantization_config")
@@ -459,15 +457,9 @@ def load_tokenizer(cfg):
             {"additional_special_tokens": additional_special_tokens}
         )
 
-    LOG.debug(
-        f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}",
-    )
-    LOG.debug(
-        f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}",
-    )
-    LOG.debug(
-        f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}",
-    )
+    LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
+    LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
+    LOG.debug(f"UNK: {tokenizer.unk_token_id} / {tokenizer.unk_token}")
 
     if cfg.chat_template:
         chat_template_string = get_chat_template_from_config(
@@ -524,9 +516,7 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
         elif im_height is not None:
             cfg.image_size = im_height
 
-        LOG.debug(
-            f"Loaded image size: {cfg.image_size} from processor",
-        )
+        LOG.debug(f"Loaded image size: {cfg.image_size} from processor")
 
     return processor
 
@@ -1179,7 +1169,7 @@ class ModelLoader:
             and self.cfg.sequence_len > self.model.config.max_position_embeddings
         ):
             LOG.warning(
-                f"increasing model.config.max_position_embeddings from {self.model.config.max_position_embeddings} to {self.cfg.sequence_len}",
+                f"increasing model.config.max_position_embeddings from {self.model.config.max_position_embeddings} to {self.cfg.sequence_len}"
             )
             self.model.config.max_position_embeddings = self.cfg.sequence_len
 
@@ -1576,9 +1566,7 @@ def load_lora(model, cfg, inference=False, config_only=False):
 
     if cfg.lora_target_linear:
         linear_names = find_all_linear_names(model)
-        LOG.info(
-            f"found linear modules: {repr(sorted(linear_names))}",
-        )
+        LOG.info(f"found linear modules: {repr(sorted(linear_names))}")
         lora_target_modules_as_list = (
             lora_target_modules
             if isinstance(lora_target_modules, list)

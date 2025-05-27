@@ -76,7 +76,7 @@ class CutCrossEntropyPlugin(BasePlugin):
             )
 
             LOG.info(
-                f"Applying Cut Cross Entropy to model type: {cfg.model_config_type}",
+                f"Applying Cut Cross Entropy to model type: {cfg.model_config_type}"
             )
 
             # The patch checks model_type internally

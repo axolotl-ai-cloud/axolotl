@@ -67,7 +67,7 @@ def check_remote_config(config: Union[str, Path]) -> Union[str, Path]:
             # Log a warning but do not raise an error; JSON is technically valid YAML.
             # This can happen when you forget to point to a raw GitHub link.
             LOG.warning(
-                f"Warning: The content of the file at {config} is JSON, which is technically valid YAML but might not be intended.",
+                f"Warning: The content of the file at {config} is JSON, which is technically valid YAML but might not be intended."
             )
         except json.JSONDecodeError:
             # If it's not valid JSON, verify it's valid YAML

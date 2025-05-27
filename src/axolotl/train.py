@@ -60,9 +60,7 @@ def setup_model_and_tokenizer(
             `None`), and processor (if multimodal, else `None`).
     """
     # Load tokenizer
-    LOG.debug(
-        f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
-    )
+    LOG.debug(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
     tokenizer = load_tokenizer(cfg)
 
     # Load processor for multimodal models if needed

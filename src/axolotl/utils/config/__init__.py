@@ -20,7 +20,7 @@ from axolotl.utils.schemas.config import (
 from axolotl.utils.schemas.config import AxolotlInputConfig as AxolotlInputConfigBase
 from axolotl.utils.schemas.datasets import DPODataset, KTODataset, SFTDataset
 
-LOG = get_logger(__name__)
+LOG = get_logger(__name__, use_environ=True)
 
 
 def choose_device(cfg):

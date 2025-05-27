@@ -189,7 +189,7 @@ def integrate_lora_mlp_patch(peft_model: PeftModelForCausalLM):
         if is_mlp_lora and mlp_no_bias and mlp_not_dora:
             layer.mlp.forward = types.MethodType(apply_lora_mlp, layer.mlp)
         else:
-            LOG.warning("unable to apply unsloth lora mlp patch to layer %d", idx)
+            LOG.warning(f"unable to apply unsloth lora mlp patch to layer {idx}")
 
 
 def integrate_lora_patch(peft_model: PeftModelForCausalLM, cfg):
@@ -215,7 +215,7 @@ def integrate_lora_patch(peft_model: PeftModelForCausalLM, cfg):
                 layer.self_attn.apply_qkv = apply_lora_qkv
             else:
                 layer.self_attn.apply_qkv = original_apply_qkv
-                LOG.warning("unable to apply unsloth lora qkv patch to layer %d", idx)
+                LOG.warning(f"unable to apply unsloth lora qkv patch to layer {idx}")
         if cfg.unsloth_lora_o:
             layer_modules = [
                 getattr(layer.self_attn, linear_proj) for linear_proj in ["o_proj"]
@@ -234,9 +234,7 @@ def integrate_lora_patch(peft_model: PeftModelForCausalLM, cfg):
                 layer.self_attn.apply_o = apply_lora_o
             else:
                 layer.self_attn.apply_o = original_apply_o
-                LOG.warning(
-                    "unable to apply unsloth lora o_proj patch to layer %d", idx
-                )
+                LOG.warning(f"unable to apply unsloth lora o_proj patch to layer {idx}")
 
 
 def patch_unsloth_layernorm():

@@ -84,9 +84,7 @@ class LigerPlugin(BasePlugin):
                 kwargs["geglu"] = cfg.liger_glu_activation
             elif "swiglu" in liger_fn_sig.parameters:
                 kwargs["swiglu"] = cfg.liger_glu_activation
-            LOG.info(
-                f"Applying LIGER to {cfg.model_config_type} with kwargs: {kwargs}",
-            )
+            LOG.info(f"Applying LIGER to {cfg.model_config_type} with kwargs: {kwargs}")
             apply_liger_fn(**kwargs)
         elif cfg.model_config_type == "jamba":
             from transformers.models.jamba import modeling_jamba

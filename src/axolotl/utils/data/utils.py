@@ -174,13 +174,9 @@ def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
     try:
         ds_lengths = get_dataset_lengths(dataset, from_arrow=True)
         min_input_len = np.min(ds_lengths)
-        LOG.info(
-            f"min_input_len: {min_input_len}",
-        )
+        LOG.info(f"min_input_len: {min_input_len}")
         max_input_len = np.max(ds_lengths)
-        LOG.info(
-            f"max_input_len: {max_input_len}",
-        )
+        LOG.info(f"max_input_len: {max_input_len}")
     except AttributeError:
         pass
 
@@ -208,8 +204,6 @@ def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
     if prior_len:
         dropped = prior_len - len(dataset)
         if dropped:
-            LOG.warning(
-                f"Dropped {dropped} long samples from dataset",
-            )
+            LOG.warning(f"Dropped {dropped} long samples from dataset")
 
     return dataset
