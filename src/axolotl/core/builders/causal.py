@@ -410,7 +410,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
     def build_collator(
         self,
-        training_args,  # type: "AxolotlTrainingArguments"
+        training_args,  # type: "AxolotlTrainingArguments"  # type: ignore
         is_eval=False,
         **kwargs,
     ):
