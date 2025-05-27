@@ -2,7 +2,6 @@ base_model: Qwen/Qwen2.5-0.5B
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
-
 chat_template: qwen_25
 rl: dpo
 datasets:

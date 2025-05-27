@@ -54,13 +54,21 @@ quartodoc:
         - core.trainers.grpo.trainer
         - core.trainers.grpo.sampler
         - core.trainers.utils
+    - title: Model Loading
+      desc: Functionality for loading and patching models, tokenizers, etc.
+      contents:
+        - loaders.model
+        - loaders.tokenizer
+        - loaders.processor
+        - loaders.adapter
+        - loaders.patch_manager
+        - loaders.constants
     - title: Mixins
       desc: Mixin classes for augmenting trainers
       contents:
         - core.trainers.mixins.optimizer
         - core.trainers.mixins.rng_state_loader
         - core.trainers.mixins.scheduler
-        - core.trainers.mixins.sequence_parallel
     - title: Context Managers
       desc: Context managers for altering trainer behaviors
       contents:
@@ -121,14 +129,14 @@ quartodoc:
         - monkeypatch.attention.mllama
         - monkeypatch.data.batch_dataset_fetcher
         - monkeypatch.mixtral
+        - monkeypatch.gradient_checkpointing.offload_cpu
+        - monkeypatch.gradient_checkpointing.offload_disk
     - title: Utils
       desc: Utility functions
       contents:
-        - utils.models
         - utils.tokenization
         - utils.chat_templates
         - utils.lora
-        - utils.lora_embeddings
         - utils.model_shard_quant
         - utils.bench
         - utils.freeze
@@ -139,8 +147,6 @@ quartodoc:
         - utils.optimizers.adopt
         - utils.data.pretraining
         - utils.data.sft
-        - utils.gradient_checkpointing.offload_cpu
-        - utils.gradient_checkpointing.offload_disk
     - title: Schemas
       desc: Pydantic data models for Axolotl config
       contents:

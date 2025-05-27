@@ -5,10 +5,10 @@ from functools import partial
 
 from packaging import version
 
-from axolotl.utils.gradient_checkpointing.offload_cpu import (
+from axolotl.monkeypatch.gradient_checkpointing.offload_cpu import (
     CPU_Offloaded_Gradient_Checkpointer,
 )
-from axolotl.utils.gradient_checkpointing.offload_disk import (
+from axolotl.monkeypatch.gradient_checkpointing.offload_disk import (
     Disco,
 )
 

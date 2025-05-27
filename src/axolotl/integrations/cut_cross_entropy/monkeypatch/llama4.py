@@ -16,22 +16,12 @@ from torch import nn
 from transformers.cache_utils import Cache
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.models.llama4.modeling_llama4 import (
-    _CONFIG_FOR_DOC,
-    LLAMA4_INPUTS_DOCSTRING,
     Llama4CausalLMOutputWithPast,
-)
-from transformers.utils import (
-    add_start_docstrings_to_model_forward,
-    replace_return_docstrings,
 )
 
 _PATCH_OPTS: PatchOptions | None = None
 
 
-@add_start_docstrings_to_model_forward(LLAMA4_INPUTS_DOCSTRING)
-@replace_return_docstrings(
-    output_type=CausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC
-)
 def cce_forward(
     self,
     input_ids: torch.LongTensor | None = None,
@@ -160,9 +150,6 @@ def cce_forward(
     )
 
 
-@replace_return_docstrings(
-    output_type=Llama4CausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC
-)
 def cce_forward_multimodal(
     self,
     input_ids: torch.LongTensor | None = None,  # type: ignore

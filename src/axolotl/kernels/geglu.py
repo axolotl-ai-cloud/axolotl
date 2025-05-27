@@ -1,5 +1,4 @@
-"""
-Module for definition of GEGLU Triton kernels.
+"""Module for definition of GEGLU Triton kernels.
 
 See "GLU Variants Improve Transformer" (https://arxiv.org/abs/2002.05202).
 
@@ -11,8 +10,6 @@ Credit to `unsloth` (https://unsloth.ai/) for inspiration for this implementatio
 import torch
 import triton
 import triton.language as tl
-
-SQRT_2_PI: tl.constexpr = 0.7978845608028654  # sqrt(2/π)
 
 
 @triton.jit

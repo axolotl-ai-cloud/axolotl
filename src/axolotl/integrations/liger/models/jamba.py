@@ -13,21 +13,11 @@ from liger_kernel.transformers.fused_linear_cross_entropy import (
 from torch.nn import CrossEntropyLoss
 from transformers.modeling_outputs import MoeCausalLMOutputWithPast
 from transformers.models.jamba.modeling_jamba import (
-    _CONFIG_FOR_DOC,
-    JAMBA_INPUTS_DOCSTRING,
     HybridMambaAttentionDynamicCache,
     load_balancing_loss_func,
 )
-from transformers.utils import (
-    add_start_docstrings_to_model_forward,
-    replace_return_docstrings,
-)
 
 
-@add_start_docstrings_to_model_forward(JAMBA_INPUTS_DOCSTRING)
-@replace_return_docstrings(
-    output_type=MoeCausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC
-)
 def lce_forward(
     self,
     input_ids: torch.LongTensor = None,

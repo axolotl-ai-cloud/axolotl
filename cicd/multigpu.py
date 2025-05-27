@@ -70,7 +70,7 @@ def run_cmd(cmd: str, run_folder: str):
     image=cicd_image,
     gpu=GPU_CONFIG,
     timeout=90 * 60,
-    cpu=8.0,
+    cpu=16.0,
     memory=131072 * N_GPUS,
     volumes=VOLUME_CONFIG,
 )

@@ -59,6 +59,7 @@ from axolotl.core.training_args import (
     AxolotlTrainingArguments,
 )
 from axolotl.integrations.base import PluginManager
+from axolotl.loaders.utils import ensure_dtype
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback
 from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
@@ -86,7 +87,6 @@ from axolotl.utils.collators import (
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
-from axolotl.utils.models import ensure_dtype
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers, RLType
 
 try:
@@ -387,8 +387,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["adam_beta1"] = self.cfg.adam_beta1
         if self.cfg.adam_beta2:
             training_arguments_kwargs["adam_beta2"] = self.cfg.adam_beta2
+        if self.cfg.adam_beta3:
+            training_arguments_kwargs["adam_beta3"] = self.cfg.adam_beta3
         if self.cfg.adam_epsilon:
             training_arguments_kwargs["adam_epsilon"] = self.cfg.adam_epsilon
+        if self.cfg.adam_epsilon2:
+            training_arguments_kwargs["adam_epsilon2"] = self.cfg.adam_epsilon2
         if self.cfg.max_grad_norm:
             training_arguments_kwargs["max_grad_norm"] = self.cfg.max_grad_norm
 
@@ -713,7 +717,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
                 beta1 = training_arguments_kwargs.get("adam_beta1", 0.9)
                 beta2 = training_arguments_kwargs.get("adam_beta2", 0.999)
-                beta3 = training_arguments_kwargs.get("adam_beta2", 0.9999)
+                beta3 = training_arguments_kwargs.get("adam_beta3", 0.9999)
                 eps1 = training_arguments_kwargs.get("adam_epsilon", 1e-30)
                 eps2 = training_arguments_kwargs.get("adam_epsilon2", 1e-16)
                 adam_kwargs["betas"] = (beta1, beta2, beta3)
@@ -793,11 +797,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["kd_top_k_before_softmax"] = (
                 self.cfg.kd_top_k_before_softmax
             )
-
-        training_arguments_kwargs["sequence_parallel_degree"] = (
-            self.cfg.sequence_parallel_degree
-        )
-        training_arguments_kwargs["ring_attn_func"] = self.cfg.ring_attn_func
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
@@ -1079,10 +1078,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.use_wandb:
             training_args_kwargs["run_name"] = self.cfg.wandb_name
 
-        training_args_kwargs["sequence_parallel_degree"] = (
-            self.cfg.sequence_parallel_degree
-        )
-
         training_args_cls = None
         blocklist_args_kwargs = []
         if self.cfg.rl is RLType.SIMPO:
@@ -1170,7 +1165,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.eval_dataset:
             trainer_kwargs["eval_dataset"] = self.eval_dataset
         if self.cfg.adapter and self.peft_config:
-            trainer_kwargs["peft_config"] = self.peft_config
+            if self.cfg.rl is not RLType.GRPO:
+                trainer_kwargs["peft_config"] = self.peft_config
         if self.cfg.precompute_ref_log_probs is not None:
             trainer_kwargs["precompute_ref_log_probs"] = (
                 self.cfg.precompute_ref_log_probs
@@ -1199,7 +1195,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.plugins:
             plugin_manager = PluginManager.get_instance()
-            trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
+            temp_trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
+            if temp_trainer_cls is not None:
+                trainer_cls = temp_trainer_cls
 
         sig = inspect.signature(trainer_cls)
         if "tokenizer" in sig.parameters.keys():
