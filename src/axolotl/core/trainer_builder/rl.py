@@ -175,7 +175,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         training_args, trainer_kwargs = self._build_training_arguments(total_num_steps)
 
         if self.cfg.rl is RLType.IPO and self.cfg.dpo_label_smoothing:
-            trainer_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
+            training_args.label_smoothing = self.cfg.dpo_label_smoothing
         if self.eval_dataset:
             trainer_kwargs["eval_dataset"] = self.eval_dataset
         if self.cfg.adapter and self.peft_config and self.cfg.rl is not RLType.GRPO:
