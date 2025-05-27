@@ -579,12 +579,13 @@ class TestTrainerClsPlugin:
 
         Fixes #2693
         """
-        kto_cfg.plugins = ["axolotl.integrations.liger.LigerPlugin"]
+        cfg = kto_cfg.copy()
+        cfg.plugins = ["axolotl.integrations.liger.LigerPlugin"]
 
         # Expected AttributeError as we don't pass regular model configs to RL trainer builder
         # If it throws `TypeError: None is not a callable object`, trainer_cls could be None
         try:
-            builder = HFRLTrainerBuilder(kto_cfg, model, tokenizer)
+            builder = HFRLTrainerBuilder(cfg, model, tokenizer)
 
             builder.build(100)
         except TypeError as e:
