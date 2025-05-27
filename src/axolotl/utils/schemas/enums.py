@@ -3,6 +3,29 @@
 from enum import Enum
 
 import torch
+from packaging import version
+
+torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+if version.parse(torch_version) < version.parse("2.6.0"):
+    # no-op - config validation should handle erroring out. this guards a `torch.int4` import being
+    # unavailable in torch < 2.6
+    class TorchIntDtype(Enum):
+        """Dummy class for import guarding"""
+
+else:
+
+    class TorchIntDType(Enum):
+        """Torch integer data types"""
+
+        uint1 = torch.uint1  # pylint: disable=invalid-name
+        uint2 = torch.uint2  # pylint: disable=invalid-name
+        uint3 = torch.uint3  # pylint: disable=invalid-name
+        uint4 = torch.uint4  # pylint: disable=invalid-name
+        uint5 = torch.uint5  # pylint: disable=invalid-name
+        uint6 = torch.uint6  # pylint: disable=invalid-name
+        uint7 = torch.uint7  # pylint: disable=invalid-name
+        int4 = torch.int4  # pylint: disable=invalid-name
+        int8 = torch.int8  # pylint: disable=invalid-name
 
 
 class RLType(str, Enum):
@@ -57,20 +80,6 @@ class CustomSupportedOptimizers(str, Enum):
     adopt_adamw = "adopt_adamw"  # pylint: disable=invalid-name
     came_pytorch = "came_pytorch"  # pylint: disable=invalid-name
     muon = "muon"  # pylint: disable=invalid-name
-
-
-class TorchIntDType(Enum):
-    """Torch integer data types"""
-
-    uint1 = torch.uint1  # pylint: disable=invalid-name
-    uint2 = torch.uint2  # pylint: disable=invalid-name
-    uint3 = torch.uint3  # pylint: disable=invalid-name
-    uint4 = torch.uint4  # pylint: disable=invalid-name
-    uint5 = torch.uint5  # pylint: disable=invalid-name
-    uint6 = torch.uint6  # pylint: disable=invalid-name
-    uint7 = torch.uint7  # pylint: disable=invalid-name
-    int4 = torch.int4  # pylint: disable=invalid-name
-    int8 = torch.int8  # pylint: disable=invalid-name
 
 
 class RingAttnFunc(str, Enum):

@@ -37,7 +37,6 @@ from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContext
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
-from axolotl.utils.quantization import convert_qat_model_for_ptq
 from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.trainer import setup_trainer
 
@@ -248,6 +247,8 @@ def save_trained_model(
 
     # handle QAT
     if cfg.qat:
+        from axolotl.utils.quantization import convert_qat_model_for_ptq
+
         LOG.info("Processing QAT model for saving...")
         convert_qat_model_for_ptq(
             model,

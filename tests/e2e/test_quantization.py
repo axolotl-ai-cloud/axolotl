@@ -32,6 +32,8 @@ from axolotl.utils.quantization import (
 from axolotl.utils.schemas.enums import TorchIntDType
 from axolotl.utils.schemas.quantization import QATConfig
 
+from tests.e2e.utils import require_torch_2_6_0
+
 
 @pytest.fixture()
 def model():
@@ -97,6 +99,7 @@ class TestQuantization:
         "weight_dtype,activation_dtype,group_size,expected_type,expected_params",
         ptq_config_test_cases,
     )
+    @require_torch_2_6_0
     def test_get_ptq_config(
         self, weight_dtype, activation_dtype, group_size, expected_type, expected_params
     ):
@@ -125,6 +128,7 @@ class TestQuantization:
     )
     @pytest.mark.parametrize("group_size", [4, 8])
     @pytest.mark.parametrize("quantize_embedding", [False, True])
+    @require_torch_2_6_0
     def test_prepare_model_for_qat(
         self, model, weight_dtype, activation_dtype, group_size, quantize_embedding
     ):  # pylint: disable=redefined-outer-name
@@ -162,6 +166,7 @@ class TestQuantization:
         "weight_dtype,activation_dtype,group_size,quantize_embedding,expected_exception",
         ptq_test_cases,
     )
+    @require_torch_2_6_0
     def test_quantize_model_for_ptq(
         self,
         model,
@@ -211,6 +216,7 @@ class TestQuantizationCallback:
             global_step=0,
         )
 
+    @require_torch_2_6_0
     def test_qat_callback_fake_quant_after_n_steps(
         self, model, trainer_state
     ):  # pylint: disable=redefined-outer-name
@@ -258,6 +264,7 @@ class TestQuantizationCallback:
         assert model.model.embed_tokens.weight_fake_quantizer.enabled
         assert model.lm_head.weight_fake_quantizer.enabled
 
+    @require_torch_2_6_0
     def test_qat_callback_fake_quant_after_n_steps_is_none(
         self, model, trainer_state
     ):  # pylint: disable=redefined-outer-name
@@ -301,6 +308,7 @@ class TestConvertQATModelForPTQ:
     Test convert_qat_model_for_ptq
     """
 
+    @require_torch_2_6_0
     def test_convert_qat_model_for_ptq(
         self, model
     ):  # pylint: disable=redefined-outer-name
