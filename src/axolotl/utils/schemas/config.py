@@ -98,6 +98,7 @@ class AxolotlInputConfig(
     # If `None`, default is `False` in the trainer.
     dpo_use_weighting: bool | None = None
     dpo_use_logits_to_keep: bool | None = None
+    dpo_label_smoothing: float | None = None
 
     datasets: (
         Annotated[

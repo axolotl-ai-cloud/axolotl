@@ -160,7 +160,7 @@ def fixture_ipo_cfg(base_cfg):
     cfg.update(
         {
             "rl": RLType.IPO,
-            "dpo_label_smoothing": 0.1,
+            "dpo_label_smoothing": 0,
             "beta": 0.1,
         }
     )
@@ -241,8 +241,8 @@ def fixture_tokenizer(base_cfg):
 
 
 @pytest.fixture(name="model")
-def fixture_model(cfg, tokenizer):
-    return ModelLoader(cfg, tokenizer).load()
+def fixture_model(base_cfg, tokenizer):
+    return ModelLoader(base_cfg, tokenizer).load()
 
 
 class TestHFRLTrainerBuilder:
@@ -289,6 +289,7 @@ class TestHFRLTrainerBuilder:
         assert training_arguments.beta == 0.1
         assert hasattr(training_arguments, "use_weighting")
         assert training_arguments.use_weighting is True
+        assert training_arguments.label_smoothing == 0.1
 
     def test_orpo_training_arguments(self, orpo_cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(orpo_cfg, model, tokenizer)
@@ -364,6 +365,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
         # IPO specific
         assert training_arguments.beta == 0.1
         assert training_arguments.loss_type == "ipo"
+        assert training_arguments.label_smoothing == 0
 
     def test_simpo_training_arguments(self, simpo_cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(simpo_cfg, model, tokenizer)

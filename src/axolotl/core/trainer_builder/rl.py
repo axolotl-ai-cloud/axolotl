@@ -140,10 +140,15 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()
 
-        else:
+        elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             training_args_cls = AxolotlDPOConfig
             if self.cfg.rl is RLType.IPO:
                 training_args_kwargs["loss_type"] = "ipo"
+
+            # Not compatible with IPO
+            if self.cfg.rl is RLType.DPO and self.cfg.dpo_label_smoothing:
+                training_args_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
+
             training_args_kwargs["max_completion_length"] = None
             training_args_kwargs["max_prompt_length"] = self.cfg.sequence_len
             training_args_kwargs["generate_during_eval"] = self.cfg.use_wandb
@@ -153,6 +158,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 training_args_kwargs["use_logits_to_keep"] = (
                     self.cfg.dpo_use_logits_to_keep
                 )
+        else:
+            raise ValueError(f"Unsupported RL: {self.cfg.rl}")
 
         for blocklist_key in blocklist_args_kwargs:
             if blocklist_key in training_args_kwargs:
@@ -174,8 +181,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
     def build(self, total_num_steps):
         training_args, trainer_kwargs = self._build_training_arguments(total_num_steps)
 
-        if self.cfg.rl is RLType.IPO and self.cfg.dpo_label_smoothing:
-            training_args.label_smoothing = self.cfg.dpo_label_smoothing
         if self.eval_dataset:
             trainer_kwargs["eval_dataset"] = self.eval_dataset
         if self.cfg.adapter and self.peft_config and self.cfg.rl is not RLType.GRPO:
