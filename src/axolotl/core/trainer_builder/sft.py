@@ -143,15 +143,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return AxolotlTrainer
 
     def build(self, total_num_steps):
-        training_arguments_kwargs = self._set_base_training_args(total_num_steps)
-
-        trainer_kwargs = {}
-
-        # Pop optimizer_cls_and_kwargs to trainer_kwargs
-        if "optimizer_cls_and_kwargs" in training_arguments_kwargs:
-            trainer_kwargs["optimizer_cls_and_kwargs"] = training_arguments_kwargs.pop(
-                "optimizer_cls_and_kwargs"
-            )
+        training_arguments_kwargs, trainer_kwargs = self._set_base_training_args(
+            total_num_steps
+        )
 
         if self.cfg.fsdp:
             training_arguments_kwargs["fsdp"] = self.cfg.fsdp

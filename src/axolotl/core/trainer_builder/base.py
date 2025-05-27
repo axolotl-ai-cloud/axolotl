@@ -21,7 +21,7 @@ import sys
 from abc import abstractmethod
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import torch
 from transformers import (
@@ -216,7 +216,7 @@ class TrainerBuilderBase(abc.ABC):
         else:
             training_args_kwargs["bf16"] = self.cfg.bf16 or self.cfg.bfloat16
 
-    def _configure_optimizer_and_scheduler(self, training_args_kwargs):
+    def _configure_optimizer_and_scheduler(self, training_args_kwargs, trainer_kwargs):
         if self.cfg.lr_scheduler in ["one_cycle", "rex"]:
             training_args_kwargs["lr_scheduler_type"] = "cosine"
             training_args_kwargs["alternate_lr_scheduler_type"] = self.cfg.lr_scheduler
@@ -317,7 +317,8 @@ class TrainerBuilderBase(abc.ABC):
                         key, value = mapping.split("=")
                         optimizer_kwargs[key] = value
 
-            training_args_kwargs["optimizer_cls_and_kwargs"] = (
+            # Note: This is not used in training_args_kwargs, but in trainer_kwargs
+            trainer_kwargs["optimizer_cls_and_kwargs"] = (
                 optimizer_cls,
                 optimizer_kwargs,
             )
@@ -427,8 +428,11 @@ class TrainerBuilderBase(abc.ABC):
                     "use_reentrant": False
                 }
 
-    def _set_base_training_args(self, total_num_steps) -> dict[str, Any]:
-        training_args_kwargs: Dict[str, Any] = {}
+    def _set_base_training_args(
+        self, total_num_steps
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        training_args_kwargs: dict[str, Any] = {}
+        trainer_kwargs: dict[str, Any] = {}
 
         self._configure_warmup_and_logging(total_num_steps, training_args_kwargs)
 
@@ -489,8 +493,8 @@ class TrainerBuilderBase(abc.ABC):
 
         self._configure_hub_parameters(training_args_kwargs)
 
-        self._configure_optimizer_and_scheduler(training_args_kwargs)
+        self._configure_optimizer_and_scheduler(training_args_kwargs, trainer_kwargs)
 
         self._configure_torch_compile(training_args_kwargs)
 
-        return training_args_kwargs
+        return training_args_kwargs, trainer_kwargs

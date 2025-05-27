@@ -77,7 +77,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         return trainer_cls, trainer_cls_args
 
     def build_training_arguments(self, total_num_steps):
-        training_args_kwargs = self._set_base_training_args(
+        """
+        Returns training_args and trainer_kwargs
+        """
+        training_args_kwargs, trainer_kwargs = self._set_base_training_args(
             total_num_steps=total_num_steps
         )
 
@@ -167,17 +170,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 None
             )
 
-        return training_args
+        return training_args, trainer_kwargs
 
     def build(self, total_num_steps):
-        training_args = self.build_training_arguments(total_num_steps)
-        trainer_kwargs = {}
-
-        # Pop optimizer_cls_and_kwargs to trainer_kwargs
-        if "optimizer_cls_and_kwargs" in training_args:
-            trainer_kwargs["optimizer_cls_and_kwargs"] = training_args.pop(
-                "optimizer_cls_and_kwargs"
-            )
+        training_args, trainer_kwargs = self.build_training_arguments(total_num_steps)
 
         if self.cfg.rl is RLType.IPO and self.cfg.dpo_label_smoothing:
             trainer_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
