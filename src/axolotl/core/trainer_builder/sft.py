@@ -372,7 +372,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         sig = inspect.signature(trainer_cls)
         if "processing_class" in sig.parameters:
             trainer_kwargs["processing_class"] = self.tokenizer
-        else:
+        elif "tokenizer" in sig.parameters:
             trainer_kwargs["tokenizer"] = self.tokenizer
         if (
             not (trainer_cls in [AxolotlRewardTrainer, AxolotlPRMTrainer])

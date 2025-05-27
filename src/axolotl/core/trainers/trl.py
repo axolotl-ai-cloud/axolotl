@@ -252,7 +252,9 @@ class AxolotlCPOTrainer(
         return loss, metrics
 
 
-class AxolotlRewardTrainer(RngLoaderMixin, SchedulerMixin, RewardTrainer):
+class AxolotlRewardTrainer(
+    RngLoaderMixin, SchedulerMixin, OptimizerMixin, OptimizerInitMixin, RewardTrainer
+):
     """
     Extend the base RewardTrainer for axolotl helpers
     """
@@ -260,7 +262,9 @@ class AxolotlRewardTrainer(RngLoaderMixin, SchedulerMixin, RewardTrainer):
     tag_names = ["axolotl", "reward"]
 
 
-class AxolotlPRMTrainer(RngLoaderMixin, SchedulerMixin, PRMTrainer):
+class AxolotlPRMTrainer(
+    RngLoaderMixin, SchedulerMixin, OptimizerMixin, OptimizerInitMixin, PRMTrainer
+):
     """
     Extend the base trl.PRMTrainer for axolotl helpers
     """

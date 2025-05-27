@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
+from axolotl.common.datasets import load_datasets
 from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.utils.config import normalize_config
 from axolotl.utils.data.rl import load_prepare_preference_datasets
@@ -192,6 +193,46 @@ def fixture_sft_cfg(base_cfg):
             "eval_sample_packing": False,
             "flash_attention": False,
         }
+    )
+    return cfg
+
+
+@pytest.fixture(name="rm_cfg")
+def fixture_rm_cfg(sft_cfg):
+    cfg = sft_cfg.copy()
+    cfg.update(
+        DictDefault(
+            {
+                "reward_model": True,
+                "datasets": [
+                    {
+                        "path": "argilla/distilabel-intel-orca-dpo-pairs",
+                        "type": "bradley_terry.chat_template",
+                        "split": "train[:1%]",
+                    }
+                ],
+            }
+        )
+    )
+    return cfg
+
+
+@pytest.fixture(name="prm_cfg")
+def fixture_prm_cfg(sft_cfg):
+    cfg = sft_cfg.copy()
+    cfg.update(
+        DictDefault(
+            {
+                "process_reward_model": True,
+                "datasets": [
+                    {
+                        "path": "trl-lib/math_shepherd",
+                        "type": "stepwise_supervised",
+                        "split": "train[:1%]",
+                    }
+                ],
+            }
+        )
     )
     return cfg
 
@@ -484,9 +525,27 @@ class TestHFCausalTrainerBuilder:
         assert training_arguments.sample_packing is False
         assert training_arguments.eval_sample_packing is False
 
-    def test_custom_optimizer_cls_and_kwargs(self, sft_cfg, model, tokenizer):
-        builder = HFCausalTrainerBuilder(sft_cfg, model, tokenizer)
-        sft_cfg["optimizer"] = "muon"
+    @pytest.mark.parametrize(
+        "cfg_string",
+        [
+            "sft_cfg",
+            "rm_cfg",
+            "prm_cfg",
+        ],
+    )
+    def test_custom_optimizer_cls_and_kwargs(
+        self, request, cfg_string, model, tokenizer
+    ):
+        cfg = request.getfixturevalue(cfg_string)
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        cfg["optimizer"] = "muon"
+
+        # need to load datasets for reward model and process reward model trainer
+        if cfg_string in ["rm_cfg", "prm_cfg"]:
+            dataset_meta = load_datasets(cfg=cfg)
+
+            builder.train_dataset = dataset_meta.train_dataset
+            builder.eval_dataset = dataset_meta.eval_dataset
 
         trainer = builder.build(100)
 
