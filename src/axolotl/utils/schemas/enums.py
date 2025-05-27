@@ -9,12 +9,22 @@ torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
 if version.parse(torch_version) < version.parse("2.6.0"):
     # no-op - config validation should handle erroring out. this guards a `torch.int4` import being
     # unavailable in torch < 2.6
-    class TorchIntDType(Enum):
+    class TorchIntDType(Enum):  # type: ignore[no-redef]
         """Dummy class for import guarding"""
+
+        uint1 = None  # pylint: disable=invalid-name
+        uint2 = None  # pylint: disable=invalid-name
+        uint3 = None  # pylint: disable=invalid-name
+        uint4 = None  # pylint: disable=invalid-name
+        uint5 = None  # pylint: disable=invalid-name
+        uint6 = None  # pylint: disable=invalid-name
+        uint7 = None  # pylint: disable=invalid-name
+        int4 = None  # pylint: disable=invalid-name
+        int8 = None  # pylint: disable=invalid-name
 
 else:
 
-    class TorchIntDType(Enum):
+    class TorchIntDType(Enum):  # type: ignore[no-redef]
         """Torch integer data types"""
 
         uint1 = torch.uint1  # pylint: disable=invalid-name

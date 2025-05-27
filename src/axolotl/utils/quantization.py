@@ -49,7 +49,7 @@ def get_ptq_config(
             or if the group size is not specified for int8 or int4 weight only quantization.
     """
     if activation_dtype is None:
-        if not weight_dtype.value.is_signed:
+        if not weight_dtype.value.is_signed:  # type: ignore[attr-defined]
             return UIntXWeightOnlyConfig(
                 dtype=weight_dtype.value,
                 group_size=group_size,
