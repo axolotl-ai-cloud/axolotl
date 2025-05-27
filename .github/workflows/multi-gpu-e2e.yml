@@ -3,7 +3,7 @@ name: docker-multigpu-tests-biweekly
 on:
   pull_request:
     paths:
-      - 'tests/e2e/multigpu/*.py'
+      - 'tests/e2e/multigpu/**.py'
       - 'requirements.txt'
       - 'setup.py'
       - 'pyproject.toml'

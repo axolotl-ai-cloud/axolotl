@@ -18,6 +18,7 @@ from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.common.datasets import load_datasets, load_preference_datasets
+from axolotl.integrations.base import PluginManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.trainer import disable_datasets_caching
 
@@ -47,7 +48,10 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
         cfg.dataset_prepared_path = DEFAULT_DATASET_PREPARED_PATH
 
     with disable_datasets_caching():
-        if cfg.rl:
+        plugin_manager = PluginManager.get_instance()
+        if plugin_manager.load_datasets(cfg, preprocess=True):
+            pass
+        elif cfg.rl:
             load_preference_datasets(cfg=cfg, cli_args=cli_args)
         else:
             load_datasets(cfg=cfg, cli_args=cli_args)

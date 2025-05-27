@@ -27,7 +27,7 @@ from axolotl.utils.schemas.datasets import (
     StepwiseSupervisedDataset,
 )
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
-from axolotl.utils.schemas.enums import ChatTemplate, RLType
+from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
 from axolotl.utils.schemas.integrations import (
     CometConfig,
     GradioConfig,
@@ -83,6 +83,7 @@ class AxolotlInputConfig(
     mean_resizing_embeddings: bool | None = False
     # optionally shrink the embeddings when the tokenizer vocab size is smaller
     shrink_embeddings: bool | None = None
+    embeddings_skip_upcast: bool | None = None
 
     rl: RLType | None = None
     trl: TRLConfig | None = Field(
@@ -105,16 +106,16 @@ class AxolotlInputConfig(
         Annotated[
             list[SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset],
             MinLen(1),
-        ]
-        | None
+        ] |
+        None
     ) = None
 
     test_datasets: (
         Annotated[
             list[SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset],
             MinLen(1),
-        ]
-        | None
+        ] |
+        None
     ) = None
     shuffle_merged_datasets: bool | None = True
     dataset_prepared_path: str | None = None
@@ -178,7 +179,9 @@ class AxolotlInputConfig(
     tf32: bool | None = None
     float32: bool | None = None
 
-    gradient_checkpointing: Literal["unsloth", "offload"] | bool | None = Field(
+    # torch_dtype: torch.dtype | None
+
+    gradient_checkpointing: Literal["offload", "offload_disk"] | bool | None = Field(
         default=False
     )
     gradient_checkpointing_kwargs: dict[str, Any] | None = None
@@ -260,7 +263,7 @@ class AxolotlInputConfig(
 
     sequence_parallel_degree: int | None = None
     heads_k_stride: int | None = None
-    ring_attn_func: str | None = None
+    ring_attn_func: RingAttnFunc | None = None
 
     special_tokens: SpecialTokensConfig | None = None
     tokens: list[str] | None = None
@@ -306,8 +309,8 @@ class AxolotlInputConfig(
     low_cpu_mem_usage: bool | None = None
 
     chat_template: (
-        ChatTemplate
-        | Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")]
+        ChatTemplate |
+        Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")]
     ) | None = None
     chat_template_jinja: str | None = None
     eot_tokens: list[str] | None = None
@@ -430,20 +433,10 @@ class AxolotlInputConfig(
     def check_gptq_w_revision(cls, data):
         if data.get("gptq") and data.get("revision_of_model"):
             raise ValueError(
-                "revision_of_model is not supported for GPTQ models. "
-                + "Please download the model from HuggingFace Hub manually for correct branch, "
-                + "point to its path, and remove revision_of_model from the config."
+                "revision_of_model is not supported for GPTQ models. " +
+                "Please download the model from HuggingFace Hub manually for correct branch, " +
+                "point to its path, and remove revision_of_model from the config."
             )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_sample_packing_w_xformers(cls, data):
-        if data.get("sample_packing") and data.get("xformers_attention"):
-            raise ValueError(
-                "sample_packing not compatible with xformers_attention. Use flash_attention"
-            )
-
         return data
 
     @model_validator(mode="before")
@@ -468,15 +461,26 @@ class AxolotlInputConfig(
     @classmethod
     def check_sample_packing_wo_flash(cls, data):
         if (
-            data.get("sample_packing")
-            and not data.get("flash_attention")
-            and not data.get("sdp_attention")
-            and not data.get("flex_attention")
+            data.get("sample_packing") and
+            not data.get("flash_attention") and
+            not data.get("sdp_attention") and
+            not data.get("flex_attention") and
+            not data.get("xformers_attention")
         ):
             LOG.warning(
-                "sample_packing without flash, sdp or flex attention does not handle cross sample decontamination."
+                "sample_packing without flash, sdp, xformers or flex attention does not handle cross sample decontamination."
             )
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_sample_packing_with_s2attn(cls, data):
+        if data.get("sample_packing") and data.get("s2_attention"):
+            raise ValueError(
+                "Received `sample_packing=true` and `s2_attention=true`; however, \
+                shifted-sparse attention does not currently support sample packing."
+            )
         return data
 
     @model_validator(mode="before")
@@ -492,10 +496,10 @@ class AxolotlInputConfig(
                 LOG.warning("batch_flattening has no effect with micro_batch_size == 1")
 
             if (
-                batch_flattening_auto
-                and data.get("flash_attention")
-                and not data.get("sample_packing")
-                and data.get("micro_batch_size") > 1
+                batch_flattening_auto and
+                data.get("flash_attention") and
+                not data.get("sample_packing") and
+                data.get("micro_batch_size") > 1
             ):
                 data["batch_flattening"] = True
             elif batch_flattening_auto:
@@ -550,9 +554,9 @@ class AxolotlInputConfig(
     @classmethod
     def hint_eval_train_mbsz(cls, data):
         if (
-            data.get("eval_batch_size")
-            and data.get("micro_batch_size")
-            and data.get("eval_batch_size") != data.get("micro_batch_size")
+            data.get("eval_batch_size") and
+            data.get("micro_batch_size") and
+            data.get("eval_batch_size") != data.get("micro_batch_size")
         ):
             LOG.warning(
                 "eval_batch_size != micro_batch_size. This can lead to VRAM instability."
@@ -563,8 +567,8 @@ class AxolotlInputConfig(
     @classmethod
     def check_push_ds_auth(cls, data):
         if (
-            data.get("push_dataset_to_hub")
-            and data.get("hf_use_auth_token") is not True
+            data.get("push_dataset_to_hub") and
+            data.get("hf_use_auth_token") is not True
         ):
             raise ValueError(
                 "Require cfg.hf_use_auth_token to be True for push_dataset_to_hub"
@@ -629,9 +633,9 @@ class AxolotlInputConfig(
     @classmethod
     def check_saves(cls, data):
         if (
-            data.get("save_strategy")
-            and data.get("save_steps")
-            and data.get("save_strategy") != "steps"
+            data.get("save_strategy") and
+            data.get("save_steps") and
+            data.get("save_strategy") != "steps"
         ):
             raise ValueError(
                 "save_strategy and save_steps mismatch. Please set save_strategy to 'steps' or remove save_steps."
@@ -657,19 +661,19 @@ class AxolotlInputConfig(
     @classmethod
     def check_evals(cls, data):
         if (
-            data.get("eval_strategy")
-            and data.get("eval_steps")
-            and data.get("eval_strategy") != "steps"
+            data.get("eval_strategy") and
+            data.get("eval_steps") and
+            data.get("eval_strategy") != "steps"
         ):
             raise ValueError(
                 "eval_strategy and eval_steps mismatch. Please set eval_strategy to 'steps' or remove eval_steps."
             )
 
         if (
-            data.get("val_set_size") == 0
-            and (data.get("eval_steps") or data.get("eval_strategy"))
-            and not data.get("test_datasets")
-            and data.get("eval_strategy") != "no"
+            data.get("val_set_size") == 0 and
+            (data.get("eval_steps") or data.get("eval_strategy")) and
+            not data.get("test_datasets") and
+            data.get("eval_strategy") != "no"
         ):
             raise ValueError(
                 "eval_steps and eval_strategy are not supported with val_set_size == 0"
@@ -679,9 +683,9 @@ class AxolotlInputConfig(
                 "eval_steps and evals_per_epoch are mutually exclusive and cannot be used together."
             )
         if (
-            data.get("evals_per_epoch")
-            and data.get("eval_strategy")
-            and data.get("eval_strategy") != "steps"
+            data.get("evals_per_epoch") and
+            data.get("eval_strategy") and
+            data.get("eval_strategy") != "steps"
         ):
             raise ValueError(
                 "eval_strategy must be empty or set to `steps` when used with evals_per_epoch."
@@ -699,9 +703,9 @@ class AxolotlInputConfig(
     @classmethod
     def check_test_datasets_bench(cls, data):
         if (
-            data.get("do_bench_eval")
-            and not data.get("test_datasets")
-            and not data.get("val_set_size")
+            data.get("do_bench_eval") and
+            not data.get("test_datasets") and
+            not data.get("val_set_size")
         ):
             LOG.warning(
                 "`do_bench_eval` needs a test dataset to run evals, adding an empty test_dataset."
@@ -715,17 +719,17 @@ class AxolotlInputConfig(
         # TODO also should check test_datasets and val_set_size as we can skip
         # if there are no eval datasets/splits
         if (
-            data.get("sample_packing")
-            and data.get("eval_table_size")
-            and data.get("eval_sample_packing") is not False
+            data.get("sample_packing") and
+            data.get("eval_table_size") and
+            data.get("eval_sample_packing") is not False
         ):
             raise ValueError(
                 "eval_table_size and eval_sample_packing are not supported together with sample_packing. Please set 'eval_sample_packing' to false."
             )
         if (
-            data.get("sample_packing")
-            and data.get("eval_sample_packing") is None
-            and not data.get("eval_table_size")
+            data.get("sample_packing") and
+            data.get("eval_sample_packing") is None and
+            not data.get("eval_table_size")
         ):
             LOG.info(
                 "explicitly setting `eval_sample_packing` to match `sample_packing`"
@@ -733,9 +737,9 @@ class AxolotlInputConfig(
             data["eval_sample_packing"] = True
 
         if (
-            data.get("sample_packing")
-            and data.get("eval_sample_packing") is False
-            and data.get("remove_unused_columns") is None
+            data.get("sample_packing") and
+            data.get("eval_sample_packing") is False and
+            data.get("remove_unused_columns") is None
         ):
             LOG.info(
                 "setting `remove_unused_columns: false` for when sample_packing and eval_sample_packing don't match"
@@ -791,7 +795,7 @@ class AxolotlInputConfig(
 
     @model_validator(mode="after")
     def check_simpo_warmup(self):
-        if self.rl == "simpo" and self.warmup_ratio:
+        if self.rl is RLType.SIMPO and self.warmup_ratio:
             raise ValueError(
                 "warmup_ratio is not supported with the simpo trainer. Please use `warmup_steps` instead"
             )
@@ -801,9 +805,9 @@ class AxolotlInputConfig(
     @classmethod
     def check_frozen(cls, data):
         if (
-            data.get("adapter")
-            and data.get("peft_layers_to_transform")
-            and data.get("unfrozen_parameters")
+            data.get("adapter") and
+            data.get("peft_layers_to_transform") and
+            data.get("unfrozen_parameters")
         ):
             raise ValueError(
                 "`unfrozen_parameters` used with `peft_layers_to_transform` can have unexpected behavior."
@@ -824,11 +828,11 @@ class AxolotlInputConfig(
     def check_fft_possible_bad_config(self):
         if (
             # pylint: disable=too-many-boolean-expressions
-            not (self.bf16 or self.bfloat16)
-            and (self.fp16 or self.float16)
-            and not self.adapter
-            and not self.flash_attention
-            and self.sample_packing
+            not (self.bf16 or self.bfloat16) and
+            (self.fp16 or self.float16) and
+            not self.adapter and
+            not self.flash_attention and
+            self.sample_packing
         ):
             LOG.warning(
                 "Full fine tune w/o FA2 w/ sample packing and fp16/float16 is likely to raise errors. Try LoRA."
@@ -893,8 +897,8 @@ class AxolotlInputConfig(
     @classmethod
     def check_mem_mismatch(cls, data):
         if (
-            data.get("max_memory") is not None
-            and data.get("gpu_memory_limit") is not None
+            data.get("max_memory") is not None and
+            data.get("gpu_memory_limit") is not None
         ):
             raise ValueError(
                 "max_memory and gpu_memory_limit are mutually exclusive and cannot be used together."
@@ -905,9 +909,9 @@ class AxolotlInputConfig(
     @classmethod
     def check_use_reentrant_mismatch(cls, data):
         if (
-            data.get("unfrozen_parameters")
-            and data.get("gradient_checkpointing_kwargs")
-            and data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
+            data.get("unfrozen_parameters") and
+            data.get("gradient_checkpointing_kwargs") and
+            data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
             is True
         ):
             # https://github.com/huggingface/transformers/issues/21381
@@ -920,12 +924,12 @@ class AxolotlInputConfig(
     @classmethod
     def warn_qlora_zero3_w_use_reentrant(cls, data):
         if (
-            data.get("adapter") == "qlora"
-            and data.get("gradient_checkpointing_kwargs", {})
-            and data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
-            is False
-            and data.get("deepspeed", "") is not None
-            and "zero3" in data.get("deepspeed", "")
+            data.get("adapter") == "qlora" and
+            data.get("gradient_checkpointing_kwargs", {}) and
+            data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
+            is False and
+            data.get("deepspeed", "") is not None and
+            "zero3" in data.get("deepspeed", "")
         ):
             # may result in:
             # torch.utils.checkpoint.CheckpointError: torch.utils.checkpoint:
@@ -949,8 +953,8 @@ class AxolotlInputConfig(
     @classmethod
     def check_eval_strategy(cls, data):
         if (
-            data.get("evaluation_strategy") is not None
-            and data.get("eval_strategy") is None
+            data.get("evaluation_strategy") is not None and
+            data.get("eval_strategy") is None
         ):
             LOG.info(
                 "explicitly setting `eval_strategy` from the `evaluation_strategy`"
@@ -962,20 +966,20 @@ class AxolotlInputConfig(
     @classmethod
     def check_fsdp_offload_w_8bit_optimizer(cls, data):
         if (
-            data.get("fsdp")
-            and "8bit" in data.get("optimizer", "")
-            and data.get("fsdp_config")
-            and data["fsdp_config"].get("fsdp_offload_params")
-            and str(data["fsdp_config"].get("fsdp_version")) != "2"
+            data.get("fsdp") and
+            "8bit" in data.get("optimizer", "") and
+            data.get("fsdp_config") and
+            data["fsdp_config"].get("fsdp_offload_params") and
+            str(data["fsdp_config"].get("fsdp_version")) != "2"
         ):
             raise ValueError(
                 f"FSDP Offload not compatible with {data.get('optimizer')}"
             )
         if (
-            data.get("fsdp")
-            and "8bit" in data.get("optimizer", "")
-            and data.get("fsdp_config")
-            and str(data["fsdp_config"].get("fsdp_version")) == "2"
+            data.get("fsdp") and
+            "8bit" in data.get("optimizer", "") and
+            data.get("fsdp_config") and
+            str(data["fsdp_config"].get("fsdp_version")) == "2"
         ):
             if data.get("optimizer", "") in ["adamw_8bit", "adamw_bnb_8bit"]:
                 # CUDA ops errors with bnb 8bit optimizer + FSDP2
@@ -989,10 +993,10 @@ class AxolotlInputConfig(
     @classmethod
     def check_fsdp_sharded_state_dict_w_safetensors(cls, data):
         if (
-            data.get("fsdp")
-            and data.get("save_safetensors")
-            and data.get("fsdp_config")
-            and data["fsdp_config"].get("fsdp_state_dict_type") == "SHARDED_STATE_DICT"
+            data.get("fsdp") and
+            data.get("save_safetensors") and
+            data.get("fsdp_config") and
+            data["fsdp_config"].get("fsdp_state_dict_type") == "SHARDED_STATE_DICT"
         ):
             raise ValueError(
                 "FSDP SHARDED_STATE_DICT not compatible with save_safetensors"
@@ -1039,9 +1043,9 @@ class AxolotlInputConfig(
     @classmethod
     def check_qlora_unsloth(cls, data):
         if (
-            data.get("unsloth_lora_mlp")
-            or data.get("unsloth_lora_qkv")
-            or data.get("unsloth_lora_o")
+            data.get("unsloth_lora_mlp") or
+            data.get("unsloth_lora_qkv") or
+            data.get("unsloth_lora_o")
         ):
             if data.get("adapter") == "lora" and data.get("load_in_8bit"):
                 raise ValueError(
@@ -1053,9 +1057,9 @@ class AxolotlInputConfig(
     @classmethod
     def check_lora_8bit(cls, data):
         if (
-            data.get("lora_mlp_kernel")
-            or data.get("lora_qkv_kernel")
-            or data.get("lora_o_kernel")
+            data.get("lora_mlp_kernel") or
+            data.get("lora_qkv_kernel") or
+            data.get("lora_o_kernel")
         ):
             if data.get("adapter") == "lora" and data.get("load_in_8bit"):
                 raise ValueError(
@@ -1130,14 +1134,14 @@ class AxolotlInputConfig(
         # and use_reentrant = True is broken upstream in TRL
         # pylint: disable=too-many-boolean-expressions
         if (
-            data.get("rl")
-            and data.get("gradient_checkpointing")
-            and data.get("gradient_checkpointing_kwargs")
-            and data.get("gradient_checkpointing_kwargs").get("use_reentrant")
-            and data.get("load_in_4bit")
-            and data.get("adapter") == "qlora"
-            and data.get("capabilities")
-            and data.get("capabilities").get("n_gpu", 1) > 1
+            data.get("rl") and
+            data.get("gradient_checkpointing") and
+            data.get("gradient_checkpointing_kwargs") and
+            data.get("gradient_checkpointing_kwargs").get("use_reentrant") and
+            data.get("load_in_4bit") and
+            data.get("adapter") == "qlora" and
+            data.get("capabilities") and
+            data.get("capabilities").get("n_gpu", 1) > 1
         ):
             raise ValueError(
                 "The `use_reentrant: True` implementation of gradient checkpointing "
@@ -1158,16 +1162,28 @@ class AxolotlInputConfig(
 
         return data
 
+    # @model_validator(mode="before")
+    # @classmethod
+    # def check_grpo_peft_liger(cls, data):
+    #     if (
+    #         data.get("rl") == "grpo"
+    #         and data.get("trl", {})
+    #         and data.get("trl").get("use_liger_loss")
+    #         and data.get("adapter")
+    #     ):
+    #         raise ValueError("PEFT + GRPO + Liger is not yet supported")
+    #     return data
+    #
     @model_validator(mode="before")
     @classmethod
-    def check_grpo_peft_liger(cls, data):
+    def check_grpo_liger_sequence_parallel(cls, data):
         if (
-            data.get("rl") == "grpo"
-            and data.get("trl", {})
-            and data.get("trl").get("use_liger_loss")
-            and data.get("adapter")
+            data.get("rl") == "grpo" and
+            data.get("trl", {}) and
+            data.get("trl").get("use_liger_loss") and
+            data.get("sequence_parallel_degree", 1) > 1
         ):
-            raise ValueError("PEFT + GRPO + Liger is not yet supported")
+            raise ValueError("GRPO + SP + Liger not currently supported")
         return data
 
     @model_validator(mode="after")
@@ -1182,7 +1198,7 @@ class AxolotlInputConfig(
 
             if self.sample_packing and self.micro_batch_size > 1:
                 raise ValueError(
-                    "micro_batch_size must be set to 1 when sample_packing is enabled"
+                    "micro_batch_size must be set to 1 when sample_packing is enabled "
                     "due to a `ring-flash-attn` requirement"
                 )
 
@@ -1214,16 +1230,8 @@ class AxolotlInputConfig(
         if getattr(self, "sequence_parallel_degree", 1) == 1:
             return self
 
-        from axolotl.monkeypatch.attention.ring_attn.patch import RingAttnFunc
-
         if self.ring_attn_func is not None:
-            valid_funcs = list(RingAttnFunc)
-            if self.ring_attn_func in valid_funcs:
-                self.ring_attn_func = RingAttnFunc(self.ring_attn_func)
-            else:
-                raise ValueError(
-                    f"ring_attn_func: {self.ring_attn_func} must be in {valid_funcs}"
-                )
+            self.ring_attn_func = RingAttnFunc(self.ring_attn_func)
         else:
             # Default ring attention function selection
             sample_packing = getattr(self, "sample_packing", False)
@@ -1262,9 +1270,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
         else:
             if (
-                not self.merge_lora
-                and not self.is_preprocess
-                and (self.bf16 is True or self.bfloat16 is True)
+                not self.merge_lora and
+                not self.is_preprocess and
+                (self.bf16 is True or self.bfloat16 is True)
             ):
                 raise ValueError(
                     "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
@@ -1275,14 +1283,14 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @classmethod
     def check_sample_packing_w_sdpa_bf16(cls, data):
         is_sm_90: bool = (
-            data["capabilities"]
-            and data["capabilities"].get("compute_capability") == "sm_90"
+            data["capabilities"] and
+            data["capabilities"].get("compute_capability") == "sm_90"
         )
         if (
-            data.get("sample_packing")
-            and data.get("sdp_attention")
-            and (data.get("bfloat16") or data.get("bf16"))
-            and not is_sm_90
+            data.get("sample_packing") and
+            data.get("sdp_attention") and
+            (data.get("bfloat16") or data.get("bf16")) and
+            not is_sm_90
         ):
             # https://github.com/pytorch/pytorch/blob/1b03423526536b5f3d35bdfa95ccc6197556cf9b/test/test_transformers.py#L2440-L2450
             LOG.warning(
@@ -1303,9 +1311,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @classmethod
     def check_multigpu_unsloth(cls, data):
         if (
-            data.get("unsloth_lora_mlp")
-            or data.get("unsloth_lora_qkv")
-            or data.get("unsloth_lora_o")
+            data.get("unsloth_lora_mlp") or
+            data.get("unsloth_lora_qkv") or
+            data.get("unsloth_lora_o")
         ):
             capabilities = data.get("capabilities")
             if capabilities and capabilities.get("n_gpu", 0) > 1:
@@ -1318,15 +1326,15 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @classmethod
     def check_multigpu_lora_kernels(cls, data):
         if (
-            data.get("lora_mlp_kernel")
-            or data.get("lora_qkv_kernel")
-            or data.get("lora_o_kernel")
+            data.get("lora_mlp_kernel") or
+            data.get("lora_qkv_kernel") or
+            data.get("lora_o_kernel")
         ):
             capabilities = data.get("capabilities")
             is_fsdp = data.get("fsdp") is not None
             is_fsdp2 = (
-                data.get("fsdp_config") is not None
-                and str(data.get("fsdp_config").get("fsdp_version")) == "2"
+                data.get("fsdp_config") is not None and
+                str(data.get("fsdp_config").get("fsdp_version")) == "2"
             )
             if capabilities and capabilities.get("n_gpu", 0) > 1 and not is_fsdp2:
                 if is_fsdp:
@@ -1347,11 +1355,15 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             unsloth_fields = ["unsloth_lora_mlp", "unsloth_lora_qkv", "unsloth_lora_o"]
             kernel_fields = ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
             if (
-                any(data.get(k) is not None for k in kernel_fields)
-                or any(data.get(k) for k in unsloth_fields)
-                or data.get("adapter") == "lora"
-                and data.get("load_in_8bit")
+                any(data.get(k) is not None for k in kernel_fields) or
+                any(data.get(k) for k in unsloth_fields) or
+                data.get("adapter") == "lora" and
+                data.get("load_in_8bit")
             ):
+                return data
+
+            # Skip if dropout is not 0, as auto enabling it would just disable it during runtime patch checks
+            if data.get("lora_dropout") != 0:
                 return data
 
             # Check multi-GPU compatibility
@@ -1359,14 +1371,14 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             is_multi_gpu = capabilities and capabilities.get("n_gpu", 0) > 1
             is_fsdp = data.get("fsdp") is not None
             is_fsdp2 = (
-                data.get("fsdp_config") is not None
-                and str(data.get("fsdp_config").get("fsdp_version")) == "2"
+                data.get("fsdp_config") is not None and
+                str(data.get("fsdp_config").get("fsdp_version")) == "2"
             )
 
             if (
-                not is_multi_gpu
-                or (is_multi_gpu and not is_fsdp)
-                or (is_multi_gpu and is_fsdp2)
+                not is_multi_gpu or
+                (is_multi_gpu and not is_fsdp) or
+                (is_multi_gpu and is_fsdp2)
             ):
                 # Auto-enable kernels if not explicitly set by user
                 if data.get("lora_mlp_kernel") is None:
@@ -1379,9 +1391,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                     data["lora_o_kernel"] = True
 
                 LOG.warning(
-                    "Auto-enabling LoRA kernel optimizations for faster training. "
-                    + "Please explicitly set `lora_*_kernel` config values to `false` to disable. "
-                    + "See https://docs.axolotl.ai/docs/lora_optims.html for more info."
+                    "Auto-enabling LoRA kernel optimizations for faster training. " +
+                    "Please explicitly set `lora_*_kernel` config values to `false` to disable. " +
+                    "See https://docs.axolotl.ai/docs/lora_optims.html for more info."
                 )
 
         return data
@@ -1477,9 +1489,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             raise ValueError("QAT and load_in_4bit cannot be used together.")
 
         if (
-            data.get("fsdp")
-            and data.get("fsdp_config")
-            and str(data["fsdp_config"].get("fsdp_version")) == "2"
+            data.get("fsdp") and
+            data.get("fsdp_config") and
+            str(data["fsdp_config"].get("fsdp_version")) == "2"
         ):
             env_capabilities = data.get("env_capabilities", {})
             torch_version = env_capabilities.get("torch_version")

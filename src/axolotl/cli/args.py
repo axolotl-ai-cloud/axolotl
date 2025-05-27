@@ -82,6 +82,12 @@ class VllmServeCliArgs:
             "hardware support this feature."
         },
     )
+    serve_module: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Module to serve. If not set, the default module will be used."
+        },
+    )
 
 
 @dataclass

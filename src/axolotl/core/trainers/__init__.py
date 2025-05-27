@@ -5,7 +5,7 @@
 
 from .base import AxolotlTrainer
 from .dpo.trainer import AxolotlDPOTrainer
-from .grpo.trainer import AxolotlGRPOTrainer
+from .grpo.trainer import AxolotlGRPOSequenceParallelTrainer, AxolotlGRPOTrainer
 from .mamba import AxolotlMambaTrainer
 from .relora import ReLoRATrainer
 from .trl import (

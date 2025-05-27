@@ -75,8 +75,10 @@ class HyperparametersConfig(BaseModel):
     lr_groups: list[LrGroup] | None = None
 
     adam_epsilon: float | None = None
+    adam_epsilon2: float | None = None
     adam_beta1: float | None = None
     adam_beta2: float | None = None
+    adam_beta3: float | None = None
     max_grad_norm: float | None = None
     num_epochs: float = Field(default=1.0)
 

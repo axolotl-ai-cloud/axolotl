@@ -29,7 +29,6 @@ from axolotl.core.trainers.mixins import (
     OptimizerMixin,
     RngLoaderMixin,
     SchedulerMixin,
-    SequenceParallelMixin,
 )
 from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
@@ -40,9 +39,7 @@ from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 LOG = logging.getLogger(__name__)
 
 
-class AxolotlTrainer(
-    SchedulerMixin, OptimizerMixin, RngLoaderMixin, SequenceParallelMixin, Trainer
-):
+class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
     """Extend the base Trainer for axolotl helpers"""
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
@@ -67,10 +64,6 @@ class AxolotlTrainer(
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
-
-        # Initialize sequence parallelism if enabled
-        if self.args.sequence_parallel_degree > 1:
-            self._setup_sequence_parallel()
 
     def _wrap_model(self, model, training=True, dataloader=None):
         if self.args.torch_compile:
@@ -114,14 +107,16 @@ class AxolotlTrainer(
             packing_efficiency_estimate=self.args.sample_packing_efficiency,
             batch_max_len=batch_max_len,
             batch_size=batch_size,
+            group_size=self.args.sample_packing_group_size,
+            bin_size=self.args.sample_packing_bin_size,
             sequential=self.args.sample_packing_sequentially,
             drop_last=True,
         )
 
     def _get_train_sampler(self) -> Sampler | None:
         """
-        Helper method to get the sampler for training. Handles cases for sequence
-        parallelism, sample packing, and curriculum sampling (sequential).
+        Helper method to get the sampler for training. Handles cases for sample packing
+        and curriculum sampling (sequential).
 
         Returns:
             If the dataset is non-empty, a sampler is returned, the type of which
@@ -130,9 +125,7 @@ class AxolotlTrainer(
         use_sample_packing = self.args.sample_packing and not self.args.pretraining
 
         # Determine the base sampler first
-        if self.args.sequence_parallel_degree > 1:
-            base_sampler = self._sp_get_train_sampler(self.train_dataset)
-        elif self.args.curriculum_sampling:
+        if self.args.curriculum_sampling:
             base_sampler = SequentialSampler(self.train_dataset)
         elif use_sample_packing:
             base_sampler = RandomSampler(self.train_dataset)
@@ -151,8 +144,7 @@ class AxolotlTrainer(
 
     def _get_eval_sampler(self, eval_dataset: Dataset | None = None) -> Sampler | None:
         """
-        Helper method to get the sampler for evaluation. Handles sequence parallelism
-        and sample packing cases.
+        Helper method to get the sampler for evaluation. Handles sample packing case.
 
         Returns:
             If the dataset is non-empty, a sampler is returned, the type of which
@@ -166,9 +158,7 @@ class AxolotlTrainer(
         )
 
         # Determine the base sampler
-        if self.args.sequence_parallel_degree > 1:
-            base_sampler = self._sp_get_eval_sampler(eval_dataset)
-        elif use_multipack:
+        if use_multipack:
             base_sampler = SequentialSampler(eval_dataset)
         else:
             return super()._get_eval_sampler(eval_dataset)
@@ -234,14 +224,6 @@ class AxolotlTrainer(
         ):
             self.accelerator.even_batches = False
 
-        # Return unprepared dataloader if using sequence parallelism
-        # TODO(djsaunde): We might be able to use `accelerate`'s dataloader preparation
-        # if we use `dispatch_batches` and `slice_fn_for_dispatch` properly (i.e.,
-        # slice each batch along the sequence dimension).
-        if self.args.sequence_parallel_degree > 1:
-            return dataloader
-
-        # Otherwise prepare with accelerator
         return self.accelerator.prepare_data_loader(dataloader)
 
     def get_train_dataloader(self) -> DataLoader:
@@ -285,12 +267,7 @@ class AxolotlTrainer(
 
             return dataloader
 
-        # Handle sample packing or sequence parallelism
-        if (
-            self.args.sample_packing
-            and self.args.eval_sample_packing is not False
-            or self.args.sequence_parallel_degree > 1
-        ):
+        if self.args.sample_packing and self.args.eval_sample_packing is not False:
             # Get appropriate data collator
             self.data_collator = (  # pylint: disable=attribute-defined-outside-init
                 self.eval_data_collator
@@ -299,17 +276,6 @@ class AxolotlTrainer(
             )
             if "length" in eval_dataset.column_names:
                 eval_dataset = eval_dataset.remove_columns(["length"])
-
-            # Handle dataset preprocessing for SP
-            if self.args.sequence_parallel_degree > 1:
-                if isinstance(eval_dataset, datasets.Dataset):
-                    eval_dataset = self._remove_unused_columns(
-                        eval_dataset, description="evaluation"
-                    )
-                else:
-                    self.data_collator = self._get_collator_with_removed_columns(  # pylint: disable=attribute-defined-outside-init
-                        self.data_collator, description="evaluation"
-                    )
 
             # Use eval_batch_size for sample packing, per_device_eval_batch_size otherwise
             batch_size = (
@@ -371,14 +337,12 @@ class AxolotlTrainer(
                 num_items_in_batch=num_items_in_batch,
             )
 
-        loss = super().compute_loss(
+        return super().compute_loss(
             model,
             inputs,
             return_outputs=return_outputs,
             num_items_in_batch=num_items_in_batch,
         )
-
-        return loss
 
     @staticmethod
     def orpo_concatenate_inputs(inputs, label_pad_token=-100, pad_token=0, device=None):

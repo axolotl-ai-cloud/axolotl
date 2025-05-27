@@ -50,8 +50,31 @@ quartodoc:
       contents:
         - core.trainers.base
         - core.trainers.trl
+        - core.trainers.mamba
+        - core.trainers.relora
         - core.trainers.dpo.trainer
         - core.trainers.grpo.trainer
+        - core.trainers.grpo.sampler
+        - core.trainers.utils
+    - title: Model Loading
+      desc: Functionality for loading and patching models, tokenizers, etc.
+      contents:
+        - loaders.model
+        - loaders.tokenizer
+        - loaders.processor
+        - loaders.adapter
+        - loaders.patch_manager
+        - loaders.constants
+    - title: Mixins
+      desc: Mixin classes for augmenting trainers
+      contents:
+        - core.trainers.mixins.optimizer
+        - core.trainers.mixins.rng_state_loader
+        - core.trainers.mixins.scheduler
+    - title: Context Managers
+      desc: Context managers for altering trainer behaviors
+      contents:
+        - utils.ctx_managers.sequence_parallel
     - title: Prompt Strategies
       desc: Prompt formatting strategies
       contents:
@@ -88,7 +111,7 @@ quartodoc:
         - kernels.swiglu
         - kernels.quantize
         - kernels.utils
-    - title: MonkeyPatches
+    - title: Monkey Patches
       desc: Runtime patches for model optimizations
       contents:
         - monkeypatch.llama_attn_hijack_flash
@@ -108,14 +131,14 @@ quartodoc:
         - monkeypatch.attention.mllama
         - monkeypatch.data.batch_dataset_fetcher
         - monkeypatch.mixtral
+        - monkeypatch.gradient_checkpointing.offload_cpu
+        - monkeypatch.gradient_checkpointing.offload_disk
     - title: Utils
       desc: Utility functions
       contents:
-        - utils.models
         - utils.tokenization
         - utils.chat_templates
         - utils.lora
-        - utils.lora_embeddings
         - utils.model_shard_quant
         - utils.bench
         - utils.freeze
@@ -126,8 +149,11 @@ quartodoc:
         - utils.optimizers.adopt
         - utils.data.pretraining
         - utils.data.sft
+<<<<<<< HEAD
         - utils.gradient_checkpointing.unsloth
         - utils.quantization
+=======
+>>>>>>> main
     - title: Schemas
       desc: Pydantic data models for Axolotl config
       contents:

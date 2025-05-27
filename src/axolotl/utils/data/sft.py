@@ -148,7 +148,7 @@ def prepare_dataset(cfg, tokenizer, processor=None, preprocess_iterable=None):
             ds_wrapper_partial,
             max_tokens=cfg.sequence_len,
             batch_size=cfg.micro_batch_size,
-            seed=cfg.seed or 42,
+            seed=cfg.seed if cfg.seed is not None else 42,
             buffer_size=cfg.pretrain_multipack_buffer_size or 10_000,
         )
         # https://discuss.huggingface.co/t/how-to-use-huggingface-trainer-streaming-datasets-without-wrapping-it-with-torchdatas-iterablewrapper/25230
@@ -416,6 +416,8 @@ def load_prepare_datasets(
     )
 
     if split == "train" and val_set_size:
+        seed = cfg.seed if cfg.seed is not None else 42
+
         # ensure we end up with the same fingerprint by doing rank0 first and being able to cache
         to_hash_train = (
             dataset._fingerprint  # pylint: disable=protected-access
@@ -424,7 +426,7 @@ def load_prepare_datasets(
             + "|"
             + "train"
             + "|"
-            + str(cfg.seed or 42)
+            + str(seed)
         )
         to_hash_test = (
             dataset._fingerprint  # pylint: disable=protected-access
@@ -433,7 +435,7 @@ def load_prepare_datasets(
             + "|"
             + "test"
             + "|"
-            + str(cfg.seed or 42)
+            + str(seed)
         )
         train_fingerprint = md5(to_hash_train)
         test_fingerprint = md5(to_hash_test)
@@ -442,7 +444,7 @@ def load_prepare_datasets(
         dataset = dataset.train_test_split(
             test_size=val_set_size,
             shuffle=False,
-            seed=cfg.seed or 42,
+            seed=seed,
             train_new_fingerprint=train_fingerprint,
             test_new_fingerprint=test_fingerprint,
         )
@@ -482,7 +484,7 @@ def get_dataset_wrapper(
     }
 
     LOG.info(
-        f"Loading dataset with base_type: {d_base_type} and prompt_style: {d_prompt_style}"
+        f"Loading dataset: {config_dataset['path']} with base_type: {d_base_type} and prompt_style: {d_prompt_style}"
     )
 
     if (

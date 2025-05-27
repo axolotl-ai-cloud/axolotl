@@ -9,8 +9,6 @@ from PIL.Image import Resampling
 from transformers import TrainingArguments
 from trl import CPOConfig, KTOConfig, ORPOConfig, PRMConfig, RewardConfig
 
-from axolotl.monkeypatch.attention.ring_attn.patch import RingAttnFunc
-
 
 @dataclass
 class AxolotlTrainingMixins:
@@ -216,14 +214,16 @@ class AxolotlTrainingMixins:
         },
     )
 
-    sequence_parallel_degree: Optional[int] = field(
-        default=1,
-        metadata={"help": "The number of workers to use in sequence parallelism"},
-    )
-    ring_attn_func: Optional[RingAttnFunc] = field(
+    adam_beta3: Optional[float] = field(
         default=None,
         metadata={
-            "help": "The ring-flash-attn function to use in sequence parallelism"
+            "help": "The beta3 hyperparameter used in some optimizers such as CAME"
+        },
+    )
+    adam_epsilon2: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "The epsilon2 hyperparameter used in some optimizers such as CAME"
         },
     )
 

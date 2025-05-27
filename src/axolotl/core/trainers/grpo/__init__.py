@@ -1,37 +1,41 @@
-"""
-GRPO Specific Strategy for training
-"""
+"""GRPO Specific Strategy for training"""
 
 import importlib
 import inspect
 import logging
+from typing import Any
 
 from trl.trainer.grpo_trainer import RewardFunc
 
-from axolotl.core.trainers.grpo.trainer import AxolotlGRPOTrainer
+from axolotl.core.trainers.grpo.args import AxolotlGRPOConfig
+from axolotl.core.trainers.grpo.trainer import (
+    AxolotlGRPOSequenceParallelTrainer,
+    AxolotlGRPOTrainer,
+)
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.trl import TRLConfig
 
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger(__name__)
 
 
 class GRPOStrategy:
-    """
-    Strategy for GRPO training
-    """
+    """Strategy for GRPO training"""
 
     @classmethod
-    def get_trainer_class(cls):
+    def get_trainer_class(
+        cls, sequence_parallel: bool
+    ) -> type[AxolotlGRPOTrainer] | type[AxolotlGRPOSequenceParallelTrainer]:
+        if sequence_parallel:
+            return AxolotlGRPOSequenceParallelTrainer
         return AxolotlGRPOTrainer
 
     @classmethod
-    def get_training_args_class(cls):
-        from axolotl.core.trainers.grpo.args import AxolotlGRPOConfig
-
+    def get_training_args_class(cls) -> type[AxolotlGRPOConfig]:
         return AxolotlGRPOConfig
 
     @classmethod
-    def set_training_args_kwargs(cls, cfg):
-        grpo_args_kwargs = {}
+    def set_training_args_kwargs(cls, cfg: DictDefault) -> dict[str, Any]:
+        grpo_args_kwargs: dict[str, Any] = {}
 
         if not hasattr(cfg, "trl") or not cfg.trl:
             return grpo_args_kwargs
@@ -40,8 +44,8 @@ class GRPOStrategy:
 
         if trl.use_vllm:
             grpo_args_kwargs["use_vllm"] = trl.use_vllm
-            grpo_args_kwargs["vllm_server_host"] = trl.vllm_server_host or trl.vllm.host
-            grpo_args_kwargs["vllm_server_port"] = trl.vllm_server_port or trl.vllm.port
+            grpo_args_kwargs["vllm_server_host"] = trl.vllm_server_host or trl.vllm.host  # type: ignore[attr-defined]
+            grpo_args_kwargs["vllm_server_port"] = trl.vllm_server_port or trl.vllm.port  # type: ignore[attr-defined]
             if trl.vllm_server_timeout:
                 grpo_args_kwargs["vllm_server_timeout"] = trl.vllm_server_timeout
             if trl.vllm_guided_decoding_regex:
@@ -102,17 +106,18 @@ class GRPOStrategy:
         return grpo_args_kwargs
 
     @classmethod
-    def set_trainer_args(cls, cfg):
+    def set_trainer_args(cls, cfg: DictDefault) -> list[Any]:
         trainer_args = []
         if cfg.trl and cfg.trl.reward_funcs:
             reward_funcs = []
             for reward_func_fqn in cfg.trl.reward_funcs:
                 reward_funcs.append(cls.get_reward_func(reward_func_fqn))
             trainer_args.append(reward_funcs)
+
         return trainer_args
 
     @classmethod
-    def set_trainer_kwargs(cls, cfg):
+    def set_trainer_kwargs(cls, cfg: DictDefault) -> dict[str, Any]:
         trainer_kwargs = {}
         if cfg.trl and cfg.trl.reward_processing_classes:
             trainer_kwargs["reward_processing_classes"] = (
@@ -126,7 +131,7 @@ class GRPOStrategy:
         return None
 
     @classmethod
-    def get_blocklist_args_kwargs(cls):
+    def get_blocklist_args_kwargs(cls) -> list[str]:
         return ["dataset_num_proc"]
 
     @classmethod
@@ -137,13 +142,13 @@ class GRPOStrategy:
         Args:
             reward_func_fqn (str): Fully qualified name of the reward function (e.g. r1_grpo.gsm8k_transform),
                 or a HF hub path to the reward model.
-        Raises:
-            ValueError: If the reward function does not accept at least two arguments.
 
         Returns:
             RewardFunc: A callable that accepts prompts and completions and returns rewards,
                 or a path to a reward model.
 
+        Raises:
+            ValueError: If the reward function does not accept at least two arguments.
         """
         try:
             # use importlib to dynamically load the reward function from the module

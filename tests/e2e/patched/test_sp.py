@@ -10,14 +10,15 @@ import pytest
 import torch
 from accelerate.state import PartialState
 
-from axolotl.core.trainers.mixins.sequence_parallel import apply_sequence_parallelism
-from axolotl.monkeypatch.attention.ring_attn import (
-    RingAttnFunc,
+from axolotl.monkeypatch.ring_attn import (
     get_ring_attn_group,
     register_ring_attn,
     set_ring_attn_group,
 )
+from axolotl.utils.ctx_managers.sequence_parallel import apply_sequence_parallelism
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.schemas.enums import RingAttnFunc
+from axolotl.utils.schemas.trl import TRLConfig
 
 
 @pytest.fixture
@@ -62,12 +63,14 @@ def sequence_parallel_batch():
     input_ids = torch.arange(batch_size * seq_len).reshape(batch_size, seq_len)
     attention_mask = torch.ones(batch_size, seq_len)
     position_ids = torch.arange(seq_len).expand(batch_size, seq_len)
+    labels = input_ids.clone()
 
     # Create test batch
     batch = {
         "input_ids": input_ids,
         "attention_mask": attention_mask,
         "position_ids": position_ids,
+        "labels": labels,
     }
 
     return batch
@@ -81,16 +84,16 @@ class TestRingAttention:
     def test_get_ring_attn_group_no_registration(
         self, mock_world_size, mock_rank, partial_state
     ):
-        """Test that get_ring_attn_group returns None when no group has been registered."""
+        """Test that get_ring_attn_group raises RuntimeError when no group has been registered."""
         # Setup mocks
         mock_world_size.return_value = 4
         mock_rank.return_value = 0
 
-        # Get the group without registration
-        group = get_ring_attn_group()
-
-        # Verify that None was returned
-        assert group is None
+        # Verify that RuntimeError is raised when no group is registered
+        with pytest.raises(
+            RuntimeError, match="register_ring_attn\\(\\) not yet called"
+        ):
+            get_ring_attn_group()
 
     @patch("torch.distributed.new_group")
     @patch("torch.distributed.get_rank")
@@ -179,12 +182,44 @@ class TestConfigValidation:
                 False,
                 "micro_batch_size must be set to 1",
             ),
+            # Valid: Basic GRPO config
+            (
+                {
+                    "sequence_parallel_degree": 2,
+                    "flash_attention": True,
+                    "micro_batch_size": 2,
+                    "trl": {"use_liger_loss": True},
+                },
+                {
+                    "sequence_parallel_degree": 2,
+                    "flash_attention": True,
+                    "micro_batch_size": 2,
+                    "trl": TRLConfig(use_liger_loss=True),
+                },
+                True,
+                "GRPO + SP + Liger not currently supported",
+            ),
+            # Invalid: GRPO config with Liger loss
+            (
+                {
+                    "rl": "grpo",
+                    "sequence_parallel_degree": 2,
+                    "flash_attention": True,
+                    "micro_batch_size": 2,
+                    "trl": {"use_liger_loss": True},
+                },
+                None,
+                False,
+                "GRPO + SP + Liger not currently supported",
+            ),
         ],
         ids=[
             "valid_config",
             "default_sp_degree",
             "without_flash_attention",
             "sample_packing_with_large_batch",
+            "valid_grpo",
+            "grpo_with_liger_loss",
         ],
     )
     def test_sequence_parallel_config_validation(
@@ -256,7 +291,7 @@ class TestConfigValidation:
             AxolotlInputConfig(**cfg)
 
         # Verify error message
-        assert "ring_attn_func: INVALID_FUNC must be in" in str(excinfo.value)
+        assert "Input should be 'varlen_llama3' or 'batch_ring'" in str(excinfo.value)
 
 
 class TestApplySequenceParallelism:
@@ -278,37 +313,45 @@ class TestApplySequenceParallelism:
 
         # Mock the process group
         monkeypatch.setattr(
-            "axolotl.monkeypatch.attention.ring_attn.get_ring_attn_group",
+            "axolotl.monkeypatch.ring_attn.get_ring_attn_group",
             MagicMock,
         )
 
         # Mock update_ring_attn_params
         monkeypatch.setattr(
-            "axolotl.monkeypatch.attention.ring_attn.update_ring_attn_params",
+            "axolotl.monkeypatch.ring_attn.update_ring_attn_params",
             lambda **kwargs: None,
         )
 
-    def test_world_size_one(self, sequence_parallel_batch):
+    @patch("axolotl.monkeypatch.ring_attn.patch.get_ring_attn_group")
+    def test_world_size_one(self, mock_get_ring_attn_group, sequence_parallel_batch):
         """Test that function returns original batch when world size is 1."""
-        result = apply_sequence_parallelism(
+        mock_get_ring_attn_group.return_value = 0
+
+        result, _, _ = apply_sequence_parallelism(
             batch=sequence_parallel_batch,
             local_rank=0,
             local_world_size=1,
+            gradient_accumulation_steps=1,
             ring_attn_func=RingAttnFunc.BATCH_RING,
         )
 
         # Should return the original batch unchanged
         assert result == sequence_parallel_batch
 
-    def test_batch_ring_rank0(self, sequence_parallel_batch):
+    @patch("axolotl.monkeypatch.ring_attn.patch.get_ring_attn_group")
+    def test_batch_ring_rank0(self, mock_get_ring_attn_group, sequence_parallel_batch):
         """Test BATCH_RING sharding for rank 0 in a 2-process group."""
+        mock_get_ring_attn_group.return_value = 0
+
         batch = sequence_parallel_batch
         seq_len = batch["input_ids"].size(1)
 
-        result = apply_sequence_parallelism(
+        result, _, _ = apply_sequence_parallelism(
             batch=batch,
             local_rank=0,
             local_world_size=2,
+            gradient_accumulation_steps=1,
             ring_attn_func=RingAttnFunc.BATCH_RING,
         )
 
@@ -322,66 +365,76 @@ class TestApplySequenceParallelism:
             result["position_ids"], batch["position_ids"][:, : seq_len // 2]
         )
 
-    def test_batch_ring_rank1(self, sequence_parallel_batch):
+    @patch("axolotl.monkeypatch.ring_attn.patch.get_ring_attn_group")
+    def test_batch_ring_rank1(self, mock_get_ring_attn_group, sequence_parallel_batch):
         """Test BATCH_RING sharding for rank 1 in a 2-process group."""
+        mock_get_ring_attn_group.return_value = 0
+
         batch = sequence_parallel_batch
         seq_len = batch["input_ids"].size(1)
         original_input_ids = batch["input_ids"].clone()
 
-        result = apply_sequence_parallelism(
+        result, _, _ = apply_sequence_parallelism(
             batch=batch,
             local_rank=1,
             local_world_size=2,
+            gradient_accumulation_steps=1,
             ring_attn_func=RingAttnFunc.BATCH_RING,
         )
 
         # Verify content: rank 1 should get the second half of the sequence
         assert torch.equal(result["input_ids"], original_input_ids[:, seq_len // 2 :])
 
-    def test_batch_zigzag(self, sequence_parallel_batch):
-        """Test BATCH_ZIGZAG sharding pattern."""
-        batch = sequence_parallel_batch
-        original_input_ids = batch["input_ids"].clone()
-        seq_len = batch["input_ids"].size(1)
+    # TODO(djsaunde): add back once implemented.
+    # def test_batch_zigzag(self, sequence_parallel_batch):
+    #     """Test BATCH_ZIGZAG sharding pattern."""
+    #     batch = sequence_parallel_batch
+    #     original_input_ids = batch["input_ids"].clone()
+    #     seq_len = batch["input_ids"].size(1)
 
-        # Test rank 0
-        result_rank0 = apply_sequence_parallelism(
-            batch={k: v.clone() for k, v in batch.items()},
-            local_rank=0,
-            local_world_size=2,
-            ring_attn_func=RingAttnFunc.BATCH_ZIGZAG,
-        )
+    #     # Test rank 0
+    #     result_rank0 = apply_sequence_parallelism(
+    #         batch={k: v.clone() for k, v in batch.items()},
+    #         local_rank=0,
+    #         local_world_size=2,
+    #         ring_attn_func=RingAttnFunc.BATCH_ZIGZAG,
+    #     )
 
-        # Test rank 1
-        result_rank1 = apply_sequence_parallelism(
-            batch={k: v.clone() for k, v in batch.items()},
-            local_rank=1,
-            local_world_size=2,
-            ring_attn_func=RingAttnFunc.BATCH_ZIGZAG,
-        )
+    #     # Test rank 1
+    #     result_rank1 = apply_sequence_parallelism(
+    #         batch={k: v.clone() for k, v in batch.items()},
+    #         local_rank=1,
+    #         local_world_size=2,
+    #         ring_attn_func=RingAttnFunc.BATCH_ZIGZAG,
+    #     )
 
-        # Checks for both ranks
-        assert result_rank0["input_ids"].shape[1] == seq_len // 2
-        assert result_rank1["input_ids"].shape[1] == seq_len // 2
+    #     # Checks for both ranks
+    #     assert result_rank0["input_ids"].shape[1] == seq_len // 2
+    #     assert result_rank1["input_ids"].shape[1] == seq_len // 2
 
-        # For a 2-rank system with 8 tokens, check specific zigzag pattern
-        # Rank 0 should get chunks [0, 1] and [6, 7]
-        # Rank 1 should get chunks [2, 3] and [4, 5]
-        if seq_len == 8:
-            # Create expected tensors for comparison
-            rank0_expected = torch.cat(
-                [original_input_ids[:, :2], original_input_ids[:, 6:8]], dim=1
-            )
+    #     # For a 2-rank system with 8 tokens, check specific zigzag pattern
+    #     # Rank 0 should get chunks [0, 1] and [6, 7]
+    #     # Rank 1 should get chunks [2, 3] and [4, 5]
+    #     if seq_len == 8:
+    #         # Create expected tensors for comparison
+    #         rank0_expected = torch.cat(
+    #             [original_input_ids[:, :2], original_input_ids[:, 6:8]], dim=1
+    #         )
 
-            rank1_expected = torch.cat(
-                [original_input_ids[:, 2:4], original_input_ids[:, 4:6]], dim=1
-            )
+    #         rank1_expected = torch.cat(
+    #             [original_input_ids[:, 2:4], original_input_ids[:, 4:6]], dim=1
+    #         )
 
-            assert torch.equal(result_rank0["input_ids"], rank0_expected)
-            assert torch.equal(result_rank1["input_ids"], rank1_expected)
+    #         assert torch.equal(result_rank0["input_ids"], rank0_expected)
+    #         assert torch.equal(result_rank1["input_ids"], rank1_expected)
 
-    def test_partial_application(self, sequence_parallel_batch):
+    @patch("axolotl.monkeypatch.ring_attn.patch.get_ring_attn_group")
+    def test_partial_application(
+        self, mock_get_ring_attn_group, sequence_parallel_batch
+    ):
         """Test that we can create a partially applied version of the function."""
+        mock_get_ring_attn_group.return_value = 0
+
         batch = sequence_parallel_batch
         original_input_ids = batch["input_ids"].clone()
 
@@ -390,11 +443,12 @@ class TestApplySequenceParallelism:
             apply_sequence_parallelism,
             local_rank=0,
             local_world_size=2,
+            gradient_accumulation_steps=1,
             ring_attn_func=RingAttnFunc.BATCH_RING,
         )
 
         # Use the partially applied function
-        result = rank0_ring_parallel(batch=batch)
+        result, _, _ = rank0_ring_parallel(batch=batch)
 
         # Verify it works as expected
         assert result["input_ids"].shape[1] == original_input_ids.shape[1] // 2
@@ -412,13 +466,15 @@ class TestApplySequenceParallelism:
         original_input_ids = batch["input_ids"].clone()
 
         # This should run without error even though position_ids is missing
-        result = apply_sequence_parallelism(
+        result, _, _ = apply_sequence_parallelism(
             batch=batch,
             local_rank=0,
             local_world_size=2,
+            gradient_accumulation_steps=1,
             ring_attn_func=RingAttnFunc.BATCH_RING,
         )
 
         # Verification should pass
-        assert "position_ids" not in result
+        assert "position_ids" in result
+        assert result["input_ids"].shape[1] == result["position_ids"].shape[1]
         assert result["input_ids"].shape[1] == original_input_ids.shape[1] // 2

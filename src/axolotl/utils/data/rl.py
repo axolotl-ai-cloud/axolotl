@@ -10,6 +10,7 @@ import yaml
 from datasets import Dataset, DatasetDict, concatenate_datasets, load_from_disk
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
+from axolotl.loaders import load_tokenizer
 from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.prompt_strategies.kto import load as load_kto
 from axolotl.prompt_strategies.orpo import load as load_orpo
@@ -17,9 +18,9 @@ from axolotl.utils.data.shared import datasets_w_name_generator, load_dataset_w_
 from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process, zero_first
-from axolotl.utils.models import load_tokenizer
+from axolotl.utils.schemas.enums import RLType
 
-LOG = logging.getLogger("axolotl")
+LOG = logging.getLogger(__name__)
 
 
 def _get_path(ds_hash, cfg):
@@ -71,6 +72,7 @@ def map_dataset(cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs):
     data_set = data_set.map(
         ds_transform_fn,
         desc="Mapping RL Dataset",
+        num_proc=cfg.dataset_processes,
         **map_kwargs,
     )
 
@@ -80,7 +82,7 @@ def map_dataset(cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs):
 def drop_long_rl_seq(
     sample, rl, tokenizer, sequence_len  # pylint: disable=invalid-name
 ):
-    if rl in ("dpo", "ipo", "orpo", "simpo"):
+    if rl in (RLType.DPO, RLType.IPO, RLType.ORPO, RLType.SIMPO):
         if not (
             sample.get("prompt") and sample.get("chosen") and sample.get("rejected")
         ):
@@ -100,7 +102,7 @@ def drop_long_rl_seq(
             len_prompt + len_rejected
         ) <= sequence_len
 
-    if rl == "kto":
+    if rl is RLType.KTO:
         if not (sample.get("prompt") and sample.get("completion")):
             raise ValueError("Prompt and completion keys are required for KTO datasets")
 
@@ -114,7 +116,7 @@ def drop_long_rl_seq(
 
         return (len_prompt + len_completion) <= sequence_len
 
-    if rl == "grpo":
+    if rl is RLType.GRPO:
         return True
 
     raise ValueError("Unknown RL type")
@@ -137,9 +139,9 @@ def load_prepare_preference_datasets(cfg):
             if _type:
                 if isinstance(_type, DictDefault):
                     _type = "user_defined.default"
-                if _cfg.rl == "orpo":
+                if _cfg.rl is RLType.ORPO:
                     ds_transform_fn = load_orpo(_type, _cfg, dataset_idx=i)
-                elif _cfg.rl == "kto":
+                elif _cfg.rl is RLType.KTO:
                     ds_transform_fn = load_kto(_type, _cfg, dataset_idx=i)
                 else:
                     ds_transform_fn = load_dpo(_type, _cfg, dataset_idx=i)
@@ -150,7 +152,7 @@ def load_prepare_preference_datasets(cfg):
                 split_datasets[i] = map_dataset(
                     cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs
                 )
-            elif _cfg.rl == "kto":
+            elif _cfg.rl is RLType.KTO:
                 ds_transform_fn = load_kto(_type, _cfg, dataset_idx=i)
                 map_kwargs = {}
                 if isinstance(ds_transform_fn, tuple):
@@ -185,7 +187,7 @@ def load_prepare_preference_datasets(cfg):
                     )
 
         combined_datasets = concatenate_datasets(split_datasets)
-        combined_datasets = combined_datasets.shuffle(seed=cfg.seed)
+        combined_datasets = combined_datasets.shuffle(seed=cfg.seed or 42)
 
         return combined_datasets
 
@@ -205,6 +207,8 @@ def load_prepare_preference_datasets(cfg):
                 eval_dataset = load_split(cfg.test_datasets, cfg)
         if not eval_dataset:
             if cfg.val_set_size:
+                seed = cfg.seed if cfg.seed is not None else 42
+
                 # ensure we end up with the same fingerprint by doing rank0 first and being able to cache
                 to_hash_train = (
                     train_dataset._fingerprint  # pylint: disable=protected-access
@@ -213,7 +217,7 @@ def load_prepare_preference_datasets(cfg):
                     + "|"
                     + "train"
                     + "|"
-                    + str(cfg.seed or 42)
+                    + str(seed)
                 )
                 to_hash_test = (
                     train_dataset._fingerprint  # pylint: disable=protected-access
@@ -222,13 +226,13 @@ def load_prepare_preference_datasets(cfg):
                     + "|"
                     + "test"
                     + "|"
-                    + str(cfg.seed or 42)
+                    + str(seed)
                 )
                 train_fingerprint = md5(to_hash_train)
                 test_fingerprint = md5(to_hash_test)
                 ds_w_test_split = train_dataset.train_test_split(
                     test_size=cfg.val_set_size,
-                    seed=cfg.seed,
+                    seed=seed,
                     shuffle=False,
                     train_new_fingerprint=train_fingerprint,
                     test_new_fingerprint=test_fingerprint,
