@@ -49,28 +49,27 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if trainer_cls is not None:
                 return trainer_cls, trainer_cls_args
 
+        trainer_cls = None
+        trainer_cls_args = [self.model]
+
         if self.cfg.rl is RLType.GRPO:
             trainer_cls = GRPOStrategy.get_trainer_class(
                 sequence_parallel=self.cfg.sequence_parallel_degree > 1
             )
-            trainer_cls_args = [self.model]
             trainer_cls_args.extend(GRPOStrategy.set_trainer_args(self.cfg))
 
             trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))
 
         elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             trainer_cls = DPOStrategy.get_trainer_class()
-            trainer_cls_args = [self.model, self.model_ref]
+            trainer_cls_args.append(self.model_ref)
 
         elif self.cfg.rl is RLType.ORPO:
             trainer_cls = AxolotlORPOTrainer
-            trainer_cls_args = [self.model]
         elif self.cfg.rl is RLType.KTO:
             trainer_cls = AxolotlKTOTrainer
-            trainer_cls_args = [self.model]
         elif self.cfg.rl is RLType.SIMPO:
             trainer_cls = AxolotlCPOTrainer
-            trainer_cls_args = [self.model]
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
 
