@@ -2,17 +2,44 @@
 Packed data loader for online teacher training supporting vllm and sglang.
 """
 
+import hashlib
+import hmac
 import logging
 from typing import Any, Dict, List, Optional
 
-import pandas as pd
 import requests
 import torch
+from orjson import orjson
 
 from axolotl.integrations.kd.collator import KDBatchSamplerDataCollatorForSeq2Seq
 from axolotl.utils.data.utils import retry_on_request_exceptions
 
 LOG = logging.getLogger(__name__)
+
+
+def hmac_sha_from_int_list(int_list, key, hash_func=hashlib.sha256):
+    """
+    Create HMAC-SHA hash from a list of integers
+
+    Args:
+        int_list: List of integers
+        key: Secret key (string or bytes)
+        hash_func: Hash function (default: sha256)
+
+    Returns:
+        HMAC digest as hex string
+    """
+    # Convert key to bytes if it's a string
+    if isinstance(key, str):
+        key = key.encode("utf-8")
+
+    # Convert list of ints to bytes
+    # Method 1: Convert each int to bytes and concatenate
+    data = b"".join(i.to_bytes(4, byteorder="big") for i in int_list)
+
+    # Create HMAC
+    h = hmac.new(key, data, hash_func)
+    return h.hexdigest()
 
 
 class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
@@ -30,6 +57,7 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
         kd_temperature: Optional[float] = 1.0,
         kd_online_server: Optional[str] = "vllm",
         kd_online_timeout: Optional[int] = 120,
+        kd_cache_dir: Optional[str] = None,
         **kwargs: Any,
     ):
         super().__init__(*args, **kwargs)
@@ -49,6 +77,7 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
         self.kd_online_server = kd_online_server
         self.http_session = requests.Session()
         self.kd_online_timeout = kd_online_timeout
+        self.kd_cache_dir = kd_cache_dir
 
     def _normalize_logprobs(self, raw_logprobs: List[float]) -> List[float]:
         """
@@ -109,7 +138,7 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
 
             return final_logprobs_tensor.tolist()
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             LOG.error(
                 f"Error during online logprob scaling: {e}. Returning raw logprobs.",
                 exc_info=True,
@@ -142,11 +171,9 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
         }
 
         # Initialize with empty lists, so if API call fails, these are returned.
-        ret_logprobs_data = {
-            "target_token_ids": [],
-            "target_logprobs": [],
-            "target_mask": [],
-        }
+        ret_data_target_token_ids: List[List[List[int]]] = []
+        ret_data_target_logprobs: List[List[List[float]]] = []
+        ret_data_target_mask: List[List[List[int]]] = []
 
         try:
             response = self.http_session.post(
@@ -162,7 +189,11 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
                     f"items, got {type(api_data)} with length {len(api_data) if isinstance(api_data, list) else 'N/A'}."
                 )
                 # Return empty data; items processed later will get default empty KD fields
-                return ret_logprobs_data
+                return {
+                    "target_token_ids": ret_data_target_token_ids,
+                    "target_logprobs": ret_data_target_logprobs,
+                    "target_mask": ret_data_target_mask,
+                }
 
             for sequence_data, seq_input_ids, seq_labels in zip(
                 api_data, batch_input_ids, labels
@@ -185,7 +216,7 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
                 # basic check that the logprob data len matches the input len, so no need to handle padding
                 assert len(seq_input_ids) == len(input_top_logprobs)
 
-                for i, input_id, label in zip(
+                for i, _, label in zip(
                     range(len(seq_input_ids)), seq_input_ids, seq_labels
                 ):
                     if i < len(input_top_logprobs) and input_top_logprobs[i] is None:
@@ -254,9 +285,9 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
                         current_target_token_ids.append([0] * self.kd_online_topk)
                         current_target_mask.append([0] * self.kd_online_topk)
 
-                ret_logprobs_data["target_token_ids"].append(current_target_token_ids)
-                ret_logprobs_data["target_logprobs"].append(current_target_logprobs)
-                ret_logprobs_data["target_mask"].append(current_target_mask)
+                ret_data_target_token_ids.append(current_target_token_ids)
+                ret_data_target_logprobs.append(current_target_logprobs)
+                ret_data_target_mask.append(current_target_mask)
 
         except requests.exceptions.RequestException as e:
             LOG.error(f"Error fetching logprobs from online teacher: {e}")
@@ -269,7 +300,11 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
             )
             raise e
 
-        return ret_logprobs_data
+        return {
+            "target_token_ids": ret_data_target_token_ids,
+            "target_logprobs": ret_data_target_logprobs,
+            "target_mask": ret_data_target_mask,
+        }
 
     @retry_on_request_exceptions(max_retries=10, delay=5)
     def fetch_online_logprobs_vllm(
@@ -296,18 +331,19 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
         }
 
         # Initialize with empty lists, so if API call fails, these are returned.
-        ret_logprobs_data = {
-            "target_token_ids": [],
-            "target_logprobs": [],
-            "target_mask": [],
-        }
+        ret_data_target_token_ids: List[List[List[int]]] = []
+        ret_data_target_logprobs: List[List[List[float]]] = []
+        ret_data_target_mask: List[List[List[int]]] = []
 
         try:
             response = self.http_session.post(
-                api_endpoint, json=payload, timeout=self.kd_online_timeout
+                api_endpoint,
+                json=payload,
+                timeout=self.kd_online_timeout,
+                # json_decoder=orjson.loads,
             )
             response.raise_for_status()
-            api_data: dict = response.json()
+            api_data: dict = orjson.loads(response.content)
             choices: list[dict] = api_data["choices"]
 
             # Ensure api_data is a list, and its length matches batch_input_ids
@@ -317,7 +353,11 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
                     f"items, got {type(api_data)} with length {len(api_data) if isinstance(api_data, list) else 'N/A'}."
                 )
                 # Return empty data; items processed later will get default empty KD fields
-                return ret_logprobs_data
+                return {
+                    "target_token_ids": ret_data_target_token_ids,
+                    "target_logprobs": ret_data_target_logprobs,
+                    "target_mask": ret_data_target_mask,
+                }
 
             for sequence_data, seq_input_ids, seq_labels in zip(
                 choices, batch_input_ids, labels
@@ -330,29 +370,10 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
                 current_target_mask = []
 
                 # Ensure input_top_logprobs is a list
-                input_top_logprobs: Optional[list[None | list[tuple]]] = (
+                input_top_logprobs: Optional[list[None | dict[str, dict]]] = (
                     sequence_data.pop("prompt_logprobs", [])
                 )
-                """
-                vllm api data for prompt logprobs looks like:
-                "prompt_logprobs": [
-                    null, # first token is always null
-                    { # second token logprobs
-                        "8948": { # token ID
-                            "logprob": -2.3841830625315197e-06,
-                            "rank": 1,
-                            "decoded_token": "system"
-                        },
-                        "1849": { # token ID
-                            "logprob": -13.187501907348633,
-                            "rank": 2,
-                            "decoded_token": "Ġsystem"
-                        },
-                        ... # rest of the top-k tokens/logprobs
-                    },
-                    ... # more tokens
-                }
-                """
+
                 if not isinstance(input_top_logprobs, list):
                     LOG.warning(
                         f"Received non-list input_top_logprobs: {input_top_logprobs}. Skipping sequence."
@@ -369,11 +390,11 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
                         # this is always the case for the first token.
                         # there is never logprob data for the first token since that's a true input
                         continue
-                    elif (
+                    if (
                         i < len(input_top_logprobs)
                         and input_top_logprobs[i] is not None
                     ):
-                        pos_top_logprobs_data: dict[str, dict] = input_top_logprobs[i]
+                        pos_top_logprobs_data: dict[str, dict] = input_top_logprobs[i]  # type: ignore[assignment]
                         # Ensure pos_top_logprobs_data is a list of lists as expected
                         if not (
                             isinstance(pos_top_logprobs_data, dict)
@@ -396,9 +417,11 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
                             continue
 
                         # pos_top_logprobs: list of logprobs, pos_token_ids: list of token_ids
-                        pos_token_ids = pos_top_logprobs_data.keys()
+                        pos_token_ids_str = list(pos_top_logprobs_data.keys())
                         pos_logprobs_dict = pos_top_logprobs_data.values()
-                        pos_token_ids = [int(token_id) for token_id in pos_token_ids]
+                        pos_token_ids = [
+                            int(token_id) for token_id in pos_token_ids_str
+                        ]
                         pos_logprobs_raw = [
                             float(logprob.get("logprob", -float("inf")))
                             for logprob in pos_logprobs_dict
@@ -446,17 +469,18 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
                     current_target_token_ids.append(list(range(self.kd_online_topk)))
                     current_target_mask.append([0] * self.kd_online_topk)
 
-                ret_logprobs_data["target_token_ids"].append(current_target_token_ids)
-                ret_logprobs_data["target_logprobs"].append(current_target_logprobs)
-                ret_logprobs_data["target_mask"].append(current_target_mask)
+                ret_data_target_token_ids.append(current_target_token_ids)
+                ret_data_target_logprobs.append(current_target_logprobs)
+                ret_data_target_mask.append(current_target_mask)
 
                 # TODO save and load targets to disk for caching for next epoch
-                # generate a hash over seq_input_ids and convert it to an int
-                # hash_input_ids: int = hash(tuple(seq_input_ids))
-                # with open(f"/tmp/target_logprobs_{hash_input_ids}.parquet", "wb") as f:
-                #     pd.DataFrame(current_target_logprobs).to_parquet(f, index=False)
-                # with open(f"/tmp/target_token_ids_{hash_input_ids}.parquet", "wb") as f:
-                #     pd.DataFrame(current_target_token_ids).to_parquet(f, index=False)
+                # generate a hmac SHA256 hash over the list seq_input_ids and convert it to an int
+                # if self.kd_cache_dir:
+                #     hash_input_ids = hmac_sha_from_int_list(
+                #         seq_input_ids, f"{self.kd_online_server_base_url}:{self.kd_online_topk}"
+                #     )
+                #     with open(f"{self.kd_cache_dir}/{hash_input_ids}.parquet", "wb") as f:
+                #         pd.DataFrame(ret_logprobs_data).to_parquet(f, index=False)
 
         except requests.exceptions.RequestException as e:
             LOG.error(f"Error fetching logprobs from online teacher: {e}")
@@ -469,7 +493,11 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
             )
             raise e
 
-        return ret_logprobs_data
+        return {
+            "target_token_ids": ret_data_target_token_ids,
+            "target_logprobs": ret_data_target_logprobs,
+            "target_mask": ret_data_target_mask,
+        }
 
     def __call__(
         self, features: List[List[Dict[str, Any]]], return_tensors: Optional[str] = None

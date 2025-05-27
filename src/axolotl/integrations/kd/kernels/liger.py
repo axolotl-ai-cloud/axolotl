@@ -20,6 +20,7 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
         target_token_ids_chunk: torch.Tensor,  # [chunk_size, top_k]
         target_logprobs_chunk: torch.Tensor,  # [chunk_size, top_k], already temp-scaled and normalized logprobs
         target_mask_chunk: torch.Tensor,  # [chunk_size, top_k]
+        beta: float = 0.0,
     ) -> torch.Tensor:
         """
         Compute Top-K KL divergence loss for a chunk.
@@ -28,6 +29,10 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
             target_token_ids_chunk: Top-k teacher token IDs. Shape: (N, K).
             target_logprobs_chunk: Top-k teacher log probabilities (temp-scaled, normalized). Shape: (N, K).
             target_mask_chunk: Mask for valid top-k tokens. Shape: (N, K).
+            beta: Controls the type of KL divergence.
+                  0.0 for Forward KL (P_teacher || P_student).
+                  1.0 for Reverse KL (P_student || P_teacher).
+                  0.5 for Symmetric KL (average of Forward and Reverse).
         Returns:
             Sum of KL divergence losses for the chunk.
         """
@@ -59,6 +64,10 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
         # Teacher probabilities P(y|x_teacher) from logprobs
         # target_logprobs_valid are already normalized (log(softmax(teacher_logits/T)))
         teacher_probs_valid = target_logprobs_valid.exp()
+        # Student probabilities P_student from log P_student
+        student_probs_topk_valid = student_logprobs_topk_valid.exp()
+
+        kd_loss_per_token = torch.zeros_like(target_logprobs_valid)
 
         # KL divergence: sum(P_teacher * (log P_teacher - log P_student))
         # = sum(P_teacher * log P_teacher) - sum(P_teacher * log P_student)
@@ -66,9 +75,17 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
         # or as sum(P_teacher * (log_softmax_teacher - log_softmax_student))
         # Here, target_logprobs_valid are log_softmax_teacher.
         # student_logprobs_topk_valid are log_softmax_student (for the selected K indices).
-        kd_loss_per_token = teacher_probs_valid * (
-            target_logprobs_valid - student_logprobs_topk_valid
-        )
+        if beta < 1.0:  # Contribution from Forward KL
+            fwd_kl_per_token = teacher_probs_valid * (
+                target_logprobs_valid - student_logprobs_topk_valid
+            )
+            kd_loss_per_token += (1.0 - beta) * fwd_kl_per_token
+        if beta > 0.0:  # Contribution from Reverse KL
+            rev_kl_per_token = student_probs_topk_valid * (
+                student_logprobs_topk_valid - target_logprobs_valid
+            )
+            kd_loss_per_token += beta * rev_kl_per_token
+
         kd_loss = kd_loss_per_token.sum()
 
         return kd_loss
@@ -91,6 +108,7 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
         weight_soft_loss: float = 0.5,
         compute_ce_loss: bool = True,
         temperature: float = 1.0,
+        beta: float = 0.0,
     ):
         # Compute student logits for the chunk from hidden states and LM head
         # student_input_chunk: [chunk_size, hidden_dim]
@@ -125,9 +143,8 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
                 target_token_ids_chunk,
                 target_logprobs_chunk,
                 target_mask_chunk,
+                beta=beta,
             )
-
-        loss = weight_hard_loss * ce_loss + weight_soft_loss * soft_loss
 
         return soft_loss, ce_loss
 
@@ -146,6 +163,7 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
         weight_soft_loss: float = 0.5,
         ignore_index: int = -100,
         temperature: float = 1.0,
+        beta: float = 0.0,
         compiled: bool = False,
         chunk_size: int = 1024,
         compute_ce_loss: bool = True,
@@ -192,6 +210,7 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
                 weight_soft_loss=weight_soft_loss,
                 compute_ce_loss=compute_ce_loss,
                 temperature=temperature,
+                beta=beta,
             )
 
         def accumulate_chunk_grads(
@@ -288,13 +307,13 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
         ctx.save_for_backward(grad_inputs_combined, grad_weight_acc, grad_bias_acc)
 
         # For matching None returns in backward for non-tensor/non-grad_requiring inputs
-        ctx.hyperparams_count = 7  # Corresponds to number of hyperparams after main tensors in fwd signature
+        ctx.hyperparams_count = 8  # Corresponds to number of hyperparams after main tensors in fwd signature
         ctx.bias_was_none = student_lm_head_bias is None
         ctx.orig_dims = (B, N, D, K)
 
-        # since this is packed, there is simply a single batch, so batchmean reduciton of kl-div is simply the accumulatedsum
-        # we still need to scale the kd_loss by the temp
-        kd_loss_acc = kd_loss_acc * (temperature ** 2)
+        # since this is packed, there is simply a single batch, so batchmean reduciton of kl-div is simply the accumulated sum
+        # we still need to scale the kd_loss by the temp^2
+        kd_loss_acc = kd_loss_acc * (temperature**2)
         final_loss = weight_soft_loss * kd_loss_acc + weight_hard_loss * ce_loss_acc
 
         return final_loss
@@ -373,6 +392,7 @@ class LigerFusedLinearKLTopKLogprobLoss(torch.nn.Module):
         weight_hard_loss: float = 0.5,
         weight_soft_loss: float = 0.5,
         temperature: float = 1.0,  # This is the kd_temperature
+        beta: float = 1.0,
         ignore_index: int = -100,
         compiled: bool = True,
         chunk_size: int = 1024,
@@ -387,6 +407,7 @@ class LigerFusedLinearKLTopKLogprobLoss(torch.nn.Module):
         self.weight_hard_loss = weight_hard_loss
         self.weight_soft_loss = weight_soft_loss
         self.temperature = temperature
+        self.beta = beta
         self.ignore_index = ignore_index
         self.compiled = compiled
         self.chunk_size = chunk_size
@@ -424,6 +445,7 @@ class LigerFusedLinearKLTopKLogprobLoss(torch.nn.Module):
             self.weight_soft_loss,
             self.ignore_index,
             self.temperature,
+            self.beta,
             self.compiled,
             self.chunk_size,
             self.compute_ce_loss,

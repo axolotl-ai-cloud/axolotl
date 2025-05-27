@@ -46,7 +46,7 @@ from axolotl.utils.distributed import (
 from axolotl.utils.schemas.config import AxolotlInputConfig
 
 if TYPE_CHECKING:
-    from axolotl.core.trainer_builder import AxolotlTrainingArguments
+    from axolotl.core.training_args import AxolotlTrainingArguments
 
 
 IGNORE_INDEX = -100

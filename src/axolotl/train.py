@@ -1,11 +1,14 @@
 """Prepare and train a model on a dataset. Can also infer from a model or merge lora"""
 
+from __future__ import annotations
+
 import importlib
 import inspect
 import logging
 import os
 import signal
 import sys
+import typing
 import weakref
 from contextlib import ExitStack
 from pathlib import Path
@@ -26,7 +29,6 @@ from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
-from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.integrations.base import PluginManager
 from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
 from axolotl.utils.dict import DictDefault
@@ -40,6 +42,10 @@ try:
     from optimum.bettertransformer import BetterTransformer
 except ImportError:
     BetterTransformer = None
+
+if typing.TYPE_CHECKING:
+    from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+
 
 LOG = logging.getLogger(__name__)
 
@@ -451,7 +457,7 @@ def handle_untrained_tokens_fix(
 
 
 def setup_model_and_trainer(cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> tuple[
-    HFRLTrainerBuilder | HFCausalTrainerBuilder,
+    "HFRLTrainerBuilder" | "HFCausalTrainerBuilder",
     PeftModel | PreTrainedModel,
     PreTrainedTokenizer,
     PeftConfig | None,
