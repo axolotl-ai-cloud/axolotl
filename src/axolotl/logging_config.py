@@ -55,11 +55,11 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
             "stream": sys.stdout,
         },
     },
-    "root": {"handlers": ["console"], "level": os.getenv("LOG_LEVEL", "INFO")},
+    "root": {"handlers": ["console"], "level": os.getenv("LOG_LEVEL", "WARNING")},
     "loggers": {
         "axolotl": {
             "handlers": ["color_console"],
-            "level": "DEBUG",
+            "level": os.getenv("LOG_LEVEL", "INFO"),
             "propagate": False,
         },
     },
