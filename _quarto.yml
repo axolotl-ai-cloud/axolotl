@@ -16,7 +16,6 @@ quartodoc:
         - datasets
         - convert
         - prompt_tokenizers
-        - qat
         - logging_config
         - core.trainer_builder
         - core.training_args
@@ -257,6 +256,8 @@ website:
             - docs/lr_groups.qmd
             - docs/lora_optims.qmd
             - docs/dataset_loading.qmd
+            - docs/qat.qmd
+            - docs/quantize.qmd
 
         - section: "Core Concepts"
           contents:
