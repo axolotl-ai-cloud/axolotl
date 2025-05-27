@@ -55,6 +55,7 @@ class KDPlugin(BasePlugin):
                 "kd_online_topk": cfg.kd_online_topk,
                 "kd_temperature": cfg.kd_temperature,
                 "kd_online_server": cfg.kd_online_server,
+                "kd_online_timeout": cfg.kd_online_timeout,
             }
 
         if use_batch_sampler_collator:
