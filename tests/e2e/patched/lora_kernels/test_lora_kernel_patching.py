@@ -21,6 +21,8 @@ from axolotl.kernels.lora import (
     apply_lora_o,
     apply_lora_qkv,
 )
+from axolotl.loaders.model import ModelLoader
+from axolotl.loaders.tokenizer import load_tokenizer
 from axolotl.monkeypatch.lora_kernels import (
     apply_lora_kernel_patches,
     patch_self_attn_lora,
@@ -466,3 +468,42 @@ def test_kernel_training_integration_auto_enable(temp_dir):
     assert cfg.lora_mlp_kernel is True
     assert cfg.lora_qkv_kernel is True
     assert cfg.lora_o_kernel is True
+
+    tokenizer = load_tokenizer(cfg)
+
+    # Get the attention class before patching to check for side effects
+    from axolotl.monkeypatch.lora_kernels import get_attention_cls_from_config
+
+    attention_cls = get_attention_cls_from_config(cfg)
+
+    # Store original state before patching
+    original_forward_method = attention_cls.forward
+
+    # Load the model (this should trigger the patches)
+    model, _ = ModelLoader(cfg, tokenizer).load()
+
+    # Test side effects of patch_self_attn_lora
+    assert hasattr(attention_cls, "_original_forward")
+    assert attention_cls.forward != original_forward_method
+
+    # Find at least one self-attention module and verify it has the patched methods
+    found_patched_attn = False
+    for layer in model.model.model.layers:
+        if hasattr(layer, "self_attn"):
+            self_attn = layer.self_attn
+            if all(
+                hasattr(self_attn, proj)
+                for proj in ["q_proj", "k_proj", "v_proj", "o_proj"]
+            ):
+                # These methods should be added by apply_lora_kernel_patches
+                assert hasattr(self_attn, "apply_qkv")
+                assert hasattr(self_attn, "apply_o")
+
+                # Verify the methods are bound methods (not just functions)
+                assert callable(self_attn.apply_qkv)
+                assert callable(self_attn.apply_o)
+
+                found_patched_attn = True
+                break
+
+    assert found_patched_attn
