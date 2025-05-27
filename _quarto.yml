@@ -149,11 +149,7 @@ quartodoc:
         - utils.optimizers.adopt
         - utils.data.pretraining
         - utils.data.sft
-<<<<<<< HEAD
-        - utils.gradient_checkpointing.unsloth
         - utils.quantization
-=======
->>>>>>> main
     - title: Schemas
       desc: Pydantic data models for Axolotl config
       contents:

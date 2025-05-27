@@ -35,18 +35,18 @@ from axolotl.utils.schemas.quantization import QATConfig
 
 @pytest.fixture()
 def model():
-    model = AutoModelForCausalLM.from_pretrained(
+    dummy_model = AutoModelForCausalLM.from_pretrained(
         "HuggingFaceTB/SmolLM2-135M",
         device_map="cuda",
         torch_dtype=torch.bfloat16,
     )
-    with torch.device(model.device):
-        model.model.embed_tokens = torch.nn.Embedding(
-            model.model.embed_tokens.weight.shape[0],
-            model.model.embed_tokens.weight.shape[1],
-            dtype=model.model.embed_tokens.weight.dtype,
+    with torch.device(dummy_model.device):
+        dummy_model.model.embed_tokens = torch.nn.Embedding(
+            dummy_model.model.embed_tokens.weight.shape[0],
+            dummy_model.model.embed_tokens.weight.shape[1],
+            dtype=dummy_model.model.embed_tokens.weight.dtype,
         )
-    return model
+    return dummy_model
 
 
 ptq_config_test_cases = [
@@ -89,6 +89,10 @@ ptq_test_cases = [
 
 
 class TestQuantization:
+    """
+    Test quantization utilities
+    """
+
     @pytest.mark.parametrize(
         "weight_dtype,activation_dtype,group_size,expected_type,expected_params",
         ptq_config_test_cases,
@@ -123,7 +127,7 @@ class TestQuantization:
     @pytest.mark.parametrize("quantize_embedding", [False, True])
     def test_prepare_model_for_qat(
         self, model, weight_dtype, activation_dtype, group_size, quantize_embedding
-    ):
+    ):  # pylint: disable=redefined-outer-name
         prepare_model_for_qat(
             model, weight_dtype, group_size, activation_dtype, quantize_embedding
         )
@@ -166,7 +170,7 @@ class TestQuantization:
         group_size,
         quantize_embedding,
         expected_exception,
-    ):
+    ):  # pylint: disable=redefined-outer-name
         if expected_exception:
             with pytest.raises(expected_exception):
                 quantize_model_for_ptq(
@@ -197,6 +201,9 @@ class TestQuantization:
 
 
 class TestQuantizationCallback:
+    """
+    Test QATCallback
+    """
 
     @pytest.fixture()
     def trainer_state(self):
@@ -204,7 +211,9 @@ class TestQuantizationCallback:
             global_step=0,
         )
 
-    def test_qat_callback_fake_quant_after_n_steps(self, model, trainer_state):
+    def test_qat_callback_fake_quant_after_n_steps(
+        self, model, trainer_state
+    ):  # pylint: disable=redefined-outer-name
         cfg = QATConfig(
             weight_dtype="int8",
             activation_dtype="int8",
@@ -249,7 +258,9 @@ class TestQuantizationCallback:
         assert model.model.embed_tokens.weight_fake_quantizer.enabled
         assert model.lm_head.weight_fake_quantizer.enabled
 
-    def test_qat_callback_fake_quant_after_n_steps_is_none(self, model, trainer_state):
+    def test_qat_callback_fake_quant_after_n_steps_is_none(
+        self, model, trainer_state
+    ):  # pylint: disable=redefined-outer-name
         cfg = QATConfig(
             weight_dtype="int8",
             activation_dtype="int8",
@@ -286,7 +297,13 @@ class TestQuantizationCallback:
 
 
 class TestConvertQATModelForPTQ:
-    def test_convert_qat_model_for_ptq(self, model):
+    """
+    Test convert_qat_model_for_ptq
+    """
+
+    def test_convert_qat_model_for_ptq(
+        self, model
+    ):  # pylint: disable=redefined-outer-name
         config = QATConfig(
             weight_dtype="int8",
             activation_dtype="int8",
@@ -309,10 +326,7 @@ class TestConvertQATModelForPTQ:
         # apply conversion
         convert_qat_model_for_ptq(
             model,
-            config.weight_dtype,
-            config.group_size,
-            config.activation_dtype,
-            config.quantize_embedding,
+            quantize_embedding=config.quantize_embedding,
         )
         # ensure modules have been swapped out
         assert not isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)

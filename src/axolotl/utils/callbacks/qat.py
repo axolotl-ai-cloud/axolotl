@@ -38,7 +38,9 @@ class QATCallback(TrainerCallback):
     def __init__(self, cfg: QATConfig):
         self.cfg = cfg
 
-    def on_step_begin(self, args, state, control, model, **kwargs):
+    def on_step_begin(
+        self, args, state, control, model, **kwargs
+    ):  # pylint: disable=unused-argument
         if self.cfg.fake_quant_after_n_steps is not None:
             if state.global_step == 0:
                 LOG.info(f"Disabling fake quantization at step {state.global_step}")

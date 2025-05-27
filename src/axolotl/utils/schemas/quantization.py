@@ -61,3 +61,4 @@ class PTQConfig(BaseModel):
             return TorchIntDType.int4
         if v == "int8":
             return TorchIntDType.int8
+        raise ValueError(f"Invalid dtype: '{v}'. Must be one of: ['int4', 'int8']")

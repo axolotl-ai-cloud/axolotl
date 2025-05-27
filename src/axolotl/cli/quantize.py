@@ -10,7 +10,7 @@ from transformers import AutoModelForCausalLM
 
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
-from axolotl.utils.models import load_tokenizer
+from axolotl.loaders import load_tokenizer
 from axolotl.utils.quantization import TorchIntDType, quantize_model_for_ptq
 
 LOG = logging.getLogger(__name__)
