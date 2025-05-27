@@ -1050,7 +1050,7 @@ class AxolotlInputConfig(
         ):
             if data.get("adapter") == "lora" and data.get("load_in_8bit"):
                 raise ValueError(
-                    "lora_mlp_kernel, lora_mlp_kernel, and lora_mlp_kernel are not compatible with 8-bit LoRA"
+                    "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with 8-bit LoRA"
                 )
         return data
 
@@ -1063,7 +1063,7 @@ class AxolotlInputConfig(
             or data.get("lora_o_kernel")
         ) and data.get("rl"):
             raise ValueError(
-                "lora_mlp_kernel, lora_mlp_kernel, and lora_mlp_kernel are not compatible with RL at the moment."
+                "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with RL at the moment."
             )
         return data
 
