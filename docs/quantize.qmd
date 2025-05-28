@@ -16,7 +16,7 @@ Quantization is configured using the `quantization` key in your configuration fi
 ```yaml
 base_model: # The path to the model to quantize.
 quantization:
- weight_dtype: # Optional[str] = "int8". Fake quantization layout to use for weight quantization. Valid options are uintX for X in [1, 2, 3, 4, 5, 6, 7], or int4, or int8
+  weight_dtype: # Optional[str] = "int8". Fake quantization layout to use for weight quantization. Valid options are uintX for X in [1, 2, 3, 4, 5, 6, 7], or int4, or int8
   activation_dtype: # Optional[str] = "int8". Fake quantization layout to use for activation quantization. Valid options are "int4" and "int8"
   group_size: # Optional[int] = 32. The number of elements in each group for per-group fake quantization
   quantize_embedding: # Optional[bool] = False. Whether to quantize the embedding layer.
