@@ -25,5 +25,5 @@ if cce_spec:
 
 print(
     UNINSTALL_PREFIX
-    + 'pip install "cut-cross-entropy[transformers] @ git+https://github.com/apple/ml-cross-entropy.git@bad6f7b49c75fdec69471abb71b4cddd0f0c6438"'
+    + 'pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@b5f58ded510e906e2eb71804df2e7b75c1c648ad"'
 )
