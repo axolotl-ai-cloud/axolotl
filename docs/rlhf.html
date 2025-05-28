@@ -103,6 +103,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     "search-label": "Search"
   }
 }</script>
+<script async="" src="https://www.googletagmanager.com/gtag/js?id=G-9KYCVJBNMQ"></script>
+
+<script type="text/javascript">
+
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
+</script>
 
 
 <link rel="stylesheet" href="../styles.css">
@@ -490,6 +499,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#grpo" id="toc-grpo" class="nav-link" data-scroll-target="#grpo">GRPO</a>
   <ul class="collapse">
   <li><a href="#reward-functions" id="toc-reward-functions" class="nav-link" data-scroll-target="#reward-functions">Reward functions</a></li>
+  <li><a href="#grpo-with-dapodr.-grpo-loss" id="toc-grpo-with-dapodr.-grpo-loss" class="nav-link" data-scroll-target="#grpo-with-dapodr.-grpo-loss">GRPO with DAPO/Dr.&nbsp;GRPO loss</a></li>
   </ul></li>
   <li><a href="#simpo" id="toc-simpo" class="nav-link" data-scroll-target="#simpo">SimPO</a></li>
   <li><a href="#using-local-dataset-files" id="toc-using-local-dataset-files" class="nav-link" data-scroll-target="#using-local-dataset-files">Using local dataset files</a></li>
@@ -534,7 +544,7 @@ feedback. Various methods include, but not limited to:</p>
 <li><a href="#ipo">Identity Preference Optimization (IPO)</a></li>
 <li><a href="#kto">Kahneman-Tversky Optimization (KTO)</a></li>
 <li><a href="#orpo">Odds Ratio Preference Optimization (ORPO)</a></li>
-<li>Proximal Policy Optimization (PPO) (not yet supported in axolotl)</li>
+<li>Proximal Policy Optimization (PPO) (not yet supported in axolotl, if you’re interested in contributing, please reach out!)</li>
 </ul>
 </section>
 <section id="rlhf-using-axolotl" class="level2">
@@ -1042,32 +1052,41 @@ Note
 <span id="cb39-12"><a href="#cb39-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> main</span></span>
 <span id="cb39-13"><a href="#cb39-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> rewards.oai_gsm8k_transform</span><span class="co">  # format: '{file_name}.{fn_name}'</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>To see other examples of custom reward functions, please see <a href="https://github.com/huggingface/trl/blob/main/docs/source/grpo_trainer.md#using-a-custom-reward-function">TRL GRPO Docs</a>.</p>
-<p>To see description of the configs, please see <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/config/models/input/v0_4_1/trl.py">TRLConfig</a>.</p>
+<p>To see all configs, please see <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/v0.9.2/src/axolotl/utils/schemas/trl.py">TRLConfig</a>.</p>
+</section>
+<section id="grpo-with-dapodr.-grpo-loss" class="level4">
+<h4 class="anchored" data-anchor-id="grpo-with-dapodr.-grpo-loss">GRPO with DAPO/Dr.&nbsp;GRPO loss</h4>
+<p>The DAPO paper and subsequently Dr.&nbsp;GRPO paper proposed an alternative loss function for GRPO to remediate the penalty in longer responses.</p>
+<div class="sourceCode" id="cb40"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
+<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">loss_type</span><span class="kw">:</span><span class="at"> dr_grpo</span></span>
+<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a><span class="co">  # Normalizes loss based on max completion length (default: 256)</span></span>
+<span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_completion_length</span><span class="kw">:</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>For more information, see <a href="https://huggingface.co/docs/trl/v0.17.0/en/grpo_trainer#loss-types">GRPO docs</a>.</p>
 </section>
 </section>
 <section id="simpo" class="level3">
 <h3 class="anchored" data-anchor-id="simpo">SimPO</h3>
 <p>SimPO uses <a href="https://huggingface.co/docs/trl/main/en/cpo_trainer">CPOTrainer</a> but with alternative loss function.</p>
-<div class="sourceCode" id="cb40"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="fu">rl</span><span class="kw">:</span><span class="at"> simpo</span></span>
-<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a><span class="fu">rl_beta</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.1</span><span class="co">  # default in CPOTrainer</span></span>
-<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a><span class="fu">cpo_alpha</span><span class="kw">:</span><span class="at"> </span><span class="fl">1.0</span><span class="co">  # default in CPOTrainer</span></span>
-<span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a><span class="fu">simpo_gamma</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.5</span><span class="co">  # default in CPOTrainer</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb41"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="fu">rl</span><span class="kw">:</span><span class="at"> simpo</span></span>
+<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a><span class="fu">rl_beta</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.1</span><span class="co">  # default in CPOTrainer</span></span>
+<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a><span class="fu">cpo_alpha</span><span class="kw">:</span><span class="at"> </span><span class="fl">1.0</span><span class="co">  # default in CPOTrainer</span></span>
+<span id="cb41-4"><a href="#cb41-4" aria-hidden="true" tabindex="-1"></a><span class="fu">simpo_gamma</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.5</span><span class="co">  # default in CPOTrainer</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>This method uses the same dataset format as <a href="#dpo">DPO</a>.</p>
 </section>
 <section id="using-local-dataset-files" class="level3">
 <h3 class="anchored" data-anchor-id="using-local-dataset-files">Using local dataset files</h3>
-<div class="sourceCode" id="cb41"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span></span>
-<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">data_files</span><span class="kw">:</span></span>
-<span id="cb41-4"><a href="#cb41-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> orca_rlhf.jsonl</span></span>
-<span id="cb41-5"><a href="#cb41-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span><span class="at"> train</span></span>
-<span id="cb41-6"><a href="#cb41-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chatml.intel</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb42"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span></span>
+<span id="cb42-3"><a href="#cb42-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">data_files</span><span class="kw">:</span></span>
+<span id="cb42-4"><a href="#cb42-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> orca_rlhf.jsonl</span></span>
+<span id="cb42-5"><a href="#cb42-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span><span class="at"> train</span></span>
+<span id="cb42-6"><a href="#cb42-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chatml.intel</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
 <section id="trl-auto-unwrapping-for-peft" class="level3">
 <h3 class="anchored" data-anchor-id="trl-auto-unwrapping-for-peft">TRL auto-unwrapping for PEFT</h3>
 <p>TRL supports auto-unwrapping PEFT models for RL training paradigms which rely on a reference model. This significantly reduces memory pressure as an additional refreference model does not need to be loaded, and reference model log-probabilities can be obtained by disabling PEFT adapters. This is enabled by default. To turn it off, pass the following config:</p>
-<div class="sourceCode" id="cb42"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a><span class="co"># load ref model when adapter training.</span></span>
-<span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a><span class="fu">rl_adapter_ref_model</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb43"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="co"># load ref model when adapter training.</span></span>
+<span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a><span class="fu">rl_adapter_ref_model</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 </section>
