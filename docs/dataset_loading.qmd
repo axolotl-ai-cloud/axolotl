@@ -54,7 +54,7 @@ datasets:
 
 #### Files
 
-Usually, to load a JSON file, you would do something like this:
+To load a JSON file, you would do something like this:
 
 ```python
 from datasets import load_dataset
@@ -66,19 +66,11 @@ Which translates to the following config:
 
 ```yaml
 datasets:
-  - path: json
-    data_files: /path/to/your/file.jsonl
-```
-
-However, to make things easier, we have added a few shortcuts for loading local dataset files.
-
-You can just point the `path` to the file or directory along with the `ds_type` to load the dataset. The below example shows for a JSON file:
-
-```yaml
-datasets:
-  - path: /path/to/your/file.jsonl
+  - path: data.json
     ds_type: json
 ```
+
+In the example above, it can be seen that we can just point the `path` to the file or directory along with the `ds_type` to load the dataset.
 
 This works for CSV, JSON, Parquet, and Arrow files.
 
