@@ -4,10 +4,10 @@ Transformers trainer callbacks to schedule the KD temperature during training
 
 import math
 
-from transformers.trainer_callback import CallbackHandler
+from transformers.trainer_callback import TrainerCallback
 
 
-class KDTemperatureSchedulerCallback(CallbackHandler):
+class KDTemperatureSchedulerCallback(TrainerCallback):
     """
     KD temperature scheduler callback for the trainer.
     """
