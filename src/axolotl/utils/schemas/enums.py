@@ -6,7 +6,7 @@ import torch
 
 
 class TorchIntDType(Enum):
-    """Torch integer data types with version compatibility"""
+    """Torch integer data types - `getattr` guards against torch < 2.6 which does not support int4"""
 
     uint1 = getattr(torch, "uint1", None)  # pylint: disable=invalid-name
     uint2 = getattr(torch, "uint2", None)  # pylint: disable=invalid-name
