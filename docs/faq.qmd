@@ -110,3 +110,17 @@ description: Frequently asked questions
 > A: If `eot_tokens: ` is not provided, the default behavior is the same as before. EOS tokens used to delimit turns are masked/unmasked depending on whether the turn is trainable.
 
 > Internally, `eot_tokens: tokenizer.eos_token` and `train_on_eot: train_on_eos` (which defaults to `turn`). This transition helps clarify the naming and behavior of EOT/EOS tokens.
+
+**Q: `Data processing error: CAS service error`
+
+> A: Try disabling XET with `export HF_HUB_DISABLE_XET=1`
+
+**Q: `torch._inductor.exc.LoweringException: NoValidChoicesError: No choices to select, please consider adding ATEN into max_autotune_gemm_backends config (defined in torch/_inductor/config.py) to allow at least one choice. `
+
+> A: Depending on the version of torch, you may need to include this in your YAML:
+
+```yaml
+flex_attn_compile_kwargs:
+  dynamic: false
+  mode: max-autotune-no-cudagraphs
+```
