@@ -1233,7 +1233,7 @@ class AxolotlInputConfig(
                 "Please note that logged losses may differ slightly to the non-SP "
                 "losses due to transformers Trainer implementation details. "
                 "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
-                "for more details.",
+                "for more details."
             )
 
         return self
