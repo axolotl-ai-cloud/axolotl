@@ -336,11 +336,12 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
         ret_data_target_mask: List[List[List[int]]] = []
 
         try:
+            headers = {"Accept-Encoding": "deflate, gzip, br, zstd"}
             response = self.http_session.post(
                 api_endpoint,
                 json=payload,
+                headers=headers,
                 timeout=self.kd_online_timeout,
-                # json_decoder=orjson.loads,
             )
             response.raise_for_status()
             api_data: dict = orjson.loads(response.content)
