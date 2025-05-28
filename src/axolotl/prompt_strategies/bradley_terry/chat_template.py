@@ -44,7 +44,7 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
 
         if len(chosen_tokenized["input_ids"]) > max_length:
             LOG.warning(
-                f"To-be-trimmed chosen sequence exceeds max sequence length: {len(chosen_tokenized['input_ids'])}",
+                f"To-be-trimmed chosen sequence exceeds max sequence length: {len(chosen_tokenized['input_ids'])}"
             )
 
             chosen_tokenized["input_ids"] = chosen_tokenized["input_ids"][:max_length]
@@ -62,7 +62,7 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
 
         if len(rejected_tokenized["input_ids"]) > max_length:
             LOG.warning(
-                f"To-be-trimmed rejected sequence exceeds max sequence length: {len(rejected_tokenized['input_ids'])}",
+                f"To-be-trimmed rejected sequence exceeds max sequence length: {len(rejected_tokenized['input_ids'])}"
             )
 
             rejected_tokenized["input_ids"] = rejected_tokenized["input_ids"][

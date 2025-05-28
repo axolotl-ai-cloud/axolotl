@@ -161,7 +161,7 @@ def deduplicate_and_log_datasets(
 def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
     if "input_ids" not in dataset.column_names:
         LOG.warning(
-            "Dataset does not contain 'input_ids' column. Skip drop long seq. This is expected for RewardModeling.",
+            "Dataset does not contain 'input_ids' column. Skip drop long seq. This is expected for RewardModeling."
         )
         return dataset
 

@@ -83,7 +83,7 @@ def check_remote_config(config: Union[str, Path]) -> Union[str, Path]:
         with open(output_path, "wb") as file:
             file.write(content)
         LOG.info(
-            f"Using the following config obtained from {config}: \n\n{content.decode('utf-8')}\n",
+            f"Using the following config obtained from {config}: \n\n{content.decode('utf-8')}\n"
         )
         return output_path
 
