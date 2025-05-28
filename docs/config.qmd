@@ -98,8 +98,10 @@ plugins:
   # - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
 
 # A list of one or more datasets to finetune the model with
+# See https://docs.axolotl.ai/docs/dataset_loading.html for guide on loading datasets
+# See https://docs.axolotl.ai/docs/dataset-formats/ for guide on dataset formats
 datasets:
-  # HuggingFace dataset repo | s3://,gs:// path | "json" for local dataset, make sure to fill data_files
+  # HuggingFace dataset repo | s3:// | gs:// | path to local file or directory
   - path: vicgalle/alpaca-gpt4
     # The type of prompt to use for training. [alpaca, gpteacher, oasst, reflection]
     type: alpaca # format | format:<prompt_style> (chat/instruct) | <prompt_strategies>.load_<load_fn>
