@@ -621,6 +621,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <blockquote class="blockquote">
 <p>Internally, <code>eot_tokens: tokenizer.eos_token</code> and <code>train_on_eot: train_on_eos</code> (which defaults to <code>turn</code>). This transition helps clarify the naming and behavior of EOT/EOS tokens.</p>
 </blockquote>
+<p><strong>Q: <code>Data processing error: CAS service error</code></strong></p>
+<blockquote class="blockquote">
+<p>A: Try disabling XET with <code>export HF_HUB_DISABLE_XET=1</code></p>
+</blockquote>
+<p><strong>Q: <code>torch._inductor.exc.LoweringException: NoValidChoicesError: No choices to select, please consider adding ATEN into max_autotune_gemm_backends config (defined in torch/_inductor/config.py) to allow at least one choice.</code></strong></p>
+<blockquote class="blockquote">
+<p>A: Depending on the version of torch, you may need to include this in your YAML:</p>
+</blockquote>
+<blockquote class="blockquote">
+<div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">flex_attn_compile_kwargs</span><span class="kw">:</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dynamic</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">mode</span><span class="kw">:</span><span class="at"> max-autotune-no-cudagraphs</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</blockquote>
 
 
 </section>
