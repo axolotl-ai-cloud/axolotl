@@ -344,6 +344,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
  <span class="menu-text">Dataset Loading</span></a>
   </div>
 </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/qat.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantization Aware Training (QAT)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/quantize.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantization with torchao</span></a>
+  </div>
+</li>
       </ul>
   </li>
         <li class="sidebar-item sidebar-item-section">
@@ -463,6 +475,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.utils.schemas.enums.CustomSupportedOptimizers" id="toc-axolotl.utils.schemas.enums.CustomSupportedOptimizers" class="nav-link" data-scroll-target="#axolotl.utils.schemas.enums.CustomSupportedOptimizers">CustomSupportedOptimizers</a></li>
   <li><a href="#axolotl.utils.schemas.enums.RLType" id="toc-axolotl.utils.schemas.enums.RLType" class="nav-link" data-scroll-target="#axolotl.utils.schemas.enums.RLType">RLType</a></li>
   <li><a href="#axolotl.utils.schemas.enums.RingAttnFunc" id="toc-axolotl.utils.schemas.enums.RingAttnFunc" class="nav-link" data-scroll-target="#axolotl.utils.schemas.enums.RingAttnFunc">RingAttnFunc</a></li>
+  <li><a href="#axolotl.utils.schemas.enums.TorchIntDType" id="toc-axolotl.utils.schemas.enums.TorchIntDType" class="nav-link" data-scroll-target="#axolotl.utils.schemas.enums.TorchIntDType">TorchIntDType</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -504,6 +517,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.utils.schemas.enums.RingAttnFunc">RingAttnFunc</a></td>
 <td>Enum class for supported <code>ring-flash-attn</code> implementations</td>
 </tr>
+<tr class="odd">
+<td><a href="#axolotl.utils.schemas.enums.TorchIntDType">TorchIntDType</a></td>
+<td>Torch integer data types - <code>getattr</code> guards against torch &lt; 2.6 which does not support int4</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.utils.schemas.enums.ChatTemplate" class="level3">
@@ -525,6 +542,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.enums.RingAttnFunc">RingAttnFunc</h3>
 <div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.enums.RingAttnFunc()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Enum class for supported <code>ring-flash-attn</code> implementations</p>
+</section>
+<section id="axolotl.utils.schemas.enums.TorchIntDType" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.enums.TorchIntDType">TorchIntDType</h3>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.enums.TorchIntDType()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Torch integer data types - <code>getattr</code> guards against torch &lt; 2.6 which does not support int4</p>
 
 
 </section>

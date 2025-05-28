@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>cli.merge_sharded_fsdp_weights – Axolotl</title>
+<title>utils.callbacks.qat – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -467,16 +467,15 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.cli.merge_sharded_fsdp_weights" id="toc-axolotl.cli.merge_sharded_fsdp_weights" class="nav-link active" data-scroll-target="#axolotl.cli.merge_sharded_fsdp_weights">cli.merge_sharded_fsdp_weights</a>
+  <li><a href="#axolotl.utils.callbacks.qat" id="toc-axolotl.utils.callbacks.qat" class="nav-link active" data-scroll-target="#axolotl.utils.callbacks.qat">utils.callbacks.qat</a>
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.cli.merge_sharded_fsdp_weights.BFloat16CastPlanner" id="toc-axolotl.cli.merge_sharded_fsdp_weights.BFloat16CastPlanner" class="nav-link" data-scroll-target="#axolotl.cli.merge_sharded_fsdp_weights.BFloat16CastPlanner">BFloat16CastPlanner</a></li>
+  <li><a href="#axolotl.utils.callbacks.qat.QATCallback" id="toc-axolotl.utils.callbacks.qat.QATCallback" class="nav-link" data-scroll-target="#axolotl.utils.callbacks.qat.QATCallback">QATCallback</a></li>
   </ul></li>
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
-  <li><a href="#axolotl.cli.merge_sharded_fsdp_weights.do_cli" id="toc-axolotl.cli.merge_sharded_fsdp_weights.do_cli" class="nav-link" data-scroll-target="#axolotl.cli.merge_sharded_fsdp_weights.do_cli">do_cli</a></li>
-  <li><a href="#axolotl.cli.merge_sharded_fsdp_weights.merge_fsdp_weights" id="toc-axolotl.cli.merge_sharded_fsdp_weights.merge_fsdp_weights" class="nav-link" data-scroll-target="#axolotl.cli.merge_sharded_fsdp_weights.merge_fsdp_weights">merge_fsdp_weights</a></li>
+  <li><a href="#axolotl.utils.callbacks.qat.toggle_fake_quant" id="toc-axolotl.utils.callbacks.qat.toggle_fake_quant" class="nav-link" data-scroll-target="#axolotl.utils.callbacks.qat.toggle_fake_quant">toggle_fake_quant</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -488,10 +487,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.cli.merge_sharded_fsdp_weights" class="level1">
-<h1>cli.merge_sharded_fsdp_weights</h1>
-<p><code>cli.merge_sharded_fsdp_weights</code></p>
-<p>CLI to merge sharded FSDP model checkpoints into a single combined checkpoint.</p>
+<section id="axolotl.utils.callbacks.qat" class="level1">
+<h1>utils.callbacks.qat</h1>
+<p><code>utils.callbacks.qat</code></p>
+<p>QAT Callback for HF Causal Trainer</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -503,15 +502,15 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.cli.merge_sharded_fsdp_weights.BFloat16CastPlanner">BFloat16CastPlanner</a></td>
-<td>A custom planner to cast tensors to bfloat16 on the fly during loading.</td>
+<td><a href="#axolotl.utils.callbacks.qat.QATCallback">QATCallback</a></td>
+<td>Callback to toggle fake quantization for the model.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.cli.merge_sharded_fsdp_weights.BFloat16CastPlanner" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.merge_sharded_fsdp_weights.BFloat16CastPlanner">BFloat16CastPlanner</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.merge_sharded_fsdp_weights.BFloat16CastPlanner()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>A custom planner to cast tensors to bfloat16 on the fly during loading.</p>
+<section id="axolotl.utils.callbacks.qat.QATCallback" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.callbacks.qat.QATCallback">QATCallback</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.callbacks.qat.QATCallback(<span class="va">self</span>, cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Callback to toggle fake quantization for the model.</p>
 </section>
 </section>
 <section id="functions" class="level2">
@@ -525,130 +524,44 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.cli.merge_sharded_fsdp_weights.do_cli">do_cli</a></td>
-<td>Parses <code>axolotl</code> config, CLI args, and calls <code>merge_fsdp_weights</code>.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.cli.merge_sharded_fsdp_weights.merge_fsdp_weights">merge_fsdp_weights</a></td>
-<td>Merge the weights from sharded FSDP model checkpoints into a single combined checkpoint. Should be used if</td>
+<td><a href="#axolotl.utils.callbacks.qat.toggle_fake_quant">toggle_fake_quant</a></td>
+<td>Toggle fake quantization for any fake quantized linear or embedding layers in the model.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.cli.merge_sharded_fsdp_weights.do_cli" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.merge_sharded_fsdp_weights.do_cli">do_cli</h3>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>cli.merge_sharded_fsdp_weights.do_cli(config<span class="op">=</span>Path(<span class="st">'examples/'</span>), <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Parses <code>axolotl</code> config, CLI args, and calls <code>merge_fsdp_weights</code>.</p>
+<section id="axolotl.utils.callbacks.qat.toggle_fake_quant" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.callbacks.qat.toggle_fake_quant">toggle_fake_quant</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.callbacks.qat.toggle_fake_quant(mod, enable)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Toggle fake quantization for any fake quantized linear or embedding layers in the model.</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 7%">
-<col style="width: 18%">
-<col style="width: 55%">
-<col style="width: 18%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>config</td>
-<td>Union[Path, str]</td>
-<td>Path to <code>axolotl</code> config YAML file.</td>
-<td><code>Path('examples/')</code></td>
-</tr>
-<tr class="even">
-<td>kwargs</td>
-<td></td>
-<td>Additional keyword arguments to override config file values.</td>
-<td><code>{}</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-<section id="axolotl.cli.merge_sharded_fsdp_weights.merge_fsdp_weights" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.merge_sharded_fsdp_weights.merge_fsdp_weights">merge_fsdp_weights</h3>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>cli.merge_sharded_fsdp_weights.merge_fsdp_weights(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    checkpoint_dir,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    output_path,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    safe_serialization<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    remove_checkpoint_dir<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Merge the weights from sharded FSDP model checkpoints into a single combined checkpoint. Should be used if
-<code>SHARDED_STATE_DICT</code> was used for the model. Weights will be saved to <code>{output_path}/model.safetensors</code> if
-<code>safe_serialization</code> else <code>pytorch_model.bin</code>.</p>
-<p>Note: this is a CPU-bound process.</p>
-<section id="parameters-1" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 14%">
-<col style="width: 25%">
-<col style="width: 53%">
-<col style="width: 7%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>checkpoint_dir</td>
-<td><code>str</code></td>
-<td>The directory containing the FSDP checkpoints (can be either the model or optimizer).</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>output_path</td>
-<td><code>str</code></td>
-<td>The path to save the merged checkpoint.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>safe_serialization</td>
-<td><code>bool</code>, <em>optional</em>, defaults to <code>True</code></td>
-<td>Whether to save the merged weights with safetensors (recommended).</td>
-<td><code>False</code></td>
-</tr>
-<tr class="even">
-<td>remove_checkpoint_dir</td>
-<td><code>bool</code>, <em>optional</em>, defaults to <code>False</code></td>
-<td>Whether to remove the checkpoint directory after merging.</td>
-<td><code>False</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="raises" class="level4 doc-section doc-section-raises">
-<h4 class="doc-section doc-section-raises anchored" data-anchor-id="raises">Raises</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 9%">
+<col style="width: 10%">
 <col style="width: 13%">
-<col style="width: 76%">
+<col style="width: 61%">
+<col style="width: 15%">
 </colgroup>
 <thead>
 <tr class="header">
 <th>Name</th>
 <th>Type</th>
 <th>Description</th>
+<th>Default</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td></td>
-<td>ValueError</td>
-<td>If torch version &lt; 2.3.0, or if <code>checkpoint_dir</code> does not exist.</td>
+<td>mod</td>
+<td>nn.Module</td>
+<td>The module to toggle fake quantization for.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>enable</td>
+<td>bool</td>
+<td>Whether to enable or disable fake quantization.</td>
+<td><em>required</em></td>
 </tr>
 </tbody>
 </table>

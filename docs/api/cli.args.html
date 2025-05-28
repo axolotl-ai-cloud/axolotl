@@ -344,6 +344,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
  <span class="menu-text">Dataset Loading</span></a>
   </div>
 </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/qat.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantization Aware Training (QAT)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/quantize.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantization with torchao</span></a>
+  </div>
+</li>
       </ul>
   </li>
         <li class="sidebar-item sidebar-item-section">
@@ -462,6 +474,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.cli.args.EvaluateCliArgs" id="toc-axolotl.cli.args.EvaluateCliArgs" class="nav-link" data-scroll-target="#axolotl.cli.args.EvaluateCliArgs">EvaluateCliArgs</a></li>
   <li><a href="#axolotl.cli.args.InferenceCliArgs" id="toc-axolotl.cli.args.InferenceCliArgs" class="nav-link" data-scroll-target="#axolotl.cli.args.InferenceCliArgs">InferenceCliArgs</a></li>
   <li><a href="#axolotl.cli.args.PreprocessCliArgs" id="toc-axolotl.cli.args.PreprocessCliArgs" class="nav-link" data-scroll-target="#axolotl.cli.args.PreprocessCliArgs">PreprocessCliArgs</a></li>
+  <li><a href="#axolotl.cli.args.QuantizeCliArgs" id="toc-axolotl.cli.args.QuantizeCliArgs" class="nav-link" data-scroll-target="#axolotl.cli.args.QuantizeCliArgs">QuantizeCliArgs</a></li>
   <li><a href="#axolotl.cli.args.TrainerCliArgs" id="toc-axolotl.cli.args.TrainerCliArgs" class="nav-link" data-scroll-target="#axolotl.cli.args.TrainerCliArgs">TrainerCliArgs</a></li>
   <li><a href="#axolotl.cli.args.VllmServeCliArgs" id="toc-axolotl.cli.args.VllmServeCliArgs" class="nav-link" data-scroll-target="#axolotl.cli.args.VllmServeCliArgs">VllmServeCliArgs</a></li>
   </ul></li>
@@ -502,10 +515,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Dataclass with CLI arguments for <code>axolotl preprocess</code> command.</td>
 </tr>
 <tr class="even">
+<td><a href="#axolotl.cli.args.QuantizeCliArgs">QuantizeCliArgs</a></td>
+<td>Dataclass with CLI arguments for <code>axolotl quantize</code> command.</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.cli.args.TrainerCliArgs">TrainerCliArgs</a></td>
 <td>Dataclass with CLI arguments for <code>axolotl train</code> command.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.cli.args.VllmServeCliArgs">VllmServeCliArgs</a></td>
 <td>Dataclass with CLI arguments for <code>axolotl vllm-serve</code> command.</td>
 </tr>
@@ -539,34 +556,47 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Dataclass with CLI arguments for <code>axolotl preprocess</code> command.</p>
 </section>
+<section id="axolotl.cli.args.QuantizeCliArgs" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.cli.args.QuantizeCliArgs">QuantizeCliArgs</h3>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>cli.args.QuantizeCliArgs(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    base_model<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    weight_dtype<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    activation_dtype<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    quantize_embedding<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    group_size<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    output_dir<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Dataclass with CLI arguments for <code>axolotl quantize</code> command.</p>
+</section>
 <section id="axolotl.cli.args.TrainerCliArgs" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.args.TrainerCliArgs">TrainerCliArgs</h3>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>cli.args.TrainerCliArgs(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    debug<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    debug_text_only<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    debug_num_examples<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    merge_lora<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    prompter<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    shard<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    main_process_port<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    num_processes<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>cli.args.TrainerCliArgs(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    debug<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    debug_text_only<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    debug_num_examples<span class="op">=</span><span class="dv">0</span>,</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    merge_lora<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    prompter<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    shard<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    main_process_port<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    num_processes<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Dataclass with CLI arguments for <code>axolotl train</code> command.</p>
 </section>
 <section id="axolotl.cli.args.VllmServeCliArgs" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.args.VllmServeCliArgs">VllmServeCliArgs</h3>
-<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>cli.args.VllmServeCliArgs(</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    tensor_parallel_size<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    host<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    port<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    gpu_memory_utilization<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    dtype<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    max_model_len<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    enable_prefix_caching<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    serve_module<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>cli.args.VllmServeCliArgs(</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    tensor_parallel_size<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    host<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    port<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    gpu_memory_utilization<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    dtype<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    max_model_len<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    enable_prefix_caching<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>    serve_module<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Dataclass with CLI arguments for <code>axolotl vllm-serve</code> command.</p>
 
 
