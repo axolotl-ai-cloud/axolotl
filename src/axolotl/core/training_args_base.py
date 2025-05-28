@@ -7,8 +7,6 @@ from typing import Optional
 
 from PIL.Image import Resampling
 
-from axolotl.utils.schemas.enums import RingAttnFunc
-
 
 @dataclass
 class AxolotlTrainingMixins:
