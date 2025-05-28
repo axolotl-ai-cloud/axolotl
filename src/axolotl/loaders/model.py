@@ -14,7 +14,13 @@ import torch
 import transformers
 import transformers.modeling_utils
 from accelerate import init_empty_weights
-from peft import PeftConfig, PeftMixedModel, PeftModel, prepare_model_for_kbit_training
+from peft import (
+    PeftConfig,
+    PeftMixedModel,
+    PeftModel,
+    PeftModelForCausalLM,
+    prepare_model_for_kbit_training,
+)
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForVision2Seq,
@@ -139,7 +145,7 @@ class ModelLoader:
         """Property that determines if FSDP with QLoRA is enabled."""
         return self.cfg.fsdp and self.cfg.adapter == "qlora"
 
-    def load(self) -> tuple[PreTrainedModel, PeftConfig | None]:
+    def load(self) -> tuple[PreTrainedModel | PeftModelForCausalLM, PeftConfig | None]:
         """Load and prepare the model with all configurations and patches.
 
         Returns:
