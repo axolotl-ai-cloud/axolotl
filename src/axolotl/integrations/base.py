@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import collections
 import importlib
-import logging
 import traceback
 from typing import TYPE_CHECKING, Callable, OrderedDict, Union
 
@@ -165,7 +164,6 @@ class BasePlugin:
             trainer: The trainer object for training.
         """
 
-
     def get_training_args(self, cfg: DictDefault):  # pylint: disable=unused-argument):
         """
         Returns custom training arguments to set on TrainingArgs.
@@ -178,7 +176,7 @@ class BasePlugin:
         """
 
     def get_collator_cls_and_kwargs(
-        self, cfg: DictDefault, is_eval: bool=False
+        self, cfg: DictDefault, is_eval: bool = False
     ):  # pylint: disable=unused-argument):
         """
         Returns a custom class for the collator.
