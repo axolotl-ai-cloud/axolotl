@@ -1,6 +1,5 @@
 """Adapter loading functionality, including LoRA / QLoRA and associated utils"""
 
-import logging
 import os
 import types
 from typing import Any
@@ -21,8 +20,9 @@ from transformers import PreTrainedModel
 
 from axolotl.loaders.utils import get_linear_embedding_layers
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def setup_quantized_meta_for_peft(model: torch.nn.Module):

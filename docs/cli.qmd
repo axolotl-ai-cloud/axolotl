@@ -209,6 +209,16 @@ axolotl delinearize-llama4 --model path/to/model_dir --output path/to/output_dir
 
 This would be necessary to use with other frameworks. If you have an adapter, merge it with the non-quantized linearized model before delinearizing.
 
+### quantize
+
+Quantizes a model using the quantization configuration specified in your YAML file.
+
+```bash
+axolotl quantize config.yml
+```
+
+See [Quantization](./quantize.qmd) for more details.
+
 
 ## Legacy CLI Usage
 

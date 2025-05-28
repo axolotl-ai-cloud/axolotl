@@ -4,7 +4,6 @@ import concurrent.futures
 import dataclasses
 import hashlib
 import json
-import logging
 from functools import wraps
 from pathlib import Path
 from types import NoneType
@@ -23,8 +22,9 @@ from transformers import (
 from axolotl.loaders import load_processor, load_tokenizer
 from axolotl.loaders.model import ModelLoader
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def strip_optional_type(field_type: type | str | None):

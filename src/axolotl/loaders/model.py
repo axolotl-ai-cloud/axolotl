@@ -3,7 +3,6 @@ models.
 """
 
 import gc
-import logging
 import math
 import os
 from functools import cached_property
@@ -53,10 +52,11 @@ from axolotl.utils.distributed import (
     get_device_count,
     get_device_type,
 )
+from axolotl.utils.logging import get_logger
 from axolotl.utils.model_shard_quant import load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 
@@ -197,6 +197,7 @@ class ModelLoader:
         self._adjust_model_config()
         self._log_memory_usage()
         self._configure_embedding_dtypes()
+        self._configure_qat()
 
     def _resize_token_embeddings(self):
         """Resize token embeddings if needed."""
@@ -309,6 +310,19 @@ class ModelLoader:
                 embedding_modules=embedding_modules,
                 dist_dtype=self.cfg.torch_dtype,
                 before_kbit_train_or_finetune=False,
+            )
+
+    def _configure_qat(self):
+        """Configure QAT."""
+        if self.cfg.qat:
+            from axolotl.utils.quantization import prepare_model_for_qat
+
+            prepare_model_for_qat(
+                self.model,
+                self.cfg.qat.weight_dtype,
+                self.cfg.qat.group_size,
+                self.cfg.qat.activation_dtype,
+                self.cfg.qat.quantize_embedding,
             )
 
     def _load_adapters(self) -> PeftConfig | None:

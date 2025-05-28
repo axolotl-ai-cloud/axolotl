@@ -2,7 +2,6 @@
 
 # pylint: disable=too-many-lines
 
-import logging
 import os
 from typing import Annotated, Any, Literal
 
@@ -18,6 +17,7 @@ from pydantic import (
 )
 from transformers.utils.import_utils import is_torch_npu_available
 
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
     DPODataset,
@@ -44,11 +44,12 @@ from axolotl.utils.schemas.model import (
 )
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
+from axolotl.utils.schemas.quantization import PTQConfig, QATConfig
 from axolotl.utils.schemas.training import HyperparametersConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.vllm import VllmConfig
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__, use_environ=True)
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
 
@@ -91,6 +92,8 @@ class AxolotlInputConfig(
     vllm: VllmConfig | None = Field(
         default_factory=lambda: VllmConfig(),  # pylint: disable=unnecessary-lambda
     )
+    qat: QATConfig | None = None
+    quantization: PTQConfig | None = None
     reward_model: bool | None = None
     process_reward_model: bool | None = None
     num_labels: int | None = None
@@ -126,7 +129,7 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "streaming dataset to use for pretraining"},
     )
-    dataset_processes: int | None = Field(default=min(32, os.cpu_count()))  # type: ignore[type-var]
+    dataset_processes: int | None = Field(default=min(32, os.cpu_count() or 1))
     dataset_exact_deduplication: bool | None = None
     dataset_keep_in_memory: bool | None = None
     dataloader_pin_memory: bool | None = None
@@ -1052,7 +1055,7 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
-    def check_lora_8bit(cls, data):
+    def check_lora_kernel_8bit(cls, data):
         if (
             data.get("lora_mlp_kernel")
             or data.get("lora_qkv_kernel")
@@ -1060,8 +1063,21 @@ class AxolotlInputConfig(
         ):
             if data.get("adapter") == "lora" and data.get("load_in_8bit"):
                 raise ValueError(
-                    "lora_mlp_kernel, lora_mlp_kernel, and lora_mlp_kernel are not compatible with 8-bit LoRA"
+                    "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with 8-bit LoRA"
                 )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_lora_kernel_rl(cls, data):
+        if (
+            data.get("lora_mlp_kernel")
+            or data.get("lora_qkv_kernel")
+            or data.get("lora_o_kernel")
+        ) and data.get("rl"):
+            raise ValueError(
+                "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with RL at the moment."
+            )
         return data
 
     @model_validator(mode="before")
@@ -1468,3 +1484,42 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
 
         return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_qat_config(cls, data):
+        qat_cfg = data.get("qat", {})
+        if not qat_cfg:
+            return data
+
+        if data.get("peft"):
+            raise ValueError("QAT and PEFT cannot be used together.")
+
+        if data.get("load_in_8bit"):
+            raise ValueError("QAT and load_in_8bit cannot be used together.")
+
+        if data.get("load_in_4bit"):
+            raise ValueError("QAT and load_in_4bit cannot be used together.")
+
+        env_capabilities = data.get("env_capabilities", {})
+        torch_version = env_capabilities.get("torch_version")
+
+        if torch_version is None:
+            import torch
+
+            torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+
+        if (
+            data.get("fsdp")
+            and data.get("fsdp_config")
+            and str(data["fsdp_config"].get("fsdp_version")) == "2"
+        ):
+            if version.parse(torch_version) < version.parse("2.7.0"):
+                raise ValueError(
+                    "FSDP2 and QAT are not supported on torch version < 2.7.0"
+                )
+
+        if version.parse(torch_version) < version.parse("2.6.0"):
+            raise ValueError("QAT is not supported on torch version < 2.6.0")
+
+        return data

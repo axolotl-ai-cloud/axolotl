@@ -1,12 +1,11 @@
 """Module for Axolotl trainer scheduler mixin"""
 
-import logging
-
 import torch
 from torch.optim.lr_scheduler import LRScheduler, OneCycleLR
 from transformers.trainer import Trainer
 
 from axolotl.integrations.base import PluginManager
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schedulers import (
     RexLR,
     get_cosine_schedule_with_min_lr,
@@ -14,7 +13,7 @@ from axolotl.utils.schedulers import (
     get_cosine_schedule_with_warmup_decay_constant,
 )
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class SchedulerMixin(Trainer):
@@ -80,13 +79,15 @@ class SchedulerMixin(Trainer):
                 self.lr_scheduler = RexLR(
                     optimizer=optimizer,
                     max_lr=self.args.learning_rate,
-                    min_lr=0 if not use_cosine_min_lr else (self.args.learning_rate * self.args.cosine_min_lr_ratio),
+                    min_lr=0 if not use_cosine_min_lr else (
+                        self.args.learning_rate * self.args.cosine_min_lr_ratio),
                     total_steps=num_training_steps,
                     num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                 )
             elif use_cosine_quadratic:
                 if use_cosine_min_lr:
-                    LOG.warning("Both cosine quadratic warmup and min lr detected. Using quadratic warmup.")
+                    LOG.warning(
+                        "Both cosine quadratic warmup and min lr detected. Using quadratic warmup.")
 
                 self.lr_scheduler = get_cosine_schedule_with_quadratic_warmup(  # pylint: disable=attribute-defined-outside-init
                     optimizer,
@@ -115,9 +116,11 @@ class SchedulerMixin(Trainer):
                 return super().create_scheduler(num_training_steps, optimizer=optimizer)
         else:
             if use_cosine_quadratic:
-                LOG.warning("axolotl's cosine scheduler with quadratic warmup not used (e.g., because of deepspeed).")
+                LOG.warning(
+                    "axolotl's cosine scheduler with quadratic warmup not used (e.g., because of deepspeed).")
 
             if use_cosine_min_lr:
-                LOG.warning("axolotl's cosine scheduler with min lr not used (e.g., because of deepspeed).")
+                LOG.warning(
+                    "axolotl's cosine scheduler with min lr not used (e.g., because of deepspeed).")
 
         return self.lr_scheduler  # type: ignore

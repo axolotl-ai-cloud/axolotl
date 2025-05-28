@@ -2,7 +2,6 @@
 
 import glob
 import json
-import logging
 import os.path
 import shutil
 from functools import partial
@@ -27,8 +26,9 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import barrier, is_main_process
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl.relora")
+LOG = get_logger(__name__)
 
 
 @torch.no_grad()

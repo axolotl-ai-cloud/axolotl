@@ -36,10 +36,6 @@ It is typically recommended to save your dataset as `.jsonl` due to its flexibil
 
 Axolotl supports loading from a Hugging Face hub repo or from local files.
 
-::: {.callout-important}
-For pre-training only, Axolotl would split texts if it exceeds the context length into multiple smaller prompts.
-:::
-
 ### Pre-training from Hugging Face hub datasets
 
 As an example, to train using a Hugging Face dataset `hf_org/name`, you can pass the following config:
@@ -77,17 +73,20 @@ datasets:
     type: completion
 ```
 
-From local files (either example works):
+From local files:
 
 ```yaml
 datasets:
   - path: A.jsonl
     type: completion
 
-  - path: json
-    data_files: ["A.jsonl", "B.jsonl", "C.jsonl"]
+  - path: B.jsonl
     type: completion
 ```
+
+::: {.callout-important}
+For `completion` only, Axolotl would split texts if it exceeds the context length into multiple smaller prompts. If you are interested in having this for `pretraining_dataset` too, please let us know or help make a PR!
+:::
 
 ### Pre-training dataset configuration tips
 

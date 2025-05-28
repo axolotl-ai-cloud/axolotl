@@ -2,7 +2,6 @@
 
 # pylint: disable=redefined-outer-name
 
-import logging
 import os
 import subprocess  # nosec B404
 import tempfile
@@ -17,6 +16,7 @@ import axolotl
 from axolotl.cli.args import (
     EvaluateCliArgs,
     PreprocessCliArgs,
+    QuantizeCliArgs,
     TrainerCliArgs,
     VllmServeCliArgs,
 )
@@ -30,7 +30,10 @@ from axolotl.cli.utils import (
 )
 from axolotl.integrations.lm_eval.cli import lm_eval
 from axolotl.utils import patch_optimized_env
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.config import AxolotlInputConfig
+
+LOG = get_logger(__name__)
 
 
 @click.group()
@@ -176,7 +179,7 @@ def train(
 
                     do_cli(config=cfg_file, **kwargs)
         except subprocess.CalledProcessError as exc:
-            logging.error(f"Failed to train/fine-tune config '{cfg_file}': {exc}")
+            LOG.error(f"Failed to train/fine-tune config '{cfg_file}': {exc}")
             if not sweep:
                 raise exc
 
@@ -331,6 +334,16 @@ def vllm_serve(config: str, **cli_args: VllmServeCliArgs):
     from axolotl.cli.vllm_serve import do_vllm_serve
 
     do_vllm_serve(config, cli_args)
+
+
+@cli.command()
+@click.argument("config", type=click.Path(exists=True, path_type=str))
+@add_options_from_dataclass(QuantizeCliArgs)
+@filter_none_kwargs
+def quantize(config: str, **cli_args: QuantizeCliArgs):
+    from axolotl.cli.quantize import do_quantize
+
+    do_quantize(config, cli_args)
 
 
 @cli.command()

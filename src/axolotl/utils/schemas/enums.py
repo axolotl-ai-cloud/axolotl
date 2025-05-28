@@ -2,6 +2,22 @@
 
 from enum import Enum
 
+import torch
+
+
+class TorchIntDType(Enum):
+    """Torch integer data types - `getattr` guards against torch < 2.6 which does not support int4"""
+
+    uint1 = getattr(torch, "uint1", None)  # pylint: disable=invalid-name
+    uint2 = getattr(torch, "uint2", None)  # pylint: disable=invalid-name
+    uint3 = getattr(torch, "uint3", None)  # pylint: disable=invalid-name
+    uint4 = getattr(torch, "uint4", None)  # pylint: disable=invalid-name
+    uint5 = getattr(torch, "uint5", None)  # pylint: disable=invalid-name
+    uint6 = getattr(torch, "uint6", None)  # pylint: disable=invalid-name
+    uint7 = getattr(torch, "uint7", None)  # pylint: disable=invalid-name
+    int4 = getattr(torch, "int4", None)  # pylint: disable=invalid-name
+    int8 = getattr(torch, "int8", None)  # pylint: disable=invalid-name
+
 
 class RLType(str, Enum):
     """RL trainer type configuration subset"""
@@ -43,6 +59,10 @@ class ChatTemplate(str, Enum):
     llava = "llava"  # pylint: disable=invalid-name
     qwen2_vl = "qwen2_vl"  # pylint: disable=invalid-name
     gemma3 = "gemma3"  # pylint: disable=invalid-name
+    command_a = "command_a"  # pylint: disable=invalid-name
+    command_a_tool_use = "command_a_tool_use"  # pylint: disable=invalid-name
+    command_a_rag = "command_a_rag"  # pylint: disable=invalid-name
+    aya = "aya"  # pylint: disable=invalid-name
 
 
 class CustomSupportedOptimizers(str, Enum):

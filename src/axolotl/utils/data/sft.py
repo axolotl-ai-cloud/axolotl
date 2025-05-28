@@ -1,7 +1,6 @@
 """data handling specific to SFT"""
 
 import functools
-import logging
 import os
 import tempfile
 from pathlib import Path
@@ -54,12 +53,13 @@ from axolotl.utils.data.utils import (
 )
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_local_main_process, zero_first
+from axolotl.utils.logging import get_logger
 from axolotl.utils.trainer import (
     calculate_total_num_steps,
     process_datasets_for_packing,
 )
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 @retry_on_request_exceptions(max_retries=3, delay=5)
@@ -182,10 +182,9 @@ def prepare_dataset(cfg, tokenizer, processor=None, preprocess_iterable=None):
         total_num_steps = min(
             calculate_total_num_steps(cfg, train_dataset), cfg.max_steps
         )
-        LOG.info(f"Maximum number of steps set at {total_num_steps}")
     else:
         total_num_steps = calculate_total_num_steps(cfg, train_dataset)
-
+    LOG.info(f"Maximum number of steps set at {total_num_steps}")
     return train_dataset, eval_dataset, total_num_steps, prompters
 
 
@@ -331,12 +330,12 @@ def load_tokenized_prepared_datasets(
         if len(datasets) == 1:
             dataset = datasets[0]
         else:
-            LOG.info("merging datasets")
+            LOG.info("Merging datasets...")
             dataset = concatenate_datasets(datasets)
 
         if len(datasets) > 1:
             if cfg.shuffle_merged_datasets:
-                LOG.debug("shuffle merged datasets")
+                LOG.debug("Shuffling merged datasets...")
                 dataset = dataset.shuffle(seed=seed)
             else:
                 LOG.debug("NOT shuffling merged datasets")
@@ -426,7 +425,7 @@ def load_prepare_datasets(
             + "|"
             + "train"
             + "|"
-            + str(seed)
+            + str(cfg.seed or 42)
         )
         to_hash_test = (
             dataset._fingerprint  # pylint: disable=protected-access
@@ -435,7 +434,7 @@ def load_prepare_datasets(
             + "|"
             + "test"
             + "|"
-            + str(seed)
+            + str(cfg.seed or 42)
         )
         train_fingerprint = md5(to_hash_train)
         test_fingerprint = md5(to_hash_test)

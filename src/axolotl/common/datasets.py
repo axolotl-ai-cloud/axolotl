@@ -1,6 +1,5 @@
 """Dataset loading utilities."""
 
-import logging
 import math
 import random
 from dataclasses import dataclass
@@ -14,10 +13,11 @@ from axolotl.loaders import load_processor, load_tokenizer
 from axolotl.utils.data import prepare_dataset
 from axolotl.utils.data.rl import load_prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.tokenization import check_dataset_labels
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 @dataclass

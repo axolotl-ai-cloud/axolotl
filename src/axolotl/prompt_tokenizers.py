@@ -1,14 +1,14 @@
 """Module containing PromptTokenizingStrategy and Prompter classes"""
 
 import abc
-import logging
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from transformers import BatchEncoding, PreTrainedTokenizer
 
 from axolotl.prompters import Prompter
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
 
 IGNORE_INDEX = -100
 LLAMA_DEFAULT_PAD_TOKEN = "<pad>"  # nosec
