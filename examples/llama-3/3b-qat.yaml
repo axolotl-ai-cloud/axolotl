@@ -20,9 +20,10 @@ datasets:
 output_dir: ./outputs/qat_out/
 
 sample_packing: true
-flex_attention: true
 pad_to_sequence_len: true
 sequence_len: 512
+
+flex_attention: true
 flex_attn_compile_kwargs:
   dynamic: false
   mode: max-autotune-no-cudagraphs
