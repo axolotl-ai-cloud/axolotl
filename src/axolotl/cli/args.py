@@ -91,6 +91,18 @@ class VllmServeCliArgs:
 
 
 @dataclass
+class QuantizeCliArgs:
+    """Dataclass with CLI arguments for `axolotl quantize` command."""
+
+    base_model: Optional[str] = field(default=None)
+    weight_dtype: Optional[str] = field(default=None)
+    activation_dtype: Optional[str] = field(default=None)
+    quantize_embedding: Optional[bool] = field(default=None)
+    group_size: Optional[int] = field(default=None)
+    output_dir: Optional[str] = field(default=None)
+
+
+@dataclass
 class EvaluateCliArgs:
     """Dataclass with CLI arguments for `axolotl evaluate` command."""
 

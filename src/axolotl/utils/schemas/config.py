@@ -44,6 +44,7 @@ from axolotl.utils.schemas.model import (
 )
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
+from axolotl.utils.schemas.quantization import PTQConfig, QATConfig
 from axolotl.utils.schemas.training import HyperparametersConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.vllm import VllmConfig
@@ -91,6 +92,8 @@ class AxolotlInputConfig(
     vllm: VllmConfig | None = Field(
         default_factory=lambda: VllmConfig(),  # pylint: disable=unnecessary-lambda
     )
+    qat: QATConfig | None = None
+    quantization: PTQConfig | None = None
     reward_model: bool | None = None
     process_reward_model: bool | None = None
     num_labels: int | None = None
@@ -126,7 +129,7 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "streaming dataset to use for pretraining"},
     )
-    dataset_processes: int | None = Field(default=min(32, os.cpu_count()))  # type: ignore[type-var]
+    dataset_processes: int | None = Field(default=min(32, os.cpu_count() or 1))
     dataset_exact_deduplication: bool | None = None
     dataset_keep_in_memory: bool | None = None
     dataloader_pin_memory: bool | None = None
@@ -1481,3 +1484,42 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
 
         return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_qat_config(cls, data):
+        qat_cfg = data.get("qat", {})
+        if not qat_cfg:
+            return data
+
+        if data.get("peft"):
+            raise ValueError("QAT and PEFT cannot be used together.")
+
+        if data.get("load_in_8bit"):
+            raise ValueError("QAT and load_in_8bit cannot be used together.")
+
+        if data.get("load_in_4bit"):
+            raise ValueError("QAT and load_in_4bit cannot be used together.")
+
+        env_capabilities = data.get("env_capabilities", {})
+        torch_version = env_capabilities.get("torch_version")
+
+        if torch_version is None:
+            import torch
+
+            torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+
+        if (
+            data.get("fsdp")
+            and data.get("fsdp_config")
+            and str(data["fsdp_config"].get("fsdp_version")) == "2"
+        ):
+            if version.parse(torch_version) < version.parse("2.7.0"):
+                raise ValueError(
+                    "FSDP2 and QAT are not supported on torch version < 2.7.0"
+                )
+
+        if version.parse(torch_version) < version.parse("2.6.0"):
+            raise ValueError("QAT is not supported on torch version < 2.6.0")
+
+        return data
