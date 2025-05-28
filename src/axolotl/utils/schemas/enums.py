@@ -43,6 +43,10 @@ class ChatTemplate(str, Enum):
     llava = "llava"  # pylint: disable=invalid-name
     qwen2_vl = "qwen2_vl"  # pylint: disable=invalid-name
     gemma3 = "gemma3"  # pylint: disable=invalid-name
+    command_a = "command_a"  # pylint: disable=invalid-name
+    command_a_tool_use = "command_a_tool_use"  # pylint: disable=invalid-name
+    command_a_rag = "command_a_rag"  # pylint: disable=invalid-name
+    aya = "aya"  # pylint: disable=invalid-name
 
 
 class CustomSupportedOptimizers(str, Enum):
