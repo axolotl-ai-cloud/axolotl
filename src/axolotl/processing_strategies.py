@@ -1,6 +1,5 @@
 """Module containing ProcessingStrategy classes and its derivative for different MultiModal Model types"""
 
-import logging
 from copy import deepcopy
 from typing import Optional
 
@@ -10,7 +9,9 @@ from torch import Tensor
 from transformers import ProcessorMixin
 from transformers.image_utils import load_image
 
-LOG = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 class ProcessingStrategy:

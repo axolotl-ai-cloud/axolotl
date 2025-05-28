@@ -1,7 +1,6 @@
 """Tokenizer loading functionality and associated utils"""
 
 import json
-import logging
 import os
 
 import transformers
@@ -19,8 +18,9 @@ from axolotl.utils.distributed import (
     is_local_main_process,
     is_main_process,
 )
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 

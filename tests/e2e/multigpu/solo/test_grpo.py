@@ -117,7 +117,6 @@ def start_vllm(
         recursive_kill(process)
         with open("/tmp/vllm.log", "r", encoding="utf-8") as log_file:
             print(log_file.read())
-
         try:
             os.remove("/tmp/vllm.log")
         except FileNotFoundError:

@@ -4,7 +4,6 @@ Applies pre- and post-model load patches for various fixes and optimizations.
 """
 
 import importlib.util
-import logging
 from functools import cached_property
 
 import addict
@@ -17,8 +16,9 @@ from axolotl.monkeypatch.multipack import (
     patch_for_multipack,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 
@@ -80,9 +80,9 @@ class PatchManager:
     def _apply_fsdp_patches(self):
         """Apply patches for FSDP configurations."""
         if self.cfg.fsdp_config and str(self.cfg.fsdp_config.fsdp_version) == "2":
-            from axolotl.monkeypatch.accelerate.fsdp2 import patch_accelerate_fsdp_utils
+            from axolotl.monkeypatch.accelerate.fsdp2 import patch_accelerate_fsdp2
 
-            patch_accelerate_fsdp_utils()
+            patch_accelerate_fsdp2()
 
     def _apply_adapter_patches(self):
         """Apply patches for adapter configurations."""

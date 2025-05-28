@@ -236,12 +236,26 @@ def save_trained_model(
         model: The trained model to save.
         safe_serialization: Whether to use safe serialization.
     """
-    LOG.info(f"Training completed! Saving pre-trained model to {cfg.output_dir}.")
+    LOG.info(f"Training completed! Saving trained model to {cfg.output_dir}.")
 
     # Post training module hooks
     for name, module in model.named_modules():
         if hasattr(module, "_post_training"):
             module._post_training(model, name)  # pylint: disable=protected-access
+
+    # handle QAT
+    if cfg.qat:
+        from axolotl.utils.quantization import convert_qat_model_for_ptq
+
+        LOG.info("Processing QAT model for saving...")
+        convert_qat_model_for_ptq(
+            model,
+            quantize_embedding=cfg.qat.quantize_embedding,
+        )
+        LOG.info(
+            "QAT modules have been converted for PTQ. Please ensure you quantize "
+            "your model weights with `axolotl quantize`."
+        )
 
     # Handle FSDP state dict type
     state_dict_type = "FULL_STATE_DICT"
@@ -318,6 +332,8 @@ def save_trained_model(
             safe_serialization=safe_serialization,
             save_compressed=cfg.llmcompressor.save_compressed,
         )
+
+    LOG.info(f"Model successfully saved to {cfg.output_dir}")
 
 
 def create_model_card(cfg: DictDefault, trainer: Trainer):
