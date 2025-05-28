@@ -31,6 +31,11 @@ def do_quantize(
 
     cfg = load_cfg(config)
 
+    if cfg.qat and cfg.quantization:
+        raise ValueError(
+            "QAT and quantization cannot be used together. Please specify only one of qat or quantization in your config file."
+        )
+
     if cfg.qat:
         quantize_cfg = cfg.qat
     elif cfg.quantization:

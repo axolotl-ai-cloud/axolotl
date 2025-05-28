@@ -1,4 +1,4 @@
-base_model: Qwen/Qwen3-8B
+base_model: meta-llama/Llama-3.2-3B
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
@@ -9,21 +9,23 @@ strict: false
 plugins:
   - axolotl.integrations.liger.LigerPlugin
 
-liger_glu_activation: true
+liger_rope: true
 liger_rms_norm: true
+liger_glu_activation: true
 liger_layer_norm: true
+liger_fused_linear_cross_entropy: true
 
 datasets:
-  - path: tatsu-lab/alpaca
+  - path: yahma/alpaca-cleaned
     type: alpaca
 
 output_dir: ./outputs/qat_out/
 
-sequence_len: 2048
 sample_packing: true
-flex_attention: true
 pad_to_sequence_len: true
+sequence_len: 512
 
+flex_attention: true
 flex_attn_compile_kwargs:
   dynamic: false
   mode: max-autotune-no-cudagraphs
@@ -31,8 +33,7 @@ flex_attn_compile_kwargs:
 qat:
   activation_dtype: int8
   weight_dtype: int4
-  group_size: 256
-  fake_quant_after_n_steps: 1000
+  group_size: 32
 
 wandb_project:
 wandb_entity:
@@ -41,14 +42,15 @@ wandb_name:
 wandb_log_model:
 
 gradient_accumulation_steps: 1
-micro_batch_size: 2
-max_steps: 2000
+micro_batch_size: 16
+num_epochs: 1
 optimizer: adamw_torch_fused
-lr_scheduler: cosine
-learning_rate: 2e-5
 
+cosine_constant_lr_ratio: 0
+cosine_min_lr_ratio: 1.0
+learning_rate: 2e-5
+save_only_model: true
 bf16: true
-tf32: true
 
 resume_from_checkpoint:
 logging_steps: 1
@@ -67,10 +69,11 @@ fsdp_config:
   fsdp_offload_params: false
   fsdp_cpu_ram_efficient_loading: true
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  fsdp_transformer_layer_cls_to_wrap: Qwen3DecoderLayer
+  fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
   fsdp_state_dict_type: FULL_STATE_DICT
   fsdp_sharding_strategy: FULL_SHARD
   fsdp_reshard_after_forward: true
   fsdp_activation_checkpointing: true
 
 special_tokens:
+  pad_token: <|end_of_text|>
