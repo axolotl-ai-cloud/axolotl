@@ -153,7 +153,6 @@ extras_require = {
     "llmcompressor": [
         "llmcompressor==0.5.1",
     ],
-    "mistral": ["mistral-common==1.5.6"],
 }
 
 install_requires, dependency_links, extras_require_build = parse_requirements(

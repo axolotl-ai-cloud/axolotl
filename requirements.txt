@@ -21,6 +21,7 @@ deepspeed>=0.15.4
 trl==0.17.0
 hf_xet==1.1.0
 hqq==0.2.5
+mistral-common==1.5.6
 
 optimum==1.16.2
 hf_transfer
