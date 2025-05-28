@@ -19,17 +19,16 @@ Cut Cross Entropy is an optimized implementation of cross entropy loss
 from Apple's ML team.
 """
 import importlib
-import logging
 
 import torch
 
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils import get_pytorch_version
-from axolotl.utils.distributed import is_main_process
+from axolotl.utils.logging import get_logger
 
 from .args import CutCrossEntropyArgs  # pylint: disable=unused-import. # noqa: F401
 
-LOG = logging.getLogger("axolotl.integrations.cut_cross_entropy")
+LOG = get_logger(__name__, use_environ=True)
 
 _CCE_INSTALL_MESSAGE = (
     "Please install cut_cross_entropy with transformers support using "
@@ -76,10 +75,9 @@ class CutCrossEntropyPlugin(BasePlugin):
                 cce_patch,
             )
 
-            if is_main_process(use_environ=True):
-                LOG.info(
-                    f"Applying Cut Cross Entropy to model type: {cfg.model_config_type}"
-                )
+            LOG.info(
+                f"Applying Cut Cross Entropy to model type: {cfg.model_config_type}"
+            )
 
             # The patch checks model_type internally
             cce_patch(cfg.model_config_type)

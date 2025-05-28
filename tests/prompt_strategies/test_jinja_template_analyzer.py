@@ -2,14 +2,12 @@
 tests for jinja_template_analyzer
 """
 
-import logging
-
 import pytest
 
 from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnalyzer
+from axolotl.utils.logging import get_logger
 
-logging.basicConfig(level=logging.DEBUG)
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__, log_level="DEBUG")
 
 
 class TestJinjaTemplateAnalyzer:

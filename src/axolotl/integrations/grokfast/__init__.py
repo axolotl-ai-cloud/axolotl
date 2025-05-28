@@ -2,15 +2,15 @@
 Grokfast plugin for Axolotl
 """
 
-import logging
-
 from transformers.trainer_callback import TrainerCallback
+
+from axolotl.utils.logging import get_logger
 
 from ..base import BasePlugin
 from .args import GrokfastArgs  # pylint: disable=unused-import. # noqa: F401
 from .optimizer import gradfilter_ema
 
-LOG = logging.getLogger("axolotl.integrations.grokfast")
+LOG = get_logger(__name__)
 
 
 class GrokfastCallbackHandler(TrainerCallback):

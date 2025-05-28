@@ -19,7 +19,6 @@ import abc
 import importlib
 import importlib.util
 import inspect
-import logging
 import math
 import os
 import sys
@@ -88,6 +87,7 @@ from axolotl.utils.collators import (
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers, RLType
 
 try:
@@ -95,7 +95,7 @@ try:
 except ImportError:
     pass
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class TrainerBuilderBase(abc.ABC):

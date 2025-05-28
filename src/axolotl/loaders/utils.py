@@ -1,7 +1,6 @@
 """Utilities for axolotl.loaders module"""
 
 import contextlib
-import logging
 from typing import Type
 
 import addict
@@ -9,8 +8,9 @@ import torch
 from transformers import AutoConfig, PretrainedConfig, PreTrainedModel
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def get_module_class_from_name(

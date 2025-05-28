@@ -1,6 +1,5 @@
 """QAT Callback for HF Causal Trainer"""
 
-import logging
 from functools import partial
 
 from torch import nn
@@ -8,9 +7,10 @@ from torchao.quantization.qat.embedding import FakeQuantizedEmbedding
 from torchao.quantization.qat.linear import FakeQuantizedLinear
 from transformers import TrainerCallback
 
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.quantization import QATConfig
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def toggle_fake_quant(mod: nn.Module, enable: bool):

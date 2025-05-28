@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from collections import defaultdict
 from functools import wraps
@@ -34,9 +33,10 @@ from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
     sanitize_kwargs_for_tagging,
 )
+from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):

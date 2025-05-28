@@ -2,8 +2,6 @@
 Utilities for quantization including QAT and PTQ using torchao.
 """
 
-import logging
-
 import torch
 from torch import nn
 from torchao.core.config import AOBaseConfig
@@ -24,8 +22,6 @@ from torchao.quantization.quant_api import (
 )
 
 from axolotl.utils.schemas.enums import TorchIntDType
-
-LOG = logging.getLogger(__name__)
 
 
 def get_ptq_config(

@@ -2,7 +2,6 @@
 
 # pylint: disable=too-many-lines
 
-import logging
 import os
 from typing import Annotated, Any, Literal
 
@@ -18,6 +17,7 @@ from pydantic import (
 )
 from transformers.utils.import_utils import is_torch_npu_available
 
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
     DPODataset,
@@ -49,7 +49,7 @@ from axolotl.utils.schemas.training import HyperparametersConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.vllm import VllmConfig
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__, use_environ=True)
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
 

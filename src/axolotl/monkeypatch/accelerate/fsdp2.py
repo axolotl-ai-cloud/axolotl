@@ -2,12 +2,13 @@
 monkeypatch for accelerate fsdp2 fix when modifying ordereddict during interation, and saving full state dicts
 """
 
-import logging
 import sys
 
 import torch
 
-LOG = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dict):

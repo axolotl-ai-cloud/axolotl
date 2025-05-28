@@ -64,6 +64,7 @@ class ChatTemplate(str, Enum):
     command_a_rag = "command_a_rag"  # pylint: disable=invalid-name
     aya = "aya"  # pylint: disable=invalid-name
 
+
 class CustomSupportedOptimizers(str, Enum):
     """Custom supported optimizers"""
 

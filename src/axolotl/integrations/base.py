@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import collections
 import importlib
-import logging
 from typing import TYPE_CHECKING, Callable, OrderedDict, Union
 
 from peft import PeftModel
@@ -31,6 +30,9 @@ from torch.optim.lr_scheduler import LRScheduler
 from transformers import PreTrainedModel, Trainer
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 if TYPE_CHECKING:
     from axolotl.common.datasets import TrainDatasetMeta
@@ -331,12 +333,12 @@ class PluginManager:
             ImportError: If the plugin module cannot be imported.
         """
         try:
-            logging.info(f"Attempting to load plugin: {plugin_name}")
+            LOG.info(f"Attempting to load plugin: {plugin_name}")
             plugin = load_plugin(plugin_name)
             self.plugins[plugin_name] = plugin
-            logging.info(f"Plugin loaded successfully: {plugin_name}")
+            LOG.info(f"Plugin loaded successfully: {plugin_name}")
         except ImportError:
-            logging.error(f"Failed to load plugin: {plugin_name}")
+            LOG.error(f"Failed to load plugin: {plugin_name}")
 
     def get_input_args(self) -> list[str]:
         """Returns a list of Pydantic classes for all registered plugins' input arguments.'

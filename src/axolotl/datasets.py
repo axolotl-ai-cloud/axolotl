@@ -1,11 +1,12 @@
 """Module containing Dataset functionality"""
 
-import logging
 import os
 from typing import List, Optional, Union
 
 import torch
 from datasets import Dataset, IterableDataset
+
+from axolotl.utils.logging import get_logger
 
 from .prompt_tokenizers import PromptTokenizingStrategy
 
@@ -15,7 +16,7 @@ from .prompt_tokenizers import PromptTokenizingStrategy
 # let's check to ensure we don't truncate an item in the middle, we'll use
 # the collators later on to pad the datasets
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
 
 
 class TokenizedPromptDataset(Dataset):
