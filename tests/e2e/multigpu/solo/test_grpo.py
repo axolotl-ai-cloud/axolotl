@@ -4,7 +4,6 @@ GRPO test suite
 
 import os
 import random
-import shutil
 import subprocess  # nosec B404
 import sys
 import tempfile
@@ -118,7 +117,11 @@ def start_vllm(
         recursive_kill(process)
         with open("/tmp/vllm.log", "r", encoding="utf-8") as log_file:
             print(log_file.read())
-        shutil.rmtree("/tmp/vllm.log")
+
+        try:
+            os.remove("/tmp/vllm.log")
+        except FileNotFoundError:
+            pass
         raise RuntimeError(f"VLLM server process did not start within {wait} seconds.")
 
     # return the process
