@@ -174,7 +174,10 @@ class ConstantLengthDataset(IterableDataset):
                             }
                         else:
                             LOG.warning(
-                                f"dropping batch due to tensor size mismatch input_ids: {input_ids.size()}, labels: {labels.size()}, attention_mask: {attention_mask.size()}"
+                                "Dropping batch due to tensor size mismatch "
+                                f"input_ids: {input_ids.size()}, "
+                                f"labels: {labels.size()}, "
+                                f"attention_mask: {attention_mask.size()}"
                             )
                     buffer = {
                         "input_ids": [],
