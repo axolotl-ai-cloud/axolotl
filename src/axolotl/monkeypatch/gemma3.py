@@ -149,13 +149,15 @@ def new_forward(
         inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, image_features)
 
     # mask out pad-token-ids in labels for BC
-    if labels is not None and self.pad_token_id in labels:
+    if labels is not None and self.language_model.padding_idx in labels:
         logger.warning_once(
             "`labels` contains `pad_token_id` which will be masked with `config.ignore_index`. "
             "You have to mask out `pad_token_id` when preparing `labels`, this behavior will be removed in v.4.46.",
         )
         labels = torch.where(
-            input_ids == self.pad_token_id, self.config.ignore_index, labels
+            input_ids == self.language_model.padding_idx,
+            self.config.ignore_index,
+            labels,
         )
 
     causal_mask = self._update_causal_mask(  # pylint: disable=protected-access
