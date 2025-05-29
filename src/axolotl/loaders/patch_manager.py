@@ -116,13 +116,6 @@ class PatchManager:
 
             patch_llama4_linearized_modeling()
 
-        if self.cfg.model_config_type == "gemma3":
-            from axolotl.monkeypatch.gemma3 import (
-                patch_gemma3conditionalgeneration_forward,
-            )
-
-            patch_gemma3conditionalgeneration_forward()
-
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
         if self.cfg.fp8:
