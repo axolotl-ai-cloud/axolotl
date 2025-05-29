@@ -92,8 +92,8 @@ def prepare_preference_datasets(cfg: DictDefault) -> tuple[Dataset, Dataset | No
 
     # Apply deduplication if configured
     if cfg.dataset_exact_deduplication:
-        train_dataset, eval_dataset, _ = deduplicate_and_log_datasets(
-            train_dataset=train_dataset, eval_dataset=eval_dataset
+        train_dataset, eval_dataset = deduplicate_and_log_datasets(
+            dataset=train_dataset, other_dataset=eval_dataset
         )
 
     return train_dataset, eval_dataset

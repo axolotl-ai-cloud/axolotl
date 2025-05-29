@@ -568,7 +568,7 @@ def _load_prepare_datasets(
             index=cfg.dataset_shard_idx,
         )
 
-    # Apply deduplication and create train/validation splits based on the split type
+    # Apply deduplication and create train / validation splits based on the split type
     if split == "train":
         train_dataset, eval_dataset = _handle_train_split(dataset, cfg)
     else:
@@ -619,7 +619,7 @@ def _handle_train_split(
 
     # No validation split - apply deduplication if needed and return as train dataset
     if cfg.dataset_exact_deduplication:
-        train_dataset, _, _ = deduplicate_and_log_datasets(train_dataset=dataset)
+        train_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
     else:
         train_dataset = dataset
 
@@ -631,7 +631,7 @@ def _handle_test_split(
 ) -> tuple[None, Dataset | None]:
     """Handle processing for test split."""
     if cfg.dataset_exact_deduplication:
-        _, eval_dataset, _ = deduplicate_and_log_datasets(eval_dataset=dataset)
+        eval_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
     else:
         eval_dataset = dataset
 
@@ -651,7 +651,7 @@ def _create_train_validation_split(
 
     # Apply deduplication before splitting if configured
     if cfg.dataset_exact_deduplication:
-        _, _, dataset = deduplicate_and_log_datasets(dataset=dataset)
+        dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
 
     # Create the train/test split
     split_dataset = dataset.train_test_split(
