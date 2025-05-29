@@ -1,4 +1,4 @@
-"""data handling specific to SFT"""
+"""Data handling specific to SFT."""
 
 import logging
 from typing import Any, cast
