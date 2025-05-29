@@ -71,35 +71,13 @@ class TestDeduplicateIndividualFunctions(unittest.TestCase):
         self.expected_dataset = Dataset.from_dict(self.expected_data)
 
     def test_deduplication(self):
-        train_dataset, _, _ = deduplicate_and_log_datasets(train_dataset=self.dataset)
-        _, eval_dataset, _ = deduplicate_and_log_datasets(eval_dataset=self.dataset)
+        train_dataset, _ = deduplicate_and_log_datasets(dataset=self.dataset)
+        eval_dataset, _ = deduplicate_and_log_datasets(
+            dataset=self.dataset, dataset_name="eval"
+        )
 
         verify_deduplication(train_dataset, self.expected_dataset, "train_dataset")
         verify_deduplication(eval_dataset, self.expected_dataset, "eval_dataset")
-
-    def test_datasets_are_none(self):
-        # Test when both datasets are None
-        train_dataset, eval_dataset, _ = deduplicate_and_log_datasets(
-            train_dataset=None, eval_dataset=None
-        )
-        self.assertIsNone(train_dataset, "Expected train_dataset to be None")
-        self.assertIsNone(eval_dataset, "Expected eval_dataset to be None")
-
-    def test_only_train_is_none(self):
-        # Test when only train_dataset is None
-        train_dataset, eval_dataset, _ = deduplicate_and_log_datasets(
-            train_dataset=None, eval_dataset=self.dataset
-        )
-        self.assertIsNone(train_dataset, "Expected train_dataset to be None")
-        verify_deduplication(eval_dataset, self.expected_dataset, "eval_dataset")
-
-    def test_only_eval_is_none(self):
-        # Test when only eval_dataset is None
-        train_dataset, eval_dataset, _ = deduplicate_and_log_datasets(
-            train_dataset=self.dataset, eval_dataset=None
-        )
-        self.assertIsNone(eval_dataset, "Expected eval_dataset to be None")
-        verify_deduplication(train_dataset, self.expected_dataset, "train_dataset")
 
     def test_exact_duplicates(self):
         # Test when datasets are exact duplicates
@@ -115,8 +93,10 @@ class TestDeduplicateIndividualFunctions(unittest.TestCase):
         expected_dataset = Dataset.from_dict(expected_data)
 
         # Run deduplication
-        train_dataset, _, _ = deduplicate_and_log_datasets(train_dataset=dataset)
-        _, eval_dataset, _ = deduplicate_and_log_datasets(eval_dataset=dataset)
+        train_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
+        eval_dataset, _ = deduplicate_and_log_datasets(
+            dataset=dataset, dataset_name="eval"
+        )
 
         verify_deduplication(train_dataset, expected_dataset, "train_dataset")
         verify_deduplication(eval_dataset, expected_dataset, "eval_dataset")
@@ -139,8 +119,10 @@ class TestDeduplicateIndividualFunctions(unittest.TestCase):
         expected_dataset = Dataset.from_dict(expected_data)
 
         # Run deduplication
-        train_dataset, _, _ = deduplicate_and_log_datasets(train_dataset=dataset)
-        _, eval_dataset, _ = deduplicate_and_log_datasets(eval_dataset=dataset)
+        train_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
+        eval_dataset, _ = deduplicate_and_log_datasets(
+            dataset=dataset, dataset_name="eval"
+        )
 
         verify_deduplication(train_dataset, expected_dataset, "train_dataset")
         verify_deduplication(eval_dataset, expected_dataset, "eval_dataset")
@@ -169,8 +151,8 @@ class TestDeduplicateIndividualFunctions(unittest.TestCase):
         expected_dataset_eval = Dataset.from_dict(expected_data_eval)
 
         # Run deduplication
-        train_dataset, eval_dataset, _ = deduplicate_and_log_datasets(
-            train_dataset=dataset, eval_dataset=dataset
+        train_dataset, eval_dataset = deduplicate_and_log_datasets(
+            dataset=dataset, other_dataset=dataset
         )
 
         verify_deduplication(train_dataset, expected_dataset_train, "train_dataset")
@@ -206,8 +188,8 @@ class TestDeduplicateIndividualFunctions(unittest.TestCase):
         expected_dataset_eval = Dataset.from_dict(expected_data_eval)
 
         # Run deduplication
-        train_dataset, eval_dataset, _ = deduplicate_and_log_datasets(
-            train_dataset=dataset_train, eval_dataset=dataset_eval
+        train_dataset, eval_dataset = deduplicate_and_log_datasets(
+            dataset=dataset_train, other_dataset=dataset_eval
         )
 
         verify_deduplication(train_dataset, expected_dataset_train, "train_dataset")
@@ -441,8 +423,8 @@ class TestWrongCollisions(unittest.TestCase):
         ),
     )
     def test_deduplication_wrong_collision_train_eval(self, _mock_sha256):
-        dedup_train, dedup_eval, _ = deduplicate_and_log_datasets(
-            train_dataset=self.train_dataset, eval_dataset=self.eval_dataset
+        dedup_train, dedup_eval = deduplicate_and_log_datasets(
+            dataset=self.train_dataset, other_dataset=self.eval_dataset
         )
         self.assertEqual(
             len(dedup_train),
@@ -466,7 +448,7 @@ class TestWrongCollisions(unittest.TestCase):
         )
 
     def test_deduplication_dataset_only(self):
-        _, _, dedup_dataset = deduplicate_and_log_datasets(dataset=self.dataset)
+        dedup_dataset, _ = deduplicate_and_log_datasets(dataset=self.dataset)
         self.assertEqual(
             len(dedup_dataset), 3, "Dataset should have all original values"
         )
