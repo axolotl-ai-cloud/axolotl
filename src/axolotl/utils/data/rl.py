@@ -330,7 +330,9 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
                 LOG.warning(f"Dropped {dropped} long samples from dataset index {i}")
 
     combined_datasets = concatenate_datasets(split_datasets)
-    combined_datasets = combined_datasets.shuffle(seed=cfg.seed if cfg.seed is not None else 42)
+    combined_datasets = combined_datasets.shuffle(
+        seed=cfg.seed if cfg.seed is not None else 42
+    )
 
     return combined_datasets
 
