@@ -185,7 +185,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
 
         data_collator = self.data_collator if is_training else self.eval_data_collator
 
-        if "length" in dataset.column_names:
+        if dataset.column_names and "length" in dataset.column_names:
             dataset = dataset.remove_columns(["length"])
 
         if isinstance(dataset, datasets.Dataset):
