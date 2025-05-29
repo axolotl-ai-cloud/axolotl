@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import os
 from collections import defaultdict
-from functools import wraps
-from typing import Literal
+from functools import partial, wraps
+from typing import Callable, Literal, Optional
 
 import datasets
 import torch
@@ -113,7 +113,9 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
             drop_last=True,
         )
 
-    def _get_train_sampler(self) -> Sampler | None:
+    def _get_train_sampler(
+        self, train_dataset: Optional[Dataset] = None
+    ) -> Optional[Sampler]:
         """
         Helper method to get the sampler for training. Handles cases for sample packing
         and curriculum sampling (sequential).
@@ -137,7 +139,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
         if use_sample_packing:
             return self._create_multipack_sampler(
                 base_sampler=base_sampler,
-                dataset=self.train_dataset,
+                dataset=train_dataset,
             )
 
         return base_sampler
@@ -150,8 +152,6 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
             If the dataset is non-empty, a sampler is returned, the type of which
                 depends on the passed training args.
         """
-        eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
-
         # Multipacking enabled if training is enabled and eval is not explicitly disabled
         use_multipack = (
             self.args.sample_packing and self.args.eval_sample_packing is not False
@@ -172,125 +172,90 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
 
         return base_sampler
 
-    def _create_dataloader_params(self, is_eval=False, custom_batch_size=None):
-        """Create common dataloader parameters for train or eval."""
-        batch_size = custom_batch_size or (
-            self.args.eval_batch_size if is_eval else self._train_batch_size
-        )
+    def _get_dataloader(
+        self,
+        dataset: Dataset,
+        description: str,
+        batch_size: int,
+        sampler_fn: Optional[Callable[[Dataset], torch.utils.data.Sampler]] = None,
+        is_training: bool = False,
+        dataloader_key: Optional[str] = None,
+    ) -> DataLoader:
+        """Create a [`~torch.utils.data.DataLoader`] from the given dataset."""
 
-        params = {
+        data_collator = self.data_collator if is_training else self.eval_data_collator
+
+        if "length" in dataset.column_names:
+            dataset = dataset.remove_columns(["length"])
+
+        if isinstance(dataset, datasets.Dataset):
+            if is_training:
+                if not self.args.sample_packing or self.args.pretraining:
+                    dataset = self._remove_unused_columns(
+                        dataset, description="training"
+                    )
+            elif (
+                not is_training
+                and self.args.sample_packing
+                and self.args.eval_sample_packing is not False
+            ):
+                batch_size = (
+                    batch_size
+                    if self.args.sample_packing
+                    else self.args.per_device_eval_batch_size
+                )
+            else:
+                dataset = self._remove_unused_columns(dataset, description=description)
+        else:
+            data_collator = self._get_collator_with_removed_columns(
+                self.data_collator, description=description
+            )
+
+        dataloader_params = {
             "batch_size": batch_size,
-            "collate_fn": self.data_collator,
+            "collate_fn": data_collator,
             "num_workers": self.args.dataloader_num_workers,
             "pin_memory": self.args.dataloader_pin_memory,
+            "persistent_workers": self.args.dataloader_persistent_workers,
         }
 
-        # Add persistent workers only for training
-        if not is_eval and hasattr(self.args, "dataloader_persistent_workers"):
-            params["persistent_workers"] = self.args.dataloader_persistent_workers
-
-        # Add prefetch factor if specified
-        if self.args.dataloader_prefetch_factor:
-            params["prefetch_factor"] = self.args.dataloader_prefetch_factor
-
-        return params
-
-    def _prepare_dataloader(
-        self, dataset, sampler, is_eval=False, custom_batch_size=None
-    ):
-        """Prepare a dataloader with the given dataset and sampler."""
-        # Get base parameters
-        dataloader_params = self._create_dataloader_params(is_eval, custom_batch_size)
-
-        # Add sampler configuration
         if not isinstance(dataset, torch.utils.data.IterableDataset):
-            if isinstance(sampler, BatchSampler):
-                # batch_size and batch_sampler are mutually exclusive
-                dataloader_params["batch_sampler"] = sampler
-                del dataloader_params["batch_size"]
-            else:
-                dataloader_params["sampler"] = sampler
-                dataloader_params["drop_last"] = self.args.dataloader_drop_last
+            if sampler_fn is not None:
+                sampler = sampler_fn(dataset)
+                if isinstance(sampler, BatchSampler):
+                    # batch_size and batch_sampler are mutually exclusive
+                    dataloader_params["batch_sampler"] = sampler
+                    del dataloader_params["batch_size"]
+                else:
+                    dataloader_params["sampler"] = sampler
 
-            if not is_eval:
-                dataloader_params["worker_init_fn"] = seed_worker
-
-        # Create the dataloader
-        dataloader = DataLoader(dataset, **dataloader_params)
-
+            dataloader_params["drop_last"] = self.args.dataloader_drop_last
+            dataloader_params["prefetch_factor"] = self.args.dataloader_prefetch_factor
+            if is_training:
+                dataloader_params["worker_init_fn"] = partial(
+                    seed_worker,
+                    num_workers=self.args.dataloader_num_workers,
+                    rank=self.args.process_index,
+                )
         if self.args.sample_packing and (
-            (not is_eval and not self.args.pretraining)
-            or (is_eval and self.args.eval_sample_packing is not False)
+            (is_training and not self.args.pretraining)
+            or (not is_training and self.args.eval_sample_packing is not False)
         ):
             self.accelerator.even_batches = False
 
-        return self.accelerator.prepare_data_loader(dataloader)
+        dataloader = DataLoader(dataset, **dataloader_params)
 
-    def get_train_dataloader(self) -> DataLoader:
-        """Get dataloader for training"""
-        train_dataset = self.train_dataset
-        data_collator = self.data_collator  # type: ignore
+        # Accelerator.free_memory() will destroy the references, so
+        # we need to store the non-prepared version for eval dataloaders.
+        # fmt: off
+        if dataloader_key is not None and self.args.dataloader_persistent_workers:
+            if hasattr(self, "_eval_dataloaders"):
+                self._eval_dataloaders[dataloader_key] = dataloader  # type: ignore  # pylint: disable=access-member-before-definition
+            else:
+                self._eval_dataloaders = {dataloader_key: dataloader}  # pylint: disable=attribute-defined-outside-init
+        # fmt: on
 
-        # Handle dataset preprocessing
-        if isinstance(train_dataset, datasets.Dataset):
-            if self.args.sample_packing and not self.args.pretraining:
-                train_dataset = train_dataset.remove_columns(["length"])
-            if not self.args.sample_packing or self.args.pretraining:
-                train_dataset = self._remove_unused_columns(
-                    train_dataset, description="training"
-                )
-        else:
-            self.data_collator = self._get_collator_with_removed_columns(  # pylint: disable=attribute-defined-outside-init
-                data_collator,
-                description="training",
-            )
-
-        # Get sampler and create dataloader
-        sampler = self._get_train_sampler()
-        return self._prepare_dataloader(train_dataset, sampler, is_eval=False)
-
-    def get_eval_dataloader(self, eval_dataset: Dataset | None = None) -> DataLoader:
-        """Get dataloader for evaluation"""
-        eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
-
-        # Handle special case: sample packing is enabled but eval_sample_packing is False
-        if self.args.sample_packing and self.args.eval_sample_packing is False:
-            self.data_collator = (  # pylint: disable=attribute-defined-outside-init
-                self.eval_data_collator
-            )
-            if "length" in eval_dataset.column_names:
-                eval_dataset = eval_dataset.remove_columns(["length"])
-            dataloader = super().get_eval_dataloader(eval_dataset)
-            self.data_collator = (  # pylint: disable=attribute-defined-outside-init
-                self.train_data_collator
-            )
-
-            return dataloader
-
-        if self.args.sample_packing and self.args.eval_sample_packing is not False:
-            # Get appropriate data collator
-            self.data_collator = (  # pylint: disable=attribute-defined-outside-init
-                self.eval_data_collator
-                if hasattr(self, "eval_data_collator") and self.eval_data_collator
-                else self.data_collator
-            )
-            if "length" in eval_dataset.column_names:
-                eval_dataset = eval_dataset.remove_columns(["length"])
-
-            # Use eval_batch_size for sample packing, per_device_eval_batch_size otherwise
-            batch_size = (
-                self.args.eval_batch_size
-                if self.args.sample_packing
-                else self.args.per_device_eval_batch_size
-            )
-            sampler = self._get_eval_sampler(eval_dataset)
-            dataloader = self._prepare_dataloader(
-                eval_dataset, sampler, is_eval=True, custom_batch_size=batch_size
-            )
-
-            return dataloader
-
-        return super().get_eval_dataloader(eval_dataset)
+        return self.accelerator.prepare(dataloader)
 
     def _get_bench_sampler(
         self, bench_dataset: Dataset
