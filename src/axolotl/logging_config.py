@@ -17,7 +17,7 @@ DEFAULT_LOG_LEVEL = "WARNING"
 
 class AxolotlOrWarnErrorFilter(logging.Filter):
     """
-    Allows ANY WARNING+ or ERROR+ (unless overridden by LOG_LEVEL)
+    Allows ANY WARNING or higher (unless overridden by LOG_LEVEL)
     Allows axolotl.* at INFO or higher (unless overridden by AXOLOTL_LOG_LEVEL)
     Drops all other records (i.e. non-axolotl.INFO, DEBUG, etc. by default)
     """
@@ -33,11 +33,11 @@ class AxolotlOrWarnErrorFilter(logging.Filter):
         ]
 
     def filter(self, record: LogRecord) -> bool:
-        # allow WARNING+ or ERROR+ from anywhere
+        # General filter
         if record.levelno >= self.other_level:
             return True
 
-        # else allow axolotl.* at INFO or higher
+        # Axolotl filter
         return (
             record.name.startswith("axolotl") and record.levelno >= self.axolotl_level
         )
