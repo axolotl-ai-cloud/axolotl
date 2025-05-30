@@ -101,6 +101,7 @@ class AxolotlInputConfig(
     # If `None`, default is `False` in the trainer.
     dpo_use_weighting: bool | None = None
     dpo_use_logits_to_keep: bool | None = None
+    dpo_label_smoothing: float | None = None
 
     datasets: (
         Annotated[
@@ -1175,18 +1176,6 @@ class AxolotlInputConfig(
 
         return data
 
-    # @model_validator(mode="before")
-    # @classmethod
-    # def check_grpo_peft_liger(cls, data):
-    #     if (
-    #         data.get("rl") == "grpo"
-    #         and data.get("trl", {})
-    #         and data.get("trl").get("use_liger_loss")
-    #         and data.get("adapter")
-    #     ):
-    #         raise ValueError("PEFT + GRPO + Liger is not yet supported")
-    #     return data
-    #
     @model_validator(mode="before")
     @classmethod
     def check_grpo_liger_sequence_parallel(cls, data):
