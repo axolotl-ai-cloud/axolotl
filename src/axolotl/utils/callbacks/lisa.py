@@ -15,7 +15,7 @@ from transformers import TrainerCallback
 from axolotl.utils.logging import get_logger
 
 if TYPE_CHECKING:
-    from axolotl.core.trainer_builder import AxolotlTrainer
+    from axolotl.core.trainers import AxolotlTrainer
 
 LOG = get_logger(__name__)
 
