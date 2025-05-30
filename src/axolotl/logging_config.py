@@ -117,3 +117,7 @@ def configure_logging():
     init()  # Initialize colorama
     dictConfig(DEFAULT_LOGGING_CONFIG)
     logging.setLoggerClass(AxolotlLogger)
+
+    # set default `ACCELERATE_LOG_LEVEL` to `LOG_LEVEL` if available and not set
+    if "ACCELERATE_LOG_LEVEL" not in os.environ:
+        os.environ["ACCELERATE_LOG_LEVEL"] = os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL)
