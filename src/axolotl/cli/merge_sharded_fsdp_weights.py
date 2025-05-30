@@ -10,7 +10,6 @@ import fire
 import torch
 import torch.distributed.checkpoint as dist_cp
 import torch.distributed.checkpoint.format_utils as dist_cp_format_utils
-import transformers
 from accelerate.utils import (
     SAFE_WEIGHTS_INDEX_NAME,
     SAFE_WEIGHTS_NAME,
@@ -23,7 +22,6 @@ from huggingface_hub import split_torch_state_dict_into_shards
 from safetensors.torch import save_file as safe_save_file
 from torch.distributed.checkpoint.format_utils import _EmptyStateDictLoadPlanner
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
 from axolotl.utils.logging import get_logger
@@ -197,11 +195,6 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     """
     # pylint: disable=duplicate-code
     print_axolotl_text_art()
-    parser = transformers.HfArgumentParser(TrainerCliArgs)
-    parsed_cli_args, _ = parser.parse_args_into_dataclasses(
-        return_remaining_strings=True
-    )
-    parsed_cli_args.merge_lora = True
     parsed_cfg = load_cfg(config, **kwargs)
 
     fsdp_dir = Path(parsed_cfg.output_dir) / "pytorch_model_fsdp_0"
