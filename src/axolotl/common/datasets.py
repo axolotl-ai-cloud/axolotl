@@ -38,6 +38,7 @@ def load_datasets(
     *,
     cfg: DictDefault,
     cli_args: PreprocessCliArgs | TrainerCliArgs,
+    debug: bool = False,
 ) -> TrainDatasetMeta:
     """Loads one or more training or evaluation datasets, calling
     `axolotl.utils.data.prepare_datasets`. Optionally, logs out debug information.
@@ -45,6 +46,8 @@ def load_datasets(
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
         cli_args: Command-specific CLI arguments.
+        debug: Whether to print out tokenization of sample. This is duplicated in
+            `cfg` and `cli_args`, but is kept due to use in our Colab notebooks.
 
     Returns:
         Dataclass with fields for training and evaluation datasets and the computed
@@ -62,10 +65,11 @@ def load_datasets(
     )
 
     if (
-        cli_args.debug
-        or cfg.debug
+        cfg.debug
+        or cli_args.debug
         or cli_args.debug_text_only
         or int(cli_args.debug_num_examples) > 0
+        or debug
     ):
         LOG.info("check_dataset_labels...")
 

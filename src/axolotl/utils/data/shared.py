@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import os
+import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Generator
+from typing import TYPE_CHECKING, Any, Callable, Generator
 
+import yaml
 from datasets import (
     Dataset,
     DatasetDict,
     IterableDataset,
     IterableDatasetDict,
+    concatenate_datasets,
     load_dataset,
     load_from_disk,
 )
+from filelock import FileLock
 from huggingface_hub import hf_hub_download, snapshot_download
 from huggingface_hub.errors import (
     HFValidationError,
@@ -20,8 +25,10 @@ from huggingface_hub.errors import (
     RevisionNotFoundError,
 )
 
-from axolotl.utils.data.utils import md5
+from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
+from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from adlfs import AzureBlobFileSystem
@@ -29,22 +36,26 @@ if TYPE_CHECKING:
     from ocifs import OCIFileSystem
     from s3fs import S3FileSystem
 
+LOG = get_logger(__name__)
+
+EXTENSIONS_TO_DATASET_TYPES = {
+    ".parquet": "parquet",
+    ".arrow": "arrow",
+    ".csv": "csv",
+    ".txt": "text",
+}
+
 
 def get_dataset_type(dataset_config: DictDefault) -> str:
     """Get the dataset type from the path if it's not specified."""
-    dataset_type = "json"
     if dataset_config.ds_type:
-        dataset_type = dataset_config.ds_type
-    elif ".parquet" in dataset_config.path:
-        dataset_type = "parquet"
-    elif ".arrow" in dataset_config.path:
-        dataset_type = "arrow"
-    elif ".csv" in dataset_config.path:
-        dataset_type = "csv"
-    elif ".txt" in dataset_config.path:
-        dataset_type = "text"
+        return dataset_config.ds_type
 
-    return dataset_type
+    for extension, dataset_type in EXTENSIONS_TO_DATASET_TYPES.items():
+        if extension in dataset_config.path:
+            return dataset_type
+
+    return "json"
 
 
 def datasets_with_name_generator(
@@ -122,12 +133,12 @@ def load_dataset_with_config(
     # Load from appropriate source
     if is_hub_dataset:
         return _load_from_hub(dataset_config, use_auth_token, load_dataset_kwargs)
-    if is_cloud_dataset and remote_fs:
+    if is_cloud_dataset:
         return _load_from_cloud(
             dataset_config, remote_fs, storage_options, load_dataset_kwargs
         )
     if dataset_config.path.startswith("https://"):
-        return _load_from_url(dataset_config, storage_options, load_dataset_kwargs)
+        return _load_from_url(dataset_config, load_dataset_kwargs)
     if dataset_config.data_files:
         return _load_from_data_files(dataset_config, load_dataset_kwargs)
 
@@ -201,6 +212,7 @@ def _get_remote_filesystem(
         try:
             import ocifs
 
+            storage_options = {}
             return ocifs.OCIFileSystem(**storage_options), storage_options
         except ImportError as exc:
             raise ImportError("oci:// paths require ocifs to be installed") from exc
@@ -217,7 +229,6 @@ def _load_from_local_path(
     if local_path.is_dir():
         if dataset_config.data_files:
             dataset_type = get_dataset_type(dataset_config)
-            print(dataset_type, dataset_config)
             return load_dataset(
                 dataset_type,
                 data_files=dataset_config.data_files,
@@ -283,14 +294,13 @@ def _load_from_cloud(
 
 
 def _load_from_url(
-    dataset_config: DictDefault, storage_options: dict, load_dataset_kwargs: dict
+    dataset_config: DictDefault, load_dataset_kwargs: dict
 ) -> Dataset | IterableDataset | DatasetDict | IterableDatasetDict:
     """Load a dataset from a URL."""
     dataset_type = get_dataset_type(dataset_config)
     return load_dataset(
         dataset_type,
         data_files=dataset_config.path,
-        storage_options=storage_options,
         **load_dataset_kwargs,
     )
 
@@ -337,3 +347,197 @@ def generate_split_fingerprints(
     test_fingerprint = md5(test_hash_input)
 
     return train_fingerprint, test_fingerprint
+
+
+class DatasetPreparer:
+    """Handles common dataset preparation tasks with distributed coordination.
+
+    This class provides a standardized way to coordinate dataset preparation
+    across multiple processes using file locks, ensuring only one process
+    does the expensive preprocessing work while others wait and load the results.
+    """
+
+    def __init__(self, cfg: DictDefault):
+        self.cfg = cfg
+        self.dataset_prepared_path = (
+            cfg.dataset_prepared_path or DEFAULT_DATASET_PREPARED_PATH
+        )
+        self.lock_file_path = Path(self.dataset_prepared_path) / "datasets_prep.lock"
+        self.ready_flag_path = Path(self.dataset_prepared_path) / "datasets_ready.flag"
+
+    def prepare_with_coordination(
+        self, prepare_fn: Callable[[], Any], load_fn: Callable[[], Any] | None = None
+    ) -> Any:
+        """Execute dataset preparation with distributed coordination.
+
+        Args:
+            prepare_fn: Function to call for dataset preparation (first process only).
+            load_fn: Optional function to call for loading (all processes).
+                    If None, prepare_fn is used for both.
+
+        Returns:
+            Result from prepare_fn or load_fn.
+        """
+        if load_fn is None:
+            load_fn = prepare_fn
+
+        with FileLock(str(self.lock_file_path)):
+            if not self.ready_flag_path.exists():
+                # First process: do the preparation
+                result = prepare_fn()
+                self.ready_flag_path.touch()
+                return result
+            # Other processes: wait for completion then load
+            while not self.ready_flag_path.exists():
+                time.sleep(1)
+            return load_fn()
+
+
+def get_prepared_dataset_path(cfg: DictDefault, dataset_hash: str) -> Path:
+    """Get standardized path for prepared datasets.
+
+    Args:
+        cfg: Configuration object.
+        dataset_hash: Hash identifying the specific dataset configuration.
+
+    Returns:
+        Path where the prepared dataset should be stored.
+    """
+    base_path = cfg.dataset_prepared_path or DEFAULT_DATASET_PREPARED_PATH
+    return Path(base_path) / dataset_hash
+
+
+def create_train_validation_split(
+    dataset: Dataset, cfg: DictDefault, val_set_size: int | float
+) -> tuple[Dataset, Dataset]:
+    """Create train/validation split with consistent fingerprinting.
+
+    Args:
+        dataset: Dataset to split.
+        cfg: Configuration object containing seed and other settings.
+        val_set_size: Size of validation set (absolute number or fraction).
+
+    Returns:
+        Tuple of (train_dataset, eval_dataset).
+    """
+    seed = cfg.seed if cfg.seed is not None else 42
+    train_fingerprint, test_fingerprint = generate_split_fingerprints(
+        dataset, val_set_size, seed
+    )
+
+    # Apply deduplication before splitting if configured
+    if cfg.dataset_exact_deduplication:
+        dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
+
+    split_dataset = dataset.train_test_split(
+        test_size=val_set_size,
+        shuffle=False,
+        seed=seed,
+        train_new_fingerprint=train_fingerprint,
+        test_new_fingerprint=test_fingerprint,
+    )
+
+    return split_dataset["train"], split_dataset["test"]
+
+
+def load_preprocessed_dataset(cfg: DictDefault, dataset_hash: str) -> Dataset | None:
+    """Load preprocessed dataset from disk if available.
+
+    Args:
+        cfg: Configuration object.
+        dataset_hash: Hash identifying the dataset configuration.
+
+    Returns:
+        Loaded dataset if found and conditions are met, None otherwise.
+    """
+    prepared_ds_path = get_prepared_dataset_path(cfg, dataset_hash)
+
+    if (
+        cfg.dataset_prepared_path
+        and any(prepared_ds_path.glob("*"))
+        and not cfg.skip_prepare_dataset
+        and not cfg.is_preprocess
+    ):
+        LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
+        return load_from_disk(str(prepared_ds_path))
+
+    LOG.info(f"Unable to find prepared dataset in {prepared_ds_path}")
+    return None
+
+
+def save_preprocessed_dataset(
+    cfg: DictDefault, dataset: Dataset, dataset_hash: str
+) -> None:
+    """Save preprocessed dataset to disk.
+
+    Args:
+        cfg: Configuration object.
+        dataset: Dataset to save.
+        dataset_hash: Hash identifying the dataset configuration.
+    """
+    if cfg.local_rank == 0 and not cfg.skip_prepare_dataset:
+        prepared_ds_path = get_prepared_dataset_path(cfg, dataset_hash)
+        LOG.info(f"Saving prepared dataset to disk... {prepared_ds_path}")
+        os.makedirs(prepared_ds_path, exist_ok=True)
+        dataset.save_to_disk(str(prepared_ds_path))
+
+
+def generate_dataset_hash_from_config(
+    cfg: DictDefault, cfg_datasets: list, tokenizer_name: str
+) -> str:
+    """Generate a hash to uniquely identify a dataset configuration for SFT.
+
+    Args:
+        cfg: Main configuration object.
+        cfg_datasets: List of dataset configurations.
+        tokenizer_name: Name of the tokenizer being used.
+
+    Returns:
+        MD5 hash string representing the configuration.
+    """
+    config_str = (
+        f"{cfg.sequence_len}@{cfg.sample_packing}@{cfg.eval_sample_packing}@"
+        f"{cfg.group_by_length}@{cfg.kd_temperature or 1.0}|"
+        f"{'|'.join(sorted([f'{d.path}:{d.type}:{d.shards}:{d.conversation}:{d.split}:{d.temperature or 1.0}' for d in cfg_datasets]))}"
+        f"|{tokenizer_name}"
+    )
+    return str(md5(config_str))
+
+
+def generate_dataset_hash_from_yaml(config: Any) -> str:
+    """Generate MD5 hash of configuration using YAML serialization.
+
+    Args:
+        config: Configuration object to hash.
+
+    Returns:
+        MD5 hash string.
+    """
+    config_str = yaml.dump(config, Dumper=yaml.Dumper)
+    return str(md5(config_str))
+
+
+def merge_datasets(datasets: list[Dataset], cfg: DictDefault) -> Dataset:
+    """Merge multiple datasets into one with optional shuffling.
+
+    Args:
+        datasets: List of datasets to merge.
+        cfg: Configuration object containing shuffle settings.
+
+    Returns:
+        Merged dataset.
+    """
+    if len(datasets) == 1:
+        return datasets[0]
+
+    LOG.info("Merging datasets")
+    merged_dataset = concatenate_datasets(datasets)
+
+    seed = cfg.seed if cfg.seed is not None else 42
+    if cfg.shuffle_merged_datasets:
+        LOG.debug("Shuffle merged datasets")
+        merged_dataset = merged_dataset.shuffle(seed=seed)
+    else:
+        LOG.debug("NOT shuffling merged datasets")
+
+    return merged_dataset

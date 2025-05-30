@@ -14,8 +14,7 @@ from datasets import Dataset
 
 from axolotl.loaders import load_processor, load_tokenizer
 from axolotl.utils.config import normalize_config, validate_config
-from axolotl.utils.data import prepare_datasets
-from axolotl.utils.data.rl import prepare_preference_datasets
+from axolotl.utils.data import prepare_datasets, prepare_preference_datasets
 from axolotl.utils.data.utils import deduplicate_and_log_datasets
 from axolotl.utils.dict import DictDefault
 

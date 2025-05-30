@@ -1,9 +1,7 @@
-"""Data handling specific to SFT"""
+"""Data handling specific to SFT."""
 
 import functools
-import os
 import tempfile
-import time
 from pathlib import Path
 from typing import Literal
 
@@ -11,25 +9,26 @@ from datasets import (
     Dataset,
     DatasetDict,
     IterableDataset,
-    concatenate_datasets,
     load_dataset,
-    load_from_disk,
 )
-from filelock import FileLock
 from transformers import PreTrainedTokenizer, ProcessorMixin
 
-from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.prompters import Prompter
 from axolotl.utils.data.pretraining import wrap_pretraining_dataset
 from axolotl.utils.data.shared import (
+    DatasetPreparer,
+    create_train_validation_split,
     datasets_with_name_generator,
-    generate_split_fingerprints,
+    generate_dataset_hash_from_config,
+    get_prepared_dataset_path,
     load_dataset_with_config,
+    load_preprocessed_dataset,
+    merge_datasets,
+    save_preprocessed_dataset,
 )
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
     drop_long_seq_in_dataset,
-    md5,
     retry_on_request_exceptions,
 )
 from axolotl.utils.data.wrappers import get_dataset_wrapper
@@ -99,20 +98,11 @@ def _prepare_standard_dataset(
 
         return train_dataset, eval_dataset, prompters
 
-    dataset_prepared_path = cfg.dataset_prepared_path or DEFAULT_DATASET_PREPARED_PATH
-    lock_file_path = Path(dataset_prepared_path) / "datasets_prep.lock"
-    ready_flag_path = Path(dataset_prepared_path) / "datasets_ready.flag"
-
-    # The rank that acquires the lock first does the data preprocessing
-    with FileLock(str(lock_file_path)):
-        if not ready_flag_path.exists():
-            train_dataset, eval_dataset, prompters = _load_datasets()
-            ready_flag_path.touch()
-        else:
-            # Other ranks: wait and then load
-            while not ready_flag_path.exists():
-                time.sleep(1)
-            train_dataset, eval_dataset, prompters = _load_datasets()
+    # Use shared coordination pattern
+    preparer = DatasetPreparer(cfg)
+    train_dataset, eval_dataset, prompters = preparer.prepare_with_coordination(
+        _load_datasets
+    )
 
     # Validate sample packing configuration for evaluation
     if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
@@ -276,17 +266,19 @@ def _load_tokenized_prepared_datasets(
     cfg_datasets = cfg.test_datasets if split == "test" else cfg.datasets
 
     # Generate dataset hash for caching
-    dataset_hash = _generate_dataset_hash(cfg, cfg_datasets, tokenizer.name_or_path)
+    dataset_hash = generate_dataset_hash_from_config(
+        cfg, cfg_datasets, tokenizer.name_or_path
+    )
 
     # Determine prepared dataset path
-    prepared_dataset_path = _get_prepared_dataset_path(cfg, dataset_hash)
+    prepared_dataset_path = get_prepared_dataset_path(cfg, dataset_hash)
 
     # Try loading from hub if push_dataset_to_hub is configured
     dataset = _try_load_from_hub(cfg, dataset_hash, split)
 
     # If not found on hub, try loading from disk
     if dataset is None:
-        dataset = _try_load_prepared(cfg, prepared_dataset_path)
+        dataset = load_preprocessed_dataset(cfg, dataset_hash)
 
     # If not found on disk or skipping prepared dataset, load and process raw datasets
     prompters: list[Prompter | None] = []
@@ -302,26 +294,6 @@ def _load_tokenized_prepared_datasets(
         )
 
     return dataset, prompters
-
-
-def _generate_dataset_hash(
-    cfg: DictDefault, cfg_datasets: list, tokenizer_name: str
-) -> str:
-    """Generate a hash to uniquely identify a dataset configuration."""
-    config_str = (
-        f"{cfg.sequence_len}@{cfg.sample_packing}@{cfg.eval_sample_packing}@"
-        f"{cfg.group_by_length}@{cfg.kd_temperature or 1.0}|"
-        f"{'|'.join(sorted([f'{d.path}:{d.type}:{d.shards}:{d.conversation}:{d.split}:{d.temperature or 1.0}' for d in cfg_datasets]))}"
-        f"|{tokenizer_name}"
-    )
-    return str(md5(config_str))
-
-
-def _get_prepared_dataset_path(cfg: DictDefault, dataset_hash: str) -> Path:
-    """Get the path where the prepared dataset should be stored."""
-    if cfg.dataset_prepared_path:
-        return Path(cfg.dataset_prepared_path) / dataset_hash
-    return Path(DEFAULT_DATASET_PREPARED_PATH) / dataset_hash
 
 
 def _try_load_from_hub(
@@ -347,27 +319,6 @@ def _try_load_from_hub(
         return None
 
 
-def _try_load_prepared(cfg: DictDefault, prepared_ds_path: Path) -> Dataset | None:
-    """Try to load the prepared dataset from disk."""
-    if cfg.is_preprocess:
-        LOG.info(
-            f"Skipping prepared dataset in {prepared_ds_path} for pre-processing..."
-        )
-        return None
-
-    if (
-        cfg.dataset_prepared_path
-        and any(prepared_ds_path.glob("*"))
-        and not cfg.skip_prepare_dataset
-    ):
-        LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
-        dataset = load_from_disk(str(prepared_ds_path))
-        return dataset
-
-    LOG.info(f"Unable to find prepared dataset in {prepared_ds_path}")
-    return None
-
-
 def _load_and_process_raw_datasets(
     cfg: DictDefault,
     cfg_datasets: list,
@@ -385,10 +336,8 @@ def _load_and_process_raw_datasets(
             "pre-process your dataset."
         )
 
-    # Use provided seed or default to 42
-    seed = cfg.seed if cfg.seed else 42
-    if not cfg.seed:
-        LOG.info("No seed provided, using default seed of 42")
+    # Use shared seed handling
+    seed = cfg.seed if cfg.seed is not None else 42
 
     # Load and process individual datasets
     datasets = []
@@ -406,8 +355,8 @@ def _load_and_process_raw_datasets(
         datasets.append(dataset_wrapper)
         prompters.append(dataset_prompter)
 
-    # Merge datasets if needed
-    dataset = _merge_datasets(datasets, cfg, seed)
+    # Merge datasets if needed using shared function
+    dataset = merge_datasets(datasets, cfg)
 
     # Apply additional processing if not skipping dataset preparation
     if not cfg.skip_prepare_dataset:
@@ -420,7 +369,7 @@ def _load_and_process_raw_datasets(
 
     # Save the prepared dataset if we're the main process and not skipping preparation
     if cfg.local_rank == 0 and not cfg.skip_prepare_dataset:
-        _save_prepared_dataset(dataset, prepared_ds_path, cfg, split)
+        save_preprocessed_dataset(cfg, dataset, prepared_ds_path.name)
 
     return dataset, prompters
 
@@ -488,46 +437,61 @@ def _parse_dataset_type(d_type: str) -> tuple[str | None, str | None]:
     return d_base_type, d_prompt_style
 
 
-def _merge_datasets(datasets: list[Dataset], cfg: DictDefault, seed: int) -> Dataset:
-    """Merge multiple datasets into one."""
-    if len(datasets) == 1:
-        return datasets[0]
+def _handle_train_split_processing(
+    dataset: Dataset, cfg: DictDefault
+) -> tuple[Dataset, Dataset | None]:
+    """Handle processing for train split, including validation set creation."""
+    val_set_size = (
+        int(cfg.val_set_size) if cfg.val_set_size > 1 else float(cfg.val_set_size)
+    )
 
-    LOG.info("Merging datasets")
-    merged_dataset = concatenate_datasets(datasets)
+    if val_set_size:
+        # Create train/validation split
+        train_dataset, eval_dataset = create_train_validation_split(
+            dataset, cfg, val_set_size
+        )
+        return train_dataset, eval_dataset
 
-    if cfg.shuffle_merged_datasets:
-        LOG.debug("Shuffle merged datasets")
-        merged_dataset = merged_dataset.shuffle(seed=seed)
+    # No validation split - apply deduplication if needed and return as train dataset
+    if cfg.dataset_exact_deduplication:
+        train_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
     else:
-        LOG.debug("NOT shuffling merged datasets")
+        train_dataset = dataset
 
-    return merged_dataset
+    return train_dataset, None
 
 
-def _save_prepared_dataset(
-    dataset: Dataset, prepared_ds_path: Path, cfg: DictDefault, split: str
-) -> None:
-    """Save the prepared dataset to disk and optionally push to Hub."""
-    LOG.info(f"Saving merged prepared dataset to disk... {prepared_ds_path}")
-
-    if isinstance(dataset, IterableDataset):
-        _save_iterable_dataset(dataset, prepared_ds_path, cfg, split)
+def _handle_test_split_processing(
+    dataset: Dataset, cfg: DictDefault
+) -> tuple[None, Dataset | None]:
+    """Handle processing for test split."""
+    if cfg.dataset_exact_deduplication:
+        eval_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
     else:
-        os.makedirs(prepared_ds_path, exist_ok=True)
-        dataset.save_to_disk(str(prepared_ds_path))
+        eval_dataset = dataset
 
-    # Push to Hub if configured
-    if cfg.push_dataset_to_hub:
-        dataset_hash = prepared_ds_path.name
+    return None, eval_dataset
+
+
+def _apply_dataset_shard(dataset: Dataset, cfg: DictDefault) -> Dataset:
+    """Apply dataset sharding if configured.
+
+    Args:
+        dataset: Dataset to shard.
+        cfg: Configuration object containing shard settings.
+
+    Returns:
+        Sharded dataset or original dataset if no sharding configured.
+    """
+    if cfg.dataset_shard_num and cfg.dataset_shard_idx is not None:
         LOG.info(
-            f"Pushing merged prepared dataset to Huggingface hub at {cfg.push_dataset_to_hub} (version {dataset_hash})..."
+            f"Using index #{cfg.dataset_shard_idx} of {cfg.dataset_shard_num} shards"
         )
-        dataset.push_to_hub(
-            cfg.push_dataset_to_hub,
-            dataset_hash,
-            private=True,
+        dataset = dataset.shard(
+            num_shards=cfg.dataset_shard_num,
+            index=cfg.dataset_shard_idx,
         )
+    return dataset
 
 
 def _load_prepare_datasets(
@@ -558,21 +522,14 @@ def _load_prepare_datasets(
         preprocess_iterable=preprocess_iterable,
     )
 
-    # Apply dataset sharding if configured
-    if cfg.dataset_shard_num and cfg.dataset_shard_idx is not None:
-        LOG.info(
-            f"Using index #{cfg.dataset_shard_idx} of {cfg.dataset_shard_num} shards"
-        )
-        dataset = dataset.shard(
-            num_shards=cfg.dataset_shard_num,
-            index=cfg.dataset_shard_idx,
-        )
+    # Apply dataset sharding if configured using shared function
+    dataset = _apply_dataset_shard(dataset, cfg)
 
     # Apply deduplication and create train / validation splits based on the split type
     if split == "train":
-        train_dataset, eval_dataset = _handle_train_split(dataset, cfg)
+        train_dataset, eval_dataset = _handle_train_split_processing(dataset, cfg)
     else:
-        train_dataset, eval_dataset = _handle_test_split(dataset, cfg)
+        train_dataset, eval_dataset = _handle_test_split_processing(dataset, cfg)
 
     return train_dataset, eval_dataset, prompters
 
@@ -600,66 +557,3 @@ def _save_iterable_dataset(
         },
     )
     ds_from_iter.save_to_disk(str(prepared_ds_path))
-
-
-def _handle_train_split(
-    dataset: Dataset, cfg: DictDefault
-) -> tuple[Dataset, Dataset | None]:
-    """Handle processing for train split, including validation set creation."""
-    val_set_size = (
-        int(cfg.val_set_size) if cfg.val_set_size > 1 else float(cfg.val_set_size)
-    )
-
-    if val_set_size:
-        # Create train/validation split
-        train_dataset, eval_dataset = _create_train_validation_split(
-            dataset, cfg, val_set_size
-        )
-        return train_dataset, eval_dataset
-
-    # No validation split - apply deduplication if needed and return as train dataset
-    if cfg.dataset_exact_deduplication:
-        train_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
-    else:
-        train_dataset = dataset
-
-    return train_dataset, None
-
-
-def _handle_test_split(
-    dataset: Dataset, cfg: DictDefault
-) -> tuple[None, Dataset | None]:
-    """Handle processing for test split."""
-    if cfg.dataset_exact_deduplication:
-        eval_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
-    else:
-        eval_dataset = dataset
-
-    return None, eval_dataset
-
-
-def _create_train_validation_split(
-    dataset: Dataset, cfg: DictDefault, val_set_size: int | float
-) -> tuple[Dataset, Dataset]:
-    """Create train / validation split with consistent fingerprinting."""
-    seed = cfg.seed if cfg.seed is not None else 42
-
-    # Generate consistent fingerprints for caching
-    train_fingerprint, test_fingerprint = generate_split_fingerprints(
-        dataset, val_set_size, seed
-    )
-
-    # Apply deduplication before splitting if configured
-    if cfg.dataset_exact_deduplication:
-        dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
-
-    # Create the train/test split
-    split_dataset = dataset.train_test_split(
-        test_size=val_set_size,
-        shuffle=False,
-        seed=seed,
-        train_new_fingerprint=train_fingerprint,
-        test_new_fingerprint=test_fingerprint,
-    )
-
-    return split_dataset["train"], split_dataset["test"]
