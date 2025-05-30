@@ -572,11 +572,10 @@ Advanced disk-based gradient checkpointer with prefetching.</p>
 <section id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager">DiskOffloadManager</h3>
 <div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.gradient_checkpointing.offload_disk.DiskOffloadManager(</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    prefetch_size<span class="op">=</span><span class="dv">3</span>,</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    prefetch_to_gpu<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    save_workers<span class="op">=</span><span class="dv">4</span>,</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    prefetch_size<span class="op">=</span><span class="dv">3</span>,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    prefetch_to_gpu<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    save_workers<span class="op">=</span><span class="dv">4</span>,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Manages offloaded tensors and handles prefetching in a separate thread.
 Includes synchronization to prevent race conditions.</p>
 <section id="methods-1" class="level4">

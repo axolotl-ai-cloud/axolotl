@@ -521,39 +521,35 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.prompt_strategies.alpaca_w_system.InstructionWSystemPromptTokenizingStrategy" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.alpaca_w_system.InstructionWSystemPromptTokenizingStrategy">InstructionWSystemPromptTokenizingStrategy</h3>
 <div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.alpaca_w_system.InstructionWSystemPromptTokenizingStrategy(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    prompter,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    train_on_inputs<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    sequence_len<span class="op">=</span><span class="dv">2048</span>,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    prompter,</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    train_on_inputs<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    sequence_len<span class="op">=</span><span class="dv">2048</span>,</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Tokenizing strategy for instruction-based prompts.</p>
 </section>
 <section id="axolotl.prompt_strategies.alpaca_w_system.OpenOrcaPromptTokenizingStrategy" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.alpaca_w_system.OpenOrcaPromptTokenizingStrategy">OpenOrcaPromptTokenizingStrategy</h3>
 <div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.alpaca_w_system.OpenOrcaPromptTokenizingStrategy(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    prompter,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    train_on_inputs<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    sequence_len<span class="op">=</span><span class="dv">2048</span>,</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    prompter,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    train_on_inputs<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    sequence_len<span class="op">=</span><span class="dv">2048</span>,</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Tokenizing strategy for OpenOrca datasets</p>
 </section>
 <section id="axolotl.prompt_strategies.alpaca_w_system.OpenOrcaSystemDataPrompter" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.alpaca_w_system.OpenOrcaSystemDataPrompter">OpenOrcaSystemDataPrompter</h3>
 <div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.alpaca_w_system.OpenOrcaSystemDataPrompter(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    prompt_style<span class="op">=</span>PromptStyle.INSTRUCT.value,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    prompt_style<span class="op">=</span>PromptStyle.INSTRUCT.value,</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Alpaca Style Prompter that uses system prompts from the dataset, with OpenOrca prompts</p>
 </section>
 <section id="axolotl.prompt_strategies.alpaca_w_system.SystemDataPrompter" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.alpaca_w_system.SystemDataPrompter">SystemDataPrompter</h3>
 <div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.alpaca_w_system.SystemDataPrompter(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    prompt_style<span class="op">=</span>PromptStyle.INSTRUCT.value,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    prompt_style<span class="op">=</span>PromptStyle.INSTRUCT.value,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Alpaca Style Prompter that uses system prompts from the dataset</p>
 
 

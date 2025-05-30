@@ -528,24 +528,19 @@ For a custom system message, the first “from” can be “system” (followed 
 </table>
 <section id="axolotl.prompt_strategies.llama2_chat.LLama2ChatTokenizingStrategy" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.llama2_chat.LLama2ChatTokenizingStrategy">LLama2ChatTokenizingStrategy</h3>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.llama2_chat.LLama2ChatTokenizingStrategy(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>args,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.llama2_chat.LLama2ChatTokenizingStrategy(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Tokenizing strategy for Llama2 prompts.
 adapted from https://github.com/lm-sys/FastChat/blob/main/fastchat/train/train.py</p>
 </section>
 <section id="axolotl.prompt_strategies.llama2_chat.Llama2ChatConversation" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.llama2_chat.Llama2ChatConversation">Llama2ChatConversation</h3>
 <div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.llama2_chat.Llama2ChatConversation(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    name<span class="op">=</span><span class="st">'llama2'</span>,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    system<span class="op">=</span><span class="st">"[INST] &lt;&lt;SYS&gt;&gt;</span><span class="ch">\n</span><span class="st">You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.</span><span class="ch">\n\n</span><span class="st">If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information.</span><span class="ch">\n</span><span class="st">&lt;&lt;/SYS&gt;&gt;</span><span class="ch">\n\n</span><span class="st">"</span>,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    roles<span class="op">=</span>(<span class="st">'[INST]'</span>, <span class="st">'[/INST]'</span>),</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    messages<span class="op">=</span><span class="bu">list</span>(),</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    offset<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    name<span class="op">=</span><span class="st">'llama2'</span>,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    system<span class="op">=</span><span class="st">"[INST] &lt;&lt;SYS&gt;&gt;</span><span class="ch">\n</span><span class="st">You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.</span><span class="ch">\n\n</span><span class="st">If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information.</span><span class="ch">\n</span><span class="st">&lt;&lt;/SYS&gt;&gt;</span><span class="ch">\n\n</span><span class="st">"</span>,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    roles<span class="op">=</span>(<span class="st">'[INST]'</span>, <span class="st">'[/INST]'</span>),</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    messages<span class="op">=</span><span class="bu">list</span>(),</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    offset<span class="op">=</span><span class="dv">0</span>,</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>A class that manages prompt templates and keeps all conversation history.
 copied from https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py</p>
 <section id="methods" class="level4">

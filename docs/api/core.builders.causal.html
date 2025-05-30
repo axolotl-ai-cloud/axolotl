@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>core.trainers.mamba – Axolotl</title>
+<title>core.builders.causal – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -467,11 +467,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.core.trainers.mamba" id="toc-axolotl.core.trainers.mamba" class="nav-link active" data-scroll-target="#axolotl.core.trainers.mamba">core.trainers.mamba</a>
+  <li><a href="#axolotl.core.builders.causal" id="toc-axolotl.core.builders.causal" class="nav-link active" data-scroll-target="#axolotl.core.builders.causal">core.builders.causal</a>
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.core.trainers.mamba.AxolotlMambaTrainer" id="toc-axolotl.core.trainers.mamba.AxolotlMambaTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.mamba.AxolotlMambaTrainer">AxolotlMambaTrainer</a></li>
+  <li><a href="#axolotl.core.builders.causal.HFCausalTrainerBuilder" id="toc-axolotl.core.builders.causal.HFCausalTrainerBuilder" class="nav-link" data-scroll-target="#axolotl.core.builders.causal.HFCausalTrainerBuilder">HFCausalTrainerBuilder</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -483,10 +483,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.core.trainers.mamba" class="level1">
-<h1>core.trainers.mamba</h1>
-<p><code>core.trainers.mamba</code></p>
-<p>Module for mamba trainer</p>
+<section id="axolotl.core.builders.causal" class="level1">
+<h1>core.builders.causal</h1>
+<p><code>core.builders.causal</code></p>
+<p>Builder for causal trainers</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -498,21 +498,21 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.core.trainers.mamba.AxolotlMambaTrainer">AxolotlMambaTrainer</a></td>
-<td>Mamba specific trainer to handle loss calculation</td>
+<td><a href="#axolotl.core.builders.causal.HFCausalTrainerBuilder">HFCausalTrainerBuilder</a></td>
+<td>Build the HuggingFace training args/trainer for causal models and reward modeling</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.core.trainers.mamba.AxolotlMambaTrainer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.mamba.AxolotlMambaTrainer">AxolotlMambaTrainer</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.mamba.AxolotlMambaTrainer(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>_args,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    bench_data_collator<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    eval_data_collator<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    dataset_tags<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Mamba specific trainer to handle loss calculation</p>
+<section id="axolotl.core.builders.causal.HFCausalTrainerBuilder" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.builders.causal.HFCausalTrainerBuilder">HFCausalTrainerBuilder</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.builders.causal.HFCausalTrainerBuilder(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    model,</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    processor<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Build the HuggingFace training args/trainer for causal models and reward modeling
+using TRL.</p>
 
 
 </section>

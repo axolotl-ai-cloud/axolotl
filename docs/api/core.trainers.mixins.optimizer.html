@@ -471,6 +471,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
+  <li><a href="#axolotl.core.trainers.mixins.optimizer.OptimizerInitMixin" id="toc-axolotl.core.trainers.mixins.optimizer.OptimizerInitMixin" class="nav-link" data-scroll-target="#axolotl.core.trainers.mixins.optimizer.OptimizerInitMixin">OptimizerInitMixin</a></li>
   <li><a href="#axolotl.core.trainers.mixins.optimizer.OptimizerMixin" id="toc-axolotl.core.trainers.mixins.optimizer.OptimizerMixin" class="nav-link" data-scroll-target="#axolotl.core.trainers.mixins.optimizer.OptimizerMixin">OptimizerMixin</a></li>
   </ul></li>
   </ul></li>
@@ -498,14 +499,24 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.core.trainers.mixins.optimizer.OptimizerInitMixin">OptimizerInitMixin</a></td>
+<td>Mixin to handle common optimizer initialization logic for Trainers (mostly TRL) that do not</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.core.trainers.mixins.optimizer.OptimizerMixin">OptimizerMixin</a></td>
 <td>Mixin class for shared handling of building custom optimizers</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.core.trainers.mixins.optimizer.OptimizerInitMixin" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.mixins.optimizer.OptimizerInitMixin">OptimizerInitMixin</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.mixins.optimizer.OptimizerInitMixin(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Mixin to handle common optimizer initialization logic for Trainers (mostly TRL) that do not
+accept optimizer_cls_and_kwargs as kwarg in constructor.</p>
+</section>
 <section id="axolotl.core.trainers.mixins.optimizer.OptimizerMixin" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.mixins.optimizer.OptimizerMixin">OptimizerMixin</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.mixins.optimizer.OptimizerMixin()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.mixins.optimizer.OptimizerMixin()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Mixin class for shared handling of building custom optimizers</p>
 
 

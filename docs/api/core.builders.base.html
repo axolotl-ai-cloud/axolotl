@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>core.trainers.mamba – Axolotl</title>
+<title>core.builders.base – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -467,11 +467,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.core.trainers.mamba" id="toc-axolotl.core.trainers.mamba" class="nav-link active" data-scroll-target="#axolotl.core.trainers.mamba">core.trainers.mamba</a>
+  <li><a href="#axolotl.core.builders.base" id="toc-axolotl.core.builders.base" class="nav-link active" data-scroll-target="#axolotl.core.builders.base">core.builders.base</a>
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.core.trainers.mamba.AxolotlMambaTrainer" id="toc-axolotl.core.trainers.mamba.AxolotlMambaTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.mamba.AxolotlMambaTrainer">AxolotlMambaTrainer</a></li>
+  <li><a href="#axolotl.core.builders.base.TrainerBuilderBase" id="toc-axolotl.core.builders.base.TrainerBuilderBase" class="nav-link" data-scroll-target="#axolotl.core.builders.base.TrainerBuilderBase">TrainerBuilderBase</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -483,10 +483,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.core.trainers.mamba" class="level1">
-<h1>core.trainers.mamba</h1>
-<p><code>core.trainers.mamba</code></p>
-<p>Module for mamba trainer</p>
+<section id="axolotl.core.builders.base" class="level1">
+<h1>core.builders.base</h1>
+<p><code>core.builders.base</code></p>
+<p>Base class for trainer builder</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -498,23 +498,39 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.core.trainers.mamba.AxolotlMambaTrainer">AxolotlMambaTrainer</a></td>
-<td>Mamba specific trainer to handle loss calculation</td>
+<td><a href="#axolotl.core.builders.base.TrainerBuilderBase">TrainerBuilderBase</a></td>
+<td>Base class for trainer builder.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.core.trainers.mamba.AxolotlMambaTrainer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.mamba.AxolotlMambaTrainer">AxolotlMambaTrainer</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.mamba.AxolotlMambaTrainer(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>_args,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    bench_data_collator<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    eval_data_collator<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    dataset_tags<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Mamba specific trainer to handle loss calculation</p>
+<section id="axolotl.core.builders.base.TrainerBuilderBase" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.builders.base.TrainerBuilderBase">TrainerBuilderBase</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.builders.base.TrainerBuilderBase(cfg, model, tokenizer, processor<span class="op">=</span><span class="va">None</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Base class for trainer builder.</p>
+<section id="methods" class="level4">
+<h4 class="anchored" data-anchor-id="methods">Methods</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.core.builders.base.TrainerBuilderBase.get_post_trainer_create_callbacks">get_post_trainer_create_callbacks</a></td>
+<td>Callbacks added after the trainer is created, usually b/c these need access to the trainer</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.core.builders.base.TrainerBuilderBase.get_post_trainer_create_callbacks" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.core.builders.base.TrainerBuilderBase.get_post_trainer_create_callbacks">get_post_trainer_create_callbacks</h5>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.builders.base.TrainerBuilderBase.get_post_trainer_create_callbacks(trainer)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Callbacks added after the trainer is created, usually b/c these need access to the trainer</p>
 
 
+</section>
+</section>
 </section>
 </section>
 </section>

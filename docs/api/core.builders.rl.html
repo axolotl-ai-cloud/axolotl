@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>core.trainer_builder – Axolotl</title>
+<title>core.builders.rl – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -467,14 +467,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.core.trainer_builder" id="toc-axolotl.core.trainer_builder" class="nav-link active" data-scroll-target="#axolotl.core.trainer_builder">core.trainer_builder</a>
+  <li><a href="#axolotl.core.builders.rl" id="toc-axolotl.core.builders.rl" class="nav-link active" data-scroll-target="#axolotl.core.builders.rl">core.builders.rl</a>
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.core.trainer_builder.HFCausalTrainerBuilder" id="toc-axolotl.core.trainer_builder.HFCausalTrainerBuilder" class="nav-link" data-scroll-target="#axolotl.core.trainer_builder.HFCausalTrainerBuilder">HFCausalTrainerBuilder</a></li>
-  <li><a href="#axolotl.core.trainer_builder.HFPPOTrainerBuilder" id="toc-axolotl.core.trainer_builder.HFPPOTrainerBuilder" class="nav-link" data-scroll-target="#axolotl.core.trainer_builder.HFPPOTrainerBuilder">HFPPOTrainerBuilder</a></li>
-  <li><a href="#axolotl.core.trainer_builder.HFRLTrainerBuilder" id="toc-axolotl.core.trainer_builder.HFRLTrainerBuilder" class="nav-link" data-scroll-target="#axolotl.core.trainer_builder.HFRLTrainerBuilder">HFRLTrainerBuilder</a></li>
-  <li><a href="#axolotl.core.trainer_builder.TrainerBuilderBase" id="toc-axolotl.core.trainer_builder.TrainerBuilderBase" class="nav-link" data-scroll-target="#axolotl.core.trainer_builder.TrainerBuilderBase">TrainerBuilderBase</a></li>
+  <li><a href="#axolotl.core.builders.rl.HFPPOTrainerBuilder" id="toc-axolotl.core.builders.rl.HFPPOTrainerBuilder" class="nav-link" data-scroll-target="#axolotl.core.builders.rl.HFPPOTrainerBuilder">HFPPOTrainerBuilder</a></li>
+  <li><a href="#axolotl.core.builders.rl.HFRLTrainerBuilder" id="toc-axolotl.core.builders.rl.HFRLTrainerBuilder" class="nav-link" data-scroll-target="#axolotl.core.builders.rl.HFRLTrainerBuilder">HFRLTrainerBuilder</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -486,10 +484,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.core.trainer_builder" class="level1">
-<h1>core.trainer_builder</h1>
-<p><code>core.trainer_builder</code></p>
-<p>Builder for the training args and trainer</p>
+<section id="axolotl.core.builders.rl" class="level1">
+<h1>core.builders.rl</h1>
+<p><code>core.builders.rl</code></p>
+<p>Builder for RLHF trainers</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -501,93 +499,26 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.core.trainer_builder.HFCausalTrainerBuilder">HFCausalTrainerBuilder</a></td>
-<td>Build the HuggingFace training args/trainer for causal models and reward modeling</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.core.trainer_builder.HFPPOTrainerBuilder">HFPPOTrainerBuilder</a></td>
+<td><a href="#axolotl.core.builders.rl.HFPPOTrainerBuilder">HFPPOTrainerBuilder</a></td>
 <td>HF Factory class for PPO Trainer</td>
 </tr>
-<tr class="odd">
-<td><a href="#axolotl.core.trainer_builder.HFRLTrainerBuilder">HFRLTrainerBuilder</a></td>
+<tr class="even">
+<td><a href="#axolotl.core.builders.rl.HFRLTrainerBuilder">HFRLTrainerBuilder</a></td>
 <td>Trainer factory class for TRL-based RLHF trainers (e.g.&nbsp;DPO)</td>
 </tr>
-<tr class="even">
-<td><a href="#axolotl.core.trainer_builder.TrainerBuilderBase">TrainerBuilderBase</a></td>
-<td>Base class for trainer builder.</td>
-</tr>
 </tbody>
 </table>
-<section id="axolotl.core.trainer_builder.HFCausalTrainerBuilder" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainer_builder.HFCausalTrainerBuilder">HFCausalTrainerBuilder</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainer_builder.HFCausalTrainerBuilder(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    processor<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Build the HuggingFace training args/trainer for causal models and reward modeling
-using TRL.</p>
-</section>
-<section id="axolotl.core.trainer_builder.HFPPOTrainerBuilder" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainer_builder.HFPPOTrainerBuilder">HFPPOTrainerBuilder</h3>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainer_builder.HFPPOTrainerBuilder(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    processor<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="axolotl.core.builders.rl.HFPPOTrainerBuilder" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.builders.rl.HFPPOTrainerBuilder">HFPPOTrainerBuilder</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.builders.rl.HFPPOTrainerBuilder(cfg, model, tokenizer, processor<span class="op">=</span><span class="va">None</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>HF Factory class for PPO Trainer</p>
 </section>
-<section id="axolotl.core.trainer_builder.HFRLTrainerBuilder" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainer_builder.HFRLTrainerBuilder">HFRLTrainerBuilder</h3>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainer_builder.HFRLTrainerBuilder(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    processor<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<section id="axolotl.core.builders.rl.HFRLTrainerBuilder" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.builders.rl.HFRLTrainerBuilder">HFRLTrainerBuilder</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.builders.rl.HFRLTrainerBuilder(cfg, model, tokenizer, processor<span class="op">=</span><span class="va">None</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Trainer factory class for TRL-based RLHF trainers (e.g.&nbsp;DPO)</p>
-</section>
-<section id="axolotl.core.trainer_builder.TrainerBuilderBase" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainer_builder.TrainerBuilderBase">TrainerBuilderBase</h3>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>core.trainer_builder.TrainerBuilderBase(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    processor<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Base class for trainer builder.</p>
-<section id="methods" class="level4">
-<h4 class="anchored" data-anchor-id="methods">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.core.trainer_builder.TrainerBuilderBase.get_post_trainer_create_callbacks">get_post_trainer_create_callbacks</a></td>
-<td>Callbacks added after the trainer is created, usually b/c these need access to the trainer</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.core.trainer_builder.TrainerBuilderBase.get_post_trainer_create_callbacks" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainer_builder.TrainerBuilderBase.get_post_trainer_create_callbacks">get_post_trainer_create_callbacks</h5>
-<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>core.trainer_builder.TrainerBuilderBase.get_post_trainer_create_callbacks(</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    trainer,</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Callbacks added after the trainer is created, usually b/c these need access to the trainer</p>
 
 
-</section>
-</section>
 </section>
 </section>
 </section>

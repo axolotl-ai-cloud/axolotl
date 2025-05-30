@@ -530,84 +530,32 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </table>
 <section id="axolotl.core.trainers.trl.AxolotlCPOTrainer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.trl.AxolotlCPOTrainer">AxolotlCPOTrainer</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.trl.AxolotlCPOTrainer()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.trl.AxolotlCPOTrainer(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Extend the base CPOTrainer for axolotl helpers</p>
-<section id="methods" class="level4">
-<h4 class="anchored" data-anchor-id="methods">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.core.trainers.trl.AxolotlCPOTrainer.get_batch_loss_metrics">get_batch_loss_metrics</a></td>
-<td>Compute the CPO loss and other metrics for the given batch of inputs for train or test.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.core.trainers.trl.AxolotlCPOTrainer.get_batch_loss_metrics" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.trl.AxolotlCPOTrainer.get_batch_loss_metrics">get_batch_loss_metrics</h5>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.trl.AxolotlCPOTrainer.get_batch_loss_metrics(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    batch,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    train_eval<span class="op">=</span><span class="st">'train'</span>,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Compute the CPO loss and other metrics for the given batch of inputs for train or test.</p>
-</section>
-</section>
 </section>
 <section id="axolotl.core.trainers.trl.AxolotlKTOTrainer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.trl.AxolotlKTOTrainer">AxolotlKTOTrainer</h3>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.trl.AxolotlKTOTrainer()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.trl.AxolotlKTOTrainer(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Extend the base KTOTrainer for axolotl helpers</p>
 </section>
 <section id="axolotl.core.trainers.trl.AxolotlORPOTrainer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.trl.AxolotlORPOTrainer">AxolotlORPOTrainer</h3>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>core.trainers.trl.AxolotlORPOTrainer()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.trl.AxolotlORPOTrainer(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Extend the base ORPOTrainer for axolotl helpers</p>
-<section id="methods-1" class="level4">
-<h4 class="anchored" data-anchor-id="methods-1">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.core.trainers.trl.AxolotlORPOTrainer.get_batch_loss_metrics">get_batch_loss_metrics</a></td>
-<td>Compute the ORPO loss and other metrics for the given batch of inputs for train or test.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.core.trainers.trl.AxolotlORPOTrainer.get_batch_loss_metrics" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.trl.AxolotlORPOTrainer.get_batch_loss_metrics">get_batch_loss_metrics</h5>
-<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>core.trainers.trl.AxolotlORPOTrainer.get_batch_loss_metrics(</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    batch,</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    train_eval<span class="op">=</span><span class="st">'train'</span>,</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Compute the ORPO loss and other metrics for the given batch of inputs for train or test.</p>
-</section>
-</section>
 </section>
 <section id="axolotl.core.trainers.trl.AxolotlPRMTrainer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.trl.AxolotlPRMTrainer">AxolotlPRMTrainer</h3>
-<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>core.trainers.trl.AxolotlPRMTrainer()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>core.trainers.trl.AxolotlPRMTrainer(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Extend the base trl.PRMTrainer for axolotl helpers</p>
 </section>
 <section id="axolotl.core.trainers.trl.AxolotlRewardTrainer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.trl.AxolotlRewardTrainer">AxolotlRewardTrainer</h3>
-<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>core.trainers.trl.AxolotlRewardTrainer()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>core.trainers.trl.AxolotlRewardTrainer(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Extend the base RewardTrainer for axolotl helpers</p>
 </section>
 <section id="axolotl.core.trainers.trl.TRLPPOTrainer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.trl.TRLPPOTrainer">TRLPPOTrainer</h3>
-<div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>core.trainers.trl.TRLPPOTrainer()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>core.trainers.trl.TRLPPOTrainer()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Wrapper for TRL PPO trainer to handle customizations</p>
 
 
