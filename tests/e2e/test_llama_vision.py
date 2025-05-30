@@ -33,7 +33,7 @@ class TestLlamaVision(unittest.TestCase):
                 "lora_r": 8,
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
-                "lora_target_modules": r"language_model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj",
+                "lora_target_modules": r"model.language_model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj",
                 "val_set_size": 0,
                 "chat_template": "llama3_2_vision",
                 "datasets": [
@@ -81,7 +81,7 @@ class TestLlamaVision(unittest.TestCase):
                 "lora_r": 8,
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
-                "lora_target_modules": r"language_model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj",
+                "lora_target_modules": r"model.language_model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj",
                 "val_set_size": 0,
                 "chat_template": "llama3_2_vision",
                 "datasets": [
