@@ -1,7 +1,6 @@
 """Trainer builder for SFT trainers"""
 
 import inspect
-import logging
 import math
 import os
 from pathlib import Path
@@ -42,6 +41,7 @@ from axolotl.utils.callbacks import (
     log_prediction_callback_factory,
 )
 from axolotl.utils.callbacks.lisa import lisa_callback_factory
+from axolotl.utils.callbacks.qat import QATCallback
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
@@ -50,8 +50,9 @@ from axolotl.utils.collators import (
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class HFCausalTrainerBuilder(TrainerBuilderBase):
@@ -76,6 +77,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         # TODO: check if can move to base class
         if self.cfg.loss_watchdog_threshold is not None:
             callbacks.append(LossWatchDogCallback(self.cfg))
+
+        if self.cfg.qat:
+            callbacks.append(QATCallback(self.cfg.qat))
 
         return callbacks
 

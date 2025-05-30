@@ -18,7 +18,6 @@ DISCO - DIsk-based Storage and Checkpointing with Optimized prefetching
 
 import atexit
 import concurrent.futures
-import logging
 import os
 import queue
 import shutil
@@ -32,11 +31,13 @@ from typing import Dict
 
 import torch
 
+from axolotl.utils.logging import get_logger
+
 torch_cuda_amp_custom_fwd = torch.amp.custom_fwd(device_type="cuda")
 torch_cuda_amp_custom_bwd = torch.amp.custom_bwd(device_type="cuda")
 
 # Setup logger
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DiskOffloadManager:

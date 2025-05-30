@@ -2,7 +2,6 @@
 
 # pylint: disable=duplicate-code
 
-import logging
 from functools import partial
 from typing import List, Optional, Tuple, Union
 
@@ -28,8 +27,9 @@ from transformers.models.mistral.modeling_mistral import (
 )
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl.monkeypatch.mistral")
+LOG = get_logger(__name__)
 
 
 def replace_mistral_attn_with_flash_attn(
@@ -359,9 +359,10 @@ def generate_qkv(
             q, query_padding_mask
         )
 
-        output_pad_fn = lambda output_unpad: pad_input(  # noqa: E731
-            output_unpad, indices_q, batch_size, seqlen_q
-        )
+        def output_pad_fn(output_unpad):
+            return pad_input(  # noqa: E731
+                output_unpad, indices_q, batch_size, seqlen_q
+            )
 
     else:
         q_unpad = rearrange(q, "b s h d -> (b s) h d")
@@ -374,9 +375,10 @@ def generate_qkv(
         )
         max_seqlen_q = seqlen_q
 
-        output_pad_fn = lambda output_unpad: rearrange(  # noqa: E731
-            output_unpad, "(b s) h d -> b s h d", b=batch_size
-        )
+        def output_pad_fn(output_unpad):
+            return rearrange(  # noqa: E731
+                output_unpad, "(b s) h d -> b s h d", b=batch_size
+            )
 
     if key_padding_mask is not None:
         k_unpad, _, cu_seqlens_k, max_seqlen_k = unpad_input(k, key_padding_mask)

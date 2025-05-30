@@ -1,7 +1,6 @@
 """Trainer builder for RLHF trainers"""
 
 import inspect
-import logging
 from pathlib import Path
 
 from axolotl.core.trainer_builder.base import TrainerBuilderBase
@@ -20,9 +19,10 @@ from axolotl.core.training_args import (
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import ensure_dtype
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class HFRLTrainerBuilder(TrainerBuilderBase):

@@ -2,7 +2,6 @@
 E2E tests for qwen
 """
 
-import logging
 import os
 from pathlib import Path
 
@@ -12,8 +11,9 @@ from accelerate.test_utils import execute_subprocess_async
 from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl.tests.qwen")
+LOG = get_logger("axolotl.tests.qwen")
 os.environ["WANDB_DISABLED"] = "true"
 
 

@@ -2,11 +2,11 @@
 
 import importlib
 import inspect
-import logging
 
 from axolotl.prompt_strategies.user_defined import UserDefinedDatasetConfig
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl.prompt_strategies")
+LOG = get_logger(__name__)
 
 
 def load(strategy, tokenizer, cfg, ds_cfg, processor=None):

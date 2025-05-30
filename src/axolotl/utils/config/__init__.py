@@ -1,7 +1,6 @@
 """Module for working with config dicts"""
 
 import json
-import logging
 import os
 from typing import Optional
 
@@ -15,13 +14,14 @@ from axolotl.loaders import MULTIMODAL_AUTO_MODEL_MAPPING
 from axolotl.loaders.utils import load_model_config
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.config import (
     AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
 )
 from axolotl.utils.schemas.config import AxolotlInputConfig as AxolotlInputConfigBase
 from axolotl.utils.schemas.datasets import DPODataset, KTODataset, SFTDataset
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__, use_environ=True)
 
 
 def choose_device(cfg):

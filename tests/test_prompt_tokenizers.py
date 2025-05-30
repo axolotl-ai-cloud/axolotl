@@ -1,7 +1,6 @@
 """Module for testing prompt tokenizers."""
 
 import json
-import logging
 from pathlib import Path
 
 from axolotl.prompt_strategies.alpaca_chat import NoSystemPrompter
@@ -17,10 +16,11 @@ from axolotl.prompt_strategies.orpo.chat_template import load
 from axolotl.prompt_tokenizers import AlpacaPromptTokenizingStrategy
 from axolotl.prompters import AlpacaPrompter, PromptStyle
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
 from tests.hf_offline_utils import enable_hf_offline
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
 
 test_data = {
     "multi_turn_sys": {

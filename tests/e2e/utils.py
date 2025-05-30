@@ -10,8 +10,6 @@ from functools import wraps
 from pathlib import Path
 
 import torch
-
-# from importlib.metadata import version
 from packaging import version
 from tbparse import SummaryReader
 

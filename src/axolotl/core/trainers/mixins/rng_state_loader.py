@@ -6,7 +6,6 @@ See https://github.com/huggingface/transformers/pull/37162
 TODO: Remove when upstream added PR to release
 """
 
-import logging
 import os
 import random
 
@@ -17,7 +16,9 @@ from transformers.trainer import safe_globals
 from transformers.trainer_pt_utils import set_rng_state_for_device
 from transformers.training_args import ParallelMode
 
-LOG = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 class RngLoaderMixin(Trainer):

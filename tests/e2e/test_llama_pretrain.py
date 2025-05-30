@@ -2,7 +2,6 @@
 E2E tests for llama pretrain
 """
 
-import logging
 import os
 
 import pytest
@@ -12,10 +11,11 @@ from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
 from .utils import check_model_output_exists, check_tensorboard
 
-LOG = logging.getLogger("axolotl.tests.e2e")
+LOG = get_logger("axolotl.tests.e2e")
 os.environ["WANDB_DISABLED"] = "true"
 
 

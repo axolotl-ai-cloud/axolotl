@@ -2,7 +2,6 @@
 HF Chat Templates prompt strategy
 """
 
-import logging
 from collections import defaultdict
 from typing import Any, Dict, List, Set, Union
 
@@ -13,11 +12,12 @@ from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnaly
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import get_chat_template_from_config
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import DatasetConfig
 
 # Configure the logger
-LOG = logging.getLogger("axolotl")
-LOG.setLevel(logging.INFO)
+LOG = get_logger(__name__)
+LOG.setLevel("INFO")
 
 
 class ChatTemplatePrompter(Prompter):
@@ -378,7 +378,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 add_generation_prompt=True,
                 images=images,
             )
-            tokenized_res = self.prompter.build_prompt(turns, images=images)  # type: ignore
+            tokenized_res = self.prompter.build_prompt(
+                turns, images=images
+            )  # type: ignore
             tokenized_prompt = {}
             if isinstance(tokenized_res, list):
                 input_ids = prompt_ids + tokenized_res[len(prompt_ids) :]
@@ -555,8 +557,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             and turns[0].get("role") == "system"
             and (
                 "mistral" in self.tokenizer.name_or_path.lower()
-                # gemma3 uses gemma tokenizer
-                or "gemma" in self.tokenizer.name_or_path.lower()
+                or "gemma"
+                in self.tokenizer.name_or_path.lower()  # gemma3 uses gemma tokenizer
             )
         ):
             return -1, -1

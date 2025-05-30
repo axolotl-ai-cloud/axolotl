@@ -3,13 +3,13 @@ allow adding additional kwargs to Accelerator init
 """
 
 import inspect
-import logging
 
 from transformers import Trainer
 
 from axolotl.monkeypatch.utils import detab_code
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 ORIGINAL_TRAINER_CODE = """
     # create accelerator object

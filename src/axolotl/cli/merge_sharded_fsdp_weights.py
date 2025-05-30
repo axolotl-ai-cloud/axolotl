@@ -1,7 +1,6 @@
 """CLI to merge sharded FSDP model checkpoints into a single combined checkpoint."""
 
 import json
-import logging
 import os
 import shutil
 from pathlib import Path
@@ -27,8 +26,9 @@ from torch.distributed.checkpoint.format_utils import _EmptyStateDictLoadPlanner
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class BFloat16CastPlanner(_EmptyStateDictLoadPlanner):
