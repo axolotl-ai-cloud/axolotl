@@ -11,21 +11,36 @@ from typing import Any, Dict
 
 from colorama import Fore, Style, init
 
+DEFAULT_AXOLOTL_LOG_LEVEL = "INFO"
+DEFAULT_LOG_LEVEL = "WARNING"
+
 
 class AxolotlOrWarnErrorFilter(logging.Filter):
     """
-    Allows ANY WARNING+ or ERROR+
-    Allows axolotl.* at INFO or higher
-    Drops all other records (i.e. non-axolotl.INFO, DEBUG, etc.)
+    Allows ANY WARNING+ or ERROR+ (unless overridden by LOG_LEVEL)
+    Allows axolotl.* at INFO or higher (unless overridden by AXOLOTL_LOG_LEVEL)
+    Drops all other records (i.e. non-axolotl.INFO, DEBUG, etc. by default)
     """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.axolotl_level = logging.getLevelNamesMapping()[
+            os.getenv("AXOLOTL_LOG_LEVEL", DEFAULT_AXOLOTL_LOG_LEVEL)
+        ]
+        self.other_level = logging.getLevelNamesMapping()[
+            os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL)
+        ]
 
     def filter(self, record: LogRecord) -> bool:
         # allow WARNING+ or ERROR+ from anywhere
-        if record.levelno >= logging.WARNING:
+        if record.levelno >= self.other_level:
             return True
 
         # else allow axolotl.* at INFO or higher
-        return record.name.startswith("axolotl") and record.levelno >= logging.INFO
+        return (
+            record.name.startswith("axolotl") and record.levelno >= self.axolotl_level
+        )
 
 
 class AxolotlLogger(Logger):
@@ -83,11 +98,14 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
         },
     },
     # log level will be superseded by the AxolotlLogger
-    "root": {"handlers": ["console"], "level": os.getenv("LOG_LEVEL", "WARNING")},
+    "root": {
+        "handlers": ["console"],
+        "level": os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL),
+    },
     "loggers": {
         "axolotl": {
             "handlers": ["color_console"],
-            "level": os.getenv("LOG_LEVEL", "INFO"),
+            "level": os.getenv("AXOLOTL_LOG_LEVEL", DEFAULT_AXOLOTL_LOG_LEVEL),
             "propagate": False,
         },
     },
