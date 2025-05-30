@@ -1,4 +1,4 @@
-"""Unit tests for axolotl.core.trainer_builder"""
+"""Unit tests for axolotl.core.builders"""
 
 # pylint: disable=protected-access
 
@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from axolotl.common.datasets import load_datasets
-from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.loaders import ModelLoader, load_tokenizer
 from axolotl.utils.config import normalize_config
 from axolotl.utils.data.rl import load_prepare_preference_datasets

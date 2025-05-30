@@ -1,9 +1,9 @@
-"""Trainer builder for RLHF trainers"""
+"""Builder for RLHF trainers"""
 
 import inspect
 from pathlib import Path
 
-from axolotl.core.trainer_builder.base import TrainerBuilderBase
+from axolotl.core.builders.base import TrainerBuilderBase
 from axolotl.core.trainers import (
     AxolotlCPOTrainer,
     AxolotlKTOTrainer,

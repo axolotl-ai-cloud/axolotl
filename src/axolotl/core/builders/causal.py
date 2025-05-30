@@ -1,4 +1,4 @@
-"""Trainer builder for SFT trainers"""
+"""Builder for causal trainers"""
 
 import inspect
 import math
@@ -13,7 +13,7 @@ from transformers import (
 )
 from trl.trainer.utils import RewardDataCollatorWithPadding
 
-from axolotl.core.trainer_builder.base import TrainerBuilderBase
+from axolotl.core.builders.base import TrainerBuilderBase
 from axolotl.core.trainers import (
     AxolotlMambaTrainer,
     AxolotlPRMTrainer,

@@ -1,6 +1,6 @@
 """Trainer builder classes"""
 
+from .causal import HFCausalTrainerBuilder
 from .rl import HFRLTrainerBuilder
-from .sft import HFCausalTrainerBuilder
 
 __all__ = ["HFCausalTrainerBuilder", "HFRLTrainerBuilder"]
