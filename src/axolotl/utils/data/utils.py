@@ -84,28 +84,28 @@ def sha256(to_hash: str, encoding: str = "utf-8") -> str:
 
 def _deduplicate_dataset(
     dataset: Dataset,
-    seen_rows: set[str] | None = None,
+    seen_hashes: set[str] | None = None,
 ) -> tuple[Dataset, set[str]]:
-    """Remove duplicate rows from a dataset by storing row content directly.
+    """Remove duplicate rows from a dataset using SHA256 hashes.
 
     Args:
         dataset: Dataset to deduplicate.
-        seen_rows: Set of previously seen row strings (for cross-deduplication).
+        seen_hashes: Set of previously seen row hashes (for cross-deduplication).
 
     Returns:
-        Tuple of deduplicated dataset and the set of seen rows.
+        Tuple of deduplicated dataset and the set of seen hashes.
     """
-    if seen_rows is None:
-        seen_rows = set()
+    if seen_hashes is None:
+        seen_hashes = set()
 
     unique_indices = []
     for idx, row in enumerate(dataset):
-        row_str = str(row)
-        if row_str not in seen_rows:
-            seen_rows.add(row_str)
+        row_hash = sha256(str(row))  # Using SHA256 for collision resistance
+        if row_hash not in seen_hashes:
+            seen_hashes.add(row_hash)
             unique_indices.append(idx)
 
-    return dataset.select(unique_indices), seen_rows
+    return dataset.select(unique_indices), seen_hashes
 
 
 def deduplicate_and_log_datasets(
