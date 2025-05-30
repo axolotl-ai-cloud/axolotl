@@ -220,16 +220,17 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
         }
 
         if not isinstance(dataset, torch.utils.data.IterableDataset):
+            dataloader_params["drop_last"] = self.args.dataloader_drop_last
             if sampler_fn is not None:
                 sampler = sampler_fn(dataset)
                 if isinstance(sampler, BatchSampler):
                     # batch_size and batch_sampler are mutually exclusive
                     dataloader_params["batch_sampler"] = sampler
                     del dataloader_params["batch_size"]
+                    del dataloader_params["drop_last"]
                 else:
                     dataloader_params["sampler"] = sampler
 
-            dataloader_params["drop_last"] = self.args.dataloader_drop_last
             dataloader_params["prefetch_factor"] = self.args.dataloader_prefetch_factor
             if is_training:
                 dataloader_params["worker_init_fn"] = partial(
