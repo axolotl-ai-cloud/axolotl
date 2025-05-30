@@ -205,11 +205,6 @@ class PatchManager:
         if not (self.cfg.flash_attention and hasattr(self.model_config, "model_type")):
             return
 
-        if self.model_config.model_type == "mllama" and self.cfg.flash_attention:
-            from axolotl.monkeypatch.attention.mllama import patch_mllama
-
-            patch_mllama()
-
         if self.model_config.model_type == "btlm":
             from axolotl.monkeypatch.btlm_attn_hijack_flash import (
                 replace_btlm_attn_with_flash_attn,
