@@ -8,11 +8,12 @@ from unittest.mock import patch
 
 import pytest
 
+from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.loaders import ModelLoader, load_tokenizer
 from axolotl.utils.config import normalize_config
-from axolotl.utils.data.rl import load_prepare_preference_datasets
+from axolotl.utils.data import prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.enums import RLType
 
@@ -456,10 +457,10 @@ def rand_reward_func(prompts, completions) -> list[float]:
                     mock_load_dataset.return_value = request.getfixturevalue(
                         dataset_name
                     )
-                    train_dataset, eval_dataset = load_prepare_preference_datasets(cfg)
+                    train_dataset, eval_dataset = prepare_preference_datasets(cfg)
             else:
                 # Load actual datasets for orpo_cfg and kto_cfg
-                train_dataset, eval_dataset = load_prepare_preference_datasets(cfg)
+                train_dataset, eval_dataset = prepare_preference_datasets(cfg)
 
             builder.train_dataset = train_dataset
             builder.eval_dataset = eval_dataset
@@ -541,7 +542,7 @@ class TestHFCausalTrainerBuilder:
 
         # need to load datasets for reward model and process reward model trainer
         if cfg_string in ["rm_cfg", "prm_cfg"]:
-            dataset_meta = load_datasets(cfg=cfg)
+            dataset_meta = load_datasets(cfg=cfg, cli_args=TrainerCliArgs())
 
             builder.train_dataset = dataset_meta.train_dataset
             builder.eval_dataset = dataset_meta.eval_dataset
