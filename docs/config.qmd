@@ -514,6 +514,7 @@ output_dir: ./completed-model
 # setting to `auto` will enable torch compile when torch>=2.5.1
 torch_compile:  # Optional[Union[Literal["auto"], bool]]
 torch_compile_backend:  # Optional[str]
+torch_compile_mode:  # 'default' | 'reduce-overhead' | 'max-autotune'
 
 # Training hyperparameters
 
@@ -560,7 +561,7 @@ profiler_steps: # enable the pytorch profiler to capture the first N steps of tr
 loss_watchdog_threshold: # High loss value, indicating the learning has broken down (a good estimate is ~2 times the loss at the start of training)
 loss_watchdog_patience: # Number of high-loss steps in a row before the trainer aborts (default: 3)
 
-# Save model as safetensors (require safetensors package)
+# Save model as safetensors (require safetensors package). Default True
 save_safetensors:
 
 # Whether to mask out or include the human's prompt from the training labels

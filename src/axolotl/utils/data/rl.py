@@ -192,8 +192,9 @@ def _map_dataset(
 
     dataset = dataset.map(
         ds_transform_fn,
-        desc="Mapping RL Dataset",
         num_proc=cfg.dataset_processes,
+        load_from_cache_file=not cfg.is_preprocess,
+        desc="Mapping RL Dataset",
         **map_kwargs,
     )
 
