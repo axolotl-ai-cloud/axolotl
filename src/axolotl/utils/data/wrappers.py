@@ -1,7 +1,7 @@
 """Data handling specific to SFT."""
 
 import logging
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 from datasets import (
     Dataset,
@@ -40,6 +40,18 @@ from axolotl.prompters import (
 from axolotl.utils.dict import DictDefault
 
 LOG = logging.getLogger(__name__)
+
+
+def handle_unknown_dataset_strategy(dataset_config: DictDefault) -> NoReturn:
+    """Raise error for unknown dataset strategy."""
+    ds_type = dataset_config.type
+    suffix = ""
+    if ":load_" in ds_type:
+        suffix = f"Did you mean {ds_type.replace(':load_', '.load_')}?"
+
+    error_message = f"unhandled prompt tokenization strategy: {ds_type}. {suffix}"
+    LOG.error(error_message)
+    raise ValueError(error_message)
 
 
 # pylint: disable=too-many-return-statements
@@ -117,14 +129,7 @@ def get_dataset_wrapper(
         return handler(dataset_prompt_style, tokenizer, cfg, dataset, dataset_kwargs)
 
     # Unhandled dataset type
-    ds_type = dataset_config.type
-    suffix = ""
-    if ":load_" in ds_type:
-        suffix = f" Did you mean {ds_type.replace(':load_', '.load_')}?"
-
-    error_message = f"unhandled prompt tokenization strategy: {ds_type}. {suffix}"
-    LOG.error(error_message)
-    raise ValueError(error_message)
+    handle_unknown_dataset_strategy(dataset_config)
 
 
 def _is_dataset_already_tokenized(dataset: Dataset | IterableDataset) -> bool:
@@ -170,14 +175,7 @@ def _handle_bradley_terry_dataset(
     dataset_strategy = bradley_terry_load(bt_type, tokenizer, cfg, dataset_config)
 
     if not dataset_strategy:
-        ds_type = dataset_config.type
-        suffix = ""
-        if ":load_" in ds_type:
-            suffix = f" Did you mean {ds_type.replace(':load_', '.load_')}?"
-
-        error_message = f"unhandled prompt tokenization strategy: {ds_type}. {suffix}"
-        LOG.error(error_message)
-        raise ValueError(error_message)
+        handle_unknown_dataset_strategy(dataset_config)
 
     dataset_prompter = UnsupportedPrompter()
     dataset_wrapper = wrap_dataset_for_tokenized_prompt(

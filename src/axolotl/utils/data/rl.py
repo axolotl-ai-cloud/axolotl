@@ -1,28 +1,27 @@
 """Data handling specific to RL trainers."""
 
 import inspect
-import time
 from functools import partial
-from pathlib import Path
 from typing import Any, Callable, Literal
 
-import yaml
-from datasets import Dataset, DatasetDict, concatenate_datasets, load_from_disk
-from filelock import FileLock
+from datasets import Dataset, DatasetDict
 
-from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.loaders import load_tokenizer
 from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.prompt_strategies.kto import load as load_kto
 from axolotl.prompt_strategies.orpo import load as load_orpo
 from axolotl.utils.data.shared import (
+    DatasetPreparer,
+    create_train_validation_split,
     datasets_with_name_generator,
-    generate_split_fingerprints,
+    generate_dataset_hash_from_yaml,
     load_dataset_with_config,
+    load_preprocessed_dataset,
+    merge_datasets,
+    save_preprocessed_dataset,
 )
-from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
+from axolotl.utils.data.utils import deduplicate_and_log_datasets
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import is_main_process
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
 
@@ -42,53 +41,50 @@ def prepare_preference_datasets(cfg: DictDefault) -> tuple[Dataset, Dataset | No
         Tuple of (train_dataset, eval_dataset). eval_dataset may be None
             if no evaluation dataset is configured.
     """
-    # pylint: disable=duplicate-code
-    dataset_prepared_path = cfg.dataset_prepared_path or DEFAULT_DATASET_PREPARED_PATH
-    lock_file_path = Path(dataset_prepared_path) / "datasets_prep.lock"
 
-    # The rank that acquires the lock first does the data preprocessing
-    with FileLock(str(lock_file_path)):
-        ready_flag_path = Path(dataset_prepared_path) / "datasets_ready.flag"
-        if not ready_flag_path.exists():
-            # Load training dataset
-            train_dataset, train_is_preprocessed = _load_or_create_dataset_split(
-                cfg, "train"
+    def _load_datasets():
+        # Load training dataset
+        train_dataset, train_is_preprocessed = _load_or_create_dataset_split(
+            cfg, "train"
+        )
+
+        # Load or create evaluation dataset
+        eval_dataset: Dataset | None = None
+        eval_is_preprocessed = False
+        if cfg.test_datasets:
+            eval_dataset, eval_is_preprocessed = _load_or_create_dataset_split(
+                cfg, "test"
+            )
+        elif cfg.val_set_size:
+            # Create validation split from training data
+            train_dataset, eval_dataset = create_train_validation_split(
+                train_dataset, cfg, cfg.val_set_size
             )
 
-            # Load or create evaluation dataset
-            eval_dataset: Dataset | None = None
-            eval_is_preprocessed = False
-            if cfg.test_datasets:
-                eval_dataset, eval_is_preprocessed = _load_or_create_dataset_split(
-                    cfg, "test"
-                )
-            elif cfg.val_set_size:
-                # Create validation split from training data
-                train_dataset, eval_dataset = _create_validation_split(
-                    train_dataset, cfg
-                )
+        # Save preprocessed datasets
+        if not train_is_preprocessed:
+            _save_preprocessed_dataset(cfg, cfg.datasets, train_dataset)
+        if eval_dataset and not eval_is_preprocessed:
+            _save_preprocessed_dataset(cfg, cfg.test_datasets, eval_dataset)
 
-            # Save preprocessed datasets
-            if not train_is_preprocessed:
-                _save_preprocessed_dataset(cfg, cfg.datasets, train_dataset)
-            if eval_dataset and not eval_is_preprocessed:
-                _save_preprocessed_dataset(cfg, cfg.test_datasets, eval_dataset)
+        return train_dataset, eval_dataset
 
-            # Mark as finished
-            ready_flag_path.touch()
-        else:
-            # Other ranks: wait and then load
-            while not ready_flag_path.exists():
-                time.sleep(1)
+    def _load_datasets_other_ranks():
+        train_dataset, _ = _load_or_create_dataset_split(cfg, "train")
+        eval_dataset = None
+        if cfg.test_datasets:
+            eval_dataset, _ = _load_or_create_dataset_split(cfg, "test")
+        elif cfg.val_set_size:
+            train_dataset, eval_dataset = create_train_validation_split(
+                train_dataset, cfg, cfg.val_set_size
+            )
+        return train_dataset, eval_dataset
 
-            train_dataset, _ = _load_or_create_dataset_split(cfg, "train")
-            eval_dataset = None
-            if cfg.test_datasets:
-                eval_dataset, _ = _load_or_create_dataset_split(cfg, "test")
-            elif cfg.val_set_size:
-                train_dataset, eval_dataset = _create_validation_split(
-                    train_dataset, cfg
-                )
+    # Use shared coordination pattern
+    preparer = DatasetPreparer(cfg)
+    train_dataset, eval_dataset = preparer.prepare_with_coordination(
+        _load_datasets, _load_datasets_other_ranks
+    )
 
     # Apply deduplication if configured
     if cfg.dataset_exact_deduplication:
@@ -99,49 +95,18 @@ def prepare_preference_datasets(cfg: DictDefault) -> tuple[Dataset, Dataset | No
     return train_dataset, eval_dataset
 
 
-def _get_path(ds_hash: str, cfg: DictDefault) -> Path:
-    """Get the path for prepared dataset based on hash and config.
-
-    Args:
-        ds_hash: MD5 hash of dataset configuration.
-        cfg: Configuration object containing dataset paths.
-
-    Returns:
-        Path to the prepared dataset directory.
-    """
-    prepared_ds_path = (
-        Path(cfg.dataset_prepared_path) / ds_hash
-        if cfg.dataset_prepared_path
-        else Path(DEFAULT_DATASET_PREPARED_PATH) / ds_hash
-    )
-
-    return prepared_ds_path
-
-
-def _load_preprocessed_ds(cfg: DictDefault, sub_cfg: Any) -> Dataset | None:
+def _load_preprocessed_ds(cfg: DictDefault, datasets_config: Any) -> Dataset | None:
     """Load preprocessed dataset from disk if available.
 
     Args:
         cfg: Main configuration object.
-        sub_cfg: Dataset-specific configuration.
+        datasets_config: Dataset-specific configuration.
 
     Returns:
         Loaded dataset if found, None otherwise.
     """
-    ds_hash = md5(yaml.dump(sub_cfg, Dumper=yaml.Dumper))
-    prepared_ds_path = _get_path(ds_hash, cfg)
-    dataset = None
-
-    # pylint: disable=duplicate-code
-    if (
-        cfg.dataset_prepared_path
-        and any(prepared_ds_path.glob("*"))
-        and not cfg.is_preprocess
-    ):
-        LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
-        dataset = load_from_disk(str(prepared_ds_path))
-
-    return dataset
+    ds_hash = generate_dataset_hash_from_yaml(datasets_config)
+    return load_preprocessed_dataset(cfg, ds_hash)
 
 
 def _save_preprocessed_dataset(
@@ -154,12 +119,8 @@ def _save_preprocessed_dataset(
         sub_cfg: Dataset-specific configuration.
         dataset: Dataset to save.
     """
-    ds_hash = md5(yaml.dump(sub_cfg, Dumper=yaml.Dumper))
-    prepared_ds_path = _get_path(ds_hash, cfg)
-
-    if cfg.is_preprocess and is_main_process():
-        LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
-        dataset.save_to_disk(str(prepared_ds_path))
+    ds_hash = generate_dataset_hash_from_yaml(sub_cfg)
+    save_preprocessed_dataset(cfg, dataset, ds_hash)
 
 
 def _map_dataset(
@@ -329,10 +290,8 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
             if dropped:
                 LOG.warning(f"Dropped {dropped} long samples from dataset index {i}")
 
-    combined_datasets = concatenate_datasets(split_datasets)
-    combined_datasets = combined_datasets.shuffle(
-        seed=cfg.seed if cfg.seed is not None else 42
-    )
+    # Use shared merge function
+    combined_datasets = merge_datasets(split_datasets, cfg)
 
     return combined_datasets
 
@@ -354,31 +313,3 @@ def _load_or_create_dataset_split(
     if preprocessed_ds := _load_preprocessed_ds(cfg, datasets_config):
         return preprocessed_ds, True
     return _load_split(cfg, split=split), False
-
-
-def _create_validation_split(
-    train_dataset: Dataset, cfg: DictDefault
-) -> tuple[Dataset, Dataset]:
-    """Create validation split from training dataset.
-
-    Args:
-        train_dataset: Training dataset to split.
-        cfg: Configuration object containing split parameters.
-
-    Returns:
-        Tuple of (train_dataset, eval_dataset).
-    """
-    seed = cfg.seed if cfg.seed is not None else 42
-    train_fingerprint, test_fingerprint = generate_split_fingerprints(
-        train_dataset, cfg.val_set_size, seed
-    )
-
-    dataset_with_test_split = train_dataset.train_test_split(
-        test_size=cfg.val_set_size,
-        seed=seed,
-        shuffle=False,
-        train_new_fingerprint=train_fingerprint,
-        test_new_fingerprint=test_fingerprint,
-    )
-
-    return dataset_with_test_split["train"], dataset_with_test_split["test"]
