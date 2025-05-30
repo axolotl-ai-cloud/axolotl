@@ -19,16 +19,15 @@ Liger Kernel is the collection of Triton-native kernels for LLM Training.
 It is designed to be performant, correct, and light-weight.
 """
 import inspect
-import logging
 import sys
 
 from axolotl.integrations.base import BasePlugin
-from axolotl.utils.distributed import is_main_process
+from axolotl.utils.logging import get_logger
 
 from .args import LigerArgs  # pylint: disable=unused-import. # noqa: F401
 from .utils import patch_with_compile_disable
 
-LOG = logging.getLogger("axolotl.integrations.liger")
+LOG = get_logger(__name__, use_environ=True)
 
 
 class LigerPlugin(BasePlugin):
@@ -85,10 +84,7 @@ class LigerPlugin(BasePlugin):
                 kwargs["geglu"] = cfg.liger_glu_activation
             elif "swiglu" in liger_fn_sig.parameters:
                 kwargs["swiglu"] = cfg.liger_glu_activation
-            if is_main_process(use_environ=True):
-                LOG.info(
-                    f"Applying LIGER to {cfg.model_config_type} with kwargs: {kwargs}"
-                )
+            LOG.info(f"Applying LIGER to {cfg.model_config_type} with kwargs: {kwargs}")
             apply_liger_fn(**kwargs)
         elif cfg.model_config_type == "jamba":
             from transformers.models.jamba import modeling_jamba
@@ -124,9 +120,9 @@ class LigerPlugin(BasePlugin):
             if cfg.liger_rope:
                 # The DeepseekV2 version of RoPE is different than upstream LLaMA.
                 # See https://github.com/linkedin/Liger-Kernel/issues/129#issuecomment-2313763528
-                logging.warning("Fused liger_rope is not supported for DeepseekV2.")
+                LOG.warning("Fused liger_rope is not supported for DeepseekV2.")
             if cfg.liger_glu_activation:
-                logging.warning("liger_glu_activation is not supported for DeepseekV2.")
+                LOG.warning("liger_glu_activation is not supported for DeepseekV2.")
             if cfg.liger_rms_norm:
                 modeling_mod.DeepseekV2RMSNorm = LigerRMSNorm
             if cfg.liger_glu_activation:
@@ -186,6 +182,6 @@ class LigerPlugin(BasePlugin):
                 swiglu=cfg.liger_glu_activation,
             )
         else:
-            logging.warning(
+            LOG.warning(
                 f"Unsupported model config type: {cfg.model_config_type}. Liger not applied."
             )

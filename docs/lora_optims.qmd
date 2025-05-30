@@ -84,6 +84,10 @@ lora_qkv_kernel: true
 lora_o_kernel: true
 ```
 
+::: {.callout-note}
+Currently, LoRA kernels are not supported for RLHF training, only SFT.
+:::
+
 ## Requirements
 
 - One or more NVIDIA or AMD GPUs (in order to use the Triton kernels)

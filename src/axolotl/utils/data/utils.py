@@ -2,7 +2,6 @@
 
 import functools
 import hashlib
-import logging
 import time
 from enum import Enum
 
@@ -12,10 +11,11 @@ import requests
 from datasets import Dataset, IterableDataset
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers.utils import get_dataset_lengths
 from axolotl.utils.trainer import drop_long_seq
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class RetryStrategy(Enum):

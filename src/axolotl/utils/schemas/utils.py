@@ -1,8 +1,8 @@
 """Utilities for Axolotl Pydantic models"""
 
-import logging
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def handle_legacy_message_fields_logic(data: dict) -> dict:

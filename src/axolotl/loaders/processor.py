@@ -1,6 +1,5 @@
 """Processor loading functionality for multi-modal models"""
 
-import logging
 from typing import Any
 
 import transformers
@@ -10,8 +9,9 @@ from transformers import (
 )
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):

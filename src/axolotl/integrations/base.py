@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import collections
 import importlib
-import logging
 from typing import TYPE_CHECKING, Callable, OrderedDict, Union
 
 from peft import PeftModel
@@ -31,12 +30,12 @@ from torch.optim.lr_scheduler import LRScheduler
 from transformers import PreTrainedModel, Trainer
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__, use_environ=True)
 
 if TYPE_CHECKING:
     from axolotl.common.datasets import TrainDatasetMeta
-
-
-LOG = logging.getLogger(__name__)
 
 
 class BasePlugin:

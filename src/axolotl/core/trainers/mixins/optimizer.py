@@ -1,18 +1,17 @@
 """Module for Axolotl trainer optimizer mixin"""
 
-import logging
-
 from peft.optimizers import create_loraplus_optimizer
 from torch import nn
 from transformers.trainer import Trainer
 from transformers.utils import is_sagemaker_mp_enabled
 
 from axolotl.integrations.base import BaseOptimizerFactory
+from axolotl.utils.logging import get_logger
 
 if is_sagemaker_mp_enabled():
     import smdistributed.modelparallel.torch as smp
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class OptimizerMixin(Trainer):

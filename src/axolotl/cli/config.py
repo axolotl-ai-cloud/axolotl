@@ -1,7 +1,6 @@
 """Configuration loading and processing."""
 
 import json
-import logging
 import os
 import tempfile
 from pathlib import Path
@@ -22,11 +21,12 @@ from axolotl.utils.config import (
     validate_config,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__, use_environ=True)
 
 
 def check_remote_config(config: Union[str, Path]) -> Union[str, Path]:
@@ -119,12 +119,12 @@ def choose_config(path: Path) -> str:
         )
 
     if len(yaml_files) == 1:
-        print(f"Using default YAML file '{yaml_files[0]}'")
+        LOG.info(f"Using default YAML file '{yaml_files[0]}'")
         return str(yaml_files[0])
 
-    print("Choose a YAML file:")
+    LOG.info("Choose a YAML file:")
     for idx, file in enumerate(yaml_files):
-        print(f"{idx + 1}. {file}")
+        LOG.info(f"{idx + 1}. {file}")
 
     chosen_file = None
     while chosen_file is None:
@@ -133,9 +133,9 @@ def choose_config(path: Path) -> str:
             if 1 <= choice <= len(yaml_files):
                 chosen_file = str(yaml_files[choice - 1])
             else:
-                print("Invalid choice. Please choose a number from the list.")
+                LOG.info("Invalid choice. Please choose a number from the list.")
         except ValueError:
-            print("Invalid input. Please enter a number.")
+            LOG.info("Invalid input. Please enter a number.")
 
     return chosen_file
 

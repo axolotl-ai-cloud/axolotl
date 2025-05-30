@@ -6,17 +6,18 @@ Arxiv: https://arxiv.org/abs/2403.17919
 License: Apache 2.0
 """
 
-import logging
 from functools import reduce
 from typing import TYPE_CHECKING
 
 import numpy as np
 from transformers import TrainerCallback
 
+from axolotl.utils.logging import get_logger
+
 if TYPE_CHECKING:
     from axolotl.core.trainer_builder import AxolotlTrainer
 
-LOG = logging.getLogger("axolotl.callbacks.lisa")
+LOG = get_logger(__name__)
 
 
 def lisa_callback_factory(trainer: "AxolotlTrainer"):
