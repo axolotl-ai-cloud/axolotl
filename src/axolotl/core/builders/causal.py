@@ -244,7 +244,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         training_arguments_kwargs["sample_packing"] = bool(self.cfg.sample_packing)
         training_arguments_kwargs["multipack_real_batches"] = (
-            not self.cfg.flash_attention or self.cfg.multipack_real_batches
+            self.cfg.multipack_real_batches
+            if self.cfg.multipack_real_batches is not None
+            else not self.cfg.flash_attention
         )
         training_arguments_kwargs["eval_sample_packing"] = bool(
             self.cfg.eval_sample_packing
