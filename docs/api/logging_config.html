@@ -74,7 +74,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-8ef56b68f8fa1e9d2ba328e99e439f80.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-2288ecdcbf81d2ab6432743cedd71d9a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-7415244d48e501ce6749b46a5d56d2c8.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -471,6 +471,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
+  <li><a href="#axolotl.logging_config.AxolotlLogger" id="toc-axolotl.logging_config.AxolotlLogger" class="nav-link" data-scroll-target="#axolotl.logging_config.AxolotlLogger">AxolotlLogger</a></li>
+  <li><a href="#axolotl.logging_config.AxolotlOrWarnErrorFilter" id="toc-axolotl.logging_config.AxolotlOrWarnErrorFilter" class="nav-link" data-scroll-target="#axolotl.logging_config.AxolotlOrWarnErrorFilter">AxolotlOrWarnErrorFilter</a></li>
   <li><a href="#axolotl.logging_config.ColorfulFormatter" id="toc-axolotl.logging_config.ColorfulFormatter" class="nav-link" data-scroll-target="#axolotl.logging_config.ColorfulFormatter">ColorfulFormatter</a></li>
   </ul></li>
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
@@ -502,14 +504,34 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.logging_config.AxolotlLogger">AxolotlLogger</a></td>
+<td>A Logger that automatically rejects non-axolotl INFOs.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.logging_config.AxolotlOrWarnErrorFilter">AxolotlOrWarnErrorFilter</a></td>
+<td>Allows ANY WARNING or higher (unless overridden by LOG_LEVEL)</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.logging_config.ColorfulFormatter">ColorfulFormatter</a></td>
 <td>Formatter to add coloring to log messages by log type</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.logging_config.AxolotlLogger" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.logging_config.AxolotlLogger">AxolotlLogger</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>logging_config.AxolotlLogger(name, level<span class="op">=</span>logging.NOTSET)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>A Logger that automatically rejects non-axolotl INFOs.</p>
+</section>
+<section id="axolotl.logging_config.AxolotlOrWarnErrorFilter" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.logging_config.AxolotlOrWarnErrorFilter">AxolotlOrWarnErrorFilter</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>logging_config.AxolotlOrWarnErrorFilter(<span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Allows ANY WARNING or higher (unless overridden by LOG_LEVEL)
+Allows axolotl.* at INFO or higher (unless overridden by AXOLOTL_LOG_LEVEL)
+Drops all other records (i.e.&nbsp;non-axolotl.INFO, DEBUG, etc. by default)</p>
+</section>
 <section id="axolotl.logging_config.ColorfulFormatter" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.logging_config.ColorfulFormatter">ColorfulFormatter</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>logging_config.ColorfulFormatter()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>logging_config.ColorfulFormatter()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Formatter to add coloring to log messages by log type</p>
 </section>
 </section>
@@ -531,7 +553,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </table>
 <section id="axolotl.logging_config.configure_logging" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.logging_config.configure_logging">configure_logging</h3>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>logging_config.configure_logging()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>logging_config.configure_logging()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Configure with default logging</p>
 
 
