@@ -12,6 +12,7 @@ import torch
 from orjson import orjson
 
 from axolotl.integrations.kd.collator import KDBatchSamplerDataCollatorForSeq2Seq
+from axolotl.integrations.kd.utils import normalize_logprobs
 from axolotl.utils.data.utils import retry_on_request_exceptions
 
 LOG = logging.getLogger(__name__)
@@ -58,6 +59,7 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
         kd_online_server: Optional[str] = "vllm",
         kd_online_timeout: Optional[int] = 120,
         kd_cache_dir: Optional[str] = None,
+        kd_normalize_topk: Optional[bool] = True,
         **kwargs: Any,
     ):
         super().__init__(*args, **kwargs)
@@ -78,6 +80,7 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
         self.http_session = requests.Session()
         self.kd_online_timeout = kd_online_timeout
         self.kd_cache_dir = kd_cache_dir
+        self.kd_normalize_topk = kd_normalize_topk
 
     def _normalize_logprobs(self, raw_logprobs: List[float]) -> List[float]:
         """
@@ -88,70 +91,15 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
                 [-float("inf")] * self.kd_online_topk if self.kd_online_topk > 0 else []
             )
 
-        # Ensure raw_logprobs matches kd_online_topk length for tensor operations
-        # This should ideally be handled by the caller ensuring correct padding/truncation first
-        if len(raw_logprobs) != self.kd_online_topk:
-            # This case should be rare if pre-padding/truncation is done correctly
-            LOG.warning(
-                f"Logprobs length mismatch in _normalize_logprobs. "
-                f"Expected {self.kd_online_topk}, got {len(raw_logprobs)}. Will pad/truncate."
-            )
-            padded_logprobs = raw_logprobs[: self.kd_online_topk]
-            if len(padded_logprobs) < self.kd_online_topk:
-                padded_logprobs.extend(
-                    [-float("inf")] * (self.kd_online_topk - len(padded_logprobs))
-                )
-            raw_logprobs = padded_logprobs
-
-        try:
-            position_logprobs_tensor = torch.tensor(raw_logprobs, dtype=torch.float32)
-
-            # Convert logprobs at T_online to probabilities
-            # use log sum exp trick to avoid underflow
-            position_logprobs_lse = torch.logsumexp(
-                position_logprobs_tensor, dim=-1, keepdim=True
-            )
-            teacher_probs_t_online = torch.exp(
-                position_logprobs_tensor - position_logprobs_lse
-            )
-
-            # Normalize probabilities (sum to 1)
-            # This is important if the top-k from server aren't a full distribution
-            teacher_probs_t_online_sum = teacher_probs_t_online.sum(dim=0, keepdim=True)
-            if teacher_probs_t_online_sum.item() > 1e-9:
-                teacher_probs_t_online = (
-                    teacher_probs_t_online / teacher_probs_t_online_sum
-                )
-            else:
-                # If sum is zero, create uniform distribution to avoid NaN/Inf later
-                # This can happen if all raw_logprobs are -inf
-                if self.kd_online_topk > 0:
-                    teacher_probs_t_online = (
-                        torch.ones_like(teacher_probs_t_online) / self.kd_online_topk
-                    )
-                # else: leave as is, will result in -inf logprobs
-            #
-            # teacher_probs_t_online = teacher_probs_t_online / teacher_probs_t_online.sum(
-            #     dim=0, keepdim=True
-            # )
-            final_logprobs_tensor = torch.log(teacher_probs_t_online)
-
-            return final_logprobs_tensor.tolist()
-
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            LOG.error(
-                f"Error during online logprob scaling: {e}. Returning raw logprobs.",
-                exc_info=True,
-            )
-            # Fallback to (padded/truncated) raw logprobs if scaling fails
-            return raw_logprobs
+        raw_logprobs_tensor = torch.tensor(raw_logprobs, dtype=torch.float32)
+        return normalize_logprobs(raw_logprobs_tensor, self.kd_online_topk).tolist()
 
     @retry_on_request_exceptions(max_retries=10, delay=5)
     def fetch_online_logprobs_sglang(
         self, batch_input_ids: List[List[int]], labels: List[List[int]]
     ):
         """
-        Fetches logprobs from an online teacher served by vllm for a batch of input_ids.
+        Fetches logprobs from an online teacher served by sglang for a batch of input_ids.
         Assumes API returns token IDs as strings in logprob dictionary keys.
         """
         api_endpoint = f"{self.kd_online_server_base_url}/generate"
@@ -267,10 +215,18 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
                         current_target_token_ids.append(
                             pos_token_ids[: self.kd_online_topk]
                         )
-                        scaled_logprobs_for_position = self._normalize_logprobs(
-                            pos_logprobs_raw[: self.kd_online_topk]
-                        )
-                        current_target_logprobs.append(scaled_logprobs_for_position)
+
+                        if self.kd_normalize_topk:
+                            normalized_logprobs_for_position = self._normalize_logprobs(
+                                pos_logprobs_raw[: self.kd_online_topk]
+                            )
+                            current_target_logprobs.append(
+                                normalized_logprobs_for_position
+                            )
+                        else:
+                            current_target_logprobs.append(
+                                pos_logprobs_raw[: self.kd_online_topk]
+                            )
 
                         # Mask depends on the corresponding label for the student
                         if label == self.DEFAULT_LABEL_PAD_TOKEN_ID:
@@ -442,12 +398,17 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
                             pos_token_ids[: self.kd_online_topk]
                         )
 
-                        # normalized_logprobs_for_position = self._normalize_logprobs(pos_logprobs_raw[:self.kd_online_topk])
-                        # current_target_logprobs.append(normalized_logprobs_for_position)
-                        # don't normalize for now as the probs seem to sum to 1.0 already
-                        current_target_logprobs.append(
-                            pos_logprobs_raw[: self.kd_online_topk]
-                        )
+                        if self.kd_normalize_topk:
+                            normalized_logprobs_for_position = self._normalize_logprobs(
+                                pos_logprobs_raw[: self.kd_online_topk]
+                            )
+                            current_target_logprobs.append(
+                                normalized_logprobs_for_position
+                            )
+                        else:
+                            current_target_logprobs.append(
+                                pos_logprobs_raw[: self.kd_online_topk]
+                            )
 
                         # Mask depends on the corresponding label for the student
                         if label == self.DEFAULT_LABEL_PAD_TOKEN_ID:
