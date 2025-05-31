@@ -1,6 +1,4 @@
-"""
-E2E tests for llama pretrain
-"""
+"""E2E tests for llama pretrain"""
 
 import os
 
@@ -20,9 +18,7 @@ os.environ["WANDB_DISABLED"] = "true"
 
 
 class TestPretrainLlama:
-    """
-    Test case for Llama models w pretraining
-    """
+    """Test case for Llama models w pretraining"""
 
     @pytest.mark.parametrize(
         "sample_packing",
