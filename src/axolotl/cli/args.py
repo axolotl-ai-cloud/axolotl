@@ -28,7 +28,6 @@ class TrainerCliArgs:
     debug: bool = field(default=False)
     debug_text_only: bool = field(default=False)
     debug_num_examples: int = field(default=0)
-    merge_lora: bool = field(default=False)
     prompter: Optional[str] = field(default=None)
     shard: bool = field(default=False)
     main_process_port: Optional[int] = field(default=None)
