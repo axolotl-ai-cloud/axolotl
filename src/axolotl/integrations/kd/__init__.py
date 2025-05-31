@@ -49,6 +49,7 @@ class KDPlugin(BasePlugin):
             "kd_alpha": cfg.kd_alpha,
             "kd_temperature": cfg.kd_temperature,
             "kd_beta": cfg.kd_beta,
+            "kd_normalize_topk": cfg.kd_normalize_topk,
         }
 
     def get_collator_cls_and_kwargs(self, cfg, is_eval=False):
@@ -72,6 +73,7 @@ class KDPlugin(BasePlugin):
                 "kd_temperature": cfg.kd_temperature,
                 "kd_online_server": cfg.kd_online_server,
                 "kd_online_timeout": cfg.kd_online_timeout,
+                "kd_normalize_topk": cfg.kd_normalize_topk,
             }
 
         if use_batch_sampler_collator:

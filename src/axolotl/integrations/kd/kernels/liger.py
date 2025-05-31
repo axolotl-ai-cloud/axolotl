@@ -8,6 +8,8 @@ from liger_kernel.chunked_loss.fused_linear_distillation import (
     LigerFusedLinearDistillationBase,
 )
 
+from axolotl.integrations.kd.utils import normalize_logprobs
+
 
 class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
     """
@@ -21,6 +23,7 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
         target_logprobs_chunk: torch.Tensor,  # [chunk_size, top_k], already temp-scaled and normalized logprobs
         target_mask_chunk: torch.Tensor,  # [chunk_size, top_k]
         beta: float = 0.0,
+        normalize_topk: bool = True,
     ) -> torch.Tensor:
         """
         Compute Top-K KL divergence loss for a chunk.
@@ -33,9 +36,11 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
                   0.0 for Forward KL (P_teacher || P_student).
                   1.0 for Reverse KL (P_student || P_teacher).
                   0.5 for Symmetric KL (average of Forward and Reverse).
+            normalize_topk: Whether to normalize the log probabilities
         Returns:
             Sum of KL divergence losses for the chunk.
         """
+        topk = target_token_ids_chunk.shape[-1]
         student_logits_temp_scaled = (  # [chunk_size, vocab_size]
             student_logits_temp_scaled.float()
         )
@@ -56,6 +61,12 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
             student_logits_topk_temp_scaled - student_lse
         )
 
+        # we have the top-k student logprobs, normalize them
+        if normalize_topk:
+            student_logprobs_topk_temp_scaled = normalize_logprobs(
+                student_logprobs_topk_temp_scaled, topk
+            )
+
         valid_mask = target_mask_chunk.to(torch.bool)  # [chunk_size, top_k]
 
         student_logprobs_topk_valid = student_logprobs_topk_temp_scaled[valid_mask]
@@ -67,7 +78,7 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
         # Student probabilities P_student from log P_student
         student_probs_topk_valid = student_logprobs_topk_valid.exp()
 
-        kd_loss_per_token = torch.zeros_like(target_logprobs_valid)
+        # kd_loss_per_token = torch.zeros_like(target_logprobs_valid)
 
         # KL divergence: sum(P_teacher * (log P_teacher - log P_student))
         # = sum(P_teacher * log P_teacher) - sum(P_teacher * log P_student)
@@ -75,18 +86,33 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
         # or as sum(P_teacher * (log_softmax_teacher - log_softmax_student))
         # Here, target_logprobs_valid are log_softmax_teacher.
         # student_logprobs_topk_valid are log_softmax_student (for the selected K indices).
-        if beta < 1.0:  # Contribution from Forward KL
+        if beta == 0.0:  # Contribution from Forward KL
             fwd_kl_per_token = teacher_probs_valid * (
                 target_logprobs_valid - student_logprobs_topk_valid
             )
-            kd_loss_per_token += (1.0 - beta) * fwd_kl_per_token
-        if beta > 0.0:  # Contribution from Reverse KL
+            kd_loss = fwd_kl_per_token.sum()
+        elif beta == 1.0:  # Contribution from Reverse KL
             rev_kl_per_token = student_probs_topk_valid * (
                 student_logprobs_topk_valid - target_logprobs_valid
             )
-            kd_loss_per_token += beta * rev_kl_per_token
-
-        kd_loss = kd_loss_per_token.sum()
+            kd_loss = rev_kl_per_token.sum()
+        else:
+            # JSD - Jensen-Shannon Divergence / Symmetric
+            mean_probs = (
+                1 - beta
+            ) * student_probs_topk_valid + beta * teacher_probs_valid
+            log_mean_probs = mean_probs.log()
+            student_kl = F.kl_div(
+                log_mean_probs,
+                student_logprobs_topk_valid,
+                reduction="sum",
+                log_target=True,
+            )
+            teacher_kl = F.kl_div(
+                log_mean_probs, target_logprobs_valid, reduction="sum", log_target=True
+            )
+            jsd_loss = beta * teacher_kl + (1 - beta) * student_kl
+            kd_loss = jsd_loss
 
         return kd_loss
 
@@ -109,6 +135,7 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
         compute_ce_loss: bool = True,
         temperature: float = 1.0,
         beta: float = 0.0,
+        normalize_topk: bool = True,
     ):
         # Compute student logits for the chunk from hidden states and LM head
         # student_input_chunk: [chunk_size, hidden_dim]
@@ -144,6 +171,7 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
                 target_logprobs_chunk,
                 target_mask_chunk,
                 beta=beta,
+                normalize_topk=normalize_topk,
             )
 
         return soft_loss, ce_loss
@@ -167,6 +195,7 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
         compiled: bool = False,
         chunk_size: int = 1024,
         compute_ce_loss: bool = True,
+        normalize_topk: bool = True,
     ):
         CHUNK_SIZE = chunk_size  # pylint: disable=invalid-name
         grad_weight_acc = torch.zeros_like(student_lm_head_weight)
@@ -211,6 +240,7 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
                 compute_ce_loss=compute_ce_loss,
                 temperature=temperature,
                 beta=beta,
+                normalize_topk=normalize_topk,
             )
 
         def accumulate_chunk_grads(
@@ -311,7 +341,7 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
         ctx.bias_was_none = student_lm_head_bias is None
         ctx.orig_dims = (B, N, D, K)
 
-        # since this is packed, there is simply a single batch, so batchmean reduciton of kl-div is simply the accumulated sum
+        # since this is packed, there is simply a single batch, so batchmean reduction of kl-div is simply the accumulated sum
         # we still need to scale the kd_loss by the temp^2
         kd_loss_acc = kd_loss_acc * (temperature**2)
         final_loss = weight_soft_loss * kd_loss_acc + weight_hard_loss * ce_loss_acc
@@ -397,6 +427,7 @@ class LigerFusedLinearKLTopKLogprobLoss(torch.nn.Module):
         compiled: bool = True,
         chunk_size: int = 1024,
         compute_ce_loss: bool = True,
+        normalize_topk: bool = True,
     ):
         super().__init__()
         if not (0.0 <= weight_hard_loss <= 1.0 and 0.0 <= weight_soft_loss <= 1.0):
@@ -412,6 +443,7 @@ class LigerFusedLinearKLTopKLogprobLoss(torch.nn.Module):
         self.compiled = compiled
         self.chunk_size = chunk_size
         self.compute_ce_loss = compute_ce_loss
+        self.normalize_topk = normalize_topk
 
         if not self.compute_ce_loss and self.weight_hard_loss > 0.0:
             print(
@@ -449,4 +481,5 @@ class LigerFusedLinearKLTopKLogprobLoss(torch.nn.Module):
             self.compiled,
             self.chunk_size,
             self.compute_ce_loss,
+            self.normalize_topk,
         )
