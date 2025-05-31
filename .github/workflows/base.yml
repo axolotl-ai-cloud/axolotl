@@ -28,42 +28,50 @@ jobs:
             python_version: "3.11"
             pytorch: 2.5.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-base"
           - cuda: "124"
             cuda_version: 12.4.1
             cudnn_version: ""
             python_version: "3.11"
             pytorch: 2.6.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-base"
           - cuda: "126"
             cuda_version: 12.6.3
             cudnn_version: ""
             python_version: "3.11"
             pytorch: 2.6.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-base"
           - cuda: "126"
             cuda_version: 12.6.3
             cudnn_version: ""
             python_version: "3.11"
             pytorch: 2.7.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-base"
           - cuda: "128"
             cuda_version: 12.6.3
             cudnn_version: ""
             python_version: "3.11"
             pytorch: 2.7.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-base"
           - cuda: "128"
             cuda_version: 12.8.1
             cudnn_version: ""
             python_version: "3.11"
             pytorch: nightly
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-          - cuda: "128"
-            cuda_version: 12.8.1
-            cudnn_version: ""
-            python_version: "3.11"
-            pytorch: next
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-base-nightly"
+#          # "next" is for release candidates of pytorch
+#          - cuda: "128"
+#            cuda_version: 12.8.1
+#            cudnn_version: ""
+#            python_version: "3.11"
+#            pytorch: next
+#            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+#            dockerfile: "Dockerfile-base-next"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -85,7 +93,52 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: ${{ matrix.pytorch == 'nightly' && './docker/Dockerfile-base-nightly' || matrix.pytorch == 'next' && './docker/Dockerfile-base-next' || './docker/Dockerfile-base' }}
+          file: ./docker/${{ matrix.dockerfile }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.metadata.outputs.tags }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            CUDA_VERSION=${{ matrix.cuda_version }}
+            CUDNN_VERSION=${{ matrix.cudnn_version }}
+            CUDA=${{ matrix.cuda }}
+            PYTHON_VERSION=${{ matrix.python_version }}
+            PYTORCH_VERSION=${{ matrix.pytorch }}
+            TORCH_CUDA_ARCH_LIST=${{ matrix.torch_cuda_arch_list }}
+  build-base-uv:
+    if: github.repository_owner == 'axolotl-ai-cloud'
+    runs-on: axolotl-gpu-runner
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: "126"
+            cuda_version: 12.6.3
+            cudnn_version: ""
+            python_version: "3.11"
+            pytorch: 2.6.0
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-uv-base"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Docker metadata
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            axolotlai/axolotl-base-uv
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./docker/${{ matrix.dockerfile }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.metadata.outputs.tags }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           labels: ${{ steps.metadata.outputs.labels }}

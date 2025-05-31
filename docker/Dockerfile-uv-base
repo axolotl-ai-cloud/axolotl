@@ -1,0 +1,36 @@
+ARG CUDA_VERSION="12.6.3"
+ARG CUDNN_VERSION=""
+ARG UBUNTU_VERSION="22.04"
+ARG MAX_JOBS=4
+
+FROM nvidia/cuda:$CUDA_VERSION-cudnn$CUDNN_VERSION-devel-ubuntu$UBUNTU_VERSION AS base-builder
+
+ARG PYTHON_VERSION="3.11"
+ARG PYTORCH_VERSION="2.6.0"
+ARG CUDA="126"
+ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
+
+ENV PYTHON_VERSION=$PYTHON_VERSION
+ENV TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST
+ENV UV_TORCH_BACKEND="cu${CUDA}"
+
+RUN apt-get update \
+    && apt-get install -y wget git build-essential ninja-build git-lfs libaio-dev pkg-config curl && rm -rf /var/lib/apt/lists/* \
+    && git lfs install --skip-repo \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh
+
+ENV PATH="/root/.local/bin:${PATH}"
+
+RUN uv python install ${PYTHON_VERSION}
+
+WORKDIR /workspace
+
+RUN uv venv --no-project --relocatable axolotl-venv
+
+ENV PATH="/workspace/axolotl-venv/bin:${PATH}"
+
+RUN uv pip install packaging setuptools wheel \
+    && uv pip install torch==${PYTORCH_VERSION} \
+    && uv pip install --no-build-isolation "causal_conv1d @ git+https://github.com/Dao-AILab/causal-conv1d.git@main" \
+    && uv pip install "mamba_ssm @ git+https://github.com/state-spaces/mamba.git@main" \
+    && uv pip install awscli pydantic

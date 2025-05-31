@@ -51,7 +51,7 @@ Features:
 
 - NVIDIA GPU (Ampere or newer for `bf16` and Flash Attention) or AMD GPU
 - Python 3.11
-- PyTorch ≥2.4.1
+- PyTorch ≥2.5.1
 
 ### Installation
 
