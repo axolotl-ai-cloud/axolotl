@@ -63,6 +63,12 @@ class AxolotlKDTrainer(AxolotlTrainer):
 
         Subclass and override for custom behavior.
         """
+        if (
+            self.args.sample_packing
+            and hasattr(inputs, "attention_mask")
+            and hasattr(inputs, "position_ids")
+        ):
+            del inputs["attention_mask"]
 
         if self.model_accepts_loss_kwargs:
             loss_kwargs = {}
