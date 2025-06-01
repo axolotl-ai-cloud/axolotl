@@ -77,25 +77,21 @@ def compute_row_hash(example):
 def deduplicate_dataset(
     dataset: Dataset,
     other_dataset: Dataset = None,
-    num_proc: int = None,
+    num_proc: Optional[int] = None,
 ) -> Dataset:
     hashes, other_hashes, seen_hashes, unique_indices = [], set(), set(), set()
 
     if dataset is not None:
         hashed = dataset.map(
             compute_row_hash,
-            batched=False,
             num_proc=num_proc,
-            remove_columns=[],
         )
         hashes = hashed["row_hash"]
 
     if other_dataset is not None:
         other_hashed = other_dataset.map(
             compute_row_hash,
-            batched=False,
             num_proc=num_proc,
-            remove_columns=[],
         )
         other_hashes = set(other_hashed["row_hash"])
 
