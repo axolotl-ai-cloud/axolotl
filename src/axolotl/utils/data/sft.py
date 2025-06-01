@@ -341,7 +341,9 @@ def load_tokenized_prepared_datasets(
                 LOG.debug("NOT shuffling merged datasets")
 
         if cfg.dataset_exact_deduplication:
-            _, _, dataset = deduplicate_and_log_datasets(dataset=dataset, num_proc=cfg.dataset_processes)
+            _, _, dataset = deduplicate_and_log_datasets(
+                dataset=dataset, num_proc=cfg.dataset_processes
+            )
 
         if not cfg.skip_prepare_dataset:
             dataset = drop_long_seq_in_dataset(dataset, cfg)

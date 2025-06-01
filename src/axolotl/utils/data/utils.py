@@ -9,6 +9,7 @@ import huggingface_hub
 import numpy as np
 import requests
 from datasets import Dataset, IterableDataset
+from typing import Optional
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
@@ -78,7 +79,7 @@ def deduplicate_dataset(
     other_dataset: Dataset = None,
     num_proc: int = None,
 ) -> Dataset:
-    hashes, other_hashes, seen_hashes, unique_indices = [], [], set(), set()
+    hashes, other_hashes, seen_hashes, unique_indices = [], set(), set(), set()
 
     if dataset is not None:
         hashed = dataset.map(
@@ -98,10 +99,10 @@ def deduplicate_dataset(
         )
         other_hashes = set(other_hashed["row_hash"])
 
-    for idx, hash in enumerate(hashes):
-        if hash in seen_hashes or hash in other_hashes:
+    for idx, row_hash in enumerate(hashes):
+        if row_hash in seen_hashes or row_hash in other_hashes:
             continue
-        seen_hashes.add(hash)
+        seen_hashes.add(row_hash)
         unique_indices.add(idx)
 
     return dataset.select(unique_indices)
@@ -112,7 +113,7 @@ def deduplicate_and_log_datasets(
     train_dataset: Dataset = None,
     eval_dataset: Dataset = None,
     dataset: Dataset = None,
-    num_proc: int = None,
+    num_proc: Optional[int] = None,
 ) -> tuple[Dataset, Dataset, Dataset]:
     """
     Deduplicates train, eval, and an optional dataset if provided, logging original and new sizes.
