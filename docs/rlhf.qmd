@@ -16,6 +16,7 @@ feedback. Various methods include, but not limited to:
 - [Identity Preference Optimization (IPO)](#ipo)
 - [Kahneman-Tversky Optimization (KTO)](#kto)
 - [Odds Ratio Preference Optimization (ORPO)](#orpo)
+- [Group Relative Policy Optimization (GPRO)](#grpo)
 - Proximal Policy Optimization (PPO) (not yet supported in axolotl, if you're interested in contributing, please reach out!)
 
 
