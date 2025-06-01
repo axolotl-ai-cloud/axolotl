@@ -3,13 +3,13 @@
 import functools
 import hashlib
 import time
+from typing import Optional
 from enum import Enum
 
 import huggingface_hub
 import numpy as np
 import requests
 from datasets import Dataset, IterableDataset
-from typing import Optional
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
