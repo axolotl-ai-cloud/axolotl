@@ -130,7 +130,11 @@ def _prepare_pretraining_dataset(
     processor: ProcessorMixin | None,
     preprocess_iterable: bool,
 ) -> tuple[Dataset, Dataset | None, int, list[Prompter | None]]:
-    """Prepare dataset for pretraining mode."""
+    """
+    Prepare dataset for pretraining mode.
+
+    Note: Pre-training datasets are streamed from the HuggingFace Hub.
+    """
     # Extract pretraining dataset configuration
     pretraining_config = _extract_pretraining_config(cfg)
 
