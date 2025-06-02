@@ -268,7 +268,7 @@ def _load_from_hub(
 
 def _load_from_cloud(
     dataset_config: DictDefault,
-    remote_fs: "S3FileSystem | GCSFileSystem | AzureBlobFileSystem | OCIFileSystem",
+    remote_fs: S3FileSystem | GCSFileSystem | AzureBlobFileSystem | OCIFileSystem,
     storage_options: dict,
     load_dataset_kwargs: dict,
 ) -> Dataset | IterableDataset | DatasetDict | IterableDatasetDict:
