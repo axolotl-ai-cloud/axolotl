@@ -39,6 +39,8 @@ co-dependencies.
 
 ### uv Installation {#sec-uv}
 
+uv is a fast, reliable Python package installer and resolver built in Rust. It offers significant performance improvements over pip and provides better dependency resolution, making it an excellent choice for complex environments.
+
 Install uv if not already installed
 ```{.bash}
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -54,6 +56,7 @@ source .venv/bin/activate
 ```
 
 Install PyTorch
+- PyTorch 2.6.0 recommended
 ```{.bash}
 uv pip install packaging setuptools wheel
 uv pip install torch==2.6.0
@@ -63,6 +66,7 @@ uv pip install awscli pydantic
 Install axolotl from PyPi
 ```{.bash}
 uv pip install --no-build-isolation axolotl[deepspeed,flash-attn]
+
 # optionally install with vLLM if you're using torch==2.6.0 and want to train w/ GRPO
 uv pip install --no-build-isolation axolotl[deepspeed,flash-attn,vllm]
 ```
