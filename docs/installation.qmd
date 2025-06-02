@@ -15,7 +15,7 @@ This guide covers all the ways you can install and set up Axolotl for your envir
 
 - NVIDIA GPU (Ampere architecture or newer for `bf16` and Flash Attention) or AMD GPU
 - Python ≥3.10
-- PyTorch ≥2.4.1
+- PyTorch ≥2.5.1
 
 ## Installation Methods {#sec-installation-methods}
 
@@ -40,6 +40,40 @@ We use `--no-build-isolation` in order to detect the installed PyTorch version (
 installed) in order not to clobber it, and so that we set the correct version of
 dependencies that are specific to the PyTorch version or other installed
 co-dependencies.
+
+### uv Installation {#sec-uv}
+
+uv is a fast, reliable Python package installer and resolver built in Rust. It offers significant performance improvements over pip and provides better dependency resolution, making it an excellent choice for complex environments.
+
+Install uv if not already installed
+```{.bash}
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+```
+
+Choose your CUDA version to use with PyTorch; e.g. `cu124`, `cu126`, `cu128`,
+then create the venv and activate
+```{.bash}
+export UV_TORCH_BACKEND=cu126
+uv venv --no-project --relocatable
+source .venv/bin/activate
+```
+
+Install PyTorch
+- PyTorch 2.6.0 recommended
+```{.bash}
+uv pip install packaging setuptools wheel
+uv pip install torch==2.6.0
+uv pip install awscli pydantic
+```
+
+Install axolotl from PyPi
+```{.bash}
+uv pip install --no-build-isolation axolotl[deepspeed,flash-attn]
+
+# optionally install with vLLM if you're using torch==2.6.0 and want to train w/ GRPO
+uv pip install --no-build-isolation axolotl[deepspeed,flash-attn,vllm]
+```
 
 ### Edge/Development Build {#sec-edge-build}
 
