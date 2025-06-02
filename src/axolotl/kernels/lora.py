@@ -280,19 +280,19 @@ class LoRA_MLP(torch.autograd.Function):
         # Initialize and compute LoRA gradients
         d_down_A = d_down_B = d_up_A = d_up_B = d_gate_A = d_gate_B = None
 
-        if down_A is not None:
+        if down_A is not None and down_B is not None:
             d_down_A = h.t() @ (grad_output @ down_B.t())
             d_down_B = (down_A.t() @ h.t()) @ grad_output
             d_down_A *= down_scale
             d_down_B *= down_scale
 
-        if up_A is not None:
+        if up_A is not None and up_B is not None:
             d_up_A = X.t() @ (grad_up @ up_B.t())
             d_up_B = (up_A.t() @ X.t()) @ grad_up
             d_up_A *= up_scale
             d_up_B *= up_scale
 
-        if gate_A is not None:
+        if gate_A is not None and gate_B is not None:
             d_gate_A = X.t() @ (grad_gate @ gate_B.t())
             d_gate_B = (gate_A.t() @ X.t()) @ grad_gate
             d_gate_A *= gate_scale
@@ -311,7 +311,7 @@ class LoRA_MLP(torch.autograd.Function):
             del up_weight
 
             # Note the .to(dtype) only where mixing LoRA with base weights
-            if up_A is not None:
+            if up_A is not None and up_B is not None:
                 dX += grad_up @ up_B.to(dtype).t() @ (up_scale * up_A.to(dtype).t())
 
             # Gate projection gradients
@@ -319,7 +319,7 @@ class LoRA_MLP(torch.autograd.Function):
             dX += grad_gate @ gate_weight.t()
             del gate_weight
 
-            if gate_A is not None:
+            if gate_A is not None and gate_B is not None:
                 dX += (
                     grad_gate
                     @ gate_B.to(dtype).t()

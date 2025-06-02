@@ -9,6 +9,7 @@ on:
        - '.github/workflows/*.yml'
        - "*.[q]md"
        - "examples/**/*.y[a]?ml"
+       - ".pre-commit-config.yaml"
   workflow_dispatch:
 
 jobs:
