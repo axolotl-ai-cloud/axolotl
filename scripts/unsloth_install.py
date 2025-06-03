@@ -39,5 +39,5 @@ else:
 x = x.format(cuda.replace(".", ""), "-ampere" if is_ampere else "")
 uv_prefix = "uv " if use_uv else ""
 print(
-    f'{uv_prefix}pip install unsloth-zoo==2024.12.1 && pip install --no-deps "unsloth[{x}]==2024.12.4"'
+    f'{uv_prefix}pip install unsloth-zoo==2024.12.1 && {uv_prefix}pip install --no-deps "unsloth[{x}]==2024.12.4"'
 )
