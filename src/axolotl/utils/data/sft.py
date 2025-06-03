@@ -54,7 +54,7 @@ def prepare_datasets(
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
-        tokenizer: Tokenizer to use for processing texts.
+        tokenizer: Tokenizer to use for processing text.
         processor: Optional processor for multimodal datasets.
         preprocess_iterable: Whether to use iterable preprocessing.
 
@@ -477,7 +477,7 @@ def _handle_test_split_processing(
     return None, eval_dataset
 
 
-def _apply_dataset_shard(dataset: Dataset, cfg: DictDefault) -> Dataset:
+def _apply_dataset_sharding(dataset: Dataset, cfg: DictDefault) -> Dataset:
     """Apply dataset sharding if configured.
 
     Args:
@@ -527,7 +527,7 @@ def _load_prepare_datasets(
     )
 
     # Apply dataset sharding if configured using shared function
-    dataset = _apply_dataset_shard(dataset, cfg)
+    dataset = _apply_dataset_sharding(dataset, cfg)
 
     # Apply deduplication and create train / validation splits based on the split type
     if split == "train":
@@ -536,28 +536,3 @@ def _load_prepare_datasets(
         train_dataset, eval_dataset = _handle_test_split_processing(dataset, cfg)
 
     return train_dataset, eval_dataset, prompters
-
-
-def _save_iterable_dataset(
-    dataset: IterableDataset, prepared_ds_path: Path, cfg: DictDefault, split: str
-) -> None:
-    """Save an IterableDataset to disk by converting it to a regular Dataset."""
-    num_workers = cfg.dataset_processes
-
-    def gen_from_iter_ds(_ds, worker_id: list[int], num_workers: list[int]):
-        """Generator function to correctly splice the dataset for each worker"""
-        for i, item in enumerate(_ds):
-            if i % num_workers[0] == worker_id[0]:
-                yield item
-
-    ds_from_iter = Dataset.from_generator(
-        functools.partial(gen_from_iter_ds, dataset),
-        features=dataset.features,
-        num_proc=num_workers,
-        split=split,
-        gen_kwargs={
-            "worker_id": list(range(num_workers)),
-            "num_workers": [num_workers] * num_workers,
-        },
-    )
-    ds_from_iter.save_to_disk(str(prepared_ds_path))
