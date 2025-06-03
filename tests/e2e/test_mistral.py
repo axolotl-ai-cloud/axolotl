@@ -2,7 +2,6 @@
 E2E tests for lora llama
 """
 
-import os
 import unittest
 
 from transformers.utils import is_torch_bf16_gpu_available

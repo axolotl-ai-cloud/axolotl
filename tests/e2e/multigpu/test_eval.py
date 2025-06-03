@@ -2,7 +2,6 @@
 E2E tests for multigpu eval
 """
 
-import os
 from pathlib import Path
 
 import yaml

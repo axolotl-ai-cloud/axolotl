@@ -2,7 +2,6 @@
 E2E tests for mixtral
 """
 
-import os
 import unittest
 
 from axolotl.cli.args import TrainerCliArgs

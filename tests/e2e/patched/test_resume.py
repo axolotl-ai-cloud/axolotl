@@ -2,7 +2,6 @@
 E2E tests for resuming training
 """
 
-import os
 import re
 import subprocess
 

@@ -2,7 +2,6 @@
 E2E tests for multipack fft llama using 4d attention masks
 """
 
-import os
 import unittest
 
 from axolotl.cli.args import TrainerCliArgs

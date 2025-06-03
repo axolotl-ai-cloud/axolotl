@@ -17,8 +17,11 @@ from axolotl.prompt_strategies.chat_template import (
 )
 from axolotl.prompters import IGNORE_TOKEN_ID
 from axolotl.utils.chat_templates import get_chat_template
+from axolotl.utils.logging import get_logger
 
 from tests.hf_offline_utils import enable_hf_offline
+
+LOG = get_logger(__name__)
 
 PARAMETRIZE_KEYS = "tokenizer, chat_template, chat_template_jinja, eos_token"
 PARAMETRIZE_PARAMS = [

@@ -2,7 +2,6 @@
 E2E tests for gemma2
 """
 
-import os
 from pathlib import Path
 
 import pytest

@@ -2,7 +2,6 @@
 E2E tests for reward model lora llama
 """
 
-import os
 import unittest
 
 from axolotl.cli.args import TrainerCliArgs

@@ -2,7 +2,6 @@
 E2E tests for gemma3_text
 """
 
-import os
 from pathlib import Path
 
 import pytest

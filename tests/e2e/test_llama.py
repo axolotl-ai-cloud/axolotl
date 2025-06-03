@@ -2,8 +2,6 @@
 E2E tests for llama
 """
 
-import os
-
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train

@@ -2,7 +2,6 @@
 E2E tests for falcon
 """
 
-import os
 import unittest
 
 import pytest

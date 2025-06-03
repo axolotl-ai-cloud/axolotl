@@ -2,8 +2,6 @@
 E2E tests for llama pretrain
 """
 
-import os
-
 import pytest
 
 from axolotl.cli.args import TrainerCliArgs

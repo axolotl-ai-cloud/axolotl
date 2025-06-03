@@ -2,7 +2,6 @@
 E2E tests for multigpu post-training use Ray Train
 """
 
-import os
 from pathlib import Path
 
 import pytest

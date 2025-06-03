@@ -2,7 +2,6 @@
 E2E tests for llama w/ S2 attn
 """
 
-import os
 import unittest
 
 import pytest

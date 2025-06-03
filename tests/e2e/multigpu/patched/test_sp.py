@@ -1,6 +1,5 @@
 """E2E tests for sequence parallelism"""
 
-import os
 from pathlib import Path
 
 import pytest

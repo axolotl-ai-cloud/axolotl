@@ -2,7 +2,6 @@
 E2E tests for multigpu qwen2
 """
 
-import os
 from pathlib import Path
 
 import pytest

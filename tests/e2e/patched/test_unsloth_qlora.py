@@ -2,8 +2,6 @@
 e2e tests for unsloth qlora
 """
 
-import os
-
 import pytest
 
 from axolotl.cli.args import TrainerCliArgs

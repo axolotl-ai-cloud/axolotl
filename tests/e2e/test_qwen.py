@@ -2,7 +2,6 @@
 E2E tests for qwen
 """
 
-import os
 from pathlib import Path
 
 import pytest

@@ -1,6 +1,5 @@
 """E2E smoke test for evaluate CLI command"""
 
-import os
 from pathlib import Path
 
 import yaml

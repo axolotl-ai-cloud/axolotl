@@ -2,7 +2,6 @@
 E2E tests for mixtral
 """
 
-import os
 import unittest
 
 import torch
