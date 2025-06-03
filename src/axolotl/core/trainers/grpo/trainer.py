@@ -136,12 +136,21 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
                     f"the valid values for the number of generations are: {possible_values}."
                 )
 
+        self.sp_group = None
+        self.rank = dist.get_rank()
+        self.world_size = dist.get_world_size()
+        self.local_rank = 0
+        self.local_world_size = 1
+
+    def train(self):
         # Initialize the SP group
         self.sp_group = get_ring_attn_group()
         self.rank = dist.get_rank()
         self.world_size = dist.get_world_size()
         self.local_rank = dist.get_rank(group=self.sp_group)
         self.local_world_size = dist.get_world_size(group=self.sp_group)
+
+        return super().train()
 
     def _get_train_sampler(self) -> Sampler:
         effective_batch_size = (
