@@ -230,7 +230,7 @@ def _load_pretraining_dataset(
         dataset_wrapper_partial,
         max_tokens=cfg.sequence_len,
         batch_size=cfg.micro_batch_size,
-        seed=cfg.seed if cfg.seed is not None else 42,
+        seed=cfg.seed,
         buffer_size=cfg.pretrain_multipack_buffer_size or 10_000,
     )
 
@@ -340,9 +340,6 @@ def _load_and_process_raw_datasets(
             "pre-process your dataset."
         )
 
-    # Use shared seed handling
-    seed = cfg.seed if cfg.seed is not None else 42
-
     # Load and process individual datasets
     datasets = []
     prompters = []
@@ -352,7 +349,7 @@ def _load_and_process_raw_datasets(
             cfg=cfg,
             tokenizer=tokenizer,
             split=split,
-            seed=seed,
+            seed=cfg.seed,
             processor=processor,
             preprocess_iterable=preprocess_iterable,
         )

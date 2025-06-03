@@ -419,9 +419,8 @@ def create_train_validation_split(
     Returns:
         Tuple of (train_dataset, eval_dataset).
     """
-    seed = cfg.seed if cfg.seed is not None else 42
     train_fingerprint, test_fingerprint = generate_split_fingerprints(
-        dataset, val_set_size, seed
+        dataset, val_set_size, cfg.seed
     )
 
     # Apply deduplication before splitting if configured
@@ -431,7 +430,7 @@ def create_train_validation_split(
     split_dataset = dataset.train_test_split(
         test_size=val_set_size,
         shuffle=False,
-        seed=seed,
+        seed=cfg.seed,
         train_new_fingerprint=train_fingerprint,
         test_new_fingerprint=test_fingerprint,
     )
@@ -519,10 +518,9 @@ def merge_datasets(datasets: list[Dataset], cfg: DictDefault) -> Dataset:
     LOG.info("Merging datasets")
     merged_dataset = concatenate_datasets(datasets)
 
-    seed = cfg.seed if cfg.seed is not None else 42
     if cfg.shuffle_merged_datasets:
         LOG.debug("Shuffle merged datasets")
-        merged_dataset = merged_dataset.shuffle(seed=seed)
+        merged_dataset = merged_dataset.shuffle(seed=cfg.seed)
     else:
         LOG.debug("NOT shuffling merged datasets")
 
