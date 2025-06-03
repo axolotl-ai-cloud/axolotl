@@ -142,7 +142,7 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
         self.local_rank = 0
         self.local_world_size = 1
 
-    def train(self):
+    def train(self, *args, **kwargs):
         # Initialize the SP group
         self.sp_group = get_ring_attn_group()
         self.rank = dist.get_rank()
@@ -150,7 +150,7 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
         self.local_rank = dist.get_rank(group=self.sp_group)
         self.local_world_size = dist.get_world_size(group=self.sp_group)
 
-        return super().train()
+        return super().train(*args, **kwargs)
 
     def _get_train_sampler(self) -> Sampler:
         effective_batch_size = (
