@@ -96,7 +96,7 @@ def deduplicate_dataset(
         other_hashed = other_dataset.map(
             compute_row_hash,
             remove_columns=other_dataset.column_names,
-            num_proc=num_proc
+            num_proc=num_proc,
         )
         other_hashes = set(other_hashed["row_hash"])
         del other_hashed
