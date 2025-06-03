@@ -7,7 +7,6 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Generator
 
-import yaml
 from datasets import (
     Dataset,
     DatasetDict,
@@ -501,19 +500,6 @@ def generate_dataset_hash_from_config(
         f"{'|'.join(sorted([f'{d.path}:{d.type}:{d.shards}:{d.conversation}:{d.split}:{d.temperature or 1.0}' for d in cfg_datasets]))}"
         f"|{tokenizer_name}"
     )
-    return str(md5(config_str))
-
-
-def generate_dataset_hash_from_yaml(config: Any) -> str:
-    """Generate MD5 hash of configuration using YAML serialization.
-
-    Args:
-        config: Configuration object to hash.
-
-    Returns:
-        MD5 hash string.
-    """
-    config_str = yaml.dump(config, Dumper=yaml.Dumper)
     return str(md5(config_str))
 
 

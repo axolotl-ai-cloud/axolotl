@@ -5,6 +5,7 @@ from functools import partial
 from typing import Any, Callable, Literal
 
 from datasets import Dataset, DatasetDict
+from transformers import PreTrainedTokenizer
 
 from axolotl.loaders import load_tokenizer
 from axolotl.prompt_strategies.dpo import load as load_dpo
@@ -14,13 +15,16 @@ from axolotl.utils.data.shared import (
     DatasetPreparer,
     create_train_validation_split,
     datasets_with_name_generator,
-    generate_dataset_hash_from_yaml,
+    generate_dataset_hash_from_config,
     load_dataset_with_config,
     load_preprocessed_dataset,
     merge_datasets,
     save_preprocessed_dataset,
 )
-from axolotl.utils.data.utils import deduplicate_and_log_datasets
+from axolotl.utils.data.utils import (
+    deduplicate_and_log_datasets,
+    retry_on_request_exceptions,
+)
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
@@ -28,7 +32,10 @@ from axolotl.utils.schemas.enums import RLType
 LOG = get_logger(__name__)
 
 
-def prepare_preference_datasets(cfg: DictDefault) -> tuple[Dataset, Dataset | None]:
+@retry_on_request_exceptions(max_retries=3, delay=5)
+def prepare_preference_datasets(
+    cfg: DictDefault, tokenizer: PreTrainedTokenizer
+) -> tuple[Dataset, Dataset | None]:
     """Load and prepare preference datasets for RL training.
 
     Loads training and evaluation datasets, handling preprocessing, caching, and
@@ -36,6 +43,7 @@ def prepare_preference_datasets(cfg: DictDefault) -> tuple[Dataset, Dataset | No
 
     Args:
         cfg: Configuration object containing dataset and training settings.
+        tokenizer: Tokenizer to use for processing text.
 
     Returns:
         Tuple of (train_dataset, eval_dataset). eval_dataset may be None
@@ -45,7 +53,7 @@ def prepare_preference_datasets(cfg: DictDefault) -> tuple[Dataset, Dataset | No
     def _load_datasets():
         # Load training dataset
         train_dataset, train_is_preprocessed = _load_or_create_dataset_split(
-            cfg, "train"
+            cfg, tokenizer, split="train"
         )
 
         # Load or create evaluation dataset
@@ -53,7 +61,7 @@ def prepare_preference_datasets(cfg: DictDefault) -> tuple[Dataset, Dataset | No
         eval_is_preprocessed = False
         if cfg.test_datasets:
             eval_dataset, eval_is_preprocessed = _load_or_create_dataset_split(
-                cfg, "test"
+                cfg, tokenizer, split="test"
             )
         elif cfg.val_set_size:
             # Create validation split from training data
@@ -63,17 +71,25 @@ def prepare_preference_datasets(cfg: DictDefault) -> tuple[Dataset, Dataset | No
 
         # Save preprocessed datasets
         if not train_is_preprocessed:
-            _save_preprocessed_dataset(cfg, cfg.datasets, train_dataset)
+            dataset_hash = generate_dataset_hash_from_config(
+                cfg, cfg.datasets, tokenizer.name_or_path
+            )
+            save_preprocessed_dataset(cfg, train_dataset, dataset_hash)
         if eval_dataset and not eval_is_preprocessed:
-            _save_preprocessed_dataset(cfg, cfg.test_datasets, eval_dataset)
+            dataset_hash = generate_dataset_hash_from_config(
+                cfg, cfg.test_datasets, tokenizer.name_or_path
+            )
+            save_preprocessed_dataset(cfg, eval_dataset, dataset_hash)
 
         return train_dataset, eval_dataset
 
     def _load_datasets_other_ranks():
-        train_dataset, _ = _load_or_create_dataset_split(cfg, "train")
+        train_dataset, _ = _load_or_create_dataset_split(cfg, tokenizer, split="train")
         eval_dataset = None
         if cfg.test_datasets:
-            eval_dataset, _ = _load_or_create_dataset_split(cfg, "test")
+            eval_dataset, _ = _load_or_create_dataset_split(
+                cfg, tokenizer, split="test"
+            )
         elif cfg.val_set_size:
             train_dataset, eval_dataset = create_train_validation_split(
                 train_dataset, cfg, cfg.val_set_size
@@ -95,32 +111,24 @@ def prepare_preference_datasets(cfg: DictDefault) -> tuple[Dataset, Dataset | No
     return train_dataset, eval_dataset
 
 
-def _load_preprocessed_ds(cfg: DictDefault, datasets_config: Any) -> Dataset | None:
+def _load_preprocessed_ds(
+    cfg: DictDefault, datasets_config: Any, tokenizer: PreTrainedTokenizer
+) -> Dataset | None:
     """Load preprocessed dataset from disk if available.
 
     Args:
         cfg: Main configuration object.
         datasets_config: Dataset-specific configuration.
+        tokenizer: Optional tokenizer for transformation.
 
     Returns:
-        Loaded dataset if found, None otherwise.
+        Loaded dataset if found, `None` otherwise.
     """
-    ds_hash = generate_dataset_hash_from_yaml(datasets_config)
-    return load_preprocessed_dataset(cfg, ds_hash)
-
-
-def _save_preprocessed_dataset(
-    cfg: DictDefault, sub_cfg: Any, dataset: Dataset
-) -> None:
-    """Save preprocessed dataset to disk.
-
-    Args:
-        cfg: Main configuration object.
-        sub_cfg: Dataset-specific configuration.
-        dataset: Dataset to save.
-    """
-    ds_hash = generate_dataset_hash_from_yaml(sub_cfg)
-    save_preprocessed_dataset(cfg, dataset, ds_hash)
+    # Generate dataset hash for caching
+    dataset_hash = generate_dataset_hash_from_config(
+        cfg, datasets_config, tokenizer.name_or_path
+    )
+    return load_preprocessed_dataset(cfg, dataset_hash)
 
 
 def _map_dataset(
@@ -297,12 +305,13 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
 
 
 def _load_or_create_dataset_split(
-    cfg: DictDefault, split: Literal["train", "test"]
+    cfg: DictDefault, tokenizer: PreTrainedTokenizer, split: Literal["train", "test"]
 ) -> tuple[Dataset, bool]:
     """Load preprocessed dataset or create new one for given split.
 
     Args:
         cfg: Configuration object.
+        tokenizer: Tokenizer to use for processing text.
         split: Dataset split to load.
 
     Returns:
@@ -310,6 +319,6 @@ def _load_or_create_dataset_split(
     """
     datasets_config = cfg.datasets if split == "train" else cfg.test_datasets
 
-    if preprocessed_ds := _load_preprocessed_ds(cfg, datasets_config):
+    if preprocessed_ds := _load_preprocessed_ds(cfg, datasets_config, tokenizer):
         return preprocessed_ds, True
     return _load_split(cfg, split=split), False

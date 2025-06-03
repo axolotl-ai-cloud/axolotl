@@ -111,7 +111,8 @@ def load_preference_datasets(
         Dataclass with fields for training and evaluation datasets and the computed
         `total_num_steps`.
     """
-    train_dataset, eval_dataset = prepare_preference_datasets(cfg)
+    tokenizer = load_tokenizer(cfg)
+    train_dataset, eval_dataset = prepare_preference_datasets(cfg, tokenizer)
 
     total_num_steps: int | None = None
     if cfg.rl is not RLType.GRPO:
