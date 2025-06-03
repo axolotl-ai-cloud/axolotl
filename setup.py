@@ -118,7 +118,7 @@ extras_require = {
         "yunchang==0.6.0",
     ],
     "deepspeed": [
-        "deepspeed==0.15.4",
+        "deepspeed==0.17.0",
         "deepspeed-kernels",
     ],
     "mamba-ssm": [
