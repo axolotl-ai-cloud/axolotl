@@ -457,10 +457,14 @@ def rand_reward_func(prompts, completions) -> list[float]:
                     mock_load_dataset.return_value = request.getfixturevalue(
                         dataset_name
                     )
-                    train_dataset, eval_dataset = prepare_preference_datasets(cfg)
+                    train_dataset, eval_dataset = prepare_preference_datasets(
+                        cfg, tokenizer
+                    )
             else:
                 # Load actual datasets for orpo_cfg and kto_cfg
-                train_dataset, eval_dataset = prepare_preference_datasets(cfg)
+                train_dataset, eval_dataset = prepare_preference_datasets(
+                    cfg, tokenizer
+                )
 
             builder.train_dataset = train_dataset
             builder.eval_dataset = eval_dataset

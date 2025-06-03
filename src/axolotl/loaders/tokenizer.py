@@ -7,12 +7,14 @@ import transformers
 from transformers import (
     AddedToken,
     AutoTokenizer,
+    PreTrainedTokenizer,
 )
 
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import get_linear_embedding_layers, load_model_config
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.chat_templates import get_chat_template_from_config
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
     barrier,
     is_local_main_process,
@@ -117,7 +119,7 @@ def modify_tokenizer_files(
     return tokenizer_dir
 
 
-def load_tokenizer(cfg):
+def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     """Load and configure the tokenizer based on the provided config."""
     model_config = load_model_config(cfg)
     tokenizer_kwargs = {}
