@@ -155,7 +155,7 @@
     "href": "docs/rlhf.html",
     "title": "RLHF (Beta)",
     "section": "",
-    "text": "Reinforcement Learning from Human Feedback is a method whereby a language model is optimized from data using human\nfeedback. Various methods include, but not limited to:\n\nDirect Preference Optimization (DPO)\nIdentity Preference Optimization (IPO)\nKahneman-Tversky Optimization (KTO)\nOdds Ratio Preference Optimization (ORPO)\nProximal Policy Optimization (PPO) (not yet supported in axolotl, if you’re interested in contributing, please reach out!)",
+    "text": "Reinforcement Learning from Human Feedback is a method whereby a language model is optimized from data using human\nfeedback. Various methods include, but not limited to:\n\nDirect Preference Optimization (DPO)\nIdentity Preference Optimization (IPO)\nKahneman-Tversky Optimization (KTO)\nOdds Ratio Preference Optimization (ORPO)\nGroup Relative Policy Optimization (GRPO)\nProximal Policy Optimization (PPO) (not yet supported in axolotl, if you’re interested in contributing, please reach out!)",
     "crumbs": [
       "How To Guides",
       "RLHF (Beta)"
@@ -166,7 +166,7 @@
     "href": "docs/rlhf.html#overview",
     "title": "RLHF (Beta)",
     "section": "",
-    "text": "Reinforcement Learning from Human Feedback is a method whereby a language model is optimized from data using human\nfeedback. Various methods include, but not limited to:\n\nDirect Preference Optimization (DPO)\nIdentity Preference Optimization (IPO)\nKahneman-Tversky Optimization (KTO)\nOdds Ratio Preference Optimization (ORPO)\nProximal Policy Optimization (PPO) (not yet supported in axolotl, if you’re interested in contributing, please reach out!)",
+    "text": "Reinforcement Learning from Human Feedback is a method whereby a language model is optimized from data using human\nfeedback. Various methods include, but not limited to:\n\nDirect Preference Optimization (DPO)\nIdentity Preference Optimization (IPO)\nKahneman-Tversky Optimization (KTO)\nOdds Ratio Preference Optimization (ORPO)\nGroup Relative Policy Optimization (GRPO)\nProximal Policy Optimization (PPO) (not yet supported in axolotl, if you’re interested in contributing, please reach out!)",
     "crumbs": [
       "How To Guides",
       "RLHF (Beta)"
