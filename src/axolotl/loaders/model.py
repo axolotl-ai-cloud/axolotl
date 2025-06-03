@@ -567,7 +567,7 @@ class ModelLoader:
 
         We need to return `hf_ds_cfg` as it needs to exist before model loading for zero3.
         HfTrainerDeepSpeedConfig is a class that is used to configure the DeepSpeed training.
-        It is not passed anywhere the model loading function, just need to exist.
+        It is not passed anywhere in the model loading function, just need to exist.
         """
         hf_ds_cfg = None
 
