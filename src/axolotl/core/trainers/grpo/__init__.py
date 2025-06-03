@@ -129,9 +129,9 @@ class GRPOStrategy:
         trl: TRLConfig = cfg.trl
         if trl.reward_funcs and isinstance(trl.reward_funcs, list):
             for reward_func in trl.reward_funcs:
-                trainer_kwargs["reward_fn"] = cls.get_reward_func(reward_func)
+                trainer_kwargs["reward_funcs"] = cls.get_reward_func(reward_func)
         elif trl.reward_funcs and isinstance(trl.reward_funcs, str):
-            trainer_kwargs["reward_fn"] = cls.get_reward_func(trl.reward_funcs)
+            trainer_kwargs["reward_funcs"] = cls.get_reward_func(trl.reward_funcs)
 
         return trainer_kwargs
 
