@@ -9,9 +9,7 @@ except ImportError as exc:
     raise ImportError("Install torch via `pip install torch`") from exc
 from packaging.version import Version as V
 
-USE_UV = False
-if len(sys.argv) > 1 and sys.argv[1] == "--uv":
-    USE_UV = True
+USE_UV = "--uv" in sys.argv[1:]
 
 v = V(torch.__version__)
 

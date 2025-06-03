@@ -8,9 +8,7 @@ except ImportError:
     raise ImportError("Install torch via `pip install torch`")
 from packaging.version import Version as V
 
-use_uv = False
-if len(sys.argv) > 1 and sys.argv[1] == "--uv":
-    use_uv = True
+use_uv = "--uv" in sys.argv[1:]
 
 v = V(torch.__version__)
 cuda = str(torch.version.cuda)
