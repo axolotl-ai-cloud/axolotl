@@ -109,7 +109,9 @@ class GRPOStrategy:
         return grpo_args_kwargs
 
     @classmethod
-    def set_trainer_args(cls, cfg: DictDefault) -> list[Any]:
+    def set_trainer_args(
+        cls, cfg: DictDefault
+    ) -> list[Any]:  # pylint: disable=unused-argument
         trainer_args = []
         if cfg.trl and cfg.trl.reward_funcs:
             reward_funcs = []
@@ -126,13 +128,6 @@ class GRPOStrategy:
             trainer_kwargs["reward_processing_classes"] = (
                 cfg.trl.reward_processing_classes
             )
-        trl: TRLConfig = cfg.trl
-        if trl.reward_funcs and isinstance(trl.reward_funcs, list):
-            trainer_kwargs["reward_funcs"] = [
-                cls.get_reward_func(reward_func) for reward_func in trl.reward_funcs
-            ]
-        elif trl.reward_funcs and isinstance(trl.reward_funcs, str):
-            trainer_kwargs["reward_funcs"] = cls.get_reward_func(trl.reward_funcs)
 
         return trainer_kwargs
 
