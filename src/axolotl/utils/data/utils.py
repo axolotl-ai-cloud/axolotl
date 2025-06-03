@@ -82,18 +82,26 @@ def deduplicate_dataset(
     hashes, other_hashes, seen_hashes, unique_indices = [], set(), set(), set()
 
     if dataset is not None:
-        hashed = dataset.map(compute_row_hash, num_proc=num_proc)
+        hashed = dataset.map(
+            compute_row_hash, remove_columns=dataset.column_names, num_proc=num_proc
+        )
         hashes = hashed["row_hash"]
+        del hashed
 
     if other_dataset is not None:
-        other_hashed = other_dataset.map(compute_row_hash, num_proc=num_proc)
+        other_hashed = other_dataset.map(
+            compute_row_hash, remove_columns=dataset.column_names, num_proc=num_proc
+        )
         other_hashes = set(other_hashed["row_hash"])
+        del other_hashed
 
     for idx, row_hash in enumerate(hashes):
         if row_hash in seen_hashes or row_hash in other_hashes:
             continue
         seen_hashes.add(row_hash)
         unique_indices.add(idx)
+
+    del hashes, other_hashes, seen_hashes
 
     return dataset.select(unique_indices)
 
