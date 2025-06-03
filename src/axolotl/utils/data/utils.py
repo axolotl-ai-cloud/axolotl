@@ -79,15 +79,19 @@ def deduplicate_dataset(
     other_dataset: Dataset = None,
     num_proc: Optional[int] = None,
 ) -> Dataset:
-    hashes, other_hashes, seen_hashes, unique_indices = [], set(), set(), set()
+    if dataset is None:
+        LOG.warning("dataset is None. De-duplication cannot be performed.")
+        return dataset
 
-    if dataset is not None:
-        hashed = dataset.map(
-            compute_row_hash, remove_columns=dataset.column_names, num_proc=num_proc
-        )
-        hashes = hashed["row_hash"]
-        del hashed
+    # Get SHA-256 hashes for all samples in dataset
+    hashed = dataset.map(
+        compute_row_hash, remove_columns=dataset.column_names, num_proc=num_proc
+    )
+    hashes = hashed["row_hash"]
+    del hashed
 
+    # Get SHA-256 hashes for all samples in other_dataset (if it exists)
+    other_hashes = set()
     if other_dataset is not None:
         other_hashed = other_dataset.map(
             compute_row_hash, remove_columns=other_dataset.column_names, num_proc=num_proc
@@ -95,6 +99,8 @@ def deduplicate_dataset(
         other_hashes = set(other_hashed["row_hash"])
         del other_hashed
 
+    # Find all non-duplicate samples based on the hashes, saving all unique indices
+    seen_hashes, unique_indices = set(), set()
     for idx, row_hash in enumerate(hashes):
         if row_hash in seen_hashes or row_hash in other_hashes:
             continue
@@ -103,6 +109,7 @@ def deduplicate_dataset(
 
     del hashes, other_hashes, seen_hashes
 
+    # Return only non-duplicate samples based on the found unique indices
     return dataset.select(unique_indices)
 
 
