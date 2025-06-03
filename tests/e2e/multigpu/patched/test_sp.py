@@ -1,6 +1,5 @@
 """E2E tests for sequence parallelism"""
 
-import os
 from pathlib import Path
 
 import pytest
@@ -11,8 +10,6 @@ from transformers.testing_utils import get_torch_dist_unique_port
 from axolotl.utils.dict import DictDefault
 
 from ...utils import check_tensorboard
-
-os.environ["WANDB_DISABLED"] = "true"
 
 
 class TestSequenceParallelism:
