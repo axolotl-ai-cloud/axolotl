@@ -263,6 +263,99 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 },
             )
         finally:
+            (recursive_kill(vllm_process))
+
+    @require_vllm
+    def test_llama_lora_sp(self, temp_dir):
+        rnd_reward_suffix = str(random.randint(1000, 9999))
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "chat_template": "llama3",
+                "rl": "grpo",
+                "trl": {
+                    "beta": 0.001,
+                    "max_completion_length": 256,
+                    "use_vllm": True,
+                    "num_generations": 4,
+                    "reward_funcs": [f"rewards_{rnd_reward_suffix}.rand_reward_func"],
+                },
+                "vllm": {
+                    "max_model_len": 800,
+                    "enable_prefix_caching": True,
+                },
+                "datasets": [
+                    {
+                        "path": "openai/gsm8k",
+                        "name": "main",
+                        "type": f"rewards_{rnd_reward_suffix}.oai_gsm8k_transform",
+                    },
+                ],
+                "adapter": "lora",
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
+                "sequence_parallel_degree": 2,
+                "flash_attention": True,
+                "sequence_len": 1024,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "max_steps": 3,
+                "num_epochs": 1,
+                "micro_batch_size": 4,
+                "gradient_accumulation_steps": 2,
+                "warmup_steps": 10,
+                "val_set_size": 0.0,
+                "output_dir": temp_dir,
+                "learning_rate": 0.0001,
+                "optimizer": "adamw_torch_fused",
+                "lr_scheduler": "cosine",
+                "save_safetensors": True,
+                "bf16": "auto",
+                "use_tensorboard": True,
+            }
+        )
+
+        self._utils_write_yaml_and_rewards(cfg, temp_dir, suffix=rnd_reward_suffix)
+
+        current_env = os.environ.copy()
+        env = {
+            "NCCL_P2P_LEVEL": "LOC",
+            **current_env,
+            "CUDA_VISIBLE_DEVICES": "1",
+        }
+        vllm_process = start_vllm(
+            cfg.base_model,
+            env=env,
+            quiet=True,
+            wait=300,
+            gpu_memory_utilization=0.15,
+            max_model_len=cfg.vllm.max_model_len,
+            enable_prefix_caching=cfg.vllm.enable_prefix_caching,
+            host="0.0.0.0",
+            port=8000,
+        )
+
+        try:
+            execute_subprocess_async(
+                [
+                    "axolotl",
+                    "train",
+                    str(Path(temp_dir) / "config.yaml"),
+                    "--num-processes",
+                    str(2),
+                    "--main-process-port",
+                    f"{get_torch_dist_unique_port()}",
+                ],
+                env={
+                    "NCCL_P2P_LEVEL": "LOC",
+                    "NCCL_DEBUG": "INFO",
+                    **current_env,
+                },
+            )
+        finally:
             recursive_kill(vllm_process)
 
     @pytest.mark.parametrize(
