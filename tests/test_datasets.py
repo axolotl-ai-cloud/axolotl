@@ -11,6 +11,7 @@ from datasets import Dataset
 from huggingface_hub import snapshot_download
 from transformers import PreTrainedTokenizer
 
+from axolotl.loaders.tokenizer import load_tokenizer
 from axolotl.utils.data.rl import prepare_preference_datasets
 from axolotl.utils.data.sft import _load_tokenized_prepared_datasets
 from axolotl.utils.dict import DictDefault
@@ -308,7 +309,8 @@ class TestDatasetPreparation:
             }
         )
 
-        train_dataset, _ = prepare_preference_datasets(cfg)
+        tokenizer = load_tokenizer(cfg)
+        train_dataset, _ = prepare_preference_datasets(cfg, tokenizer)
 
         assert len(train_dataset) == 1800
         assert "conversation" not in train_dataset.features
@@ -375,7 +377,8 @@ class TestDatasetPreparation:
                 dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff
             )
 
-            train_dataset, _ = prepare_preference_datasets(cfg)
+            tokenizer = load_tokenizer(cfg)
+            train_dataset, _ = prepare_preference_datasets(cfg, tokenizer)
 
             assert len(train_dataset) == 1800
             assert "conversation" not in train_dataset.features

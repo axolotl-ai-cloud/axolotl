@@ -6,6 +6,7 @@ import unittest
 
 import pytest
 
+from axolotl.loaders.tokenizer import load_tokenizer
 from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.utils.data.rl import prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
@@ -55,7 +56,8 @@ class TestDPOChatml:
         # test that dpo.load works
         load_dpo("chatml", cfg)
         # now actually load the datasets with the strategy
-        train_ds, _ = prepare_preference_datasets(cfg)
+        tokenizer = load_tokenizer(cfg)
+        train_ds, _ = prepare_preference_datasets(cfg, tokenizer)
         assert train_ds[0]["prompt"].startswith("<|im_start|>")
         assert train_ds[0]["prompt"].endswith("<|im_start|>assistant\n")
         assert "chosen" in train_ds[0]

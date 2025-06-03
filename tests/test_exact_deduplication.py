@@ -237,7 +237,8 @@ class TestDeduplicateRLDataset:
             ]
             mock_load_tokenizer.return_value = tokenizer_huggyllama
 
-            train_dataset, _ = prepare_preference_datasets(cfg)
+            tokenizer = load_tokenizer(cfg)
+            train_dataset, _ = prepare_preference_datasets(cfg, tokenizer)
 
             # Verify that the dataset has been deduplicated
             assert len(train_dataset) == 1800, "Dataset was not properly deduplicated"
@@ -263,9 +264,10 @@ class TestDeduplicateRLDataset:
             ]
             mock_load_tokenizer.return_value = tokenizer_huggyllama
 
-            cfg.dataset_exact_deduplication = False
             # Load the dataset without deduplication
-            train_dataset, _ = prepare_preference_datasets(cfg)
+            cfg.dataset_exact_deduplication = False
+            tokenizer = load_tokenizer(cfg)
+            train_dataset, _ = prepare_preference_datasets(cfg, tokenizer)
 
             # Verify that the dataset retains duplicates
             assert (
