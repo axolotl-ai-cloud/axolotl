@@ -452,7 +452,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
             # Only use mock for the commented out configs
             if dataset_name is not None:
                 with patch(
-                    "axolotl.utils.data.rl.load_dataset_w_config"
+                    "axolotl.utils.data.rl.load_dataset_with_config"
                 ) as mock_load_dataset:
                     mock_load_dataset.return_value = request.getfixturevalue(
                         dataset_name
