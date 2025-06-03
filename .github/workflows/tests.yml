@@ -291,7 +291,7 @@ jobs:
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
           echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
           # use default dockerfile if not specified
-          echo "DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile.jinja'}}" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile.jinja'}}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
           modal run cicd.e2e_tests
