@@ -336,6 +336,14 @@ class AxolotlInputConfig(
 
     plugins: list[str] | None = Field(default=None)
 
+    @model_validator(mode="before")
+    @classmethod
+    def set_default_seed(cls, values):
+        if isinstance(values, dict) and values.get("seed") is None:
+            LOG.info("`seed` not set in config; setting to 42")
+            values["seed"] = 42
+        return values
+
     @field_validator("datasets", mode="before")
     @classmethod
     def deprecate_sharegpt_datasets(cls, datasets):
