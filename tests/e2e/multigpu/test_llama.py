@@ -14,12 +14,8 @@ from packaging import version
 from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.logging import get_logger
 
 from tests.e2e.utils import check_tensorboard, require_torch_2_6_0
-
-LOG = get_logger("axolotl.tests.e2e.multigpu")
-os.environ["WANDB_DISABLED"] = "true"
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 

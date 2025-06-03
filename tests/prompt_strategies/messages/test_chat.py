@@ -7,9 +7,6 @@ import unittest
 
 from axolotl.prompt_strategies.messages.chat import load
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.logging import get_logger
-
-LOG = get_logger(__name__, log_level="DEBUG")
 
 
 class TestMessagesChatLlama3:

@@ -12,8 +12,6 @@ from axolotl.utils.dict import DictDefault
 
 from ...utils import check_tensorboard
 
-os.environ["WANDB_DISABLED"] = "true"
-
 
 class TestSequenceParallelism:
     """Test case for training with sequence parallelism enabled"""

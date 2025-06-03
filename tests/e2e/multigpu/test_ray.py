@@ -10,12 +10,8 @@ import yaml
 from accelerate.test_utils import execute_subprocess_async
 
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.logging import get_logger
 
 from tests.e2e.utils import check_tensorboard, require_torch_lt_2_6_0
-
-LOG = get_logger(__name__)
-os.environ["WANDB_DISABLED"] = "true"
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 

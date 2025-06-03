@@ -12,14 +12,11 @@ from axolotl.loaders.utils import check_model_config
 from axolotl.utils import is_comet_available
 from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.logging import get_logger
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.schemas.config import AxolotlConfigWCapabilities
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
 warnings.filterwarnings("error")
-
-LOG = get_logger(__name__)
 
 
 @pytest.fixture(name="minimal_cfg")
@@ -1507,7 +1504,6 @@ class TestValidationWandb(BaseValidation):
         assert os.environ.get("WANDB_MODE", "") == "online"
         assert os.environ.get("WANDB_WATCH", "") == "false"
         assert os.environ.get("WANDB_LOG_MODEL", "") == "checkpoint"
-        assert os.environ.get("WANDB_DISABLED", "") != "true"
 
         os.environ.pop("WANDB_PROJECT", None)
         os.environ.pop("WANDB_NAME", None)
@@ -1516,16 +1512,12 @@ class TestValidationWandb(BaseValidation):
         os.environ.pop("WANDB_MODE", None)
         os.environ.pop("WANDB_WATCH", None)
         os.environ.pop("WANDB_LOG_MODEL", None)
-        os.environ.pop("WANDB_DISABLED", None)
 
     def test_wandb_set_disabled(self, minimal_cfg):
         cfg = DictDefault({}) | minimal_cfg
-
         new_cfg = validate_config(cfg)
-
         setup_wandb_env_vars(new_cfg)
-
-        assert os.environ.get("WANDB_DISABLED", "") == "true"
+        assert new_cfg.use_wandb is None
 
         cfg = (
             DictDefault(
@@ -1537,13 +1529,10 @@ class TestValidationWandb(BaseValidation):
         )
 
         new_cfg = validate_config(cfg)
-
         setup_wandb_env_vars(new_cfg)
-
-        assert os.environ.get("WANDB_DISABLED", "") != "true"
+        assert new_cfg.use_wandb is True
 
         os.environ.pop("WANDB_PROJECT", None)
-        os.environ.pop("WANDB_DISABLED", None)
 
 
 @pytest.mark.skipif(is_comet_available() is False, reason="comet_ml is not installed")
