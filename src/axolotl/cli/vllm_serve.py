@@ -37,6 +37,7 @@ def do_vllm_serve(
     Returns:
         process_id: the process id of the started VLLM server
     """
+    patch_vllm_worker()
     cfg = load_cfg(config)
     model = cfg.base_model
 
