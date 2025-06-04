@@ -91,4 +91,4 @@ def default(
 
         return result
 
-    return transform_fn, {"remove_columns":[field_messages]}
+    return transform_fn, {"remove_columns": [field_messages]}
