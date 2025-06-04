@@ -140,10 +140,15 @@ class ModelLoader:
         """Check if flash attention is installed."""
         return find_spec("flash_attn") is not None
 
+    @property
+    def is_fsdp_enabled(self):
+        """Property that determines if FSDP is enabled."""
+        return self.cfg.fsdp_config is not None
+
     @cached_property
     def qlora_fsdp(self):
         """Property that determines if FSDP with QLoRA is enabled."""
-        return self.cfg.fsdp and self.cfg.adapter == "qlora"
+        return self.is_fsdp_enabled and self.cfg.adapter == "qlora"
 
     def load(self) -> tuple[PreTrainedModel | PeftModelForCausalLM, PeftConfig | None]:
         """Load and prepare the model with all configurations and patches.
@@ -266,7 +271,7 @@ class ModelLoader:
         embedding_modules = get_linear_embedding_layers(self.cfg.model_config_type)
 
         # Initial dtype conversion
-        if not self.cfg.fsdp:
+        if not self.is_fsdp_enabled:
             # We don't run this during FSDP because this will leave mixed and bfloat16
             # dtypes in the model which FSDP doesn't like
             if self.cfg.load_in_4bit and self.cfg.embeddings_skip_upcast:
@@ -282,7 +287,7 @@ class ModelLoader:
             self._set_z3_leaf_modules()
 
         # Apply gradient checkpointing if needed
-        needs_fa2_dtype = self.cfg.adapter or self.cfg.fsdp
+        needs_fa2_dtype = self.cfg.adapter or self.is_fsdp_enabled
         if self.cfg.adapter in ["lora", "qlora"]:
             needs_fa2_dtype = True
             if self.cfg.gradient_checkpointing:
@@ -499,7 +504,7 @@ class ModelLoader:
                 "bnb_4bit_quant_storage": torch.bfloat16,
             }
             if self.cfg.model_config_type in ["jamba", "qwen2_moe"] and not (
-                self.cfg.deepspeed or self.cfg.fsdp
+                self.cfg.deepspeed or self.is_fsdp_enabled
             ):
                 # for some reason, this causes the loss to be off by an order of magnitude
                 # but deepspeed needs this still in bfloat16
@@ -615,50 +620,6 @@ class ModelLoader:
             )
             skip_move_to_device = True
         elif (
-            self.model_config.model_type in ["llama", "llama4"]
-            and not self.cfg.trust_remote_code
-            and not self.cfg.gptq
-        ):
-            # TODO: Do we need to open this up for all models?
-            if self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
-                skip_move_to_device = True
-                if "device_map" in self.model_kwargs:
-                    del self.model_kwargs["device_map"]
-
-            self._configure_zero3_memory_efficient_loading()
-
-            # Load model with random initialization if specified
-            if self.cfg.random_init_weights:
-                # AutoModel classes support the from_config method
-                if self.auto_model_loader in [
-                    AutoModelForCausalLM,
-                    AutoModelForVision2Seq,
-                ]:
-                    self.model = self.auto_model_loader.from_config(
-                        config=self.model_config,
-                    )
-                else:
-                    self.model = self.auto_model_loader(config=self.model_config)
-            else:
-                self.model = self.auto_model_loader.from_pretrained(
-                    self.base_model,
-                    config=self.model_config,
-                    **self.model_kwargs,
-                )
-        elif self.model_type == "MambaLMHeadModel":
-            # FIXME this is janky at best and hacked together to make it work
-            MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name
-
-            self.model_kwargs["dtype"] = self.model_kwargs["torch_dtype"]
-            self.model_kwargs["device"] = torch.cuda.current_device()
-            self.model_kwargs.pop("torch_dtype", None)
-            self.model_kwargs.pop("device_map", None)
-
-            self.model = MambaLMHeadModel.from_pretrained(
-                self.base_model,
-                **self.model_kwargs,
-            )
-        elif (
             self.model_type
             and self.model_type != "AutoModelForCausalLM"
             and not self.cfg.trust_remote_code
@@ -686,15 +647,6 @@ class ModelLoader:
                     **self.model_kwargs,
                 )
             else:
-                if (
-                    self.cfg.fsdp
-                    and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-                ):
-                    # disabling either of these two still leads to VRAM spike before setting back down
-                    skip_move_to_device = True
-                    if "device_map" in self.model_kwargs:
-                        del self.model_kwargs["device_map"]
-
                 self._configure_zero3_memory_efficient_loading()
 
                 self.model = self.auto_model_loader.from_pretrained(
@@ -739,7 +691,7 @@ class ModelLoader:
 
         if (
             self.qlora_fsdp
-            or (self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
+            or (self.cfg.is_fsdp_enabled and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
             or is_deepspeed_zero3_enabled()
         ):
             # Make sure everything is in the same dtype

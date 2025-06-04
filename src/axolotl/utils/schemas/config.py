@@ -254,11 +254,10 @@ class AxolotlInputConfig(
     llama4_linearized_experts: bool | None = None
 
     deepspeed: str | dict[str, Any] | None = None
-    fsdp: list[str] | None = None
     fsdp_config: dict[str, Any] | None = None
-    fsdp_final_state_dict_type: (
-        Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None
-    ) = None
+    # fsdp_final_state_dict_type: (
+    #     Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None
+    # ) = None
 
     val_set_size: float | None = Field(default=0.0)
 
@@ -1511,4 +1510,13 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if version.parse(torch_version) < version.parse("2.6.0"):
             raise ValueError("QAT is not supported on torch version < 2.6.0")
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_version(cls, data):
+        if data.get("fsdp_config") is not None and data.get("fsdp_version") == 1:
+            LOG.info("We reccomend that you use FSDP version 2 for better performance and stability. "
+                     "Please see this link for more details: https://docs.axolotl.ai/docs/multi-gpu.html#sec-fsdp"
+                     "For more details on migrating your config.")
         return data
