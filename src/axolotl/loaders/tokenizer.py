@@ -209,11 +209,12 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
                 )
                 and k != "pad_token"
             ):
-                lora_modules_to_save = ", ".join(
+                lora_modules_to_save_str = ", ".join(
                     [f"`{x}`" for x in lora_modules_to_save]
                 )
                 raise ValueError(
-                    f"Please set lora_modules_to_save to [{lora_modules_to_save}] when using an adapter and changing the special tokens."
+                    f"Please set lora_modules_to_save to [{lora_modules_to_save_str}] "
+                    "when using an adapter and changing the special tokens."
                 )
 
             tokenizer.add_special_tokens(
