@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Generator
@@ -43,6 +42,9 @@ EXTENSIONS_TO_DATASET_TYPES = {
     ".csv": "csv",
     ".txt": "text",
 }
+
+LOCK_FILE_NAME = "datasets_prep.lock"
+READY_FILE_NAME = "datasets_ready.flag"
 
 
 def get_dataset_type(dataset_config: DictDefault) -> str:
@@ -348,12 +350,11 @@ def generate_split_fingerprints(
     return train_fingerprint, test_fingerprint
 
 
-class DatasetPreparer:
-    """Handles common dataset preparation tasks with distributed coordination.
-
-    This class provides a standardized way to coordinate dataset preparation
-    across multiple processes using file locks, ensuring only one process
-    does the expensive preprocessing work while others wait and load the results.
+class FileLockWrapper:
+    """
+    Simple class for abstracting single process data loading / processing. The first
+    process that creates a lock file does the work; the remaining procesees simply load
+    the preprocessed dataset once the first process is done.
     """
 
     def __init__(self, cfg: DictDefault):
@@ -361,35 +362,33 @@ class DatasetPreparer:
         self.dataset_prepared_path = (
             cfg.dataset_prepared_path or DEFAULT_DATASET_PREPARED_PATH
         )
-        self.lock_file_path = Path(self.dataset_prepared_path) / "datasets_prep.lock"
-        self.ready_flag_path = Path(self.dataset_prepared_path) / "datasets_ready.flag"
+        self.lock_file_path = Path(self.dataset_prepared_path) / LOCK_FILE_NAME
+        self.ready_flag_path = Path(self.dataset_prepared_path) / READY_FILE_NAME
 
-    def prepare_with_coordination(
-        self, prepare_fn: Callable[[], Any], load_fn: Callable[[], Any] | None = None
-    ) -> Any:
+    def prepare(self, load_fn: Callable[[], Any]) -> Any:
         """Execute dataset preparation with distributed coordination.
 
         Args:
-            prepare_fn: Function to call for dataset preparation (first process only).
-            load_fn: Optional function to call for loading (all processes).
-                    If None, prepare_fn is used for both.
+            load_fn: Function to call for dataset loading / preparation. This function
+                should return the preprocessed datasets after initially run in all
+                subsequent processes.
 
         Returns:
-            Result from prepare_fn or load_fn.
+            Result from `load_fn`.
         """
-        if load_fn is None:
-            load_fn = prepare_fn
-
         with FileLock(str(self.lock_file_path)):
             if not self.ready_flag_path.exists():
-                # First process: do the preparation
-                result = prepare_fn()
+                result = load_fn()
                 self.ready_flag_path.touch()
                 return result
             # Other processes: wait for completion then load
             while not self.ready_flag_path.exists():
                 time.sleep(1)
             return load_fn()
+
+    def cleanup(self):
+        """Clean up ready flag post dataset preparation."""
+        self.ready_flag_path.unlink(missing_ok=True)
 
 
 def get_prepared_dataset_path(cfg: DictDefault, dataset_hash: str) -> Path:
@@ -461,23 +460,6 @@ def load_preprocessed_dataset(cfg: DictDefault, dataset_hash: str) -> Dataset | 
 
     LOG.info(f"Unable to find prepared dataset in {prepared_ds_path}")
     return None
-
-
-def save_preprocessed_dataset(
-    cfg: DictDefault, dataset: Dataset, dataset_hash: str
-) -> None:
-    """Save preprocessed dataset to disk.
-
-    Args:
-        cfg: Configuration object.
-        dataset: Dataset to save.
-        dataset_hash: Hash identifying the dataset configuration.
-    """
-    if cfg.local_rank == 0 and not cfg.skip_prepare_dataset:
-        prepared_ds_path = get_prepared_dataset_path(cfg, dataset_hash)
-        LOG.info(f"Saving prepared dataset to disk... {prepared_ds_path}")
-        os.makedirs(prepared_ds_path, exist_ok=True)
-        dataset.save_to_disk(str(prepared_ds_path))
 
 
 def generate_dataset_hash_from_config(
