@@ -1,8 +1,8 @@
 """Data handling specific to SFT."""
 
 import functools
+import os
 import tempfile
-from pathlib import Path
 from typing import Literal
 
 from datasets import (
@@ -16,7 +16,7 @@ from transformers import PreTrainedTokenizer, ProcessorMixin
 from axolotl.prompters import Prompter
 from axolotl.utils.data.pretraining import wrap_pretraining_dataset
 from axolotl.utils.data.shared import (
-    DatasetPreparer,
+    FileLockWrapper,
     create_train_validation_split,
     datasets_with_name_generator,
     generate_dataset_hash_from_config,
@@ -24,7 +24,6 @@ from axolotl.utils.data.shared import (
     load_dataset_with_config,
     load_preprocessed_dataset,
     merge_datasets,
-    save_preprocessed_dataset,
 )
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
@@ -49,7 +48,7 @@ def prepare_datasets(
     tokenizer: PreTrainedTokenizer,
     processor: ProcessorMixin | None = None,
     preprocess_iterable: bool = False,
-) -> tuple[Dataset, Dataset | None, int, list[Prompter | None]]:
+) -> tuple[IterableDataset | Dataset, Dataset | None, int, list[Prompter | None]]:
     """Prepare training and evaluation datasets based on configuration.
 
     Args:
@@ -98,11 +97,9 @@ def _prepare_standard_dataset(
 
         return train_dataset, eval_dataset, prompters
 
-    # Use shared coordination pattern
-    preparer = DatasetPreparer(cfg)
-    train_dataset, eval_dataset, prompters = preparer.prepare_with_coordination(
-        _load_datasets
-    )
+    # Prepare datasets (with file locking logic for multiple ranks)
+    preparer = FileLockWrapper(cfg)
+    train_dataset, eval_dataset, prompters = preparer.prepare(_load_datasets)
 
     # Validate sample packing configuration for evaluation
     if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
@@ -129,7 +126,7 @@ def _prepare_pretraining_dataset(
     tokenizer: PreTrainedTokenizer,
     processor: ProcessorMixin | None,
     preprocess_iterable: bool,
-) -> tuple[Dataset, Dataset | None, int, list[Prompter | None]]:
+) -> tuple[IterableDataset, Dataset | None, int, list[Prompter | None]]:
     """
     Prepare dataset for pretraining mode.
 
@@ -274,11 +271,10 @@ def _load_tokenized_prepared_datasets(
         cfg, cfg_datasets, tokenizer.name_or_path
     )
 
-    # Determine prepared dataset path
-    prepared_dataset_path = get_prepared_dataset_path(cfg, dataset_hash)
-
     # Try loading from hub if push_dataset_to_hub is configured
-    dataset = _try_load_from_hub(cfg, dataset_hash, split)
+    dataset = None
+    if cfg.push_dataset_to_hub:
+        dataset = _try_load_from_hub(cfg, dataset_hash, split)
 
     # If not found on hub, try loading from disk
     if dataset is None:
@@ -292,7 +288,6 @@ def _load_tokenized_prepared_datasets(
             cfg_datasets,
             tokenizer,
             split,
-            prepared_dataset_path,
             processor,
             preprocess_iterable,
         )
@@ -304,9 +299,6 @@ def _try_load_from_hub(
     cfg: DictDefault, dataset_hash: str, split: str
 ) -> Dataset | None:
     """Try to load the prepared dataset from HuggingFace Hub."""
-    if not cfg.push_dataset_to_hub:
-        return None
-
     try:
         LOG.info(
             "Attempting to load prepared dataset from HuggingFace Hub at "
@@ -323,12 +315,56 @@ def _try_load_from_hub(
         return None
 
 
+def _generate_from_iterable_dataset(
+    dataset: IterableDataset, worker_id: list[int], num_workers: list[int]
+):
+    """Generator function to correctly split the dataset for each worker"""
+    for i, item in enumerate(dataset):
+        if i % num_workers[0] == worker_id[0]:
+            yield item
+
+
+def _save_preprocessed_dataset(
+    cfg: DictDefault,
+    dataset: Dataset,
+    dataset_hash: str,
+    split: str,
+) -> None:
+    prepared_ds_path = get_prepared_dataset_path(cfg, dataset_hash)
+    if isinstance(dataset, IterableDataset):
+        num_workers = cfg.dataset_processes
+
+        ds_from_iter = Dataset.from_generator(
+            functools.partial(_generate_from_iterable_dataset, dataset),
+            features=dataset.features,
+            num_proc=num_workers,
+            split=split,
+            gen_kwargs={
+                "worker_id": list(range(num_workers)),
+                "num_workers": [num_workers] * num_workers,
+            },
+        )
+        ds_from_iter.save_to_disk(str(prepared_ds_path))
+    else:
+        os.makedirs(prepared_ds_path, exist_ok=True)
+        dataset.save_to_disk(str(prepared_ds_path))
+    if cfg.push_dataset_to_hub:
+        LOG.info(
+            "Pushing merged prepared dataset to Huggingface hub at "
+            f"{cfg.push_dataset_to_hub} (version {dataset_hash})..."
+        )
+        dataset.push_to_hub(
+            cfg.push_dataset_to_hub,
+            dataset_hash,
+            private=True,
+        )
+
+
 def _load_and_process_raw_datasets(
     cfg: DictDefault,
     cfg_datasets: list,
     tokenizer: PreTrainedTokenizer,
     split: str,
-    prepared_ds_path: Path,
     processor: ProcessorMixin | None = None,
     preprocess_iterable: bool = False,
 ) -> tuple[Dataset, list[Prompter | None]]:
@@ -337,7 +373,7 @@ def _load_and_process_raw_datasets(
     if not cfg.is_preprocess:
         LOG.warning(
             "Processing datasets during training can lead to VRAM instability. Please "
-            "pre-process your dataset."
+            "pre-process your dataset using `axolotl preprocess path/to/config.yml`."
         )
 
     # Load and process individual datasets
@@ -356,21 +392,19 @@ def _load_and_process_raw_datasets(
         datasets.append(dataset_wrapper)
         prompters.append(dataset_prompter)
 
-    # Merge datasets if needed using shared function
+    # Merge datasets
     dataset = merge_datasets(datasets, cfg)
 
-    # Apply additional processing if not skipping dataset preparation
     if not cfg.skip_prepare_dataset:
-        # Remove examples with sequences that are too long
         dataset = drop_long_seq_in_dataset(dataset, cfg)
-
-        # Apply sample packing if configured
         if cfg.sample_packing:
             dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
-    # Save the prepared dataset if we're the main process and not skipping preparation
-    if cfg.local_rank == 0 and not cfg.skip_prepare_dataset:
-        save_preprocessed_dataset(cfg, dataset, prepared_ds_path.name)
+        # Save the prepared dataset
+        dataset_hash = generate_dataset_hash_from_config(
+            cfg, cfg.datasets, tokenizer.name_or_path
+        )
+        _save_preprocessed_dataset(cfg, dataset, dataset_hash, split)
 
     return dataset, prompters
 
@@ -438,7 +472,7 @@ def _parse_dataset_type(d_type: str) -> tuple[str | None, str | None]:
     return d_base_type, d_prompt_style
 
 
-def _handle_train_split_processing(
+def _handle_train_dataset_split(
     dataset: Dataset, cfg: DictDefault
 ) -> tuple[Dataset, Dataset | None]:
     """Handle processing for train split, including validation set creation."""
@@ -462,7 +496,7 @@ def _handle_train_split_processing(
     return train_dataset, None
 
 
-def _handle_test_split_processing(
+def _handle_test_dataset_split(
     dataset: Dataset, cfg: DictDefault
 ) -> tuple[None, Dataset | None]:
     """Handle processing for test split."""
@@ -528,8 +562,8 @@ def _load_prepare_datasets(
 
     # Apply deduplication and create train / validation splits based on the split type
     if split == "train":
-        train_dataset, eval_dataset = _handle_train_split_processing(dataset, cfg)
+        train_dataset, eval_dataset = _handle_train_dataset_split(dataset, cfg)
     else:
-        train_dataset, eval_dataset = _handle_test_split_processing(dataset, cfg)
+        train_dataset, eval_dataset = _handle_test_dataset_split(dataset, cfg)
 
     return train_dataset, eval_dataset, prompters
