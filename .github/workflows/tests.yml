@@ -201,6 +201,13 @@ jobs:
             pytorch: 2.6.0
             num_gpus: 1
             axolotl_extras: vllm
+          - cuda: 126
+            cuda_version: 12.6.3
+            python_version: "3.11"
+            pytorch: 2.6.0
+            num_gpus: 1
+            axolotl_extras:
+            dockerfile: "Dockerfile-uv.jinja"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -222,6 +229,7 @@ jobs:
           echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
           echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile.jinja'}}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
           modal run cicd.e2e_tests
@@ -245,12 +253,6 @@ jobs:
             pytorch: 2.6.0
             num_gpus: 1
             axolotl_extras: llmcompressor
-          - cuda: 126
-            cuda_version: 12.6.3
-            python_version: "3.11"
-            pytorch: 2.6.0
-            num_gpus: 1
-            dockerfile: "Dockerfile-uv.jinja"
           - cuda: 124
             cuda_version: 12.4.1
             python_version: "3.11"
@@ -290,7 +292,6 @@ jobs:
           echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
           echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
-          # use default dockerfile if not specified
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile.jinja'}}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |

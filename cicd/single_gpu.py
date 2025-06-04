@@ -39,7 +39,7 @@ temp_dir = tempfile.mkdtemp()
 with open(pathlib.Path(temp_dir) / "Dockerfile", "w", encoding="utf-8") as f:
     f.write(dockerfile_contents)
 
-cicd_image = Image.from_dockerfile(
+cicd_image = Image.experimental.raw_dockerfile_image(
     pathlib.Path(temp_dir) / "Dockerfile",
     context_mount=None,
     force_build=True,
