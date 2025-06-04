@@ -3,7 +3,7 @@
 import functools
 import os
 import tempfile
-from typing import Literal
+from typing import Any, Generator, Literal
 
 from datasets import (
     Dataset,
@@ -77,7 +77,7 @@ def _prepare_standard_dataset(
 
     def _load_datasets():
         # Always load training dataset
-        train_dataset, eval_dataset, prompters = _load_prepare_datasets(
+        train_dataset, eval_dataset, prompters = _load_and_prepare_datasets(
             tokenizer,
             cfg,
             split="train",
@@ -87,7 +87,7 @@ def _prepare_standard_dataset(
 
         # Overwrite eval_dataset if test data exists
         if cfg.test_datasets:
-            _, eval_dataset, _ = _load_prepare_datasets(
+            _, eval_dataset, _ = _load_and_prepare_datasets(
                 tokenizer,
                 cfg,
                 split="test",
@@ -141,7 +141,7 @@ def _prepare_pretraining_dataset(
     # Load evaluation dataset if specified
     eval_dataset = None
     if cfg.test_datasets:
-        _, eval_dataset, _ = _load_prepare_datasets(
+        _, eval_dataset, _ = _load_and_prepare_datasets(
             tokenizer,
             cfg,
             split="test",
@@ -283,7 +283,7 @@ def _load_tokenized_prepared_datasets(
     # If not found on disk or skipping prepared dataset, load and process raw datasets
     prompters: list[Prompter | None] = []
     if dataset is None:
-        dataset, prompters = _load_and_process_raw_datasets(
+        dataset, prompters = _load_raw_datasets(
             cfg,
             cfg_datasets,
             tokenizer,
@@ -317,7 +317,7 @@ def _try_load_from_hub(
 
 def _generate_from_iterable_dataset(
     dataset: IterableDataset, worker_id: list[int], num_workers: list[int]
-):
+) -> Generator[Any, None, None]:
     """Generator function to correctly split the dataset for each worker"""
     for i, item in enumerate(dataset):
         if i % num_workers[0] == worker_id[0]:
@@ -360,7 +360,7 @@ def _save_preprocessed_dataset(
         )
 
 
-def _load_and_process_raw_datasets(
+def _load_raw_datasets(
     cfg: DictDefault,
     cfg_datasets: list,
     tokenizer: PreTrainedTokenizer,
@@ -529,7 +529,7 @@ def _apply_dataset_sharding(dataset: Dataset, cfg: DictDefault) -> Dataset:
     return dataset
 
 
-def _load_prepare_datasets(
+def _load_and_prepare_datasets(
     tokenizer: PreTrainedTokenizer,
     cfg: DictDefault,
     split: Literal["train", "test"] = "train",
