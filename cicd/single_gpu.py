@@ -42,9 +42,9 @@ with open(pathlib.Path(temp_dir) / "Dockerfile", "w", encoding="utf-8") as f:
 
 cicd_image = modal.experimental.raw_dockerfile_image(
     pathlib.Path(temp_dir) / "Dockerfile",
-    context_mount=None,
+    # context_mount=None,
     force_build=True,
-    gpu="A10G",
+    # gpu="A10G",
 ).env(df_args)
 
 app = App("Axolotl CI/CD", secrets=[])
