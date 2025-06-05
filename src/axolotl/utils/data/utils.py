@@ -4,6 +4,7 @@ import functools
 import hashlib
 import time
 from enum import Enum
+from typing import Optional
 
 import huggingface_hub
 import numpy as np
@@ -69,39 +70,48 @@ def sha256(to_hash: str, encoding: str = "utf-8") -> str:
     return hashlib.sha256(to_hash.encode(encoding)).hexdigest()
 
 
-def deduplicate_dataset(
-    dataset: Dataset, seen_hashes: dict[str, list[int]], other_dataset: Dataset = None
-) -> Dataset:
-    unique_indices = []
+def compute_row_hash(example):
+    return {"row_hash": sha256(str(example))}
 
-    for idx, row in enumerate(dataset):
-        row_hash = sha256(str(row))  # Using SHA256 for collision resistance.
-        if row_hash not in seen_hashes:
-            seen_hashes[row_hash] = [idx]
-            unique_indices.append(idx)
-        else:
-            # Check for collision by looking up the original dataset indices
-            original_indices = seen_hashes[row_hash]
-            is_duplicate = False
-            for original_idx in original_indices:
-                if (
-                    not idx == original_idx
-                    and original_idx < len(dataset)
-                    and str(dataset[original_idx]) == str(row)
-                ):
-                    is_duplicate = True
-                    break
-                # Check in the other dataset if provided
-                if other_dataset is not None:
-                    if original_idx < len(other_dataset) and str(
-                        other_dataset[original_idx]
-                    ) == str(row):
-                        is_duplicate = True
-                        break
-            if not is_duplicate:
-                seen_hashes[row_hash].append(idx)
-                unique_indices.append(idx)
-                continue
+
+def deduplicate_dataset(
+    dataset: Dataset,
+    other_dataset: Dataset = None,
+    num_proc: Optional[int] = None,
+) -> Dataset:
+    if dataset is None:
+        LOG.warning("dataset is None. De-duplication cannot be performed.")
+        return dataset
+
+    # Get SHA-256 hashes for all samples in dataset
+    hashed = dataset.map(
+        compute_row_hash, remove_columns=dataset.column_names, num_proc=num_proc
+    )
+    hashes = hashed["row_hash"]
+    del hashed
+
+    # Get SHA-256 hashes for all samples in other_dataset (if it exists)
+    other_hashes = set()
+    if other_dataset is not None:
+        other_hashed = other_dataset.map(
+            compute_row_hash,
+            remove_columns=other_dataset.column_names,
+            num_proc=num_proc,
+        )
+        other_hashes = set(other_hashed["row_hash"])
+        del other_hashed
+
+    # Find all non-duplicate samples based on the hashes, saving all unique indices
+    seen_hashes, unique_indices = set(), set()
+    for idx, row_hash in enumerate(hashes):
+        if row_hash in seen_hashes or row_hash in other_hashes:
+            continue
+        seen_hashes.add(row_hash)
+        unique_indices.add(idx)
+
+    del hashes, other_hashes, seen_hashes
+
+    # Return only non-duplicate samples based on the found unique indices
     return dataset.select(unique_indices)
 
 
@@ -110,6 +120,7 @@ def deduplicate_and_log_datasets(
     train_dataset: Dataset = None,
     eval_dataset: Dataset = None,
     dataset: Dataset = None,
+    num_proc: Optional[int] = None,
 ) -> tuple[Dataset, Dataset, Dataset]:
     """
     Deduplicates train, eval, and an optional dataset if provided, logging original and new sizes.
@@ -117,16 +128,12 @@ def deduplicate_and_log_datasets(
     Returns:
         tuple: Deduplicated train, eval, and additional datasets.
     """
-    seen_hashes: dict[str, list[int]] = {}
-
     # Handle cases where datasets are None
     if train_dataset is not None:
         LOG.info(
             f"Starting deduplication for train dataset. Original size: {len(train_dataset)}"
         )
-        train_dataset = deduplicate_dataset(
-            dataset=train_dataset, seen_hashes=seen_hashes
-        )
+        train_dataset = deduplicate_dataset(dataset=train_dataset, num_proc=num_proc)
         LOG.info(
             f"Deduplication complete for train dataset. New size: {len(train_dataset)}"
         )
@@ -138,7 +145,7 @@ def deduplicate_and_log_datasets(
             f"Starting deduplication for eval dataset. Original size: {len(eval_dataset)}"
         )
         eval_dataset = deduplicate_dataset(
-            dataset=eval_dataset, seen_hashes=seen_hashes, other_dataset=train_dataset
+            dataset=eval_dataset, other_dataset=train_dataset, num_proc=num_proc
         )
         LOG.info(
             f"Deduplication complete for eval dataset. New size: {len(eval_dataset)}"
@@ -150,7 +157,7 @@ def deduplicate_and_log_datasets(
         LOG.info(
             f"Starting deduplication for combined dataset. Original size: {len(dataset)}"
         )
-        dataset = deduplicate_dataset(dataset=dataset, seen_hashes=seen_hashes)
+        dataset = deduplicate_dataset(dataset=dataset, num_proc=num_proc)
         LOG.info(
             f"Deduplication complete for combined dataset. New size: {len(dataset)}"
         )
