@@ -10,7 +10,12 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_model_output_exists, require_torch_2_5_1, with_temp_dir
+from .utils import (
+    check_model_output_exists,
+    require_torch_2_5_1,
+    require_torch_2_6_0,
+    with_temp_dir,
+)
 
 
 class TestCustomOptimizers(unittest.TestCase):
@@ -196,6 +201,7 @@ class TestCustomOptimizers(unittest.TestCase):
         check_model_output_exists(temp_dir, cfg)
 
     @with_temp_dir
+    @require_torch_2_6_0
     def test_came_pytorch(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
