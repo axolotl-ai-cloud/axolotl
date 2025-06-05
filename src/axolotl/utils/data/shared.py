@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Generator
+from typing import TYPE_CHECKING, Generator
 
 from datasets import (
     Dataset,
@@ -15,7 +14,6 @@ from datasets import (
     load_dataset,
     load_from_disk,
 )
-from filelock import FileLock
 from huggingface_hub import hf_hub_download, snapshot_download
 from huggingface_hub.errors import (
     HFValidationError,
@@ -42,9 +40,6 @@ EXTENSIONS_TO_DATASET_TYPES = {
     ".csv": "csv",
     ".txt": "text",
 }
-
-LOCK_FILE_NAME = "datasets_prep.lock"
-READY_FILE_NAME = "datasets_ready.flag"
 
 
 def get_dataset_type(dataset_config: DictDefault) -> str:
@@ -348,47 +343,6 @@ def generate_split_fingerprints(
     test_fingerprint = md5(test_hash_input)
 
     return train_fingerprint, test_fingerprint
-
-
-class FileLockWrapper:
-    """
-    Simple class for abstracting single process data loading / processing. The first
-    process that creates a lock file does the work; the remaining procesees simply load
-    the preprocessed dataset once the first process is done.
-    """
-
-    def __init__(self, cfg: DictDefault):
-        self.cfg = cfg
-        self.dataset_prepared_path = (
-            cfg.dataset_prepared_path or DEFAULT_DATASET_PREPARED_PATH
-        )
-        self.lock_file_path = Path(self.dataset_prepared_path) / LOCK_FILE_NAME
-        self.ready_flag_path = Path(self.dataset_prepared_path) / READY_FILE_NAME
-
-    def prepare(self, load_fn: Callable[[], Any]) -> Any:
-        """Execute dataset preparation with distributed coordination.
-
-        Args:
-            load_fn: Function to call for dataset loading / preparation. This function
-                should return the preprocessed datasets after initially run in all
-                subsequent processes.
-
-        Returns:
-            Result from `load_fn`.
-        """
-        with FileLock(str(self.lock_file_path)):
-            if not self.ready_flag_path.exists():
-                result = load_fn()
-                self.ready_flag_path.touch()
-                return result
-            # Other processes: wait for completion then load
-            while not self.ready_flag_path.exists():
-                time.sleep(1)
-            return load_fn()
-
-    def cleanup(self):
-        """Clean up ready flag post dataset preparation."""
-        self.ready_flag_path.unlink(missing_ok=True)
 
 
 def get_prepared_dataset_path(cfg: DictDefault, dataset_hash: str) -> Path:

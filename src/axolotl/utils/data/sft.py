@@ -14,9 +14,9 @@ from datasets import (
 from transformers import PreTrainedTokenizer, ProcessorMixin
 
 from axolotl.prompters import Prompter
+from axolotl.utils.data.lock import FileLockLoader
 from axolotl.utils.data.pretraining import wrap_pretraining_dataset
 from axolotl.utils.data.shared import (
-    FileLockWrapper,
     create_train_validation_split,
     datasets_with_name_generator,
     generate_dataset_hash_from_config,
@@ -98,8 +98,9 @@ def _prepare_standard_dataset(
         return train_dataset, eval_dataset, prompters
 
     # Prepare datasets (with file locking logic for multiple ranks)
-    preparer = FileLockWrapper(cfg)
-    train_dataset, eval_dataset, prompters = preparer.prepare(_load_datasets)
+    loader = FileLockLoader(cfg)
+    train_dataset, eval_dataset, prompters = loader.load(_load_datasets)
+    loader.cleanup()
 
     # Validate sample packing configuration for evaluation
     if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
