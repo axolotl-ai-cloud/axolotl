@@ -8,6 +8,7 @@ from transformers import (
     MllamaForConditionalGeneration,
     Qwen2_5_VLForConditionalGeneration,
     Qwen2VLForConditionalGeneration,
+    AutoModelForCausalLM
 )
 
 MULTIMODAL_AUTO_MODEL_MAPPING = {
@@ -18,4 +19,5 @@ MULTIMODAL_AUTO_MODEL_MAPPING = {
     "qwen2_5_vl": Qwen2_5_VLForConditionalGeneration,
     "mistral3": Mistral3ForConditionalGeneration,
     "gemma3": Gemma3ForConditionalGeneration,
+    "gemma3omni": AutoModelForCausalLM,
 }
