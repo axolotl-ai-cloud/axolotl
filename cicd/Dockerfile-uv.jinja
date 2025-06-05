@@ -1,0 +1,52 @@
+FROM axolotlai/axolotl-base-uv:{{ BASE_TAG }}
+
+ENV TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
+ENV AXOLOTL_EXTRAS="{{ AXOLOTL_EXTRAS }}"
+ENV AXOLOTL_ARGS="{{ AXOLOTL_ARGS }}"
+ENV CUDA="{{ CUDA }}"
+ENV PYTORCH_VERSION="{{ PYTORCH_VERSION }}"
+ENV GITHUB_REF="{{ GITHUB_REF }}"
+ENV GITHUB_SHA="{{ GITHUB_SHA }}"
+ENV NIGHTLY_BUILD="{{ NIGHTLY_BUILD }}"
+ENV HF_HOME="{{ HF_HOME }}"
+
+RUN apt-get update && \
+    apt-get install -y --allow-change-held-packages vim curl nano libnccl2 libnccl-dev
+
+WORKDIR /workspace
+
+RUN git clone --depth=1 https://github.com/axolotl-ai-cloud/axolotl.git
+
+WORKDIR /workspace/axolotl
+
+RUN git fetch origin +$GITHUB_REF && \
+    git checkout FETCH_HEAD
+
+# If AXOLOTL_EXTRAS is set, append it in brackets
+RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
+        sed -i 's#^transformers.*#transformers @ git+https://github.com/huggingface/transformers.git@main#' requirements.txt; \
+        sed -i 's#^peft.*#peft @ git+https://github.com/huggingface/peft.git@main#' requirements.txt; \
+        sed -i 's#^accelerate.*#accelerate @ git+https://github.com/huggingface/accelerate.git@main#' requirements.txt; \
+        sed -i 's#^trl.*#trl @ git+https://github.com/huggingface/trl.git@main#' requirements.txt; \
+        sed -i 's#^datasets.*#datasets @ git+https://github.com/huggingface/datasets.git@main#' requirements.txt; \
+    fi
+
+RUN uv pip install packaging==23.2 setuptools==75.8.0
+RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
+        uv pip install --no-build-isolation -e .[deepspeed,flash-attn,ring-flash-attn,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
+    else \
+        uv pip install --no-build-isolation -e .[deepspeed,flash-attn,ring-flash-attn,optimizers,ray] $AXOLOTL_ARGS; \
+    fi
+
+RUN python scripts/unsloth_install.py --uv | sh
+RUN python scripts/cutcrossentropy_install.py --uv | sh
+
+# So we can test the Docker image
+RUN uv pip install -r requirements-dev.txt -r requirements-tests.txt
+
+# fix so that git fetch/pull from remote works
+RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
+    git config --get remote.origin.fetch
+
+# helper for huggingface-login cli
+RUN git config --global credential.helper store
