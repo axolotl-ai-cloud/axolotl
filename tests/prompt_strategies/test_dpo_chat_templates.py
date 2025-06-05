@@ -103,7 +103,7 @@ class TestAssistantDPOChatTemplateLlama3:
 
     def test_llama3_defaults(self, llama3_tokenizer, assistant_dataset):
         # pylint: disable=duplicate-code
-        transform_fn = default(
+        transform_fn, _ = default(
             DictDefault(
                 {
                     "chat_template": "llama3",
@@ -128,7 +128,7 @@ class TestAssistantDPOChatTemplateLlama3:
 
     def test_llama3_configured(self, llama3_tokenizer, custom_assistant_dataset):
         # pylint: disable=duplicate-code
-        transform_fn = default(
+        transform_fn, _ = default(
             DictDefault(
                 {
                     "chat_template": "llama3",
@@ -169,7 +169,7 @@ class TestAssistantDPOChatTemplatePhi3:
 
     def test_phi3_defaults(self, phi3_tokenizer, assistant_dataset):
         # pylint: disable=duplicate-code
-        transform_fn = default(
+        transform_fn, _ = default(
             DictDefault(
                 {
                     "chat_template": "tokenizer_default",
@@ -199,7 +199,7 @@ class TestAssistantDPOChatTemplateGemma:
 
     def test_gemma_defaults(self, gemma_tokenizer, assistant_dataset):
         # pylint: disable=duplicate-code
-        transform_fn = default(
+        transform_fn, _ = default(
             DictDefault(
                 {
                     "chat_template": "tokenizer_default",
