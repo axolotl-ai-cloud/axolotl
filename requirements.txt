@@ -20,7 +20,6 @@ datasets==3.6.0
 deepspeed>=0.17.0
 trl==0.18.1
 hf_xet==1.1.2
-hqq==0.2.5
 
 optimum==1.16.2
 hf_transfer
