@@ -524,14 +524,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.core.trainers.base.AxolotlTrainer.get_eval_dataloader">get_eval_dataloader</a></td>
-<td>Get dataloader for evaluation</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.core.trainers.base.AxolotlTrainer.get_train_dataloader">get_train_dataloader</a></td>
-<td>Get dataloader for training</td>
-</tr>
-<tr class="odd">
 <td><a href="#axolotl.core.trainers.base.AxolotlTrainer.log">log</a></td>
 <td>Log <code>logs</code> on the various objects watching training, including stored metrics.</td>
 </tr>
@@ -541,19 +533,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 </tbody>
 </table>
-<section id="axolotl.core.trainers.base.AxolotlTrainer.get_eval_dataloader" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.base.AxolotlTrainer.get_eval_dataloader">get_eval_dataloader</h5>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.AxolotlTrainer.get_eval_dataloader(eval_dataset<span class="op">=</span><span class="va">None</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Get dataloader for evaluation</p>
-</section>
-<section id="axolotl.core.trainers.base.AxolotlTrainer.get_train_dataloader" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.base.AxolotlTrainer.get_train_dataloader">get_train_dataloader</h5>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.AxolotlTrainer.get_train_dataloader()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Get dataloader for training</p>
-</section>
 <section id="axolotl.core.trainers.base.AxolotlTrainer.log" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.core.trainers.base.AxolotlTrainer.log">log</h5>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.AxolotlTrainer.log(logs, start_time<span class="op">=</span><span class="va">None</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.AxolotlTrainer.log(logs, start_time<span class="op">=</span><span class="va">None</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Log <code>logs</code> on the various objects watching training, including stored metrics.</p>
 <section id="parameters" class="level6 doc-section doc-section-parameters">
 <h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h6>
@@ -591,7 +573,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 <section id="axolotl.core.trainers.base.AxolotlTrainer.push_to_hub" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.core.trainers.base.AxolotlTrainer.push_to_hub">push_to_hub</h5>
-<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.AxolotlTrainer.push_to_hub(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.AxolotlTrainer.push_to_hub(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Overwrite the <code>push_to_hub</code> method in order to force-add the tags when pushing the
 model on the Hub. Please refer to <code>~transformers.Trainer.push_to_hub</code> for more details.</p>
 
