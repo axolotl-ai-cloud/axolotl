@@ -186,6 +186,7 @@ class AxolotlInputConfig(
         default=False
     )
     gradient_checkpointing_kwargs: dict[str, Any] | None = None
+    activation_memory_budget: float | None = None
 
     unfrozen_parameters: list[str] | None = None
 
@@ -1105,6 +1106,19 @@ class AxolotlInputConfig(
             raise ValueError(
                 "torch_compile should be set within your deepspeed config file"
             )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_activation_memory_budget_w_compile(cls, data):
+        if data.get("activation_memory_budget") is not None and not data.get(
+            "torch_compile"
+        ):
+            LOG.warning(
+                "activation_memory_budget is enabled, but torch_compile is not set. "
+                "Automatically setting torch_compile to true."
+            )
+            data["torch_compile"] = True
         return data
 
     @model_validator(mode="before")
