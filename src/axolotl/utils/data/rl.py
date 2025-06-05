@@ -92,11 +92,10 @@ def _save_preprocessed_dataset(
         dataset: Dataset to save.
         dataset_hash: Hash identifying the dataset configuration.
     """
-    if cfg.skip_prepare_dataset:
-        prepared_ds_path = get_prepared_dataset_path(cfg, dataset_hash)
-        LOG.info(f"Saving prepared dataset to disk... {prepared_ds_path}")
-        os.makedirs(prepared_ds_path, exist_ok=True)
-        dataset.save_to_disk(str(prepared_ds_path))
+    prepared_ds_path = get_prepared_dataset_path(cfg, dataset_hash)
+    LOG.info(f"Saving prepared dataset to disk... {prepared_ds_path}")
+    os.makedirs(prepared_ds_path, exist_ok=True)
+    dataset.save_to_disk(str(prepared_ds_path))
 
 
 def _map_dataset(
