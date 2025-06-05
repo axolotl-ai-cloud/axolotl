@@ -1,5 +1,5 @@
 """Data collators for axolotl to pad labels and position_ids for packed sequences"""
-import torch
+
 from dataclasses import dataclass
 from typing import Any
 
@@ -7,65 +7,6 @@ import numpy as np
 from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
 
-
-def modify_position_ids(ids: torch.Tensor) -> torch.Tensor:
-    """
-    Modify a tensor of position ids so that for a contiguous block of zeros,
-    the filler zeros are replaced with an increasing sequence (0,1,2,...)
-    except if a zero is immediately followed by a nonzero (which is taken
-    as the start of an already increasing segment) in which case that zero
-    remains 0.
-
-    This is to avoid creating too many sub sequences that slows down flash attention computation.
-    TODO: making sure that the increasing sequence is not longer than the existing longest increasing sequences
-          we can split it into sub sequencces to achieve that.
-
-    Example:
-        Input:  tensor([0, 1, 2, 3, 4, 5, 0, 0, 0, 0, 1, 2, 3])
-        Output: tensor([0, 1, 2, 3, 4, 5, 0, 1, 2, 0, 1, 2, 3])
-    """
-    ids_shape = ids.shape
-    ids = ids.view(-1)
-    n = ids.shape[0]
-    device = ids.device
-    indices = torch.arange(n, device=device)
-    mask = ids == 0
-
-    # Identify the start of each contiguous group of zeros.
-    # A zero starts a group if it is the first element or if the previous element is nonzero.
-    new_group = mask.clone()
-    new_group[0] = mask[0]
-    new_group[1:] = mask[1:] & (~mask[:-1])
-
-    # For the zeros, assign a group id (each contiguous block gets its own id).
-    group_ids = torch.cumsum(new_group.to(torch.int64), dim=0) - 1  # valid only where mask is True
-    zero_indices = indices[mask]
-
-    # For each group, find the index of its first occurrence.
-    num_groups = int(new_group.sum().item())
-    if num_groups > 0:
-        # Initialize with a large value and then use scatter_reduce to compute the minimum index per group.
-        group_first = torch.full((num_groups,), n, dtype=torch.int64, device=device)
-        group_first = group_first.scatter_reduce(0, group_ids[mask], zero_indices, reduce="amin")
-        # For each zero, its new value is the difference between its index and the group's start.
-        new_vals = zero_indices - group_first[group_ids[mask]]
-    else:
-        new_vals = torch.tensor([], dtype=torch.int64, device=device)
-
-    # Create the output: replace zeros with computed new_vals.
-    output = ids.clone()
-    output[mask] = new_vals
-
-    # Now “look ahead” one element:
-    # If a zero is immediately followed by a nonzero, assume it is the start of a new (increasing) segment.
-    # For such boundary zeros, override any filler modification and force the value to 0.
-    boundary = torch.zeros(n, dtype=torch.bool, device=device)
-    if n > 1:
-        # For positions 0..n-2, if current is zero and the next is nonzero, mark it.
-        boundary[:-1] = mask[:-1] & (ids[1:] != 0)
-    output[boundary] = 0
-
-    return output.view(ids_shape)
 
 @dataclass
 class DataCollatorForSeq2Seq:
@@ -140,9 +81,11 @@ class DataCollatorForSeq2Seq:
 
                 padding_side = self.tokenizer.padding_side
                 for feature in features:
-                    remainder = [pad_token_id] * (
-                        max_feature_length - len(feature[feature_name])
-                    )
+                    remainder_len = max_feature_length - len(feature[feature_name])
+                    if feature_name == "position_ids":
+                        remainder = list(range(remainder_len))
+                    else:
+                        remainder = [pad_token_id] * remainder_len
                     if isinstance(feature[feature_name], list):
                         feature[feature_name] = (
                             feature[feature_name] + remainder
@@ -178,9 +121,6 @@ class DataCollatorForSeq2Seq:
                 labels=features["labels"]
             )
             features["decoder_input_ids"] = decoder_input_ids
-
-        if "position_ids" in features:
-            features["position_ids"] = modify_position_ids(features["position_ids"])
 
         return features
 
