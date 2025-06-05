@@ -69,6 +69,9 @@ class GRPOStrategy:
         grpo_args_kwargs["log_completions"] = trl.log_completions
         grpo_args_kwargs["num_completions_to_print"] = trl.num_completions_to_print
 
+        if cfg.sequence_parallel_degree > 1:
+            grpo_args_kwargs["sequence_parallel_degree"] = cfg.sequence_parallel_degree
+
         if trl.reward_weights:
             grpo_args_kwargs["reward_weights"] = trl.reward_weights
 
@@ -106,7 +109,9 @@ class GRPOStrategy:
         return grpo_args_kwargs
 
     @classmethod
-    def set_trainer_args(cls, cfg: DictDefault) -> list[Any]:
+    def set_trainer_args(
+        cls, cfg: DictDefault
+    ) -> list[Any]:  # pylint: disable=unused-argument
         trainer_args = []
         if cfg.trl and cfg.trl.reward_funcs:
             reward_funcs = []
@@ -123,6 +128,7 @@ class GRPOStrategy:
             trainer_kwargs["reward_processing_classes"] = (
                 cfg.trl.reward_processing_classes
             )
+
         return trainer_kwargs
 
     @classmethod

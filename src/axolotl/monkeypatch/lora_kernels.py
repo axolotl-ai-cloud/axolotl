@@ -342,10 +342,11 @@ def apply_lora_kernel_patches(
 
     layers = []
     # check for multimodal models first
-    if hasattr(model, "language_model"):
-        layers = model.language_model.model.layers
-    elif hasattr(model, "model"):
-        layers = model.model.model.layers
+    pretrained_model = model.model
+    if hasattr(pretrained_model, "language_model"):
+        layers = pretrained_model.language_model.layers
+    elif hasattr(pretrained_model, "model"):
+        layers = pretrained_model.model.layers
     else:
         raise NotImplementedError(
             f"Model type {model.config.model_type} is not supported yet. Please create an Issue."

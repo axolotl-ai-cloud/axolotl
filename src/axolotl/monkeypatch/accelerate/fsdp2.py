@@ -18,27 +18,65 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
 
     Args:
         accelerator (`Accelerator`): The accelerator instance
-        model (`torch.nn.Module`): The model to load the state dict into
+        model (`torch.nn.Module`):
+            The model to load the state dict into, expected to be on meta device or a VRAM spike can occur
         full_sd (`dict`): The full state dict to load, can only be on rank 0
     """
     import torch.distributed as dist
     from torch.distributed.tensor import distribute_tensor
 
-    LOG.info("Broadcasting full state dict to all ranks...")
-    sharded_sd = model.state_dict()
-    param_names = sorted(sharded_sd.keys())
+    # Model was previously copied to meta device
+    meta_sharded_sd = model.state_dict()
+    sharded_sd = {}
+
+    # Rank 0 distributes the full state dict to other ranks
+    def _infer_parameter_dtype(model, param_name, empty_param):
+        try:
+            old_param = model.get_parameter_or_buffer(param_name)
+        except AttributeError:
+            # Need this for LORA, as there some params are not *parameters* of sorts
+            base_param_name, local_param_name = param_name.rsplit(".", 1)
+            submodule = model.get_submodule(base_param_name)
+            old_param = getattr(submodule, local_param_name)
+
+        is_torch_e4m3fn_available = hasattr(torch, "float8_e4m3fn")
+        casting_dtype = None
+        is_param_float8_e4m3fn = (
+            is_torch_e4m3fn_available and empty_param.dtype == torch.float8_e4m3fn
+        )
+
+        if empty_param.dtype.is_floating_point and not is_param_float8_e4m3fn:
+            casting_dtype = old_param.dtype
+
+        return old_param is not None and old_param.is_contiguous(), casting_dtype
+
+    def _cast_and_contiguous(tensor, to_contiguous, dtype):
+        if dtype is not None:
+            tensor = tensor.to(dtype=dtype)
+        if to_contiguous:
+            tensor = tensor.contiguous()
+        return tensor
+
+    param_names = sorted(meta_sharded_sd.keys())
+
     for param_name in param_names:
-        mesh = sharded_sd[param_name].device_mesh
+        mesh = meta_sharded_sd[param_name].device_mesh
         if accelerator.is_main_process:
-            # Use the corresponding tensor from full_sd (assuming the key exists in full_sd)
             full_param = full_sd[param_name].detach().cuda()
             dist.broadcast(full_param, src=0, group=mesh.get_group())
             sharded_tensor = distribute_tensor(
                 full_param, mesh, sharded_sd[param_name].placements
             )
+            to_contiguous, casting_dtype = _infer_parameter_dtype(
+                model,
+                param_name,
+                full_param,
+            )
+            sharded_tensor = _cast_and_contiguous(
+                sharded_tensor, to_contiguous, casting_dtype
+            )
             sharded_sd[param_name] = sharded_tensor
         else:
-            # Prepare a tensor of matching shape and dtype
             full_tensor = torch.empty(
                 sharded_sd[param_name].size(),
                 device="cuda",
@@ -48,57 +86,19 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
             sharded_tensor = distribute_tensor(
                 full_tensor, mesh, sharded_sd[param_name].placements
             )
+            to_contiguous, casting_dtype = _infer_parameter_dtype(
+                model,
+                param_name,
+                full_tensor,
+            )
+            sharded_tensor = _cast_and_contiguous(
+                sharded_tensor, to_contiguous, casting_dtype
+            )
             sharded_sd[param_name] = sharded_tensor
 
+    # we set `assign=True` because our params are on meta device
     model.load_state_dict(sharded_sd, assign=True)
-
-
-def set_state_dict_type(self, state_dict_type=None):
-    """
-    Set the state dict config based on the `StateDictType`.
-    """
-    import os
-
-    from torch.distributed.fsdp.fully_sharded_data_parallel import (
-        FullOptimStateDictConfig,
-        FullStateDictConfig,
-        ShardedOptimStateDictConfig,
-        ShardedStateDictConfig,
-        StateDictType,
-    )
-
-    # Override the state_dict_type if provided, typical use case:
-    # user trains with sharded, but final save is with full
-    if state_dict_type is not None:
-        self.state_dict_type = state_dict_type
-
-    if self.state_dict_type is None:
-        self.state_dict_type = os.environ.get(
-            "FSDP_STATE_DICT_TYPE",
-            "FULL_STATE_DICT" if self.fsdp_version == 1 else "SHARDED_STATE_DICT",
-        )
-    if isinstance(self.state_dict_type, str):
-        if self.state_dict_type.isdigit():
-            self.state_dict_type = StateDictType(int(self.state_dict_type))
-        else:
-            self.state_dict_type = StateDictType[self.state_dict_type.upper()]
-
-    if self.state_dict_type == StateDictType.FULL_STATE_DICT:
-        if self.state_dict_config is None:
-            self.state_dict_config = FullStateDictConfig(
-                offload_to_cpu=True, rank0_only=True
-            )
-        if self.optim_state_dict_config is None:
-            self.optim_state_dict_config = FullOptimStateDictConfig(
-                offload_to_cpu=True, rank0_only=True
-            )
-    elif self.state_dict_type == StateDictType.SHARDED_STATE_DICT:
-        if self.state_dict_config is None:
-            self.state_dict_config = ShardedStateDictConfig(offload_to_cpu=True)
-        if self.optim_state_dict_config is None:
-            self.optim_state_dict_config = ShardedOptimStateDictConfig(
-                offload_to_cpu=True
-            )
+    return model
 
 
 def get_state_dict(self, model, unwrap=True):
@@ -207,13 +207,4 @@ def patch_accelerate_fsdp2():
         sys.modules["accelerate"],
         "Accelerator.get_state_dict",
         get_state_dict,
-    )
-
-    accelerate.utils.dataclasses.FullyShardedDataParallelPlugin.set_state_dict_type = (
-        set_state_dict_type
-    )
-    setattr(
-        sys.modules["accelerate.utils.dataclasses"],
-        "FullyShardedDataParallelPlugin.set_state_dict_type",
-        set_state_dict_type,
     )
