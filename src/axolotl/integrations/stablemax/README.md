@@ -2,6 +2,8 @@
 
 > **Note:** StableMax is incompatible with the CutCrossEntropy integration. Do not enable both plugins at the same time.
 
+> **Note:** StableMax is intended to be used in combination with the orthograd optimizer ([implementation here](https://github.com/cognitivecomputations/dolphinflow-optimizer)) to fully implement the solution described in Prieto et al.
+
 StableMax is a numerically stable alternative to the softmax activation, designed to prevent Softmax Collapse (SC) and enable grokking without regularization, as described in [Grokking at the Edge of Numerical Stability (ICLR 2025)](https://arxiv.org/abs/2501.04697).
 
 ## How it works
