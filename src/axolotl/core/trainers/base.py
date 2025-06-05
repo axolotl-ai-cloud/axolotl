@@ -33,6 +33,7 @@ from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
     sanitize_kwargs_for_tagging,
 )
+from axolotl.utils import get_not_null
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
@@ -220,7 +221,9 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
         }
 
         if not isinstance(dataset, torch.utils.data.IterableDataset):
-            dataloader_params["drop_last"] = self.args.dataloader_drop_last
+            dataloader_params["drop_last"] = get_not_null(
+                self.args.dataloader_drop_last, True
+            )
             if sampler_fn is not None:
                 sampler = sampler_fn(dataset)
                 if isinstance(sampler, BatchSampler):
