@@ -305,9 +305,11 @@ def _load_or_create_dataset_split(
         dataset = _try_load_from_hub(cfg, dataset_hash, split)
 
     # Attempt to load preprocessed dataset
-    dataset = load_preprocessed_dataset(cfg, dataset_hash)
-    if dataset:
-        return dataset
+    if dataset is None:
+        dataset = load_preprocessed_dataset(cfg, dataset_hash)
 
     # Otherwise, load it
-    return _load_split(cfg, split=split)
+    if dataset is None:
+        dataset = _load_split(cfg, split=split)
+
+    return dataset
