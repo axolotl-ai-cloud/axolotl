@@ -629,7 +629,7 @@ def setup_trainer(
         A trainer instance (either `HFRLTrainer` or `HFCausalTrainer`) configured based
             on the provided parameters.
     """
-    from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+    from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 
     if (
         cfg.torch_compile
