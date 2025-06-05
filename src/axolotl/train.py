@@ -257,13 +257,13 @@ def save_trained_model(
             "your model weights with `axolotl quantize`."
         )
 
-    # Handle FSDP state dict type
-    state_dict_type = "FULL_STATE_DICT"
-    if trainer.is_fsdp_enabled and str(cfg.fsdp_config.fsdp_version) != "2":
-        if cfg.fsdp_final_state_dict_type:
-            state_dict_type = cfg.fsdp_final_state_dict_type
-        trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
-        LOG.info(f"Set FSDP state dict type to {state_dict_type} for saving.")
+    # # Handle FSDP state dict type
+    # state_dict_type = "FULL_STATE_DICT"
+    # if trainer.is_fsdp_enabled and str(cfg.fsdp_config.fsdp_version) != "2":
+    #     if cfg.fsdp_final_state_dict_type:
+    #         state_dict_type = cfg.fsdp_final_state_dict_type
+    #     trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
+    #     LOG.info(f"Set FSDP state dict type to {state_dict_type} for saving.")
 
     # Handle ReLoRA early return case
     if cfg.relora_steps:
@@ -273,19 +273,26 @@ def save_trained_model(
             # final model weights have already been saved by `ReLoRACallback.on_train_end`
             return
 
-    if fsdp_config := cfg.fsdp_config:
-        if fsdp_config.final_state_dict_type:
-            state_dict_type = fsdp_config.final_state_dict_type
-        elif fsdp_config.state_dict_type:
-            state_dict_type = fsdp_config.state_dict_type
-        else:
-            state_dict_type = "FULL_STATE_DICT"
+    if trainer.is_fsdp_enabled:
+        if cfg.fsdp_config and str(cfg.fsdp_config.fsdp_version) != "2":
+            if cfg.fsdp_config.final_state_dict_type:
+                state_dict_type = cfg.fsdp_config.final_state_dict_type
+            else:
+                state_dict_type = cfg.fsdp_config.state_dict_type
+            trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
+                
+        # if fsdp_config.final_state_dict_type:
+        #     state_dict_type = fsdp_config.final_state_dict_type
+        # elif fsdp_config.state_dict_type:
+        #     state_dict_type = fsdp_config.state_dict_type
+        # else:
+        #     state_dict_type = "FULL_STATE_DICT"
 
         # # TODO: do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
         # # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple
         # # processes attempt to write the same file
         # if (
-        #     state_dict_type == "SHARDED_STATE_DICT"
+            # state_dict_type == "SHARDED_STATE_DICT"
         #     and cfg.fsdp_config.fsdp_state_dict_type == "SHARDED_STATE_DICT"
         # ):
         #     save_fsdp_model(
