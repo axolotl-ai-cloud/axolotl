@@ -37,7 +37,7 @@ def sample_dataset(dataset: Dataset, num_samples: int) -> Dataset:
 def load_datasets(
     *,
     cfg: DictDefault,
-    cli_args: PreprocessCliArgs | TrainerCliArgs,
+    cli_args: PreprocessCliArgs | TrainerCliArgs | None = None,
     debug: bool = False,
 ) -> TrainDatasetMeta:
     """Loads one or more training or evaluation datasets, calling
@@ -66,9 +66,9 @@ def load_datasets(
 
     if (
         cfg.debug
-        or cli_args.debug
-        or cli_args.debug_text_only
-        or int(cli_args.debug_num_examples) > 0
+        or getattr(cli_args, "debug", False)
+        or getattr(cli_args, "debug_text_only", False)
+        or getattr(cli_args, "debug_num_examples", 0) > 0
         or debug
     ):
         LOG.info("check_dataset_labels...")
@@ -95,9 +95,7 @@ def load_datasets(
 
 
 def load_preference_datasets(
-    *,
-    cfg: DictDefault,
-    cli_args: PreprocessCliArgs | TrainerCliArgs,
+    *, cfg: DictDefault, cli_args: PreprocessCliArgs | TrainerCliArgs
 ) -> TrainDatasetMeta:
     """Loads one or more training or evaluation datasets for RL training using paired
     preference data, calling `axolotl.utils.data.rl.prepare_preference_datasets`.
