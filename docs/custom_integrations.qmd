@@ -50,7 +50,8 @@ sections = [
     ("Liger Kernels", "liger"),
     ("Language Model Evaluation Harness (LM Eval)", "lm_eval"),
     ("Spectrum", "spectrum"),
-    ("LLMCompressor", "llm_compressor")
+    ("LLMCompressor", "llm_compressor"),
+    ("Stablemax", "stablemax")
 ]
 
 for section_name, folder_name in sections:
