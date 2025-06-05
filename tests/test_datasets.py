@@ -289,7 +289,10 @@ class TestDatasetPreparation:
         train_dataset, _ = load_prepare_preference_datasets(cfg)
 
         assert len(train_dataset) == 1800
-        assert "conversation" in train_dataset.features
+        assert "conversation" not in train_dataset.features
+        assert "chosen" in train_dataset.features
+        assert "rejected" in train_dataset.features
+        assert "prompt" in train_dataset.features
 
     @pytest.mark.skip(reason="TODO: fix hf hub offline to work with HF rate limits")
     @enable_hf_offline
@@ -348,7 +351,10 @@ class TestDatasetPreparation:
             train_dataset, _ = load_prepare_preference_datasets(cfg)
 
             assert len(train_dataset) == 1800
-            assert "conversation" in train_dataset.features
+            assert "conversation" not in train_dataset.features
+            assert "chosen" in train_dataset.features
+            assert "rejected" in train_dataset.features
+            assert "prompt" in train_dataset.features
 
     @enable_hf_offline
     @pytest.mark.skip("datasets bug with local datasets when offline")
