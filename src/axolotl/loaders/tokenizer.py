@@ -12,6 +12,7 @@ from transformers import (
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import get_linear_embedding_layers, load_model_config
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.distributed import (
     barrier,

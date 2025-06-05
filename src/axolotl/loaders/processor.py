@@ -8,6 +8,7 @@ from transformers import (
     PreTrainedTokenizerBase,
 )
 
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 

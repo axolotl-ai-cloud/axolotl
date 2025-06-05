@@ -1,4 +1,5 @@
 """Tests for runtime metrics telemetry module"""
+
 # pylint: disable=redefined-outer-name
 
 from unittest.mock import MagicMock, patch

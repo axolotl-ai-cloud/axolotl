@@ -11,12 +11,11 @@ from accelerate.logging import get_logger
 from datasets import Dataset
 from transformers.trainer import Trainer
 
+from axolotl.telemetry.errors import send_errors
 from axolotl.train import (
     TrainDatasetMeta,
     setup_model_and_tokenizer,
 )
-from axolotl.telemetry.errors import send_errors
-from axolotl.train import TrainDatasetMeta
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.trainer import setup_trainer

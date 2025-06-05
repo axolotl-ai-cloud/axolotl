@@ -202,8 +202,8 @@ class RuntimeMetricsTracker:
         memory_used = self._get_allocated_memory()
         for i, memory in memory_used.items():
             memory_metrics[f"gpu_{i}_memory_bytes"] = memory
-            memory_metrics[
-                f"gpu_{i}_peak_memory_bytes"
-            ] = self.metrics.peak_gpu_memory.get(i, 0)
+            memory_metrics[f"gpu_{i}_peak_memory_bytes"] = (
+                self.metrics.peak_gpu_memory.get(i, 0)
+            )
 
         return memory_metrics

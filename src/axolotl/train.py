@@ -33,7 +33,6 @@ from axolotl.loaders import (
     load_tokenizer,
 )
 from axolotl.telemetry.errors import send_errors
-from axolotl.telemetry.errors import send_errors
 from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
 from axolotl.utils.dict import DictDefault
@@ -91,11 +90,11 @@ def setup_model_and_tokenizer(
     if model.generation_config is not None:
         model.generation_config.do_sample = True
 
-    TELEMETRY_MANAGER.track_event(
+    TELEMETRY_MANAGER.send_event(
         event_type="model-load", properties=model.config.to_dict()
     )
     if peft_config:
-        TELEMETRY_MANAGER.track_event(
+        TELEMETRY_MANAGER.send_event(
             event_type="peft-config-load", properties=peft_config.to_dict()
         )
 

@@ -59,12 +59,14 @@ class TelemetryCallback(TrainerCallback):
         self.telemetry_manager.send_event(
             event_type="train-end",
             properties={
-                "loss": state.log_history[-1].get("loss", 0)
-                if state.log_history
-                else None,
-                "learning_rate": state.log_history[-1].get("learning_rate", 0)
-                if state.log_history
-                else None,
+                "loss": (
+                    state.log_history[-1].get("loss", 0) if state.log_history else None
+                ),
+                "learning_rate": (
+                    state.log_history[-1].get("learning_rate", 0)
+                    if state.log_history
+                    else None
+                ),
             }
             | self.tracker.metrics.to_dict(),
         )

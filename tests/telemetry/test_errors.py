@@ -1,4 +1,5 @@
 """Tests for telemetry error utilities"""
+
 # pylint: disable=redefined-outer-name
 
 from unittest.mock import MagicMock, patch

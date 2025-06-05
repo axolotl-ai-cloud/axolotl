@@ -307,9 +307,11 @@ class TelemetryManager:
                 gpu_info.append(
                     {
                         "name": torch.hip.get_device_name(i),
-                        "memory": torch.hip.get_device_properties(i).total_memory
-                        if hasattr(torch.hip, "get_device_properties")
-                        else None,
+                        "memory": (
+                            torch.hip.get_device_properties(i).total_memory
+                            if hasattr(torch.hip, "get_device_properties")
+                            else None
+                        ),
                     }
                 )
 

@@ -1,4 +1,5 @@
 """Tests for TelemetryManager class and utilities"""
+
 # pylint: disable=redefined-outer-name,protected-access
 
 import os
@@ -38,9 +39,13 @@ def telemetry_manager_class():
 @pytest.fixture
 def manager(telemetry_manager_class, mock_whitelist):
     """Create a TelemetryManager instance with mocked dependencies"""
-    with patch("posthog.capture"), patch("posthog.flush"), patch("time.sleep"), patch(
-        "axolotl.telemetry.manager.WHITELIST_PATH", mock_whitelist
-    ), patch.dict(os.environ, {"RANK": "0"}):
+    with (
+        patch("posthog.capture"),
+        patch("posthog.flush"),
+        patch("time.sleep"),
+        patch("axolotl.telemetry.manager.WHITELIST_PATH", mock_whitelist),
+        patch.dict(os.environ, {"RANK": "0"}),
+    ):
         manager = telemetry_manager_class()
         # Manually enable for most tests
         manager.enabled = True
@@ -49,8 +54,10 @@ def manager(telemetry_manager_class, mock_whitelist):
 
 def test_singleton_instance(telemetry_manager_class):
     """Test that TelemetryManager is a singleton"""
-    with patch("posthog.capture"), patch("time.sleep"), patch.dict(
-        os.environ, {"RANK": "0"}
+    with (
+        patch("posthog.capture"),
+        patch("time.sleep"),
+        patch.dict(os.environ, {"RANK": "0"}),
     ):
         first = telemetry_manager_class()
         second = telemetry_manager_class()
@@ -60,8 +67,10 @@ def test_singleton_instance(telemetry_manager_class):
 
 def test_telemetry_disabled_by_default(telemetry_manager_class):
     """Test that telemetry is disabled by default (opt-in)"""
-    with patch.dict(os.environ, {"RANK": "0"}, clear=True), patch("time.sleep"), patch(
-        "logging.Logger.info"
+    with (
+        patch.dict(os.environ, {"RANK": "0"}, clear=True),
+        patch("time.sleep"),
+        patch("logging.Logger.info"),
     ):
         manager = telemetry_manager_class()
         assert not manager.enabled
@@ -69,8 +78,9 @@ def test_telemetry_disabled_by_default(telemetry_manager_class):
 
 def test_telemetry_enabled_with_explicit_opt_in(telemetry_manager_class):
     """Test that telemetry is enabled when AXOLOTL_DO_NOT_TRACK=0"""
-    with patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "0", "RANK": "0"}), patch(
-        "time.sleep"
+    with (
+        patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "0", "RANK": "0"}),
+        patch("time.sleep"),
     ):
         manager = telemetry_manager_class()
         assert manager.enabled
@@ -78,8 +88,9 @@ def test_telemetry_enabled_with_explicit_opt_in(telemetry_manager_class):
 
 def test_telemetry_disabled_with_axolotl_do_not_track(telemetry_manager_class):
     """Test that telemetry is disabled when AXOLOTL_DO_NOT_TRACK=1"""
-    with patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "1", "RANK": "0"}), patch(
-        "time.sleep"
+    with (
+        patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "1", "RANK": "0"}),
+        patch("time.sleep"),
     ):
         manager = telemetry_manager_class()
         assert not manager.enabled
@@ -87,17 +98,21 @@ def test_telemetry_disabled_with_axolotl_do_not_track(telemetry_manager_class):
 
 def test_telemetry_disabled_with_do_not_track(telemetry_manager_class):
     """Test that telemetry is disabled when DO_NOT_TRACK=1"""
-    with patch.dict(
-        os.environ, {"AXOLOTL_DO_NOT_TRACK": "0", "DO_NOT_TRACK": "1", "RANK": "0"}
-    ), patch("time.sleep"):
+    with (
+        patch.dict(
+            os.environ, {"AXOLOTL_DO_NOT_TRACK": "0", "DO_NOT_TRACK": "1", "RANK": "0"}
+        ),
+        patch("time.sleep"),
+    ):
         manager = telemetry_manager_class()
         assert not manager.enabled
 
 
 def test_telemetry_disabled_for_non_main_process(telemetry_manager_class):
     """Test that telemetry is disabled for non-main processes"""
-    with patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "0", "RANK": "1"}), patch(
-        "time.sleep"
+    with (
+        patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "0", "RANK": "1"}),
+        patch("time.sleep"),
     ):
         manager = telemetry_manager_class()
         assert not manager.enabled
@@ -105,9 +120,11 @@ def test_telemetry_disabled_for_non_main_process(telemetry_manager_class):
 
 def test_opt_in_info_displayed(telemetry_manager_class):
     """Test that opt-in info is displayed when telemetry is not configured"""
-    with patch.dict(os.environ, {"RANK": "0"}, clear=True), patch(
-        "logging.Logger.warning"
-    ) as mock_warning, patch("time.sleep"):
+    with (
+        patch.dict(os.environ, {"RANK": "0"}, clear=True),
+        patch("logging.Logger.warning") as mock_warning,
+        patch("time.sleep"),
+    ):
         telemetry_manager_class()
         info_displayed = False
         for call in mock_warning.call_args_list:
@@ -120,8 +137,9 @@ def test_opt_in_info_displayed(telemetry_manager_class):
 
 def test_is_whitelisted(telemetry_manager_class, mock_whitelist):
     """Test org whitelist functionality"""
-    with patch("axolotl.telemetry.manager.WHITELIST_PATH", mock_whitelist), patch.dict(
-        os.environ, {"AXOLOTL_DO_NOT_TRACK": "0"}
+    with (
+        patch("axolotl.telemetry.manager.WHITELIST_PATH", mock_whitelist),
+        patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "0"}),
     ):
         manager = telemetry_manager_class()
 
@@ -150,8 +168,9 @@ def test_system_info_collection(manager):
 
 def test_send_event(telemetry_manager_class):
     """Test basic event sending"""
-    with patch("posthog.capture") as mock_capture, patch.dict(
-        os.environ, {"AXOLOTL_DO_NOT_TRACK": "0"}
+    with (
+        patch("posthog.capture") as mock_capture,
+        patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "0"}),
     ):
         manager = telemetry_manager_class()
 
@@ -171,8 +190,9 @@ def test_send_event(telemetry_manager_class):
 
 def test_send_system_info(telemetry_manager_class):
     """Test sending system info"""
-    with patch("posthog.capture") as mock_capture, patch.dict(
-        os.environ, {"AXOLOTL_DO_NOT_TRACK": "0"}
+    with (
+        patch("posthog.capture") as mock_capture,
+        patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "0"}),
     ):
         manager = telemetry_manager_class()
         manager.send_system_info()
@@ -183,8 +203,9 @@ def test_send_system_info(telemetry_manager_class):
 
 def test_redacted_properties(telemetry_manager_class):
     """Test path redaction in send_event method"""
-    with patch("posthog.capture") as mock_capture, patch.dict(
-        os.environ, {"AXOLOTL_DO_NOT_TRACK": "0"}
+    with (
+        patch("posthog.capture") as mock_capture,
+        patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "0"}),
     ):
         manager = telemetry_manager_class()
         # Test with properties containing various paths and non-paths
@@ -237,9 +258,10 @@ def test_disable_telemetry(manager):
 
 def test_exception_handling_during_send(manager):
     """Test that exceptions in PostHog are handled gracefully"""
-    with patch("posthog.capture", side_effect=Exception("Test error")), patch(
-        "logging.Logger.warning"
-    ) as mock_warning:
+    with (
+        patch("posthog.capture", side_effect=Exception("Test error")),
+        patch("logging.Logger.warning") as mock_warning,
+    ):
         manager.send_event("test_event")
         warning_logged = False
         for call in mock_warning.call_args_list:

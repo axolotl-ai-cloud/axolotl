@@ -1,4 +1,5 @@
 """Tests for telemetry callback module."""
+
 # pylint: disable=redefined-outer-name
 
 import time
@@ -15,9 +16,9 @@ def calc_expected_metrics(step, last_step, current_time, last_time, start_time=9
     time_diff = current_time - last_time
     step_diff = step - last_step
     return {
-        "steps_per_second": step_diff / time_diff
-        if time_diff > 0 and step_diff > 0
-        else 0,
+        "steps_per_second": (
+            step_diff / time_diff if time_diff > 0 and step_diff > 0 else 0
+        ),
         "time_since_last_report": time_diff,
         "elapsed_time": current_time - start_time,
     }

@@ -19,6 +19,7 @@ from peft import (
 from transformers import PreTrainedModel
 
 from axolotl.loaders.utils import get_linear_embedding_layers
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
