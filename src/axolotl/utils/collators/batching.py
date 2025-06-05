@@ -81,9 +81,11 @@ class DataCollatorForSeq2Seq:
 
                 padding_side = self.tokenizer.padding_side
                 for feature in features:
-                    remainder = [pad_token_id] * (
-                        max_feature_length - len(feature[feature_name])
-                    )
+                    remainder_len = max_feature_length - len(feature[feature_name])
+                    if feature_name == "position_ids":
+                        remainder = list(range(remainder_len))
+                    else:
+                        remainder = [pad_token_id] * remainder_len
                     if isinstance(feature[feature_name], list):
                         feature[feature_name] = (
                             feature[feature_name] + remainder
