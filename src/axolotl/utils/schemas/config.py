@@ -336,13 +336,13 @@ class AxolotlInputConfig(
 
     plugins: list[str] | None = Field(default=None)
 
-    @model_validator(mode="before")
+    @field_validator("seed", mode="after")
     @classmethod
-    def set_default_seed(cls, values):
-        if isinstance(values, dict) and values.get("seed") is None:
+    def set_default_seed(cls, seed):
+        if seed is None:
             LOG.info("`seed` not set in config; setting to 42")
-            values["seed"] = 42
-        return values
+            seed = 42
+        return seed
 
     @field_validator("datasets", mode="before")
     @classmethod

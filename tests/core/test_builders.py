@@ -8,7 +8,6 @@ from unittest.mock import patch
 
 import pytest
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.loaders import ModelLoader, load_tokenizer
@@ -546,7 +545,7 @@ class TestHFCausalTrainerBuilder:
 
         # need to load datasets for reward model and process reward model trainer
         if cfg_string in ["rm_cfg", "prm_cfg"]:
-            dataset_meta = load_datasets(cfg=cfg, cli_args=TrainerCliArgs())
+            dataset_meta = load_datasets(cfg=cfg)
 
             builder.train_dataset = dataset_meta.train_dataset
             builder.eval_dataset = dataset_meta.eval_dataset
