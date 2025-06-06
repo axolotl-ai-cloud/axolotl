@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 
+
 def stablemax_fn(x):
     """
     Numerically stable alternative to softmax.
@@ -10,9 +11,17 @@ def stablemax_fn(x):
     s = torch.where(x >= 0, x + 1, 1 / (1 - x))
     return s / s.sum(dim=-1, keepdim=True)
 
-def stablemax_cross_entropy(input, target, weight=None, ignore_index=-100, 
-                           size_average=None, reduce=None, reduction="mean", 
-                           label_smoothing=0.0):
+
+def stablemax_cross_entropy(
+    input,
+    target,
+    weight=None,
+    ignore_index=-100,
+    size_average=None,
+    reduce=None,
+    reduction="mean",
+    label_smoothing=0.0,
+):
     """
     Cross-entropy loss using StableMax instead of softmax.
     Args:
@@ -29,7 +38,7 @@ def stablemax_cross_entropy(input, target, weight=None, ignore_index=-100,
     """
     probs = stablemax_fn(input)
     log_probs = torch.log(probs + 1e-12)
-    
+
     # Handle target format and create mask for ignore_index
     if target.dim() == input.dim():
         # one-hot targets
@@ -46,16 +55,18 @@ def stablemax_cross_entropy(input, target, weight=None, ignore_index=-100,
         valid_targets = target[valid_mask]
         if valid_targets.numel() > 0:
             targets_one_hot[valid_mask] = F.one_hot(valid_targets, num_classes).float()
-    
+
     # Apply label smoothing
     if label_smoothing > 0.0:
         num_classes = input.shape[-1]
         uniform_dist = torch.ones_like(targets_one_hot) / num_classes
-        targets_one_hot = (1.0 - label_smoothing) * targets_one_hot + label_smoothing * uniform_dist
-    
+        targets_one_hot = (
+            1.0 - label_smoothing
+        ) * targets_one_hot + label_smoothing * uniform_dist
+
     # Compute loss
     loss = -(targets_one_hot * log_probs).sum(dim=-1)
-    
+
     # Apply class weights
     if weight is not None:
         if target.dim() == input.dim():
@@ -66,21 +77,25 @@ def stablemax_cross_entropy(input, target, weight=None, ignore_index=-100,
             class_weights = torch.ones_like(loss)
             class_weights[valid_mask] = weight[target[valid_mask]]
         loss = loss * class_weights
-    
+
     # Apply ignore_index mask
     if ignore_index != -100 or not valid_mask.all():
         loss = loss[valid_mask]
-    
+
     # Apply reduction
     if reduction == "none":
         # For "none" reduction with ignored indices, we need to return full-size tensor
         if not valid_mask.all():
-            full_loss = torch.zeros(valid_mask.shape[0], dtype=loss.dtype, device=loss.device)
+            full_loss = torch.zeros(
+                valid_mask.shape[0], dtype=loss.dtype, device=loss.device
+            )
             full_loss[valid_mask] = loss
             return full_loss
         return loss
     elif reduction == "mean":
-        return loss.mean() if loss.numel() > 0 else torch.tensor(0.0, device=input.device)
+        return (
+            loss.mean() if loss.numel() > 0 else torch.tensor(0.0, device=input.device)
+        )
     elif reduction == "sum":
         return loss.sum()
     else:

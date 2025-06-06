@@ -32,7 +32,7 @@ plugins:
 stablemax: true
 ```
 
-3. **What it does:**  
+3. **What it does:**
 When enabled, this plugin patches `torch.nn.functional.cross_entropy` to use StableMax cross-entropy loss for all classification tasks.
 
 ## References
