@@ -1,6 +1,8 @@
 # StableMax Integration
 
-> **Note:** StableMax is incompatible with the CutCrossEntropy integration. Do not enable both plugins at the same time.
+> **⚠️ WARNING:** StableMax performs **global patching** of `torch.nn.functional.cross_entropy`, replacing it with `stablemax_cross_entropy` for ALL subsequent calls throughout the entire application. This affects not only your model training but also any other libraries, models, or code that use `torch.nn.functional.cross_entropy`.
+
+> **⚠️ COMPATIBILITY:** Do not enable StableMax simultaneously with other cross-entropy patches such as **Liger** (`liger_cross_entropy`, `liger_fused_linear_cross_entropy`) or **CutCrossEntropy** (`cut_cross_entropy`). The system will detect and prevent such conflicts, but enabling multiple patches can lead to unpredictable runtime behavior.
 
 > **Note:** StableMax is intended to be used in combination with the orthograd optimizer ([implementation here](https://github.com/cognitivecomputations/dolphinflow-optimizer)) to fully implement the solution described in Prieto et al.
 
