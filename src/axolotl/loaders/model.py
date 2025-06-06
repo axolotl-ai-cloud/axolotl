@@ -712,6 +712,10 @@ class ModelLoader:
                 # Please don't remove underscore binding without reading the fn docstring.
                 _ = self._configure_zero3_memory_efficient_loading()
 
+                if self.cfg.lora_on_cpu:
+                    self.model_kwargs["max_memory"] = {"cpu": "256GiB"}
+                    self.model_kwargs["device_map"] = {"": "cpu"}
+
                 self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
                     config=self.model_config,
