@@ -172,8 +172,7 @@ class TelemetryManager:
         https://axolotl-ai-cloud.github.io/axolotl/docs/telemetry.html.
 
         Returns:
-            Tuple containing:
-                - Boolean denoting whether telemetry is enabled or not.
+            Boolean denoting whether telemetry is enabled or not.
         """
         # Parse relevant env vars
         axolotl_do_not_track = os.getenv("AXOLOTL_DO_NOT_TRACK")
@@ -233,7 +232,10 @@ class TelemetryManager:
         """
         # NOTE: This membership-checking logic can be improved.
         # What happens when a local model path matches a whitelisted org?
-        org = value.split("/")[0]
+        parts = value.split("/")
+        if len(parts) < 2:
+            return False
+        org = parts[0]
         whitelisted = org.lower() in self.whitelist["organizations"]
 
         return whitelisted
@@ -406,7 +408,8 @@ class TelemetryManager:
 
     def send_system_info(self):
         """Helper method for sending system info"""
-        self.send_event(event_type="system-info", properties=self.system_info)
+        if self.system_info is not None:
+            self.send_event(event_type="system-info", properties=self.system_info)
 
     def shutdown(self):
         """Ensure all queued events are processed before shutdown"""

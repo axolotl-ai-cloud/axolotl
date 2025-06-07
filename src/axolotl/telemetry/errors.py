@@ -127,7 +127,7 @@ def send_errors(func: Callable) -> Callable:
             return func(*args, **kwargs)
         except Exception as exception:
             # Only track if we're not already handling an error. This prevents us from
-            # capturing an error more than once in nested decorated function calls.=
+            # capturing an error more than once in nested decorated function calls.
             global ERROR_HANDLED  # pylint: disable=global-statement
             if not ERROR_HANDLED:
                 ERROR_HANDLED = True

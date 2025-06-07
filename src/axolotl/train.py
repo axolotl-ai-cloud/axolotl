@@ -50,6 +50,7 @@ except ImportError:
 LOG = get_logger(__name__)
 
 TELEMETRY_MANAGER = TelemetryManager.get_instance()
+PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 def setup_model_and_tokenizer(
@@ -532,6 +533,7 @@ def setup_model_and_trainer(cfg: DictDefault, dataset_meta: TrainDatasetMeta) ->
         model_ref=model_ref,
         peft_config=peft_config,
     )
+    PLUGIN_MANAGER.post_trainer_create(cfg, trainer)
 
     return (
         trainer,
@@ -567,17 +569,6 @@ def train(
         processor,
     ) = setup_model_and_trainer(cfg, dataset_meta)
 
-    TELEMETRY_MANAGER.send_event(
-        event_type="model-load", properties=model.config.to_dict()
-    )
-    if peft_config:
-        TELEMETRY_MANAGER.send_event(
-            event_type="peft-config-load", properties=peft_config.to_dict()
-        )
-
-    plugin_manager = PluginManager.get_instance()
-    plugin_manager.post_trainer_create(cfg, trainer)
-
     # Determine if we need to resume from a checkpoint
     resume_from_checkpoint = determine_resume_checkpoint(cfg)
 
@@ -604,7 +595,6 @@ def train(
     create_model_card(cfg, trainer)
     if not cfg.use_ray:
         cleanup_distributed()
-
-    plugin_manager.post_train(cfg, model)
+    PLUGIN_MANAGER.post_train(cfg, model)
 
     return model, tokenizer, trainer

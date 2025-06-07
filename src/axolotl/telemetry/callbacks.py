@@ -37,67 +37,63 @@ class TelemetryCallback(TrainerCallback):
         self.last_report_time = None
         self.last_report_step = 0
 
+    # pylint: disable=unused-argument
     def on_train_begin(
         self,
         args: TrainingArguments,
-        state: TrainerState,  # pylint: disable=unused-argument
-        control: TrainerControl,  # pylint: disable=unused-argument
-        **kwargs,  # pylint: disable=unused-argument
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
     ):
         """Handle training start."""
         self.telemetry_manager.send_event(event_type="train-start")
 
+    # pylint: disable=unused-argument
     def on_train_end(
         self,
-        args: TrainingArguments,  # pylint: disable=unused-argument
+        args: TrainingArguments,
         state: TrainerState,
-        control: TrainerControl,  # pylint: disable=unused-argument
-        **kwargs,  # pylint: disable=unused-argument
+        control: TrainerControl,
+        **kwargs,
     ):
         """Handle training end."""
         # Send training completion event
         self.telemetry_manager.send_event(
             event_type="train-end",
-            properties={
-                "loss": (
-                    state.log_history[-1].get("loss", 0) if state.log_history else None
-                ),
-                "learning_rate": (
-                    state.log_history[-1].get("learning_rate", 0)
-                    if state.log_history
-                    else None
-                ),
-            }
+            properties=self._extract_last_metrics(state)
             | self.tracker.metrics.to_dict(),
         )
 
+    # pylint: disable=unused-argument
     def on_epoch_begin(
         self,
-        args: TrainingArguments,  # pylint: disable=unused-argument
-        state: TrainerState,  # pylint: disable=unused-argument
-        control: TrainerControl,  # pylint: disable=unused-argument
-        **kwargs,  # pylint: disable=unused-argument
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
     ):
         """Handle epoch start."""
         self.current_epoch += 1
         self.tracker.start_epoch(self.current_epoch)
 
+    # pylint: disable=unused-argument
     def on_epoch_end(
         self,
-        args: TrainingArguments,  # pylint: disable=unused-argument
-        state: TrainerState,  # pylint: disable=unused-argument
-        control: TrainerControl,  # pylint: disable=unused-argument
-        **kwargs,  # pylint: disable=unused-argument
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
     ):
         """Handle epoch end."""
         self.tracker.end_epoch(self.current_epoch)
 
+    # pylint: disable=unused-argument
     def on_step_end(
         self,
-        args: TrainingArguments,  # pylint: disable=unused-argument
+        args: TrainingArguments,
         state: TrainerState,
-        control: TrainerControl,  # pylint: disable=unused-argument
-        **kwargs,  # pylint: disable=unused-argument
+        control: TrainerControl,
+        **kwargs,
     ):
         """Handle step end."""
         step = state.global_step
@@ -118,7 +114,7 @@ class TelemetryCallback(TrainerCallback):
                 time_since_last_report = current_time - self.start_time
             steps_since_last_report = step - self.last_report_step
 
-            # Only report if enough time has passed to avoid flooding
+            # Only report if enough time has passed
             if (
                 step == 1
                 or time_since_last_report >= TIME_SINCE_LAST
@@ -133,20 +129,11 @@ class TelemetryCallback(TrainerCallback):
                 # Update memory metrics
                 self.tracker.update_memory_metrics()
 
-                loss = state.log_history[-1].get("loss", 0) if state.log_history else 0
-                learning_rate = (
-                    state.log_history[-1].get("learning_rate", 0)
-                    if state.log_history
-                    else 0
-                )
-
                 # Prepare metrics to report
-                metrics = {
+                metrics = self._extract_last_metrics(state) | {
                     "step": step,
                     "epoch": self.current_epoch,
                     "progress": state.epoch,  # Fractional epoch progress
-                    "loss": loss,
-                    "learning_rate": learning_rate,
                     "steps_per_second": steps_per_second,
                     "elapsed_time": current_time - self.start_time,
                     "time_since_last_report": time_since_last_report,
@@ -164,3 +151,14 @@ class TelemetryCallback(TrainerCallback):
                 # Update last report time and step
                 self.last_report_time = current_time
                 self.last_report_step = step
+
+    def _extract_last_metrics(self, state: TrainerState) -> dict:
+        """Extract last loss and learning_rate from log history."""
+        if not state.log_history:
+            return {"loss": 0, "learning_rate": 0}
+
+        last_log = state.log_history[-1]
+        return {
+            "loss": last_log.get("loss", 0),
+            "learning_rate": last_log.get("learning_rate", 0),
+        }
