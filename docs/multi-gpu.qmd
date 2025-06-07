@@ -66,9 +66,20 @@ Start from Stage 1 -> Stage 2 -> Stage 3.
 
 :::
 
-## FSDP {#sec-fsdp}
+## Fully Sharded Data Parallel (FSDP) {#sec-fsdp}
 
-### Basic FSDP Configuration {#sec-fsdp-config}
+### FSDP2 (reccomended)
+
+
+#### Migrating from FSDP1 to FSDP2
+
+Config field mapping
+-----------
+FSDP1 | FSDP2
+-------- | --------:
+
+
+### FSDP1 {#sec-fsdp-config}
 
 ```{.yaml}
 fsdp:

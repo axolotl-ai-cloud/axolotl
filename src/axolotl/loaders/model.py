@@ -140,10 +140,20 @@ class ModelLoader:
         """Check if flash attention is installed."""
         return find_spec("flash_attn") is not None
 
+    @property
+    def is_fsdp_enabled(self):
+        """Property that determines if FSDP is enabled."""
+        return self.cfg.fsdp_config is not None
+
+    @property
+    def fsdp_version(self):
+        """Property that determines the version of FSDP."""
+        return self.cfg.fsdp_config.fsdp_version
+
     @cached_property
     def qlora_fsdp(self):
         """Property that determines if FSDP with QLoRA is enabled."""
-        return self.cfg.fsdp and self.cfg.adapter == "qlora"
+        return self.is_fsdp_enabled and self.cfg.adapter == "qlora"
 
     def load(self) -> tuple[PreTrainedModel | PeftModelForCausalLM, PeftConfig | None]:
         """Load and prepare the model with all configurations and patches.
@@ -188,16 +198,16 @@ class ModelLoader:
         """Configure the model after it has been loaded."""
         # Handle PeftModel if needed
         if (
-            isinstance(self.model, (peft.PeftModel, peft.PeftModelForCausalLM))
-            and not self.qlora_fsdp
+            isinstance(self.model, (peft.PeftModel, peft.PeftModelForCausalLM)) and
+            not self.qlora_fsdp
         ):
             self.model = self.model.merge_and_unload()
 
         self._resize_token_embeddings()
         self._adjust_model_config()
-        self._log_memory_usage()
         self._configure_embedding_dtypes()
         self._configure_qat()
+        log_gpu_memory_usage(LOG, "Memory usage after model load", 0)
 
     def _resize_token_embeddings(self):
         """Resize token embeddings if needed."""
@@ -207,10 +217,10 @@ class ModelLoader:
             else len(self.tokenizer)
         )
         if hasattr(self.model, "get_input_embeddings") and (
-            self.model.get_input_embeddings().num_embeddings < embeddings_len
-            or (
-                self.model.get_input_embeddings().num_embeddings > embeddings_len
-                and self.cfg.shrink_embeddings
+            self.model.get_input_embeddings().num_embeddings < embeddings_len or
+            (
+                self.model.get_input_embeddings().num_embeddings > embeddings_len and
+                self.cfg.shrink_embeddings
             )
         ):
             resize_kwargs = {}
@@ -224,10 +234,10 @@ class ModelLoader:
 
     def _adjust_model_config(self):
         if (
-            hasattr(self.model, "config")
-            and hasattr(self.model.config, "max_position_embeddings")
-            and self.model.config.max_position_embeddings
-            and self.cfg.sequence_len > self.model.config.max_position_embeddings
+            hasattr(self.model, "config") and
+            hasattr(self.model.config, "max_position_embeddings") and
+            self.model.config.max_position_embeddings and
+            self.cfg.sequence_len > self.model.config.max_position_embeddings
         ):
             LOG.warning(
                 "increasing model.config.max_position_embeddings from "
@@ -236,29 +246,20 @@ class ModelLoader:
             self.model.config.max_position_embeddings = self.cfg.sequence_len
 
         if (
-            hasattr(self.model, "config")
-            and hasattr(self.model.config, "bos_token_id")
-            and self.model.config.bos_token_id
-            and self.model.config.bos_token_id != self.tokenizer.bos_token_id
+            hasattr(self.model, "config") and
+            hasattr(self.model.config, "bos_token_id") and
+            self.model.config.bos_token_id and
+            self.model.config.bos_token_id != self.tokenizer.bos_token_id
         ):
             self.model.config.bos_token_id = self.tokenizer.bos_token_id
 
         if (
-            hasattr(self.model, "config")
-            and hasattr(self.model.config, "eos_token_id")
-            and self.model.config.eos_token_id
-            and self.model.config.eos_token_id != self.tokenizer.eos_token_id
+            hasattr(self.model, "config") and
+            hasattr(self.model.config, "eos_token_id") and
+            self.model.config.eos_token_id and
+            self.model.config.eos_token_id != self.tokenizer.eos_token_id
         ):
             self.model.config.eos_token_id = self.tokenizer.eos_token_id
-
-    def _log_memory_usage(self):
-        """Log device memory usage after model load."""
-        if hasattr(self.model, "device") and self.model.device.type in (
-            "cuda",
-            "mps",
-            "npu",
-        ):
-            log_gpu_memory_usage(LOG, "after model load", self.model.device)
 
     def _configure_embedding_dtypes(self):
         """Configure embedding module dtypes."""
@@ -266,7 +267,7 @@ class ModelLoader:
         embedding_modules = get_linear_embedding_layers(self.cfg.model_config_type)
 
         # Initial dtype conversion
-        if not self.cfg.fsdp:
+        if not self.is_fsdp_enabled:
             # We don't run this during FSDP because this will leave mixed and bfloat16
             # dtypes in the model which FSDP doesn't like
             if self.cfg.load_in_4bit and self.cfg.embeddings_skip_upcast:
@@ -282,7 +283,7 @@ class ModelLoader:
             self._set_z3_leaf_modules()
 
         # Apply gradient checkpointing if needed
-        needs_fa2_dtype = self.cfg.adapter or self.cfg.fsdp
+        needs_fa2_dtype = self.cfg.adapter or self.is_fsdp_enabled
         if self.cfg.adapter in ["lora", "qlora"]:
             needs_fa2_dtype = True
             if self.cfg.gradient_checkpointing:
@@ -297,11 +298,11 @@ class ModelLoader:
             # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so
             # we need to convert them back to fp16/bf16 for flash-attn compatibility.
             (
-                (needs_fa2_dtype or self.cfg.flash_attention or self.cfg.flex_attention)
-                and not self.qlora_fsdp
-            )
+                (needs_fa2_dtype or self.cfg.flash_attention or self.cfg.flex_attention) and
+                not self.qlora_fsdp
+            ) or
             # CCE requires embedding layers to be in fp16/bf16 for backward pass
-            or self.cfg.cut_cross_entropy
+            self.cfg.cut_cross_entropy
         )
 
         if should_convert:
@@ -334,9 +335,9 @@ class ModelLoader:
             # for training. Then, the DPO trainer doesn't want the PEFT model loaded
             # over it, it just wants the LoRA / PEFT config.
             if (
-                self.cfg.adapter
-                and self.cfg.rl in [RLType.DPO, RLType.IPO, RLType.KTO]
-                and not self.cfg.merge_lora
+                self.cfg.adapter and
+                self.cfg.rl in [RLType.DPO, RLType.IPO, RLType.KTO] and
+                not self.cfg.merge_lora
             ):
                 _, lora_config = load_lora(
                     self.model, self.cfg, inference=False, config_only=True
@@ -352,10 +353,10 @@ class ModelLoader:
         """Apply final optimizations and patches."""
         # Place model on accelerator
         if (
-            self.cfg.ddp
-            and not self.cfg.load_in_8bit
-            and not (self.cfg.rl and self.cfg.load_in_4bit)
-            and not skip_move_to_device
+            self.cfg.ddp and
+            not self.cfg.load_in_8bit and
+            not (self.cfg.rl and self.cfg.load_in_4bit) and
+            not skip_move_to_device
         ):
             # TODO: validate this conditional
             self.model.to(f"{str(get_device_type())}:{self.cfg.local_rank}")
@@ -469,9 +470,9 @@ class ModelLoader:
                     **self.model_config.quantization_config
                 )
         if (
-            self.cfg.adapter in ["qlora", "lora"]
-            and hasattr(self.model_config, "quantization_config")
-            and self.model_config.quantization_config["quant_method"]
+            self.cfg.adapter in ["qlora", "lora"] and
+            hasattr(self.model_config, "quantization_config") and
+            self.model_config.quantization_config["quant_method"]
             in ["gptq", "awq", "bitsandbytes"]
         ):
             if self.model_config.quantization_config["quant_method"] == "gptq":
@@ -499,7 +500,7 @@ class ModelLoader:
                 "bnb_4bit_quant_storage": torch.bfloat16,
             }
             if self.cfg.model_config_type in ["jamba", "qwen2_moe"] and not (
-                self.cfg.deepspeed or self.cfg.fsdp
+                self.cfg.deepspeed or self.is_fsdp_enabled
             ):
                 # for some reason, this causes the loss to be off by an order of magnitude
                 # but deepspeed needs this still in bfloat16
@@ -581,9 +582,9 @@ class ModelLoader:
             )
             hf_ds_cfg.fill_match(
                 "train_batch_size",
-                int(os.getenv("WORLD_SIZE", "1"))
-                * self.cfg.micro_batch_size
-                * self.cfg.gradient_accumulation_steps,
+                int(os.getenv("WORLD_SIZE", "1")) *
+                self.cfg.micro_batch_size *
+                self.cfg.gradient_accumulation_steps,
             )
             if "device_map" in self.model_kwargs:
                 del self.model_kwargs["device_map"]
@@ -599,11 +600,19 @@ class ModelLoader:
         """Load model, with load strategy depending on config."""
         skip_move_to_device = False
         if (
-            self.qlora_fsdp
-            and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-            and (
-                self.cfg.model_config_type == "dbrx"
-                or self.cfg.qlora_sharded_model_loading
+            self.cfg.fsdp and
+            self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        ):
+            # disabling either of these two still leads to VRAM spike before setting back down
+            skip_move_to_device = True
+            if "device_map" in self.model_kwargs:
+                del self.model_kwargs["device_map"]
+        if (
+            self.qlora_fsdp and
+            self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading and
+            (
+                self.cfg.model_config_type == "dbrx" or
+                self.cfg.qlora_sharded_model_loading
             )
         ):
             quant_storage = self.cfg.torch_dtype
@@ -622,16 +631,10 @@ class ModelLoader:
             )
             skip_move_to_device = True
         elif (
-            self.model_config.model_type in ["llama", "llama4"]
-            and not self.cfg.trust_remote_code
-            and not self.cfg.gptq
+            self.model_config.model_type in ["llama", "llama4"] and
+            not self.cfg.trust_remote_code and
+            not self.cfg.gptq
         ):
-            # TODO: Do we need to open this up for all models?
-            if self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
-                skip_move_to_device = True
-                if "device_map" in self.model_kwargs:
-                    del self.model_kwargs["device_map"]
-
             # Please don't remove underscore binding without reading the fn docstring.
             _ = self._configure_zero3_memory_efficient_loading()
 
@@ -667,52 +670,42 @@ class ModelLoader:
                 **self.model_kwargs,
             )
         elif (
-            self.model_type
-            and self.model_type != "AutoModelForCausalLM"
-            and not self.cfg.trust_remote_code
+            self.model_type and
+            self.model_type != "AutoModelForCausalLM" and
+            not self.cfg.trust_remote_code
         ):
             if self.cfg.gptq:
                 self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
                     config=self.model_config,
-                    trust_remote_code=self.cfg.trust_remote_code or False,
+                    trust_remote_code=False,
                     **self.model_kwargs,
                 )
             else:
                 self.model = getattr(transformers, self.model_type).from_pretrained(
                     self.base_model,
                     config=self.model_config,
-                    trust_remote_code=self.cfg.trust_remote_code or False,
+                    trust_remote_code=False,
                     **self.model_kwargs,
                 )
+        elif self.cfg.gptq:
+            self.model = self.auto_model_loader.from_pretrained(
+                self.base_model,
+                config=self.model_config,
+                trust_remote_code=self.cfg.trust_remote_code or False,
+                **self.model_kwargs,
+            )
         else:
-            if self.cfg.gptq:
-                self.model = self.auto_model_loader.from_pretrained(
-                    self.base_model,
-                    config=self.model_config,
-                    trust_remote_code=self.cfg.trust_remote_code or False,
-                    **self.model_kwargs,
-                )
-            else:
-                if (
-                    self.cfg.fsdp
-                    and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-                ):
-                    # disabling either of these two still leads to VRAM spike before setting back down
-                    skip_move_to_device = True
-                    if "device_map" in self.model_kwargs:
-                        del self.model_kwargs["device_map"]
+            # Please don't remove underscore binding without reading the fn docstring.
+            _ = self._configure_zero3_memory_efficient_loading()
 
-                # Please don't remove underscore binding without reading the fn docstring.
-                _ = self._configure_zero3_memory_efficient_loading()
-
-                self.model = self.auto_model_loader.from_pretrained(
-                    self.base_model,
-                    config=self.model_config,
-                    trust_remote_code=self.cfg.trust_remote_code or False,
-                    **self.model_kwargs,
-                )
-        if is_deepspeed_zero3_enabled():
+            self.model = self.auto_model_loader.from_pretrained(
+                self.base_model,
+                config=self.model_config,
+                trust_remote_code=self.cfg.trust_remote_code or False,
+                **self.model_kwargs,
+            )
+        if is_deepspeed_zero3_enabled() or self.is_fsdp_enabled and self.fsdp_version == 2:
             skip_move_to_device = True
 
         return skip_move_to_device
@@ -739,25 +732,25 @@ class ModelLoader:
             skip_prepare_model_for_kbit_training = True
 
         loftq_bits = (
-            self.cfg.peft
-            and self.cfg.peft.loftq_config
-            and self.cfg.peft.loftq_config.loftq_bits
+            self.cfg.peft and
+            self.cfg.peft.loftq_config and
+            self.cfg.peft.loftq_config.loftq_bits
         )
         if self.cfg.adapter == "lora" and loftq_bits:
             skip_prepare_model_for_kbit_training = True
 
         if (
-            self.qlora_fsdp
-            or (self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
-            or is_deepspeed_zero3_enabled()
+            self.qlora_fsdp or
+            (self.cfg.is_fsdp_enabled and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading) or
+            is_deepspeed_zero3_enabled()
         ):
             # Make sure everything is in the same dtype
             skip_prepare_model_for_kbit_training = True
 
         if (
-            not skip_prepare_model_for_kbit_training
-            and self.cfg.adapter in ["lora", "qlora"]
-            and (self.cfg.load_in_8bit or self.cfg.load_in_4bit)
+            not skip_prepare_model_for_kbit_training and
+            self.cfg.adapter in ["lora", "qlora"] and
+            (self.cfg.load_in_8bit or self.cfg.load_in_4bit)
         ):
             LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
             self.model = prepare_model_for_kbit_training(

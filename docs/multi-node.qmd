@@ -40,6 +40,8 @@ use_cpu: false
 
 Configure your model to use FSDP in the Axolotl yaml. For example:
 ```yaml
+
+asdasd
 fsdp:
   - full_shard
   - auto_wrap

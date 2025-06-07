@@ -7,6 +7,8 @@ import sys
 import torch
 
 from axolotl.utils.logging import get_logger
+import torch.nn as nn
+from axolotl.utils.bench import log_gpu_memory_usage
 
 LOG = get_logger(__name__)
 
@@ -29,7 +31,9 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
     meta_sharded_sd = model.state_dict()
     sharded_sd = {}
 
+    LOG.info("Broadcasting full state dict to all ranks...")
     # Rank 0 distributes the full state dict to other ranks
+
     def _infer_parameter_dtype(model, param_name, empty_param):
         try:
             old_param = model.get_parameter_or_buffer(param_name)
@@ -84,7 +88,7 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
             )
             dist.broadcast(full_tensor, src=0, group=mesh.get_group())
             sharded_tensor = distribute_tensor(
-                full_tensor, mesh, sharded_sd[param_name].placements
+                full_tensor, sharded_param.device_mesh, sharded_param.placements
             )
             to_contiguous, casting_dtype = _infer_parameter_dtype(
                 model,
@@ -98,6 +102,7 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
 
     # we set `assign=True` because our params are on meta device
     model.load_state_dict(sharded_sd, assign=True)
+    log_gpu_memory_usage(LOG, "Memory usage after broadcasting full state dict", 0)
     return model
 
 
