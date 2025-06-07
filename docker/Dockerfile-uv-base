@@ -36,5 +36,5 @@ RUN uv pip install packaging setuptools wheel \
     && uv pip install awscli pydantic
 
 RUN if [ "$PYTORCH_VERSION" = "2.7.1" ] ; then \
-        uv pip install flash-attn==2.7.4.post1; \
+        uv pip install --no-build-isolation flash-attn==2.7.4.post1; \
     fi
