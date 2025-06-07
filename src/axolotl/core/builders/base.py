@@ -31,6 +31,8 @@ from transformers.training_args import OptimizerNames
 
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
+from axolotl.telemetry.callbacks import TelemetryCallback
+from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
     GCCallback,
@@ -144,6 +146,10 @@ class TrainerBuilderBase(abc.ABC):
             )
 
         callbacks.append(GPUStatsCallback(cfg=self.cfg))
+
+        telemetry_manager = TelemetryManager.get_instance()
+        if telemetry_manager.enabled:
+            callbacks.append(TelemetryCallback())
 
         return callbacks
 

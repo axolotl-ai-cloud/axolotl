@@ -236,6 +236,7 @@ website:
             - docs/inference.qmd
             - docs/cli.qmd
             - docs/config.qmd
+            - docs/telemetry.qmd
             - text: "API Reference"
               href: docs/api
 

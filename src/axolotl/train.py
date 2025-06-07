@@ -32,6 +32,8 @@ from axolotl.loaders import (
     load_processor,
     load_tokenizer,
 )
+from axolotl.telemetry.errors import send_errors
+from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
@@ -46,6 +48,9 @@ except ImportError:
     BetterTransformer = None
 
 LOG = get_logger(__name__)
+
+TELEMETRY_MANAGER = TelemetryManager.get_instance()
+PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 def setup_model_and_tokenizer(
@@ -64,7 +69,10 @@ def setup_model_and_tokenizer(
             `None`), and processor (if multimodal, else `None`).
     """
     # Load tokenizer
-    LOG.debug(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
+    LOG.debug(
+        f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
+        main_process_only=True,
+    )
     tokenizer = load_tokenizer(cfg)
 
     # Load processor for multimodal models if needed
@@ -82,6 +90,14 @@ def setup_model_and_tokenizer(
     model, peft_config = model_loader.load()
     if model.generation_config is not None:
         model.generation_config.do_sample = True
+
+    TELEMETRY_MANAGER.send_event(
+        event_type="model-load", properties=model.config.to_dict()
+    )
+    if peft_config:
+        TELEMETRY_MANAGER.send_event(
+            event_type="peft-config-load", properties=peft_config.to_dict()
+        )
 
     # Apply freezing if specified
     if cfg.unfrozen_parameters:
@@ -517,6 +533,7 @@ def setup_model_and_trainer(cfg: DictDefault, dataset_meta: TrainDatasetMeta) ->
         model_ref=model_ref,
         peft_config=peft_config,
     )
+    PLUGIN_MANAGER.post_trainer_create(cfg, trainer)
 
     return (
         trainer,
@@ -527,6 +544,7 @@ def setup_model_and_trainer(cfg: DictDefault, dataset_meta: TrainDatasetMeta) ->
     )
 
 
+@send_errors
 def train(
     cfg: DictDefault, dataset_meta: TrainDatasetMeta
 ) -> tuple[PeftModel | PreTrainedModel, PreTrainedTokenizer, Trainer]:
@@ -551,8 +569,11 @@ def train(
         processor,
     ) = setup_model_and_trainer(cfg, dataset_meta)
 
-    plugin_manager = PluginManager.get_instance()
-    plugin_manager.post_trainer_create(cfg, trainer)
+    # Determine if we need to resume from a checkpoint
+    resume_from_checkpoint = determine_resume_checkpoint(cfg)
+
+    # Configuration for saving
+    safe_serialization = cfg.save_safetensors is True
 
     # Handle untrained tokens if configured
     safe_serialization = cfg.save_safetensors is True
@@ -567,7 +588,6 @@ def train(
     setup_model_card(cfg)
 
     # Execute the training
-    resume_from_checkpoint = determine_resume_checkpoint(cfg)
     execute_training(cfg, trainer, resume_from_checkpoint)
 
     # Save the trained model and cleanup
@@ -575,7 +595,6 @@ def train(
     create_model_card(cfg, trainer)
     if not cfg.use_ray:
         cleanup_distributed()
-
-    plugin_manager.post_train(cfg, model)
+    PLUGIN_MANAGER.post_train(cfg, model)
 
     return model, tokenizer, trainer
