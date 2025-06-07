@@ -64,7 +64,7 @@ def setup_model_and_tokenizer(
             `None`), and processor (if multimodal, else `None`).
     """
     # Load tokenizer
-    LOG.debug(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
+    LOG.debug(f"Loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
     tokenizer = load_tokenizer(cfg)
 
     # Load processor for multimodal models if needed
@@ -72,11 +72,8 @@ def setup_model_and_tokenizer(
     if cfg.is_multimodal:
         processor = load_processor(cfg, tokenizer)
 
-    # Load the model and peft_config
-    msg = "loading model"
-    if cfg.adapter:
-        msg += " and peft_config..."
-    LOG.debug(msg)
+    # Load the model
+    LOG.debug(f"Loading model")
 
     model_loader = ModelLoader(cfg, tokenizer, processor=processor)
     model, peft_config = model_loader.load()

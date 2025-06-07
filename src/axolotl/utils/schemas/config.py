@@ -1515,7 +1515,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_fsdp_version(cls, data):
-        if data.get("fsdp_config") is not None and str(data.get("fsdp_version")) != 2:
+        if data.get("fsdp_config") is not None and str(data.get("fsdp_version")) != "2":
             LOG.info("We recommend that you use FSDP version 2 for better performance and stability. "
                      "Please see this link for more details: https://docs.axolotl.ai/docs/multi-gpu.html#sec-fsdp"
                      "For more details on migrating your config.")

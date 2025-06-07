@@ -1,4 +1,4 @@
-base_model: meta-llama/Llama-3.2-3B
+base_model: Qwen/Qwen3-32B
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
@@ -25,15 +25,15 @@ sample_packing: true
 pad_to_sequence_len: true
 sequence_len: 512
 
-flex_attention: true
+flex_attention: false
 flex_attn_compile_kwargs:
   dynamic: false
   mode: max-autotune-no-cudagraphs
 
-qat:
-  activation_dtype: int8
-  weight_dtype: int4
-  group_size: 32
+# qat:
+#   activation_dtype: int8
+#   weight_dtype: int4
+#   group_size: 32
 
 wandb_project:
 wandb_entity:
@@ -61,16 +61,12 @@ saves_per_epoch: 1
 warmup_steps: 10
 weight_decay: 0.0
 
-fsdp:
-  - full_shard
-  - auto_wrap
-
 fsdp_config:
   fsdp_version: 2
   fsdp_offload_params: false
   fsdp_cpu_ram_efficient_loading: true
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
+  fsdp_transformer_layer_cls_to_wrap: Qwen3DecoderLayer
   fsdp_state_dict_type: FULL_STATE_DICT
   fsdp_sharding_strategy: FULL_SHARD
   fsdp_reshard_after_forward: true

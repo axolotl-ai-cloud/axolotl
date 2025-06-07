@@ -145,6 +145,11 @@ class ModelLoader:
         """Property that determines if FSDP is enabled."""
         return self.cfg.fsdp_config is not None
 
+    @property
+    def fsdp_version(self):
+        """Property that determines the version of FSDP."""
+        return self.cfg.fsdp_config.fsdp_version
+
     @cached_property
     def qlora_fsdp(self):
         """Property that determines if FSDP with QLoRA is enabled."""
@@ -200,9 +205,9 @@ class ModelLoader:
 
         self._resize_token_embeddings()
         self._adjust_model_config()
-        self._log_memory_usage()
         self._configure_embedding_dtypes()
         self._configure_qat()
+        log_gpu_memory_usage(LOG, "Memory usage after model load", 0)
 
     def _resize_token_embeddings(self):
         """Resize token embeddings if needed."""
@@ -255,15 +260,6 @@ class ModelLoader:
             and self.model.config.eos_token_id != self.tokenizer.eos_token_id
         ):
             self.model.config.eos_token_id = self.tokenizer.eos_token_id
-
-    def _log_memory_usage(self):
-        """Log device memory usage after model load."""
-        if hasattr(self.model, "device") and self.model.device.type in (
-            "cuda",
-            "mps",
-            "npu",
-        ):
-            log_gpu_memory_usage(LOG, "after model load", self.model.device)
 
     def _configure_embedding_dtypes(self):
         """Configure embedding module dtypes."""
@@ -655,7 +651,7 @@ class ModelLoader:
                     trust_remote_code=self.cfg.trust_remote_code or False,
                     **self.model_kwargs,
                 )
-        if is_deepspeed_zero3_enabled():
+        if is_deepspeed_zero3_enabled() or self.is_fsdp_enabled and self.fsdp_version == 2:
             skip_move_to_device = True
 
         return skip_move_to_device

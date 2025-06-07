@@ -7,6 +7,8 @@ import sys
 import torch
 
 from axolotl.utils.logging import get_logger
+import torch.nn as nn
+from axolotl.utils.bench import log_gpu_memory_usage
 
 LOG = get_logger(__name__)
 
@@ -25,32 +27,49 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
     from torch.distributed.tensor import distribute_tensor
 
     LOG.info("Broadcasting full state dict to all ranks...")
-    sharded_sd = model.state_dict()
-    param_names = sorted(sharded_sd.keys())
-    for param_name in param_names:
-        mesh = sharded_sd[param_name].device_mesh
-        if accelerator.is_main_process:
-            # Use the corresponding tensor from full_sd (assuming the key exists in full_sd)
-            full_param = full_sd[param_name].detach().cuda()
-            dist.broadcast(full_param, src=0, group=mesh.get_group())
-            sharded_tensor = distribute_tensor(
-                full_param, mesh, sharded_sd[param_name].placements
-            )
-            sharded_sd[param_name] = sharded_tensor
+    sharded_sd = {}
+    cpu_sd = model.state_dict()
+    for param_name, full_tensor in full_sd.items():
+        sharded_param = cpu_sd.get(param_name)
+        assert sharded_param is not None, f"{param_name} not found in model"
+        full_tensor = full_tensor.to(sharded_param.dtype).to("cuda")
+        if not hasattr(sharded_param, "device_mesh"):
+            sharded_tensor = full_tensor
         else:
-            # Prepare a tensor of matching shape and dtype
-            full_tensor = torch.empty(
-                sharded_sd[param_name].size(),
-                device="cuda",
-                dtype=sharded_sd[param_name].dtype,
-            )
-            dist.broadcast(full_tensor, src=0, group=mesh.get_group())
             sharded_tensor = distribute_tensor(
-                full_tensor, mesh, sharded_sd[param_name].placements
+                full_tensor, sharded_param.device_mesh, sharded_param.placements
             )
-            sharded_sd[param_name] = sharded_tensor
+        sharded_sd[param_name] = nn.Parameter(sharded_tensor)
+        full_sd[param_name] = None
 
     model.load_state_dict(sharded_sd, assign=True)
+    log_gpu_memory_usage(LOG, "Memory usage after broadcasting full state dict", 0)
+
+    # param_names = sorted(sharded_sd.keys())
+    # for param_name in param_names:
+    #     mesh = sharded_sd[param_name].device_mesh
+        # if accelerator.is_main_process:
+        #     # Use the corresponding tensor from full_sd (assuming the key exists in full_sd)
+        #     full_param = full_sd[param_name].detach().cuda()
+        #     dist.broadcast(full_param, src=0, group=mesh.get_group())
+        #     sharded_tensor = distribute_tensor(
+        #         full_param, mesh, sharded_sd[param_name].placements
+        #     )
+        #     sharded_sd[param_name] = sharded_tensor
+        # else:
+        # Prepare a tensor of matching shape and dtype
+        # full_tensor = torch.empty(
+        #     sharded_sd[param_name].size(),
+        #     device="cuda",
+        #     dtype=sharded_sd[param_name].dtype,
+        # )
+        # dist.broadcast(full_tensor, src=0, group=mesh.get_group())
+        # sharded_tensor = distribute_tensor(
+        #     full_tensor, mesh, sharded_sd[param_name].placements
+        # )
+        # sharded_sd[param_name] = sharded_tensor
+
+    # model.load_state_dict(sharded_sd, assign=True)
 
 
 def set_state_dict_type(self, state_dict_type=None):
