@@ -9,12 +9,8 @@ import pytest
 from axolotl.utils.config import prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
+
 # pylint: disable=duplicate-code
-from axolotl.utils.logging import get_logger
-
-LOG = get_logger("axolotl.integrations.test_liger")
-
-
 @pytest.fixture(name="minimal_liger_cfg")
 def fixture_cfg():
     return DictDefault(

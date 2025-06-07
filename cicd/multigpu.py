@@ -55,7 +55,7 @@ VOLUME_CONFIG = {
 }
 
 N_GPUS = int(os.environ.get("N_GPUS", 2))
-GPU_CONFIG = modal.gpu.H100(count=N_GPUS)
+GPU_CONFIG = f"H100:{N_GPUS}"
 
 
 def run_cmd(cmd: str, run_folder: str):

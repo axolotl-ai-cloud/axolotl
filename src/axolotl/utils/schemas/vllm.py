@@ -44,3 +44,12 @@ class VllmConfig(BaseModel):
         default=8000,
         json_schema_extra={"description": "Port of the vLLM server to start on"},
     )
+
+    enable_reasoning: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Enable reasoning for VLLM"},
+    )
+    reasoning_parser: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Reasoning parser for VLLM"},
+    )

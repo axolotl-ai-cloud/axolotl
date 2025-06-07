@@ -88,6 +88,14 @@ class VllmServeCliArgs:
         },
     )
 
+    enable_reasoning: Optional[bool] = field(
+        default=None,
+    )
+
+    reasoning_parser: Optional[str] = field(
+        default=None,
+    )
+
 
 @dataclass
 class QuantizeCliArgs:

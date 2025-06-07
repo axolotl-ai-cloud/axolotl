@@ -2,7 +2,6 @@
 E2E tests for lora llama
 """
 
-import os
 import unittest
 
 from axolotl.cli.args import TrainerCliArgs
@@ -10,12 +9,8 @@ from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.logging import get_logger
 
 from .utils import check_model_output_exists, with_temp_dir
-
-LOG = get_logger("axolotl.tests.e2e")
-os.environ["WANDB_DISABLED"] = "true"
 
 
 class TestLlamaVision(unittest.TestCase):
@@ -38,7 +33,7 @@ class TestLlamaVision(unittest.TestCase):
                 "lora_r": 8,
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
-                "lora_target_modules": r"language_model.model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj",
+                "lora_target_modules": r"model.language_model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj",
                 "val_set_size": 0,
                 "chat_template": "llama3_2_vision",
                 "datasets": [
@@ -86,7 +81,7 @@ class TestLlamaVision(unittest.TestCase):
                 "lora_r": 8,
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
-                "lora_target_modules": r"language_model.model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj",
+                "lora_target_modules": r"model.language_model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj",
                 "val_set_size": 0,
                 "chat_template": "llama3_2_vision",
                 "datasets": [

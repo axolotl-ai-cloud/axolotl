@@ -2,7 +2,6 @@
 E2E tests for relora llama
 """
 
-import os
 import unittest
 from pathlib import Path
 
@@ -11,12 +10,8 @@ from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.logging import get_logger
 
 from ..utils import check_model_output_exists, check_tensorboard, with_temp_dir
-
-LOG = get_logger("axolotl.tests.e2e")
-os.environ["WANDB_DISABLED"] = "true"
 
 
 class TestReLoraLlama(unittest.TestCase):

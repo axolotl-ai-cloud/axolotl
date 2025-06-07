@@ -9,6 +9,8 @@ except ImportError as exc:
     raise ImportError("Install torch via `pip install torch`") from exc
 from packaging.version import Version as V
 
+USE_UV = "--uv" in sys.argv[1:]
+
 v = V(torch.__version__)
 
 # no cut-cross-entropy support for torch < 2.4.0
@@ -23,7 +25,9 @@ if cce_spec:
     if not importlib.util.find_spec("cut_cross_entropy.transformers"):
         UNINSTALL_PREFIX = "pip uninstall -y cut-cross-entropy && "
 
+UV_PREFIX = "uv " if USE_UV else ""
+
 print(
     UNINSTALL_PREFIX
-    + 'pip install "cut-cross-entropy[transformers] @ git+https://github.com/apple/ml-cross-entropy.git@bad6f7b49c75fdec69471abb71b4cddd0f0c6438"'
+    + f'{UV_PREFIX}pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@a1174ca"'
 )

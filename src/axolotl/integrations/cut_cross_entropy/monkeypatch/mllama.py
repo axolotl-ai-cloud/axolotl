@@ -15,12 +15,7 @@ from cut_cross_entropy.transformers.utils import (
 from transformers.cache_utils import Cache
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.models.mllama.modeling_mllama import (
-    MLLAMA_INPUTS_DOCSTRING,
     _prepare_cross_attention_mask,
-)
-from transformers.utils import (
-    add_start_docstrings_to_model_forward,
-    replace_return_docstrings,
 )
 from transformers.utils.deprecation import deprecate_kwarg
 
@@ -28,10 +23,6 @@ _PATCH_OPTS: PatchOptions | None = None
 
 
 @deprecate_kwarg("num_logits_to_keep", version="4.50", new_name="logits_to_keep")
-@add_start_docstrings_to_model_forward(MLLAMA_INPUTS_DOCSTRING)
-@replace_return_docstrings(
-    output_type=CausalLMOutputWithPast, config_class="MllamaTextConfig"
-)
 def cce_forward(
     self,
     input_ids: torch.LongTensor | None = None,
@@ -164,10 +155,6 @@ def cce_forward(
 
 
 @deprecate_kwarg("num_logits_to_keep", version="4.50", new_name="logits_to_keep")
-@add_start_docstrings_to_model_forward(MLLAMA_INPUTS_DOCSTRING)
-@replace_return_docstrings(
-    output_type=CausalLMOutputWithPast, config_class="MllamaConfig"
-)
 def cce_forward_multimodal(
     self,
     input_ids: Optional[torch.LongTensor] = None,

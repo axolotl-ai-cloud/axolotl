@@ -2,7 +2,6 @@
 E2E tests for custom optimizers using Llama
 """
 
-import os
 import unittest
 
 from axolotl.cli.args import TrainerCliArgs
@@ -10,12 +9,13 @@ from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.logging import get_logger
 
-from .utils import check_model_output_exists, require_torch_2_5_1, with_temp_dir
-
-LOG = get_logger("axolotl.tests.e2e")
-os.environ["WANDB_DISABLED"] = "true"
+from .utils import (
+    check_model_output_exists,
+    require_torch_2_5_1,
+    require_torch_2_6_0,
+    with_temp_dir,
+)
 
 
 class TestCustomOptimizers(unittest.TestCase):
@@ -201,6 +201,7 @@ class TestCustomOptimizers(unittest.TestCase):
         check_model_output_exists(temp_dir, cfg)
 
     @with_temp_dir
+    @require_torch_2_6_0
     def test_came_pytorch(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
