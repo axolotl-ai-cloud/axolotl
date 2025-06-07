@@ -102,7 +102,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
             )
             batch_max_len = train_batch_size * self.args.max_seq_length
 
-        return MultipackBatchSampler(
+        sampler = MultipackBatchSampler(
             base_sampler,
             lengths=get_dataset_lengths(dataset),
             packing_efficiency_estimate=self.args.sample_packing_efficiency,
@@ -113,6 +113,9 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
             sequential=self.args.sample_packing_sequentially,
             drop_last=True,
         )
+
+        len(sampler)
+        return sampler
 
     def _get_train_sampler(
         self, train_dataset: Optional[Dataset] = None

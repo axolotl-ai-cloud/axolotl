@@ -481,6 +481,9 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                     data_loader_len * cfg.num_epochs * cfg.sequence_parallel_degree
                 )
             )
+            if cfg.dataloader_drop_last:
+                # drop the last batch for each epoch
+                total_num_steps -= int(math.ceil(cfg.num_epochs))
 
             def calc_sample_packing_eff_est(estimates: List[float]):
                 LOG.info(f"sample_packing_eff_est across ranks: {repr(estimates)}")

@@ -443,10 +443,18 @@ class MultipackBatchSampler(BatchSampler):
 
         if self._len_across_ranks is None:
             # Sample multiple times to get stable estimate
-            len_batches = min(  # pylint: disable=consider-using-generator
-                [len(self._batches) for _ in range(self.num_count_samples)]
-            )
+            _sampled_lens = []
+            for _ in range(self.num_count_samples):
+                self._batches = None  # Reset cached batches
+                _sampled_lens.append(len(self.generate_batches(set_stats=False)))
+            len_batches = min(_sampled_lens)
+
             # Gather minimum across all ranks
-            self._len_across_ranks = self.gather_len_batches(len_batches)
+            if self._len_across_ranks is None:
+                self._len_across_ranks = self.gather_len_batches(len_batches)
+            else:
+                self._len_across_ranks = min(
+                    self._len_across_ranks, self.gather_len_batches(len_batches)
+                )
 
         return self._len_across_ranks
