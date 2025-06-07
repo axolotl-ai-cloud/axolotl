@@ -13,9 +13,9 @@ import inspect
 import accelerate
 import torch
 import torch.distributed as dist
-from accelerate.logging import get_logger
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RingAttnFunc
 
 LOG = get_logger(__name__)
@@ -80,19 +80,9 @@ def register_ring_attn(
     rank = dist.get_rank()
     world_size = dist.get_world_size()
 
-    if rank == 0:
-        LOG.info(
-            "Enabling ring attention sequence parallelism: "
-            f"each sequence will be processed across {sequence_parallel_degree} GPUs"
-        )
-
-    assert sequence_parallel_degree <= world_size, (
-        f"sequence_parallel_degree ({sequence_parallel_degree}) "
-        f"must be less than or equal to world_size ({world_size})"
-    )
-    assert world_size % sequence_parallel_degree == 0, (
-        f"sequence_parallel_degree ({sequence_parallel_degree}) "
-        f"must evenly divide world_size ({world_size})"
+    LOG.info(
+        "Enabling ring attention sequence parallelism: "
+        f"each sequence will be processed across {sequence_parallel_degree} GPUs"
     )
 
     # Assign ranks to sequence parallel groups
@@ -113,9 +103,7 @@ def register_ring_attn(
         if rank in ring_attn_ranks:
             set_ring_attn_group(group)
 
-    # Log the GPU group assignments
-    if rank == 0:
-        LOG.info(f"Sequence parallel group assignments: {group_assignments}")
+    LOG.info(f"Sequence parallel group assignments: {group_assignments}")
 
     if ring_attn_func is RingAttnFunc.VARLEN_LLAMA3:
         from ring_flash_attn import substitute_hf_flash_attn

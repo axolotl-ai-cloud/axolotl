@@ -17,7 +17,7 @@ from accelerate.utils import save_fsdp_model
 from datasets import Dataset
 from huggingface_hub.errors import OfflineModeIsEnabled
 from peft import PeftConfig, PeftModel
-from torch.distributed.tensor.experimental import _context_parallel
+from torch.distributed.tensor.experimental import context_parallel
 from transformers import PreTrainedModel, PreTrainedTokenizer, ProcessorMixin
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.trainer import Trainer
@@ -216,7 +216,7 @@ def execute_training(
                     torch.tensor(list(range(world_size))).reshape(mesh_shape),
                     mesh_dim_names=("dp", "cp"),
                 )
-                stack.enter_context(_context_parallel(seq_dim=2, mesh=mesh))
+                stack.enter_context(context_parallel(mesh=mesh))
             else:  # flash_attention
                 models = [trainer.model]
                 if hasattr(trainer, "ref_model") and trainer.ref_model:

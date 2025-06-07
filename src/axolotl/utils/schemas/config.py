@@ -1194,9 +1194,24 @@ class AxolotlInputConfig(
         if not self.sequence_parallel_degree:
             self.sequence_parallel_degree = 1
         elif self.sequence_parallel_degree > 1:
-            if not self.flash_attention:
+            import torch
+
+            world_size = torch.cuda.device_count()
+            if not world_size >= self.sequence_parallel_degree:
                 raise ValueError(
-                    "flash_attention: true must be set with sequence_parallel_degree > 1"
+                    f"World size ({world_size}) must be greater "
+                    f"than or equal to SP degree ({self.sequence_parallel_degree})"
+                )
+            if not world_size % self.sequence_parallel_degree == 0:
+                raise ValueError(
+                    f"SP degree ({self.sequence_parallel_degree}) "
+                    f"must evenly divide world size ({world_size})"
+                )
+
+            if not (self.flash_attention or self.sdp_attention):
+                raise ValueError(
+                    "flash_attention: true or sdp_attention: true "
+                    "must be set with sequence_parallel_degree > 1"
                 )
 
             if self.sample_packing and self.micro_batch_size > 1:
@@ -1205,14 +1220,15 @@ class AxolotlInputConfig(
                     "due to a `ring-flash-attn` requirement"
                 )
 
-            try:
-                import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
-            except ImportError as exception:
-                raise ImportError(
-                    "sequence_parallel_degree > 1 but ring_flash_attn is not installed. "
-                    "Please install it with `pip install axolotl[ring-flash-attn] "
-                    "or `pip install ring-flash-attn>=0.1.4`."
-                ) from exception
+            if self.flash_attention:
+                try:
+                    import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
+                except ImportError as exception:
+                    raise ImportError(
+                        "sequence_parallel_degree > 1 but ring_flash_attn is not installed. "
+                        "Please install it with `pip install axolotl[ring-flash-attn] "
+                        "or `pip install ring-flash-attn>=0.1.4`."
+                    ) from exception
 
             # TODO: monkeypatch / callback to average losses correctly across SP ranks
             # / fix gradient scaling across SP ranks. Losses, grads should be scaled
