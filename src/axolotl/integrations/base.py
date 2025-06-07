@@ -397,7 +397,6 @@ class PluginManager:  # pylint: disable=too-many-public-methods
         training_args = []
         for plugin in self.plugins.values():
             training_args_from_plugin = plugin.get_training_args_mixin()
-            print(f"Training args from plugin: {plugin.__class__.__name__}")
             if training_args_from_plugin is not None:
                 training_args.append(training_args_from_plugin)
         return training_args

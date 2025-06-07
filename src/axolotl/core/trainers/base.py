@@ -105,7 +105,7 @@ class AxolotlTrainer(
             )
             batch_max_len = train_batch_size * self.args.max_seq_length
 
-        return MultipackBatchSampler(
+        sampler = MultipackBatchSampler(
             base_sampler,
             lengths=get_dataset_lengths(dataset),
             packing_efficiency_estimate=self.args.sample_packing_efficiency,
@@ -117,6 +117,9 @@ class AxolotlTrainer(
             drop_last=True,
             num_processes=self.args.dataset_num_proc,
         )
+
+        len(sampler)
+        return sampler
 
     def _get_train_sampler(
         self, train_dataset: Optional[Dataset] = None
