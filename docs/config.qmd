@@ -173,6 +173,10 @@ datasets:
     # Key containing the messages (default: "messages")
     field_messages: messages
 
+    # Key containing the tools (default: "tools")
+    # Must be a list[dict] and follow [JSON schema](https://json-schema.org/learn/getting-started-step-by-step).
+    field_tools: tools
+
     # Key containing the system message (default: "system")
     # If the system message is not present in the dataset sample, it will be loaded from the field_system property.
     field_system: system
