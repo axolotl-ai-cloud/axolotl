@@ -17,7 +17,6 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
     """
     Loads the full state dict (could be only on rank 0) into the sharded model. This is done by broadcasting the
     parameters from rank 0 to all other ranks. This function modifies the model in-place.
-
     Args:
         accelerator (`Accelerator`): The accelerator instance
         model (`torch.nn.Module`):
