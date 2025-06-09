@@ -86,6 +86,15 @@ class ChatTemplatePrompter(Prompter):
         images=None,
         tools=None,
     ):
+        """
+        Build a prompt from a conversation.
+
+        Args:
+            conversation: A list of messages.
+            add_generation_prompt: Whether to add a generation prompt.
+            images: A list of images. (optional)
+            tools: A list of tools. (optional)
+        """
         chat_template_kwargs = {
             "chat_template": self.chat_template,
             "add_generation_prompt": add_generation_prompt,
@@ -561,7 +570,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 return i
         return -1
 
-    def find_turn(self, turns: list[dict], turn_idx: int, tools: list[dict] | None):
+    def find_turn(
+        self, turns: list[dict], turn_idx: int, tools: list[dict] | None = None
+    ):
         """
         Locate the starting and ending indices of the specified turn in a conversation.
         """
