@@ -145,7 +145,7 @@ def pack_parallel(
     """
     num_items = len(sequence_lengths)
     if num_processes is None:
-        num_processes = max(1, min(num_items // group_size, cpu_count()))
+        num_processes = max(1, min(num_items // group_size, cpu_count(), 16))
 
     # Create tasks for parallel processing
     tasks = []
