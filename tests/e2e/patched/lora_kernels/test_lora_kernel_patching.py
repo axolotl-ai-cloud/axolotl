@@ -546,7 +546,7 @@ def test_kernel_training_integration_dropout_non_zero():
     assert attention_cls.forward == original_forward_method
 
     # Load model
-    model, _ = load_model_and_tokenizer(cfg=cfg)
+    model, _, _ = load_model_and_tokenizer(cfg=cfg)
 
     # Apply apply_lora_kernel_patches
     apply_lora_kernel_patches(model, cfg)
