@@ -178,6 +178,13 @@ def patch_self_attn_lora(cfg: DictDefault):
         AssertionError: If the required code blocks are not found in the attention
             implementation.
     """
+    # Only patch if conditions are met
+    can_patch = cfg.lora_dropout == 0
+
+    if not can_patch:
+        LOG.warning("Cannot patch self-attention - requires no dropout")
+        return
+
     attention_cls = get_attention_cls_from_config(cfg)
 
     # Check if already patched
@@ -269,6 +276,29 @@ def find_mlp_in_layer(
                 )
 
 
+def get_layers(model: PeftModelForCausalLM) -> list[nn.Module]:
+    """
+    Get the layers of the model. Handles text-only and multimodal models.
+
+    Args:
+        model: A PEFT model.
+
+    Returns:
+        A list of layers.
+    """
+    pretrained_model = model.model
+
+    # check for multimodal models first
+    if hasattr(pretrained_model, "language_model"):
+        return pretrained_model.language_model.layers
+    if hasattr(pretrained_model, "model"):
+        return pretrained_model.model.layers
+
+    raise NotImplementedError(
+        f"Model type {model.config.model_type} is not supported yet. Please create an Issue."
+    )
+
+
 def apply_lora_kernel_patches(
     model: PeftModelForCausalLM, cfg: DictDefault
 ) -> PeftModelForCausalLM:
@@ -340,17 +370,7 @@ def apply_lora_kernel_patches(
     if activation not in SUPPORTED_ACTIVATIONS:
         raise NotImplementedError(f"Activation {activation} is not supported")
 
-    layers = []
-    # check for multimodal models first
-    pretrained_model = model.model
-    if hasattr(pretrained_model, "language_model"):
-        layers = pretrained_model.language_model.layers
-    elif hasattr(pretrained_model, "model"):
-        layers = pretrained_model.model.layers
-    else:
-        raise NotImplementedError(
-            f"Model type {model.config.model_type} is not supported yet. Please create an Issue."
-        )
+    layers = get_layers(model)
 
     # Patch each layer
     for layer in layers:
