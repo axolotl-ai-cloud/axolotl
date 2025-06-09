@@ -379,7 +379,7 @@ class TokenizerConfiguration:
         """Load Mistral tokenizer from model configuration."""
         # Instantiate Mistral tokenizer
         model_id = self.cfg.base_model
-        mistral_tokenizer = MistralTokenizer.from_file(model_id)
+        mistral_tokenizer = MistralTokenizer.from_hf_hub(model_id)
 
         # Wrap it for compatibility
         tokenizer = MistralTokenizerWrapper(mistral_tokenizer, model_id)
@@ -637,9 +637,9 @@ def load_tokenizer(cfg):
     config = TokenizerConfiguration(cfg)
 
     # Check if we should use Mistral tokenizer
-    if config.detect_by_model_name_mapping():
+    try:
         tokenizer = config.load_mistral_tokenizer()
-    else:
+    except:
         # Standard tokenizer loading
         tokenizer_cls = config.get_tokenizer_class()
         tokenizer_path = config.get_tokenizer_path()
