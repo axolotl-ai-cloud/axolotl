@@ -26,11 +26,9 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
     import torch.distributed as dist
     from torch.distributed.tensor import distribute_tensor
 
-    # Model was previously copied to meta device
-    meta_sharded_sd = model.state_dict()
-    sharded_sd = {}
-
     LOG.info("Broadcasting full state dict to all ranks...")
+    import time
+    start_time = time.time()
     # Rank 0 distributes the full state dict to other ranks
 
     def _infer_parameter_dtype(model, param_name, empty_param):
@@ -60,47 +58,69 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
             tensor = tensor.contiguous()
         return tensor
 
-    param_names = sorted(meta_sharded_sd.keys())
-
-    for param_name in param_names:
-        mesh = meta_sharded_sd[param_name].device_mesh
-        if accelerator.is_main_process:
-            full_param = full_sd[param_name].detach().cuda()
-            dist.broadcast(full_param, src=0, group=mesh.get_group())
-            sharded_tensor = distribute_tensor(
-                full_param, mesh, sharded_sd[param_name].placements
-            )
-            to_contiguous, casting_dtype = _infer_parameter_dtype(
-                model,
-                param_name,
-                full_param,
-            )
-            sharded_tensor = _cast_and_contiguous(
-                sharded_tensor, to_contiguous, casting_dtype
-            )
-            sharded_sd[param_name] = sharded_tensor
-        else:
+    # param_names = sorted(meta_sharded_sd.keys())
+    # Model was previously copied to meta device
+    meta_sharded_sd = model.state_dict()
+    sharded_sd = {}
+    for param_name, full_tensor in full_sd.items():
+        sharded_meta_param = meta_sharded_sd.get(param_name)
+        if not accelerator.is_main_process:
             full_tensor = torch.empty(
-                sharded_sd[param_name].size(),
-                device="cuda",
-                dtype=sharded_sd[param_name].dtype,
+                sharded_meta_param.size(),
+                device="cpu",
+                dtype=sharded_meta_param.dtype,
             )
-            dist.broadcast(full_tensor, src=0, group=mesh.get_group())
-            sharded_tensor = distribute_tensor(
-                full_tensor, sharded_param.device_mesh, sharded_param.placements
-            )
-            to_contiguous, casting_dtype = _infer_parameter_dtype(
-                model,
-                param_name,
-                full_tensor,
-            )
-            sharded_tensor = _cast_and_contiguous(
-                sharded_tensor, to_contiguous, casting_dtype
-            )
-            sharded_sd[param_name] = sharded_tensor
+        dist.broadcast(full_tensor, src=0, group=sharded_meta_param.device_mesh.get_group())
+        sharded_param = distribute_tensor(
+            full_tensor, sharded_meta_param.device_mesh, sharded_meta_param.placements
+        )
+        if not hasattr(sharded_meta_param, "device_mesh"):
+            sharded_param = full_tensor
+        else:
+            sharded_sd[param_name] = nn.Parameter(sharded_param)
+
+        full_sd[param_name] = None
+    # for param_name in param_names:
+    #     mesh = meta_sharded_sd[param_name].device_mesh
+    #     if accelerator.is_main_process:
+    #         full_param = full_sd[param_name].detach().cuda()
+    #         dist.broadcast(full_param, src=0, group=mesh.get_group())
+    #         sharded_tensor = distribute_tensor(
+    #             full_param, mesh, sharded_sd[param_name].placements
+    #         )
+    #         to_contiguous, casting_dtype = _infer_parameter_dtype(
+    #             model,
+    #             param_name,
+    #             full_param,
+    #         )
+    #         sharded_tensor = _cast_and_contiguous(
+    #             sharded_tensor, to_contiguous, casting_dtype
+    #         )
+    #         sharded_sd[param_name] = sharded_tensor
+    #     else:
+    #         full_tensor = torch.empty(
+    #             sharded_sd[param_name].size(),
+    #             device="cuda",
+    #             dtype=sharded_sd[param_name].dtype,
+    #         )
+    #         dist.broadcast(full_tensor, src=0, group=mesh.get_group())
+    #         sharded_tensor = distribute_tensor(
+    #             full_tensor, sharded_param.device_mesh, sharded_param.placements
+    #         )
+    #         to_contiguous, casting_dtype = _infer_parameter_dtype(
+    #             model,
+    #             param_name,
+    #             full_tensor,
+    #         )
+    #         sharded_tensor = _cast_and_contiguous(
+    #             sharded_tensor, to_contiguous, casting_dtype
+    #         )
+    #         sharded_sd[param_name] = sharded_tensor
 
     # we set `assign=True` because our params are on meta device
     model.load_state_dict(sharded_sd, assign=True)
+    end_time = time.time()
+    LOG.info(f"Time taken to load full state dict: {end_time - start_time} seconds")
     log_gpu_memory_usage(LOG, "Memory usage after broadcasting full state dict", 0)
     return model
 
