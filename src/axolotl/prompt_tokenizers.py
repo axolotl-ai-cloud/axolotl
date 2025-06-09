@@ -67,7 +67,9 @@ class PromptTokenizingStrategy(abc.ABC):
             LOG.warning("Empty text requested for tokenization.")
             return empty
 
-        import ipdb; ipdb.set_trace()
+        import ipdb
+
+        ipdb.set_trace()
 
         result = self.tokenizer(
             prompt,
