@@ -20,6 +20,7 @@ datasets==3.6.0
 deepspeed>=0.17.0
 trl==0.18.1
 hf_xet==1.1.2
+mistral-common[hf-hub]==1.6.0
 
 optimum==1.16.2
 hf_transfer
@@ -67,5 +68,3 @@ schedulefree==1.4.1
 
 axolotl-contribs-lgpl==0.0.6
 axolotl-contribs-mit==0.0.3
-
-mistral-common[hf-hub]==1.6.0

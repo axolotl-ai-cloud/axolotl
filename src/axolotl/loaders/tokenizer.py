@@ -10,7 +10,6 @@ from huggingface_hub import hf_hub_download
 from mistral_common.protocol.instruct.messages import SystemMessage, UserMessage
 from mistral_common.protocol.instruct.request import ChatCompletionRequest
 from mistral_common.tokens.tokenizers.mistral import (
-    MODEL_NAME_TO_TOKENIZER_CLS,
     MistralTokenizer,
 )
 from transformers import (
@@ -365,15 +364,6 @@ class TokenizerConfiguration:
     def __init__(self, cfg):
         self.cfg = cfg
         self.model_config = load_model_config(cfg)
-
-    def detect_by_model_name_mapping(self) -> bool:
-        # Extract model name from path
-        model = self.cfg.base_model.split("/")[-1]
-        for model_name in MODEL_NAME_TO_TOKENIZER_CLS.keys():
-            if model_name in model.lower():
-                return True
-
-        return False
 
     def load_mistral_tokenizer(self) -> MistralTokenizerWrapper:
         """Load Mistral tokenizer from model configuration."""
