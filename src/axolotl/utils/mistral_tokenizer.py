@@ -1,6 +1,7 @@
 """Wrapper for MistralTokenizer from mistral-common"""
 
 import os
+from shutil import copyfile
 from typing import TYPE_CHECKING, Optional
 
 from huggingface_hub import hf_hub_download
@@ -138,7 +139,8 @@ class HFMistralTokenizer:
         if isinstance(inner, Tekkenizer):
             # Create the directory and save the model
             os.makedirs(save_directory, exist_ok=True)
-            os.symlink(self._path, os.path.join(save_directory, "tekken.json"))
+            copyfile(self._path, os.path.join(save_directory, "tekken.json"))
+
         else:
             raise RuntimeError(f"don't know how to save {type(inner)}")
 
