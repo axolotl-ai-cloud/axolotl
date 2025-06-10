@@ -12,7 +12,7 @@ from axolotl.common.datasets import load_datasets
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.loaders import ModelLoader, load_tokenizer
 from axolotl.utils.config import normalize_config
-from axolotl.utils.data.rl import load_prepare_preference_datasets
+from axolotl.utils.data import prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.enums import RLType
 
@@ -451,15 +451,19 @@ def rand_reward_func(prompts, completions) -> list[float]:
             # Only use mock for the commented out configs
             if dataset_name is not None:
                 with patch(
-                    "axolotl.utils.data.rl.load_dataset_w_config"
+                    "axolotl.utils.data.rl.load_dataset_with_config"
                 ) as mock_load_dataset:
                     mock_load_dataset.return_value = request.getfixturevalue(
                         dataset_name
                     )
-                    train_dataset, eval_dataset = load_prepare_preference_datasets(cfg)
+                    train_dataset, eval_dataset = prepare_preference_datasets(
+                        cfg, tokenizer
+                    )
             else:
                 # Load actual datasets for orpo_cfg and kto_cfg
-                train_dataset, eval_dataset = load_prepare_preference_datasets(cfg)
+                train_dataset, eval_dataset = prepare_preference_datasets(
+                    cfg, tokenizer
+                )
 
             builder.train_dataset = train_dataset
             builder.eval_dataset = eval_dataset

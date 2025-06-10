@@ -105,7 +105,7 @@ def start_vllm(
                 print(f"{i}: VLLM server failed to start: {str(exc)}")
 
             # also check if the process.pid is still running
-            if not process.poll() is None:
+            if process.poll() is not None:
                 break
 
             time.sleep(period_seconds)

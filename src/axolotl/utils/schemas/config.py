@@ -336,6 +336,14 @@ class AxolotlInputConfig(
 
     plugins: list[str] | None = Field(default=None)
 
+    @field_validator("seed", mode="after")
+    @classmethod
+    def set_default_seed(cls, seed):
+        if seed is None:
+            LOG.info("`seed` not set in config; setting to 42")
+            seed = 42
+        return seed
+
     @field_validator("datasets", mode="before")
     @classmethod
     def deprecate_sharegpt_datasets(cls, datasets):
@@ -1199,7 +1207,7 @@ class AxolotlInputConfig(
                     "flash_attention: true must be set with sequence_parallel_degree > 1"
                 )
 
-            if self.sample_packing and self.micro_batch_size > 1:
+            if self.sample_packing and getattr(self, "micro_batch_size", 1) > 1:
                 raise ValueError(
                     "micro_batch_size must be set to 1 when sample_packing is enabled "
                     "due to a `ring-flash-attn` requirement"
