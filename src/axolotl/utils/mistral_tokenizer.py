@@ -13,36 +13,58 @@ if TYPE_CHECKING:
     from mistral_common.protocol.instruct.request import ChatCompletionRequest
 
 
+def _get_file_path(path_or_repo_id: str, filename: str) -> str:
+    """Get the file path from local or HF Hub"""
+    if os.path.exists(path_or_repo_id):
+        if os.path.exists(os.path.join(path_or_repo_id, filename)):
+            return path_or_repo_id
+
+        raise FileNotFoundError(f"File not found at {path_or_repo_id}")
+
+    return hf_hub_download(repo_id=path_or_repo_id, filename=filename)
+
+
 class HFMistralTokenizer:
     """
     Wraps mistral_common.tokens.tokenizers.mistral.MistralTokenizer
     and exposes HuggingFace API for special tokens.
     """
 
-    def __init__(self, tokenizer: _MistralTokenizer, path: str):
+    def __init__(self, mistral: _MistralTokenizer, path_or_repo_id: str):
         """
         Args:
             tokenizer: The tokenizer to wrap.
             path: The path to the tokenizer files.
         """
-        self._mistral = tokenizer
+        self._mistral = mistral
         self._padding_side = "right"
         self.chat_template = None
-        self._path = path
+        self._tokenizer_path = _get_file_path(path_or_repo_id, "tekken.json")
 
         # Try to load system prompt if available
         try:
-            self._system_prompt = self._load_system_prompt(path)
+            self._system_prompt = self._load_system_prompt(
+                path_or_repo_id=path_or_repo_id
+            )
         except FileNotFoundError:
             pass
 
-    @classmethod
-    def _load_system_prompt(cls, path: str) -> str:
-        """Load system prompt from local or HF Hub"""
-        if os.path.exists(path):
-            file_path = path
+        # Make sure special tokens will be kept when decoding
+        tokenizer_ = self._mistral.instruct_tokenizer.tokenizer
+        from mistral_common.tokens.tokenizers.tekken import (
+            SpecialTokenPolicy,
+            Tekkenizer,
+        )
+
+        is_tekken = isinstance(tokenizer_, Tekkenizer)
+        if is_tekken:
+            tokenizer_._special_token_policy = SpecialTokenPolicy.KEEP  # type: ignore  # pylint: disable=protected-access
         else:
-            file_path = hf_hub_download(repo_id=path, filename="SYSTEM_PROMPT.txt")
+            raise NotImplementedError(f"Tokenizer {path_or_repo_id} not supported yet")
+
+    def _load_system_prompt(self, path_or_repo_id: str) -> str:
+        """Load system prompt from local or HF Hub"""
+        file_path = _get_file_path(path_or_repo_id, "SYSTEM_PROMPT.txt")
 
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"System prompt file not found at {file_path}")
@@ -91,7 +113,7 @@ class HFMistralTokenizer:
     @classmethod
     def from_pretrained(
         cls,
-        repo_id: str,
+        path_or_repo_id: str,
         *,
         revision: Optional[str] = None,
         **kwargs,  # pylint: disable=unused-argument
@@ -100,31 +122,14 @@ class HFMistralTokenizer:
         Download a mistral tokenizer from HF Hub and wrap it.
         """
 
+        if revision:
+            raise NotImplementedError("Revision not supported yet")
+
         # check if tokenizer_config is a valid local path
-        if os.path.exists(repo_id):
-            # check if 'tekken.json' exists and load from there
-            if os.path.exists(os.path.join(repo_id, "tekken.json")):
-                base = _MistralTokenizer.from_file(repo_id)
-            else:
-                base = _MistralTokenizer.from_model(repo_id, strict=True)
-        else:
-            # fallback to hf hub
-            base = _MistralTokenizer.from_hf_hub(repo_id, revision=revision)
-
-        tokenizer_ = base.instruct_tokenizer.tokenizer
-        from mistral_common.tokens.tokenizers.tekken import (
-            SpecialTokenPolicy,
-            Tekkenizer,
+        base = _MistralTokenizer.from_file(
+            _get_file_path(path_or_repo_id, "tekken.json")
         )
-
-        # Make sure special tokens will be kept when decoding
-        is_tekken = isinstance(tokenizer_, Tekkenizer)
-        if is_tekken:
-            tokenizer_._special_token_policy = SpecialTokenPolicy.KEEP  # type: ignore  # pylint: disable=protected-access
-        else:
-            raise NotImplementedError(f"Tokenizer {repo_id} not supported yet")
-
-        return cls(base, path=repo_id)
+        return cls(base, path_or_repo_id=path_or_repo_id)
 
     def save_pretrained(self, save_directory: str) -> None:
         """
@@ -132,24 +137,14 @@ class HFMistralTokenizer:
         """
         from mistral_common.tokens.tokenizers.tekken import Tekkenizer
 
-        # Note: mistral_common's MistralTokenizer does not expose a save method
-        # so you would have to delegate to its underlying tokenizer
-        # which for Tekkenizer/SPM is a `.save_model(...)` or similar.
         inner = self._mistral.instruct_tokenizer.tokenizer
         if isinstance(inner, Tekkenizer):
             # Create the directory and save the model
             os.makedirs(save_directory, exist_ok=True)
-            copyfile(self._path, os.path.join(save_directory, "tekken.json"))
+            copyfile(self._tokenizer_path, os.path.join(save_directory, "tekken.json"))
 
         else:
-            raise RuntimeError(f"don't know how to save {type(inner)}")
-
-    # def __getattr__(self, name):
-    #     """
-    #     Delegate any missing attributes/methods to the wrapped MistralTokenizer.
-    #     This gives us access to encode, decode, apply_chat_template, etc.
-    #     """
-    #     return getattr(self._mistral, name)
+            raise RuntimeError(f"Unknown tokenizer type: {type(inner)}")
 
     def encode(self, text: str, add_special_tokens: bool = True) -> list[int]:
         return self._mistral.instruct_tokenizer.tokenizer.encode(
