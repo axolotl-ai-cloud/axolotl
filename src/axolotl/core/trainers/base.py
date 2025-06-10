@@ -25,6 +25,7 @@ from trl.trainer.utils import pad_to_length
 from typing_extensions import override
 
 from axolotl.core.trainers.mixins import (
+    CheckpointSaveMixin,
     OptimizerMixin,
     RngLoaderMixin,
     SchedulerMixin,
@@ -39,7 +40,9 @@ from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 LOG = get_logger(__name__)
 
 
-class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
+class AxolotlTrainer(
+    SchedulerMixin, OptimizerMixin, RngLoaderMixin, CheckpointSaveMixin, Trainer
+):
     """Extend the base Trainer for axolotl helpers"""
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
