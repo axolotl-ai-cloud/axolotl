@@ -19,6 +19,7 @@ from axolotl.core.training_args import (
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import ensure_dtype
+from axolotl.utils.callbacks.qat import QATCallback
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
 
@@ -30,6 +31,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
     def get_callbacks(self):
         callbacks = super().get_callbacks()
+
+        if self.cfg.qat:
+            callbacks.append(QATCallback(self.cfg.qat))
 
         return callbacks
 

@@ -2,7 +2,6 @@
 E2E tests for QAT
 """
 
-import unittest
 from pathlib import Path
 
 from axolotl.common.datasets import load_datasets
@@ -10,16 +9,15 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_model_output_exists, with_temp_dir
+from .utils import check_model_output_exists, check_tensorboard
 
 
-class TestQATLlama(unittest.TestCase):
+class TestQATLlama:
     """
     Test case for QAT Llama models
     """
 
-    @with_temp_dir
-    def test_qat_lora(self, temp_dir):
+    def test_qat(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -67,3 +65,70 @@ class TestQATLlama(unittest.TestCase):
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(Path(temp_dir) / "checkpoint-5", cfg)
+
+    def test_qat_dpo(self, temp_dir):
+        # pylint: disable=duplicate-code
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "sequence_len": 2048,
+                "sample_packing": False,
+                "eval_sample_packing": False,
+                "pad_to_sequence_len": True,
+                "val_set_size": 0.01,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "rl": "dpo",
+                "chat_template": "chatml",
+                "datasets": [
+                    {
+                        "path": "fozziethebeat/alpaca_messages_2k_dpo_test",
+                        "type": "chat_template.default",
+                        "field_messages": "conversation",
+                        "field_chosen": "chosen",
+                        "field_rejected": "rejected",
+                        "message_field_role": "role",
+                        "message_field_content": "content",
+                        "roles": {
+                            "system": ["system"],
+                            "user": ["user"],
+                            "assistant": ["assistant"],
+                        },
+                    },
+                ],
+                "num_epochs": 1,
+                "max_steps": 2,
+                "micro_batch_size": 2,
+                "gradient_accumulation_steps": 2,
+                "output_dir": temp_dir,
+                "warmup_steps": 0,
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_torch_fused",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+                "use_tensorboard": True,
+                "bf16": True,
+                "qat": {
+                    "quantize_embedding": True,
+                    "activation_dtype": "int8",
+                    "weight_dtype": "int8",
+                    "group_size": 8,
+                },
+            }
+        )
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        cli_args = TrainerCliArgs()
+        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(Path(temp_dir) / "checkpoint-5", cfg)
+
+        loss_threshold = 2.3
+        check_tensorboard(
+            temp_dir + "/runs",
+            "train/train_loss",
+            loss_threshold,
+            "Train Loss is too high",
+        )
