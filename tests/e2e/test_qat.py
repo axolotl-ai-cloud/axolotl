@@ -4,7 +4,8 @@ E2E tests for QAT
 
 from pathlib import Path
 
-from axolotl.common.datasets import load_datasets
+from axolotl.cli.args import TrainerCliArgs
+from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
@@ -98,7 +99,7 @@ class TestQATLlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 5,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
@@ -120,7 +121,7 @@ class TestQATLlama:
         cfg = validate_config(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_preference_datasets(cfg=cfg, cli_args=cli_args)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(Path(temp_dir) / "checkpoint-5", cfg)
