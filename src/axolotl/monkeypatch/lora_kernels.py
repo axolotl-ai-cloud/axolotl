@@ -178,15 +178,6 @@ def patch_self_attn_lora(cfg: DictDefault):
         AssertionError: If the required code blocks are not found in the attention
             implementation.
     """
-    # Only patch if conditions are met
-    can_patch = (
-        cfg.lora_dropout == 0 if hasattr(cfg, "lora_dropout") else True
-    )  # default to True if lora_dropout is not set
-
-    if not can_patch:
-        LOG.warning("Cannot patch self-attention - requires no dropout")
-        return
-
     attention_cls = get_attention_cls_from_config(cfg)
 
     # Check if already patched

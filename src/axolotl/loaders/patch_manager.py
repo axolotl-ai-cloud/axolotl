@@ -166,6 +166,17 @@ class PatchManager:
     def _apply_self_attention_lora_patch(self):
         """Apply self-attention LoRA patches if configured."""
         if self.cfg.lora_qkv_kernel or self.cfg.lora_o_kernel:
+            # Only patch if conditions are met
+            can_patch = (
+                self.cfg.lora_dropout == 0
+                if hasattr(self.cfg, "lora_dropout")
+                else True
+            )  # default to True if lora_dropout is not set
+
+            if not can_patch:
+                LOG.warning("Cannot patch self-attention - requires no dropout")
+                return
+
             from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
 
             patch_self_attn_lora(self.cfg)
