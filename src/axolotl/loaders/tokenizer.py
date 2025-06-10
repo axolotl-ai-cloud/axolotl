@@ -121,6 +121,38 @@ def modify_tokenizer_files(
 
 def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     """Load and configure the tokenizer based on the provided config."""
+
+    def _load_mistral_common_tokenizer(cfg: DictDefault):
+        """Load mistral-common tokenizer"""
+        assert (
+            cfg.tokenizer_use_mistral_common
+        ), "tokenizer_use_mistral_common must be True"
+
+        from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
+
+        # check if tokenizer_config is a valid local path
+        if os.path.exists(cfg.tokenizer_config):
+            tokenizer = MistralTokenizer.from_file(cfg.tokenizer_config)
+        else:
+            # fallback to hf hub
+            tokenizer = MistralTokenizer.from_hf_hub(cfg.tokenizer_config)
+
+        tokenizer_ = tokenizer.instruct_tokenizer.tokenizer
+        from mistral_common.tokens.tokenizers.tekken import (
+            SpecialTokenPolicy,
+            Tekkenizer,
+        )
+
+        is_tekken = isinstance(tokenizer_, Tekkenizer)
+        if is_tekken:
+            # Make sure special tokens will be kept when decoding
+            tokenizer_._special_token_policy = SpecialTokenPolicy.KEEP  # type: ignore  # pylint: disable=protected-access
+
+        return tokenizer
+
+    if cfg.tokenizer_use_mistral_common:
+        return _load_mistral_common_tokenizer(cfg)
+
     model_config = load_model_config(cfg)
     tokenizer_kwargs = {}
     use_fast = True  # this is the default

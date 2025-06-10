@@ -32,7 +32,9 @@ def check_example_labels(example, tokenizer, text_only=False):
     # Remember to ignore positions with IGNORE_TOKEN_ID (if you use it) or attention_mask equal to 0
     colored_tokens = []
     for _, (input_id, label_id) in enumerate(zip(input_ids, labels)):
-        decoded_input_token = tokenizer.decode(input_id)
+        decoded_input_token = tokenizer.decode(
+            [input_id]
+        )  # mistral-common does not auto cast int -> list[int]
         # Choose the color based on whether the label has the ignore value or not
         color = "red" if label_id == -100 else ("yellow" if label_id == 0 else "green")
         colored_token = colored(decoded_input_token, color) + (
