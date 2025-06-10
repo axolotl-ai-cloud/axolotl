@@ -90,11 +90,7 @@ class TestFileLockLoader:
     def test_load_waiting_for_ready_flag(self, mock_sleep, loader):
         """Test that processes wait for the ready flag to appear."""
         mock_load_fn = Mock(return_value="waiting_data")
-
-        # Create a mock path object with controllable exists() behavior
-        mock_ready_flag_path = Mock()
-
-        # Track exists() calls
+        mock_ready_flag_path = Path(tempfile.mktemp())
         exists_call_count = 0
 
         def mock_exists():

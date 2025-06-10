@@ -69,8 +69,10 @@ def prepare_preference_datasets(
 
     # Prepare datasets (with file locking logic for multiple ranks)
     loader = FileLockLoader(cfg)
-    train_dataset, eval_dataset = loader.load(_load_datasets)
-    loader.cleanup()
+    try:
+        train_dataset, eval_dataset = loader.load(_load_datasets)
+    finally:
+        loader.cleanup()
 
     # Apply deduplication if configured
     if cfg.dataset_exact_deduplication:
@@ -187,10 +189,10 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
     Returns:
         Combined and processed dataset for the specified split.
     """
-    datasets = cfg.datasets if split == "train" else cfg.test_datasets
+    datasets_configs = cfg.datasets if split == "train" else cfg.test_datasets
     split_datasets: list[Dataset | DatasetDict] = []
 
-    for dataset_config in datasets_with_name_generator(datasets):
+    for dataset_config in datasets_with_name_generator(datasets_configs):
         dataset: Dataset | DatasetDict = load_dataset_with_config(
             dataset_config, cfg.hf_use_auth_token, streaming=False
         )
@@ -199,7 +201,7 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
     tokenizer = load_tokenizer(cfg)
 
     for i, data_set in enumerate(split_datasets):
-        _type = datasets[i]["type"]
+        _type = datasets_configs[i]["type"]
         if _type:
             if isinstance(_type, DictDefault):
                 _type = "user_defined.default"
@@ -246,7 +248,7 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
     if not cfg.skip_prepare_dataset:
         # Save preprocessed dataset
         dataset_hash = generate_dataset_hash_from_config(
-            cfg, cfg.datasets, tokenizer.name_or_path
+            cfg, datasets_configs, tokenizer.name_or_path
         )
         save_preprocessed_dataset(cfg, dataset, dataset_hash, split)
 
