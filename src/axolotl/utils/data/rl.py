@@ -233,14 +233,6 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
             split_datasets[i] = _map_dataset(
                 cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs
             )
-        elif cfg.rl is RLType.KTO:
-            ds_transform_fn = load_kto(_type, cfg, dataset_idx=i)
-            map_kwargs = {}
-            if isinstance(ds_transform_fn, tuple):
-                ds_transform_fn, map_kwargs = ds_transform_fn
-            split_datasets[i] = _map_dataset(
-                cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs
-            )
         else:
             # If no `type` is provided, assume the dataset is already in the expected format with
             # "prompt", "chosen", and "rejected" already preprocessed
