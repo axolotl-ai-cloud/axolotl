@@ -15,5 +15,7 @@ class CheckpointSaveMixin(Trainer):
             super()._save_optimizer_and_scheduler(output_dir)
         except NotImplementedError as exc:
             LOG.warning(
-                f"Trainer does not support saving optimizer and scheduler: {exc}"
+                f"Trainer does not support saving optimizer and scheduler:  {exc}\n"
+                "Optimizer and scheduler states were not saved - resuming from checkpoints "
+                "for this training run will not be possible."
             )
