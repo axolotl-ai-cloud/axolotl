@@ -128,25 +128,10 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
             cfg.tokenizer_use_mistral_common
         ), "tokenizer_use_mistral_common must be True"
 
-        from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
+        from axolotl.utils.mistral_tokenizer import HFMistralTokenizer
 
-        # check if tokenizer_config is a valid local path
-        if os.path.exists(cfg.tokenizer_config):
-            tokenizer = MistralTokenizer.from_file(cfg.tokenizer_config)
-        else:
-            # fallback to hf hub
-            tokenizer = MistralTokenizer.from_hf_hub(cfg.tokenizer_config)
-
-        tokenizer_ = tokenizer.instruct_tokenizer.tokenizer
-        from mistral_common.tokens.tokenizers.tekken import (
-            SpecialTokenPolicy,
-            Tekkenizer,
-        )
-
-        is_tekken = isinstance(tokenizer_, Tekkenizer)
-        if is_tekken:
-            # Make sure special tokens will be kept when decoding
-            tokenizer_._special_token_policy = SpecialTokenPolicy.KEEP  # type: ignore  # pylint: disable=protected-access
+        # Load the HF-compatible wrapper around MistralTokenizer
+        tokenizer = HFMistralTokenizer.from_pretrained(cfg.tokenizer_config)
 
         return tokenizer
 

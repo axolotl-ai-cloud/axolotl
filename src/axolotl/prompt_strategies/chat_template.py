@@ -5,7 +5,7 @@ HF Chat Templates prompt strategy
 # pylint: disable=too-many-lines
 
 from collections import defaultdict
-from typing import Any, Dict, List, Set, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
 
 from pydantic import BaseModel
 from transformers import ProcessorMixin
@@ -16,6 +16,9 @@ from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import DatasetConfig
+
+if TYPE_CHECKING:
+    from axolotl.utils.mistral_tokenizer import HFMistralTokenizer
 
 # Configure the logger
 LOG = get_logger(__name__)
@@ -812,7 +815,7 @@ class MistralStrategy(ChatTemplateStrategy):
     def __init__(
         self,
         prompter: "ChatTemplatePrompter",
-        tokenizer,
+        tokenizer: "HFMistralTokenizer",
         train_on_inputs: bool,
         sequence_len: int,
         roles_to_train: list[str] | None = None,
@@ -846,8 +849,7 @@ class MistralStrategy(ChatTemplateStrategy):
             self.eot_tokens = eot_tokens
         else:
             # set eot_tokens to the eos_token
-            tokenizer_ = self.tokenizer.instruct_tokenizer.tokenizer
-            self.eot_tokens = [tokenizer_.decode([tokenizer_.eos_id])]
+            self.eot_tokens = [self.tokenizer.eos_token]
 
         self.split_thinking = split_thinking
 
@@ -870,12 +872,12 @@ class MistralStrategy(ChatTemplateStrategy):
 
         return False
 
-    def find_first_eos_token(self, input_ids, start_idx):
-        eos_token_id = self.tokenizer.instruct_tokenizer.tokenizer.eos_id
-        for i in range(start_idx, len(input_ids)):
-            if input_ids[i] == eos_token_id:
-                return i
-        return -1
+    # def find_first_eos_token(self, input_ids, start_idx):
+    #     eos_token_id = self.tokenizer.instruct_tokenizer.tokenizer.eos_id
+    #     for i in range(start_idx, len(input_ids)):
+    #         if input_ids[i] == eos_token_id:
+    #             return i
+    #     return -1
 
     def find_first_eot_token(self, input_ids, start_idx):
         """Find the first EOT token in the input_ids starting from start_idx."""
@@ -893,127 +895,127 @@ class MistralPrompter(ChatTemplatePrompter):
 
         self._chat_template_msg_variables = set(["tool_call_id", "name", "tool_calls"])
 
-    def _create_mistral_chat_completion_request(
-        self, conversation: list[dict], tools: list[dict] | None = None
-    ):
-        # assume is mistral-common tokenizer, we don't check directly to avoid importing a dependency
-        from mistral_common.protocol.instruct.messages import (
-            AssistantMessage,
-            SystemMessage,
-            ToolMessage,
-            UserMessage,
-        )
-        from mistral_common.protocol.instruct.request import ChatCompletionRequest
-        from mistral_common.protocol.instruct.tool_calls import Function, Tool
+    # def _create_mistral_chat_completion_request(
+    #     self, conversation: list[dict], tools: list[dict] | None = None
+    # ):
+    #     # assume is mistral-common tokenizer, we don't check directly to avoid importing a dependency
+    #     from mistral_common.protocol.instruct.messages import (
+    #         AssistantMessage,
+    #         SystemMessage,
+    #         ToolMessage,
+    #         UserMessage,
+    #     )
+    #     from mistral_common.protocol.instruct.request import ChatCompletionRequest
+    #     from mistral_common.protocol.instruct.tool_calls import Function, Tool
 
-        messages: list[UserMessage | AssistantMessage | ToolMessage | SystemMessage] = (
-            []
-        )
-        for turn in conversation:
-            role = turn.get("role")
+    #     messages: list[UserMessage | AssistantMessage | ToolMessage | SystemMessage] = (
+    #         []
+    #     )
+    #     for turn in conversation:
+    #         role = turn.get("role")
 
-            if role == "user":
-                messages.append(UserMessage(content=turn["content"]))
-            elif role == "assistant":
-                messages.append(
-                    AssistantMessage(
-                        content=turn.get("content"),
-                        tool_calls=turn.get("tool_calls"),
-                    )
-                )
-            elif role == "tool":
-                messages.append(
-                    ToolMessage(
-                        content=turn.get("content"),
-                        tool_call_id=turn.get("tool_call_id"),
-                        name=turn.get("name"),
-                    )
-                )
-            elif role == "system":
-                messages.append(SystemMessage(content=turn["content"]))
-            else:
-                raise ValueError(
-                    f"Unknown role for use with mistral-common tokenizer: {turn['role']}"
-                )
+    #         if role == "user":
+    #             messages.append(UserMessage(content=turn["content"]))
+    #         elif role == "assistant":
+    #             messages.append(
+    #                 AssistantMessage(
+    #                     content=turn.get("content"),
+    #                     tool_calls=turn.get("tool_calls"),
+    #                 )
+    #             )
+    #         elif role == "tool":
+    #             messages.append(
+    #                 ToolMessage(
+    #                     content=turn.get("content"),
+    #                     tool_call_id=turn.get("tool_call_id"),
+    #                     name=turn.get("name"),
+    #                 )
+    #             )
+    #         elif role == "system":
+    #             messages.append(SystemMessage(content=turn["content"]))
+    #         else:
+    #             raise ValueError(
+    #                 f"Unknown role for use with mistral-common tokenizer: {turn['role']}"
+    #             )
 
-        # set prefix to True for the last message if it is an assistant message
-        if messages[-1].role == "assistant":
-            messages[-1].prefix = True
+    #     # set prefix to True for the last message if it is an assistant message
+    #     if messages[-1].role == "assistant":
+    #         messages[-1].prefix = True
 
-        tool_calls: list[Tool] = []
-        if tools:
-            # convert to Tool
-            for tool in tools:
-                if tool["type"] != "function":
-                    continue
+    #     tool_calls: list[Tool] = []
+    #     if tools:
+    #         # convert to Tool
+    #         for tool in tools:
+    #             if tool["type"] != "function":
+    #                 continue
 
-                function = tool["function"]
+    #             function = tool["function"]
 
-                tool_calls.append(
-                    Tool(
-                        function=Function(
-                            name=function["name"],
-                            description=function["description"],
-                            # set parameters to empty dict if not provided
-                            parameters=function.get("parameters", {}),
-                        )
-                    )
-                )
+    #             tool_calls.append(
+    #                 Tool(
+    #                     function=Function(
+    #                         name=function["name"],
+    #                         description=function["description"],
+    #                         # set parameters to empty dict if not provided
+    #                         parameters=function.get("parameters", {}),
+    #                     )
+    #                 )
+    #             )
 
-        chat_completion: ChatCompletionRequest = ChatCompletionRequest(
-            messages=messages,
-            tools=tool_calls,
-        )
+    #     chat_completion: ChatCompletionRequest = ChatCompletionRequest(
+    #         messages=messages,
+    #         tools=tool_calls,
+    #     )
 
-        return self.tokenizer.encode_chat_completion(chat_completion).tokens
+    #     return self.tokenizer.encode_chat_completion(chat_completion).tokens
 
-    def build_prompt(
-        self,
-        conversation: list[dict],
-        add_generation_prompt=False,
-        images=None,
-        tools=None,
-    ):
-        """
-        Build a prompt from a conversation.
+    # def build_prompt(
+    #     self,
+    #     conversation: list[dict],
+    #     add_generation_prompt=False,
+    #     images=None,
+    #     tools=None,
+    # ):
+    #     """
+    #     Build a prompt from a conversation.
 
-        Args:
-            conversation: A list of messages.
-            add_generation_prompt: Whether to add a generation prompt.
-            images: A list of images. (optional)
-            tools: A list of tools. (optional)
-        """
-        chat_template_kwargs = {
-            "chat_template": self.chat_template,
-            "add_generation_prompt": add_generation_prompt,
-        }
+    #     Args:
+    #         conversation: A list of messages.
+    #         add_generation_prompt: Whether to add a generation prompt.
+    #         images: A list of images. (optional)
+    #         tools: A list of tools. (optional)
+    #     """
+    #     chat_template_kwargs = {
+    #         "chat_template": self.chat_template,
+    #         "add_generation_prompt": add_generation_prompt,
+    #     }
 
-        if tools:
-            chat_template_kwargs["tools"] = tools
+    #     if tools:
+    #         chat_template_kwargs["tools"] = tools
 
-        if self.processor:
-            if not callable(self.processor):
-                raise TypeError("Processor must be callable")
+    #     if self.processor:
+    #         if not callable(self.processor):
+    #             raise TypeError("Processor must be callable")
 
-            text = self.processor.apply_chat_template(
-                conversation,
-                tokenize=False,
-                **chat_template_kwargs,
-            )
-            batch = self.processor(
-                text=text,
-                images=images,
-                return_tensors="pt",
-            )
-            # workaround since processor works in batches instead of single examples
-            for k, val in batch.items():
-                if k in ["pixel_values"]:
-                    batch[k] = val.tolist()
-                else:
-                    batch[k] = val.squeeze().tolist()
-            return batch
+    #         text = self.processor.apply_chat_template(
+    #             conversation,
+    #             tokenize=False,
+    #             **chat_template_kwargs,
+    #         )
+    #         batch = self.processor(
+    #             text=text,
+    #             images=images,
+    #             return_tensors="pt",
+    #         )
+    #         # workaround since processor works in batches instead of single examples
+    #         for k, val in batch.items():
+    #             if k in ["pixel_values"]:
+    #                 batch[k] = val.tolist()
+    #             else:
+    #                 batch[k] = val.squeeze().tolist()
+    #         return batch
 
-        return self._create_mistral_chat_completion_request(conversation, tools=tools)
+    #     return self._create_mistral_chat_completion_request(conversation, tools=tools)
 
 
 class StrategyLoader:
