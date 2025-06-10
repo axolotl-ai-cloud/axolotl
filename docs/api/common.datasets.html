@@ -539,7 +539,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.common.datasets.sample_dataset">sample_dataset</a></td>
-<td>Randomly sample <code>num_samples</code> samples from <code>dataset</code>.</td>
+<td>Randomly sample <code>num_samples</code> samples with replacement from <code>dataset</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -547,15 +547,15 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h3 class="anchored" data-anchor-id="axolotl.common.datasets.load_datasets">load_datasets</h3>
 <div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>common.datasets.load_datasets(cfg, cli_args<span class="op">=</span><span class="va">None</span>, debug<span class="op">=</span><span class="va">False</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Loads one or more training or evaluation datasets, calling
-<code>axolotl.utils.data.prepare_dataset</code>. Optionally, logs out debug information.</p>
+<code>axolotl.utils.data.prepare_datasets</code>. Optionally, logs out debug information.</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 8%">
-<col style="width: 37%">
-<col style="width: 44%">
-<col style="width: 10%">
+<col style="width: 4%">
+<col style="width: 22%">
+<col style="width: 67%">
+<col style="width: 5%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -581,7 +581,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="odd">
 <td>debug</td>
 <td>bool</td>
-<td>Whether to print out tokenization of sample</td>
+<td>Whether to print out tokenization of sample. This is duplicated in <code>cfg</code> and <code>cli_args</code>, but is kept due to use in our Colab notebooks.</td>
 <td><code>False</code></td>
 </tr>
 </tbody>
@@ -591,9 +591,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 7%">
-<col style="width: 17%">
-<col style="width: 74%">
+<col style="width: 6%">
+<col style="width: 14%">
+<col style="width: 78%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -606,12 +606,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="odd">
 <td></td>
 <td>TrainDatasetMeta</td>
-<td>Dataclass with fields for training and evaluation datasets and the computed</td>
-</tr>
-<tr class="even">
-<td></td>
-<td>TrainDatasetMeta</td>
-<td><code>total_num_steps</code>.</td>
+<td>Dataclass with fields for training and evaluation datasets and the computed <code>total_num_steps</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -621,15 +616,15 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h3 class="anchored" data-anchor-id="axolotl.common.datasets.load_preference_datasets">load_preference_datasets</h3>
 <div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>common.datasets.load_preference_datasets(cfg, cli_args)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Loads one or more training or evaluation datasets for RL training using paired
-preference data, calling <code>axolotl.utils.data.rl.load_prepare_preference_datasets</code>.
+preference data, calling <code>axolotl.utils.data.rl.prepare_preference_datasets</code>.
 Optionally, logs out debug information.</p>
 <section id="parameters-1" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 8%">
-<col style="width: 36%">
-<col style="width: 44%">
+<col style="width: 33%">
+<col style="width: 47%">
 <col style="width: 10%">
 </colgroup>
 <thead>
@@ -649,7 +644,7 @@ Optionally, logs out debug information.</p>
 </tr>
 <tr class="even">
 <td>cli_args</td>
-<td>Union[PreprocessCliArgs, TrainerCliArgs]</td>
+<td>PreprocessCliArgs | TrainerCliArgs</td>
 <td>Command-specific CLI arguments.</td>
 <td><em>required</em></td>
 </tr>
@@ -689,60 +684,9 @@ Optionally, logs out debug information.</p>
 <section id="axolotl.common.datasets.sample_dataset" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.common.datasets.sample_dataset">sample_dataset</h3>
 <div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>common.datasets.sample_dataset(dataset, num_samples)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Randomly sample <code>num_samples</code> samples from <code>dataset</code>.</p>
-<section id="parameters-2" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-2">Parameters</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>dataset</td>
-<td>Dataset</td>
-<td>Dataset.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>num_samples</td>
-<td>int</td>
-<td>Number of samples to return.</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-2" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-2">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 10%">
-<col style="width: 11%">
-<col style="width: 77%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>Dataset</td>
-<td>Random sample (with replacement) of examples in <code>dataset</code>.</td>
-</tr>
-</tbody>
-</table>
+<p>Randomly sample <code>num_samples</code> samples with replacement from <code>dataset</code>.</p>
 
 
-</section>
 </section>
 </section>
 </section>

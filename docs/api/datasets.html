@@ -500,7 +500,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.datasets.ConstantLengthDataset">ConstantLengthDataset</a></td>
-<td>Iterable dataset that returns constant length chunks of tokens from stream of text files.</td>
+<td>Iterable dataset that returns constant length chunks of tokens from stream of</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.datasets.TokenizedPromptDataset">TokenizedPromptDataset</a></td>
@@ -511,11 +511,47 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.datasets.ConstantLengthDataset" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.datasets.ConstantLengthDataset">ConstantLengthDataset</h3>
 <div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>datasets.ConstantLengthDataset(tokenizer, datasets, seq_length<span class="op">=</span><span class="dv">2048</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Iterable dataset that returns constant length chunks of tokens from stream of text files.
-Args:
-tokenizer (Tokenizer): The processor used for processing the data.
-dataset (dataset.Dataset): Dataset with text files.
-seq_length (int): Length of token sequences to return.</p>
+<p>Iterable dataset that returns constant length chunks of tokens from stream of
+text files.</p>
+<section id="parameters" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 15%">
+<col style="width: 10%">
+<col style="width: 58%">
+<col style="width: 15%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>tokenizer</td>
+<td></td>
+<td>The processor used for processing the data.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>dataset</td>
+<td></td>
+<td>Dataset with text files.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="odd">
+<td>seq_length</td>
+<td></td>
+<td>Length of token sequences to return.</td>
+<td><code>2048</code></td>
+</tr>
+</tbody>
+</table>
+</section>
 </section>
 <section id="axolotl.datasets.TokenizedPromptDataset" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.datasets.TokenizedPromptDataset">TokenizedPromptDataset</h3>
@@ -526,14 +562,54 @@ seq_length (int): Length of token sequences to return.</p>
 <span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    keep_in_memory<span class="op">=</span><span class="va">False</span>,</span>
 <span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
 <span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Dataset that returns tokenized prompts from a stream of text files.
-Args:
-prompt_tokenizer (PromptTokenizingStrategy): The prompt tokenizing method for processing the data.
-dataset (dataset.Dataset): Dataset with text files.
-process_count (int): Number of processes to use for tokenizing.
-keep_in_memory (bool): Whether to keep the tokenized dataset in memory.</p>
+<p>Dataset that returns tokenized prompts from a stream of text files.</p>
+<section id="parameters-1" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 16%">
+<col style="width: 23%">
+<col style="width: 49%">
+<col style="width: 10%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>prompt_tokenizer</td>
+<td>PromptTokenizingStrategy</td>
+<td>The prompt tokenizing method for processing the data.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>dataset</td>
+<td>Dataset</td>
+<td>Dataset with text files.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="odd">
+<td>process_count</td>
+<td>int | None</td>
+<td>Number of processes to use for tokenizing.</td>
+<td><code>None</code></td>
+</tr>
+<tr class="even">
+<td>keep_in_memory</td>
+<td>bool | None</td>
+<td>Whether to keep the tokenized dataset in memory.</td>
+<td><code>False</code></td>
+</tr>
+</tbody>
+</table>
 
 
+</section>
 </section>
 </section>
 </section>
