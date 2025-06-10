@@ -1,7 +1,6 @@
 """Data handling specific to RL trainers."""
 
 import inspect
-import os
 from functools import partial
 from typing import Any, Callable, Literal
 
@@ -13,15 +12,15 @@ from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.prompt_strategies.kto import load as load_kto
 from axolotl.prompt_strategies.orpo import load as load_orpo
 from axolotl.utils.data.lock import FileLockLoader
-from axolotl.utils.data.sft import _try_load_from_hub
 from axolotl.utils.data.shared import (
     create_train_validation_split,
     datasets_with_name_generator,
     generate_dataset_hash_from_config,
-    get_prepared_dataset_path,
     load_dataset_with_config,
     load_preprocessed_dataset,
     merge_datasets,
+    save_preprocessed_dataset,
+    try_load_from_hub,
 )
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
@@ -80,22 +79,6 @@ def prepare_preference_datasets(
         )
 
     return train_dataset, eval_dataset
-
-
-def _save_preprocessed_dataset(
-    cfg: DictDefault, dataset: Dataset, dataset_hash: str
-) -> None:
-    """Save preprocessed dataset to disk.
-
-    Args:
-        cfg: Configuration object.
-        dataset: Dataset to save.
-        dataset_hash: Hash identifying the dataset configuration.
-    """
-    prepared_ds_path = get_prepared_dataset_path(cfg, dataset_hash)
-    LOG.info(f"Saving prepared dataset to disk... {prepared_ds_path}")
-    os.makedirs(prepared_ds_path, exist_ok=True)
-    dataset.save_to_disk(str(prepared_ds_path))
 
 
 def _map_dataset(
@@ -265,7 +248,7 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
         dataset_hash = generate_dataset_hash_from_config(
             cfg, cfg.datasets, tokenizer.name_or_path
         )
-        _save_preprocessed_dataset(cfg, dataset, dataset_hash)
+        save_preprocessed_dataset(cfg, dataset, dataset_hash, split)
 
     return dataset
 
@@ -295,7 +278,7 @@ def _load_or_create_dataset_split(
     # Try loading from hub if push_dataset_to_hub is configured
     dataset = None
     if cfg.push_dataset_to_hub:
-        dataset = _try_load_from_hub(cfg, dataset_hash, split)
+        dataset = try_load_from_hub(cfg, dataset_hash, split)
 
     # Attempt to load preprocessed dataset
     if dataset is None:

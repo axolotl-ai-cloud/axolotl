@@ -11,6 +11,7 @@ from axolotl.utils.dict import DictDefault
 
 LOCK_FILE_NAME = "datasets_prep.lock"
 READY_FILE_NAME = "datasets_ready.flag"
+PROCESS_COUNTER_FILE_NAME = "process_counter.txt"
 
 
 class FileLockLoader:
@@ -27,10 +28,14 @@ class FileLockLoader:
         )
         self.lock_file_path = Path(self.dataset_prepared_path) / LOCK_FILE_NAME
         self.ready_flag_path = Path(self.dataset_prepared_path) / READY_FILE_NAME
-        self.counter_path = Path(self.dataset_prepared_path) / "process_counter.txt"
+        self.counter_path = Path(self.dataset_prepared_path) / PROCESS_COUNTER_FILE_NAME
 
     def load(self, load_fn: Callable[[], Any]) -> Any:
+        import torch.distributed as dist
+
         with FileLock(str(self.lock_file_path)):
+            print(f"FileLock acquired by rank {dist.get_rank()}")
+
             # Increment process counter
             self._increment_counter()
 

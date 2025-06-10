@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import functools
+import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Generator
+from typing import TYPE_CHECKING, Any, Generator
 
 from datasets import (
     Dataset,
@@ -391,6 +393,53 @@ def create_train_validation_split(
     return split_dataset["train"], split_dataset["test"]
 
 
+def _generate_from_iterable_dataset(
+    dataset: IterableDataset, worker_id: list[int], num_workers: list[int]
+) -> Generator[Any, None, None]:
+    """Generator function to correctly split the dataset for each worker"""
+    for i, item in enumerate(dataset):
+        if i % num_workers[0] == worker_id[0]:
+            yield item
+
+
+def save_preprocessed_dataset(
+    cfg: DictDefault,
+    dataset: Dataset,
+    dataset_hash: str,
+    split: str,
+) -> None:
+    """Save preprocessed dataset to disk and optionally push to the HF Hub."""
+    prepared_ds_path = get_prepared_dataset_path(cfg, dataset_hash)
+    if isinstance(dataset, IterableDataset):
+        num_workers = cfg.dataset_processes
+
+        ds_from_iter = Dataset.from_generator(
+            functools.partial(_generate_from_iterable_dataset, dataset),
+            features=dataset.features,
+            num_proc=num_workers,
+            split=split,
+            gen_kwargs={
+                "worker_id": list(range(num_workers)),
+                "num_workers": [num_workers] * num_workers,
+            },
+        )
+        ds_from_iter.save_to_disk(str(prepared_ds_path))
+    else:
+        os.makedirs(prepared_ds_path, exist_ok=True)
+        dataset.save_to_disk(str(prepared_ds_path))
+    if cfg.push_dataset_to_hub:
+        LOG.info(
+            "Pushing merged prepared dataset to Huggingface hub at "
+            f"{cfg.push_dataset_to_hub} (version {dataset_hash})...",
+            main_process_only=False,
+        )
+        dataset.push_to_hub(
+            cfg.push_dataset_to_hub,
+            dataset_hash,
+            private=True,
+        )
+
+
 def load_preprocessed_dataset(cfg: DictDefault, dataset_hash: str) -> Dataset | None:
     """Load preprocessed dataset from disk if available.
 
@@ -409,11 +458,37 @@ def load_preprocessed_dataset(cfg: DictDefault, dataset_hash: str) -> Dataset | 
         and not cfg.skip_prepare_dataset
         and not cfg.is_preprocess
     ):
-        LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
+        LOG.info(
+            f"Loading prepared dataset from disk at {prepared_ds_path}...",
+            main_process_only=False,
+        )
         return load_from_disk(str(prepared_ds_path))
 
-    LOG.info(f"Unable to find prepared dataset in {prepared_ds_path}")
+    LOG.info(
+        f"Unable to find prepared dataset in {prepared_ds_path}",
+        main_process_only=False,
+    )
     return None
+
+
+def try_load_from_hub(
+    cfg: DictDefault, dataset_hash: str, split: str
+) -> Dataset | None:
+    """Try to load the prepared dataset from HuggingFace Hub."""
+    try:
+        LOG.info(
+            "Attempting to load prepared dataset from HuggingFace Hub at "
+            f"{cfg.push_dataset_to_hub} (version {dataset_hash})..."
+        )
+        dataset = load_dataset(
+            cfg.push_dataset_to_hub,
+            dataset_hash,
+            token=cfg.hf_use_auth_token,
+        )
+        return dataset[split]
+    except Exception:  # pylint: disable=broad-except # nosec
+        LOG.info("Unable to find prepared dataset in HuggingFace Hub")
+        return None
 
 
 def generate_dataset_hash_from_config(
@@ -451,13 +526,13 @@ def merge_datasets(datasets: list[Dataset], cfg: DictDefault) -> Dataset:
     if len(datasets) == 1:
         return datasets[0]
 
-    LOG.info("Merging datasets")
+    LOG.info("Merging datasets...")
     merged_dataset = concatenate_datasets(datasets)
 
     if cfg.shuffle_merged_datasets:
-        LOG.debug("Shuffle merged datasets")
+        LOG.debug("Shuffling merged datasets...")
         merged_dataset = merged_dataset.shuffle(seed=cfg.seed)
     else:
-        LOG.debug("NOT shuffling merged datasets")
+        LOG.debug("Not shuffling merged datasets.")
 
     return merged_dataset

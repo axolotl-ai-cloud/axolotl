@@ -1,9 +1,8 @@
 """Data handling specific to SFT."""
 
 import functools
-import os
 import tempfile
-from typing import Any, Generator, Literal
+from typing import Literal
 
 from datasets import (
     Dataset,
@@ -20,10 +19,11 @@ from axolotl.utils.data.shared import (
     create_train_validation_split,
     datasets_with_name_generator,
     generate_dataset_hash_from_config,
-    get_prepared_dataset_path,
     load_dataset_with_config,
     load_preprocessed_dataset,
     merge_datasets,
+    save_preprocessed_dataset,
+    try_load_from_hub,
 )
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
@@ -275,7 +275,7 @@ def _load_tokenized_prepared_datasets(
     # Try loading from hub if push_dataset_to_hub is configured
     dataset = None
     if cfg.push_dataset_to_hub:
-        dataset = _try_load_from_hub(cfg, dataset_hash, split)
+        dataset = try_load_from_hub(cfg, dataset_hash, split)
 
     # If not found on hub, try loading from disk
     if dataset is None:
@@ -296,71 +296,6 @@ def _load_tokenized_prepared_datasets(
     return dataset, prompters
 
 
-def _try_load_from_hub(
-    cfg: DictDefault, dataset_hash: str, split: str
-) -> Dataset | None:
-    """Try to load the prepared dataset from HuggingFace Hub."""
-    try:
-        LOG.info(
-            "Attempting to load prepared dataset from HuggingFace Hub at "
-            f"{cfg.push_dataset_to_hub} (version {dataset_hash})..."
-        )
-        dataset = load_dataset(
-            cfg.push_dataset_to_hub,
-            dataset_hash,
-            token=cfg.hf_use_auth_token,
-        )
-        return dataset[split]
-    except Exception:  # pylint: disable=broad-except # nosec
-        LOG.info("Unable to find prepared dataset in HuggingFace Hub")
-        return None
-
-
-def _generate_from_iterable_dataset(
-    dataset: IterableDataset, worker_id: list[int], num_workers: list[int]
-) -> Generator[Any, None, None]:
-    """Generator function to correctly split the dataset for each worker"""
-    for i, item in enumerate(dataset):
-        if i % num_workers[0] == worker_id[0]:
-            yield item
-
-
-def _save_preprocessed_dataset(
-    cfg: DictDefault,
-    dataset: Dataset,
-    dataset_hash: str,
-    split: str,
-) -> None:
-    prepared_ds_path = get_prepared_dataset_path(cfg, dataset_hash)
-    if isinstance(dataset, IterableDataset):
-        num_workers = cfg.dataset_processes
-
-        ds_from_iter = Dataset.from_generator(
-            functools.partial(_generate_from_iterable_dataset, dataset),
-            features=dataset.features,
-            num_proc=num_workers,
-            split=split,
-            gen_kwargs={
-                "worker_id": list(range(num_workers)),
-                "num_workers": [num_workers] * num_workers,
-            },
-        )
-        ds_from_iter.save_to_disk(str(prepared_ds_path))
-    else:
-        os.makedirs(prepared_ds_path, exist_ok=True)
-        dataset.save_to_disk(str(prepared_ds_path))
-    if cfg.push_dataset_to_hub:
-        LOG.info(
-            "Pushing merged prepared dataset to Huggingface hub at "
-            f"{cfg.push_dataset_to_hub} (version {dataset_hash})..."
-        )
-        dataset.push_to_hub(
-            cfg.push_dataset_to_hub,
-            dataset_hash,
-            private=True,
-        )
-
-
 def _load_raw_datasets(
     cfg: DictDefault,
     cfg_datasets: list,
@@ -370,7 +305,7 @@ def _load_raw_datasets(
     preprocess_iterable: bool = False,
 ) -> tuple[Dataset, list[Prompter | None]]:
     """Load, process, merge, and save raw datasets."""
-    LOG.info("Loading raw datasets...")
+    LOG.info("Loading raw datasets...", main_process_only=False)
     if not cfg.is_preprocess:
         LOG.warning(
             "Processing datasets during training can lead to VRAM instability. Please "
@@ -405,7 +340,7 @@ def _load_raw_datasets(
         dataset_hash = generate_dataset_hash_from_config(
             cfg, cfg.datasets, tokenizer.name_or_path
         )
-        _save_preprocessed_dataset(cfg, dataset, dataset_hash, split)
+        save_preprocessed_dataset(cfg, dataset, dataset_hash, split)
 
     return dataset, prompters
 
