@@ -31,12 +31,7 @@ class FileLockLoader:
         self.counter_path = Path(self.dataset_prepared_path) / PROCESS_COUNTER_FILE_NAME
 
     def load(self, load_fn: Callable[[], Any]) -> Any:
-        import torch.distributed as dist
-
         with FileLock(str(self.lock_file_path)):
-            print(f"FileLock acquired by rank {dist.get_rank()}")
-
-            # Increment process counter
             self._increment_counter()
 
             if not self.ready_flag_path.exists():
