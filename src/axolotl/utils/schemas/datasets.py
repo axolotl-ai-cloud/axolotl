@@ -43,6 +43,7 @@ class SFTDataset(BaseModel):
     field_human: str | None = None
     field_model: str | None = None
     field_messages: str | None = None
+    field_tools: str | None = None
     # deprecated, use message_property_mappings
     message_field_role: str | None = None
     # deprecated, use message_property_mappings
