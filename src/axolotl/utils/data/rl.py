@@ -200,7 +200,7 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
 
     tokenizer = load_tokenizer(cfg)
 
-    for i, data_set in enumerate(split_datasets):
+    for i, dataset in enumerate(split_datasets):
         _type = datasets_configs[i]["type"]
         if _type:
             if isinstance(_type, DictDefault):
@@ -216,12 +216,12 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
             if isinstance(ds_transform_fn, tuple):
                 ds_transform_fn, map_kwargs = ds_transform_fn
             split_datasets[i] = _map_dataset(
-                cfg, data_set, ds_transform_fn, tokenizer, **map_kwargs
+                cfg, dataset, ds_transform_fn, tokenizer, **map_kwargs
             )
         else:
             # If no `type` is provided, assume the dataset is already in the expected format with
             # "prompt", "chosen", and "rejected" already preprocessed
-            split_datasets[i] = data_set
+            split_datasets[i] = dataset
 
         if not cfg.skip_prepare_dataset:
             drop_long = partial(
