@@ -120,7 +120,7 @@ def _map_dataset(
     return dataset
 
 
-def _drop_long_rl_seq(
+def _drop_long_sequences(
     sample: dict[str, Any], rl: RLType, tokenizer: Any, sequence_len: int
 ) -> bool:
     """Filter out samples that exceed maximum sequence length.
@@ -223,7 +223,7 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
 
         if not cfg.skip_prepare_dataset:
             drop_long = partial(
-                _drop_long_rl_seq,
+                _drop_long_sequences,
                 rl=cfg.rl,
                 tokenizer=tokenizer,
                 sequence_len=cfg.sequence_len,
