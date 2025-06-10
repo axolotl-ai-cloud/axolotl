@@ -265,11 +265,11 @@ def _load_tokenized_prepared_datasets(
         Tuple of (dataset, prompters list).
     """
     # Select correct dataset configuration based on split
-    cfg_datasets = cfg.test_datasets if split == "test" else cfg.datasets
+    datasets_config = cfg.datasets if split == "train" else cfg.test_datasets
 
     # Generate dataset hash for caching
     dataset_hash = generate_dataset_hash_from_config(
-        cfg, cfg_datasets, tokenizer.name_or_path
+        cfg, datasets_config, tokenizer.name_or_path
     )
 
     # Try loading from hub if push_dataset_to_hub is configured
@@ -286,7 +286,7 @@ def _load_tokenized_prepared_datasets(
     if dataset is None:
         dataset, prompters = _load_raw_datasets(
             cfg,
-            cfg_datasets,
+            datasets_config,
             tokenizer,
             split,
             processor,
