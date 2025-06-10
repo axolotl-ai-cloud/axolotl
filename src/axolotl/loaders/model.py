@@ -193,8 +193,11 @@ class ModelLoader:
         ):
             self.model = self.model.merge_and_unload()
 
-        self._resize_token_embeddings()
-        self._adjust_model_config()
+        # Run only on tokenizer that is a PreTrainedTokenizerBase (not mistral-common)
+        if isinstance(self.tokenizer, PreTrainedTokenizerBase):
+            self._resize_token_embeddings()
+            self._adjust_model_config()
+
         self._log_memory_usage()
         self._configure_embedding_dtypes()
         self._configure_qat()
