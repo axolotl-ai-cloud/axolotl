@@ -28,4 +28,8 @@ class DPOStrategy:
         training_args_kwargs["generate_during_eval"] = cfg.use_wandb
         if cfg.dpo_use_weighting is not None:
             training_args_kwargs["use_weighting"] = cfg.dpo_use_weighting
+        if cfg.dpo_padding_free is not None:
+            training_args_kwargs["padding_free"] = cfg.dpo_padding_free
+        if cfg.dpo_norm_loss is not None:
+            training_args_kwargs["dpo_norm_loss"] = cfg.dpo_norm_loss
         return training_args_kwargs
