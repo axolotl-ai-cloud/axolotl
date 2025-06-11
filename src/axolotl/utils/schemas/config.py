@@ -1265,7 +1265,26 @@ class AxolotlInputConfig(
             )
         return data
 
-    @field_validator("tokenizer_use_mistral_common")
+    @model_validator(mode="before")
+    @classmethod
+    def check_tokenizer_use_mistral_common(cls, data):
+        if data.get("tokenizer_use_mistral_common") is None:
+            if any(
+                "magistral" in name.lower()
+                for name in [
+                    data.get("base_model", ""),
+                    data.get("base_model_config", ""),
+                    data.get("tokenizer_config", ""),
+                ]
+            ):
+                LOG.warning(
+                    "tokenizer_use_mistral_common auto inferred to True for Magistral models. Please set it to True explicitly if you want to use mistral-common tokenizer."
+                )
+                data["tokenizer_use_mistral_common"] = True
+
+        return data
+
+    @field_validator("tokenizer_use_mistral_common", mode="after")
     @classmethod
     def check_mistral_common_import(cls, tokenizer_use_mistral_common):
         if tokenizer_use_mistral_common:
