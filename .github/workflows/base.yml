@@ -16,6 +16,7 @@ on:
 jobs:
   build-base:
     if: github.repository_owner == 'axolotl-ai-cloud'
+    timeout-minutes: 480
     # this job needs to be run on self-hosted GPU runners...
     runs-on: ubuntu-latest-m
     strategy:
@@ -106,6 +107,7 @@ jobs:
             TORCH_CUDA_ARCH_LIST=${{ matrix.torch_cuda_arch_list }}
   build-base-uv:
     if: github.repository_owner == 'axolotl-ai-cloud'
+    timeout-minutes: 480
     runs-on: ubuntu-latest-m
     strategy:
       fail-fast: false
