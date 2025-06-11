@@ -50,6 +50,9 @@ class TokenizedPromptDataset(Dataset):
 
         # Disable multiprocessing if the tokenizer doesn't support it (e.g., mistral_common)
         if not getattr(self.prompt_tokenizer, "supports_multiprocessing", True):
+            LOG.info(
+                "Disabling multiprocessing for tokenizer as it doesn't support it (e.g., mistral_common)"
+            )
             num_proc = 1
 
         map_kwargs = {}
