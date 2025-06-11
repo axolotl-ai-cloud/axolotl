@@ -143,8 +143,7 @@ class HFMistralTokenizer:
             os.makedirs(save_directory, exist_ok=True)
             copyfile(self._tokenizer_path, os.path.join(save_directory, "tekken.json"))
 
-        else:
-            raise RuntimeError(f"Unknown tokenizer type: {type(inner)}")
+        raise RuntimeError(f"Unsupported tokenizer type: {type(inner)}")
 
     def encode(self, text: str, add_special_tokens: bool = True) -> list[int]:
         return self._mistral.instruct_tokenizer.tokenizer.encode(
