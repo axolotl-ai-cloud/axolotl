@@ -10,6 +10,10 @@ from huggingface_hub import hf_hub_download
 from mistral_common.tokens.tokenizers.mistral import (
     MistralTokenizer as _MistralTokenizer,
 )
+from mistral_common.tokens.tokenizers.tekken import (
+    SpecialTokenPolicy,
+    Tekkenizer,
+)
 from torch import Tensor
 from transformers.utils import PaddingStrategy
 
@@ -40,11 +44,12 @@ class HFMistralTokenizer:
         """
         Args:
             tokenizer: The tokenizer to wrap.
-            path: The path to the tokenizer files.
+            path_or_repo_id: The path to the tokenizer files or the repo id.
         """
         self._mistral = mistral
         self._padding_side = "right"
-        self.chat_template = None
+        self._chat_template = None
+        self._name_or_path = path_or_repo_id
         self._tokenizer_path = _get_file_path(path_or_repo_id, "tekken.json")
 
         # Try to load system prompt if available
@@ -55,18 +60,27 @@ class HFMistralTokenizer:
         except FileNotFoundError:
             pass
 
-        # Make sure special tokens will be kept when decoding
-        tokenizer_ = self._mistral.instruct_tokenizer.tokenizer
-        from mistral_common.tokens.tokenizers.tekken import (
-            SpecialTokenPolicy,
-            Tekkenizer,
+        self._set_skip_special_tokens(skip_special_tokens=False)
+
+        # Manual set to training mode
+        from mistral_common.protocol.instruct.validator import (
+            MistralRequestValidator,
+            ValidationMode,
         )
 
-        is_tekken = isinstance(tokenizer_, Tekkenizer)
-        if is_tekken:
-            tokenizer_._special_token_policy = SpecialTokenPolicy.KEEP  # type: ignore  # pylint: disable=protected-access
-        else:
-            raise NotImplementedError(f"Tokenizer {path_or_repo_id} not supported yet")
+        # Check if MistralRequestValidator has a _mode attribute.
+        # This is a private API and may change in the future.
+        assert (
+            hasattr(self._mistral, "_chat_completion_request_validator")
+            and isinstance(
+                self._mistral._chat_completion_request_validator,
+                MistralRequestValidator,
+            )
+            and hasattr(self._mistral._chat_completion_request_validator, "_mode")
+        ), "Could not access _mode attribute to set finetuning mode in mistral-common tokenizer."
+        self._mistral._chat_completion_request_validator._mode = (
+            ValidationMode.finetuning
+        )
 
     def _load_system_prompt(self, path_or_repo_id: str) -> str:
         """Load system prompt from local or HF Hub"""
@@ -113,8 +127,45 @@ class HFMistralTokenizer:
     def padding_side(self) -> str:
         return self._padding_side
 
+    @property
+    def name_or_path(self) -> str:
+        return self._name_or_path
+
+    @property
+    def chat_template(self) -> str | None:
+        """Chat template is not supported. Dummy method to satisfy HuggingFace API."""
+        return self._chat_template
+
     def __len__(self) -> int:
         return self._mistral.instruct_tokenizer.tokenizer.n_words
+
+    def _set_skip_special_tokens(self, skip_special_tokens: bool = False) -> None:
+        """
+        Set the skip_special_tokens attribute of the tokenizer by setting
+        the special_token_policy attribute.
+
+        Args:
+            skip_special_tokens: Whether to skip special tokens in the decoded text. Default is False.
+        """
+        tokenizer_ = self._mistral.instruct_tokenizer.tokenizer
+
+        is_tekken = isinstance(tokenizer_, Tekkenizer)
+        if is_tekken:
+            # Check if special token policy private API is available
+            assert hasattr(
+                tokenizer_, "_special_token_policy"
+            ), "Special token policy not found in mistral-common tokenizer"
+
+            # pylint: disable=protected-access
+            tokenizer_._special_token_policy = (
+                SpecialTokenPolicy.IGNORE
+                if skip_special_tokens
+                else SpecialTokenPolicy.KEEP
+            )
+        else:
+            raise NotImplementedError(
+                f"Tokenizer {self._name_or_path} not supported yet to set skip_special_tokens"
+            )
 
     @classmethod
     def from_pretrained(
@@ -126,6 +177,14 @@ class HFMistralTokenizer:
     ) -> "HFMistralTokenizer":
         """
         Download a mistral tokenizer from HF Hub and wrap it.
+
+        Args:
+            path_or_repo_id: The path to the tokenizer files or the repo id.
+            revision: The revision of the tokenizer to download.
+            kwargs: Additional keyword arguments.
+
+        Returns:
+            A HFMistralTokenizer instance.
         """
 
         if revision:
@@ -140,9 +199,12 @@ class HFMistralTokenizer:
     def save_pretrained(self, save_directory: str) -> None:
         """
         Save the Tekken/SentencePiece model file so that from_pretrained can pick it up again.
-        """
-        from mistral_common.tokens.tokenizers.tekken import Tekkenizer
 
+        Only Tekken models are supported.
+
+        Args:
+            save_directory: The directory to save the tokenizer files.
+        """
         inner = self._mistral.instruct_tokenizer.tokenizer
         if isinstance(inner, Tekkenizer):
             # Create the directory and save the model
@@ -173,20 +235,42 @@ class HFMistralTokenizer:
             raise RuntimeError(f"Unknown tokenizer type: {type(inner)}")
 
     def encode(self, text: str, add_special_tokens: bool = True) -> list[int]:
+        """
+        Encode a text string into a list of token IDs.
+
+        Args:
+            text: The text string to encode.
+            add_special_tokens: Whether to add special tokens to the encoded tokens.
+
+        Returns:
+            A list of token IDs.
+        """
         return self._mistral.instruct_tokenizer.tokenizer.encode(
             text,
             bos=add_special_tokens,
             eos=add_special_tokens,
         )
 
-    def decode(self, ids: int | list[int], skip_special_tokens: bool = True) -> str:
+    def decode(
+        self, token_ids: int | list[int], skip_special_tokens: bool = False
+    ) -> str:
+        """
+        Decode a list of token IDs into a text string.
+
+        Args:
+            token_ids: The int or list of token IDs to decode.
+            skip_special_tokens: Whether to skip special tokens in the decoded text.
+
+        Returns:
+            The decoded text string.
+        """
         if not skip_special_tokens:
-            raise NotImplementedError("skip_special_tokens not supported yet")
+            raise NotImplementedError("skip_special_tokens=True is not supported yet")
 
-        if isinstance(ids, int):
-            return self.decode([ids])
+        if isinstance(token_ids, int):
+            return self.decode([token_ids], skip_special_tokens)
 
-        return self._mistral.instruct_tokenizer.tokenizer.decode(ids)
+        return self._mistral.instruct_tokenizer.tokenizer.decode(token_ids)
 
     def _create_mistral_chat_completion_request(
         self, conversation: list[dict], tools: list[dict] | None = None
@@ -229,10 +313,6 @@ class HFMistralTokenizer:
                 raise ValueError(
                     f"Unknown role for use with mistral-common tokenizer: {turn['role']}"
                 )
-
-        # set prefix to True for the last message if it is an assistant message
-        if messages[-1].role == "assistant":
-            messages[-1].prefix = True
 
         tool_calls: list[Tool] = []
         if tools:
