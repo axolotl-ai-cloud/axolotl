@@ -146,7 +146,7 @@ class HFMistralTokenizer:
         **kwargs,  # pylint: disable=unused-argument
     ) -> "HFMistralTokenizer":
         """
-        Download a mistral tokenizer from HF Hub and wrap it.
+        Load a mistral tekken tokenizer from a local file or HF Hub and wrap it.
 
         Args:
             path_or_repo_id: The path to the tokenizer files or the repo id.
@@ -156,16 +156,21 @@ class HFMistralTokenizer:
         Returns:
             A HFMistralTokenizer instance.
         """
-        maybe_tokenizer_path = os.path.join(name_or_path, "tekken.json")
-        if os.path.exists(maybe_tokenizer_path):
-            base = MistralTokenizer.from_file(maybe_tokenizer_path)
-        else:
-            base = MistralTokenizer.from_hf_hub(name_or_path, revision=revision)
+        if revision:
+            raise NotImplementedError(
+                "Revision not supported yet for mistral-common tokenizer"
+            )
+
+        # only support Tekken tokenizer for now
+        # downloads from HF Hub if not local
+        tokenizer_path = _get_file_path(name_or_path, "tekken.json")
+
+        base = MistralTokenizer.from_file(tokenizer_path)
 
         return cls(
             base,
             name_or_path=name_or_path,
-            tokenizer_path=os.path.join(name_or_path, "tekken.json"),
+            tokenizer_path=tokenizer_path,
         )
 
     def save_pretrained(self, save_directory: str) -> None:
