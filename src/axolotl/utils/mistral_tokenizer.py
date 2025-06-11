@@ -11,7 +11,6 @@ from mistral_common.tokens.tokenizers.mistral import (
     MistralTokenizer as _MistralTokenizer,
 )
 from mistral_common.tokens.tokenizers.tekken import (
-    SpecialTokenPolicy,
     Tekkenizer,
 )
 from torch import Tensor
@@ -51,8 +50,6 @@ class HFMistralTokenizer:
         self._chat_template = None
         self._name_or_path = name_or_path
         self._tokenizer_path = _get_file_path(name_or_path, "tekken.json")
-
-        self._set_skip_special_tokens(skip_special_tokens=False)
 
         # Manual set to training mode
         from mistral_common.protocol.instruct.validator import (
@@ -141,34 +138,6 @@ class HFMistralTokenizer:
     def __len__(self) -> int:
         return self._mistral.instruct_tokenizer.tokenizer.n_words
 
-    def _set_skip_special_tokens(self, skip_special_tokens: bool = False) -> None:
-        """
-        Set the skip_special_tokens attribute of the tokenizer by setting
-        the special_token_policy attribute.
-
-        Args:
-            skip_special_tokens: Whether to skip special tokens in the decoded text. Default is False.
-        """
-        tokenizer_ = self._mistral.instruct_tokenizer.tokenizer
-
-        is_tekken = isinstance(tokenizer_, Tekkenizer)
-        if is_tekken:
-            # Check if special token policy private API is available
-            assert hasattr(
-                tokenizer_, "_special_token_policy"
-            ), "Special token policy not found in mistral-common tokenizer"
-
-            # pylint: disable=protected-access
-            tokenizer_._special_token_policy = (
-                SpecialTokenPolicy.IGNORE
-                if skip_special_tokens
-                else SpecialTokenPolicy.KEEP
-            )
-        else:
-            raise NotImplementedError(
-                f"Tokenizer {self._name_or_path} not supported yet to set skip_special_tokens"
-            )
-
     @classmethod
     def from_pretrained(
         cls,
@@ -192,6 +161,7 @@ class HFMistralTokenizer:
         if revision:
             raise NotImplementedError("Revision not supported yet")
 
+        # only support Tekken tokenizer for now
         base = _MistralTokenizer.from_file(_get_file_path(name_or_path, "tekken.json"))
         return cls(base, name_or_path=name_or_path)
 
@@ -263,13 +233,14 @@ class HFMistralTokenizer:
         Returns:
             The decoded text string.
         """
-        if skip_special_tokens:
-            raise NotImplementedError("skip_special_tokens=True is not supported yet")
-
         if isinstance(token_ids, int):
             token_ids = [token_ids]
 
-        return self._mistral.instruct_tokenizer.tokenizer.decode(token_ids)
+        if skip_special_tokens:
+            return self._mistral.instruct_tokenizer.tokenizer.decode(token_ids)
+
+        # to_string returns a string with special tokens
+        return self._mistral.instruct_tokenizer.tokenizer.to_string(token_ids)
 
     def _create_mistral_chat_completion_request(
         self, conversation: list[dict], tools: list[dict] | None = None
