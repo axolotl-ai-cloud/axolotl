@@ -7,12 +7,8 @@ from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 from huggingface_hub import hf_hub_download
-from mistral_common.tokens.tokenizers.mistral import (
-    MistralTokenizer as _MistralTokenizer,
-)
-from mistral_common.tokens.tokenizers.tekken import (
-    Tekkenizer,
-)
+from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
+from mistral_common.tokens.tokenizers.tekken import Tekkenizer
 from torch import Tensor
 from transformers.utils import PaddingStrategy
 
@@ -39,7 +35,7 @@ class HFMistralTokenizer:
     and exposes HuggingFace API for special tokens.
     """
 
-    def __init__(self, mistral: _MistralTokenizer, name_or_path: str):
+    def __init__(self, mistral: MistralTokenizer, name_or_path: str):
         """
         Args:
             mistral: The mistral-common tokenizer to wrap.
@@ -162,7 +158,7 @@ class HFMistralTokenizer:
             raise NotImplementedError("Revision not supported yet")
 
         # only support Tekken tokenizer for now
-        base = _MistralTokenizer.from_file(_get_file_path(name_or_path, "tekken.json"))
+        base = MistralTokenizer.from_file(_get_file_path(name_or_path, "tekken.json"))
         return cls(base, name_or_path=name_or_path)
 
     def save_pretrained(self, save_directory: str) -> None:
