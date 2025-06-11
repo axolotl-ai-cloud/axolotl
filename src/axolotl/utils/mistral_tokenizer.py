@@ -57,14 +57,20 @@ class HFMistralTokenizer:
 
         # Check if MistralRequestValidator has a _mode attribute.
         # This is a private API and may change in the future.
-        assert (
+        # pylint: disable=protected-access
+        if not (
             hasattr(self._mistral, "_chat_completion_request_validator")
             and isinstance(
                 self._mistral._chat_completion_request_validator,
                 MistralRequestValidator,
             )
             and hasattr(self._mistral._chat_completion_request_validator, "_mode")
-        ), "Could not access _mode attribute to set finetuning mode in mistral-common tokenizer."
+        ):
+            raise RuntimeError(
+                "Unable to switch mistral tokenizer to finetuning mode – "
+                "private API `_chat_completion_request_validator._mode` missing."
+            )
+
         self._mistral._chat_completion_request_validator._mode = (
             ValidationMode.finetuning
         )
