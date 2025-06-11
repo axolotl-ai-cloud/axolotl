@@ -712,10 +712,6 @@ class ModelLoader:
                 # Please don't remove underscore binding without reading the fn docstring.
                 _ = self._configure_zero3_memory_efficient_loading()
 
-                if self.cfg.lora_on_cpu:
-                    self.model_kwargs["max_memory"] = {"cpu": "256GiB"}
-                    self.model_kwargs["device_map"] = {"": "cpu"}
-
                 self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
                     config=self.model_config,
@@ -780,6 +776,9 @@ class ModelLoader:
         dist_dtype: torch.dtype,
         before_kbit_train_or_finetune: bool,
     ):
+        dest = {"dtype": dist_dtype}
+        if self.cfg.lora_on_cpu:
+            dest["device"] = "cpu"
         for name, module in self.model.named_modules():
             if "norm" in name:
                 module.to(dist_dtype)
@@ -790,4 +789,4 @@ class ModelLoader:
                     # don't upcast lm_head for btlm
                     continue
             if any(m in name for m in embedding_modules) and hasattr(module, "weight"):
-                module.to(dist_dtype)
+                module.to(**dest)
