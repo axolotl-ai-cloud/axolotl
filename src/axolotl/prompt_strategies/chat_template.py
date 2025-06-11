@@ -825,8 +825,7 @@ class MistralStrategy(ChatTemplateStrategy):
         split_thinking: bool | None = False,
     ):
         # Call the parent's parent __init__ (PromptTokenizingStrategy) to skip ChatTemplateStrategy's validation
-        # pylint: disable=non-parent-init-called
-        # pylint: disable=super-init-not-called
+        # pylint: disable=non-parent-init-called,super-init-not-called
         PromptTokenizingStrategy.__init__(
             self, prompter, tokenizer, train_on_inputs, sequence_len
         )
