@@ -40,17 +40,17 @@ class HFMistralTokenizer:
     and exposes HuggingFace API for special tokens.
     """
 
-    def __init__(self, mistral: _MistralTokenizer, path_or_repo_id: str):
+    def __init__(self, mistral: _MistralTokenizer, name_or_path: str):
         """
         Args:
-            tokenizer: The tokenizer to wrap.
-            path_or_repo_id: The path to the tokenizer files or the repo id.
+            mistral: The mistral-common tokenizer to wrap.
+            name_or_path: The name or path to the tokenizer files or the repo id.
         """
         self._mistral = mistral
         self._padding_side = "right"
         self._chat_template = None
-        self._name_or_path = path_or_repo_id
-        self._tokenizer_path = _get_file_path(path_or_repo_id, "tekken.json")
+        self._name_or_path = name_or_path
+        self._tokenizer_path = _get_file_path(name_or_path, "tekken.json")
 
         self._set_skip_special_tokens(skip_special_tokens=False)
 
@@ -172,7 +172,7 @@ class HFMistralTokenizer:
     @classmethod
     def from_pretrained(
         cls,
-        path_or_repo_id: str,
+        name_or_path: str,
         *,
         revision: Optional[str] = None,
         **kwargs,  # pylint: disable=unused-argument
@@ -192,11 +192,8 @@ class HFMistralTokenizer:
         if revision:
             raise NotImplementedError("Revision not supported yet")
 
-        # check if tokenizer_config is a valid local path
-        base = _MistralTokenizer.from_file(
-            _get_file_path(path_or_repo_id, "tekken.json")
-        )
-        return cls(base, path_or_repo_id=path_or_repo_id)
+        base = _MistralTokenizer.from_file(_get_file_path(name_or_path, "tekken.json"))
+        return cls(base, name_or_path=name_or_path)
 
     def save_pretrained(self, save_directory: str) -> None:
         """
