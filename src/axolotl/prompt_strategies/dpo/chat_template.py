@@ -46,6 +46,14 @@ def default(
         )
 
         messages = sample[field_messages]
+        if isinstance(messages, str):
+            messages = [
+                {
+                    message_property_mappings["role"]: "user",
+                    message_property_mappings["content"]: messages,
+                }
+            ]
+
         messages = [
             {
                 "role": role_map[m[message_property_mappings["role"]]],
