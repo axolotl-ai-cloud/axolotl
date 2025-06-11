@@ -16,8 +16,8 @@ from axolotl.train import (
 )
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
-from axolotl.utils.trainer import setup_trainer
 from axolotl.utils.logging import get_logger
+from axolotl.utils.trainer import setup_trainer
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
