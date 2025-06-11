@@ -872,13 +872,6 @@ class MistralStrategy(ChatTemplateStrategy):
 
         return False
 
-    # def find_first_eos_token(self, input_ids, start_idx):
-    #     eos_token_id = self.tokenizer.instruct_tokenizer.tokenizer.eos_id
-    #     for i in range(start_idx, len(input_ids)):
-    #         if input_ids[i] == eos_token_id:
-    #             return i
-    #     return -1
-
     def find_first_eot_token(self, input_ids, start_idx):
         """Find the first EOT token in the input_ids starting from start_idx."""
         # mistral-common tokenizer does not support eot_tokens
