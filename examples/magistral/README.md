@@ -1,6 +1,6 @@
 # Finetune Magistral Small with Axolotl
 
-Magistral Small is a 24B parameter opensource model from MistralAI found on [HuggingFace](https://huggingface.co/mistralai/Magistral-Small-2506). This guide shows how to fine-tune it with Axolotl.
+Magistral Small is a 24B parameter opensource model from MistralAI found on [HuggingFace](https://huggingface.co/mistralai/Magistral-Small-2506). This guide shows how to fine-tune it with Axolotl with multi-turn conversations with proper masking.
 
 MistralAI has also released a proprietary medium-sized version called Magistral Medium.
 
