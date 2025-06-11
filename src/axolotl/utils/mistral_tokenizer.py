@@ -1,13 +1,19 @@
 """Wrapper for MistralTokenizer from mistral-common"""
 
+import math
 import os
 from shutil import copyfile
 from typing import TYPE_CHECKING, Optional
 
+import numpy as np
 from huggingface_hub import hf_hub_download
 from mistral_common.tokens.tokenizers.mistral import (
     MistralTokenizer as _MistralTokenizer,
 )
+from torch import Tensor
+from transformers.utils import PaddingStrategy
+
+from axolotl.utils.collators.core import IGNORE_INDEX
 
 if TYPE_CHECKING:
     from mistral_common.protocol.instruct.request import ChatCompletionRequest
@@ -140,10 +146,31 @@ class HFMistralTokenizer:
         inner = self._mistral.instruct_tokenizer.tokenizer
         if isinstance(inner, Tekkenizer):
             # Create the directory and save the model
-            os.makedirs(save_directory, exist_ok=True)
-            copyfile(self._tokenizer_path, os.path.join(save_directory, "tekken.json"))
+            try:
+                os.makedirs(save_directory, exist_ok=True)
 
-        raise RuntimeError(f"Unsupported tokenizer type: {type(inner)}")
+                # Verify directory was created
+                if not os.path.exists(save_directory):
+                    raise RuntimeError(f"Failed to create directory: {save_directory}")
+
+                # Verify source file exists
+                if not os.path.exists(self._tokenizer_path):
+                    raise FileNotFoundError(
+                        f"Source tokenizer file not found: {self._tokenizer_path}"
+                    )
+
+                destination_path = os.path.join(save_directory, "tekken.json")
+                copyfile(self._tokenizer_path, destination_path)
+
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to save tokenizer to {save_directory}: {e}. "
+                    f"Source path: {self._tokenizer_path}, "
+                    f"Directory exists: {os.path.exists(save_directory)}"
+                ) from e
+
+        else:
+            raise RuntimeError(f"Unknown tokenizer type: {type(inner)}")
 
     def encode(self, text: str, add_special_tokens: bool = True) -> list[int]:
         return self._mistral.instruct_tokenizer.tokenizer.encode(
@@ -258,3 +285,205 @@ class HFMistralTokenizer:
             return tokens
 
         return self._mistral.decode(tokens)
+
+    def pad(
+        self,
+        features: list[dict[str, list[int] | np.ndarray]],
+        *,
+        padding: bool | str | PaddingStrategy = True,
+        max_length: int | None = None,
+        pad_to_multiple_of: int | None = None,
+        return_tensors: str | None = None,  # "np", "pt", or "tf"
+    ) -> dict[str, np.ndarray | Tensor]:
+        """
+        HF-style pad method that properly handles all sequence-related features:
+        - pad 'input_ids' & 'labels' to the longest (or to max_length)
+        """
+        import torch
+        from torch.nn import functional as F
+
+        # Check for unsupported fields
+        if any("token_type_ids" in f for f in features):
+            raise ValueError("token_type_ids is not supported by this tokenizer")
+
+        # Determine desired sequence length
+        lengths = [len(f["input_ids"]) for f in features]
+        if padding in (True, "longest", PaddingStrategy.LONGEST):
+            target_length = max(lengths)
+        elif padding in ("max_length", PaddingStrategy.MAX_LENGTH):
+            if max_length is None:
+                raise ValueError("max_length must be set for 'max_length' padding")
+            target_length = max_length
+        elif padding in (False, "do_not_pad", PaddingStrategy.DO_NOT_PAD):
+            target_length = None
+        else:
+            raise ValueError(f"Unknown padding strategy: {padding}")
+
+        # Apply pad_to_multiple_of
+        if target_length is not None and pad_to_multiple_of is not None:
+            target_length = (
+                math.ceil(target_length / pad_to_multiple_of) * pad_to_multiple_of
+            )
+
+        # If no padding requested, just stack tensors
+        do_pad = target_length is not None
+
+        # Pad sequences using torch.nn.utils.rnn.pad_sequence
+        input_ids = torch.nn.utils.rnn.pad_sequence(
+            [torch.tensor(x["input_ids"], dtype=torch.long) for x in features],
+            batch_first=True,
+            padding_value=self.pad_token_id if self.pad_token_id is not None else 0,
+        )
+
+        labels = torch.nn.utils.rnn.pad_sequence(
+            [torch.tensor(x["labels"], dtype=torch.long) for x in features],
+            batch_first=True,
+            padding_value=IGNORE_INDEX,
+        )
+
+        attention_mask = torch.nn.utils.rnn.pad_sequence(
+            [torch.tensor(x["attention_mask"], dtype=torch.long) for x in features],
+            batch_first=True,
+            padding_value=0,
+        )
+
+        # Handle position_ids - pad with sequential values for right padding, 0s for left padding
+        if "position_ids" in features[0]:
+            if self.padding_side == "left":
+                # Likely not needed, but keeping for now
+                # For left padding, we'll pad with 0s using pad_sequence, then handle manually
+                position_ids = torch.nn.utils.rnn.pad_sequence(
+                    [
+                        torch.tensor(x["position_ids"], dtype=torch.long)
+                        for x in features
+                    ],
+                    batch_first=True,
+                    padding_value=0,
+                )
+            else:
+                # For right padding, continue the sequence
+                max_pos_len = max(len(f["position_ids"]) for f in features)
+                position_ids_list = []
+                for f in features:
+                    pos_seq = torch.tensor(f["position_ids"], dtype=torch.long)
+                    if len(pos_seq) < max_pos_len:
+                        # Continue the sequence
+                        last_pos = pos_seq[-1].item() if len(pos_seq) > 0 else -1
+                        pad_len = max_pos_len - len(pos_seq)
+                        pad_positions = torch.arange(
+                            last_pos + 1, last_pos + 1 + pad_len, dtype=torch.long
+                        )
+                        pos_seq = torch.cat([pos_seq, pad_positions])
+                    position_ids_list.append(pos_seq)
+                position_ids = torch.stack(position_ids_list)
+        else:
+            # Create position_ids if not present
+            seq_len = input_ids.size(1)
+            position_ids = (
+                torch.arange(seq_len, dtype=torch.long)
+                .unsqueeze(0)
+                .expand(input_ids.size(0), -1)
+            )
+
+        # Ensure all tensors have the same sequence length
+        max_seq_len = max(
+            input_ids.size(1),
+            labels.size(1),
+            attention_mask.size(1),
+            position_ids.size(1),
+        )
+
+        # TODO: check if trimming is needed? and correct.
+
+        if do_pad and target_length is not None:
+            max_seq_len = target_length
+
+        # Pad all tensors to the same length
+        if input_ids.size(1) < max_seq_len:
+            pad_len = max_seq_len - input_ids.size(1)
+            if self.padding_side == "right":
+                input_ids = F.pad(
+                    input_ids,
+                    (0, pad_len),
+                    value=self.pad_token_id if self.pad_token_id is not None else 0,
+                )
+            else:
+                input_ids = F.pad(
+                    input_ids,
+                    (pad_len, 0),
+                    value=self.pad_token_id if self.pad_token_id is not None else 0,
+                )
+        elif input_ids.size(1) > max_seq_len:
+            input_ids = input_ids[:, :max_seq_len]
+
+        if labels.size(1) < max_seq_len:
+            pad_len = max_seq_len - labels.size(1)
+            if self.padding_side == "right":
+                labels = F.pad(labels, (0, pad_len), value=IGNORE_INDEX)
+            else:
+                labels = F.pad(labels, (pad_len, 0), value=IGNORE_INDEX)
+        elif labels.size(1) > max_seq_len:
+            labels = labels[:, :max_seq_len]
+
+        if attention_mask.size(1) < max_seq_len:
+            pad_len = max_seq_len - attention_mask.size(1)
+            if self.padding_side == "right":
+                attention_mask = F.pad(attention_mask, (0, pad_len), value=0)
+            else:
+                attention_mask = F.pad(attention_mask, (pad_len, 0), value=0)
+        elif attention_mask.size(1) > max_seq_len:
+            attention_mask = attention_mask[:, :max_seq_len]
+
+        if position_ids.size(1) < max_seq_len:
+            pad_len = max_seq_len - position_ids.size(1)
+            if self.padding_side == "right":
+                batch_size = position_ids.size(0)
+                new_position_ids = []
+                for i in range(batch_size):
+                    seq = position_ids[i]
+                    if len(seq) > 0:
+                        # get last position and pad with sequential values
+                        last_pos = seq[-1].item()
+                        pad_positions = torch.arange(
+                            last_pos + 1, last_pos + 1 + pad_len, dtype=torch.long
+                        )
+                        new_seq = torch.cat([seq, pad_positions])
+                    else:
+                        new_seq = torch.arange(pad_len, dtype=torch.long)
+                    new_position_ids.append(new_seq)
+                position_ids = torch.stack(new_position_ids)
+            else:
+                position_ids = F.pad(position_ids, (pad_len, 0), value=0)
+        elif position_ids.size(1) > max_seq_len:
+            position_ids = position_ids[:, :max_seq_len]
+
+        final_batch = {
+            "input_ids": input_ids,
+            "labels": labels,
+            "attention_mask": attention_mask,
+            "position_ids": position_ids,
+        }
+
+        # Handle non-sequence fields (raise error)
+        sequence_fields = {"input_ids", "labels", "attention_mask", "position_ids"}
+        for f in features:
+            for key in f.keys():
+                if key not in sequence_fields:
+                    raise NotImplementedError(
+                        f"Non-sequence field {key} not handled yet"
+                    )
+
+        # Convert to requested tensor type
+        if return_tensors is None or return_tensors == "np":
+            result = {}
+            for k, v in final_batch.items():
+                if isinstance(v, torch.Tensor):
+                    result[k] = v.numpy().astype(np.long)
+                else:
+                    result[k] = v
+            return result
+
+        if return_tensors == "pt":
+            return final_batch
+
+        raise ValueError(f"Unsupported return_tensors='{return_tensors}'")
