@@ -47,7 +47,6 @@ class HFMistralTokenizer:
         """
         self._mistral = mistral
         self._padding_side = "right"
-        self._chat_template = None
         self._name_or_path = name_or_path
         self._tokenizer_path = _get_file_path(name_or_path, "tekken.json")
 
@@ -100,10 +99,12 @@ class HFMistralTokenizer:
         return self._mistral.instruct_tokenizer.tokenizer.eos_id
 
     @property
-    def pad_token_id(self) -> Optional[int]:
-        if hasattr(self._mistral.instruct_tokenizer.tokenizer, "pad_id"):
-            return self._mistral.instruct_tokenizer.tokenizer.pad_id
-        return None
+    def pad_token_id(self) -> int:
+        return self._mistral.instruct_tokenizer.tokenizer.pad_id
+
+    @property
+    def unk_token_id(self) -> int:
+        return self._mistral.instruct_tokenizer.tokenizer.unk_id
 
     @property
     def bos_token(self) -> str:
@@ -114,13 +115,12 @@ class HFMistralTokenizer:
         return self._mistral.instruct_tokenizer.tokenizer.id_to_piece(self.eos_token_id)
 
     @property
-    def pad_token(self) -> Optional[str]:
-        pid = self.pad_token_id
-        return (
-            self._mistral.instruct_tokenizer.tokenizer.id_to_piece(pid)
-            if pid is not None
-            else None
-        )
+    def pad_token(self) -> str:
+        return self._mistral.instruct_tokenizer.tokenizer.id_to_piece(self.pad_token_id)
+
+    @property
+    def unk_token(self) -> str:
+        return self._mistral.instruct_tokenizer.tokenizer.id_to_piece(self.unk_token_id)
 
     @property
     def padding_side(self) -> str:
@@ -133,7 +133,7 @@ class HFMistralTokenizer:
     @property
     def chat_template(self) -> str | None:
         """Chat template is not supported. Dummy method to satisfy HuggingFace API."""
-        return self._chat_template
+        return None
 
     def __len__(self) -> int:
         return self._mistral.instruct_tokenizer.tokenizer.n_words
