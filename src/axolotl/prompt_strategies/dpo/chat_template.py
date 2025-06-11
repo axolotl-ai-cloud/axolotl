@@ -61,20 +61,32 @@ def default(
             }
             for m in messages
         ]
-        chosen_msg = (
-            sample[field_chosen]
-            if isinstance(sample[field_chosen], dict)
-            else sample[field_chosen][-1]
-        )
+
+        chosen_raw = sample[field_chosen]
+        if isinstance(chosen_raw, str):
+            chosen_msg = {
+                message_property_mappings["role"]: "assistant",
+                message_property_mappings["content"]: chosen_raw,
+            }
+        elif isinstance(chosen_raw, dict):
+            chosen_msg = chosen_raw
+        else:
+            chosen_msg = chosen_raw[-1]
         chosen = {
             "role": role_map[chosen_msg[message_property_mappings["role"]]],
             "content": chosen_msg[message_property_mappings["content"]],
         }
-        rejected_msg = (
-            sample[field_rejected]
-            if isinstance(sample[field_rejected], dict)
-            else sample[field_rejected][-1]
-        )
+
+        rejected_raw = sample[field_rejected]
+        if isinstance(rejected_raw, str):
+            rejected_msg = {
+                message_property_mappings["role"]: "assistant",
+                message_property_mappings["content"]: rejected_raw,
+            }
+        elif isinstance(rejected_raw, dict):
+            rejected_msg = rejected_raw
+        else:
+            rejected_msg = rejected_raw[-1]
         rejected = {
             "role": role_map[rejected_msg[message_property_mappings["role"]]],
             "content": rejected_msg[message_property_mappings["content"]],
