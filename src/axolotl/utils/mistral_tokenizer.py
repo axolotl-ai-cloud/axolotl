@@ -21,8 +21,9 @@ if TYPE_CHECKING:
 def _get_file_path(path_or_repo_id: str, filename: str) -> str:
     """Get the file path from local or HF Hub"""
     if os.path.exists(path_or_repo_id):
-        if os.path.exists(os.path.join(path_or_repo_id, filename)):
-            return path_or_repo_id
+        maybe_file_path = os.path.join(path_or_repo_id, filename)
+        if os.path.exists(maybe_file_path):
+            return maybe_file_path
 
         raise FileNotFoundError(f"File not found at {path_or_repo_id}")
 
@@ -35,7 +36,9 @@ class HFMistralTokenizer:
     and exposes HuggingFace API for special tokens.
     """
 
-    def __init__(self, mistral: MistralTokenizer, name_or_path: str):
+    def __init__(
+        self, mistral: MistralTokenizer, name_or_path: str, tokenizer_path: str
+    ):
         """
         Args:
             mistral: The mistral-common tokenizer to wrap.
@@ -44,7 +47,7 @@ class HFMistralTokenizer:
         self._mistral = mistral
         self._padding_side = "right"
         self._name_or_path = name_or_path
-        self._tokenizer_path = _get_file_path(name_or_path, "tekken.json")
+        self._tokenizer_path = tokenizer_path
 
         # Manual set to training mode
         from mistral_common.protocol.instruct.validator import (
@@ -153,13 +156,17 @@ class HFMistralTokenizer:
         Returns:
             A HFMistralTokenizer instance.
         """
+        maybe_tokenizer_path = os.path.join(name_or_path, "tekken.json")
+        if os.path.exists(maybe_tokenizer_path):
+            base = MistralTokenizer.from_file(maybe_tokenizer_path)
+        else:
+            base = MistralTokenizer.from_hf_hub(name_or_path, revision=revision)
 
-        if revision:
-            raise NotImplementedError("Revision not supported yet")
-
-        # only support Tekken tokenizer for now
-        base = MistralTokenizer.from_file(_get_file_path(name_or_path, "tekken.json"))
-        return cls(base, name_or_path=name_or_path)
+        return cls(
+            base,
+            name_or_path=name_or_path,
+            tokenizer_path=os.path.join(name_or_path, "tekken.json"),
+        )
 
     def save_pretrained(self, save_directory: str) -> None:
         """
