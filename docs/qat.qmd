@@ -29,4 +29,4 @@ qat:
   fake_quant_after_n_steps: # Optional[int] = None. The number of steps to apply fake quantization after
 ```
 
-Once you have finished training, you must quantize your model by using the same quantization configuration which you used to train the model with. You can use the [`quantize`](./quantize.html) command  to do this.
+Once you have finished training, you must quantize your model by using the same quantization configuration which you used to train the model with. You can use the [`quantize`](./quantize.qmd) command to do this.
