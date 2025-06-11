@@ -52,14 +52,6 @@ class HFMistralTokenizer:
         self._name_or_path = path_or_repo_id
         self._tokenizer_path = _get_file_path(path_or_repo_id, "tekken.json")
 
-        # Try to load system prompt if available
-        try:
-            self._system_prompt = self._load_system_prompt(
-                path_or_repo_id=path_or_repo_id
-            )
-        except FileNotFoundError:
-            pass
-
         self._set_skip_special_tokens(skip_special_tokens=False)
 
         # Manual set to training mode
@@ -83,7 +75,17 @@ class HFMistralTokenizer:
         )
 
     def _load_system_prompt(self, path_or_repo_id: str) -> str:
-        """Load system prompt from local or HF Hub"""
+        """Load system prompt from local or HF Hub.
+
+        Note: Unused for now as we don't want to explicitly set the system prompt if a user does
+        not provide one.
+
+        Args:
+            path_or_repo_id: The path to the tokenizer files or the repo id.
+
+        Returns:
+            The system prompt.
+        """
         file_path = _get_file_path(path_or_repo_id, "SYSTEM_PROMPT.txt")
 
         if not os.path.exists(file_path):
@@ -264,7 +266,7 @@ class HFMistralTokenizer:
         Returns:
             The decoded text string.
         """
-        if not skip_special_tokens:
+        if skip_special_tokens:
             raise NotImplementedError("skip_special_tokens=True is not supported yet")
 
         if isinstance(token_ids, int):
