@@ -270,7 +270,7 @@ class HFMistralTokenizer:
             raise NotImplementedError("skip_special_tokens=True is not supported yet")
 
         if isinstance(token_ids, int):
-            return self.decode([token_ids], skip_special_tokens)
+            token_ids = [token_ids]
 
         return self._mistral.instruct_tokenizer.tokenizer.decode(token_ids)
 
