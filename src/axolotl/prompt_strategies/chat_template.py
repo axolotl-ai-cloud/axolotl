@@ -661,9 +661,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             return -1, -1
 
         LOG.debug(f"Content boundaries: {start_idx}, {end_idx}")
-        # LOG.debug(
-        #     f"Content tokens: {self.tokenizer.convert_ids_to_tokens(full_ids[start_idx:end_idx])}"
-        # )
+        LOG.debug(
+            f"Content tokens: {self.tokenizer.convert_ids_to_tokens(full_ids[start_idx:end_idx])}"
+        )
 
         return start_idx, end_idx
 

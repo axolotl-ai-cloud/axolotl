@@ -537,3 +537,17 @@ class HFMistralTokenizer:
             return final_batch
 
         raise ValueError(f"Unsupported return_tensors='{return_tensors}'")
+
+    def convert_ids_to_tokens(self, ids: list[int]) -> list[str]:
+        """
+        Convert a list of token IDs to a list of tokens.
+
+        Args:
+            ids: The list of token IDs to convert.
+
+        Returns:
+            The list of tokens.
+        """
+        return [
+            self._mistral.instruct_tokenizer.tokenizer.id_to_piece(id) for id in ids
+        ]
