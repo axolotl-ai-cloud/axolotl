@@ -3,4 +3,4 @@
 # pylint: disable=unused-import
 # flake8: noqa
 
-from .sequence_parallel import SequenceParallelContextManager
+from .sequence_parallel import ContextParallelContextManager

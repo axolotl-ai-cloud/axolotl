@@ -1,0 +1,145 @@
+"""Utils for context parallel context manager."""
+
+import torch
+
+from axolotl.monkeypatch.ring_attn.patch import update_ring_attn_params
+from axolotl.utils.schemas.enums import RingAttnFunc
+
+
+# TODO(djsaunde): implement zigzag, stripe patterns here (and elsewhere) in this
+# module. Currently, we just focus on batch ring and varlen llama3 for simplicity.
+def apply_context_parallelism(
+    batch: dict[str, torch.Tensor],
+    local_rank: int,
+    local_world_size: int,
+    gradient_accumulation_steps: int,
+    ring_attn_func: RingAttnFunc,  # pylint: disable=unused-argument
+) -> tuple[dict[str, torch.Tensor], int, iwnt]:
+    """
+    Apply context parallelism slicing to a batch.
+
+    Special handling is implemented for integer logits_to_keep, which indicates
+    to only keep the last N tokens in the input sequence during generation.
+
+    Args:
+        batch: Batch dictionary (e.g., input_ids, attention_mask, etc.).
+        local_rank: Local rank in the context parallel group.
+        local_world_size: World size of the context parallel group.
+        gradient_accumulation_steps: Number of steps to accumulate gradients over.
+        ring_attn_func: Which ring attention function to use. Currently unused, but
+            related to above TODO.
+
+    Returns:
+        tuple of:
+            - Batch dictionary with sliced tensors.
+            - The original sequence length before padding.
+            - The number of padding tokens added.
+    """
+    original_seq_len = batch["input_ids"].size(1)
+
+    # Update ring attention params if needed
+    if batch.get("position_ids") is not None:
+        update_ring_attn_params(position_ids=batch["position_ids"])
+    else:
+        # If position_ids aren't already in the batch, create them
+        batch["position_ids"] = torch.arange(
+            0,
+            original_seq_len,
+            dtype=torch.long,
+            device=batch["input_ids"].device,
+        ).expand(batch["input_ids"].size(0), -1)
+
+    if "logits_to_keep" in batch and isinstance(batch["logits_to_keep"], int):
+        logits_to_keep = batch["logits_to_keep"]
+
+        # Calculate which positions in the full sequence contain the last N tokens
+        start_position = max(0, original_seq_len - logits_to_keep)
+        chunk_size = original_seq_len // local_world_size
+        rank_start = local_rank * chunk_size
+        rank_end = rank_start + chunk_size
+
+        # Create a boolean mask tensor for this rank's chunk
+        mask = torch.zeros(
+            chunk_size,
+            dtype=torch.bool,
+            device=batch["input_ids"].device,
+        )
+
+        if rank_end > start_position:
+            # Calculate how many of the last N tokens fall within this rank's range
+            tokens_in_rank = min(rank_end, original_seq_len) - max(
+                rank_start, start_position
+            )
+
+            # Calculate where these tokens start in the local chunk
+            local_start_idx = max(0, start_position - rank_start)
+
+            # Set the appropriate positions in the mask to True
+            mask[local_start_idx : local_start_idx + tokens_in_rank] = True
+
+        # Replace the integer with the boolean mask
+        batch["logits_to_keep"] = mask
+
+    # Add padding to make sequence length divisible by local_world_size
+    total_seq_len = original_seq_len
+    pad_len = 0
+    divisor = min(local_world_size, 64)
+    if total_seq_len % divisor != 0:
+        pad_len = divisor - (total_seq_len % divisor)
+
+        # Apply padding to all relevant tensors
+        for key in batch:
+            if (
+                isinstance(batch[key], torch.Tensor)
+                and batch[key].dim() > 1
+                and batch[key].size(1) == total_seq_len
+            ):
+                # Create padding tensor
+                pad_value = -100 if key == "labels" else 0
+                padding = torch.full(
+                    (batch[key].size(0), pad_len, *batch[key].shape[2:]),
+                    pad_value,
+                    dtype=batch[key].dtype,
+                    device=batch[key].device,
+                )
+
+                # Concatenate padding to the right side of the tensor
+                batch[key] = torch.cat([batch[key], padding], dim=1)
+            if key == "logits_to_keep":
+                # Create padding tensor
+                padding = torch.ones(
+                    1,
+                    dtype=batch[key].dtype,
+                    device=batch[key].device,
+                )
+
+                # Concatenate padding to the right side of the tensor
+                batch[key] = torch.cat([batch[key], padding], dim=0)
+
+        # Update the total sequence length after padding
+        total_seq_len = batch["input_ids"].size(1)
+
+    # Slice batch for context parallel
+    for key in batch:
+        if not isinstance(batch[key], torch.Tensor) or batch[key].dim() <= 1:
+            continue
+
+        # Split in sequential fashion and grab this rank's chunk
+        if batch[key].size(1) == total_seq_len:
+            batch[key] = (
+                batch[key].chunk(local_world_size, dim=1)[local_rank].contiguous()
+            )
+        elif key == "logits_to_keep":
+            batch[key] = (
+                batch[key].chunk(local_world_size, dim=0)[local_rank].contiguous()
+            )
+
+        # Handle num_items_in_batch
+        if "num_items_in_batch" in batch:
+            # Approximation; this needed since num_items_in_batch may be counted across
+            # all samples in a gradient accumulated batch, not on a per-step basis.
+            batch["num_items_in_batch"] = (
+                batch["labels"] != -100
+            ).sum() * gradient_accumulation_steps
+
+    return batch, original_seq_len, pad_len
