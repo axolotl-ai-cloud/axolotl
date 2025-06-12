@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 
 
 def test_magistral_chat_template(magistral_tokenizer: "HFMistralTokenizer"):
+    # pylint: disable=duplicate-code
     from axolotl.prompt_strategies.chat_template import MistralPrompter, MistralStrategy
 
     # check bos, eos, pad, unk are accessible properties
