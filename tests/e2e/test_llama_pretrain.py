@@ -23,7 +23,9 @@ class TestPretrainLlama:
     )
     def test_pretrain(self, temp_dir, sample_packing, pretrain_multipack_attn):
         if not sample_packing and pretrain_multipack_attn:
-            return
+            pytest.skip(
+                "Combination not supported (multipack attention without sample packing)"
+            )
 
         # pylint: disable=duplicate-code
         cfg = DictDefault(
