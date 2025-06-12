@@ -48,6 +48,13 @@ class TokenizedPromptDataset(Dataset):
         features = dataset.features.keys()
         num_proc = min(64, self.process_count if self.process_count else os.cpu_count())
 
+        # Disable multiprocessing if the tokenizer doesn't support it (e.g., mistral_common)
+        if not getattr(self.prompt_tokenizer, "supports_multiprocessing", True):
+            LOG.info(
+                "Disabling multiprocessing for tokenizer as it doesn't support it (e.g., mistral_common)"
+            )
+            num_proc = 1
+
         map_kwargs = {}
         if self.prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True

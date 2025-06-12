@@ -18,6 +18,7 @@ class ModelInputConfig(BaseModel):
     tokenizer_config: str | None = None
     tokenizer_use_fast: bool | None = None
     tokenizer_legacy: bool | None = None
+    tokenizer_use_mistral_common: bool | None = None
     tokenizer_type: str | None = Field(
         default=None, json_schema_extra={"description": "transformers tokenizer class"}
     )

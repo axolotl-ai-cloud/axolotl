@@ -2,8 +2,10 @@
 HF Chat Templates prompt strategy
 """
 
+# pylint: disable=too-many-lines
+
 from collections import defaultdict
-from typing import Any, Dict, List, Set, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
 
 from pydantic import BaseModel
 from transformers import ProcessorMixin
@@ -14,6 +16,9 @@ from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import DatasetConfig
+
+if TYPE_CHECKING:
+    from axolotl.utils.mistral_tokenizer import HFMistralTokenizer
 
 # Configure the logger
 LOG = get_logger(__name__)
@@ -81,7 +86,7 @@ class ChatTemplatePrompter(Prompter):
 
     def build_prompt(
         self,
-        conversation,
+        conversation: list[dict],
         add_generation_prompt=False,
         images=None,
         tools=None,
@@ -271,9 +276,15 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         self.train_on_eot = train_on_eot if train_on_eot is not None else train_on_eos
 
         # Default to eos_token if eot_tokens not provided
-        self.eot_tokens = (
-            eot_tokens if eot_tokens is not None else [self.tokenizer.eos_token]
-        )
+        self.eot_tokens = []
+        if eot_tokens is not None:
+            self.eot_tokens = eot_tokens
+        elif (
+            hasattr(self.tokenizer, "eos_token")
+            and self.tokenizer.eos_token is not None
+        ):
+            self.eot_tokens = [self.tokenizer.eos_token]
+
         self.split_thinking = split_thinking
 
         self.images = "images"
@@ -796,13 +807,103 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         )
 
 
+class MistralStrategy(ChatTemplateStrategy):
+    """
+    Mistral strategy for chat template.
+    """
+
+    def __init__(
+        self,
+        prompter: "ChatTemplatePrompter",
+        tokenizer: "HFMistralTokenizer",
+        train_on_inputs: bool,
+        sequence_len: int,
+        roles_to_train: list[str] | None = None,
+        train_on_eos: str | None = None,
+        train_on_eot: str | None = None,
+        eot_tokens: list[str] | None = None,
+        split_thinking: bool | None = False,
+    ):
+        # Call the parent's parent __init__ (PromptTokenizingStrategy) to skip ChatTemplateStrategy's validation
+        # pylint: disable=non-parent-init-called,super-init-not-called
+        PromptTokenizingStrategy.__init__(
+            self, prompter, tokenizer, train_on_inputs, sequence_len
+        )
+        self.prompter: ChatTemplatePrompter = prompter
+
+        self.roles_to_train = []
+        if roles_to_train:
+            # map roles if exist in prompter.roles else use the role as is
+            self.roles_to_train = [
+                prompter.roles.get(role, role) for role in roles_to_train
+            ]
+
+        self.train_on_eos = train_on_eos
+        # Backward compatibility, load from train_on_eos
+        self.train_on_eot = train_on_eot if train_on_eot is not None else train_on_eos
+
+        # Default to eos_token if eot_tokens not provided
+        self.eot_tokens = []
+        if eot_tokens is not None:
+            self.eot_tokens = eot_tokens
+        else:
+            # set eot_tokens to the eos_token
+            self.eot_tokens = [self.tokenizer.eos_token]
+
+        self.split_thinking = split_thinking
+
+        self.images = "images"
+
+        LOG.debug(
+            f"The chat template uses the following properites on the message: {self.prompter.chat_template_msg_variables}"
+        )
+
+        # Skip the validation that ChatTemplateStrategy calls
+        # TODO: address this in the future with mistral-specific checks
+        # self._validate_eot_and_eos_tokens()
+
+    @property
+    def supports_multiprocessing(self) -> bool:
+        """
+        Whether this tokenizing strategy supports multiprocessing.
+        mistral_common tokenizers cannot be pickled for multiprocessing.
+        """
+
+        return False
+
+    def find_first_eot_token(self, input_ids, start_idx):
+        """Find the first EOT token in the input_ids starting from start_idx."""
+        # mistral-common tokenizer does not support eot_tokens
+        return self.find_first_eos_token(input_ids, start_idx)
+
+
+class MistralPrompter(ChatTemplatePrompter):
+    """
+    Mistral prompter for chat template.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self._chat_template_msg_variables = set(["tool_call_id", "name", "tool_calls"])
+
+
 class StrategyLoader:
     """
     Load chat template strategy based on configuration.
     """
 
-    def _get_strategy_cls(self):
+    def _get_strategy_cls(self, cfg):
+        if cfg.tokenizer_use_mistral_common:
+            return MistralStrategy
+
         return ChatTemplateStrategy
+
+    def _get_prompter_cls(self, cfg):
+        if cfg.tokenizer_use_mistral_common:
+            return MistralPrompter
+
+        return ChatTemplatePrompter
 
     def _get_strategy_params(self, cfg, ds_cfg: Dict[str, Any]):
         return {
@@ -829,9 +930,14 @@ class StrategyLoader:
         else:
             dataset_config = ds_cfg
 
-        chat_template_string = get_chat_template_from_config(
-            cfg=cfg, ds_cfg=dataset_config, tokenizer=tokenizer
-        )
+        if cfg.tokenizer_use_mistral_common:
+            # mistral-common does not use this, so we pass an empty string
+            chat_template_string = ""
+        else:
+            chat_template_string = get_chat_template_from_config(
+                cfg=cfg, ds_cfg=dataset_config, tokenizer=tokenizer
+            )
+
         LOG.info(f"Using chat template:\n---\n{chat_template_string!s}\n---")
 
         prompter_params = {
@@ -857,10 +963,11 @@ class StrategyLoader:
         }
 
         strategy_params = self._get_strategy_params(cfg, dataset_config)
-        strategy_cls = self._get_strategy_cls()
+        strategy_cls = self._get_strategy_cls(cfg)
+        prompter_cls = self._get_prompter_cls(cfg)
 
         strategy = strategy_cls(
-            ChatTemplatePrompter(**prompter_params),
+            prompter_cls(**prompter_params),
             tokenizer=tokenizer,
             **strategy_params,
         )

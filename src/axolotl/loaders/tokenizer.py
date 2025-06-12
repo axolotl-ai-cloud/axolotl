@@ -121,6 +121,19 @@ def modify_tokenizer_files(
 
 def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     """Load and configure the tokenizer based on the provided config."""
+
+    def _load_mistral_common_tokenizer(cfg: DictDefault):
+        """Load mistral-common tokenizer"""
+        from axolotl.utils.mistral_tokenizer import HFMistralTokenizer
+
+        # Load the HF-compatible wrapper around MistralTokenizer
+        tokenizer = HFMistralTokenizer.from_pretrained(cfg.tokenizer_config)
+
+        return tokenizer
+
+    if cfg.tokenizer_use_mistral_common:
+        return _load_mistral_common_tokenizer(cfg)
+
     model_config = load_model_config(cfg)
     tokenizer_kwargs = {}
     use_fast = True  # this is the default

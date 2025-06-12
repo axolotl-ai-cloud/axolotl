@@ -1265,6 +1265,68 @@ class AxolotlInputConfig(
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_tokenizer_use_mistral_common(cls, data):
+        if data.get("tokenizer_use_mistral_common") is None:
+            if any(
+                "magistral" in name.lower()
+                for name in [
+                    data.get("base_model", ""),
+                    data.get("base_model_config", ""),
+                    data.get("tokenizer_config", ""),
+                ]
+            ):
+                LOG.warning(
+                    "tokenizer_use_mistral_common auto inferred to True for Magistral models. Please set it to True explicitly if you want to use mistral-common tokenizer."
+                )
+                data["tokenizer_use_mistral_common"] = True
+
+        return data
+
+    @field_validator("tokenizer_use_mistral_common", mode="after")
+    @classmethod
+    def check_mistral_common_import(cls, tokenizer_use_mistral_common):
+        if tokenizer_use_mistral_common:
+            try:
+                import mistral_common  # noqa: F401 # pylint:disable=unused-import
+            except ImportError as exception:
+                raise ImportError(
+                    "mistral-common is required for mistral models. Please install it with `pip install axolotl` or `pip install -e .`."
+                ) from exception
+
+        return tokenizer_use_mistral_common
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_mistral_common_incompatible_options(cls, data):
+        if not data.get("tokenizer_use_mistral_common"):
+            return data
+
+        # NOTE: mistral-common tokenizer is not compatible with editing tokenizer at the moment
+
+        if data.get("added_tokens_overrides"):
+            raise ValueError(
+                "added_tokens_overrides is not supported with mistral-common tokenizer"
+            )
+
+        if data.get("special_tokens"):
+            raise ValueError(
+                "special_tokens override is not supported with mistral-common tokenizer"
+            )
+
+        if data.get("tokens"):
+            raise ValueError(
+                "tokens override is not supported with mistral-common tokenizer"
+            )
+
+        if data.get("chat_template"):
+            raise ValueError(
+                "Setting chat_template is not supported with mistral-common tokenizer"
+            )
+
+        return data
+
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """wrapper to valdiate gpu capabilities with the configured options"""
