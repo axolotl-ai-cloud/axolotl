@@ -348,7 +348,7 @@ class HFMistralTokenizer:
         if tokenize:
             return tokens
 
-        return self._mistral.decode(tokens)
+        return self.decode(tokens)
 
     def pad(
         self,
