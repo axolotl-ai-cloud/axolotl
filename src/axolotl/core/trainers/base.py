@@ -114,6 +114,7 @@ class AxolotlTrainer(
             bin_size=self.args.sample_packing_bin_size,
             sequential=self.args.sample_packing_sequentially,
             drop_last=True,
+            num_processes=self.args.dataset_num_proc,
         )
 
     def _get_train_sampler(

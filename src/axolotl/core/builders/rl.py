@@ -90,10 +90,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         else:
             training_args_kwargs["remove_unused_columns"] = False
 
-        # only rlhf
-        if self.cfg.dataset_processes:
-            training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
-
         if self.cfg.trl and self.cfg.trl.beta is not None:
             training_args_kwargs["beta"] = self.cfg.trl.beta
         elif self.cfg.rl_beta is not None:

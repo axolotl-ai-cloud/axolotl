@@ -467,6 +467,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 bin_size=cfg.sample_packing_bin_size,
                 sequential=cfg.sample_packing_sequentially,
                 drop_last=True,
+                num_processes=cfg.dataset_processes,
             )
 
             data_loader = DataLoader(

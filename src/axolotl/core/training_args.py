@@ -68,6 +68,10 @@ class AxolotlTrainingMixins:
         default=2048,
         metadata={"help": "The maximum sequence length the model can handle"},
     )
+    dataset_num_proc: int | None = field(
+        default=None,
+        metadata={"help": "The number of processes to use for data processing"},
+    )
     relora_steps: Optional[int] = field(
         default=None,
         metadata={"help": "how often to reset for ReLoRA"},
