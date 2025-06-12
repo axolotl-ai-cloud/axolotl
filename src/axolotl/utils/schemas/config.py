@@ -1292,7 +1292,7 @@ class AxolotlInputConfig(
                 import mistral_common  # noqa: F401 # pylint:disable=unused-import
             except ImportError as exception:
                 raise ImportError(
-                    "mistral-common is required for mistral models. Please install it with `pip install axolotl[mistral]` or `pip install -e .[mistral]`."
+                    "mistral-common is required for mistral models. Please install it with `pip install axolotl` or `pip install -e .`."
                 ) from exception
 
         return tokenizer_use_mistral_common
