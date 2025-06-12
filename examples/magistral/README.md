@@ -33,6 +33,8 @@ axolotl fetch examples
 axolotl train examples/magistral/magistral-small-qlora.yaml
 ```
 
+This config uses about 24GB VRAM.
+
 Let us know how it goes. Happy finetuning! 🚀
 
 ### TIPS
