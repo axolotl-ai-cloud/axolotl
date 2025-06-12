@@ -512,7 +512,7 @@ and the QAT documentation in the <a href="https://github.com/pytorch/ao/tree/mai
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">weight_dtype</span><span class="kw">:</span><span class="co"> # Optional[str] = "int8". Fake quantization layout to use for weight quantization. Valid options are "int4" and "int8"</span></span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">group_size</span><span class="kw">:</span><span class="co"> # Optional[int] = 32. The number of elements in each group for per-group fake quantization</span></span>
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fake_quant_after_n_steps</span><span class="kw">:</span><span class="co"> # Optional[int] = None. The number of steps to apply fake quantization after</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Once you have finished training, you must quantize your model by using the same quantization configuration which you used to train the model with. You can use the <a href="./quantize.md"><code>quantize</code> command</a> to do this.</p>
+<p>Once you have finished training, you must quantize your model by using the same quantization configuration which you used to train the model with. You can use the <a href="../docs/quantize.html"><code>quantize</code></a> command to do this.</p>
 
 
 </section>

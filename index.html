@@ -467,16 +467,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#quick-start" id="toc-quick-start" class="nav-link active" data-scroll-target="#quick-start">🚀 Quick Start</a>
+  <li><a href="#latest-updates" id="toc-latest-updates" class="nav-link active" data-scroll-target="#latest-updates">🎉 Latest Updates</a></li>
+  <li><a href="#overview" id="toc-overview" class="nav-link" data-scroll-target="#overview">✨ Overview</a></li>
+  <li><a href="#quick-start" id="toc-quick-start" class="nav-link" data-scroll-target="#quick-start">🚀 Quick Start</a>
   <ul class="collapse">
   <li><a href="#installation" id="toc-installation" class="nav-link" data-scroll-target="#installation">Installation</a></li>
   <li><a href="#your-first-fine-tune" id="toc-your-first-fine-tune" class="nav-link" data-scroll-target="#your-first-fine-tune">Your First Fine-tune</a></li>
   </ul></li>
-  <li><a href="#key-features" id="toc-key-features" class="nav-link" data-scroll-target="#key-features">✨ Key Features</a></li>
   <li><a href="#documentation" id="toc-documentation" class="nav-link" data-scroll-target="#documentation">📚 Documentation</a></li>
   <li><a href="#getting-help" id="toc-getting-help" class="nav-link" data-scroll-target="#getting-help">🤝 Getting Help</a></li>
   <li><a href="#contributing" id="toc-contributing" class="nav-link" data-scroll-target="#contributing">🌟 Contributing</a></li>
-  <li><a href="#supported-models" id="toc-supported-models" class="nav-link" data-scroll-target="#supported-models">Supported Models</a></li>
   <li><a href="#sponsors" id="toc-sponsors" class="nav-link" data-scroll-target="#sponsors">❤️ Sponsors</a></li>
   <li><a href="#license" id="toc-license" class="nav-link" data-scroll-target="#license">📜 License</a></li>
   </ul>
@@ -510,27 +510,31 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests-nightly.yml/badge.svg" alt="tests-nightly">
 <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/multi-gpu-e2e.yml/badge.svg" alt="multigpu-semi-weekly tests">
 </p>
-<p>Axolotl is a tool designed to streamline post-training for various AI models.
-Post-training refers to any modifications or additional training performed on
-pre-trained models - including full model fine-tuning, parameter-efficient tuning (like
-LoRA and QLoRA), supervised fine-tuning (SFT), instruction tuning, and alignment
-techniques. With support for multiple model architectures and training configurations,
-Axolotl makes it easy to get started with these techniques.</p>
-<p>Axolotl is designed to work with YAML config files that contain everything you need to
-preprocess a dataset, train or fine-tune a model, run model inference or evaluation,
-and much more.</p>
+<section id="latest-updates" class="level2">
+<h2 class="anchored" data-anchor-id="latest-updates">🎉 Latest Updates</h2>
+<ul>
+<li>2025/05: Quantization Aware Training (QAT) support has been added to Axolotl. Explore the <a href="https://docs.axolotl.ai/docs/qat.html">docs</a> to learn more!</li>
+<li>2025/04: Llama 4 support has been added in Axolotl. See <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/llama-4">examples</a> to start training your own Llama 4 models with Axolotl’s linearized version!</li>
+<li>2025/03: Axolotl has implemented Sequence Parallelism (SP) support. Read the <a href="https://huggingface.co/blog/axolotl-ai-co/long-context-with-sequence-parallelism-in-axolotl">blog</a> and <a href="https://docs.axolotl.ai/docs/sequence_parallelism.html">docs</a> to learn how to scale your context length when fine-tuning.</li>
+<li>2025/03: (Beta) Fine-tuning Multimodal models is now supported in Axolotl. Check out the <a href="https://docs.axolotl.ai/docs/multimodal.html">docs</a> to fine-tune your own!</li>
+<li>2025/02: Axolotl has added LoRA optimizations to reduce memory usage and improve training speed for LoRA and QLoRA in single GPU and multi-GPU training (DDP and DeepSpeed). Jump into the <a href="https://docs.axolotl.ai/docs/lora_optims.html">docs</a> to give it a try.</li>
+<li>2025/02: Axolotl has added GRPO support. Dive into our <a href="https://huggingface.co/blog/axolotl-ai-co/training-llms-w-interpreter-feedback-wasm">blog</a> and <a href="https://github.com/axolotl-ai-cloud/grpo_code">GRPO example</a> and have some fun!</li>
+<li>2025/01: Axolotl has added Reward Modelling / Process Reward Modelling fine-tuning support. See <a href="https://docs.axolotl.ai/docs/reward_modelling.html">docs</a>.</li>
+</ul>
+</section>
+<section id="overview" class="level2">
+<h2 class="anchored" data-anchor-id="overview">✨ Overview</h2>
+<p>Axolotl is a tool designed to streamline post-training for various AI models.</p>
 <p>Features:</p>
 <ul>
-<li>Train various Huggingface models such as llama, pythia, falcon, mpt</li>
-<li>Supports fullfinetune, lora, qlora, relora, and gptq</li>
-<li>Customize configurations using a simple yaml file or CLI overwrite</li>
-<li>Load different dataset formats, use custom formats, or bring your own tokenized datasets</li>
-<li>Integrated with <a href="https://github.com/facebookresearch/xformers">xformers</a>, flash attention, <a href="https://github.com/linkedin/Liger-Kernel">liger kernel</a>, rope scaling, and multipacking</li>
-<li>Works with single GPU or multiple GPUs via FSDP or Deepspeed</li>
-<li>Easily run with Docker locally or on the cloud</li>
-<li>Log results and optionally checkpoints to wandb, mlflow or Comet</li>
-<li>And more!</li>
+<li><strong>Multiple Model Support</strong>: Train various models like LLaMA, Mistral, Mixtral, Pythia, and more. We are compatible with HuggingFace transformers causal language models.</li>
+<li><strong>Training Methods</strong>: Full fine-tuning, LoRA, QLoRA, GPTQ, QAT, Preference Tuning (DPO, IPO, KTO, ORPO), RL (GRPO), Multimodal, and Reward Modelling (RM) / Process Reward Modelling (PRM).</li>
+<li><strong>Easy Configuration</strong>: Re-use a single YAML file between dataset preprocess, training, evaluation, quantization, and inference.</li>
+<li><strong>Performance Optimizations</strong>: <a href="https://docs.axolotl.ai/docs/multipack.html">Multipacking</a>, <a href="https://github.com/Dao-AILab/flash-attention">Flash Attention</a>, <a href="https://github.com/facebookresearch/xformers">Xformers</a>, <a href="https://pytorch.org/blog/flexattention/">Flex Attention</a>, <a href="https://github.com/linkedin/Liger-Kernel">Liger Kernel</a>, <a href="https://github.com/apple/ml-cross-entropy/tree/main">Cut Cross Entropy</a>, Sequence Parallelism (SP), LoRA optimizations, Multi-GPU training (FSDP1, FSDP2, DeepSpeed), Multi-node training (Torchrun, Ray), and many more!</li>
+<li><strong>Flexible Dataset Handling</strong>: Load from local, HuggingFace, and cloud (S3, Azure, GCP, OCI) datasets.</li>
+<li><strong>Cloud Ready</strong>: We ship <a href="https://hub.docker.com/u/axolotlai">Docker images</a> and also <a href="https://pypi.org/project/axolotl/">PyPI packages</a> for use on cloud platforms and local hardware.</li>
 </ul>
+</section>
 <section id="quick-start" class="level2">
 <h2 class="anchored" data-anchor-id="quick-start">🚀 Quick Start</h2>
 <p><strong>Requirements</strong>:</p>
@@ -562,22 +566,12 @@ and much more.</p>
 <p>That’s it! Check out our <a href="https://docs.axolotl.ai/docs/getting-started.html">Getting Started Guide</a> for a more detailed walkthrough.</p>
 </section>
 </section>
-<section id="key-features" class="level2">
-<h2 class="anchored" data-anchor-id="key-features">✨ Key Features</h2>
-<ul>
-<li><strong>Multiple Model Support</strong>: Train various models like LLaMA, Mistral, Mixtral, Pythia, and more</li>
-<li><strong>Training Methods</strong>: Full fine-tuning, LoRA, QLoRA, and more</li>
-<li><strong>Easy Configuration</strong>: Simple YAML files to control your training setup</li>
-<li><strong>Performance Optimizations</strong>: Flash Attention, xformers, multi-GPU training</li>
-<li><strong>Flexible Dataset Handling</strong>: Use various formats and custom datasets</li>
-<li><strong>Cloud Ready</strong>: Run on cloud platforms or local hardware</li>
-</ul>
-</section>
 <section id="documentation" class="level2">
 <h2 class="anchored" data-anchor-id="documentation">📚 Documentation</h2>
 <ul>
 <li><a href="https://docs.axolotl.ai/docs/installation.html">Installation Options</a> - Detailed setup instructions for different environments</li>
 <li><a href="https://docs.axolotl.ai/docs/config.html">Configuration Guide</a> - Full configuration options and examples</li>
+<li><a href="https://docs.axolotl.ai/docs/dataset_loading.html">Dataset Loading</a> - Loading datasets from various sources</li>
 <li><a href="https://docs.axolotl.ai/docs/dataset-formats/">Dataset Guide</a> - Supported formats and how to use them</li>
 <li><a href="https://docs.axolotl.ai/docs/multi-gpu.html">Multi-GPU Training</a></li>
 <li><a href="https://docs.axolotl.ai/docs/multi-node.html">Multi-Node Training</a></li>
@@ -598,198 +592,6 @@ and much more.</p>
 <section id="contributing" class="level2">
 <h2 class="anchored" data-anchor-id="contributing">🌟 Contributing</h2>
 <p>Contributions are welcome! Please see our <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/.github/CONTRIBUTING.md">Contributing Guide</a> for details.</p>
-</section>
-<section id="supported-models" class="level2">
-<h2 class="anchored" data-anchor-id="supported-models">Supported Models</h2>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 14%">
-<col style="width: 12%">
-<col style="width: 6%">
-<col style="width: 7%">
-<col style="width: 6%">
-<col style="width: 21%">
-<col style="width: 13%">
-<col style="width: 15%">
-</colgroup>
-<thead>
-<tr class="header">
-<th></th>
-<th style="text-align: left;">fp16/fp32</th>
-<th style="text-align: left;">lora</th>
-<th>qlora</th>
-<th>gptq</th>
-<th>gptq w/flash attn</th>
-<th>flash attn</th>
-<th>xformers attn</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>llama</td>
-<td style="text-align: left;">✅</td>
-<td style="text-align: left;">✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr class="even">
-<td>Mistral</td>
-<td style="text-align: left;">✅</td>
-<td style="text-align: left;">✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr class="odd">
-<td>Mixtral-MoE</td>
-<td style="text-align: left;">✅</td>
-<td style="text-align: left;">✅</td>
-<td>✅</td>
-<td>❓</td>
-<td>❓</td>
-<td>❓</td>
-<td>❓</td>
-</tr>
-<tr class="even">
-<td>Mixtral8X22</td>
-<td style="text-align: left;">✅</td>
-<td style="text-align: left;">✅</td>
-<td>✅</td>
-<td>❓</td>
-<td>❓</td>
-<td>❓</td>
-<td>❓</td>
-</tr>
-<tr class="odd">
-<td>Pythia</td>
-<td style="text-align: left;">✅</td>
-<td style="text-align: left;">✅</td>
-<td>✅</td>
-<td>❌</td>
-<td>❌</td>
-<td>❌</td>
-<td>❓</td>
-</tr>
-<tr class="even">
-<td>cerebras</td>
-<td style="text-align: left;">✅</td>
-<td style="text-align: left;">✅</td>
-<td>✅</td>
-<td>❌</td>
-<td>❌</td>
-<td>❌</td>
-<td>❓</td>
-</tr>
-<tr class="odd">
-<td>btlm</td>
-<td style="text-align: left;">✅</td>
-<td style="text-align: left;">✅</td>
-<td>✅</td>
-<td>❌</td>
-<td>❌</td>
-<td>❌</td>
-<td>❓</td>
-</tr>
-<tr class="even">
-<td>mpt</td>
-<td style="text-align: left;">✅</td>
-<td style="text-align: left;">❌</td>
-<td>❓</td>
-<td>❌</td>
-<td>❌</td>
-<td>❌</td>
-<td>❓</td>
-</tr>
-<tr class="odd">
-<td>falcon</td>
-<td style="text-align: left;">✅</td>
-<td style="text-align: left;">✅</td>
-<td>✅</td>
-<td>❌</td>
-<td>❌</td>
-<td>❌</td>
-<td>❓</td>
-</tr>
-<tr class="even">
-<td>gpt-j</td>
-<td style="text-align: left;">✅</td>
-<td style="text-align: left;">✅</td>
-<td>✅</td>
-<td>❌</td>
-<td>❌</td>
-<td>❓</td>
-<td>❓</td>
-</tr>
-<tr class="odd">
-<td>XGen</td>
-<td style="text-align: left;">✅</td>
-<td style="text-align: left;">❓</td>
-<td>✅</td>
-<td>❓</td>
-<td>❓</td>
-<td>❓</td>
-<td>✅</td>
-</tr>
-<tr class="even">
-<td>phi</td>
-<td style="text-align: left;">✅</td>
-<td style="text-align: left;">✅</td>
-<td>✅</td>
-<td>❓</td>
-<td>❓</td>
-<td>❓</td>
-<td>❓</td>
-</tr>
-<tr class="odd">
-<td>RWKV</td>
-<td style="text-align: left;">✅</td>
-<td style="text-align: left;">❓</td>
-<td>❓</td>
-<td>❓</td>
-<td>❓</td>
-<td>❓</td>
-<td>❓</td>
-</tr>
-<tr class="even">
-<td>Qwen</td>
-<td style="text-align: left;">✅</td>
-<td style="text-align: left;">✅</td>
-<td>✅</td>
-<td>❓</td>
-<td>❓</td>
-<td>❓</td>
-<td>❓</td>
-</tr>
-<tr class="odd">
-<td>Gemma</td>
-<td style="text-align: left;">✅</td>
-<td style="text-align: left;">✅</td>
-<td>✅</td>
-<td>❓</td>
-<td>❓</td>
-<td>✅</td>
-<td>❓</td>
-</tr>
-<tr class="even">
-<td>Jamba</td>
-<td style="text-align: left;">✅</td>
-<td style="text-align: left;">✅</td>
-<td>✅</td>
-<td>❓</td>
-<td>❓</td>
-<td>✅</td>
-<td>❓</td>
-</tr>
-</tbody>
-</table>
-<p>✅: supported
-❌: not supported
-❓: untested</p>
 </section>
 <section id="sponsors" class="level2">
 <h2 class="anchored" data-anchor-id="sponsors">❤️ Sponsors</h2>
