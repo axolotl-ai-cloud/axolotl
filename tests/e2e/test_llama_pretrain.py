@@ -14,19 +14,14 @@ class TestPretrainLlama:
     """Test case for Llama models w pretraining"""
 
     @pytest.mark.parametrize(
-        "sample_packing",
-        [True, False],
-    )
-    @pytest.mark.parametrize(
-        "pretrain_multipack_attn",
-        [True, False],
+        ("sample_packing", "pretrain_multipack_attn"),
+        [
+            (False, False),
+            (True, True),
+            (True, False),
+        ],
     )
     def test_pretrain(self, temp_dir, sample_packing, pretrain_multipack_attn):
-        if not sample_packing and pretrain_multipack_attn:
-            pytest.skip(
-                "Combination not supported (multipack attention without sample packing)"
-            )
-
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
