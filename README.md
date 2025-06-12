@@ -22,28 +22,31 @@
     <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/multi-gpu-e2e.yml/badge.svg" alt="multigpu-semi-weekly tests">
 </p>
 
-Axolotl is a tool designed to streamline post-training for various AI models.
-Post-training refers to any modifications or additional training performed on
-pre-trained models - including full model fine-tuning, parameter-efficient tuning (like
-LoRA and QLoRA), supervised fine-tuning (SFT), instruction tuning, and alignment
-techniques. With support for multiple model architectures and training configurations,
-Axolotl makes it easy to get started with these techniques.
 
-Axolotl is designed to work with YAML config files that contain everything you need to
-preprocess a dataset, train or fine-tune a model, run model inference or evaluation,
-and much more.
+## 🎉 Latest Updates
+
+- 2025/05: Quantization Aware Training (QAT) support has been added to Axolotl. Explore the [docs](https://docs.axolotl.ai/docs/qat.html) to learn more!
+- 2025/04: Llama 4 support has been added in Axolotl. See [examples](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/llama-4) to start training your own Llama 4 models with Axolotl's linearized version!
+- 2025/03: Axolotl has implemented Sequence Parallelism (SP) support. Read the [blog](https://huggingface.co/blog/axolotl-ai-co/long-context-with-sequence-parallelism-in-axolotl) and [docs](https://docs.axolotl.ai/docs/sequence_parallelism.html) to learn how to scale your context length when fine-tuning.
+- 2025/03: (Beta) Fine-tuning Multimodal models is now supported in Axolotl. Check out the [docs](https://docs.axolotl.ai/docs/multimodal.html) to fine-tune your own!
+- 2025/02: Axolotl has added LoRA optimizations to reduce memory usage and improve training speed for LoRA and QLoRA in single GPU and multi-GPU training (DDP and DeepSpeed). Jump into the [docs](https://docs.axolotl.ai/docs/lora_optims.html) to give it a try.
+- 2025/02: Axolotl has added GRPO support. Dive into our [blog](https://huggingface.co/blog/axolotl-ai-co/training-llms-w-interpreter-feedback-wasm) and [GRPO example](https://github.com/axolotl-ai-cloud/grpo_code) and have some fun!
+- 2025/01: Axolotl has added Reward Modelling / Process Reward Modelling fine-tuning support. See [docs](https://docs.axolotl.ai/docs/reward_modelling.html).
+
+## ✨ Overview
+
+Axolotl is a tool designed to streamline post-training for various AI models.
 
 Features:
 
-- Train various Huggingface models such as llama, pythia, falcon, mpt
-- Supports fullfinetune, lora, qlora, relora, and gptq
-- Customize configurations using a simple yaml file or CLI overwrite
-- Load different dataset formats, use custom formats, or bring your own tokenized datasets
-- Integrated with [xformers](https://github.com/facebookresearch/xformers), flash attention, [liger kernel](https://github.com/linkedin/Liger-Kernel), rope scaling, and multipacking
-- Works with single GPU or multiple GPUs via FSDP or Deepspeed
-- Easily run with Docker locally or on the cloud
-- Log results and optionally checkpoints to wandb, mlflow or Comet
-- And more!
+- **Multiple Model Support**: Train various models like LLaMA, Mistral, Mixtral, Pythia, and more. We are compatible with HuggingFace transformers causal language models.
+- **Training Methods**: Full fine-tuning, LoRA, QLoRA, GPTQ, QAT, Preference Tuning (DPO, IPO, KTO, ORPO), RL (GRPO), Multimodal, and Reward Modelling (RM) / Process Reward Modelling (PRM).
+- **Easy Configuration**: Re-use a single YAML file between dataset preprocess, training, evaluation, quantization, and inference.
+- **Performance Optimizations**: [Multipacking](https://docs.axolotl.ai/docs/multipack.html), [Flash Attention](https://github.com/Dao-AILab/flash-attention), [Xformers](https://github.com/facebookresearch/xformers), [Flex Attention](https://pytorch.org/blog/flexattention/), [Liger Kernel](https://github.com/linkedin/Liger-Kernel), [Cut Cross Entropy](https://github.com/apple/ml-cross-entropy/tree/main), Sequence Parallelism (SP), LoRA optimizations, Multi-GPU training (FSDP1, FSDP2, DeepSpeed), Multi-node training (Torchrun, Ray), and many more!
+- **Flexible Dataset Handling**: Load from local, HuggingFace, and cloud (S3, Azure, GCP, OCI) datasets.
+- **Cloud Ready**: We ship [Docker images](https://hub.docker.com/u/axolotlai) and also [PyPI packages](https://pypi.org/project/axolotl/) for use on cloud platforms and local hardware.
+
+
 
 ## 🚀 Quick Start
 
@@ -81,19 +84,12 @@ axolotl train examples/llama-3/lora-1b.yml
 
 That's it! Check out our [Getting Started Guide](https://docs.axolotl.ai/docs/getting-started.html) for a more detailed walkthrough.
 
-## ✨ Key Features
-
-- **Multiple Model Support**: Train various models like LLaMA, Mistral, Mixtral, Pythia, and more
-- **Training Methods**: Full fine-tuning, LoRA, QLoRA, and more
-- **Easy Configuration**: Simple YAML files to control your training setup
-- **Performance Optimizations**: Flash Attention, xformers, multi-GPU training
-- **Flexible Dataset Handling**: Use various formats and custom datasets
-- **Cloud Ready**: Run on cloud platforms or local hardware
 
 ## 📚 Documentation
 
 - [Installation Options](https://docs.axolotl.ai/docs/installation.html) - Detailed setup instructions for different environments
 - [Configuration Guide](https://docs.axolotl.ai/docs/config.html) - Full configuration options and examples
+- [Dataset Loading](https://docs.axolotl.ai/docs/dataset_loading.html) - Loading datasets from various sources
 - [Dataset Guide](https://docs.axolotl.ai/docs/dataset-formats/) - Supported formats and how to use them
 - [Multi-GPU Training](https://docs.axolotl.ai/docs/multi-gpu.html)
 - [Multi-Node Training](https://docs.axolotl.ai/docs/multi-node.html)
@@ -111,31 +107,6 @@ That's it! Check out our [Getting Started Guide](https://docs.axolotl.ai/docs/ge
 ## 🌟 Contributing
 
 Contributions are welcome! Please see our [Contributing Guide](https://github.com/axolotl-ai-cloud/axolotl/blob/main/.github/CONTRIBUTING.md) for details.
-
-## Supported Models
-
-|             | fp16/fp32 | lora | qlora | gptq | gptq w/flash attn | flash attn | xformers attn |
-|-------------|:----------|:-----|-------|------|-------------------|------------|--------------|
-| llama       | ✅         | ✅    | ✅     | ✅             | ✅                 | ✅          | ✅            |
-| Mistral     | ✅         | ✅    | ✅     | ✅             | ✅                 | ✅          | ✅            |
-| Mixtral-MoE | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
-| Mixtral8X22 | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
-| Pythia      | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
-| cerebras    | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
-| btlm        | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
-| mpt         | ✅         | ❌    | ❓     | ❌             | ❌                 | ❌          | ❓            |
-| falcon      | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
-| gpt-j       | ✅         | ✅    | ✅     | ❌             | ❌                 | ❓          | ❓            |
-| XGen        | ✅         | ❓    | ✅     | ❓             | ❓                 | ❓          | ✅            |
-| phi         | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
-| RWKV        | ✅         | ❓    | ❓     | ❓             | ❓                 | ❓          | ❓            |
-| Qwen        | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
-| Gemma       | ✅         | ✅    | ✅     | ❓             | ❓                 | ✅          | ❓            |
-| Jamba       | ✅         | ✅    | ✅     | ❓             | ❓                 | ✅          | ❓            |
-
-✅: supported
-❌: not supported
-❓: untested
 
 ## ❤️ Sponsors
 
