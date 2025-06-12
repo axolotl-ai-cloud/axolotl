@@ -473,6 +473,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.prompt_strategies.chat_template.ChatTemplatePrompter" id="toc-axolotl.prompt_strategies.chat_template.ChatTemplatePrompter" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.chat_template.ChatTemplatePrompter">ChatTemplatePrompter</a></li>
   <li><a href="#axolotl.prompt_strategies.chat_template.ChatTemplateStrategy" id="toc-axolotl.prompt_strategies.chat_template.ChatTemplateStrategy" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.chat_template.ChatTemplateStrategy">ChatTemplateStrategy</a></li>
+  <li><a href="#axolotl.prompt_strategies.chat_template.MistralPrompter" id="toc-axolotl.prompt_strategies.chat_template.MistralPrompter" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.chat_template.MistralPrompter">MistralPrompter</a></li>
+  <li><a href="#axolotl.prompt_strategies.chat_template.MistralStrategy" id="toc-axolotl.prompt_strategies.chat_template.MistralStrategy" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.chat_template.MistralStrategy">MistralStrategy</a></li>
   <li><a href="#axolotl.prompt_strategies.chat_template.StrategyLoader" id="toc-axolotl.prompt_strategies.chat_template.StrategyLoader" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.chat_template.StrategyLoader">StrategyLoader</a></li>
   </ul></li>
   </ul></li>
@@ -506,6 +508,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="even">
 <td><a href="#axolotl.prompt_strategies.chat_template.ChatTemplateStrategy">ChatTemplateStrategy</a></td>
 <td>Tokenizing strategy for instruction-based prompts.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.prompt_strategies.chat_template.MistralPrompter">MistralPrompter</a></td>
+<td>Mistral prompter for chat template.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.prompt_strategies.chat_template.MistralStrategy">MistralStrategy</a></td>
+<td>Mistral strategy for chat template.</td>
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.prompt_strategies.chat_template.StrategyLoader">StrategyLoader</a></td>
@@ -560,10 +570,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h6>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 28%">
-<col style="width: 10%">
-<col style="width: 46%">
-<col style="width: 15%">
+<col style="width: 26%">
+<col style="width: 16%">
+<col style="width: 43%">
+<col style="width: 13%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -576,7 +586,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tbody>
 <tr class="odd">
 <td>conversation</td>
-<td></td>
+<td>list[dict]</td>
 <td>A list of messages.</td>
 <td><em>required</em></td>
 </tr>
@@ -666,9 +676,71 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 </section>
 </section>
+<section id="axolotl.prompt_strategies.chat_template.MistralPrompter" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.chat_template.MistralPrompter">MistralPrompter</h3>
+<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.chat_template.MistralPrompter(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Mistral prompter for chat template.</p>
+</section>
+<section id="axolotl.prompt_strategies.chat_template.MistralStrategy" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.chat_template.MistralStrategy">MistralStrategy</h3>
+<div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.chat_template.MistralStrategy(</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    prompter,</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    train_on_inputs,</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    sequence_len,</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>    roles_to_train<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>    train_on_eos<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>    train_on_eot<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>    eot_tokens<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>    split_thinking<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Mistral strategy for chat template.</p>
+<section id="attributes" class="level4">
+<h4 class="anchored" data-anchor-id="attributes">Attributes</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.prompt_strategies.chat_template.MistralStrategy.supports_multiprocessing">supports_multiprocessing</a></td>
+<td>Whether this tokenizing strategy supports multiprocessing.</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="methods-2" class="level4">
+<h4 class="anchored" data-anchor-id="methods-2">Methods</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.prompt_strategies.chat_template.MistralStrategy.find_first_eot_token">find_first_eot_token</a></td>
+<td>Find the first EOT token in the input_ids starting from start_idx.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.prompt_strategies.chat_template.MistralStrategy.find_first_eot_token" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.prompt_strategies.chat_template.MistralStrategy.find_first_eot_token">find_first_eot_token</h5>
+<div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.chat_template.MistralStrategy.find_first_eot_token(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    input_ids,</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    start_idx,</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Find the first EOT token in the input_ids starting from start_idx.</p>
+</section>
+</section>
+</section>
 <section id="axolotl.prompt_strategies.chat_template.StrategyLoader" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.chat_template.StrategyLoader">StrategyLoader</h3>
-<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.chat_template.StrategyLoader()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.chat_template.StrategyLoader()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Load chat template strategy based on configuration.</p>
 
 
