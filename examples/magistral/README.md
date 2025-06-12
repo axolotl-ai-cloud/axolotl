@@ -13,7 +13,7 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
     Here is an example of how to install from main for pip:
 
 ```bash
-# Ensure you have Pytorch installed (we recommend Pytorch 2.6.0)
+# Ensure you have Pytorch installed (Pytorch 2.6.0 recommended)
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 
@@ -56,10 +56,10 @@ The tokenizer does not work with `dataset.map` with multiprocessing, so we had t
 
 ## Related Resources
 
-- [Magistral Blog](https://mistral.ai/news/magistral/)
+- [MistralAI Magistral Blog](https://mistral.ai/news/magistral/)
 - [Axolotl Docs](https://docs.axolotl.ai)
 - [Axolotl Website](https://axolotl.ai)
-- [Axolotl GitHub](https://github.com/axolotl-ai/axolotl)
+- [Axolotl GitHub](https://github.com/axolotl-ai-cloud/axolotl)
 - [Axolotl Discord](https://discord.gg/7m9sfhzaf3)
 
 
