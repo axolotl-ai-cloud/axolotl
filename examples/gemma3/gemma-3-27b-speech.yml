@@ -1,0 +1,77 @@
+# ==== Model & Processor ====
+base_model: voidful/gemma-3-omni-27b-it            # Model name
+base_model_config: voidful/gemma-3-omni-27b-it     # Model config (can usually match base_model)
+model_type: Gemma3OmniForConditionalGeneration     # Model class
+processor_type: AutoProcessor                      # Processor class
+is_multimodal: true                                # Enable multimodal inputs
+trust_remote_code: true                            # Allow loading custom code
+
+# ==== Data Processing ====
+skip_prepare_dataset: true         # Bypass dataset preprocessing (required for vision chat)
+remove_unused_columns: false       # Keep all columns in the dataset
+sample_packing: false              # Do not pack samples
+
+# ==== Distributed Training ====
+ddp_find_unused_parameters: true   # Prevent DDP errors (Gemma3 issue workaround)
+
+# ==== Chat Template ====
+chat_template: gemma3              # Use Gemma3 chat template
+
+# ==== Dataset ====
+datasets:
+  - path: voidful/earica_audio_test      # Dataset path
+    type: chat_template                  # Use chat_template format
+    split: validation                    # Validation split
+    field_messages: messages             # Field name for chat messages
+
+dataset_prepared_path: last_run_prepared # Where to cache processed dataset
+val_set_size: 0.01                       # Validation split size (fraction)
+
+# ==== Sequence & Training ====
+sequence_len: 32768                      # Max sequence length
+pad_to_sequence_len: false               # No padding to full length
+
+gradient_accumulation_steps: 1           # Accumulate gradients (set 1 for minimal config)
+micro_batch_size: 1                      # Batch size per device
+num_epochs: 50                           # Number of training epochs
+optimizer: adamw_torch_fused             # Optimizer
+lr_scheduler: cosine                     # Learning rate scheduler
+learning_rate: 2e-5                      # Learning rate
+max_grad_norm: 1.0                       # Gradient clipping
+
+bf16: true                               # Use bfloat16
+tf32: false                              # Do not use TF32
+
+# ==== Logging ====
+logging_steps: 1                         # Log every step
+flash_attention: false                   # Disable flash attention
+xformers_attention: false                # Disable xformers
+sdp_attention: false                     # Disable SDP attention
+
+# ==== Warmup & Checkpointing ====
+warmup_ratio: 0.01                       # Warmup steps ratio
+saves_per_epoch:                         # (Optional, not set)
+save_steps: 1000                         # Save every 1000 steps
+weight_decay: 0                          # No weight decay
+
+# ==== FSDP Config ====
+fsdp:
+  - full_shard
+  - auto_wrap
+fsdp_config:
+  fsdp_limit_all_gathers: true
+  fsdp_sync_module_states: true
+  fsdp_offload_params: true
+  fsdp_use_orig_params: false
+  fsdp_cpu_ram_efficient_loading: true
+  fsdp_activation_checkpointing: true
+  fsdp_transformer_layer_cls_to_wrap: Gemma3DecoderLayer,SiglipEncoderLayer
+  fsdp_state_dict_type: FULL_STATE_DICT
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+
+# ==== Special Tokens ====
+special_tokens:
+  pad_token: "<pad>"
+
+# ==== Seed ====
+seed: 42                                  # For reproducibility
