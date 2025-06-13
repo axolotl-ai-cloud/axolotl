@@ -539,17 +539,23 @@ def test_kernel_training_integration_dropout_non_zero():
     # Store original state before patching
     original_forward_method = attention_cls.forward
 
+    # Load model
+    model, tokenizer, _ = load_model_and_tokenizer(cfg=cfg)
+
+    # We call modelloader as that's where the patches are applied
+    # despite the fact that we're not using it to load the model
+    model_loader = ModelLoader(cfg, tokenizer)
+
     # Apply patch
-    patch_self_attn_lora(cfg=cfg)
+    model_loader.patch_manager._apply_self_attention_lora_patch()  # pylint: disable=protected-access
 
     # Verify patch was not applied
     assert attention_cls.forward == original_forward_method
 
-    # Load model
-    model, _, _ = load_model_and_tokenizer(cfg=cfg)
-
     # Apply apply_lora_kernel_patches
-    apply_lora_kernel_patches(model, cfg)
+    model_loader.patch_manager._apply_lora_kernel_patch(  # pylint: disable=protected-access
+        model
+    )
 
     # Verify patch was not applied
     layers = get_layers(model)
