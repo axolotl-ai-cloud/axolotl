@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Optional
 import numpy as np
 from huggingface_hub import hf_hub_download
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
-from mistral_common.tokens.tokenizers.tekken import Tekkenizer
+from mistral_common.tokens.tokenizers.tekken import SpecialTokenPolicy, Tekkenizer
 from torch import Tensor
 from transformers.utils import PaddingStrategy
 
@@ -251,10 +251,13 @@ class HFMistralTokenizer:
             token_ids = [token_ids]
 
         if skip_special_tokens:
-            return self._mistral.instruct_tokenizer.tokenizer.decode(token_ids)
+            return self._mistral.instruct_tokenizer.tokenizer.decode(
+                token_ids, special_token_policy=SpecialTokenPolicy.IGNORE
+            )
 
-        # to_string returns a string with special tokens
-        return self._mistral.instruct_tokenizer.tokenizer.to_string(token_ids)
+        return self._mistral.instruct_tokenizer.tokenizer.decode(
+            token_ids, special_token_policy=SpecialTokenPolicy.KEEP
+        )
 
     def _create_mistral_chat_completion_request(
         self, conversation: list[dict], tools: list[dict] | None = None
