@@ -201,7 +201,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             callbacks=self.get_callbacks(),
             **trainer_kwargs,
         )
-        if self.cfg.fsdp:
+        if self.cfg.fsdp_config:
             ensure_dtype(trainer.model, dtype=self.cfg.torch_dtype)
             if self.cfg.rl in [RLType.DPO, RLType.IPO] and trainer.ref_model:
                 ensure_dtype(trainer.ref_model, dtype=self.cfg.torch_dtype)

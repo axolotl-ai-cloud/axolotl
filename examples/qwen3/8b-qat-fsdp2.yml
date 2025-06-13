@@ -1,4 +1,4 @@
-base_model: Qwen/Qwen3-8B
+base_model: Qwen/Qwen3-32B
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
@@ -21,20 +21,28 @@ datasets:
 
 output_dir: ./outputs/qat_out/
 
-sequence_len: 2048
+adapter: lora
+lora_model_dir:
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_linear: true
+
+sequence_len: 256
 sample_packing: true
-flex_attention: true
+flash_attention: true
+# flex_attention: true
 pad_to_sequence_len: true
 
-flex_attn_compile_kwargs:
-  dynamic: false
-  mode: max-autotune-no-cudagraphs
+# flex_attn_compile_kwargs:
+#   dynamic: false
+#   mode: max-autotune-no-cudagraphs
 
-qat:
-  activation_dtype: int8
-  weight_dtype: int4
-  group_size: 256
-  fake_quant_after_n_steps: 1000
+# qat:
+#   activation_dtype: int8
+#   weight_dtype: int4
+#   group_size: 256
+#   fake_quant_after_n_steps: 1000
 
 wandb_project:
 wandb_entity:
@@ -43,14 +51,14 @@ wandb_name:
 wandb_log_model:
 
 gradient_accumulation_steps: 1
-micro_batch_size: 2
+micro_batch_size: 1
 max_steps: 2000
 optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 2e-5
 
 bf16: true
-tf32: true
+# tf32: true
 
 resume_from_checkpoint:
 logging_steps: 1
@@ -60,9 +68,6 @@ saves_per_epoch: 1
 
 warmup_steps: 10
 weight_decay: 0.0
-fsdp:
-  - full_shard
-  - auto_wrap
 
 fsdp_config:
   fsdp_version: 2
