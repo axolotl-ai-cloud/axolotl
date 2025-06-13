@@ -3,7 +3,7 @@
 from typing import Dict, Optional, Set, TypedDict, Union
 
 from jinja2 import Environment, meta, nodes
-
+from jinja2.ext import Extension
 
 class JinjaTemplateAnalysis(TypedDict):
     """
@@ -26,6 +26,12 @@ class JinjaTemplateAnalysis(TypedDict):
     iteration_source: Optional[str]
     iteration_target: Optional[Union[str, list[str]]]
 
+class GenerationTagIgnore(Extension):
+    tags = {"generation", "endgeneration"}
+
+    def parse(self, parser):
+        parser.stream.skip(1)
+        return nodes.Const("")
 
 class JinjaTemplateAnalyzer:
     """
@@ -57,7 +63,7 @@ class JinjaTemplateAnalyzer:
     """
 
     def __init__(self, template: str):
-        self.env: Environment = Environment(autoescape=True)
+        self.env: Environment = Environment(autoescape=True, extensions=[GenerationTagIgnore])
         self.property_access: Dict[str, Set[str]] = {}
         self.iteration_targets: Dict[str, Union[str, list[str]]] = {}
         self.index_access: Dict[str, Set[Union[int, float]]] = {}
