@@ -1,6 +1,7 @@
 """Utils for context parallel context manager."""
 
 import torch
+import torch.distributed as dist
 
 from axolotl.monkeypatch.ring_attn.patch import update_ring_attn_params
 from axolotl.utils.schemas.enums import RingAttnFunc
@@ -14,7 +15,7 @@ def apply_context_parallelism(
     local_world_size: int,
     gradient_accumulation_steps: int,
     ring_attn_func: RingAttnFunc,  # pylint: disable=unused-argument
-) -> tuple[dict[str, torch.Tensor], int, iwnt]:
+) -> tuple[dict[str, torch.Tensor], int, int]:
     """
     Apply context parallelism slicing to a batch.
 
@@ -143,3 +144,82 @@ def apply_context_parallelism(
             ).sum() * gradient_accumulation_steps
 
     return batch, original_seq_len, pad_len
+
+
+class AllGatherWithGrad(torch.autograd.Function):
+    """Custom autograd function for all-gather to preserve gradients."""
+
+    @staticmethod
+    def forward(
+        ctx: torch.autograd.function.FunctionCtx,
+        input_tensor: torch.Tensor,
+        group: dist.ProcessGroup,
+    ) -> torch.Tensor:
+        """
+        Forward pass of all-gather of data with sequence dimension.
+
+        Args:
+            ctx: `torch.autograd` function context.
+            input_tensor: Tensor from model output with sequence dimension.
+            group: `torch.distributed` process group.
+
+        Returns:
+            Tensor from gathering the `input_tensor` from across the process group and
+                concatenating along the sequence dimension.
+        """
+        ctx.group = group
+        ctx.rank = dist.get_rank(group)
+        world_size = dist.get_world_size(group)
+
+        # Gather shape metadata
+        local_shape = torch.tensor(list(input_tensor.shape), device=input_tensor.device)
+        all_shapes = [torch.zeros_like(local_shape) for _ in range(world_size)]
+        dist.all_gather(all_shapes, local_shape, group=group)
+
+        # Store sequence lengths for backward pass
+        seq_lens = [int(shape[1].item()) for shape in all_shapes]
+        ctx.seq_lens = seq_lens
+
+        # Perform all_gather operation
+        gathered = [
+            torch.zeros(
+                tuple(shape.tolist()),
+                dtype=input_tensor.dtype,
+                device=input_tensor.device,
+            )
+            for shape in all_shapes
+        ]
+        dist.all_gather(gathered, input_tensor, group=group)
+
+        # Concatenate tensors along sequence dimension
+        result = torch.cat(gathered, dim=1)
+
+        return result
+
+    @staticmethod
+    def backward(
+        ctx: torch.autograd.function.FunctionCtx, grad_output: torch.Tensor
+    ) -> tuple[torch.Tensor, None]:
+        """
+        Backward pass for all-gather operation.
+
+        Extracts the gradient slice corresponding to this rank's original input
+        from the full gradient tensor.
+
+        Args:
+            ctx: `torch.autograd` function context.
+            grad_output: Gradient from subsequent layers with respect to the
+                concatenated output tensor.
+
+        Returns:
+            Tuple containing the gradient slice for this rank's input tensor and `None`
+                for the process group parameter which doesn't require gradients.
+        """
+        rank = ctx.rank
+        seq_lens = ctx.seq_lens
+
+        # Extract gradient for this rank's chunk
+        offset = sum(seq_lens[:rank])
+        grad_slice = grad_output[:, offset : offset + seq_lens[rank]].contiguous()
+
+        return grad_slice, None

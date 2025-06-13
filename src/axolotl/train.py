@@ -33,7 +33,7 @@ from axolotl.loaders import (
     load_processor,
     load_tokenizer,
 )
-from axolotl.utils.ctx_managers.sequence_parallel import ContextParallelContextManager
+from axolotl.utils.ctx_managers.context_parallel import ContextParallelContextManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
@@ -203,7 +203,7 @@ def execute_training(
                 )
             )
 
-        if cfg.sequence_parallel_degree > 1:
+        if cfg.context_parallel_degree > 1:
             # Models to enter context parallel manager for
             models = [trainer.model]
             if hasattr(trainer, "ref_model") and trainer.ref_model:
@@ -216,7 +216,7 @@ def execute_training(
                 ContextParallelContextManager(
                     models=models,
                     backend=backend,
-                    context_parallel_degree=cfg.sequence_parallel_degree,
+                    context_parallel_degree=cfg.context_parallel_degree,
                     gradient_accumulation_steps=cfg.gradient_accumulation_steps,
                     ring_attn_func=cfg.ring_attn_func,
                     heads_k_stride=cfg.heads_k_stride,

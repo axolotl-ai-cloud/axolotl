@@ -1,6 +1,6 @@
-"""Init for context manager submodule"""
+"""Init for context manager submodule."""
 
-# pylint: disable=unused-import
-# flake8: noqa
 
-from .sequence_parallel import ContextParallelContextManager
+from .context_parallel.manager import ContextParallelContextManager
+
+__all__ = ["ContextParallelContextManager"]

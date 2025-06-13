@@ -262,7 +262,7 @@ class AxolotlInputConfig(
 
     val_set_size: float | None = Field(default=0.0)
 
-    sequence_parallel_degree: int | None = None
+    context_parallel_degree: int | None = None
     heads_k_stride: int | None = None
     ring_attn_func: RingAttnFunc | None = None
 
@@ -1179,39 +1179,39 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
-    def check_grpo_liger_sequence_parallel(cls, data):
+    def check_grpo_liger_context_parallel(cls, data):
         if (
             data.get("rl") == "grpo"
             and data.get("trl", {})
             and data.get("trl").get("use_liger_loss")
-            and data.get("sequence_parallel_degree", 1) > 1
+            and data.get("context_parallel_degree", 1) > 1
         ):
-            raise ValueError("GRPO + SP + Liger not currently supported")
+            raise ValueError("GRPO + CP + Liger not currently supported")
         return data
 
     @model_validator(mode="after")
-    def check_sequence_parallel_degree(self):
-        if not self.sequence_parallel_degree:
-            self.sequence_parallel_degree = 1
-        elif self.sequence_parallel_degree > 1:
+    def check_context_parallel_degree(self):
+        if not self.context_parallel_degree:
+            self.context_parallel_degree = 1
+        elif self.context_parallel_degree > 1:
             import torch
 
             world_size = torch.cuda.device_count()
-            if not world_size >= self.sequence_parallel_degree:
+            if not world_size >= self.context_parallel_degree:
                 raise ValueError(
                     f"World size ({world_size}) must be greater "
-                    f"than or equal to SP degree ({self.sequence_parallel_degree})"
+                    f"than or equal to CP degree ({self.context_parallel_degree})"
                 )
-            if not world_size % self.sequence_parallel_degree == 0:
+            if not world_size % self.context_parallel_degree == 0:
                 raise ValueError(
-                    f"SP degree ({self.sequence_parallel_degree}) "
+                    f"SP degree ({self.context_parallel_degree}) "
                     f"must evenly divide world size ({world_size})"
                 )
 
             if not (self.flash_attention or self.sdp_attention):
                 raise ValueError(
                     "flash_attention: true or sdp_attention: true "
-                    "must be set with sequence_parallel_degree > 1"
+                    "must be set with context_parallel_degree > 1"
                 )
 
             if self.sample_packing and self.micro_batch_size > 1:
@@ -1225,17 +1225,17 @@ class AxolotlInputConfig(
                     import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
                 except ImportError as exception:
                     raise ImportError(
-                        "sequence_parallel_degree > 1 but ring_flash_attn is not installed. "
+                        "context_parallel_degree > 1 but ring_flash_attn is not installed. "
                         "Please install it with `pip install axolotl[ring-flash-attn] "
                         "or `pip install ring-flash-attn>=0.1.4`."
                     ) from exception
 
-            # TODO: monkeypatch / callback to average losses correctly across SP ranks
-            # / fix gradient scaling across SP ranks. Losses, grads should be scaled
+            # TODO: monkeypatch / callback to average losses correctly across CP ranks
+            # / fix gradient scaling across CP ranks. Losses, grads should be scaled
             # according to the proportion of non-padding tokens per rank.
             LOG.warning(
-                "Sequence parallelism (SP) is enabled with "
-                f"sequence_parallel_degree={self.sequence_parallel_degree}. "
+                "Context parallelism (SP) is enabled with "
+                f"context_parallel_degree={self.context_parallel_degree}. "
                 "Please note that logged losses may differ slightly to the non-SP "
                 "losses due to transformers Trainer implementation details. "
                 "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
@@ -1246,7 +1246,7 @@ class AxolotlInputConfig(
 
     @model_validator(mode="after")
     def validate_ring_attn_func(self):
-        if getattr(self, "sequence_parallel_degree", 1) == 1:
+        if getattr(self, "context_parallel_degree", 1) == 1:
             return self
 
         if self.ring_attn_func is not None:

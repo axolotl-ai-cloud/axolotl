@@ -8,7 +8,7 @@ on:
       - 'setup.py'
       - 'pyproject.toml'
       - '.github/workflows/multi-gpu-e2e.yml'
-      - 'src/axolotl/core/trainers/mixins/sequence_parallel.py'
+      - 'src/axolotl/core/trainers/mixins/context_parallel.py'
       - 'src/axolotl/utils/distributed.py'
   workflow_dispatch:
   schedule:

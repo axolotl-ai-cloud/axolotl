@@ -8,7 +8,7 @@ from trl.trainer.grpo_trainer import RewardFunc
 
 from axolotl.core.trainers.grpo.args import AxolotlGRPOConfig
 from axolotl.core.trainers.grpo.trainer import (
-    AxolotlGRPOSequenceParallelTrainer,
+    AxolotlGRPOContextParallelTrainer,
     AxolotlGRPOTrainer,
 )
 from axolotl.utils.dict import DictDefault
@@ -23,10 +23,10 @@ class GRPOStrategy:
 
     @classmethod
     def get_trainer_class(
-        cls, sequence_parallel: bool
-    ) -> type[AxolotlGRPOTrainer] | type[AxolotlGRPOSequenceParallelTrainer]:
-        if sequence_parallel:
-            return AxolotlGRPOSequenceParallelTrainer
+        cls, context_parallel: bool
+    ) -> type[AxolotlGRPOTrainer] | type[AxolotlGRPOContextParallelTrainer]:
+        if context_parallel:
+            return AxolotlGRPOContextParallelTrainer
         return AxolotlGRPOTrainer
 
     @classmethod
@@ -69,8 +69,8 @@ class GRPOStrategy:
         grpo_args_kwargs["log_completions"] = trl.log_completions
         grpo_args_kwargs["num_completions_to_print"] = trl.num_completions_to_print
 
-        if cfg.sequence_parallel_degree > 1:
-            grpo_args_kwargs["sequence_parallel_degree"] = cfg.sequence_parallel_degree
+        if cfg.context_parallel_degree > 1:
+            grpo_args_kwargs["context_parallel_degree"] = cfg.context_parallel_degree
 
         if trl.reward_weights:
             grpo_args_kwargs["reward_weights"] = trl.reward_weights

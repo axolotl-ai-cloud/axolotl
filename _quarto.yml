@@ -75,7 +75,7 @@ quartodoc:
     - title: Context Managers
       desc: Context managers for altering trainer behaviors
       contents:
-        - utils.ctx_managers.sequence_parallel
+        - utils.ctx_managers.context_parallel
     - title: Prompt Strategies
       desc: Prompt formatting strategies
       contents:
@@ -274,7 +274,7 @@ website:
             - docs/unsloth.qmd
             - docs/torchao.qmd
             - docs/custom_integrations.qmd
-            - docs/sequence_parallelism.qmd
+            - docs/context_parallelism.qmd
 
         - section: "Troubleshooting"
           contents:

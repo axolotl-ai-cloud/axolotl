@@ -1,4 +1,4 @@
-"""Axolotl GRPO trainers (with and without sequence parallelism handling)"""
+"""Axolotl GRPO trainers (with and without context parallelism handling)"""
 
 # pylint: disable=too-many-lines,duplicate-code,protected-access,no-member
 
@@ -41,7 +41,7 @@ from trl.trainer.grpo_config import GRPOConfig
 from trl.trainer.grpo_trainer import RewardFunc, nanstd
 from trl.trainer.utils import pad
 
-from axolotl.core.trainers.grpo.sampler import SequenceParallelRepeatRandomSampler
+from axolotl.core.trainers.grpo.sampler import ContextParallelRepeatRandomSampler
 from axolotl.core.trainers.mixins import RngLoaderMixin, SchedulerMixin
 from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
 from axolotl.monkeypatch.ring_attn import get_ring_attn_group
@@ -59,8 +59,8 @@ class AxolotlGRPOTrainer(
     _tag_names = ["trl", "grpo", "axolotl"]
 
 
-class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
-    """Extend the base GRPOTrainer for sequence parallelism handling"""
+class AxolotlGRPOContextParallelTrainer(AxolotlGRPOTrainer):
+    """Extend the base GRPOTrainer for context parallelism handling"""
 
     def __init__(
         self,
@@ -97,11 +97,11 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
             optimizer_cls_and_kwargs=optimizer_cls_and_kwargs,
         )
 
-        # Get number of SP groups (number of processes divided by SP degree)
+        # Get number of CP groups (number of processes divided by CP degree)
         num_processes = self.accelerator.num_processes
-        num_sp_groups = num_processes // self.args.sequence_parallel_degree
+        num_sp_groups = num_processes // self.args.context_parallel_degree
 
-        # Calculate batch size per SP group (not per process)
+        # Calculate batch size per CP group (not per process)
         sp_group_batch_size = self.args.per_device_train_batch_size * num_sp_groups
         possible_values = [
             n_gen
@@ -111,7 +111,7 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
 
         if self.num_generations not in possible_values:
             raise ValueError(
-                f"The batch size per SP group ({num_sp_groups} x "
+                f"The batch size per CP group ({num_sp_groups} x "
                 f"{self.args.per_device_train_batch_size}) must be evenly divisible by "
                 f"the number of generations per prompt ({self.num_generations}). Given "
                 "the current configuration, the valid values for the number of "
@@ -119,7 +119,7 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
             )
 
         if self.args.eval_strategy != "no":
-            # If sequence parallelism is enabled, calculate batch size per SP group
+            # If context parallelism is enabled, calculate batch size per CP group
             sp_group_eval_batch_size = args.per_device_eval_batch_size * num_sp_groups  # type: ignore[union-attr]
             possible_values = [
                 n_gen
@@ -129,8 +129,8 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
 
             if self.num_generations not in possible_values:
                 raise ValueError(
-                    f"With sequence parallelism (degree {self.args.sequence_parallel_degree}), "
-                    f"the eval batch size per SP group ({num_sp_groups} x {self.args.per_device_eval_batch_size}) "
+                    f"With context parallelism (degree {self.args.context_parallel_degree}), "
+                    f"the eval batch size per CP group ({num_sp_groups} x {self.args.per_device_eval_batch_size}) "
                     f"must be evenly divisible by the number of generations per prompt "
                     f"({self.num_generations}). Given the current eval batch size, "
                     f"the valid values for the number of generations are: {possible_values}."
@@ -143,7 +143,7 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
         self.local_world_size = 1
 
     def train(self, *args, **kwargs):
-        # Initialize the SP group
+        # Initialize the CP group
         self.sp_group = get_ring_attn_group()
         self.rank = dist.get_rank()
         self.world_size = dist.get_world_size()
@@ -159,16 +159,16 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
             * self.args.gradient_accumulation_steps
         )
 
-        return SequenceParallelRepeatRandomSampler(
+        return ContextParallelRepeatRandomSampler(
             dataset=self.train_dataset,
             mini_repeat_count=self.num_generations,
             world_size=self.world_size,
             rank=self.rank,
             batch_size=effective_batch_size
             // self.num_generations
-            // self.args.sequence_parallel_degree,
+            // self.args.context_parallel_degree,
             repeat_count=self.num_iterations * self.args.gradient_accumulation_steps,
-            sequence_parallel_degree=self.args.sequence_parallel_degree,
+            context_parallel_degree=self.args.context_parallel_degree,
             shuffle=True,
             seed=self.args.seed,
             drop_last=True,
@@ -226,11 +226,11 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
         ):
             self.accelerator.even_batches = False
 
-        # Return unprepared dataloader if using sequence parallelism
+        # Return unprepared dataloader if using context parallelism
         # TODO(djsaunde): We might be able to use `accelerate`'s dataloader preparation
         # if we use `dispatch_batches` and `slice_fn_for_dispatch` properly (i.e.,
         # slice each batch along the sequence dimension).
-        if self.args.sequence_parallel_degree > 1:
+        if self.args.context_parallel_degree > 1:
             return dataloader
 
         # Otherwise prepare with accelerator
@@ -303,21 +303,21 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
             # Generate completions using vLLM: gather all prompts and use them in a single call in the main process
             all_prompts_text = gather_object(prompts_text)
             if self.accelerator.is_main_process:
-                if self.args.sequence_parallel_degree > 1:
-                    # Calculate sequence parallel group information
+                if self.args.context_parallel_degree > 1:
+                    # Calculate context parallel group information
                     world_size = self.accelerator.num_processes
-                    sequence_parallel_degree = self.args.sequence_parallel_degree
-                    num_sp_groups = world_size // sequence_parallel_degree
+                    context_parallel_degree = self.args.context_parallel_degree
+                    num_sp_groups = world_size // context_parallel_degree
 
-                    # Since processes in the same SP group have the same prompts, we need to ensure
-                    # we only take one copy of each prompt from each SP group
+                    # Since processes in the same CP group have the same prompts, we need to ensure
+                    # we only take one copy of each prompt from each CP group
                     ordered_set_of_prompts = []
                     for sp_group_id in range(num_sp_groups):
-                        # Get the first process from each SP group (typically the group leader)
-                        group_leader_rank = sp_group_id * sequence_parallel_degree
+                        # Get the first process from each CP group (typically the group leader)
+                        group_leader_rank = sp_group_id * context_parallel_degree
 
-                        # Extract prompts from this SP group, accounting for num_generations duplicates
-                        # We only need prompts from one rank in each SP group
+                        # Extract prompts from this CP group, accounting for num_generations duplicates
+                        # We only need prompts from one rank in each CP group
                         group_prompts = all_prompts_text[
                             group_leader_rank
                             * len(prompts_text) : (group_leader_rank + 1)
@@ -330,7 +330,7 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
                     # num_generations outputs for each one. This is faster than generating outputs for each duplicate
                     # prompt individually.
                     ordered_set_of_prompts = all_prompts_text[
-                        :: self.num_generations * self.args.sequence_parallel_degree
+                        :: self.num_generations * self.args.context_parallel_degree
                     ]
 
                 with profiling_context(self, "vLLM.generate"):
@@ -347,28 +347,28 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
                     )
             else:
                 completion_ids = [None] * (
-                    len(all_prompts_text) // self.args.sequence_parallel_degree
+                    len(all_prompts_text) // self.args.context_parallel_degree
                 )
 
             # Broadcast the completions from the main process to all processes
             completion_ids = broadcast_object_list(completion_ids, from_process=0)
 
-            # Determine the appropriate slice based on sequence parallelism
-            if self.args.sequence_parallel_degree > 1:
-                # Calculate SP group ID (which group of ranks this rank belongs to)
+            # Determine the appropriate slice based on context parallelism
+            if self.args.context_parallel_degree > 1:
+                # Calculate CP group ID (which group of ranks this rank belongs to)
                 sp_group_id = self.accelerator.process_index // self.local_world_size
 
-                # Calculate the start index for this SP group
+                # Calculate the start index for this CP group
                 sp_group_start = sp_group_id * len(prompts) * self.local_world_size
 
-                # All ranks in the same SP group get the same data slice
+                # All ranks in the same CP group get the same data slice
                 process_slice = slice(
                     sp_group_start,
                     sp_group_start + len(prompts),
                 )
                 completion_ids = completion_ids[process_slice]
             else:
-                # Original behavior for non-sequence parallel case
+                # Original behavior for non-context parallel case
                 process_slice = slice(
                     self.accelerator.process_index * len(prompts),
                     (self.accelerator.process_index + 1) * len(prompts),
@@ -578,20 +578,20 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
             advantages = advantages / (std_grouped_rewards + 1e-4)
 
         # Slice to keep only the local part of the data
-        if self.args.sequence_parallel_degree > 1:
-            # Calculate SP group ID (which group of ranks this rank belongs to)
+        if self.args.context_parallel_degree > 1:
+            # Calculate CP group ID (which group of ranks this rank belongs to)
             sp_group_id = self.accelerator.process_index // self.local_world_size
 
-            # Calculate the start index for this SP group
+            # Calculate the start index for this CP group
             sp_group_start = sp_group_id * len(prompts) * self.local_world_size
 
-            # All ranks in the same SP group get the same data slice
+            # All ranks in the same CP group get the same data slice
             process_slice = slice(
                 sp_group_start,
                 sp_group_start + len(prompts),
             )
         else:
-            # Original behavior for non-sequence parallel case
+            # Original behavior for non-context parallel case
             process_slice = slice(
                 self.accelerator.process_index * len(prompts),
                 (self.accelerator.process_index + 1) * len(prompts),

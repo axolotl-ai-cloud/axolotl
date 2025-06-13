@@ -296,7 +296,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "sequence_parallel_degree": 2,
+                "context_parallel_degree": 2,
                 "flash_attention": True,
                 "sequence_len": 1024,
                 "special_tokens": {

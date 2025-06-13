@@ -764,13 +764,13 @@ ddp_timeout:
 ddp_bucket_cap_mb:
 ddp_broadcast_buffers:
 
-# Sequence parallelism
+# Context parallelism
 # Set to a divisor of the number of GPUs available to split sequences into chunks of equal size.
 # Use in long context training to prevent OOM when sequences cannot fit into a single GPU's VRAM.
 # E.g., if 4 GPUs are available, set this value to 2 to split each sequence into two equal-sized
 # subsequences, or set to 4 to split into four equal-sized subsequences.
-# See https://docs.axolotl.ai/docs/sequence_parallelism.html for more details.
-sequence_parallel_degree:
+# See https://docs.axolotl.ai/docs/context_parallelism.html for more details.
+context_parallel_degree:
 # Optional; strides across the key dimension. Larger values use more memory but should make training faster.
 # Must evenly divide the number of KV heads in your model.
 heads_k_stride: 1

@@ -2,10 +2,10 @@
 
 Make use of the `ring-flash-attn` (https://github.com/zhuzilin/ring-flash-attention)
 package, specifically the `hf_adapter.substitute_hf_flash_attn` function to patch in
-their sequence parallel version of Flash Attention 2.
+their context parallel version of Flash Attention 2.
 
 We also provide some patches for accelerate functions to prepare the dataloader for
-sequence parallelism training.
+context parallelism training.
 """
 
 import inspect
@@ -63,15 +63,15 @@ def set_ring_attn_group(ring_attn_group: dist.ProcessGroup | None):
 
 
 def register_ring_attn(
-    sequence_parallel_degree: int,
+    context_parallel_degree: int,
     heads_k_stride: int | None,
     ring_attn_func: RingAttnFunc | None,
 ):
     """Create ring attention group and substitute flash attn with ring flash attn.
 
     Args:
-        sequence_parallel_degree: Sequence parallelism factor.
-        heads_k_stride: Sequence parallelism K head stride size. Passed through to
+        context_parallel_degree: Context parallelism factor.
+        heads_k_stride: Context parallelism K head stride size. Passed through to
             `varlen_llama3` `ring_flash_attn` implementation.
         ring_attn_func: `ring_flash_attn` ring attention implemention. If sample
             packing is enabled, it must be a `varlen` function; otherwise, it must be a
@@ -81,17 +81,17 @@ def register_ring_attn(
     world_size = dist.get_world_size()
 
     LOG.info(
-        "Enabling ring attention sequence parallelism: "
-        f"each sequence will be processed across {sequence_parallel_degree} GPUs"
+        "Enabling ring attention context parallelism: "
+        f"each sequence will be processed across {context_parallel_degree} GPUs"
     )
 
-    # Assign ranks to sequence parallel groups
+    # Assign ranks to context parallel groups
     group_assignments = {}
-    for i in range(world_size // sequence_parallel_degree):
+    for i in range(world_size // context_parallel_degree):
         ring_attn_ranks = list(
             range(
-                i * sequence_parallel_degree,
-                (i + 1) * sequence_parallel_degree,
+                i * context_parallel_degree,
+                (i + 1) * context_parallel_degree,
             )
         )
         group = dist.new_group(ranks=ring_attn_ranks, backend="nccl")
@@ -103,7 +103,7 @@ def register_ring_attn(
         if rank in ring_attn_ranks:
             set_ring_attn_group(group)
 
-    LOG.info(f"Sequence parallel group assignments: {group_assignments}")
+    LOG.info(f"Context parallel group assignments: {group_assignments}")
 
     if ring_attn_func is RingAttnFunc.VARLEN_LLAMA3:
         from ring_flash_attn import substitute_hf_flash_attn
@@ -138,7 +138,7 @@ def update_ring_attn_params(position_ids: torch.Tensor | None):
 
 
 def patch_prepare_data_loader():
-    """Patch `accelerate.data_loader.prepare_data_loader` to respect the SP degree.
+    """Patch `accelerate.data_loader.prepare_data_loader` to respect the CP degree.
 
     Raies:
         RuntimeError: If source code to patch does not exist.
@@ -164,15 +164,15 @@ def patch_prepare_data_loader():
     patched_function = namespace["prepare_data_loader"]
 
     accelerate.data_loader.prepare_data_loader = patched_function
-    LOG.info("Patched accelerate.data_loader.prepare_data_loader for SP support")
+    LOG.info("Patched accelerate.data_loader.prepare_data_loader for CP support")
 
 
-def patch_prepare_device_mesh(sequence_parallel_degree: int):
+def patch_prepare_device_mesh(context_parallel_degree: int):
     """Patches the `Accelerator._prepare_device_mesh` method to create a device mesh
-    that includes sequence parallelism with the specified degree.
+    that includes context parallelism with the specified degree.
 
     Args:
-        sequence_parallel_degree (int): The degree of sequence parallelism to use.
+        context_parallel_degree (int): The degree of context parallelism to use.
     """
 
     def _prepare_device_mesh(self):
@@ -187,11 +187,11 @@ def patch_prepare_device_mesh(sequence_parallel_degree: int):
         ):
             return self.state.ds_device_mesh
 
-        # Create device mesh with sequence parallelism
+        # Create device mesh with context parallelism
         world_size = dist.get_world_size()
         mesh_shape = (
-            world_size // sequence_parallel_degree,
-            sequence_parallel_degree,
+            world_size // context_parallel_degree,
+            context_parallel_degree,
         )
         device_ids = list(range(world_size))
 
@@ -209,5 +209,5 @@ def patch_prepare_device_mesh(sequence_parallel_degree: int):
 
     LOG.info(
         "Successfully patched Accelerator._prepare_device_mesh "
-        f"with sequence_parallel_degree={sequence_parallel_degree}"
+        f"with context_parallel_degree={context_parallel_degree}"
     )
