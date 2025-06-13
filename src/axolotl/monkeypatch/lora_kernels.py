@@ -145,6 +145,11 @@ def get_attention_cls_from_config(cfg: DictDefault) -> Type[nn.Module]:
 
         return Qwen2Attention
 
+    if model_type == "mllama":
+        from transformers.models.mllama.modeling_mllama import MllamaTextSelfAttention
+
+        return MllamaTextSelfAttention
+
     try:
         # Dynamically import the module and attention class
         module_path = f"transformers.models.{model_type}.modeling_{model_type}"
