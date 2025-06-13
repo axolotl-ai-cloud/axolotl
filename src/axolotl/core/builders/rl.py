@@ -19,6 +19,7 @@ from axolotl.core.training_args import (
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import ensure_dtype
+from axolotl.utils.callbacks.qat import QATCallback
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
 
@@ -30,6 +31,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
     def get_callbacks(self):
         callbacks = super().get_callbacks()
+
+        if self.cfg.qat:
+            callbacks.append(QATCallback(self.cfg.qat))
 
         return callbacks
 
@@ -138,22 +142,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             training_args_cls = AxolotlDPOConfig
-            if self.cfg.rl is RLType.IPO:
-                training_args_kwargs["loss_type"] = "ipo"
-
-            # Not compatible with IPO
-            if self.cfg.rl is RLType.DPO and self.cfg.dpo_label_smoothing:
-                training_args_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
-
-            training_args_kwargs["max_completion_length"] = None
-            training_args_kwargs["max_prompt_length"] = self.cfg.sequence_len
-            training_args_kwargs["generate_during_eval"] = self.cfg.use_wandb
-            if self.cfg.dpo_use_weighting is not None:
-                training_args_kwargs["use_weighting"] = self.cfg.dpo_use_weighting
-            if self.cfg.dpo_use_logits_to_keep is not None:
-                training_args_kwargs["use_logits_to_keep"] = (
-                    self.cfg.dpo_use_logits_to_keep
-                )
+            training_args_kwargs.update(DPOStrategy.set_training_args_kwargs(self.cfg))
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
 
