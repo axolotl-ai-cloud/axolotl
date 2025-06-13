@@ -24,6 +24,14 @@ pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transform
 
 ## Usage
 
+**NOTE**: If you are training a VLM model, please use older version of Axolotl as upstream has applied a major VLM refactor, and our patches have not been updated yet.
+
+```bash
+git checkout 787880215b3ab32ccaf81c1b2e9588c6f3e6e764
+
+pip3 install --no-build-isolation -e .
+```
+
 ```yaml
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
