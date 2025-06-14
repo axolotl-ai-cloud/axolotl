@@ -35,11 +35,11 @@ https://github.com/pytorch/torchtune/blob/2344509cf83bd886538fe3e8263e5145d1afb5
 import contextlib
 from typing import Callable, Generator, Optional, Union
 
+from axolotl.utils.dict import DictDefault
 import torch
-
 from torch.distributed.tensor.experimental import context_parallel
 from torch.distributed.tensor.experimental._attention import set_rotate_method
-from torch.nn.attention import sdpa_kernel, SDPBackend
+from torch.nn.attention import SDPBackend, sdpa_kernel
 from torch.nn.attention.flex_attention import BlockMask
 from transformers import PreTrainedModel
 
@@ -85,7 +85,6 @@ def get_context_parallel_manager(
     dimension, this context manager also calls into _get_sdpa_context to filter to acceptable SDPA backends.
 
     Args:
-        enabled: Whether context parallel is enabled. Default: False
         world_mesh: Global device mesh.
         model: Model to apply context parallelism to.
 
@@ -102,12 +101,8 @@ def get_context_parallel_manager(
             "Context parallel is enabled but no context parallel device mesh is provided."
         )
     # TODO: context parallel for multimodal models requires extra work
-    if not isinstance(model, TransformerDecoder):
-        raise ValueError("Context parallel is only supported for text models")
-    # TODO: this is a hacky proxy for whether we use flex for chunked attention
-    # remove this once flex is supported
-    if any([layer.mask_mod is not None for layer in model.layers]):
-        raise ValueError("Context parallel with flex attention is not yet supported")
+    # if not isinstance(model, TransformerDecoder):
+    #     raise ValueError("Context parallel is only supported for text models")
     model_buffers = list(model.buffers())
 
     @contextlib.contextmanager

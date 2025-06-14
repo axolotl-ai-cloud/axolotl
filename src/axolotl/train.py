@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Dict
 
 import torch
-import torch.distributed as dist
 import transformers.modelcard
 from accelerate.utils import save_fsdp_model
 from datasets import Dataset
@@ -33,7 +32,7 @@ from axolotl.loaders import (
     load_processor,
     load_tokenizer,
 )
-from axolotl.utils.ctx_managers.context_parallel import ContextParallelContextManager
+from axolotl.utils.ctx_managers import ContextParallelContextManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except

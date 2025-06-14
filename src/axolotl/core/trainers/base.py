@@ -7,13 +7,11 @@ from __future__ import annotations
 import os
 from collections import defaultdict
 from functools import partial, wraps
-from typing import Any, Callable, Literal, Optional
+from typing import Callable, Literal, Optional
 
-from axolotl.utils.ctx_managers.utils import get_context_parallel_manager
 import datasets
 import torch
 from datasets import Dataset
-from torch import nn
 from torch.utils.data import (
     BatchSampler,
     DataLoader,
