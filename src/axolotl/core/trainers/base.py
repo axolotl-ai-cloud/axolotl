@@ -7,11 +7,13 @@ from __future__ import annotations
 import os
 from collections import defaultdict
 from functools import partial, wraps
-from typing import Callable, Literal, Optional
+from typing import Any, Callable, Literal, Optional
 
+from axolotl.utils.ctx_managers.context_parallel.distributed import get_context_parallel_manager
 import datasets
 import torch
 from datasets import Dataset
+from torch import nn
 from torch.utils.data import (
     BatchSampler,
     DataLoader,
@@ -64,6 +66,32 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+
+        # SPDA device mesh init
+        import torch.distributed as dist
+
+        world_size = dist.get_world_size()
+        mesh_shape = (
+            world_size // 2,
+            2,
+        )
+        self.world_mesh = dist.DeviceMesh(
+            "cuda",
+            torch.tensor(list(range(world_size))).reshape(mesh_shape),
+            mesh_dim_names=("dp", "cp"),
+        )
+
+    def training_step(
+        self, model: nn.Module, inputs: dict[str, torch.Tensor | Any], num_items_in_batch=None
+    ) -> torch.Tensor:
+        ctx_manager = get_context_parallel_manager(
+            world_mesh=self.world_mesh,
+            model=model,
+        )
+        to_shard = {k: v for k, v in inputs.items() if v.ndim > 1}
+        with ctx_manager(list(to_shard.values())):
+            super().training_step(model, inputs, num_items_in_batch)
+        
 
     def _wrap_model(self, model, training=True, dataloader=None):
         if self.args.torch_compile:

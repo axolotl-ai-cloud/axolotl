@@ -70,7 +70,7 @@ class ContextParallelContextManager:
             self.process_group = get_ring_attn_group()
             self.local_rank = dist.get_rank(self.process_group)
             self.local_world_size = dist.get_world_size(self.process_group)
-            
+
              # Create a partially applied version of the apply_context_parallelism function
             self.apply_context_parallelism = functools.partial(
                 apply_context_parallelism,
@@ -79,7 +79,7 @@ class ContextParallelContextManager:
                 gradient_accumulation_steps=self.gradient_accumulation_steps,
                 ring_attn_func=self.ring_attn_func,
             )
-            
+
             # Store original sequence length and padding information
             self.original_seq_len = 0
             self.pad_len = 0
@@ -95,7 +95,7 @@ class ContextParallelContextManager:
                 torch.tensor(list(range(world_size))).reshape(mesh_shape),
                 mesh_dim_names=("dp", "cp"),
             )
-            
+
             # SDPA context parallel managers 
             self.context_parallel_managers = []
             for model in models:

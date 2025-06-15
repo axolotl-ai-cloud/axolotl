@@ -25,7 +25,6 @@ from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
-from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders import (
     ModelLoader,
@@ -148,7 +147,7 @@ def determine_resume_checkpoint(cfg: DictDefault) -> str | None:
 
 
 def setup_signal_handler(
-    cfg: DictDefault, model: PreTrainedModel, safe_serialization: bool
+    cfg: DictDefault, model: PeftModel | PreTrainedModel, safe_serialization: bool
 ):
     """
     Set up signal handler for graceful termination.
@@ -202,7 +201,7 @@ def execute_training(
                 )
             )
 
-        if cfg.context_parallel_degree > 1:
+        if cfg.context_parallel_degree > 1 and not cfg.sdp_attention:
             # Models to enter context parallel manager for
             models = [trainer.model]
             if hasattr(trainer, "ref_model") and trainer.ref_model:
@@ -229,7 +228,7 @@ def execute_training(
 def save_trained_model(
     cfg: DictDefault,
     trainer: Any,
-    model: PreTrainedModel,
+    model: PeftModel | PreTrainedModel,
     safe_serialization: bool,
 ):
     """
@@ -380,7 +379,7 @@ def create_model_card(cfg: DictDefault, trainer: Trainer):
 def save_initial_configs(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizer,
-    model: PreTrainedModel,
+    model: PeftModel | PreTrainedModel,
     peft_config: PeftConfig | None,
     processor: ProcessorMixin | None,
 ):
@@ -434,7 +433,7 @@ def setup_model_card(cfg: DictDefault):
 
 def handle_untrained_tokens_fix(
     cfg: DictDefault,
-    model: PreTrainedModel,
+    model: PeftModel | PreTrainedModel,
     tokenizer: PreTrainedTokenizer,
     train_dataset: Dataset,
     safe_serialization: bool,
@@ -477,7 +476,7 @@ def handle_untrained_tokens_fix(
 
 
 def setup_model_and_trainer(cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> tuple[
-    HFRLTrainerBuilder | HFCausalTrainerBuilder,
+    Trainer,
     PeftModel | PreTrainedModel,
     PreTrainedTokenizer,
     PeftConfig | None,

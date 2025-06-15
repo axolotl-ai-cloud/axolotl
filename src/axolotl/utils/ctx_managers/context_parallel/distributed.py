@@ -35,14 +35,14 @@ https://github.com/pytorch/torchtune/blob/2344509cf83bd886538fe3e8263e5145d1afb5
 import contextlib
 from typing import Callable, Generator, Optional, Union
 
-from axolotl.utils.dict import DictDefault
 import torch
+from torch import nn
 from torch.distributed.tensor.experimental import context_parallel
 from torch.distributed.tensor.experimental._attention import set_rotate_method
 from torch.nn.attention import SDPBackend, sdpa_kernel
 from torch.nn.attention.flex_attention import BlockMask
-from transformers import PreTrainedModel
 
+from axolotl.utils.dict import DictDefault
 
 def _get_sdpa_context() -> (
     Callable[[Optional[Generator[None, None, None]]], Generator[None, None, None]]
@@ -77,7 +77,7 @@ def _get_sdpa_context() -> (
 def get_context_parallel_manager(
     *,
     world_mesh: torch.distributed.DeviceMesh,
-    model: PreTrainedModel,
+    model: nn.Module,
 ) -> Callable[[list[torch.Tensor]], Generator[None, None, None]]:
     """
     Context manager for applying context parallelism to a model. In addition to applying the
