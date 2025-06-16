@@ -243,7 +243,7 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
                 LOG.warning(f"Dropped {dropped} long samples from dataset index {i}")
 
     # Merge datasets
-    dataset = merge_datasets(split_datasets, cfg)
+    dataset = merge_datasets(split_datasets, cfg, datasets_configs)
 
     if not cfg.skip_prepare_dataset:
         # Save preprocessed dataset
