@@ -16,9 +16,10 @@ _JINJA_TEMPALTE_CHOICE = "jinja"
 _DEFAULT_TEMPLATE_CHOICE = "tokenizer_default"
 _DEFAULT_FALLBACK_CHATML_TEMPLATE_CHOICE_PREFIX = "tokenizer_default_fallback_"
 
+TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 _CHAT_TEMPLATES: dict[str, str] = {}
-for filename in [f for f in os.listdir("./templates") if f.endswith(".jinja")]:
-    with open(f"./templates/{filename}", "r", encoding="utf-8") as f:
+for filename in [f for f in os.listdir(TEMPLATE_DIR) if f.endswith(".jinja")]:
+    with open(os.path.join(TEMPLATE_DIR, filename), "r", encoding="utf-8") as f:
         _CHAT_TEMPLATES[filename[:-6]] = f.read()
 
 
