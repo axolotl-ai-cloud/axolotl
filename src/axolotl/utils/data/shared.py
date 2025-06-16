@@ -630,6 +630,14 @@ def _merge_datasets_with_token_weighting(
             )
             weighted_parts.append(ds)
 
+    LOG.info("Weighted dataset parts before concatenation:")
+    total_weighted_tokens = 0
+    for i, part in enumerate(weighted_parts):
+        part_tokens = _count_tokens(part)
+        total_weighted_tokens += part_tokens
+        LOG.info(f"  Part {i+1}: {part_tokens:,} tokens ({len(part):,} samples)")
+    LOG.info(f"Total tokens in weighted parts: {total_weighted_tokens:,}")
+
     merged = concatenate_datasets(weighted_parts)
     
     final_tokens = _count_tokens(merged)
