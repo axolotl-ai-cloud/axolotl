@@ -28,8 +28,39 @@ class QuartoGenerator:
         wrapped_lines = textwrap.wrap(text, width=content_width)
         return [f"# {line}" for line in wrapped_lines]
 
-    def _format_type(self, field_info: dict[str, Any]) -> str:
+    def _extract_type_from_source(
+        self, model_class: type[BaseModel], field_name: str
+    ) -> str:
+        """Extract the actual type annotation text from source code."""
+        try:
+            source = inspect.getsource(model_class)
+            tree = ast.parse(source)
+        except (OSError, TypeError):
+            return "unknown"
+
+        # Find the class definition
+        class_node = None
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name == model_class.__name__:
+                class_node = node
+                break
+
+        if not class_node:
+            return "unknown"
+
+        # Find the field assignment
+        for node in class_node.body:
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                if node.target.id == field_name and node.annotation:
+                    # Convert the AST annotation back to source text
+                    return ast.unparse(node.annotation)
+
+        return "unknown"
         """Format field type information in a readable way."""
+        # Handle fallback case where we only have basic info
+        if field_info.get("type") == "unknown":
+            return "unknown"
+
         if "anyOf" in field_info:
             types = []
             is_optional = False
@@ -254,9 +285,44 @@ class QuartoGenerator:
         if title is None:
             title = f"{model_class.__name__} Reference"
 
-        schema = model_class.model_json_schema()
-        properties = schema.get("properties", {})
-        required = schema.get("required", [])
+        # Try to get JSON schema, with fallback for serialization issues
+        try:
+            schema = model_class.model_json_schema()
+            properties = schema.get("properties", {})
+            required = schema.get("required", [])
+        except Exception as e:
+            print(
+                f"Warning: Could not generate JSON schema ({e}). Using model fields instead."
+            )
+            # Fallback: use model fields directly
+            properties = {}
+            required = []
+            for field_name, field_info in model_class.model_fields.items():
+                # Extract description from json_schema_extra or field info
+                description = ""
+                if (
+                    hasattr(field_info, "json_schema_extra")
+                    and field_info.json_schema_extra
+                ):
+                    description = field_info.json_schema_extra.get("description", "")
+                elif hasattr(field_info, "description") and field_info.description:
+                    description = field_info.description
+
+                # Get default value
+                default_val = None
+                if hasattr(field_info, "default") and field_info.default is not None:
+                    # Handle special Pydantic default markers
+                    if str(field_info.default) != "PydanticUndefined":
+                        default_val = field_info.default
+
+                properties[field_name] = {
+                    "type": "unknown",
+                    "description": description,
+                    "default": default_val,
+                }
+
+                if field_info.is_required():
+                    required.append(field_name)
 
         # Extract field groups from source code
         field_groups = self._extract_field_groups_from_source(model_class)
@@ -287,7 +353,7 @@ class QuartoGenerator:
                     continue
 
                 field_info = properties[field_name]
-                field_type = self._format_type(field_info)
+                field_type = self._extract_type_from_source(model_class, field_name)
                 is_required = field_name in required
 
                 description = field_info.get("description", "")
