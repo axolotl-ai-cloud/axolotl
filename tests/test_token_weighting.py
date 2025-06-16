@@ -136,16 +136,10 @@ class TestTokenWeighting:
 
     def test_validate_weights_helper(self):
         """Test _validate_weights helper function."""
-        configs1 = [
-            DictDefault({"weight": 0.3}),
-            DictDefault({"weight": 0.7})
-        ]
+        configs1 = [DictDefault({"weight": 0.3}), DictDefault({"weight": 0.7})]
         _validate_weights(configs1)  # Should not raise
-        
-        configs2 = [
-            DictDefault({"weight": 0.3}),
-            DictDefault({"weight": 0.8})
-        ]
+
+        configs2 = [DictDefault({"weight": 0.3}), DictDefault({"weight": 0.8})]
         with pytest.raises(ValueError):
             _validate_weights(configs2)
 
@@ -155,9 +149,9 @@ class TestTokenWeighting:
         cfg = create_cfg()
         datasets_configs = [
             DictDefault({"weight": 0.0, "weight_strategy": "upsample"}),
-            DictDefault({"weight": 1.0, "weight_strategy": "upsample"})
+            DictDefault({"weight": 1.0, "weight_strategy": "upsample"}),
         ]
-        
+
         result = merge_datasets(sample_datasets, cfg, datasets_configs)
         assert len(result) > 0
         assert "input_ids" in result.features
@@ -167,10 +161,18 @@ class TestTokenWeighting:
         sample_datasets = create_sample_datasets()
         cfg = create_cfg()
         datasets_configs = [
-            DictDefault({"weight": 0.5, "weight_strategy": "unknown_strategy", "path": "dataset1"}),
-            DictDefault({"weight": 0.5, "weight_strategy": "upsample", "path": "dataset2"})
+            DictDefault(
+                {
+                    "weight": 0.5,
+                    "weight_strategy": "unknown_strategy",
+                    "path": "dataset1",
+                }
+            ),
+            DictDefault(
+                {"weight": 0.5, "weight_strategy": "upsample", "path": "dataset2"}
+            ),
         ]
-        
+
         result = merge_datasets(sample_datasets, cfg, datasets_configs)
         assert len(result) > 0
         assert "input_ids" in result.features
@@ -180,11 +182,17 @@ class TestTokenWeighting:
         sample_datasets = create_sample_datasets()
         cfg = create_cfg()
         datasets_configs = [
-            DictDefault({"weight": 1.2, "weight_strategy": "downsample", "path": "dataset1"}),
-            DictDefault({"weight": -0.2, "weight_strategy": "upsample", "path": "dataset2"})  # This will cause validation error
+            DictDefault(
+                {"weight": 1.2, "weight_strategy": "downsample", "path": "dataset1"}
+            ),
+            DictDefault(
+                {"weight": -0.2, "weight_strategy": "upsample", "path": "dataset2"}
+            ),  # This will cause validation error
         ]
-        
-        with pytest.raises(ValueError, match="Dataset weight must be between 0.0 and 1.0"):
+
+        with pytest.raises(
+            ValueError, match="Dataset weight must be between 0.0 and 1.0"
+        ):
             merge_datasets(sample_datasets, cfg, datasets_configs)
 
     def test_floating_point_precision_weights(self):
@@ -193,9 +201,11 @@ class TestTokenWeighting:
         cfg = create_cfg()
         datasets_configs = [
             DictDefault({"weight": 0.1, "weight_strategy": "upsample"}),
-            DictDefault({"weight": 0.9000000000000001, "weight_strategy": "upsample"})  # Sum slightly > 1.0
+            DictDefault(
+                {"weight": 0.9000000000000001, "weight_strategy": "upsample"}
+            ),  # Sum slightly > 1.0
         ]
-        
+
         result = merge_datasets(sample_datasets, cfg, datasets_configs)
         assert len(result) > 0
         assert "input_ids" in result.features
@@ -206,8 +216,10 @@ class TestTokenWeighting:
         cfg = create_cfg()
         datasets_configs = [
             DictDefault({"weight": 0.1, "weight_strategy": "upsample"}),
-            DictDefault({"weight": 0.95, "weight_strategy": "upsample"})  # Sum = 1.05, too large
+            DictDefault(
+                {"weight": 0.95, "weight_strategy": "upsample"}
+            ),  # Sum = 1.05, too large
         ]
-        
+
         with pytest.raises(ValueError, match="Dataset weights must sum to 1.0"):
             merge_datasets(sample_datasets, cfg, datasets_configs)
