@@ -569,11 +569,21 @@ def _merge_datasets_with_token_weighting(
 
     _validate_weights(datasets_configs)
 
+    total_original_tokens = 0
+    for i, (ds, d_cfg) in enumerate(zip(datasets, datasets_configs)):
+        original_tokens = _count_tokens(ds)
+        total_original_tokens += original_tokens
+        dataset_name = getattr(d_cfg, "path", f"dataset_{i}")
+        LOG.info(f"Dataset '{dataset_name}': {original_tokens:,} tokens ({len(ds):,} samples)")
+    
+    LOG.info(f"Total original tokens across all datasets: {total_original_tokens:,}")
+
     weighted_parts: list[Dataset] = []
 
-    for ds, d_cfg in zip(datasets, datasets_configs):
+    for i, (ds, d_cfg) in enumerate(zip(datasets, datasets_configs)):
         weight = float(getattr(d_cfg, "weight", 1.0) or 1.0)
         strategy = getattr(d_cfg, "weight_strategy", "upsample").lower()
+        dataset_name = getattr(d_cfg, "path", f"dataset_{i}")
 
         if weight == 1.0 and len(datasets) == 1:
             weighted_parts.append(ds)
@@ -581,6 +591,9 @@ def _merge_datasets_with_token_weighting(
 
         tok_cnt = _count_tokens(ds)
         target_tok = max(1, int(tok_cnt * weight))
+        
+        LOG.info(f"Dataset '{dataset_name}': {tok_cnt:,} → {target_tok:,} tokens "
+                f"(weight={weight:.3f}, strategy={strategy})")
 
         if strategy == "upsample":
             repeats = max(1, floor(target_tok / tok_cnt))
@@ -618,6 +631,11 @@ def _merge_datasets_with_token_weighting(
             weighted_parts.append(ds)
 
     merged = concatenate_datasets(weighted_parts)
+    
+    final_tokens = _count_tokens(merged)
+    LOG.info(f"Final merged dataset: {final_tokens:,} tokens ({len(merged):,} samples)")
+    LOG.info(f"Token count change: {total_original_tokens:,} → {final_tokens:,} "
+            f"({final_tokens/total_original_tokens:.2f}x)")
 
     if cfg.shuffle_merged_datasets:
         merged = merged.shuffle(seed=cfg.seed)
