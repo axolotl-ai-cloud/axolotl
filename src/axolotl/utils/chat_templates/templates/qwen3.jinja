@@ -1,15 +1,15 @@
 {%- if tools %}
-    {{- '<|im_start |>system\n' }}
+    {{- '<|im_start|>system\n' }}
     {%- if messages[0].role == 'system' %}{{- messages[0].content + '\n\n' }}{%- endif %}
     {{- "# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>" }}
     {%- for tool in tools %}
         {{- "\n" }}
         {{- tool | tojson }}
     {%- endfor %}
-    {{- "\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end |>\n" }}
+    {{- "\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n" }}
 {%- else %}
     {%- if messages[0].role == 'system' %}
-        {{- '<|im_start |>system\n' + messages[0].content + '<|im_end |>\n' }}
+        {{- '<|im_start|>system\n' + messages[0].content + '<|im_end|>\n' }}
     {%- endif %}
 {%- endif %}
 {%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}
@@ -22,7 +22,7 @@
 {%- endfor %}
 {%- for message in messages %}
     {%- if (message.role == "user") or (message.role == "system" and not loop.first) %}
-        {{- '<|im_start |>' + message.role + '\n' + message.content + '<|im_end |>' + '\n' }}
+        {{- '<|im_start|>' + message.role + '\n' + message.content + '<|im_end|>' + '\n' }}
     {%- elif message.role == "assistant" %}
         {%- set content = message.content %}
         {%- set reasoning_content = "" %}
@@ -36,12 +36,12 @@
         {%- endif %}
         {%- if loop.index0 > ns.last_query_index %}
             {%- if loop.last or (not loop.last and reasoning_content) %}
-                {{- '<|im_start |>' + message.role + '\n<think>\n' + reasoning_content.strip("\n") + '\n</think>\n\n' + content.lstrip('\n') }}
+                {{- '<|im_start|>' + message.role + '\n<think>\n' + reasoning_content.strip("\n") + '\n</think>\n\n' + content.lstrip('\n') }}
             {%- else %}
-                {{- '<|im_start |>' + message.role + '\n' + content }}
+                {{- '<|im_start|>' + message.role + '\n' + content }}
             {%- endif %}
         {%- else %}
-            {{- '<|im_start |>' + message.role + '\n' + content }}
+            {{- '<|im_start|>' + message.role + '\n' + content }}
         {%- endif %}
         {%- if message.tool_calls %}
             {%- for tool_call in message.tool_calls %}
@@ -60,16 +60,16 @@
                 {{- '}\n</tool_call>' }}
             {%- endfor %}
         {%- endif %}
-        {{- '<|im_end |>\n' }}
+        {{- '<|im_end|>\n' }}
     {%- elif message.role == "tool" %}
-        {%- if loop.first or (messages[loop.index0 - 1].role != "tool") %}{{- '<|im_start |>user' }}{%- endif %}
+        {%- if loop.first or (messages[loop.index0 - 1].role != "tool") %}{{- '<|im_start|>user' }}{%- endif %}
         {{- '\n<tool_response>\n' }}
         {{- message.content }}
         {{- '\n</tool_response>' }}
-        {%- if loop.last or (messages[loop.index0 + 1].role != "tool") %}{{- '<|im_end |>\n' }}{%- endif %}
+        {%- if loop.last or (messages[loop.index0 + 1].role != "tool") %}{{- '<|im_end|>\n' }}{%- endif %}
     {%- endif %}
 {%- endfor %}
 {%- if add_generation_prompt %}
-    {{- '<|im_start |>assistant\n' }}
+    {{- '<|im_start|>assistant\n' }}
     {%- if enable_thinking is defined and enable_thinking is false %}{{- '<think>\n\n</think>\n\n' }}{%- endif %}
 {%- endif %}

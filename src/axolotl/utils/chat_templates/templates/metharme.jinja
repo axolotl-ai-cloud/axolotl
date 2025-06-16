@@ -4,17 +4,17 @@
 {% else %}
     {% set loop_messages = messages %}{% set system_message = "Enter RP mode. You shall reply to the user while staying in character. Your responses must be detailed, creative, immersive, and drive the scenario forward." %}
 {% endif %}
-{{ '<|system |>' + system_message }}
+{{ '<|system|>' + system_message }}
 {% for message in loop_messages %}
     {% set content = message['content'] %}
     {% if message['role'] == 'user' %}
-        {{ '<|user |>' + content.strip() }}
+        {{ '<|user|>' + content.strip() }}
     {% elif message['role'] == 'assistant' %}
-        {{ '<|model |>'  + content.strip() }}
+        {{ '<|model|>'  + content.strip() }}
     {% endif %}
 {% endfor %}
 {% if add_generation_prompt %}
-    {{ '<|model |>' }}
+    {{ '<|model|>' }}
 {% else %}
     {{ eos_token }}
 {% endif %}

@@ -1,8 +1,8 @@
 {# Variables #}
 {% set ns = namespace(message_count=0, is_last_checked_defined=False) %}
 {##}
-{% set bom_str = bom_str or "<|bom |>" %}
-{% set eom_str = eom_str or "<|eom |>" %}
+{% set bom_str = bom_str or "<|bom|>" %}
+{% set eom_str = eom_str or "<|eom|>" %}
 {% set default_system_message = "" %}
 {##}
 {% set documents_prefix = "<documents>" %}
@@ -171,7 +171,7 @@
 {##}
 {##}
 {# Template #}
-{{- "<|startoftext |>" -}}
+{{- "<|startoftext|>" -}}
 {% set _ = is_param_set(system_message) %}
 {% set is_system_message_set = ns.is_last_checked_defined %}
 {% set _ = is_param_set(tools, is_list=True) %}
