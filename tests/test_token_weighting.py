@@ -2,31 +2,36 @@
 
 import pytest
 from datasets import Dataset
-from axolotl.utils.data.shared import merge_datasets, _validate_weights, _has_token_weighting
+from axolotl.utils.data.shared import (
+    _has_token_weighting,
+    _validate_weights,
+    merge_datasets,
+)
 from axolotl.utils.dict import DictDefault
 
 
 def create_sample_datasets():
     """Create sample datasets with input_ids for testing."""
-    ds1 = Dataset.from_list([
-        {"input_ids": [1, 2, 3, 4, 5]},  # 5 tokens
-        {"input_ids": [6, 7, 8]},        # 3 tokens
-    ])  # Total: 8 tokens
-    
-    ds2 = Dataset.from_list([
-        {"input_ids": [9, 10, 11, 12]},  # 4 tokens
-        {"input_ids": [13, 14]},         # 2 tokens
-    ])  # Total: 6 tokens
+    ds1 = Dataset.from_list(
+        [
+            {"input_ids": [1, 2, 3, 4, 5]},  # 5 tokens
+            {"input_ids": [6, 7, 8]},  # 3 tokens
+        ]
+    )  # Total: 8 tokens
+
+    ds2 = Dataset.from_list(
+        [
+            {"input_ids": [9, 10, 11, 12]},  # 4 tokens
+            {"input_ids": [13, 14]},  # 2 tokens
+        ]
+    )  # Total: 6 tokens
     
     return [ds1, ds2]
 
 
 def create_cfg():
     """Basic configuration for testing."""
-    return DictDefault({
-        "seed": 42,
-        "shuffle_merged_datasets": True
-    })
+    return DictDefault({"seed": 42, "shuffle_merged_datasets": True})
 
 
 class TestTokenWeighting:

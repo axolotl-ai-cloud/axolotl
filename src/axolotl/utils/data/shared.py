@@ -547,12 +547,11 @@ def _validate_weights(datasets_configs) -> None:
                 f"for dataset {getattr(d_cfg, 'path', '<unknown>')}"
             )
         weights.append(weight)
-    
+
     weight_sum = sum(weights)
     if abs(weight_sum - 1.0) > 1e-6:  # Allow for small floating point errors
         raise ValueError(
-            f"Dataset weights must sum to 1.0, got {weight_sum}. "
-            f"Weights: {weights}"
+            f"Dataset weights must sum to 1.0, got {weight_sum}. " f"Weights: {weights}"
         )
 
 
@@ -565,9 +564,9 @@ def _merge_datasets_with_token_weighting(
     Merge several HF datasets into one, honouring per-dataset weights *in tokens*.
     """
     from math import floor
-    
+
     LOG.info("Merging datasets with token-based weighting...")
-    
+
     _validate_weights(datasets_configs)
 
     weighted_parts: list[Dataset] = []
@@ -627,9 +626,7 @@ def _merge_datasets_with_token_weighting(
 
 
 def merge_datasets(
-    datasets: list[Dataset], 
-    cfg: DictDefault, 
-    datasets_configs: list | None = None
+    datasets: list[Dataset], cfg: DictDefault, datasets_configs: list | None = None
 ) -> Dataset:
     """Merge multiple datasets into one with optional token-based weighting.
 
