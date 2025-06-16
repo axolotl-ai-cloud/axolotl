@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
 Enhanced Quarto documentation generator from Pydantic models.
-Includes YAML example generation and better formatting.
+Uses source code structure to automatically group fields.
 """
 
+import ast
+import inspect
+import textwrap
 from typing import Any
 
 import yaml
@@ -15,100 +18,15 @@ from axolotl.utils.schemas.config import AxolotlInputConfig
 class QuartoGenerator:
     """Generate Quarto documentation from Pydantic models."""
 
-    def __init__(self):
-        self.field_categories = {
-            "Model Configuration": {
-                "description": "Basic model setup and tokenizer configuration",
-                "fields": [
-                    "base_model",
-                    "base_model_config",
-                    "base_model_ignore_patterns",
-                    "model_type",
-                    "tokenizer_type",
-                    "tokenizer_config",
-                    "trust_remote_code",
-                    "tokenizer_use_fast",
-                    "tokenizer_legacy",
-                ],
-            },
-            "Training Hyperparameters": {
-                "description": "Core training settings and optimization parameters",
-                "fields": [
-                    "num_epochs",
-                    "micro_batch_size",
-                    "gradient_accumulation_steps",
-                    "learning_rate",
-                    "warmup_steps",
-                    "warmup_ratio",
-                    "max_steps",
-                    "optimizer",
-                    "lr_scheduler",
-                    "weight_decay",
-                ],
-            },
-            "Dataset Configuration": {
-                "description": "Dataset loading and preprocessing options",
-                "fields": [
-                    "datasets",
-                    "test_datasets",
-                    "val_set_size",
-                    "sequence_len",
-                    "sample_packing",
-                    "pad_to_sequence_len",
-                    "train_on_inputs",
-                ],
-            },
-            "LoRA/PEFT Settings": {
-                "description": "Low-rank adaptation and parameter-efficient fine-tuning",
-                "fields": [
-                    "adapter",
-                    "lora_r",
-                    "lora_alpha",
-                    "lora_dropout",
-                    "lora_target_modules",
-                    "lora_model_dir",
-                    "lora_target_linear",
-                ],
-            },
-            "Memory & Performance": {
-                "description": "Memory optimization and performance settings",
-                "fields": [
-                    "load_in_8bit",
-                    "load_in_4bit",
-                    "bf16",
-                    "fp16",
-                    "tf32",
-                    "flash_attention",
-                    "gradient_checkpointing",
-                    "low_cpu_mem_usage",
-                ],
-            },
-            "Distributed Training": {
-                "description": "Multi-GPU and distributed training configuration",
-                "fields": [
-                    "deepspeed",
-                    "fsdp",
-                    "fsdp_config",
-                    "ddp_timeout",
-                    "ddp_bucket_cap_mb",
-                    "world_size",
-                    "local_rank",
-                ],
-            },
-            "Logging & Monitoring": {
-                "description": "Experiment tracking and monitoring options",
-                "fields": [
-                    "wandb_project",
-                    "wandb_entity",
-                    "wandb_watch",
-                    "wandb_name",
-                    "logging_steps",
-                    "eval_steps",
-                    "save_steps",
-                    "output_dir",
-                ],
-            },
-        }
+    def _wrap_comment(self, text: str, width: int = 88) -> list[str]:
+        """Wrap a comment to specified width, accounting for '# ' prefix."""
+        if not text.strip():
+            return ["#"]
+        
+        # Account for "# " prefix (2 characters)
+        content_width = width - 2
+        wrapped_lines = textwrap.wrap(text, width=content_width)
+        return [f"# {line}" for line in wrapped_lines]
 
     def _format_type(self, field_info: dict[str, Any]) -> str:
         """Format field type information in a readable way."""
@@ -144,6 +62,119 @@ class QuartoGenerator:
             return "dict"
 
         return field_type
+
+    def _extract_field_groups_from_source(self, model_class: type[BaseModel]) -> list[dict]:
+        """Extract field groups from source code based on blank lines and comments."""
+        try:
+            source = inspect.getsource(model_class)
+            tree = ast.parse(source)
+        except (OSError, TypeError):
+            # Fallback if we can't get source code
+            return [{"title": "Configuration Options", "fields": list(model_class.model_fields.keys())}]
+
+        groups = []
+        current_group_fields = []
+        current_group_title = None
+        current_group_comment = None
+        
+        # Find the class definition
+        class_node = None
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name == model_class.__name__:
+                class_node = node
+                break
+        
+        if not class_node:
+            return [{"title": "Configuration Options", "fields": list(model_class.model_fields.keys())}]
+
+        # Parse the source lines to detect groupings
+        source_lines = source.split('\n')
+        
+        # Find assignments that correspond to model fields
+        field_assignments = []
+        for node in class_node.body:
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                field_name = node.target.id
+                if field_name in model_class.model_fields:
+                    field_assignments.append({
+                        'name': field_name,
+                        'lineno': node.lineno,
+                        'end_lineno': getattr(node, 'end_lineno', node.lineno)
+                    })
+
+        if not field_assignments:
+            return [{"title": "Configuration Options", "fields": list(model_class.model_fields.keys())}]
+
+        # Sort by line number
+        field_assignments.sort(key=lambda x: x['lineno'])
+
+        # Group fields based on blank lines and comments
+        for i, field_info in enumerate(field_assignments):
+            field_name = field_info['name']
+            current_line = field_info['lineno']
+            
+            # Check if this starts a new group (blank line before or significant gap)
+            is_new_group = False
+            
+            if i == 0:
+                is_new_group = True
+            else:
+                prev_end_line = field_assignments[i-1]['end_lineno']
+                
+                # Check for blank lines or comments between fields
+                lines_between = source_lines[prev_end_line:current_line-1]
+                has_blank_line = any(line.strip() == '' for line in lines_between)
+                has_comment = any(line.strip().startswith('#') for line in lines_between)
+                
+                # Start new group if there's a blank line or comment, or significant gap
+                if has_blank_line or has_comment or (current_line - prev_end_line > 3):
+                    is_new_group = True
+
+            if is_new_group and current_group_fields:
+                # Save the previous group
+                title = current_group_title or f"Group {len(groups) + 1}"
+                groups.append({
+                    "title": title,
+                    "fields": current_group_fields.copy(),
+                    "description": current_group_comment
+                })
+                current_group_fields = []
+                current_group_title = None
+                current_group_comment = None
+
+            # Look for a comment that might serve as a group title
+            if is_new_group:
+                # Check lines before this field for comments
+                start_check = max(0, current_line - 5)
+                for line_idx in range(start_check, current_line - 1):
+                    if line_idx < len(source_lines):
+                        line = source_lines[line_idx].strip()
+                        if line.startswith('#') and not line.startswith('# '):
+                            # This might be a section comment
+                            comment_text = line.lstrip('#').strip()
+                            if len(comment_text) > 0 and not comment_text.lower().startswith(('todo', 'fixme', 'note')):
+                                current_group_title = comment_text.title()
+                                current_group_comment = comment_text
+
+            current_group_fields.append(field_name)
+
+        # Add the final group
+        if current_group_fields:
+            title = current_group_title or f"Group {len(groups) + 1}"
+            groups.append({
+                "title": title,
+                "fields": current_group_fields,
+                "description": current_group_comment
+            })
+
+        # If no groups were created, create a default one
+        if not groups:
+            groups.append({
+                "title": "Configuration Options",
+                "fields": list(model_class.model_fields.keys())
+            })
+
+        return groups
 
     def _get_yaml_example(
         self, field_name: str, field_info: dict[str, Any]
@@ -184,32 +215,6 @@ class QuartoGenerator:
 
         return None
 
-    def _categorize_fields(self, properties: dict[str, Any]) -> dict[str, list[str]]:
-        """Categorize fields into logical groups."""
-        categorized: dict[str, list[str]] = {
-            category: [] for category in self.field_categories
-        }
-        uncategorized = []
-
-        for field_name in properties:
-            if field_name.startswith("_"):
-                continue
-
-            found_category = False
-            for category, config in self.field_categories.items():
-                if field_name in config["fields"]:
-                    categorized[category].append(field_name)
-                    found_category = True
-                    break
-
-            if not found_category:
-                uncategorized.append(field_name)
-
-        if uncategorized:
-            categorized["Other Options"] = uncategorized
-
-        return categorized
-
     def generate_qmd(
         self, model_class: type[BaseModel], title: str | None = None
     ) -> str:
@@ -222,6 +227,9 @@ class QuartoGenerator:
         properties = schema.get("properties", {})
         required = schema.get("required", [])
 
+        # Extract field groups from source code
+        field_groups = self._extract_field_groups_from_source(model_class)
+
         # Start building QMD content
         qmd_lines = [
             "---",
@@ -231,35 +239,19 @@ class QuartoGenerator:
             "",
         ]
 
-        # Generate table of contents
-        categorized = self._categorize_fields(properties)
-        qmd_lines.extend(
-            [
-                "## Table of Contents",
-                "",
-            ]
-        )
+        # Generate one big code block with all fields
+        qmd_lines.append("```yaml")
 
-        for category, fields in categorized.items():
-            if fields:
-                qmd_lines.append(
-                    f"- [{category}](#{category.lower().replace(' ', '-')})"
-                )
-
-        qmd_lines.append("")
-
-        # Generate sections
-        for category, fields in categorized.items():
-            if not fields:
+        for i, group in enumerate(field_groups):
+            if not group["fields"]:
                 continue
 
-            category_config = self.field_categories.get(category, {})
-            category_desc = category_config.get("description", "")
+            # Add blank line between groups (except before first group)
+            if i > 0:
+                qmd_lines.append("")
 
-            qmd_lines.extend([f"## {category}", "", category_desc, ""])
-            qmd_lines.append("```yaml")
-
-            for field_name in sorted(fields):
+            # Process fields in the order they appear in source
+            for field_name in group["fields"]:
                 if field_name not in properties:
                     continue
 
@@ -270,8 +262,11 @@ class QuartoGenerator:
                 description = field_info.get("description", "")
                 default = field_info.get("default")
 
+                # Add wrapped comment for description
                 if description:
-                    qmd_lines.append(f"# {description}")
+                    wrapped_lines = self._wrap_comment(description)
+                    qmd_lines.extend(wrapped_lines)
+                    
                 line = f"{field_name}: {field_type}"
                 if default is not None:
                     line += f" = {default}"
@@ -279,7 +274,7 @@ class QuartoGenerator:
                     line += " (required)"
                 qmd_lines.append(line)
 
-            qmd_lines.append("```")
+        qmd_lines.append("```")
 
         return "\n".join(qmd_lines)
 
