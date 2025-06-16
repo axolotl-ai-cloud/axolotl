@@ -300,7 +300,7 @@ class KDStrategyLoader(StrategyLoader):
     """
 
     def _get_strategy_cls(self, cfg):  # pylint: disable=unused-argument
-        return ChatTemplateStrategyWithKDv2
+        return ChatTemplateStrategyWithKD
 
     def _get_strategy_params(self, cfg, ds_cfg: Dict[str, Any]):
         strategy_params = super()._get_strategy_params(cfg, ds_cfg)
@@ -314,4 +314,14 @@ class KDStrategyLoader(StrategyLoader):
         return strategy_params
 
 
+class KDStrategyLoaderV2(KDStrategyLoader):
+    """
+    Load KD chat template datasets with pre-tokenized logprob data
+    """
+
+    def _get_strategy_cls(self, cfg):  # pylint: disable=unused-argument
+        return ChatTemplateStrategyWithKDv2
+
+
 load = KDStrategyLoader()
+load_v2 = KDStrategyLoaderV2()
