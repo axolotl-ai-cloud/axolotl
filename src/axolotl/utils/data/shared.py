@@ -562,6 +562,9 @@ def _merge_datasets_with_token_weighting(
 ) -> Dataset:
     """
     Merge several HF datasets into one, honouring per-dataset weights *in tokens*.
+    
+    Weights represent the relative proportion each dataset should contribute
+    to the final merged dataset in terms of tokens.
     """
     from math import floor
 
@@ -570,8 +573,10 @@ def _merge_datasets_with_token_weighting(
     _validate_weights(datasets_configs)
 
     total_original_tokens = 0
+    original_token_counts = []
     for i, (ds, d_cfg) in enumerate(zip(datasets, datasets_configs)):
         original_tokens = _count_tokens(ds)
+        original_token_counts.append(original_tokens)
         total_original_tokens += original_tokens
         dataset_name = getattr(d_cfg, "path", f"dataset_{i}")
         LOG.info(f"Dataset '{dataset_name}': {original_tokens:,} tokens ({len(ds):,} samples)")
@@ -589,37 +594,32 @@ def _merge_datasets_with_token_weighting(
             weighted_parts.append(ds)
             continue
 
-        tok_cnt = _count_tokens(ds)
-        target_tok = max(1, int(tok_cnt * weight))
+        tok_cnt = original_token_counts[i]
+        target_tok = max(1, int(weight * total_original_tokens))
         
         LOG.info(f"Dataset '{dataset_name}': {tok_cnt:,} → {target_tok:,} tokens "
                 f"(weight={weight:.3f}, strategy={strategy})")
 
         if strategy == "upsample":
-            repeats = max(1, floor(target_tok / tok_cnt))
-            weighted_parts.extend([ds] * repeats)
-
-            remaining_tok = target_tok - repeats * tok_cnt
-            if remaining_tok:
+            if target_tok <= tok_cnt:
                 avg_len = max(1, tok_cnt // len(ds))
-                n_extra = min(len(ds), int(remaining_tok / avg_len) + 1)
+                n_keep = max(1, min(len(ds), int(target_tok / avg_len)))
+                sampled = ds.shuffle(seed=cfg.seed).select(range(n_keep))
+                weighted_parts.append(sampled)
+            else:
+                repeats = max(1, floor(target_tok / tok_cnt))
+                weighted_parts.extend([ds] * repeats)
 
-                extra = ds.shuffle(seed=cfg.seed).select(range(n_extra))
-                weighted_parts.append(extra)
+                remaining_tok = target_tok - repeats * tok_cnt
+                if remaining_tok > 0:
+                    avg_len = max(1, tok_cnt // len(ds))
+                    n_extra = min(len(ds), max(1, int(remaining_tok / avg_len)))
+                    extra = ds.shuffle(seed=cfg.seed).select(range(n_extra))
+                    weighted_parts.append(extra)
 
         elif strategy == "downsample":
-            if weight >= 1:
-                LOG.warning(
-                    f"Ignoring downsample weight ≥1 for dataset "
-                    f"{getattr(d_cfg, 'path', '<unknown>')}."
-                )
-                weighted_parts.append(ds)
-                continue
-
-            target_tok = max(1, int(tok_cnt * weight))
             avg_len = max(1, tok_cnt // len(ds))
-            n_keep = max(1, int(target_tok / avg_len))
-
+            n_keep = max(1, min(len(ds), int(target_tok / avg_len)))
             sampled = ds.shuffle(seed=cfg.seed).select(range(n_keep))
             weighted_parts.append(sampled)
         else:
