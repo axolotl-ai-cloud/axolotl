@@ -22,7 +22,7 @@ class QuartoGenerator:
         """Wrap a comment to specified width, accounting for '# ' prefix."""
         if not text.strip():
             return ["#"]
-        
+
         # Account for "# " prefix (2 characters)
         content_width = width - 2
         wrapped_lines = textwrap.wrap(text, width=content_width)
@@ -63,69 +63,90 @@ class QuartoGenerator:
 
         return field_type
 
-    def _extract_field_groups_from_source(self, model_class: type[BaseModel]) -> list[dict]:
+    def _extract_field_groups_from_source(
+        self, model_class: type[BaseModel]
+    ) -> list[dict]:
         """Extract field groups from source code based on blank lines and comments."""
         try:
             source = inspect.getsource(model_class)
             tree = ast.parse(source)
         except (OSError, TypeError):
             # Fallback if we can't get source code
-            return [{"title": "Configuration Options", "fields": list(model_class.model_fields.keys())}]
+            return [
+                {
+                    "title": "Configuration Options",
+                    "fields": list(model_class.model_fields.keys()),
+                }
+            ]
 
         groups = []
         current_group_fields = []
         current_group_title = None
         current_group_comment = None
-        
+
         # Find the class definition
         class_node = None
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef) and node.name == model_class.__name__:
                 class_node = node
                 break
-        
+
         if not class_node:
-            return [{"title": "Configuration Options", "fields": list(model_class.model_fields.keys())}]
+            return [
+                {
+                    "title": "Configuration Options",
+                    "fields": list(model_class.model_fields.keys()),
+                }
+            ]
 
         # Parse the source lines to detect groupings
-        source_lines = source.split('\n')
-        
+        source_lines = source.split("\n")
+
         # Find assignments that correspond to model fields
         field_assignments = []
         for node in class_node.body:
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 field_name = node.target.id
                 if field_name in model_class.model_fields:
-                    field_assignments.append({
-                        'name': field_name,
-                        'lineno': node.lineno,
-                        'end_lineno': getattr(node, 'end_lineno', node.lineno)
-                    })
+                    field_assignments.append(
+                        {
+                            "name": field_name,
+                            "lineno": node.lineno,
+                            "end_lineno": getattr(node, "end_lineno", node.lineno),
+                        }
+                    )
 
         if not field_assignments:
-            return [{"title": "Configuration Options", "fields": list(model_class.model_fields.keys())}]
+            return [
+                {
+                    "title": "Configuration Options",
+                    "fields": list(model_class.model_fields.keys()),
+                }
+            ]
 
         # Sort by line number
-        field_assignments.sort(key=lambda x: x['lineno'])
+        field_assignments.sort(key=lambda x: x["lineno"])
 
         # Group fields based on blank lines and comments
         for i, field_info in enumerate(field_assignments):
-            field_name = field_info['name']
-            current_line = field_info['lineno']
-            
+            field_name = field_info["name"]
+            current_line = field_info["lineno"]
+
             # Check if this starts a new group (blank line before or significant gap)
             is_new_group = False
-            
+
             if i == 0:
                 is_new_group = True
             else:
-                prev_end_line = field_assignments[i-1]['end_lineno']
-                
+                prev_end_line = field_assignments[i - 1]["end_lineno"]
+
                 # Check for blank lines or comments between fields
-                lines_between = source_lines[prev_end_line:current_line-1]
-                has_blank_line = any(line.strip() == '' for line in lines_between)
-                has_comment = any(line.strip().startswith('#') for line in lines_between)
-                
+                lines_between = source_lines[prev_end_line : current_line - 1]
+                has_blank_line = any(line.strip() == "" for line in lines_between)
+                has_comment = any(
+                    line.strip().startswith("#") for line in lines_between
+                )
+
                 # Start new group if there's a blank line or comment, or significant gap
                 if has_blank_line or has_comment or (current_line - prev_end_line > 3):
                     is_new_group = True
@@ -133,11 +154,13 @@ class QuartoGenerator:
             if is_new_group and current_group_fields:
                 # Save the previous group
                 title = current_group_title or f"Group {len(groups) + 1}"
-                groups.append({
-                    "title": title,
-                    "fields": current_group_fields.copy(),
-                    "description": current_group_comment
-                })
+                groups.append(
+                    {
+                        "title": title,
+                        "fields": current_group_fields.copy(),
+                        "description": current_group_comment,
+                    }
+                )
                 current_group_fields = []
                 current_group_title = None
                 current_group_comment = None
@@ -149,10 +172,14 @@ class QuartoGenerator:
                 for line_idx in range(start_check, current_line - 1):
                     if line_idx < len(source_lines):
                         line = source_lines[line_idx].strip()
-                        if line.startswith('#') and not line.startswith('# '):
+                        if line.startswith("#") and not line.startswith("# "):
                             # This might be a section comment
-                            comment_text = line.lstrip('#').strip()
-                            if len(comment_text) > 0 and not comment_text.lower().startswith(('todo', 'fixme', 'note')):
+                            comment_text = line.lstrip("#").strip()
+                            if len(
+                                comment_text
+                            ) > 0 and not comment_text.lower().startswith(
+                                ("todo", "fixme", "note")
+                            ):
                                 current_group_title = comment_text.title()
                                 current_group_comment = comment_text
 
@@ -161,18 +188,22 @@ class QuartoGenerator:
         # Add the final group
         if current_group_fields:
             title = current_group_title or f"Group {len(groups) + 1}"
-            groups.append({
-                "title": title,
-                "fields": current_group_fields,
-                "description": current_group_comment
-            })
+            groups.append(
+                {
+                    "title": title,
+                    "fields": current_group_fields,
+                    "description": current_group_comment,
+                }
+            )
 
         # If no groups were created, create a default one
         if not groups:
-            groups.append({
-                "title": "Configuration Options",
-                "fields": list(model_class.model_fields.keys())
-            })
+            groups.append(
+                {
+                    "title": "Configuration Options",
+                    "fields": list(model_class.model_fields.keys()),
+                }
+            )
 
         return groups
 
@@ -266,7 +297,7 @@ class QuartoGenerator:
                 if description:
                     wrapped_lines = self._wrap_comment(description)
                     qmd_lines.extend(wrapped_lines)
-                    
+
                 line = f"{field_name}: {field_type}"
                 if default is not None:
                     line += f" = {default}"
