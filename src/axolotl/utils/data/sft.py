@@ -331,7 +331,7 @@ def _load_raw_datasets(
         prompters.append(dataset_prompter)
 
     # Merge datasets
-    dataset = merge_datasets(datasets, cfg)
+    dataset = merge_datasets(datasets, cfg, datasets_configs)
 
     if not cfg.skip_prepare_dataset:
         dataset = drop_long_seq_in_dataset(dataset, cfg)
