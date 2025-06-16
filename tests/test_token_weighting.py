@@ -46,7 +46,7 @@ class TestTokenWeighting:
         cfg = create_cfg()
         datasets_configs = [
             DictDefault({"weight": 1.0, "weight_strategy": "upsample"}),
-            DictDefault({"weight": 1.0, "weight_strategy": "upsample"})
+            DictDefault({"weight": 1.0, "weight_strategy": "upsample"}),
         ]
         result = merge_datasets(sample_datasets, cfg, datasets_configs)
         assert len(result) == 4  # Should be same as no weighting
@@ -57,9 +57,9 @@ class TestTokenWeighting:
         cfg = create_cfg()
         datasets_configs = [
             DictDefault({"weight": 0.7, "path": "dataset1"}),
-            DictDefault({"weight": 0.4, "path": "dataset2"})  # Sum = 1.1
+            DictDefault({"weight": 0.4, "path": "dataset2"}),  # Sum = 1.1
         ]
-        
+
         with pytest.raises(ValueError, match="Dataset weights must sum to 1.0"):
             merge_datasets(sample_datasets, cfg, datasets_configs)
 
@@ -69,10 +69,12 @@ class TestTokenWeighting:
         cfg = create_cfg()
         datasets_configs = [
             DictDefault({"weight": 1.5, "path": "dataset1"}),  # Invalid
-            DictDefault({"weight": 0.5, "path": "dataset2"})
+            DictDefault({"weight": 0.5, "path": "dataset2"}),
         ]
-        
-        with pytest.raises(ValueError, match="Dataset weight must be between 0.0 and 1.0"):
+
+        with pytest.raises(
+            ValueError, match="Dataset weight must be between 0.0 and 1.0"
+        ):
             merge_datasets(sample_datasets, cfg, datasets_configs)
 
     def test_token_weighting_equal_weights(self):
@@ -81,9 +83,9 @@ class TestTokenWeighting:
         cfg = create_cfg()
         datasets_configs = [
             DictDefault({"weight": 0.5, "weight_strategy": "upsample"}),
-            DictDefault({"weight": 0.5, "weight_strategy": "upsample"})
+            DictDefault({"weight": 0.5, "weight_strategy": "upsample"}),
         ]
-        
+
         result = merge_datasets(sample_datasets, cfg, datasets_configs)
         assert len(result) > 0
         assert "input_ids" in result.features
@@ -94,9 +96,9 @@ class TestTokenWeighting:
         cfg = create_cfg()
         datasets_configs = [
             DictDefault({"weight": 0.8, "weight_strategy": "upsample"}),
-            DictDefault({"weight": 0.2, "weight_strategy": "upsample"})
+            DictDefault({"weight": 0.2, "weight_strategy": "upsample"}),
         ]
-        
+
         result = merge_datasets(sample_datasets, cfg, datasets_configs)
         assert len(result) > 0
         assert "input_ids" in result.features
@@ -107,9 +109,9 @@ class TestTokenWeighting:
         cfg = create_cfg()
         datasets_configs = [
             DictDefault({"weight": 0.3, "weight_strategy": "downsample"}),
-            DictDefault({"weight": 0.7, "weight_strategy": "upsample"})
+            DictDefault({"weight": 0.7, "weight_strategy": "upsample"}),
         ]
-        
+
         result = merge_datasets(sample_datasets, cfg, datasets_configs)
         assert len(result) > 0
         assert "input_ids" in result.features
@@ -119,7 +121,7 @@ class TestTokenWeighting:
         cfg = create_cfg()
         single_dataset = [Dataset.from_list([{"input_ids": [1, 2, 3]}])]
         datasets_configs = [DictDefault({"weight": 0.5})]
-        
+
         result = merge_datasets(single_dataset, cfg, datasets_configs)
         assert len(result) == 1
 
@@ -127,10 +129,10 @@ class TestTokenWeighting:
         """Test _has_token_weighting helper function."""
         configs1 = [DictDefault({"weight": 1.0, "weight_strategy": "upsample"})]
         assert not _has_token_weighting(configs1)
-        
+
         configs2 = [DictDefault({"weight": 0.5, "weight_strategy": "upsample"})]
         assert _has_token_weighting(configs2)
-        
+
         configs3 = [DictDefault({"weight": 1.0, "weight_strategy": "downsample"})]
         assert _has_token_weighting(configs3)
 
