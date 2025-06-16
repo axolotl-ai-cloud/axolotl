@@ -541,7 +541,7 @@ def _validate_weights(datasets_configs) -> None:
     weights = []
     for d_cfg in datasets_configs:
         weight = getattr(d_cfg, "weight", 1.0)
-        if not (0.0 <= weight <= 1.0):
+        if not 0.0 <= weight <= 1.0:
             raise ValueError(
                 f"Dataset weight must be between 0.0 and 1.0, got {weight} "
                 f"for dataset {getattr(d_cfg, 'path', '<unknown>')}"
