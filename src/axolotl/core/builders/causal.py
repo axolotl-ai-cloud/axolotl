@@ -437,6 +437,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         ]
         collator_args = [self.tokenizer]
 
+        collator_cls_and_kwargs = None
         if self.cfg.plugins:
             plugin_manager = PluginManager.get_instance()
             collator_cls_and_kwargs = plugin_manager.get_collator_cls_and_kwargs(

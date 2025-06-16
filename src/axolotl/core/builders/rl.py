@@ -151,7 +151,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if blocklist_key in training_args_kwargs:
                 del training_args_kwargs[blocklist_key]
 
-
         if self.cfg.plugins:
             plugin_manager = PluginManager.get_instance()
             plugin_training_args = plugin_manager.get_training_args(self.cfg)
