@@ -597,8 +597,15 @@ def _merge_datasets_with_token_weighting(
         tok_cnt = original_token_counts[i]
         target_tok = max(1, int(weight * total_original_tokens))
         
+        if target_tok > tok_cnt:
+            effective_operation = "upsampling"
+        elif target_tok < tok_cnt:
+            effective_operation = "downsampling"
+        else:
+            effective_operation = "unchanged"
+        
         LOG.info(f"Dataset '{dataset_name}': {tok_cnt:,} → {target_tok:,} tokens "
-                f"(weight={weight:.3f}, strategy={strategy})")
+                f"(weight={weight:.3f}, {effective_operation})")
 
         if strategy == "upsample":
             if target_tok <= tok_cnt:
