@@ -651,6 +651,16 @@ def _merge_datasets_with_token_weighting(
     LOG.info(f"Final merged dataset: {final_tokens:,} tokens ({len(merged):,} samples)")
     LOG.info(f"Token count change: {total_original_tokens:,} → {final_tokens:,} "
             f"({final_tokens/total_original_tokens:.2f}x)")
+    
+    LOG.info("Final weight verification:")
+    for i, (ds, d_cfg) in enumerate(zip(datasets, datasets_configs)):
+        dataset_name = getattr(d_cfg, "path", f"dataset_{i}")
+        original_weight = float(getattr(d_cfg, "weight", 1.0) or 1.0)
+        target_tokens = max(1, int(original_weight * total_original_tokens))
+        actual_weight = target_tokens / final_tokens if final_tokens > 0 else 0
+        
+        LOG.info(f"  {dataset_name}: requested={original_weight:.3f}, "
+                f"achieved≈{actual_weight:.3f} ({target_tokens:,}/{final_tokens:,} tokens)")
 
     if cfg.shuffle_merged_datasets:
         merged = merged.shuffle(seed=cfg.seed)
