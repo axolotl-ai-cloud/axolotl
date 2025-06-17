@@ -371,7 +371,6 @@ jobs:
           directory: coverage-reports
           fail_ci_if_error: false
           verbose: true
-          carryforward: true
           name: codecov-umbrella
           override_commit: ${{ github.event.pull_request.head.sha || github.sha }}
           override_pr: ${{ github.event.pull_request.number }}
