@@ -14,7 +14,7 @@ This guide covers all the ways you can install and set up Axolotl for your envir
 ## Requirements {#sec-requirements}
 
 - NVIDIA GPU (Ampere architecture or newer for `bf16` and Flash Attention) or AMD GPU
-- Python ≥3.10
+- Python ≥3.11
 - PyTorch ≥2.5.1
 
 ## Installation Methods {#sec-installation-methods}
@@ -153,7 +153,7 @@ We recommend using WSL2 (Windows Subsystem for Linux) or Docker.
 
 ### Conda/Pip venv {#sec-conda}
 
-1. Install Python ≥3.10
+1. Install Python ≥3.11
 2. Install PyTorch: https://pytorch.org/get-started/locally/
 3. Install Axolotl:
    ```{.bash}
