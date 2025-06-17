@@ -53,11 +53,11 @@ IGNORE_INDEX = -100
 LOG = get_logger(__name__)
 
 
-class EvalFirstStepCallback(
+class EvalOnTrainingBeginCallback(
     TrainerCallback
 ):  # pylint: disable=too-few-public-methods disable=unused-argument
     """
-    Callback to trigger evals on the first step
+    Callback to trigger evals before training begins
     """
 
     def on_step_end(
@@ -67,7 +67,7 @@ class EvalFirstStepCallback(
         control: TrainerControl,
         **kwargs,
     ):
-        if args.eval_strategy == IntervalStrategy.STEPS and state.global_step == 1:
+        if args.eval_strategy == IntervalStrategy.STEPS and state.global_step == 0:
             control.should_evaluate = True
         return control
 
