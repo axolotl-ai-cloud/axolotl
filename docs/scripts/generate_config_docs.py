@@ -9,9 +9,8 @@ import ast
 import inspect
 import textwrap
 from functools import lru_cache
-from typing import Any, FrozenSet, Type
+from typing import Any, FrozenSet, Type, Union
 
-import yaml
 from pydantic import BaseModel
 
 from axolotl.utils.schemas.config import AxolotlInputConfig
@@ -30,18 +29,18 @@ class QuartoGenerator:
         """Get fields defined directly in a single class (not inherited)."""
         if cls in self._class_fields_cache:
             return self._class_fields_cache[cls]
-        
+
         fields = set()
-        
+
         # Get annotated fields
-        if hasattr(cls, '__annotations__'):
+        if hasattr(cls, "__annotations__"):
             fields.update(cls.__annotations__.keys())
-        
+
         # Also check for non-annotated assignments via AST (fallback)
         try:
             source = inspect.getsource(cls)
             tree = ast.parse(source)
-            
+
             # Find the class definition
             for node in tree.body:
                 if isinstance(node, ast.ClassDef) and node.name == cls.__name__:
@@ -53,10 +52,10 @@ class QuartoGenerator:
                     break
         except (OSError, TypeError):
             pass
-        
+
         # Filter out private/special methods
-        fields = {f for f in fields if not f.startswith('_')}
-        
+        fields = {f for f in fields if not f.startswith("_")}
+
         result = frozenset(fields)
         self._class_fields_cache[cls] = result
         return result
@@ -64,57 +63,82 @@ class QuartoGenerator:
     def _is_pydantic_model(self, type_obj) -> bool:
         """Check if a type is a Pydantic BaseModel."""
         try:
-            return (hasattr(type_obj, '__bases__') and 
-                    any(base.__name__ == 'BaseModel' for base in type_obj.__bases__))
+            # Check if it's a class and has model_fields (Pydantic v2 indicator)
+            if hasattr(type_obj, "model_fields") and hasattr(type_obj, "__mro__"):
+                # Check the method resolution order for BaseModel
+                for base in type_obj.__mro__:
+                    if base.__name__ == "BaseModel" and hasattr(base, "model_fields"):
+                        return True
+
+            # Fallback: check __bases__ directly
+            if hasattr(type_obj, "__bases__"):
+                return any(base.__name__ == "BaseModel" for base in type_obj.__bases__)
+
+            return False
         except (AttributeError, TypeError):
             return False
 
     def _extract_nested_type(self, field_type) -> tuple[Any, bool]:
         """Extract the actual type from Union types like PeftConfig | None."""
+        import types
+
         is_optional = False
-        
-        # Handle Union types (like PeftConfig | None)
-        if hasattr(field_type, '__origin__'):
+
+        # Handle new Python 3.10+ union syntax (PeftConfig | None)
+        if hasattr(field_type, "__class__") and field_type.__class__ is types.UnionType:
+            # Get non-None types from the Union
+            non_none_types = [
+                arg for arg in field_type.__args__ if arg is not type(None)
+            ]
+            if len(non_none_types) >= 1:
+                is_optional = type(None) in field_type.__args__
+                return non_none_types[0], is_optional
+
+        # Handle old typing.Union syntax
+        if hasattr(field_type, "__origin__"):
             if field_type.__origin__ is Union:
                 # Get non-None types from the Union
-                non_none_types = [arg for arg in field_type.__args__ if arg is not type(None)]
-                if len(non_none_types) == 1:
+                non_none_types = [
+                    arg for arg in field_type.__args__ if arg is not type(None)
+                ]
+                if len(non_none_types) >= 1:
                     is_optional = type(None) in field_type.__args__
                     return non_none_types[0], is_optional
-                elif len(non_none_types) > 1:
-                    # Multiple non-None types, keep as Union
-                    return field_type, is_optional
             # Handle other generic types like list[str], dict[str, Any], etc.
-            elif hasattr(field_type, '__args__'):
+            elif hasattr(field_type, "__args__"):
                 return field_type, is_optional
-        
+
         return field_type, is_optional
 
-    def _get_nested_models(self, model_class: type[BaseModel], visited=None) -> dict[str, type[BaseModel]]:
+    def _get_nested_models(
+        self, model_class: type[BaseModel], visited=None
+    ) -> dict[str, type[BaseModel]]:
         """Get all nested Pydantic models from a model class."""
+        import types
+
         if visited is None:
             visited = set()
-        
+
         # Avoid infinite recursion
         if model_class.__name__ in visited:
             return {}
-        
+
         if model_class in self._nested_models_cache:
             return self._nested_models_cache[model_class]
-        
+
         visited.add(model_class.__name__)
         nested_models = {}
-        
+
         # Check all fields in the model
         for field_name, field_info in model_class.model_fields.items():
             field_type, is_optional = self._extract_nested_type(field_info.annotation)
-            
+
             if self._is_pydantic_model(field_type):
                 nested_models[field_type.__name__] = field_type
                 # Recursively get nested models from this nested model
                 deeper_nested = self._get_nested_models(field_type, visited.copy())
                 nested_models.update(deeper_nested)
-        
+
         self._nested_models_cache[model_class] = nested_models
         return nested_models
 
@@ -122,19 +146,20 @@ class QuartoGenerator:
         """Build inheritance map for a class and all its parents."""
         if child_class in self._inheritance_map_cache:
             return self._inheritance_map_cache[child_class]
-        
+
         inheritance_map = {}
-        
+
         # Get MRO and filter out BaseModel and object
         mro_classes = [
-            cls for cls in child_class.__mro__ 
-            if cls not in (BaseModel, object) and hasattr(cls, '__annotations__')
+            cls
+            for cls in child_class.__mro__
+            if cls not in (BaseModel, object) and hasattr(cls, "__annotations__")
         ]
-        
+
         # Process each class in the MRO
         for cls in mro_classes:
             inheritance_map[cls] = self._get_direct_fields(cls)
-        
+
         self._inheritance_map_cache[child_class] = inheritance_map
         return inheritance_map
 
@@ -154,14 +179,14 @@ class QuartoGenerator:
         """Extract the actual type annotation text from source code, checking inheritance chain."""
         # Use inheritance map to check classes efficiently
         inheritance_map = self._build_inheritance_map(model_class)
-        
+
         # Check classes in MRO order
         for cls in model_class.__mro__:
             if cls in inheritance_map and field_name in inheritance_map[cls]:
                 type_annotation = self._get_type_from_class_source(cls, field_name)
                 if type_annotation != "unknown":
                     return type_annotation
-        
+
         return "unknown"
 
     def _get_type_from_class_source(self, class_obj: type, field_name: str) -> str:
@@ -177,7 +202,9 @@ class QuartoGenerator:
             if isinstance(node, ast.ClassDef) and node.name == class_obj.__name__:
                 # Find the field assignment
                 for body_node in node.body:
-                    if isinstance(body_node, ast.AnnAssign) and isinstance(body_node.target, ast.Name):
+                    if isinstance(body_node, ast.AnnAssign) and isinstance(
+                        body_node.target, ast.Name
+                    ):
                         if body_node.target.id == field_name and body_node.annotation:
                             return ast.unparse(body_node.annotation)
                 break
@@ -190,34 +217,38 @@ class QuartoGenerator:
         """Extract field groups from all classes in the inheritance hierarchy."""
         all_groups = []
         inheritance_map = self._build_inheritance_map(model_class)
-        
-        # Get all Pydantic base classes in reverse MRO order (most specific first)
+
+        # Get all Pydantic base classes in MRO order (most specific first)
+        # This puts AxolotlInputConfig fields first, then parent class fields
         pydantic_classes = [
-            cls for cls in reversed(model_class.__mro__)
+            cls
+            for cls in model_class.__mro__
             if cls in inheritance_map and inheritance_map[cls]
         ]
-        
+
         # Extract groups from each class
         for cls in pydantic_classes:
             class_groups = self._extract_field_groups_from_source(cls, model_class)
             for group in class_groups:
                 # Add class name to group title for context
                 if len(pydantic_classes) > 1:
-                    group['title'] = f"{cls.__name__}: {group['title']}"
-                    group['class_name'] = cls.__name__
+                    group["title"] = f"{cls.__name__}: {group['title']}"
+                    group["class_name"] = cls.__name__
                 all_groups.append(group)
-        
+
         # If no groups found, create a default grouping by class
         if not all_groups:
             for cls in pydantic_classes:
                 fields_in_class = inheritance_map[cls]
                 if fields_in_class:
-                    all_groups.append({
-                        'title': cls.__name__,
-                        'fields': list(fields_in_class),
-                        'class_name': cls.__name__
-                    })
-        
+                    all_groups.append(
+                        {
+                            "title": cls.__name__,
+                            "fields": list(fields_in_class),
+                            "class_name": cls.__name__,
+                        }
+                    )
+
         return all_groups
 
     def _extract_field_groups_from_source(
@@ -256,7 +287,7 @@ class QuartoGenerator:
             if fields_in_class:
                 return [
                     {
-                        "title": "Configuration Options", 
+                        "title": "Configuration Options",
                         "fields": list(fields_in_class),
                     }
                 ]
@@ -366,94 +397,155 @@ class QuartoGenerator:
 
         return groups
 
-    def _generate_nested_model_sections(self, nested_models: dict[str, type[BaseModel]]) -> list[str]:
-        """Generate documentation sections for nested models."""
-        sections = []
-        
-        for model_name, model_class in nested_models.items():
-            # Generate schema for the nested model
+    def _generate_field_documentation(
+        self,
+        model_class: type[BaseModel],
+        field_name: str,
+        field_info: dict,
+        field_type_str: str,
+        is_required: bool,
+        indent_level: int = 0,
+        visited_models: set = None,
+    ) -> list[str]:
+        """Generate documentation for a single field, expanding nested models inline."""
+        if visited_models is None:
+            visited_models = set()
+
+        lines = []
+        indent = "  " * indent_level
+
+        # Get the actual field type for nested model detection
+        if field_name in model_class.model_fields:
+            pydantic_field_info = model_class.model_fields[field_name]
+            actual_field_type, is_optional = self._extract_nested_type(
+                pydantic_field_info.annotation
+            )
+        else:
+            actual_field_type = None
+            is_optional = False
+
+        # Add description comment if available
+        description = field_info.get("description", "")
+        if description:
+            wrapped_lines = self._wrap_comment(description, width=88 - len(indent))
+            for line in wrapped_lines:
+                lines.append(f"{indent}{line}")
+
+        # Check if this is a nested Pydantic model
+        if (
+            actual_field_type
+            and self._is_pydantic_model(actual_field_type)
+            and actual_field_type.__name__ not in visited_models
+        ):
+
+            # Add the field name with nested structure
+            field_line = f"{indent}{field_name}:"
+            if field_info.get("default") is not None:
+                field_line += f" # default: {field_info['default']}"
+            if is_required:
+                field_line += " # (required)"
+            lines.append(field_line)
+
+            # Add to visited to prevent infinite recursion
+            new_visited = visited_models.copy()
+            new_visited.add(actual_field_type.__name__)
+
+            # Get nested model schema
             try:
-                schema = model_class.model_json_schema()
-                properties = schema.get("properties", {})
-                required = schema.get("required", [])
+                nested_schema = actual_field_type.model_json_schema()
+                nested_properties = nested_schema.get("properties", {})
+                nested_required = nested_schema.get("required", [])
             except Exception:
                 # Fallback: use model fields directly
-                properties = {}
-                required = []
-                for field_name, field_info in model_class.model_fields.items():
-                    description = ""
-                    if (hasattr(field_info, "json_schema_extra") and 
-                        field_info.json_schema_extra):
-                        description = field_info.json_schema_extra.get("description", "")
-                    elif hasattr(field_info, "description") and field_info.description:
-                        description = field_info.description
+                nested_properties = {}
+                nested_required = []
+                for (
+                    nested_field_name,
+                    nested_field_info,
+                ) in actual_field_type.model_fields.items():
+                    nested_description = ""
+                    if (
+                        hasattr(nested_field_info, "json_schema_extra")
+                        and nested_field_info.json_schema_extra
+                    ):
+                        nested_description = nested_field_info.json_schema_extra.get(
+                            "description", ""
+                        )
+                    elif (
+                        hasattr(nested_field_info, "description")
+                        and nested_field_info.description
+                    ):
+                        nested_description = nested_field_info.description
 
-                    default_val = None
-                    if hasattr(field_info, "default") and field_info.default is not None:
-                        if str(field_info.default) != "PydanticUndefined":
-                            default_val = field_info.default
+                    nested_default_val = None
+                    if (
+                        hasattr(nested_field_info, "default")
+                        and nested_field_info.default is not None
+                    ):
+                        if str(nested_field_info.default) != "PydanticUndefined":
+                            nested_default_val = nested_field_info.default
 
-                    properties[field_name] = {
+                    nested_properties[nested_field_name] = {
                         "type": "unknown",
-                        "description": description,
-                        "default": default_val,
+                        "description": nested_description,
+                        "default": nested_default_val,
                     }
 
-                    if field_info.is_required():
-                        required.append(field_name)
+                    if nested_field_info.is_required():
+                        nested_required.append(nested_field_name)
 
-            # Start the section
-            section_lines = [
-                f"## {model_name}",
-                "",
-                f"*{model_class.__doc__ or f'Configuration options for {model_name}'}*",
-                "",
-                "```yaml"
-            ]
+            # Get field groups for the nested model
+            nested_field_groups = self._extract_field_groups_from_all_classes(
+                actual_field_type
+            )
 
-            # Get field groups for this nested model
-            field_groups = self._extract_field_groups_from_all_classes(model_class)
-
-            for i, group in enumerate(field_groups):
+            # Generate nested fields with increased indentation
+            for i, group in enumerate(nested_field_groups):
                 if not group["fields"]:
                     continue
 
                 # Add blank line between groups (except before first group)
                 if i > 0:
-                    section_lines.append("")
+                    lines.append("")
 
-                # Process fields in the order they appear in source
-                for field_name in group["fields"]:
-                    if field_name not in properties:
+                # Process nested fields
+                for nested_field_name in group["fields"]:
+                    if nested_field_name not in nested_properties:
                         continue
 
-                    field_info = properties[field_name]
-                    field_type = self._extract_type_from_source(model_class, field_name)
-                    is_required = field_name in required
+                    nested_field_info = nested_properties[nested_field_name]
+                    nested_field_type = self._extract_type_from_source(
+                        actual_field_type, nested_field_name
+                    )
+                    nested_is_required = nested_field_name in nested_required
 
-                    description = field_info.get("description", "")
-                    default = field_info.get("default")
+                    # Recursively generate documentation for nested field
+                    nested_lines = self._generate_field_documentation(
+                        actual_field_type,
+                        nested_field_name,
+                        nested_field_info,
+                        nested_field_type,
+                        nested_is_required,
+                        indent_level + 1,
+                        new_visited,
+                    )
+                    lines.extend(nested_lines)
+        else:
+            # Regular field (not a nested model or already visited)
+            field_line = f"{indent}{field_name}: {field_type_str}"
+            if field_info.get("default") is not None:
+                field_line += f" = {field_info['default']}"
+            if is_required:
+                field_line += " (required)"
+            lines.append(field_line)
 
-                    # Add wrapped comment for description
-                    if description:
-                        wrapped_lines = self._wrap_comment(description)
-                        section_lines.extend(wrapped_lines)
-
-                    line = f"{field_name}: {field_type}"
-                    if default is not None:
-                        line += f" = {default}"
-                    if is_required:
-                        line += " (required)"
-                    section_lines.append(line)
-
-            section_lines.extend(["```", ""])
-            sections.append("\n".join(section_lines))
-
-        return sections
+        return lines
 
     def generate_qmd(
-        self, model_class: type[BaseModel], title: str | None = None, 
-        expand_nested: bool = True
+        self,
+        model_class: type[BaseModel],
+        title: str | None = None,
+        expand_nested: bool = True,
     ) -> str:
         """Auto-generate config reference documentation including inherited fields."""
 
@@ -511,7 +603,7 @@ class QuartoGenerator:
             "",
         ]
 
-        # Generate one big code block with all fields
+        # Generate one big code block with all fields (inline nested expansion)
         qmd_lines.append("```yaml")
 
         for i, group in enumerate(field_groups):
@@ -531,32 +623,69 @@ class QuartoGenerator:
                 field_type = self._extract_type_from_source(model_class, field_name)
                 is_required = field_name in required
 
-                description = field_info.get("description", "")
-                default = field_info.get("default")
+                if expand_nested:
+                    # Check if this field has nested models to add spacing
+                    if field_name in model_class.model_fields:
+                        pydantic_field_info = model_class.model_fields[field_name]
+                        actual_field_type, is_optional = self._extract_nested_type(
+                            pydantic_field_info.annotation
+                        )
+                        has_nested = actual_field_type and self._is_pydantic_model(
+                            actual_field_type
+                        )
+                    else:
+                        has_nested = False
 
-                # Add wrapped comment for description
-                if description:
-                    wrapped_lines = self._wrap_comment(description)
-                    qmd_lines.extend(wrapped_lines)
+                    # Add blank line before nested config
+                    if has_nested:
+                        qmd_lines.append("")
 
-                line = f"{field_name}: {field_type}"
-                if default is not None:
-                    line += f" = {default}"
-                if is_required:
-                    line += " (required)"
-                qmd_lines.append(line)
+                    # Use the new inline generation method
+                    field_lines = self._generate_field_documentation(
+                        model_class,
+                        field_name,
+                        field_info,
+                        field_type,
+                        is_required,
+                        indent_level=0,
+                        visited_models=set(),
+                    )
+                    qmd_lines.extend(field_lines)
+
+                    # Add blank line after nested config
+                    if has_nested:
+                        qmd_lines.append("")
+                else:
+                    # Original simple approach
+                    description = field_info.get("description", "")
+                    default = field_info.get("default")
+
+                    # Add wrapped comment for description
+                    if description:
+                        wrapped_lines = self._wrap_comment(description)
+                        qmd_lines.extend(wrapped_lines)
+
+                    line = f"{field_name}: {field_type}"
+                    if default is not None:
+                        line += f" = {default}"
+                    if is_required:
+                        line += " (required)"
+                    qmd_lines.append(line)
 
         qmd_lines.append("```")
 
-        # Add nested model sections if requested
-        if expand_nested:
-            nested_models = self._get_nested_models(model_class)
-            if nested_models:
-                qmd_lines.extend(["", "# Nested Configuration Objects", ""])
-                nested_sections = self._generate_nested_model_sections(nested_models)
-                qmd_lines.extend(nested_sections)
+        # Join all lines and clean up any double newlines
+        content = "\n".join(qmd_lines)
 
-        return "\n".join(qmd_lines)
+        # Replace multiple consecutive newlines with just two newlines (one blank line)
+        import re
+
+        content = re.sub(r"\n{3,}", "\n\n", content)
+
+        # Ensure single newline at the very end
+        content = content.rstrip("\n") + "\n"
+
+        return content
 
     def clear_cache(self):
         """Clear all caches for memory management."""
@@ -570,7 +699,7 @@ def main():
     generator = QuartoGenerator()
 
     print("Generating config reference content...")
-    qmd_content = generator.generate_qmd(AxolotlInputConfig, "Config Reference")
+    qmd_content = generator.generate_qmd(AxolotlInputConfig, "Config Reference", True)
 
     print("Writing to file...")
     with open("docs/config-reference.qmd", "w", encoding="utf-8") as f:
