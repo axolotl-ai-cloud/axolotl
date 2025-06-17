@@ -9,7 +9,6 @@ import ast
 import inspect
 import textwrap
 import types
-from functools import lru_cache
 from typing import Any, FrozenSet, Type, Union
 
 from pydantic import BaseModel
@@ -25,7 +24,6 @@ class QuartoGenerator:
         self._inheritance_map_cache = {}
         self._nested_models_cache = {}
 
-    @lru_cache(maxsize=128)
     def _get_direct_fields(self, cls: Type[BaseModel]) -> FrozenSet[str]:
         """Get fields defined directly in a single class (not inherited)."""
         if cls in self._class_fields_cache:
@@ -629,13 +627,6 @@ class QuartoGenerator:
         content = content.rstrip("\n") + "\n"
 
         return content
-
-    def clear_cache(self):
-        """Clear all caches for memory management."""
-        self._class_fields_cache.clear()
-        self._inheritance_map_cache.clear()
-        self._nested_models_cache.clear()
-        self._get_direct_fields.cache_clear()
 
 
 def main():
