@@ -16,6 +16,7 @@ format:
 - [Gemma-3](#sec-gemma-3)
 - [Qwen2-VL](#sec-qwen2-vl)
 - [Qwen2.5-VL](#sec-qwen25-vl)
+- [Phi3-V](#sec-phi3-v)
 
 ## Usage
 
@@ -124,6 +125,15 @@ chat_template: qwen2_vl
 base_model: Qwen/Qwen2.5-VL-7B-Instruct
 
 chat_template: qwen2_vl  # same as qwen2-vl
+```
+
+### Phi3-V {#sec-phi3-v}
+
+```yaml
+base_model: microsoft/Phi-3.5-vision-instruct
+
+trust_remote_code: true
+chat_template: phi_35_vl
 ```
 
 ## Dataset Format

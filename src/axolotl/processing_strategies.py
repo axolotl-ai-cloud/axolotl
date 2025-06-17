@@ -285,6 +285,7 @@ def get_processing_strategy(
         "llava",
         "mistral_v7_tekken",
         "pixtral",
+        "phi_35_vl",
     ]:
         return ProcessingStrategy(
             processor, chat_template, image_size, image_resize_algorithm
