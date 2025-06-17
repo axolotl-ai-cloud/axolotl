@@ -11,8 +11,6 @@ from axolotl.prompt_strategies.chat_template import (
 )
 from axolotl.utils.dict import DictDefault
 
-from tests.hf_offline_utils import enable_hf_offline
-
 
 @pytest.fixture(name="messages_w_reasoning")
 def messages_w_reasoning_fixture():
@@ -59,7 +57,6 @@ def messages_w_reasoning_fixture():
 
 
 @pytest.fixture(name="qwen3_tokenizer")
-@enable_hf_offline
 def qwen3_tokenizer_fixture(
     download_qwen3_half_billion_model,
 ):  # pylint: disable=unused-argument
