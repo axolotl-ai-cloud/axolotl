@@ -41,7 +41,7 @@ class KDArgs(BaseModel):
     )
     kd_alpha: float | None = None  # loss coefficient for KD loss
     kd_temperature: float | None = None  # temperature for sampling during KD
-    kd_beta: float | None = None  # beta coefficient for ratio of fwd and reverse KL
+    kd_beta: float | None = 0.0  # beta coefficient for ratio of fwd and reverse KL
     kd_normalize_topk: bool | None = (
         None  # whether to normalize student logits during KD
     )
