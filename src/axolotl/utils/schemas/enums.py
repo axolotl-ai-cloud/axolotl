@@ -10,7 +10,7 @@ import torch
 class TorchIntDType(Enum):
     """Torch integer data types - `getattr` guards against torch < 2.6 which does not support int4"""
 
-    uint1 = getattr(torch, "uint1", None)  
+    uint1 = getattr(torch, "uint1", None)
     uint2 = getattr(torch, "uint2", None)
     uint3 = getattr(torch, "uint3", None)
     uint4 = getattr(torch, "uint4", None)

@@ -10,7 +10,9 @@ class TRLConfig(BaseModel):
 
     beta: float | None = Field(
         default=None,
-        json_schema_extra={"description": "Beta parameter for the RL training. Same as `rl_beta`. Use"},
+        json_schema_extra={
+            "description": "Beta parameter for the RL training. Same as `rl_beta`. Use"
+        },
     )
     max_completion_length: int | None = Field(
         default=None,
@@ -41,14 +43,14 @@ class TRLConfig(BaseModel):
     )
     vllm_guided_decoding_regex: str | None = Field(
         default=None,
-        json_schema_extra={
-            "description": "Regex for vLLM guided decoding."
-        },
+        json_schema_extra={"description": "Regex for vLLM guided decoding."},
     )
 
     reward_funcs: list[str] | None = Field(
         default=None,
-        json_schema_extra={"description": "List of reward functions to load. Paths must be importable from current dir."},
+        json_schema_extra={
+            "description": "List of reward functions to load. Paths must be importable from current dir."
+        },
     )
     reward_weights: list[float] | None = Field(
         default=None,
@@ -58,9 +60,7 @@ class TRLConfig(BaseModel):
     )
     num_generations: int | None = Field(
         default=None,
-        json_schema_extra={
-            "description": "Number of generations to sample."
-        },
+        json_schema_extra={"description": "Number of generations to sample."},
     )
     log_completions: bool | None = Field(
         default=False,
@@ -74,21 +74,15 @@ class TRLConfig(BaseModel):
     )
     sync_ref_model: bool | None = Field(
         default=False,
-        json_schema_extra={
-            "description": "Whether to sync the reference model."
-        },
+        json_schema_extra={"description": "Whether to sync the reference model."},
     )
     ref_model_mixup_alpha: float | None = Field(
         default=0.9,
-        json_schema_extra={
-            "description": "Mixup alpha for the reference model."
-        },
+        json_schema_extra={"description": "Mixup alpha for the reference model."},
     )
     ref_model_sync_steps: int | None = Field(
         default=64,
-        json_schema_extra={
-            "description": "Sync steps for the reference model."
-        },
+        json_schema_extra={"description": "Sync steps for the reference model."},
     )
     scale_rewards: bool = Field(
         default=True,

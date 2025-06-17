@@ -23,6 +23,7 @@ class QuartoGenerator:
     def __init__(self):
         self._class_fields_cache = {}
         self._inheritance_map_cache = {}
+        self._nested_models_cache = {}
 
     @lru_cache(maxsize=128)
     def _get_direct_fields(self, cls: Type[BaseModel]) -> FrozenSet[str]:
@@ -60,6 +61,63 @@ class QuartoGenerator:
         self._class_fields_cache[cls] = result
         return result
 
+    def _is_pydantic_model(self, type_obj) -> bool:
+        """Check if a type is a Pydantic BaseModel."""
+        try:
+            return (hasattr(type_obj, '__bases__') and 
+                    any(base.__name__ == 'BaseModel' for base in type_obj.__bases__))
+        except (AttributeError, TypeError):
+            return False
+
+    def _extract_nested_type(self, field_type) -> tuple[Any, bool]:
+        """Extract the actual type from Union types like PeftConfig | None."""
+        is_optional = False
+        
+        # Handle Union types (like PeftConfig | None)
+        if hasattr(field_type, '__origin__'):
+            if field_type.__origin__ is Union:
+                # Get non-None types from the Union
+                non_none_types = [arg for arg in field_type.__args__ if arg is not type(None)]
+                if len(non_none_types) == 1:
+                    is_optional = type(None) in field_type.__args__
+                    return non_none_types[0], is_optional
+                elif len(non_none_types) > 1:
+                    # Multiple non-None types, keep as Union
+                    return field_type, is_optional
+            # Handle other generic types like list[str], dict[str, Any], etc.
+            elif hasattr(field_type, '__args__'):
+                return field_type, is_optional
+        
+        return field_type, is_optional
+
+    def _get_nested_models(self, model_class: type[BaseModel], visited=None) -> dict[str, type[BaseModel]]:
+        """Get all nested Pydantic models from a model class."""
+        if visited is None:
+            visited = set()
+        
+        # Avoid infinite recursion
+        if model_class.__name__ in visited:
+            return {}
+        
+        if model_class in self._nested_models_cache:
+            return self._nested_models_cache[model_class]
+        
+        visited.add(model_class.__name__)
+        nested_models = {}
+        
+        # Check all fields in the model
+        for field_name, field_info in model_class.model_fields.items():
+            field_type, is_optional = self._extract_nested_type(field_info.annotation)
+            
+            if self._is_pydantic_model(field_type):
+                nested_models[field_type.__name__] = field_type
+                # Recursively get nested models from this nested model
+                deeper_nested = self._get_nested_models(field_type, visited.copy())
+                nested_models.update(deeper_nested)
+        
+        self._nested_models_cache[model_class] = nested_models
+        return nested_models
+
     def _build_inheritance_map(self, child_class: Type[BaseModel]):
         """Build inheritance map for a class and all its parents."""
         if child_class in self._inheritance_map_cache:
@@ -79,18 +137,6 @@ class QuartoGenerator:
         
         self._inheritance_map_cache[child_class] = inheritance_map
         return inheritance_map
-
-    def _field_defined_in_class(self, cls: Type[BaseModel], field_name: str, 
-                               child_class: Type[BaseModel] = None) -> bool:
-        """Check if a field is defined in this specific class (not inherited)."""
-        if child_class:
-            # Use the inheritance map for efficiency
-            inheritance_map = self._build_inheritance_map(child_class)
-            if cls in inheritance_map:
-                return field_name in inheritance_map[cls]
-        
-        # Fallback to direct check
-        return field_name in self._get_direct_fields(cls)
 
     def _wrap_comment(self, text: str, width: int = 88) -> list[str]:
         """Wrap a comment to specified width, accounting for '# ' prefix."""
@@ -320,47 +366,94 @@ class QuartoGenerator:
 
         return groups
 
-    def _get_yaml_example(
-        self, field_name: str, field_info: dict[str, Any]
-    ) -> str | None:
-        """Generate a YAML example for the field."""
-        default = field_info.get("default")
+    def _generate_nested_model_sections(self, nested_models: dict[str, type[BaseModel]]) -> list[str]:
+        """Generate documentation sections for nested models."""
+        sections = []
+        
+        for model_name, model_class in nested_models.items():
+            # Generate schema for the nested model
+            try:
+                schema = model_class.model_json_schema()
+                properties = schema.get("properties", {})
+                required = schema.get("required", [])
+            except Exception:
+                # Fallback: use model fields directly
+                properties = {}
+                required = []
+                for field_name, field_info in model_class.model_fields.items():
+                    description = ""
+                    if (hasattr(field_info, "json_schema_extra") and 
+                        field_info.json_schema_extra):
+                        description = field_info.json_schema_extra.get("description", "")
+                    elif hasattr(field_info, "description") and field_info.description:
+                        description = field_info.description
 
-        # Common examples based on field names
-        examples = {
-            "base_model": "./llama-7b-hf",
-            "model_type": "AutoModelForCausalLM",
-            "tokenizer_type": "AutoTokenizer",
-            "sequence_len": 2048,
-            "micro_batch_size": 2,
-            "gradient_accumulation_steps": 1,
-            "num_epochs": 4,
-            "learning_rate": 0.00003,
-            "warmup_steps": 100,
-            "lora_r": 8,
-            "lora_alpha": 16,
-            "lora_dropout": 0.05,
-            "lora_target_modules": ["q_proj", "v_proj"],
-            "load_in_8bit": True,
-            "bf16": True,
-            "flash_attention": True,
-            "gradient_checkpointing": True,
-            "output_dir": "./completed-model",
-            "wandb_project": "my-finetuning-project",
-        }
+                    default_val = None
+                    if hasattr(field_info, "default") and field_info.default is not None:
+                        if str(field_info.default) != "PydanticUndefined":
+                            default_val = field_info.default
 
-        if field_name in examples:
-            return yaml.dump(
-                {field_name: examples[field_name]}, default_style=None
-            ).strip()
+                    properties[field_name] = {
+                        "type": "unknown",
+                        "description": description,
+                        "default": default_val,
+                    }
 
-        if default is not None:
-            return yaml.dump({field_name: default}, default_style=None).strip()
+                    if field_info.is_required():
+                        required.append(field_name)
 
-        return None
+            # Start the section
+            section_lines = [
+                f"## {model_name}",
+                "",
+                f"*{model_class.__doc__ or f'Configuration options for {model_name}'}*",
+                "",
+                "```yaml"
+            ]
+
+            # Get field groups for this nested model
+            field_groups = self._extract_field_groups_from_all_classes(model_class)
+
+            for i, group in enumerate(field_groups):
+                if not group["fields"]:
+                    continue
+
+                # Add blank line between groups (except before first group)
+                if i > 0:
+                    section_lines.append("")
+
+                # Process fields in the order they appear in source
+                for field_name in group["fields"]:
+                    if field_name not in properties:
+                        continue
+
+                    field_info = properties[field_name]
+                    field_type = self._extract_type_from_source(model_class, field_name)
+                    is_required = field_name in required
+
+                    description = field_info.get("description", "")
+                    default = field_info.get("default")
+
+                    # Add wrapped comment for description
+                    if description:
+                        wrapped_lines = self._wrap_comment(description)
+                        section_lines.extend(wrapped_lines)
+
+                    line = f"{field_name}: {field_type}"
+                    if default is not None:
+                        line += f" = {default}"
+                    if is_required:
+                        line += " (required)"
+                    section_lines.append(line)
+
+            section_lines.extend(["```", ""])
+            sections.append("\n".join(section_lines))
+
+        return sections
 
     def generate_qmd(
-        self, model_class: type[BaseModel], title: str | None = None
+        self, model_class: type[BaseModel], title: str | None = None, 
+        expand_nested: bool = True
     ) -> str:
         """Auto-generate config reference documentation including inherited fields."""
 
@@ -455,13 +548,23 @@ class QuartoGenerator:
 
         qmd_lines.append("```")
 
+        # Add nested model sections if requested
+        if expand_nested:
+            nested_models = self._get_nested_models(model_class)
+            if nested_models:
+                qmd_lines.extend(["", "# Nested Configuration Objects", ""])
+                nested_sections = self._generate_nested_model_sections(nested_models)
+                qmd_lines.extend(nested_sections)
+
         return "\n".join(qmd_lines)
 
     def clear_cache(self):
         """Clear all caches for memory management."""
         self._class_fields_cache.clear()
         self._inheritance_map_cache.clear()
+        self._nested_models_cache.clear()
         self._get_direct_fields.cache_clear()
+
 
 def main():
     generator = QuartoGenerator()
