@@ -13,10 +13,22 @@ class MLFlowConfig(BaseModel):
     """MLFlow configuration subset"""
 
     use_mlflow: bool | None = None
-    mlflow_tracking_uri: str | None = None
-    mlflow_experiment_name: str | None = None
-    mlflow_run_name: str | None = None
-    hf_mlflow_log_artifacts: bool | None = None
+    mlflow_tracking_uri: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "URI to mlflow"}
+    )
+    mlflow_experiment_name: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Your experiment name"}
+    )
+    mlflow_run_name: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Your run name"}
+    )
+    hf_mlflow_log_artifacts: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "set to true to copy each saved checkpoint on each save to mlflow artifact registry"}
+    )
 
 
 class LISAConfig(BaseModel):
@@ -40,13 +52,31 @@ class WandbConfig(BaseModel):
     """Wandb configuration subset"""
 
     use_wandb: bool | None = None
-    wandb_name: str | None = None
-    wandb_run_id: str | None = None
-    wandb_mode: str | None = None
-    wandb_project: str | None = None
-    wandb_entity: str | None = None
+    wandb_name: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Set the name of your wandb run"}
+    )
+    wandb_run_id: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Set the ID of your wandb run"}
+    )
+    wandb_mode: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "\"offline\" to save run metadata locally and not sync to the server, \"disabled\" to turn off wandb"}
+    )
+    wandb_project: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Your wandb project name"}
+    )
+    wandb_entity: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "A wandb Team name if using a Team"}
+    )
     wandb_watch: str | None = None
-    wandb_log_model: str | None = None
+    wandb_log_model: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "\"checkpoint\" to log model to wandb Artifacts every `save_steps` or \"end\" to log only at the end of training"}
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -64,14 +94,38 @@ class WandbConfig(BaseModel):
 class CometConfig(BaseModel):
     """Comet configuration subset"""
 
-    use_comet: bool | None = None
-    comet_api_key: str | None = None
-    comet_workspace: str | None = None
-    comet_project_name: str | None = None
-    comet_experiment_key: str | None = None
-    comet_mode: str | None = None
-    comet_online: bool | None = None
-    comet_experiment_config: dict[str, Any] | None = None
+    use_comet: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Enable or disable Comet integration."}
+    )
+    comet_api_key: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "API key for Comet. Recommended to set via `comet login`."}
+    )
+    comet_workspace: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Workspace name in Comet. Defaults to the user's default workspace."}
+    )
+    comet_project_name: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Project name in Comet. Defaults to Uncategorized."}
+    )
+    comet_experiment_key: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Identifier for the experiment. Used to append data to an existing experiment or control the key of new experiments. Default to a random key."}
+    )
+    comet_mode: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Create a new experiment (\"create\") or log to an existing one (\"get\"). Default (\"get_or_create\") auto-selects based on configuration."}
+    )
+    comet_online: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Set to True to log data to Comet server, or False for offline storage. Default is True."}
+    )
+    comet_experiment_config: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={"description": "Dictionary for additional configuration settings, see the doc for more details."}
+    )
 
 
 class GradioConfig(BaseModel):

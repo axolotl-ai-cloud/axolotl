@@ -1,13 +1,15 @@
-#!/usr/bin/env python3
+# type: ignore
+
 """
-Enhanced Quarto documentation generator from Pydantic models.
-Uses source code structure to automatically group fields.
+Quarto documentation generation from Pydantic models. Uses Pydantic model source code
+to automatically group fields, including inherited fields from parent classes.
 """
 
 import ast
 import inspect
 import textwrap
-from typing import Any
+from functools import lru_cache
+from typing import Any, FrozenSet, Type
 
 import yaml
 from pydantic import BaseModel
@@ -17,6 +19,78 @@ from axolotl.utils.schemas.config import AxolotlInputConfig
 
 class QuartoGenerator:
     """Generate Quarto documentation from Pydantic models."""
+
+    def __init__(self):
+        self._class_fields_cache = {}
+        self._inheritance_map_cache = {}
+
+    @lru_cache(maxsize=128)
+    def _get_direct_fields(self, cls: Type[BaseModel]) -> FrozenSet[str]:
+        """Get fields defined directly in a single class (not inherited)."""
+        if cls in self._class_fields_cache:
+            return self._class_fields_cache[cls]
+        
+        fields = set()
+        
+        # Get annotated fields
+        if hasattr(cls, '__annotations__'):
+            fields.update(cls.__annotations__.keys())
+        
+        # Also check for non-annotated assignments via AST (fallback)
+        try:
+            source = inspect.getsource(cls)
+            tree = ast.parse(source)
+            
+            # Find the class definition
+            for node in tree.body:
+                if isinstance(node, ast.ClassDef) and node.name == cls.__name__:
+                    for body_node in node.body:
+                        if isinstance(body_node, ast.Assign):
+                            for target in body_node.targets:
+                                if isinstance(target, ast.Name):
+                                    fields.add(target.id)
+                    break
+        except (OSError, TypeError):
+            pass
+        
+        # Filter out private/special methods
+        fields = {f for f in fields if not f.startswith('_')}
+        
+        result = frozenset(fields)
+        self._class_fields_cache[cls] = result
+        return result
+
+    def _build_inheritance_map(self, child_class: Type[BaseModel]):
+        """Build inheritance map for a class and all its parents."""
+        if child_class in self._inheritance_map_cache:
+            return self._inheritance_map_cache[child_class]
+        
+        inheritance_map = {}
+        
+        # Get MRO and filter out BaseModel and object
+        mro_classes = [
+            cls for cls in child_class.__mro__ 
+            if cls not in (BaseModel, object) and hasattr(cls, '__annotations__')
+        ]
+        
+        # Process each class in the MRO
+        for cls in mro_classes:
+            inheritance_map[cls] = self._get_direct_fields(cls)
+        
+        self._inheritance_map_cache[child_class] = inheritance_map
+        return inheritance_map
+
+    def _field_defined_in_class(self, cls: Type[BaseModel], field_name: str, 
+                               child_class: Type[BaseModel] = None) -> bool:
+        """Check if a field is defined in this specific class (not inherited)."""
+        if child_class:
+            # Use the inheritance map for efficiency
+            inheritance_map = self._build_inheritance_map(child_class)
+            if cls in inheritance_map:
+                return field_name in inheritance_map[cls]
+        
+        # Fallback to direct check
+        return field_name in self._get_direct_fields(cls)
 
     def _wrap_comment(self, text: str, width: int = 88) -> list[str]:
         """Wrap a comment to specified width, accounting for '# ' prefix."""
@@ -31,71 +105,77 @@ class QuartoGenerator:
     def _extract_type_from_source(
         self, model_class: type[BaseModel], field_name: str
     ) -> str:
-        """Extract the actual type annotation text from source code."""
+        """Extract the actual type annotation text from source code, checking inheritance chain."""
+        # Use inheritance map to check classes efficiently
+        inheritance_map = self._build_inheritance_map(model_class)
+        
+        # Check classes in MRO order
+        for cls in model_class.__mro__:
+            if cls in inheritance_map and field_name in inheritance_map[cls]:
+                type_annotation = self._get_type_from_class_source(cls, field_name)
+                if type_annotation != "unknown":
+                    return type_annotation
+        
+        return "unknown"
+
+    def _get_type_from_class_source(self, class_obj: type, field_name: str) -> str:
+        """Extract type annotation from a specific class's source code."""
         try:
-            source = inspect.getsource(model_class)
+            source = inspect.getsource(class_obj)
             tree = ast.parse(source)
         except (OSError, TypeError):
             return "unknown"
 
         # Find the class definition
-        class_node = None
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.name == model_class.__name__:
-                class_node = node
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef) and node.name == class_obj.__name__:
+                # Find the field assignment
+                for body_node in node.body:
+                    if isinstance(body_node, ast.AnnAssign) and isinstance(body_node.target, ast.Name):
+                        if body_node.target.id == field_name and body_node.annotation:
+                            return ast.unparse(body_node.annotation)
                 break
 
-        if not class_node:
-            return "unknown"
-
-        # Find the field assignment
-        for node in class_node.body:
-            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                if node.target.id == field_name and node.annotation:
-                    # Convert the AST annotation back to source text
-                    return ast.unparse(node.annotation)
-
         return "unknown"
-        """Format field type information in a readable way."""
-        # Handle fallback case where we only have basic info
-        if field_info.get("type") == "unknown":
-            return "unknown"
 
-        if "anyOf" in field_info:
-            types = []
-            is_optional = False
-
-            for option in field_info["anyOf"]:
-                if option.get("type") == "null":
-                    is_optional = True
-                elif option.get("type"):
-                    types.append(option["type"])
-                elif "$ref" in option:
-                    ref_name = option["$ref"].split("/")[-1]
-                    types.append(ref_name)
-
-            type_str = " | ".join(types) if types else "unknown"
-            return f"{type_str} | None" if is_optional else type_str
-
-        field_type = field_info.get("type", "unknown")
-
-        if field_type == "array":
-            items = field_info.get("items", {})
-            if items.get("type"):
-                item_type = items["type"]
-            elif "$ref" in items:
-                item_type = items["$ref"].split("/")[-1]
-            else:
-                item_type = "unknown"
-            return f"list[{item_type}]"
-
-        if field_type == "object":
-            return "dict"
-
-        return field_type
+    def _extract_field_groups_from_all_classes(
+        self, model_class: type[BaseModel]
+    ) -> list[dict]:
+        """Extract field groups from all classes in the inheritance hierarchy."""
+        all_groups = []
+        inheritance_map = self._build_inheritance_map(model_class)
+        
+        # Get all Pydantic base classes in reverse MRO order (most specific first)
+        pydantic_classes = [
+            cls for cls in reversed(model_class.__mro__)
+            if cls in inheritance_map and inheritance_map[cls]
+        ]
+        
+        # Extract groups from each class
+        for cls in pydantic_classes:
+            class_groups = self._extract_field_groups_from_source(cls, model_class)
+            for group in class_groups:
+                # Add class name to group title for context
+                if len(pydantic_classes) > 1:
+                    group['title'] = f"{cls.__name__}: {group['title']}"
+                    group['class_name'] = cls.__name__
+                all_groups.append(group)
+        
+        # If no groups found, create a default grouping by class
+        if not all_groups:
+            for cls in pydantic_classes:
+                fields_in_class = inheritance_map[cls]
+                if fields_in_class:
+                    all_groups.append({
+                        'title': cls.__name__,
+                        'fields': list(fields_in_class),
+                        'class_name': cls.__name__
+                    })
+        
+        return all_groups
 
     def _extract_field_groups_from_source(
-        self, model_class: type[BaseModel]
+        self, model_class: type[BaseModel], child_class: type[BaseModel] = None
     ) -> list[dict]:
         """Extract field groups from source code based on blank lines and comments."""
         try:
@@ -103,12 +183,15 @@ class QuartoGenerator:
             tree = ast.parse(source)
         except (OSError, TypeError):
             # Fallback if we can't get source code
-            return [
-                {
-                    "title": "Configuration Options",
-                    "fields": list(model_class.model_fields.keys()),
-                }
-            ]
+            fields_in_class = self._get_direct_fields(model_class)
+            if fields_in_class:
+                return [
+                    {
+                        "title": "Configuration Options",
+                        "fields": list(fields_in_class),
+                    }
+                ]
+            return []
 
         groups = []
         current_group_fields = []
@@ -123,22 +206,28 @@ class QuartoGenerator:
                 break
 
         if not class_node:
-            return [
-                {
-                    "title": "Configuration Options",
-                    "fields": list(model_class.model_fields.keys()),
-                }
-            ]
+            fields_in_class = self._get_direct_fields(model_class)
+            if fields_in_class:
+                return [
+                    {
+                        "title": "Configuration Options", 
+                        "fields": list(fields_in_class),
+                    }
+                ]
+            return []
 
         # Parse the source lines to detect groupings
         source_lines = source.split("\n")
 
-        # Find assignments that correspond to model fields
+        # Get fields that are actually defined in this specific class
+        fields_in_class = self._get_direct_fields(model_class)
+
+        # Find assignments that correspond to model fields for THIS class only
         field_assignments = []
         for node in class_node.body:
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 field_name = node.target.id
-                if field_name in model_class.model_fields:
+                if field_name in fields_in_class:
                     field_assignments.append(
                         {
                             "name": field_name,
@@ -148,12 +237,14 @@ class QuartoGenerator:
                     )
 
         if not field_assignments:
-            return [
-                {
-                    "title": "Configuration Options",
-                    "fields": list(model_class.model_fields.keys()),
-                }
-            ]
+            if fields_in_class:
+                return [
+                    {
+                        "title": "Configuration Options",
+                        "fields": list(fields_in_class),
+                    }
+                ]
+            return []
 
         # Sort by line number
         field_assignments.sort(key=lambda x: x["lineno"])
@@ -227,15 +318,6 @@ class QuartoGenerator:
                 }
             )
 
-        # If no groups were created, create a default one
-        if not groups:
-            groups.append(
-                {
-                    "title": "Configuration Options",
-                    "fields": list(model_class.model_fields.keys()),
-                }
-            )
-
         return groups
 
     def _get_yaml_example(
@@ -280,7 +362,7 @@ class QuartoGenerator:
     def generate_qmd(
         self, model_class: type[BaseModel], title: str | None = None
     ) -> str:
-        """Auto-generate config reference documentation."""
+        """Auto-generate config reference documentation including inherited fields."""
 
         if title is None:
             title = f"{model_class.__name__} Reference"
@@ -324,8 +406,8 @@ class QuartoGenerator:
                 if field_info.is_required():
                     required.append(field_name)
 
-        # Extract field groups from source code
-        field_groups = self._extract_field_groups_from_source(model_class)
+        # Extract field groups from all classes in inheritance hierarchy
+        field_groups = self._extract_field_groups_from_all_classes(model_class)
 
         # Start building QMD content
         qmd_lines = [
@@ -375,10 +457,13 @@ class QuartoGenerator:
 
         return "\n".join(qmd_lines)
 
+    def clear_cache(self):
+        """Clear all caches for memory management."""
+        self._class_fields_cache.clear()
+        self._inheritance_map_cache.clear()
+        self._get_direct_fields.cache_clear()
 
-# Usage example
 def main():
-    """Example usage of the enhanced generator."""
     generator = QuartoGenerator()
 
     print("Generating config reference content...")

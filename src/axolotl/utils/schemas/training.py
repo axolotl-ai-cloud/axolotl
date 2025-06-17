@@ -23,10 +23,13 @@ class LrGroup(BaseModel):
 class HyperparametersConfig(BaseModel):
     """Training hyperparams configuration subset"""
 
-    gradient_accumulation_steps: int | None = Field(default=1)
+    gradient_accumulation_steps: int | None = Field(
+        default=1,
+        json_schema_extra={"description": "If greater than 1, backpropagation will be skipped and the gradients will be accumulated for the given number of steps."}
+    )
     micro_batch_size: int | None = Field(
         default=1,
-        json_schema_extra={"description": "per gpu micro batch size for training"},
+        json_schema_extra={"description": "The number of samples to include in each batch. This is the number of samples sent to each GPU. Batch size per gpu = micro_batch_size * gradient_accumulation_steps"},
     )
     batch_size: int | None = Field(
         default=None,
@@ -41,45 +44,91 @@ class HyperparametersConfig(BaseModel):
         },
     )
 
-    auto_find_batch_size: bool | None = None
+    auto_find_batch_size: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "whether to find batch size that fits in memory. Passed to underlying transformers Trainer"}
+    )
 
-    train_on_inputs: bool | None = False
-    group_by_length: bool | None = None
+    train_on_inputs: bool | None = Field(
+        default=False,
+        json_schema_extra={"description": "Whether to mask out or include the human's prompt from the training labels"}
+    )
+    group_by_length: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Group similarly sized data to minimize padding. May be slower to start, as it must download and sort the entire dataset. Note that training loss may have an oscillating pattern with this enabled."}
+    )
 
     learning_rate: str | float
     embedding_lr: float | None = None
     embedding_lr_scale: float | None = None
-    weight_decay: float | None = 0.0
-    optimizer: (OptimizerNames | CustomSupportedOptimizers) | None = (
-        OptimizerNames.ADAMW_TORCH_FUSED
+    weight_decay: float | None = Field(
+        default=0.0,
+        json_schema_extra={"description": "Specify weight decay"}
+    )
+    optimizer: (OptimizerNames | CustomSupportedOptimizers) | None = Field(
+        default=OptimizerNames.ADAMW_TORCH_FUSED,
+        json_schema_extra={"description": "Specify optimizer"}
     )
     optim_args: (str | dict[str, Any]) | None = Field(
         default=None,
-        json_schema_extra={"description": "Optional arguments to supply to optimizer."},
+        json_schema_extra={"description": "Dictionary of arguments to pass to the optimizer"},
     )
     optim_target_modules: (list[str] | Literal["all_linear"]) | None = Field(
         default=None,
         json_schema_extra={
-            "description": "The target modules to optimize, i.e. the module names that you would like to train."
+            "description": "The target modules to optimize, i.e. the module names that you would like to train, right now this is used only for GaLore algorithm"
         },
     )
-    torchdistx_path: str | None = None
+    torchdistx_path: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Path to torch distx for optim 'adamw_anyprecision'"}
+    )
     lr_scheduler: (SchedulerType | Literal["one_cycle"] | Literal["rex"]) | None = (
         SchedulerType.COSINE
     )
-    lr_scheduler_kwargs: dict[str, Any] | None = None
+    lr_scheduler_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={"description": "Specify a scheduler and kwargs to use with the optimizer"}
+    )
     lr_quadratic_warmup: bool | None = None
-    cosine_min_lr_ratio: float | None = None
-    cosine_constant_lr_ratio: float | None = None
-    lr_div_factor: float | None = None
+    cosine_min_lr_ratio: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "decay lr to some percentage of the peak lr, e.g. cosine_min_lr_ratio=0.1 for 10% of peak lr"}
+    )
+    cosine_constant_lr_ratio: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "freeze lr at some percentage of the step, e.g. cosine_constant_lr_ratio=0.8 means start cosine_min_lr at 80% of training step"}
+    )
+    lr_div_factor: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "Learning rate div factor"}
+    )
     lr_groups: list[LrGroup] | None = None
 
-    adam_epsilon: float | None = None
-    adam_epsilon2: float | None = None
-    adam_beta1: float | None = None
-    adam_beta2: float | None = None
-    adam_beta3: float | None = None
-    max_grad_norm: float | None = None
+    adam_epsilon: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "adamw hyperparams"}
+    )
+    adam_epsilon2: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "only used for CAME Optimizer"}
+    )
+    adam_beta1: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "adamw hyperparams"}
+    )
+    adam_beta2: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "adamw hyperparams"}
+    )
+    adam_beta3: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "only used for CAME Optimizer"}
+    )
+    max_grad_norm: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "Gradient clipping max norm"}
+    )
     num_epochs: float = Field(default=1.0)
 
     @field_validator("batch_size")
