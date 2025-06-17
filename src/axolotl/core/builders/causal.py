@@ -32,7 +32,6 @@ from axolotl.monkeypatch.relora import ReLoRACallback
 from axolotl.processing_strategies import get_processing_strategy
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
-    EvalFirstStepCallback,
     LossWatchDogCallback,
     SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
@@ -63,7 +62,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
     def get_callbacks(self):
         callbacks = super().get_callbacks()
-        callbacks.append(EvalFirstStepCallback())
 
         if self.cfg.relora_steps:
             callbacks.append(ReLoRACallback(self.cfg))
