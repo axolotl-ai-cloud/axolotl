@@ -8,6 +8,7 @@ to automatically group fields, including inherited fields from parent classes.
 import ast
 import inspect
 import textwrap
+import types
 from functools import lru_cache
 from typing import Any, FrozenSet, Type, Union
 
@@ -36,23 +37,6 @@ class QuartoGenerator:
         if hasattr(cls, "__annotations__"):
             fields.update(cls.__annotations__.keys())
 
-        # Also check for non-annotated assignments via AST (fallback)
-        try:
-            source = inspect.getsource(cls)
-            tree = ast.parse(source)
-
-            # Find the class definition
-            for node in tree.body:
-                if isinstance(node, ast.ClassDef) and node.name == cls.__name__:
-                    for body_node in node.body:
-                        if isinstance(body_node, ast.Assign):
-                            for target in body_node.targets:
-                                if isinstance(target, ast.Name):
-                                    fields.add(target.id)
-                    break
-        except (OSError, TypeError):
-            pass
-
         # Filter out private/special methods
         fields = {f for f in fields if not f.startswith("_")}
 
@@ -78,12 +62,8 @@ class QuartoGenerator:
         except (AttributeError, TypeError):
             return False
 
-    def _extract_nested_type(self, field_type) -> tuple[Any, bool]:
+    def _extract_nested_type(self, field_type) -> Any:
         """Extract the actual type from Union types like PeftConfig | None."""
-        import types
-
-        is_optional = False
-
         # Handle new Python 3.10+ union syntax (PeftConfig | None)
         if hasattr(field_type, "__class__") and field_type.__class__ is types.UnionType:
             # Get non-None types from the Union
@@ -91,8 +71,7 @@ class QuartoGenerator:
                 arg for arg in field_type.__args__ if arg is not type(None)
             ]
             if len(non_none_types) >= 1:
-                is_optional = type(None) in field_type.__args__
-                return non_none_types[0], is_optional
+                return non_none_types[0]
 
         # Handle old typing.Union syntax
         if hasattr(field_type, "__origin__"):
@@ -102,20 +81,17 @@ class QuartoGenerator:
                     arg for arg in field_type.__args__ if arg is not type(None)
                 ]
                 if len(non_none_types) >= 1:
-                    is_optional = type(None) in field_type.__args__
-                    return non_none_types[0], is_optional
+                    return non_none_types[0]
             # Handle other generic types like list[str], dict[str, Any], etc.
             elif hasattr(field_type, "__args__"):
-                return field_type, is_optional
+                return field_type
 
-        return field_type, is_optional
+        return field_type
 
     def _get_nested_models(
         self, model_class: type[BaseModel], visited=None
     ) -> dict[str, type[BaseModel]]:
         """Get all nested Pydantic models from a model class."""
-        import types
-
         if visited is None:
             visited = set()
 
@@ -130,8 +106,8 @@ class QuartoGenerator:
         nested_models = {}
 
         # Check all fields in the model
-        for field_name, field_info in model_class.model_fields.items():
-            field_type, is_optional = self._extract_nested_type(field_info.annotation)
+        for field_info in model_class.model_fields.values():
+            field_type = self._extract_nested_type(field_info.annotation)
 
             if self._is_pydantic_model(field_type):
                 nested_models[field_type.__name__] = field_type
@@ -228,12 +204,8 @@ class QuartoGenerator:
 
         # Extract groups from each class
         for cls in pydantic_classes:
-            class_groups = self._extract_field_groups_from_source(cls, model_class)
+            class_groups = self._extract_field_groups_from_source(cls)
             for group in class_groups:
-                # Add class name to group title for context
-                if len(pydantic_classes) > 1:
-                    group["title"] = f"{cls.__name__}: {group['title']}"
-                    group["class_name"] = cls.__name__
                 all_groups.append(group)
 
         # If no groups found, create a default grouping by class
@@ -243,16 +215,15 @@ class QuartoGenerator:
                 if fields_in_class:
                     all_groups.append(
                         {
-                            "title": cls.__name__,
                             "fields": list(fields_in_class),
-                            "class_name": cls.__name__,
                         }
                     )
 
         return all_groups
 
+    # pylint: disable=too-many-return-statements
     def _extract_field_groups_from_source(
-        self, model_class: type[BaseModel], child_class: type[BaseModel] = None
+        self, model_class: type[BaseModel]
     ) -> list[dict]:
         """Extract field groups from source code based on blank lines and comments."""
         try:
@@ -264,7 +235,6 @@ class QuartoGenerator:
             if fields_in_class:
                 return [
                     {
-                        "title": "Configuration Options",
                         "fields": list(fields_in_class),
                     }
                 ]
@@ -272,7 +242,6 @@ class QuartoGenerator:
 
         groups = []
         current_group_fields = []
-        current_group_title = None
         current_group_comment = None
 
         # Find the class definition
@@ -287,7 +256,6 @@ class QuartoGenerator:
             if fields_in_class:
                 return [
                     {
-                        "title": "Configuration Options",
                         "fields": list(fields_in_class),
                     }
                 ]
@@ -317,7 +285,6 @@ class QuartoGenerator:
             if fields_in_class:
                 return [
                     {
-                        "title": "Configuration Options",
                         "fields": list(fields_in_class),
                     }
                 ]
@@ -352,44 +319,21 @@ class QuartoGenerator:
 
             if is_new_group and current_group_fields:
                 # Save the previous group
-                title = current_group_title or f"Group {len(groups) + 1}"
                 groups.append(
                     {
-                        "title": title,
                         "fields": current_group_fields.copy(),
                         "description": current_group_comment,
                     }
                 )
                 current_group_fields = []
-                current_group_title = None
                 current_group_comment = None
-
-            # Look for a comment that might serve as a group title
-            if is_new_group:
-                # Check lines before this field for comments
-                start_check = max(0, current_line - 5)
-                for line_idx in range(start_check, current_line - 1):
-                    if line_idx < len(source_lines):
-                        line = source_lines[line_idx].strip()
-                        if line.startswith("#") and not line.startswith("# "):
-                            # This might be a section comment
-                            comment_text = line.lstrip("#").strip()
-                            if len(
-                                comment_text
-                            ) > 0 and not comment_text.lower().startswith(
-                                ("todo", "fixme", "note")
-                            ):
-                                current_group_title = comment_text.title()
-                                current_group_comment = comment_text
 
             current_group_fields.append(field_name)
 
         # Add the final group
         if current_group_fields:
-            title = current_group_title or f"Group {len(groups) + 1}"
             groups.append(
                 {
-                    "title": title,
                     "fields": current_group_fields,
                     "description": current_group_comment,
                 }
@@ -417,12 +361,11 @@ class QuartoGenerator:
         # Get the actual field type for nested model detection
         if field_name in model_class.model_fields:
             pydantic_field_info = model_class.model_fields[field_name]
-            actual_field_type, is_optional = self._extract_nested_type(
+            actual_field_type = self._extract_nested_type(
                 pydantic_field_info.annotation
             )
         else:
             actual_field_type = None
-            is_optional = False
 
         # Add description comment if available
         description = field_info.get("description", "")
@@ -455,7 +398,7 @@ class QuartoGenerator:
                 nested_schema = actual_field_type.model_json_schema()
                 nested_properties = nested_schema.get("properties", {})
                 nested_required = nested_schema.get("required", [])
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 # Fallback: use model fields directly
                 nested_properties = {}
                 nested_required = []
@@ -557,7 +500,7 @@ class QuartoGenerator:
             schema = model_class.model_json_schema()
             properties = schema.get("properties", {})
             required = schema.get("required", [])
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             print(
                 f"Warning: Could not generate JSON schema ({e}). Using model fields instead."
             )
@@ -627,7 +570,7 @@ class QuartoGenerator:
                     # Check if this field has nested models to add spacing
                     if field_name in model_class.model_fields:
                         pydantic_field_info = model_class.model_fields[field_name]
-                        actual_field_type, is_optional = self._extract_nested_type(
+                        actual_field_type = self._extract_nested_type(
                             pydantic_field_info.annotation
                         )
                         has_nested = actual_field_type and self._is_pydantic_model(
