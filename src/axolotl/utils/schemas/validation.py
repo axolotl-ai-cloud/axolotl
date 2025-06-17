@@ -330,7 +330,7 @@ class TrainingValidationMixin:
         if data.get("noisy_embedding_alpha") and not data.get("neftune_noise_alpha"):
             data["neftune_noise_alpha"] = data["noisy_embedding_alpha"]
             del data["noisy_embedding_alpha"]
-        elif data.get("noisy_embedding_alpha") and not data.get("neftune_noise_alpha"):
+        elif data.get("noisy_embedding_alpha") and data.get("neftune_noise_alpha"):
             raise ValueError(
                 "noisy_embedding_alpha is deprecated, use neftune_noise_alpha; both are set, please remove the deprecated noisy_embedding_alpha setting"
             )

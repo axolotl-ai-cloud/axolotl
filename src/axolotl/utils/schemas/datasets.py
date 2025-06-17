@@ -1,5 +1,7 @@
 """Pydantic models for datasets-related configuration"""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, model_validator
 
 from axolotl.utils.schemas.enums import ChatTemplate
@@ -153,7 +155,7 @@ class SFTDataset(BaseModel):
             "description": "Roles to train on. The tokens from these roles will be considered for the loss."
         },
     )
-    train_on_eos: str | None = Field(
+    train_on_eos: Literal["all", "turn", "last"] | None = Field(
         default=None,
         json_schema_extra={
             "description": "Which EOS tokens to train on in the conversation. Possible values are: all: train on all EOS tokens, turn (default): train on the EOS token at the end of each trainable turn, last: train on the last EOS token in the conversation"
