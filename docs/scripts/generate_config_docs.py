@@ -44,21 +44,7 @@ class QuartoGenerator:
 
     def _is_pydantic_model(self, type_obj) -> bool:
         """Check if a type is a Pydantic BaseModel."""
-        try:
-            # Check if it's a class and has model_fields (Pydantic v2 indicator)
-            if hasattr(type_obj, "model_fields") and hasattr(type_obj, "__mro__"):
-                # Check the method resolution order for BaseModel
-                for base in type_obj.__mro__:
-                    if base.__name__ == "BaseModel" and hasattr(base, "model_fields"):
-                        return True
-
-            # Fallback: check __bases__ directly
-            if hasattr(type_obj, "__bases__"):
-                return any(base.__name__ == "BaseModel" for base in type_obj.__bases__)
-
-            return False
-        except (AttributeError, TypeError):
-            return False
+        return inspect.isclass(type_obj) and issubclass(type_obj, BaseModel)
 
     def _extract_nested_type(self, field_type) -> Any:
         """Extract the actual type from Union types like PeftConfig | None."""
