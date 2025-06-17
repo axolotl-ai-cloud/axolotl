@@ -2,6 +2,7 @@
 model patcher for chunked top-k kl-div
 """
 
+from types import MethodType
 from typing import Optional, Union, Unpack
 
 import torch
@@ -94,4 +95,4 @@ def apply_kernel(model_type):
     model_cls_prefix = "".join([part.capitalize() for part in model_type.split("_")])
     module = __import__(module_path, fromlist=[f"{model_cls_prefix}ForCausalLM"])
     model_cls = getattr(module, f"{model_cls_prefix}ForCausalLM")
-    model_cls.forward = kldiv_forward_llama_like
+    model_cls.forward = MethodType(kldiv_forward_llama_like, model_cls)

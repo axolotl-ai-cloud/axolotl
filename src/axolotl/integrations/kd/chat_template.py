@@ -323,5 +323,5 @@ class KDStrategyLoaderV2(KDStrategyLoader):
         return ChatTemplateStrategyWithKDv2
 
 
-load = KDStrategyLoader()
-load_v2 = KDStrategyLoaderV2()
+load_legacy = KDStrategyLoader()
+load = KDStrategyLoaderV2()

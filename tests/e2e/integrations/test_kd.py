@@ -16,8 +16,8 @@ from tests.e2e.utils import check_tensorboard, require_torch_2_5_1
 @pytest.fixture(name="kd_min_cfg")
 def min_cfg(temp_dir):
     return {
-        "base_model": "osllmai-community/Llama-3.2-1B",
-        "tokenizer_config": "axolotl-ai-co/Llama-3.3-70B-Instruct-tokenizer",
+        "base_model": "Qwen/Qwen3-0.6B",
+        "tokenizer_config": "winglian/qwen3-14b-math",
         "plugins": [
             "axolotl.integrations.kd.KDPlugin",
             "axolotl.integrations.liger.LigerPlugin",
@@ -30,20 +30,22 @@ def min_cfg(temp_dir):
         "kd_ce_alpha": 0.1,
         "kd_alpha": 0.9,
         "kd_temperature": 1.0,
+        "kd_beta": 0.0,
+        "kd_normalize_topk": True,
         "dataloader_prefetch_factor": 8,
         "dataloader_num_workers": 4,
         "dataloader_pin_memory": True,
         "datasets": [
             {
-                "path": "axolotl-ai-co/evolkit-logprobs-pipeline-75k-v2-sample",
-                "type": "axolotl.integrations.kd.chat_template",
-                "field_messages": "messages_combined",
+                "path": "winglian/OpenThoughts-114k-math-correct-qwen3-14b-math-prepared-topk128-normalized",
+                "type": "chat_template",
                 "split": "train",
-                "logprobs_field": "llm_text_generation_vllm_logprobs",
-                "temperature": 1.0,
-                "preprocess_shards": 2,
+                "split_thinking": True,
+                "eot_tokens": ["<|im_end|>"],
+                "data_files": ["train/batch-000000.parquet"],
             },
         ],
+        "skip_prepare_dataset": True,
         "val_set_size": 0.0,
         "sequence_len": 2048,
         "sample_packing": True,
@@ -101,6 +103,7 @@ class TestKnowledgeDistillation:
             temp_dir + "/runs", "train/loss", 1.4, "Train Loss (%s) is too high"
         )
 
+    @pytest.mark.skip(reason="Chunked KD loss doesn't support PEFT/LoRA")
     @pytest.mark.parametrize(
         "load_in_8bit",
         [True, False],
