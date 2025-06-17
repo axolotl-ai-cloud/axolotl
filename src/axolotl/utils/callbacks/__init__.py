@@ -60,16 +60,9 @@ class EvalOnTrainingBeginCallback(
     Callback to trigger evals before training begins
     """
 
-    def on_step_end(
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        **kwargs,
-    ):
-        if args.eval_strategy == IntervalStrategy.STEPS and state.global_step == 0:
+    def on_train_begin(self, args, state, control, **kwargs):
+        if args.eval_strategy == IntervalStrategy.STEPS:
             control.should_evaluate = True
-        return control
 
 
 class SaveBetterTransformerModelCallback(
