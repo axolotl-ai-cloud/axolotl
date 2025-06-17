@@ -80,13 +80,13 @@ class QuartoGenerator:
             visited = set()
 
         # Avoid infinite recursion
-        if model_class.__name__ in visited:
+        if model_class in visited:
             return {}
 
         if model_class in self._nested_models_cache:
             return self._nested_models_cache[model_class]
 
-        visited.add(model_class.__name__)
+        visited.add(model_class)
         nested_models = {}
 
         # Check all fields in the model
@@ -362,7 +362,7 @@ class QuartoGenerator:
         if (
             actual_field_type
             and self._is_pydantic_model(actual_field_type)
-            and actual_field_type.__name__ not in visited_models
+            and actual_field_type not in visited_models
         ):
 
             # Add the field name with nested structure
@@ -375,7 +375,7 @@ class QuartoGenerator:
 
             # Add to visited to prevent infinite recursion
             new_visited = visited_models.copy()
-            new_visited.add(actual_field_type.__name__)
+            new_visited.add(actual_field_type)
 
             # Get nested model schema
             try:
