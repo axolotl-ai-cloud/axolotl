@@ -16,7 +16,7 @@ Module to handle merging the plugins' input arguments with the base configuratio
 This was moved here to prevent circular imports.
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Type
 
 from axolotl.utils.schemas.config import (
     AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
@@ -61,3 +61,43 @@ def merge_input_args():
         ]
         return AxolotlConfigWCapabilities, AxolotlInputConfig
     return AxolotlConfigWCapabilitiesBase, AxolotlInputConfigBase
+
+
+def merge_training_args() -> Type:
+    """
+    Merges training arguments from registered plugins with the base TrainingArguments.
+
+    This function retrieves the training arguments from registered plugins using the PluginManager.
+    It then dynamically creates new classes, AxolotlTrainingMixins,
+    that inherit from the base configurations and include the training arguments from the plugins.
+
+    Returns:
+    tuple: A tuple containing the newly created classes, AxolotlTrainingMixins.
+    """
+    # pylint: disable=duplicate-code
+    from axolotl.core.training_args_base import (
+        AxolotlTrainingMixins as AxolotlTrainingMixinsBase,
+    )
+    from axolotl.integrations.base import PluginManager
+
+    plugin_manager = PluginManager.get_instance()
+    training_args_mixins: List[str] = plugin_manager.get_training_args_mixin()
+    mixin_classes = []
+    dynamic_input = ""
+    for plugin_args in training_args_mixins:
+        plugin_module, plugin_cls = plugin_args.rsplit(".", 1)
+        dynamic_input += f"from {plugin_module} import {plugin_cls}\n"
+        mixin_classes.append(plugin_cls)
+    if dynamic_input:
+        dynamic_input += f"class AxolotlTrainingMixins(AxolotlTrainingMixinsBase, {', '.join(mixin_classes)}):\n    pass\n"
+
+        namespace: Dict[Any, Any] = {}
+        local_vars = {"AxolotlTrainingMixinsBase": AxolotlTrainingMixinsBase}
+        exec(  # pylint: disable=exec-used  # nosec B102
+            dynamic_input, {**globals(), **local_vars}, namespace
+        )
+        AxolotlTrainingMixins = namespace[  # pylint: disable=invalid-name
+            "AxolotlTrainingMixins"
+        ]
+        return AxolotlTrainingMixins
+    return AxolotlTrainingMixinsBase

@@ -21,11 +21,6 @@ from axolotl.core.trainers import (
     AxolotlTrainer,
     ReLoRATrainer,
 )
-from axolotl.core.training_args import (
-    AxolotlPRMConfig,
-    AxolotlRewardConfig,
-    AxolotlTrainingArguments,
-)
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback
@@ -130,6 +125,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return callbacks
 
     def _get_trainer_cls(self):
+        """
+        Gets the trainer class for the given configuration.
+        """
         if self.cfg.plugins:
             plugin_manager = PluginManager.get_instance()
             trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
@@ -146,6 +144,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return AxolotlTrainer
 
     def build(self, total_num_steps):
+        from axolotl.core.training_args import (
+            AxolotlPRMConfig,
+            AxolotlRewardConfig,
+            AxolotlTrainingArguments,
+        )
+
         training_arguments_kwargs, trainer_kwargs = self._set_base_training_args(
             total_num_steps
         )
@@ -314,20 +318,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["image_resize_algorithm"] = (
                 self.cfg.image_resize_algorithm
             )
-        if self.cfg.kd_ce_alpha is not None:
-            training_arguments_kwargs["kd_ce_alpha"] = self.cfg.kd_ce_alpha
-        if self.cfg.kd_alpha is not None:
-            training_arguments_kwargs["kd_alpha"] = self.cfg.kd_alpha
-        if self.cfg.kd_temperature is not None:
-            training_arguments_kwargs["kd_temperature"] = self.cfg.kd_temperature
-        if self.cfg.kd_zscore_base_temp is not None:
-            training_arguments_kwargs["kd_zscore_base_temp"] = (
-                self.cfg.kd_zscore_base_temp
-            )
-        if self.cfg.kd_top_k_before_softmax is not None:
-            training_arguments_kwargs["kd_top_k_before_softmax"] = (
-                self.cfg.kd_top_k_before_softmax
-            )
+
+        if self.cfg.plugins:
+            plugin_manager = PluginManager.get_instance()
+            plugin_training_args = plugin_manager.get_training_args(self.cfg)
+            if plugin_training_args:
+                training_arguments_kwargs.update(plugin_training_args)
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
@@ -408,7 +404,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return trainer
 
     def build_collator(
-        self, training_args: AxolotlTrainingArguments, is_eval=False, **kwargs
+        self,
+        training_args,  # type: "AxolotlTrainingArguments"  # type: ignore
+        is_eval=False,
+        **kwargs,
     ):
         if training_args.pretraining:
             if (
@@ -437,7 +436,19 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ]
         ]
         collator_args = [self.tokenizer]
-        if self.cfg.reward_model:
+
+        collator_cls_and_kwargs = None
+        if self.cfg.plugins:
+            plugin_manager = PluginManager.get_instance()
+            collator_cls_and_kwargs = plugin_manager.get_collator_cls_and_kwargs(
+                self.cfg, is_eval=is_eval
+            )
+
+        if collator_cls_and_kwargs:
+            collator = collator_cls_and_kwargs[0]
+            if kwargs and isinstance(kwargs, dict):
+                kwargs.update(collator_cls_and_kwargs[1])
+        elif self.cfg.reward_model:
             collator = RewardDataCollatorWithPadding
         elif use_batch_sampler_collator:
             # Use V2BatchSamplerDataCollatorForSeq2Seq for flex attention,
@@ -468,16 +479,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 collator_args.pop(0)
                 kwargs.pop("pad_to_multiple_of", None)
                 kwargs.pop("padding", None)
-            elif self.cfg.kd_trainer:
-                from axolotl.integrations.kd.collator import (
-                    DataCollatorForKD,
-                    KDBatchSamplerDataCollatorForSeq2Seq,
-                )
-
-                if self.cfg.sample_packing:
-                    collator = KDBatchSamplerDataCollatorForSeq2Seq
-                else:
-                    collator = DataCollatorForKD
             else:
                 collator = DataCollatorForSeq2Seq
 
