@@ -33,15 +33,14 @@ PARAMETRIZE_PARAMS = [
         "mistralv03_tokenizer_chat_template_jinja",
         "[/INST]",
     ),
-    # TODO: temporarily skip gemma due to gemma3 template
-    # Re-enable on new chat_template implementation for perf
-    # (
-    #     "gemma2_tokenizer",
-    #     "jinja",
-    #     "gemma2_tokenizer_chat_template_jinja",
-    #     "<end_of_turn>",
-    # ),
+    (
+        "gemma2_tokenizer",
+        "jinja",
+        "gemma2_tokenizer_chat_template_jinja",
+        "<end_of_turn>",
+    ),
     ("phi35_tokenizer", "phi_35", None, "<|end|>"),
+    ("phi4_tokenizer", "phi_4", None, "<|im_end|>"),
 ]
 
 
@@ -95,11 +94,7 @@ class TestChatTemplateConfigurations:
         if (
             turn_idx == 0
             and turn.get("from") in ["system", "context"]
-            and (
-                "mistral" in tokenizer.name_or_path.lower()
-                or "gemma"
-                in tokenizer.name_or_path.lower()  # temporarily skip gemma due to gemma3 template
-            )
+            and ("mistral" in tokenizer.name_or_path.lower())
         ):
             assert (
                 start_idx == -1 and end_idx == -1
@@ -960,6 +955,12 @@ class TestChatTemplateConfigurations:
                 f"Chat template: {actual_jinja_template}"
             )
         elif chat_template == "phi_35":
+            assert variables == {"role", "content"}, (
+                f"Expected variables: {'role', 'content'} from {tokenizer}/{chat_template}\n"
+                f"Got: {variables}\n"
+                f"Chat template: {actual_jinja_template}"
+            )
+        elif chat_template == "phi_4":
             assert variables == {"role", "content"}, (
                 f"Expected variables: {'role', 'content'} from {tokenizer}/{chat_template}\n"
                 f"Got: {variables}\n"
