@@ -8,7 +8,9 @@ on:
     paths:
       - '**/*.md'      # any Markdown file
       - '**/*.qmd'     # any Quarto file
-      - '_quarto.yaml'
+      - '_quarto.yml'
+      - docs/scripts/generate_config_docs.py
+      - src/axolotl/utils/schemas/**.py
 
 permissions:
   checks: write
