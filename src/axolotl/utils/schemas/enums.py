@@ -46,6 +46,7 @@ class ChatTemplate(str, Enum):
     llama4 = "llama4"  # pylint: disable=invalid-name
     phi_3 = "phi_3"  # pylint: disable=invalid-name
     phi_35 = "phi_35"  # pylint: disable=invalid-name
+    phi_35_vl = "phi_35_vl"  # pylint: disable=invalid-name
     deepseek_v2 = "deepseek_v2"  # pylint: disable=invalid-name
     deepseek_v3 = "deepseek_v3"  # pylint: disable=invalid-name
     jamba = "jamba"  # pylint: disable=invalid-name
