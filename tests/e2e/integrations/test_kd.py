@@ -5,10 +5,9 @@ e2e tests for kd trainer support in Axolotl
 from pathlib import Path
 
 import pytest
+import yaml
+from accelerate.test_utils import execute_subprocess_async, get_torch_dist_unique_port
 
-from axolotl.common.datasets import load_datasets
-from axolotl.train import train
-from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
 from tests.e2e.utils import check_tensorboard, require_torch_2_5_1
@@ -80,12 +79,23 @@ class TestKnowledgeDistillation:
     def test_llama_kd(self, temp_dir, kd_min_cfg):
         cfg = DictDefault(kd_min_cfg)
         # pylint: disable=duplicate-code
-        cfg = validate_config(cfg)
-        prepare_plugins(cfg)
-        normalize_config(cfg)
-        dataset_meta = load_datasets(cfg=cfg)
+        # write cfg to yaml file
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
+            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
 
-        train(cfg=cfg, dataset_meta=dataset_meta)
+        execute_subprocess_async(
+            [
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
+                "--num-processes",
+                "1",
+                "--main-process-port",
+                f"{get_torch_dist_unique_port()}",
+            ]
+        )
+
         assert (Path(temp_dir) / "model.safetensors").exists()
         check_tensorboard(
             temp_dir + "/runs", "train/loss", 1.4, "Train Loss (%s) is too high"
@@ -110,12 +120,22 @@ class TestKnowledgeDistillation:
             | kd_min_cfg
         )
         # pylint: disable=duplicate-code
-        cfg = validate_config(cfg)
-        prepare_plugins(cfg)
-        normalize_config(cfg)
-        dataset_meta = load_datasets(cfg=cfg)
+        # write cfg to yaml file
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
+            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
 
-        train(cfg=cfg, dataset_meta=dataset_meta)
+        execute_subprocess_async(
+            [
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
+                "--num-processes",
+                "1",
+                "--main-process-port",
+                f"{get_torch_dist_unique_port()}",
+            ]
+        )
         assert (Path(temp_dir) / "adapter_model.safetensors").exists()
         check_tensorboard(
             temp_dir + "/runs", "train/loss", 1.2, "Train Loss (%s) is too high"
