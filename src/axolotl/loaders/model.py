@@ -671,6 +671,7 @@ class ModelLoader:
             and self.model_type != "AutoModelForCausalLM"
             and not self.cfg.trust_remote_code
         ):
+            _ = self._configure_zero3_memory_efficient_loading()
             if self.cfg.gptq:
                 self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
