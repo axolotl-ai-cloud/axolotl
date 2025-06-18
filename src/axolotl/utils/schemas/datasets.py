@@ -60,6 +60,8 @@ class SFTDataset(BaseModel):
     drop_system_message: bool | None = None
     trust_remote_code: bool | None = False
     revision: str | None = None
+    weight: float | None = 1.0
+    weight_strategy: str | None = "upsample"
 
     @model_validator(mode="before")
     @classmethod
@@ -127,6 +129,8 @@ class DPODataset(BaseModel):
     data_files: list[str] | None = None
     revision: str | None = None
     field_messages: str | None = None
+    weight: float | None = 1.0
+    weight_strategy: str | None = "upsample"
 
 
 class StepwiseSupervisedDataset(BaseModel):
@@ -139,6 +143,8 @@ class StepwiseSupervisedDataset(BaseModel):
     step_separator: str | None = None
     max_completion_length: int | None = None
     train_on_last_step_only: bool | None = None
+    weight: float | None = 1.0
+    weight_strategy: str | None = "upsample"
 
 
 class UserDefinedKTOType(BaseModel):
@@ -161,6 +167,8 @@ class KTODataset(BaseModel):
     data_files: list[str] | None = None
     trust_remote_code: bool | None = False
     revision: str | None = None
+    weight: float | None = 1.0
+    weight_strategy: str | None = "upsample"
 
 
 DatasetConfig = SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset
