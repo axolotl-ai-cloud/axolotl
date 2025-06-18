@@ -12,7 +12,7 @@ Chat Template strategy uses a jinja2 template that converts a list of messages i
 {"conversations": [{"role": "...", "content": "..."}]}
 ```
 
-See [configs](../config.qmd) for full configs and supported templates.
+See [configs](../config-reference.qmd) for full configs and supported templates.
 
 ### Migrating from sharegpt
 
@@ -130,13 +130,13 @@ datasets:
 ```
 
 ::: {.callout-tip}
-See [config documentation](../config.qmd) for detailed explanations of "turn", "last", and "all" options for training on tokens.
+See [config documentation](../config-reference.qmd) for detailed explanations of "turn", "last", and "all" options for training on tokens.
 :::
 
 ::: {.callout-note}
 Using `eot_tokens` requires each token that exists in `chat_template` to be a single token in the tokenizer. Otherwise, the tokenizer will split the token and cause unexpected behavior.
 
-You can add those tokens as new tokens under `tokens: ` or (recommended) override unused added_tokens via `added_tokens_overrides: `. See [config](../config.qmd) for more details.
+You can add those tokens as new tokens under `tokens: ` or (recommended) override unused added_tokens via `added_tokens_overrides: `. See [config](../config-reference.qmd) for more details.
 :::
 
 - Continuing from the previous example, if you want to train on all EOT token trainable turns but only last EOS token, set `train_on_eos: last`.
