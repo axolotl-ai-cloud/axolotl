@@ -3392,7 +3392,7 @@
     "href": "docs/installation.html#sec-requirements",
     "title": "Installation",
     "section": "1 Requirements",
-    "text": "1 Requirements\n\nNVIDIA GPU (Ampere architecture or newer for bf16 and Flash Attention) or AMD GPU\nPython ≥3.10\nPyTorch ≥2.5.1",
+    "text": "1 Requirements\n\nNVIDIA GPU (Ampere architecture or newer for bf16 and Flash Attention) or AMD GPU\nPython ≥3.11\nPyTorch ≥2.5.1",
     "crumbs": [
       "Getting Started",
       "Installation"
@@ -3436,7 +3436,7 @@
     "href": "docs/installation.html#sec-env-managers",
     "title": "Installation",
     "section": "5 Environment Managers",
-    "text": "5 Environment Managers\n\n5.1 Conda/Pip venv\n\nInstall Python ≥3.10\nInstall PyTorch: https://pytorch.org/get-started/locally/\nInstall Axolotl:\npip3 install -U packaging setuptools wheel ninja\npip3 install --no-build-isolation -e '.[flash-attn,deepspeed]'\n(Optional) Login to Hugging Face:\nhuggingface-cli login",
+    "text": "5 Environment Managers\n\n5.1 Conda/Pip venv\n\nInstall Python ≥3.11\nInstall PyTorch: https://pytorch.org/get-started/locally/\nInstall Axolotl:\npip3 install -U packaging setuptools wheel ninja\npip3 install --no-build-isolation -e '.[flash-attn,deepspeed]'\n(Optional) Login to Hugging Face:\nhuggingface-cli login",
     "crumbs": [
       "Getting Started",
       "Installation"
