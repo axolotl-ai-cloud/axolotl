@@ -1,383 +1,177 @@
 <div align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/887513285d98132142bf5db2a74eb5e0928787f1/image/axolotl_logo_digital_white.svg">
-    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/887513285d98132142bf5db2a74eb5e0928787f1/image/axolotl_logo_digital_black.svg">
-    <img alt="Axolotl" src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/887513285d98132142bf5db2a74eb5e0928787f1/image/axolotl_logo_digital_black.svg" width="400" height="104" style="max-width: 100%; margin-bottom: 20px;">
-  </picture>
-  
-  <h3 style="color: #2563eb; font-weight: 600; margin: 20px 0 10px 0;">🧠 Streamlined AI Model Post-Training</h3>
-  <p style="font-size: 18px; color: #6b7280; margin-bottom: 30px; max-width: 600px;">
-    A powerful, flexible tool designed to streamline post-training for various AI models with enterprise-grade features and optimizations.
+  <a href="https://github.com/axolotl-ai-cloud/axolotl">
+    <img src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/docs/logo.png" alt="Axolotl Logo" width="250" style="margin-bottom: 20px;"/>
+  </a>
+  <h1><span style="color: #4CAF50;">Axolotl: Fine-tune LLMs with Unprecedented Ease & Power!</span> 🚀</h1>
+  <p style="font-size: 1.1em; color: #555;">Your ultimate toolkit for efficient, scalable, and versatile large language model fine-tuning.</p>
+
+  <p>
+    <a href="https://discord.gg/HhrNrHJPRb" target="_blank">
+      <img src="https://img.shields.io/discord/1070542385153273887?label=Discord&logo=discord&logoColor=white&color=7289DA" alt="Discord Community" style="margin: 5px;">
+    </a>
+    <a href="https://docs.axolotl.ai/" target="_blank">
+      <img src="https://img.shields.io/badge/Documentation-blue?style=flat&logo=readthedocs&logoColor=white" alt="Official Documentation" style="margin: 5px;">
+    </a>
+    <a href="https://pypi.org/project/axolotl/" target="_blank">
+      <img src="https://img.shields.io/pypi/v/axolotl?label=PyPI&logo=pypi&logoColor=white&color=blue" alt="PyPI Package" style="margin: 5px;">
+    </a>
+    <a href="https://github.com/axolotl-ai-cloud/axolotl/releases" target="_blank">
+      <img src="https://img.shields.io/github/downloads/axolotl-ai-cloud/axolotl/total?label=Downloads&color=green" alt="GitHub Downloads" style="margin: 5px;">
+    </a>
+  </p>
+  <br>
+</div>
+
+---
+
+<div style="background-color: #f0f8ff; padding: 25px; border-radius: 12px; margin-bottom: 30px; border: 1px solid #d0e8ff;">
+  <h2 style="color: #0056b3; text-align: center; margin-top: 0;">🎉 Latest Innovations & Updates!</h2>
+  <ul style="list-style-type: none; padding-left: 0;">
+    <li style="margin-bottom: 10px; border-left: 4px solid #6495ED; padding-left: 10px;"><strong><span style="color: #2E8B57;">2025/06:</span> Magistral with mistral-common tokenizer support!</strong> Dive into <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/magistral" style="color: #007bff; text-decoration: none;">examples</a> to train your own Magistral models.</li>
+    <li style="margin-bottom: 10px; border-left: 4px solid #6495ED; padding-left: 10px;"><strong><span style="color: #2E8B57;">2025/05:</span> Quantization Aware Training (QAT) support!</strong> Explore the <a href="https://docs.axolotl.ai/docs/qat.html" style="color: #007bff; text-decoration: none;">docs</a> to learn more.</li>
+    <li style="margin-bottom: 10px; border-left: 4px solid #6495ED; padding-left: 10px;"><strong><span style="color: #2E8B57;">2025/04:</span> Llama 4 support!</strong> See <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/llama-4" style="color: #007bff; text-decoration: none;">examples</a> to train Llama 4 with Axolotl's linearized version!</li>
+    <li style="margin-bottom: 10px; border-left: 4px solid #6495ED; padding-left: 10px;"><strong><span style="color: #2E8B57;">2025/03:</span> Sequence Parallelism (SP) support!</strong> Scale your context length. Read the <a href="https://huggingface.co/blog/axolotl-ai-co/long-context-with-sequence-parallelism-in-axolotl" style="color: #007bff; text-decoration: none;">blog</a> and <a href="https://docs.axolotl.ai/docs/sequence_parallelism.html" style="color: #007bff; text-decoration: none;">docs</a>.</li>
+    <li style="margin-bottom: 10px; border-left: 4px solid #6495ED; padding-left: 10px;"><strong><span style="color: #2E8B57;">2025/03:</span> (Beta) Fine-tuning Multimodal models!</strong> Check out the <a href="https://docs.axolotl.ai/docs/multimodal.html" style="color: #007bff; text-decoration: none;">docs</a>.</li>
+    <li style="margin-bottom: 10px; border-left: 4px solid #6495ED; padding-left: 10px;"><strong><span style="color: #2E8B57;">2025/02:</span> LoRA optimizations!</strong> Reduce memory and improve speed. Jump into the <a href="https://docs.axolotl.ai/docs/lora_optims.html" style="color: #007bff; text-decoration: none;">docs</a>.</li>
+    <li style="margin-bottom: 10px; border-left: 4px solid #6495ED; padding-left: 10px;"><strong><span style="color: #2E8B57;">2025/02:</span> GRPO support!</strong> Dive into our <a href="https://huggingface.co/blog/axolotl-ai-co/training-llms-w-interpreter-feedback-wasm" style="color: #007bff; text-decoration: none;">blog</a> and <a href="https://github.com/axolotl-ai-cloud/grpo_code" style="color: #007bff; text-decoration: none;">GRPO example</a>.</li>
+    <li style="margin-bottom: 0px; border-left: 4px solid #6495ED; padding-left: 10px;"><strong><span style="color: #2E8B57;">2025/01:</span> Reward Modelling / Process Reward Modelling fine-tuning!</strong> See <a href="https://docs.axolotl.ai/docs/reward_modelling.html" style="color: #007bff; text-decoration: none;">docs</a>.</li>
+  </ul>
+</div>
+
+<h2 style="color: #FF5733;"><span style="margin-right: 10px;">✨</span> Axolotl Overview: Your LLM Fine-tuning Powerhouse!</h2>
+
+<div style="background-color: #fffacd; padding: 20px; border-radius: 10px; margin-bottom: 30px; border: 1px solid #ffd700;">
+  <p style="font-size: 1.1em; color: #333; text-align: center;">Axolotl is a powerful, flexible, and user-friendly tool designed to supercharge your post-training workflows for a wide range of cutting-edge AI models.</p>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; justify-content: space-around; gap: 20px; margin-bottom: 40px;">
+  <div style="flex: 1 1 45%; background-color: #f9f9f9; padding: 20px; border-radius: 10px; border: 1px solid #eee; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+    <h3 style="color: #4CAF50; margin-top: 0;"><span style="margin-right: 5px;">🤖</span> Broad Model Compatibility</h3>
+    <ul style="list-style-type: disc; padding-left: 20px;">
+      <li>Train a vast array of models including LLaMA, Mistral, Mixtral, Pythia, and many more.</li>
+      <li>Fully compatible with HuggingFace transformers causal language models, ensuring wide adoption.</li>
+    </ul>
+  </div>
+
+  <div style="flex: 1 1 45%; background-color: #f9f9f9; padding: 20px; border-radius: 10px; border: 1px solid #eee; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+    <h3 style="color: #4CAF50; margin-top: 0;"><span style="margin-right: 5px;">🔧</span> Diverse Training Methodologies</h3>
+    <ul style="list-style-type: disc; padding-left: 20px;">
+      <li>Full fine-tuning, LoRA, QLoRA, GPTQ, QAT.</li>
+      <li>Preference Tuning: DPO, IPO, KTO, ORPO.</li>
+      <li>Advanced RL: GRPO.</li>
+      <li>Multimodal and Reward Modelling (RM) / Process Reward Modelling (PRM).</li>
+    </ul>
+  </div>
+
+  <div style="flex: 1 1 45%; background-color: #f9f9f9; padding: 20px; border-radius: 10px; border: 1px solid #eee; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+    <h3 style="color: #4CAF50; margin-top: 0;"><span style="margin-right: 5px;">⚙️</span> Streamlined Configuration</h3>
+    <ul style="list-style-type: disc; padding-left: 20px;">
+      <li>Utilize a single, intuitive YAML file across dataset preprocess, training, evaluation, quantization, and inference.</li>
+    </ul>
+  </div>
+
+  <div style="flex: 1 1 45%; background-color: #f9f9f9; padding: 20px; border-radius: 10px; border: 1px solid #eee; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+    <h3 style="color: #4CAF50; margin-top: 0;"><span style="margin-right: 5px;">⚡</span> Cutting-Edge Performance Optimizations</h3>
+    <ul style="list-style-type: disc; padding-left: 20px;">
+      <li><a href="https://docs.axolotl.ai/docs/multipack.html" style="color: #007bff;">Multipacking</a>, <a href="https://github.com/Dao-AILab/flash-attention" style="color: #007bff;">Flash Attention</a>, <a href="https://github.com/facebookresearch/xformers" style="color: #007bff;">Xformers</a>, <a href="https://pytorch.org/blog/flexattention/" style="color: #007bff;">Flex Attention</a>, <a href="https://github.com/linkedin/Liger-Kernel" style="color: #007bff;">Liger Kernel</a>, <a href="https://github.com/apple/ml-cross-entropy/tree/main" style="color: #007bff;">Cut Cross Entropy</a>.</li>
+      <li>Sequence Parallelism (SP), LoRA optimizations.</li>
+      <li>Multi-GPU training (FSDP1, FSDP2, DeepSpeed), Multi-node training (Torchrun, Ray), and many more!</li>
+    </ul>
+  </div>
+
+  <div style="flex: 1 1 45%; background-color: #f9f9f9; padding: 20px; border-radius: 10px; border: 1px solid #eee; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+    <h3 style="color: #4CAF50; margin-top: 0;"><span style="margin-right: 5px;">📂</span> Flexible Data Handling</h3>
+    <ul style="list-style-type: disc; padding-left: 20px;">
+      <li>Load datasets from local paths, HuggingFace Hub, and major cloud providers (S3, Azure, GCP, OCI).</li>
+    </ul>
+  </div>
+
+  <div style="flex: 1 1 45%; background-color: #f9f9f9; padding: 20px; border-radius: 10px; border: 1px solid #eee; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+    <h3 style="color: #4CAF50; margin-top: 0;"><span style="margin-right: 5px;">☁️</span> Cloud-Ready & Deployable</h3>
+    <ul style="list-style-type: disc; padding-left: 20px;">
+      <li>Official <a href="https://hub.docker.com/u/axolotlai" style="color: #007bff;">Docker images</a> and <a href="https://pypi.org/project/axolotl/" style="color: #007bff;">PyPI packages</a> for seamless integration on cloud platforms and local hardware.</li>
+    </ul>
+  </div>
+</div>
+
+<h2 style="color: #007bff;"><span style="margin-right: 10px;">🚀</span> Quick Start: Get Fine-tuning in Minutes!</h2>
+
+<div style="background-color: #e6f7ff; padding: 25px; border-radius: 12px; margin-bottom: 30px; border: 1px solid #cceeff;">
+  <h3 style="color: #0056b3; margin-top: 0;">Requirements:</h3>
+  <ul style="list-style-type: none; padding-left: 0;">
+    <li style="margin-bottom: 5px;"><span style="color: #333; font-weight: bold;">▶ NVIDIA GPU</span> (Ampere or newer for `bf16` and Flash Attention) or AMD GPU</li>
+    <li style="margin-bottom: 5px;"><span style="color: #333; font-weight: bold;">▶ Python 3.11</span></li>
+    <li style="margin-bottom: 5px;"><span style="color: #333; font-weight: bold;">▶ PyTorch ≥2.5.1</span></li>
+  </ul>
+
+  <h3 style="color: #0056b3;">Installation:</h3>
+  <pre><code style="background-color: #eef; padding: 15px; border-radius: 8px; display: block; overflow-x: auto;">pip3 install -U packaging==23.2 setuptools==75.8.0 wheel ninja
+pip3 install --no-build-isolation axolotl[flash-attn,deepspeed]
+
+# Download example axolotl configs, deepspeed configs
+axolotl fetch examples
+axolotl fetch deepspeed_configs  # OPTIONAL</code></pre>
+  <p style="font-size: 0.9em; color: #555;">Other installation approaches are described <a href="https://docs.axolotl.ai/docs/installation.html" style="color: #007bff; text-decoration: none;">here</a>.</p>
+
+  <h3 style="color: #0056b3;">Your First Fine-tune:</h3>
+  <pre><code style="background-color: #eef; padding: 15px; border-radius: 8px; display: block; overflow-x: auto;"># Fetch axolotl examples
+axolotl fetch examples
+
+# Or, specify a custom path
+axolotl fetch examples --dest path/to/folder
+
+# Train a model using LoRA
+axolotl train examples/llama-3/lora-1b.yml</code></pre>
+  <p style="text-align: center; font-size: 1.1em; font-weight: bold; margin-top: 20px;">
+    That's it! Check out our <a href="https://docs.axolotl.ai/docs/getting-started.html" style="background-color: #28a745; color: white; padding: 12px 25px; border-radius: 8px; text-decoration: none; display: inline-block; transition: background-color 0.3s ease;"> Getting Started Guide ➜</a> for a more detailed walkthrough.
   </p>
 </div>
 
-<div align="center" style="margin: 30px 0;">
-  <table style="border: none; margin: 0 auto;">
-    <tr>
-      <td style="border: none; padding: 5px;">
-        <img src="https://img.shields.io/github/license/axolotl-ai-cloud/axolotl.svg?color=blue&style=for-the-badge" alt="GitHub License">
-      </td>
-      <td style="border: none; padding: 5px;">
-        <img src="https://img.shields.io/github/stars/axolotl-ai-cloud/axolotl?style=for-the-badge&color=yellow" alt="GitHub Repo stars">
-      </td>
-    </tr>
-    <tr>
-      <td style="border: none; padding: 5px;">
-        <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests.yml/badge.svg?style=for-the-badge" alt="tests">
-      </td>
-      <td style="border: none; padding: 5px;">
-        <a href="https://codecov.io/gh/axolotl-ai-cloud/axolotl">
-          <img src="https://img.shields.io/codecov/c/github/axolotl-ai-cloud/axolotl?style=for-the-badge" alt="codecov">
-        </a>
-      </td>
-    </tr>
-  </table>
+<h2 style="color: #8A2BE2;"><span style="margin-right: 10px;">📚</span> Comprehensive Documentation: Unlock Axolotl's Full Potential</h2>
+
+<div style="background-color: #f7f0ff; padding: 25px; border-radius: 12px; margin-bottom: 30px; border: 1px solid #e0caff;">
+  <p style="text-align: center; font-size: 1.1em; color: #333;">Dive deep into Axolotl's capabilities with our extensive documentation:</p>
+  <ul style="list-style-type: none; padding-left: 0; text-align: center;">
+    <li style="margin-bottom: 10px;"><a href="https://docs.axolotl.ai/docs/installation.html" style="color: #5d2b99; text-decoration: none; font-weight: bold;"> Installation Options</a> - Detailed setup instructions for different environments</li>
+    <li style="margin-bottom: 10px;"><a href="https://docs.axolotl.ai/docs/config.html" style="color: #5d2b99; text-decoration: none; font-weight: bold;"> Configuration Guide</a> - Full configuration options and examples</li>
+    <li style="margin-bottom: 10px;"><a href="https://docs.axolotl.ai/docs/dataset_loading.html" style="color: #5d2b99; text-decoration: none; font-weight: bold;"> Dataset Loading</a> - Loading datasets from various sources</li>
+    <li style="margin-bottom: 10px;"><a href="https://docs.axolotl.ai/docs/dataset-formats/" style="color: #5d2b99; text-decoration: none; font-weight: bold;"> Dataset Guide</a> - Supported formats and how to use them</li>
+    <li style="margin-bottom: 10px;"><a href="https://docs.axolotl.ai/docs/multi-gpu.html" style="color: #5d2b99; text-decoration: none; font-weight: bold;"> Multi-GPU Training</a></li>
+    <li style="margin-bottom: 10px;"><a href="https://docs.axolotl.ai/docs/multi-node.html" style="color: #5d2b99; text-decoration: none; font-weight: bold;"> Multi-Node Training</a></li>
+    <li style="margin-bottom: 10px;"><a href="https://docs.axolotl.ai/docs/multipack.html" style="color: #5d2b99; text-decoration: none; font-weight: bold;"> Multipacking</a></li>
+    <li style="margin-bottom: 10px;"><a href="https://docs.axolotl.ai/docs/api/" style="color: #5d2b99; text-decoration: none; font-weight: bold;"> API Reference</a> - Auto-generated code documentation</li>
+    <li style="margin-bottom: 0px;"><a href="https://docs.axolotl.ai/docs/faq.html" style="color: #5d2b99; text-decoration: none; font-weight: bold;">❓ FAQ</a> - Frequently asked questions</li>
+  </ul>
 </div>
 
-<div align="center" style="margin: 20px 0;">
-  <a href="https://github.com/axolotl-ai-cloud/axolotl/graphs/contributors" style="text-decoration: none; margin: 0 10px;">
-    <img src="https://img.shields.io/github/contributors-anon/axolotl-ai-cloud/axolotl?color=green&style=for-the-badge&logo=github" alt="contributors">
+<h2 style="color: #FF8C00;"><span style="margin-right: 10px;">🤝</span> Need Help? We're Here for You!</h2>
+<ul style="list-style-type: none; padding-left: 0;">
+    <li style="margin-bottom: 10px;"><span style="font-size: 1.2em; color: #7289DA;"></span> Join our vibrant <a href="https://discord.gg/HhrNrHJPRb" style="color: #7289DA; text-decoration: none; font-weight: bold;">Discord community</a> for real-time support and discussions.</li>
+    <li style="margin-bottom: 10px;"><span style="font-size: 1.2em; color: #555;"></span> Explore our <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/" style="color: #FF8C00; text-decoration: none; font-weight: bold;">Examples</a> directory for practical use cases.</li>
+    <li style="margin-bottom: 10px;"><span style="font-size: 1.2em; color: #555;"></span> Read our <a href="https://docs.axolotl.ai/docs/debugging.html" style="color: #FF8C00; text-decoration: none; font-weight: bold;">Debugging Guide</a> for troubleshooting tips.</li>
+    <li style="margin-bottom: 0px;"><span style="font-size: 1.2em; color: #007bff;">✉</span> Need dedicated support? Please contact <a href="mailto:wing@axolotl.ai" style="color: #007bff; text-decoration: none; font-weight: bold;">wing@axolotl.ai</a> for professional assistance options.</li>
+</ul>
+
+<h2 style="color: #FF1493;"><span style="margin-right: 10px;">🌟</span> Contribute to Axolotl!</h2>
+<p style="font-size: 1.1em;">
+  Contributions are always welcome and highly appreciated! Axolotl thrives on community support. Please see our <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/.github/CONTRIBUTING.md" style="color: #FF1493; text-decoration: none; font-weight: bold;">Contributing Guide</a> for details on how you can help make Axolotl even better.
+</p>
+
+<div align="center" style="margin-top: 40px; padding: 25px; background-color: #f8f8f8; border-radius: 12px; border: 1px solid #eee;">
+  <h2 style="color: #FF69B4; margin-bottom: 20px;">❤️ Our Esteemed Sponsors</h2>
+  <p style="font-size: 1.1em; color: #555;">A huge thank you to our visionary sponsors who provide the essential resources to keep Axolotl at the forefront of LLM fine-tuning:</p>
+  <a href="https://www.modal.com?utm_source=github&utm_medium=github&utm_campaign=axolotl" target="_blank" style="display: inline-block; margin: 20px;">
+    <img src="https://assets-global.website-files.com/6247c4c1d68352614b7e87ae/63b27b3b44b82d02c8163f4f_logo-dark-square.png" alt="Modal Logo" width="180" style="vertical-align: middle; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.15);"/>
   </a>
-  <a href="https://github.com/axolotl-ai-cloud/axolotl/releases" style="text-decoration: none; margin: 0 10px;">
-    <img src="https://img.shields.io/github/release/axolotl-ai-cloud/axolotl.svg?style=for-the-badge&color=purple" alt="Releases">
-  </a>
+  <p style="font-size: 0.9em; color: #777; margin-top: 20px;">
+    <strong>Modal:</strong> Revolutionizing cloud computing for Gen AI. Run jobs, deploy models, and fine-tune LLMs at scale with ease.
+  </p>
+  <p style="font-size: 1em; color: #555; margin-top: 30px;">
+    Interested in powering the future of Axolotl? <span style="font-weight: bold; color: #FF69B4;">Become a sponsor!</span> Contact us at <a href="mailto:wing@axolotl.ai" style="color: #007bff; text-decoration: none;">wing@axolotl.ai</a>
+  </p>
 </div>
 
-<div align="center" style="margin: 30px 0;">
-  <a href="https://discord.com/invite/HhrNrHJPRb" style="text-decoration: none; margin: 0 10px;">
-    <img src="https://img.shields.io/badge/Discord-Join%20Community-7289da?style=for-the-badge&logo=discord&logoColor=white" alt="discord">
-  </a>
-  <a href="https://twitter.com/axolotl_ai" style="text-decoration: none; margin: 0 10px;">
-    <img src="https://img.shields.io/twitter/follow/axolotl_ai?style=for-the-badge&logo=twitter&color=1da1f2" alt="twitter">
-  </a>
-</div>
-
----
-
-<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 15px; margin: 40px 0; color: white;">
-  <h2 style="color: white; text-align: center; margin-bottom: 20px;">
-    🎉 <strong>Latest Updates</strong>
-  </h2>
-  
-  <div style="display: grid; gap: 15px;">
-    <details style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2);">
-      <summary style="font-weight: 600; cursor: pointer; padding: 10px 0;">
-        <strong>📅 2025/06:</strong> Magistral Support Added
-      </summary>
-      <p style="margin: 10px 0 0 0; padding-left: 20px;">
-        Magistral with mistral-common tokenizer support has been added to Axolotl. 
-        <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/magistral" style="color: #fbbf24; text-decoration: none;">
-          <strong>See examples →</strong>
-        </a>
-      </p>
-    </details>
-    
-    <details style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2);">
-      <summary style="font-weight: 600; cursor: pointer; padding: 10px 0;">
-        <strong>📅 2025/05:</strong> Quantization Aware Training (QAT)
-      </summary>
-      <p style="margin: 10px 0 0 0; padding-left: 20px;">
-        QAT support has been added to Axolotl. 
-        <a href="https://docs.axolotl.ai/docs/qat.html" style="color: #fbbf24; text-decoration: none;">
-          <strong>Explore the docs →</strong>
-        </a>
-      </p>
-    </details>
-    
-    <details style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2);">
-      <summary style="font-weight: 600; cursor: pointer; padding: 10px 0;">
-        <strong>📅 2025/04:</strong> Llama 4 Support
-      </summary>
-      <p style="margin: 10px 0 0 0; padding-left: 20px;">
-        Llama 4 support has been added in Axolotl. 
-        <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/llama-4" style="color: #fbbf24; text-decoration: none;">
-          <strong>See examples →</strong>
-        </a>
-      </p>
-    </details>
-    
-    <details style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2);">
-      <summary style="font-weight: 600; cursor: pointer; padding: 10px 0;">
-        <strong>📅 2025/03:</strong> Sequence Parallelism & Multimodal Support
-      </summary>
-      <div style="margin: 10px 0 0 0; padding-left: 20px;">
-        <p style="margin: 5px 0;">
-          • Sequence Parallelism (SP) for scaling context length - 
-          <a href="https://huggingface.co/blog/axolotl-ai-co/long-context-with-sequence-parallelism-in-axolotl" style="color: #fbbf24; text-decoration: none;">
-            <strong>Blog</strong>
-          </a> | 
-          <a href="https://docs.axolotl.ai/docs/sequence_parallelism.html" style="color: #fbbf24; text-decoration: none;">
-            <strong>Docs</strong>
-          </a>
-        </p>
-        <p style="margin: 5px 0;">
-          • (Beta) Multimodal models fine-tuning - 
-          <a href="https://docs.axolotl.ai/docs/multimodal.html" style="color: #fbbf24; text-decoration: none;">
-            <strong>Check docs →</strong>
-          </a>
-        </p>
-      </div>
-    </details>
-    
-    <details style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2);">
-      <summary style="font-weight: 600; cursor: pointer; padding: 10px 0;">
-        <strong>📅 2025/02:</strong> LoRA Optimizations & GRPO Support
-      </summary>
-      <div style="margin: 10px 0 0 0; padding-left: 20px;">
-        <p style="margin: 5px 0;">
-          • LoRA optimizations for better memory usage and speed - 
-          <a href="https://docs.axolotl.ai/docs/lora_optims.html" style="color: #fbbf24; text-decoration: none;">
-            <strong>Docs →</strong>
-          </a>
-        </p>
-        <p style="margin: 5px 0;">
-          • GRPO support added - 
-          <a href="https://huggingface.co/blog/axolotl-ai-co/training-llms-w-interpreter-feedback-wasm" style="color: #fbbf24; text-decoration: none;">
-            <strong>Blog</strong>
-          </a> | 
-          <a href="https://github.com/axolotl-ai-cloud/grpo_code" style="color: #fbbf24; text-decoration: none;">
-            <strong>Example</strong>
-          </a>
-        </p>
-      </div>
-    </details>
-    
-    <details style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2);">
-      <summary style="font-weight: 600; cursor: pointer; padding: 10px 0;">
-        <strong>📅 2025/01:</strong> Reward Modelling Support
-      </summary>
-      <p style="margin: 10px 0 0 0; padding-left: 20px;">
-        Reward Modelling / Process Reward Modelling fine-tuning support added. 
-        <a href="https://docs.axolotl.ai/docs/reward_modelling.html" style="color: #fbbf24; text-decoration: none;">
-          <strong>See docs →</strong>
-        </a>
-      </p>
-    </details>
-  </div>
-</div>
-
----
-
-<div style="background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%); padding: 30px; border-radius: 15px; margin: 40px 0; color: white;">
-  <h2 style="color: white; text-align: center; margin-bottom: 30px;">
-    ✨ <strong>What Makes Axolotl Special</strong>
-  </h2>
-  
-  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
-    <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2);">
-      <h3 style="color: #fbbf24; margin-bottom: 10px;">🚀 Multiple Model Support</h3>
-      <p style="margin: 0; line-height: 1.6;">
-        Train LLaMA, Mistral, Mixtral, Pythia, and more. Full compatibility with HuggingFace transformers causal language models.
-      </p>
-    </div>
-    
-    <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2);">
-      <h3 style="color: #fbbf24; margin-bottom: 10px;">🎯 Advanced Training Methods</h3>
-      <p style="margin: 0; line-height: 1.6;">
-        Full fine-tuning, LoRA, QLoRA, GPTQ, QAT, Preference Tuning (DPO, IPO, KTO, ORPO), RL (GRPO), Multimodal, and Reward Modelling.
-      </p>
-    </div>
-    
-    <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2);">
-      <h3 style="color: #fbbf24; margin-bottom: 10px;">⚙️ Easy Configuration</h3>
-      <p style="margin: 0; line-height: 1.6;">
-        Reuse a single YAML file across dataset preprocessing, training, evaluation, quantization, and inference.
-      </p>
-    </div>
-    
-    <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2);">
-      <h3 style="color: #fbbf24; margin-bottom: 10px;">⚡ Performance Optimizations</h3>
-      <p style="margin: 0; line-height: 1.6;">
-        Multipacking, Flash Attention, Xformers, Flex Attention, Liger Kernel, Sequence Parallelism, and Multi-GPU training.
-      </p>
-    </div>
-    
-    <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2);">
-      <h3 style="color: #fbbf24; margin-bottom: 10px;">📊 Flexible Dataset Handling</h3>
-      <p style="margin: 0; line-height: 1.6;">
-        Load from local files, HuggingFace datasets, and cloud storage (S3, Azure, GCP, OCI).
-      </p>
-    </div>
-    
-    <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2);">
-      <h3 style="color: #fbbf24; margin-bottom: 10px;">☁️ Cloud Ready</h3>
-      <p style="margin: 0; line-height: 1.6;">
-        Pre-built Docker images and PyPI packages for seamless deployment on cloud platforms and local hardware.
-      </p>
-    </div>
-  </div>
-</div>
-
----
-
-<div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); padding: 30px; border-radius: 15px; margin: 40px 0; color: white;">
-  <h2 style="color: white; text-align: center; margin-bottom: 20px;">
-    🚀 <strong>Quick Start</strong>
-  </h2>
-  
-  <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px; margin: 20px 0;">
-    <h3 style="color: #fbbf24; margin-bottom: 15px;">📋 Requirements</h3>
-    <ul style="margin: 0; padding-left: 20px; line-height: 1.8;">
-      <li><strong>GPU:</strong> NVIDIA GPU (Ampere or newer for bf16 and Flash Attention) or AMD GPU</li>
-      <li><strong>Python:</strong> 3.11+</li>
-      <li><strong>PyTorch:</strong> ≥2.5.1</li>
-    </ul>
-  </div>
-  
-  <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px; margin: 20px 0;">
-    <h3 style="color: #fbbf24; margin-bottom: 15px;">💾 Installation</h3>
-    <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; font-family: 'Courier New', monospace; overflow-x: auto;">
-      <pre style="margin: 0; color: #fff;"><code># Install dependencies
-pip3 install -U packaging==23.2 setuptools==75.8.0 wheel ninja
-
-# Install Axolotl with Flash Attention and DeepSpeed
-pip3 install --no-build-isolation axolotl[flash-attn,deepspeed]
-
-# Download examples and configs
-axolotl fetch examples
-axolotl fetch deepspeed_configs  # OPTIONAL</code></pre>
-    </div>
-    <p style="margin: 15px 0 0 0; font-size: 14px; opacity: 0.9;">
-      <em>Other installation methods available in our <a href="https://docs.axolotl.ai/docs/installation.html" style="color: #fbbf24; text-decoration: none;"><strong>documentation</strong></a></em>
-    </p>
-  </div>
-  
-  <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px; margin: 20px 0;">
-    <h3 style="color: #fbbf24; margin-bottom: 15px;">🎯 Your First Fine-tune</h3>
-    <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; font-family: 'Courier New', monospace; overflow-x: auto;">
-      <pre style="margin: 0; color: #fff;"><code># Fetch examples
-axolotl fetch examples
-
-# Or specify custom path
-axolotl fetch examples --dest path/to/folder
-
-# Start training with LoRA
-axolotl train examples/llama-3/lora-1b.yml</code></pre>
-    </div>
-    <p style="margin: 15px 0 0 0; font-size: 14px; opacity: 0.9;">
-      <em>That's it! Check our <a href="https://docs.axolotl.ai/docs/getting-started.html" style="color: #fbbf24; text-decoration: none;"><strong>Getting Started Guide</strong></a> for detailed walkthrough</em>
-    </p>
-  </div>
-</div>
-
----
-
-<div style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); padding: 30px; border-radius: 15px; margin: 40px 0; color: #374151;">
-  <h2 style="color: #374151; text-align: center; margin-bottom: 30px;">
-    📚 <strong>Documentation Hub</strong>
-  </h2>
-  
-  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px;">
-    <a href="https://docs.axolotl.ai/docs/installation.html" style="text-decoration: none; color: inherit;">
-      <div style="background: rgba(255,255,255,0.7); padding: 15px; border-radius: 10px; border: 1px solid rgba(55,65,81,0.1); transition: transform 0.2s; hover: transform: translateY(-2px);">
-        <h4 style="margin: 0 0 8px 0; color: #1f2937;">🔧 Installation Options</h4>
-        <p style="margin: 0; font-size: 14px; opacity: 0.8;">Detailed setup instructions for different environments</p>
-      </div>
-    </a>
-    
-    <a href="https://docs.axolotl.ai/docs/config.html" style="text-decoration: none; color: inherit;">
-      <div style="background: rgba(255,255,255,0.7); padding: 15px; border-radius: 10px; border: 1px solid rgba(55,65,81,0.1);">
-        <h4 style="margin: 0 0 8px 0; color: #1f2937;">⚙️ Configuration Guide</h4>
-        <p style="margin: 0; font-size: 14px; opacity: 0.8;">Full configuration options and examples</p>
-      </div>
-    </a>
-    
-    <a href="https://docs.axolotl.ai/docs/dataset_loading.html" style="text-decoration: none; color: inherit;">
-      <div style="background: rgba(255,255,255,0.7); padding: 15px; border-radius: 10px; border: 1px solid rgba(55,65,81,0.1);">
-        <h4 style="margin: 0 0 8px 0; color: #1f2937;">📊 Dataset Loading</h4>
-        <p style="margin: 0; font-size: 14px; opacity: 0.8;">Loading datasets from various sources</p>
-      </div>
-    </a>
-    
-    <a href="https://docs.axolotl.ai/docs/dataset-formats/" style="text-decoration: none; color: inherit;">
-      <div style="background: rgba(255,255,255,0.7); padding: 15px; border-radius: 10px; border: 1px solid rgba(55,65,81,0.1);">
-        <h4 style="margin: 0 0 8px 0; color: #1f2937;">📋 Dataset Guide</h4>
-        <p style="margin: 0; font-size: 14px; opacity: 0.8;">Supported formats and usage instructions</p>
-      </div>
-    </a>
-    
-    <a href="https://docs.axolotl.ai/docs/multi-gpu.html" style="text-decoration: none; color: inherit;">
-      <div style="background: rgba(255,255,255,0.7); padding: 15px; border-radius: 10px; border: 1px solid rgba(55,65,81,0.1);">
-        <h4 style="margin: 0 0 8px 0; color: #1f2937;">🖥️ Multi-GPU Training</h4>
-        <p style="margin: 0; font-size: 14px; opacity: 0.8;">Scale your training across multiple GPUs</p>
-      </div>
-    </a>
-    
-    <a href="https://docs.axolotl.ai/docs/multi-node.html" style="text-decoration: none; color: inherit;">
-      <div style="background: rgba(255,255,255,0.7); padding: 15px; border-radius: 10px; border: 1px solid rgba(55,65,81,0.1);">
-        <h4 style="margin: 0 0 8px 0; color: #1f2937;">🌐 Multi-Node Training</h4>
-        <p style="margin: 0; font-size: 14px; opacity: 0.8;">Distributed training across multiple machines</p>
-      </div>
-    </a>
-    
-    <a href="https://docs.axolotl.ai/docs/multipack.html" style="text-decoration: none; color: inherit;">
-      <div style="background: rgba(255,255,255,0.7); padding: 15px; border-radius: 10px; border: 1px solid rgba(55,65,81,0.1);">
-        <h4 style="margin: 0 0 8px 0; color: #1f2937;">📦 Multipacking</h4>
-        <p style="margin: 0; font-size: 14px; opacity: 0.8;">Efficient batch packing for training</p>
-      </div>
-    </a>
-    
-    <a href="https://docs.axolotl.ai/docs/api/" style="text-decoration: none; color: inherit;">
-      <div style="background: rgba(255,255,255,0.7); padding: 15px; border-radius: 10px; border: 1px solid rgba(55,65,81,0.1);">
-        <h4 style="margin: 0 0 8px 0; color: #1f2937;">🔍 API Reference</h4>
-        <p style="margin: 0; font-size: 14px; opacity: 0.8;">Auto-generated code documentation</p>
-      </div>
-    </a>
-    
-    <a href="https://docs.axolotl.ai/docs/faq.html" style="text-decoration: none; color: inherit;">
-      <div style="background: rgba(255,255,255,0.7); padding: 15px; border-radius: 10px; border: 1px solid rgba(55,65,81,0.1);">
-        <h4 style="margin: 0 0 8px 0; color: #1f2937;">❓ FAQ</h4>
-        <p style="margin: 0; font-size: 14px; opacity: 0.8;">Frequently asked questions</p>
-      </div>
-    </a>
-  </div>
-</div>
-
----
-
-<div style="background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); padding: 30px; border-radius: 15px; margin: 40px 0; color: #78350f;">
-  <h2 style="color: #78350f; text-align: center; margin-bottom: 20px;">
-    🤝 <strong>Getting Help</strong>
-  </h2>
-  
-  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
-    <div style="background: rgba(255,255,255,0.6); padding: 20px; border-radius: 12px; text-align: center;">
-      <div style="font-size: 30px; margin-bottom: 10px;">💬</div>
-      <h3 style="margin: 0 0 10px 0; color: #78350f;">Community Support</h3>
-      <p style="margin: 0 0 15px 0; font-size: 14px;">Join thousands of developers in our Discord</p>
-      <a href="https://discord.gg/HhrNrHJPRb" style="background: #7289da; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 600;">Join Discord</a>
-    </div>
-    
-    <div style="background: rgba(255,255,255,0.6); padding: 20px; border-radius: 12px; text-align: center;">
-      <div style="font-size: 30px; margin-bottom: 10px;">📖</div>
-      <h3 style="margin: 0 0 10px 0; color: #78350f;">Examples</h3>
-      <p style="margin: 0 0 15px 0; font-size: 14px;">Browse our comprehensive examples</p>
-      <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/" style="background: #10b981; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 600;">View Examples</a>
-    </div>
-    
-    <div style="background: rgba(255,255,255,0.6); padding: 20px; border-radius: 12px; text-align: center;">
-      <div style="font-size: 30px; margin-bottom: 10px;">🔧</div>
-      <h3 style="margin: 0 0 10px 0; color: #78350f;">Debugging</h3>
-      <p style="margin: 0 0 15px 0; font-size: 14px;">Troubleshooting and debugging guide</p>
-      <a href="https://docs.axolotl.ai/docs/debugging.html" style="background: #f59e0b; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 600;">Debug Guide</a>
-    </div>
-    
-    <div style="background: rgba(255,255,255,0.6); padding: 20px; border-radius: 12px; text-align: center;">
-      <div style="font-size: 30px; margin-bottom: 10px;">✉️</div>
-      <h3 style="margin: 0 0 10px 0; color: #78350f;">Enterprise Support</h3>
-      <p style="margin: 0 0 15px 0; font-size: 14px;">Need dedicated support? Contact us</p>
-      <a href="mailto:wing@axolotl.ai" style="background: #8b5cf6; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 600;">Contact Us</a>
-    </div>
-  </div>
-</div>
-
----
-
-<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 15px; margin: 40px 0; color: white;">
-  <h2 style="color: white; text-align: center; margin-bottom: 20px;">
-    🌟 <strong>Contributing</strong>
-  </h2>
-  
-  <div style="text-align: center; margin-bottom: 20px;">
-    <p style="font-size: 16px; margin-bottom: 20px;">
-      We welcome contributions from the community! Whether it's bug fixes,
+<h2 style="color: #6A5ACD;"><span style="margin-right: 10px;">📜</span> License</h2>
+<p style="font-size: 1.1em;">
+  This project is proudly licensed under the <span style="font-weight: bold; color: #6A5ACD;">Apache 2.0 License</span>. See the <a href="LICENSE" style="color: #007bff; text-decoration: none;">LICENSE</a> file for full details.
+</p>
