@@ -73,7 +73,7 @@ class TestUnslothQLoRA:
         check_model_output_exists(temp_dir, cfg)
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss (%s) is too high"
         )
 
     def test_unsloth_llama_qlora_unpacked(self, temp_dir):
@@ -123,7 +123,7 @@ class TestUnslothQLoRA:
         check_model_output_exists(temp_dir, cfg)
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -178,5 +178,5 @@ class TestUnslothQLoRA:
         check_model_output_exists(temp_dir, cfg)
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss (%s) is too high"
         )

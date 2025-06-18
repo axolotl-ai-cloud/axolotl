@@ -89,7 +89,7 @@ That's it! Check out our [Getting Started Guide](https://docs.axolotl.ai/docs/ge
 ## 📚 Documentation
 
 - [Installation Options](https://docs.axolotl.ai/docs/installation.html) - Detailed setup instructions for different environments
-- [Configuration Guide](https://docs.axolotl.ai/docs/config.html) - Full configuration options and examples
+- [Configuration Guide](https://docs.axolotl.ai/docs/config-reference.html) - Full configuration options and examples
 - [Dataset Loading](https://docs.axolotl.ai/docs/dataset_loading.html) - Loading datasets from various sources
 - [Dataset Guide](https://docs.axolotl.ai/docs/dataset-formats/) - Supported formats and how to use them
 - [Multi-GPU Training](https://docs.axolotl.ai/docs/multi-gpu.html)

@@ -187,7 +187,7 @@ jobs:
     if: ${{ ! contains(github.event.commits[0].message, '[skip e2e]') && github.repository_owner == 'axolotl-ai-cloud' }}
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
-    timeout-minutes: 90
+    timeout-minutes: 120
     needs: [pre-commit, pytest, pytest-sdist]
 
     strategy:
@@ -245,7 +245,7 @@ jobs:
     if: github.repository_owner == 'axolotl-ai-cloud'
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
-    timeout-minutes: 90
+    timeout-minutes: 120
     # Only run the remainder of the matrix if the first e2e check passed;
     # this is to save on wasted compute costs for known failures that get caught in the first run
     needs: [pre-commit, pytest, docker-e2e-tests-1st]

@@ -1,5 +1,6 @@
 project:
   type: website
+  pre-render: docs/scripts/generate_config_docs.py
 
 quartodoc:
   dir: docs/api
@@ -235,7 +236,7 @@ website:
             - docs/installation.qmd
             - docs/inference.qmd
             - docs/cli.qmd
-            - docs/config.qmd
+            - docs/config-reference.qmd
             - text: "API Reference"
               href: docs/api
 

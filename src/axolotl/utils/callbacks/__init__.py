@@ -53,25 +53,6 @@ IGNORE_INDEX = -100
 LOG = get_logger(__name__)
 
 
-class EvalFirstStepCallback(
-    TrainerCallback
-):  # pylint: disable=too-few-public-methods disable=unused-argument
-    """
-    Callback to trigger evals on the first step
-    """
-
-    def on_step_end(
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        **kwargs,
-    ):
-        if args.eval_strategy == IntervalStrategy.STEPS and state.global_step == 1:
-            control.should_evaluate = True
-        return control
-
-
 class SaveBetterTransformerModelCallback(
     TrainerCallback
 ):  # pylint: disable=too-few-public-methods

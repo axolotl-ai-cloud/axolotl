@@ -186,4 +186,4 @@ datasets:
       no_input_format: "[INST] {instruction} [/INST]"
 ```
 
-See full config options under [here](../config.qmd).
+See full config options under [here](../config-reference.qmd).

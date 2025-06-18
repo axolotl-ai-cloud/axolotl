@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import collections
 import importlib
+import traceback
 from typing import TYPE_CHECKING, Callable, OrderedDict, Union
 
 from peft import PeftModel
@@ -82,6 +83,11 @@ class BasePlugin:
 
     def get_input_args(self) -> str | None:
         """Returns a pydantic model for the plugin's input arguments."""
+
+    def get_training_args_mixin(self) -> str | None:
+        """
+        Returns a dataclass model for the plugin's training arguments.
+        """
 
     def load_datasets(
         self, cfg: DictDefault, preprocess: bool = False
@@ -156,6 +162,31 @@ class BasePlugin:
         Args:
             cfg: The configuration for the plugin.
             trainer: The trainer object for training.
+        """
+
+    def get_training_args(self, cfg: DictDefault):  # pylint: disable=unused-argument):
+        """
+        Returns custom training arguments to set on TrainingArgs.
+
+        Args:
+            cfg: The global axolotl configuration.
+
+        Returns:
+            object: dict containing the training arguments.
+        """
+
+    def get_collator_cls_and_kwargs(
+        self, cfg: DictDefault, is_eval: bool = False
+    ):  # pylint: disable=unused-argument):
+        """
+        Returns a custom class for the collator.
+
+        Args:
+            cfg: The global axolotl configuration.
+            is_eval: Whether this is an eval split.
+
+        Returns:
+            class: The class for the collator.
         """
 
     # pylint: disable=unused-argument
@@ -278,7 +309,7 @@ def load_plugin(plugin_name: str) -> BasePlugin:
     return plugin
 
 
-class PluginManager:
+class PluginManager:  # pylint: disable=too-many-public-methods
     """The `PluginManager` class is responsible for loading and managing plugins. It
     should be a singleton so it can be accessed from anywhere in the codebase.
 
@@ -337,8 +368,11 @@ class PluginManager:
             plugin = load_plugin(plugin_name)
             self.plugins[plugin_name] = plugin
             LOG.info(f"Plugin loaded successfully: {plugin_name}")
-        except ImportError:
+        except ImportError as exc:
             LOG.error(f"Failed to load plugin: {plugin_name}")
+            # print stacktrace
+            traceback.print_exc()
+            print(f"Error: {exc}")
 
     def get_input_args(self) -> list[str]:
         """Returns a list of Pydantic classes for all registered plugins' input arguments.'
@@ -352,6 +386,20 @@ class PluginManager:
             if input_args_from_plugin is not None:
                 input_args.append(input_args_from_plugin)
         return input_args
+
+    def get_training_args_mixin(self):
+        """
+        Returns a list of dataclasses for all registered plugins' training args mixins'
+
+        Returns:
+        list[str]: A list of dataclsses
+        """
+        training_args = []
+        for plugin in self.plugins.values():
+            training_args_from_plugin = plugin.get_training_args_mixin()
+            if training_args_from_plugin is not None:
+                training_args.append(training_args_from_plugin)
+        return training_args
 
     def load_datasets(
         self, cfg: DictDefault, preprocess: bool = False
@@ -440,6 +488,42 @@ class PluginManager:
             trainer_cls = plugin.get_trainer_cls(cfg)
             if trainer_cls is not None:
                 return trainer_cls
+        return None
+
+    def get_training_args(self, cfg):
+        """
+        Calls the get_training_args method of all registered plugins and returns the combined training arguments.
+
+        Parameters:
+        cfg (dict): The configuration for the plugins.
+
+        Returns:
+        object: The training arguments
+        """
+        training_args_kwargs = {}
+        for plugin in self.plugins.values():
+            training_args = plugin.get_training_args(cfg)
+            if training_args is not None:
+                training_args_kwargs.update(training_args)
+
+        return training_args_kwargs
+
+    def get_collator_cls_and_kwargs(self, cfg, is_eval=False):
+        """
+        Calls the get_collator_cls_and_kwargs method of all registered plugins and returns the first non-None collator class.
+
+        Parameters:
+        cfg (dict): The configuration for the plugins.
+        is_eval (bool): Whether this is an eval split.
+
+        Returns:
+        object: The collator class, or None if none was found.
+        """
+        for plugin in self.plugins.values():
+            collator = plugin.get_collator_cls_and_kwargs(cfg, is_eval=is_eval)
+            if collator is not None:
+                collator_cls, collator_kwargs = collator
+                return collator_cls, collator_kwargs
         return None
 
     def post_trainer_create(self, cfg: DictDefault, trainer: Trainer):
