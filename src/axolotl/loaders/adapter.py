@@ -122,12 +122,17 @@ def load_lora(
     rank = int(os.environ.get("LOCAL_RANK", 0))
 
     if (
-        cfg.fsdp
+        cfg.fsdp_config
         and cfg.adapter
         and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
         and rank != 0
     ):
         setup_quantized_meta_for_peft(model)
+
+    autocast_adapter_dtype = True
+    if cfg.fsdp_config and cfg.fsdp_config.fsdp_version == 2:
+        autocast_adapter_dtype = False
+        # FSDP does not support mixed p
 
     if cfg.lora_model_dir:
         LOG.debug("Loading pretrained PEFT - LoRA")
@@ -139,10 +144,11 @@ def load_lora(
             model,
             cfg.lora_model_dir,
             is_trainable=(not inference),
+            autocast_adapter_dtype=autocast_adapter_dtype,
             **model_kwargs,
         )
     else:
-        model = get_peft_model(model, lora_config)
+        model = get_peft_model(model, lora_config, autocast_adapter_dtype=autocast_adapter_dtype)
 
     if rank == 0:
         try:
@@ -152,7 +158,7 @@ def load_lora(
                 "Exception caught during model.print_trainable_parameters(): %s", exc
             )
     elif (
-        cfg.fsdp
+        cfg.fsdp_config
         and cfg.adapter
         and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
         and rank != 0

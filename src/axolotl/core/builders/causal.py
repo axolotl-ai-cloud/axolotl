@@ -151,14 +151,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs, trainer_kwargs = self._set_base_training_args(
             total_num_steps
         )
-
-        if self.cfg.fsdp:
-            training_arguments_kwargs["fsdp"] = self.cfg.fsdp
-            if self.cfg.fsdp_config:
-                training_arguments_kwargs["fsdp_config"] = {
-                    k.lstrip("fsdp_"): v for k, v in dict(self.cfg.fsdp_config).items()
-                }
-
         if self.cfg.adapter == "qlora":
             training_arguments_kwargs["qlora"] = True
 
