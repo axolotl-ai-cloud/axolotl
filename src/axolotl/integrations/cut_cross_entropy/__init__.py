@@ -64,7 +64,9 @@ class CutCrossEntropyPlugin(BasePlugin):
             "cut_cross_entropy.transformers"
         )
         if cce_spec_transformers is None:
-            raise ImportError(_CCE_INSTALL_MESSAGE)
+            raise ImportError(
+                "Transformers support is not installed. " + _CCE_INSTALL_MESSAGE
+            )
 
         # Check if Axolotl's cce fork is installed
         try:
@@ -73,7 +75,10 @@ class CutCrossEntropyPlugin(BasePlugin):
             if not AXOLOTL_CCE_FORK:
                 raise ImportError
         except ImportError as e:
-            raise ImportError(_CCE_INSTALL_MESSAGE) from e
+            raise ImportError(
+                "Axolotl's fork of cut_cross_entropy is not installed. "
+                + _CCE_INSTALL_MESSAGE
+            ) from e
 
     def pre_model_load(self, cfg):
         """Apply cut cross entropy before model loading if enabled."""
