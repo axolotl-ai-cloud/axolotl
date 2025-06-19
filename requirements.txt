@@ -15,7 +15,7 @@ huggingface_hub==0.32.2
 peft==0.15.2
 transformers==4.52.4
 tokenizers>=0.21.1
-accelerate==1.7.0
+accelerate==1.8.0
 datasets==3.6.0
 deepspeed>=0.17.0
 trl==0.18.2
