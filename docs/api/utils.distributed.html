@@ -494,7 +494,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.utils.distributed" class="level1">
 <h1>utils.distributed</h1>
 <p><code>utils.distributed</code></p>
-<p>utility helpers for distributed checks</p>
+<p>Utilities for distributed functionality.</p>
 <section id="functions" class="level2">
 <h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
@@ -595,13 +595,35 @@ The value is then broadcasted to all other ranks.</p>
 </section>
 <section id="axolotl.utils.distributed.is_main_process" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.distributed.is_main_process">is_main_process</h3>
-<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.is_main_process(use_environ<span class="op">=</span><span class="va">False</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.is_main_process()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Check if the current process is the main process. If not in distributed mode,
 always return <code>True</code>.</p>
-<p>Args:
-- use_environ (bool, optional): Use environment variable to determine main process.</p>
-<p>Returns:
-- bool: <code>True</code> if the current process is the main process, <code>False</code> otherwise.</p>
+<p>We use a simpler logic when the distributed state is not initialized: we just log
+on the 0-th local rank.</p>
+<section id="returns" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 9%">
+<col style="width: 9%">
+<col style="width: 81%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td></td>
+<td>bool</td>
+<td><code>True</code> if the current process is the main process, <code>False</code> otherwise.</td>
+</tr>
+</tbody>
+</table>
+</section>
 </section>
 <section id="axolotl.utils.distributed.reduce_and_broadcast" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.distributed.reduce_and_broadcast">reduce_and_broadcast</h3>
