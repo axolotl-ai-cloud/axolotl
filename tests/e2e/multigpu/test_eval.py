@@ -38,7 +38,7 @@ class TestMultiGPUEval:
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "lora_modules_to_save": ["embed_tokens", "lm_head"],
-                "val_set_size": 0.01,
+                "val_set_size": 0.05,
                 "special_tokens": {"pad_token": "<|endoftext|>"},
                 "datasets": [
                     {
