@@ -260,7 +260,7 @@ class MultipackBatchSampler(BatchSampler):
         lengths: np.ndarray,  # Sequence lengths
         packing_efficiency_estimate: float = 1.0,  # Initial efficiency estimate
         drop_last: bool = True,  # Whether to drop final batches (might be incomplete)
-        num_count_samples: int = 8,  # Number of times to estimate batch count
+        num_count_samples: int = 4,  # Number of times to estimate batch count
         sequential: bool = False,  # Whether to use sequential packing
         group_size: int = 100_000,  # Size of groups for parallel packing
         bin_size: int = 200,  # The max number of samples that can be packed in a single bin

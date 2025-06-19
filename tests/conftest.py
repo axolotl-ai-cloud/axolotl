@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Generator
 
 import datasets
 import pytest
@@ -411,7 +412,7 @@ def tokenizer_mistral_7b_instruct_chatml(tokenizer_mistral_7b_instruct):
 
 
 @pytest.fixture
-def temp_dir():
+def temp_dir() -> Generator[str, None, None]:
     # Create a temporary directory
     _temp_dir = tempfile.mkdtemp()
     yield _temp_dir
