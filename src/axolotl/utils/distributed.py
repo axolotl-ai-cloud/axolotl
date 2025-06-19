@@ -74,9 +74,6 @@ def is_main_process() -> bool:
     Check if the current process is the main process. If not in distributed mode,
     always return `True`.
 
-    We use a simpler logic when the distributed state is not initialized: we just log
-    on the 0-th local rank.
-
     Returns:
         `True` if the current process is the main process, `False` otherwise.
     """
