@@ -36,7 +36,7 @@ lora_target_modules:
   - down_proj
 
 sequence_len: 2048
-sample_packing: true
+sample_packing: false
 eval_sample_packing: false
 pad_to_sequence_len: true
 
