@@ -17,7 +17,7 @@ class MultiProcessAdapter(logging.LoggerAdapter):
 
     @staticmethod
     def _should_log(main_process_only: bool):
-        return not main_process_only or main_process_only and is_main_process()
+        return not main_process_only and is_main_process()
 
     def log(self, level, msg, *args, **kwargs):
         main_process_only = kwargs.pop("main_process_only", True)
