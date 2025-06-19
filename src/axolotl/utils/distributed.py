@@ -1,6 +1,4 @@
-"""
-utility helpers for distributed checks
-"""
+"""Utilities for distributed functionality."""
 
 import os
 import pickle  # nosec
@@ -19,7 +17,7 @@ from transformers.utils.import_utils import (
 distributed_state = None  # pylint: disable=invalid-name
 
 
-def get_device_type():
+def get_device_type() -> torch.device:
     device = torch.device("cpu")
     if is_torch_cuda_available():
         device = torch.device("cuda")
@@ -30,7 +28,7 @@ def get_device_type():
     return device
 
 
-def get_device_count():
+def get_device_count() -> int:
     cur_device = get_device_type()
     if "cuda" in str(cur_device):
         return torch.cuda.device_count()
@@ -39,7 +37,7 @@ def get_device_count():
     return 1
 
 
-def get_current_device():
+def get_current_device() -> int:
     cur_device = get_device_type()
     if "cuda" in str(cur_device):
         return torch.cuda.current_device()
@@ -48,12 +46,14 @@ def get_current_device():
     return 0
 
 
-def is_distributed():
-    """
-    Check if distributed training is initialized.
-    """
-    global distributed_state  # pylint: disable=global-statement
-    if not distributed_state:
+def get_distributed_state() -> PartialState | None:
+    global distributed_state
+    return distributed_state  # pylint: disable=global-statement
+
+
+def is_distributed() -> bool:
+    """Check if distributed training is initialized."""
+    if not get_distributed_state():
         timeout = int(os.environ.get("AXOLOTL_NCCL_TIMEOUT", 1800))
         distributed_state = PartialState(timeout=timedelta(seconds=timeout))
 
@@ -69,31 +69,31 @@ def barrier():
         dist.barrier()
 
 
-def is_main_process(use_environ=False):
+def is_main_process() -> bool:
     """
     Check if the current process is the main process. If not in distributed mode,
     always return `True`.
-
-    Args:
-    - use_environ (bool, optional): Use environment variable to determine main process.
+    
+    We use a simpler logic when the distributed state is not initialized: we just log
+    on the 0-th local rank.
 
     Returns:
-    - bool: `True` if the current process is the main process, `False` otherwise.
+        `True` if the current process is the main process, `False` otherwise.
     """
-    if use_environ:
+    if not get_distributed_state():
         return os.environ.get("LOCAL_RANK", "0") == "0"
     if not is_distributed():
         return True
     return dist.get_rank() == 0
 
 
-def is_local_main_process(use_environ=False):
-    if use_environ:
+def is_local_main_process() -> bool:
+    if not get_distributed_state():
         return os.environ.get("LOCAL_RANK", "0") == "0"
     return PartialState().is_local_main_process
 
 
-def get_world_size():
+def get_world_size() -> int:
     return int(os.getenv("WORLD_SIZE", "1"))
 
 
@@ -115,7 +115,7 @@ def cleanup_distributed():
 
 
 @contextmanager
-def zero_first(is_main):
+def zero_first(is_main: bool):
     """
     runs the wrapped context so that rank 0 runs first before other ranks
     """

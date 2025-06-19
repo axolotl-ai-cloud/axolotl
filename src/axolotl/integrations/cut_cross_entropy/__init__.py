@@ -28,7 +28,7 @@ from axolotl.utils.logging import get_logger
 
 from .args import CutCrossEntropyArgs  # pylint: disable=unused-import. # noqa: F401
 
-LOG = get_logger(__name__, use_environ=True)
+LOG = get_logger(__name__)
 
 _CCE_INSTALL_MESSAGE = (
     "Please install cut_cross_entropy with transformers support using "

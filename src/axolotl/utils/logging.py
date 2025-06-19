@@ -1,6 +1,4 @@
-"""
-logging helpers to only log on main process
-"""
+"""Logging helpers to only log on main process."""
 
 import functools
 import logging
@@ -14,27 +12,21 @@ from axolotl.utils.distributed import is_main_process
 
 class MultiProcessAdapter(logging.LoggerAdapter):
     """
-    logger adapter for distributed logging, specifically to only log on main process
+    Logger adapter for distributed logging, specifically to only log on main process.
     """
 
-    def __init__(self, logger, use_environ=False, extra=None):
+    def __init__(self, logger, extra=None):
         super().__init__(logger, extra)
-        self.use_environ = use_environ
 
     @staticmethod
-    def _should_log(main_process_only, use_environ=False):
-        return not main_process_only or (
-            main_process_only and is_main_process(use_environ=use_environ)
-        )
+    def _should_log(main_process_only: bool):
+        return not main_process_only or main_process_only and is_main_process()
 
     def log(self, level, msg, *args, **kwargs):
-        use_environ = kwargs.pop("use_environ", self.use_environ)
         main_process_only = kwargs.pop("main_process_only", True)
-        kwargs.setdefault("stacklevel", 2)
+        kwargs.setdefault("stacklevel", 1)
 
-        if self.isEnabledFor(level) and self._should_log(
-            main_process_only, use_environ=use_environ
-        ):
+        if self.isEnabledFor(level) and self._should_log(main_process_only):
             msg, kwargs = self.process(msg, kwargs)
             self.logger.log(level, msg, *args, **kwargs)
 
@@ -51,7 +43,7 @@ class MultiProcessAdapter(logging.LoggerAdapter):
 
 
 def get_logger(
-    name: str, log_level: str | None = None, use_environ: bool = False
+    name: str, log_level: str | None = None
 ) -> MultiProcessAdapter:
     if log_level is None:
         log_level = os.environ.get("AXOLOTL_LOG_LEVEL", None)
@@ -59,4 +51,4 @@ def get_logger(
     if log_level is not None:
         logger.setLevel(log_level.upper())
         logger.root.setLevel(log_level.upper())
-    return MultiProcessAdapter(logger, use_environ=use_environ, extra={})
+    return MultiProcessAdapter(logger, extra={})

@@ -27,7 +27,7 @@ from axolotl.utils.logging import get_logger
 from .args import LigerArgs  # pylint: disable=unused-import. # noqa: F401
 from .utils import patch_with_compile_disable
 
-LOG = get_logger(__name__, use_environ=True)
+LOG = get_logger(__name__)
 
 
 class LigerPlugin(BasePlugin):

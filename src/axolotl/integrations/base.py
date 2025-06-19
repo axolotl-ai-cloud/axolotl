@@ -33,7 +33,7 @@ from transformers import PreTrainedModel, Trainer
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
-LOG = get_logger(__name__, use_environ=True)
+LOG = get_logger(__name__)
 
 if TYPE_CHECKING:
     from axolotl.common.datasets import TrainDatasetMeta

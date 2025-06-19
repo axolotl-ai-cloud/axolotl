@@ -22,7 +22,7 @@ from pydantic import BaseModel, model_validator
 
 from axolotl.utils.logging import get_logger
 
-LOG = get_logger(__name__, use_environ=True)
+LOG = get_logger(__name__)
 
 
 class LigerArgs(BaseModel):

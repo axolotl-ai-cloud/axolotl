@@ -48,7 +48,7 @@ from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.validation import ValidationMixin
 from axolotl.utils.schemas.vllm import VllmConfig
 
-LOG = get_logger(__name__, use_environ=True)
+LOG = get_logger(__name__)
 
 
 # pylint: disable=too-many-ancestors
