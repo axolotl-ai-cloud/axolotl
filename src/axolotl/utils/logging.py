@@ -15,16 +15,13 @@ class MultiProcessAdapter(logging.LoggerAdapter):
     Logger adapter for distributed logging, specifically to only log on main process.
     """
 
-    def __init__(self, logger, extra=None):
-        super().__init__(logger, extra)
-
     @staticmethod
     def _should_log(main_process_only: bool):
         return not main_process_only or main_process_only and is_main_process()
 
     def log(self, level, msg, *args, **kwargs):
         main_process_only = kwargs.pop("main_process_only", True)
-        kwargs.setdefault("stacklevel", 1)
+        kwargs.setdefault("stacklevel", 2)
 
         if self.isEnabledFor(level) and self._should_log(main_process_only):
             msg, kwargs = self.process(msg, kwargs)
@@ -42,9 +39,7 @@ class MultiProcessAdapter(logging.LoggerAdapter):
         self.warning(*args, **kwargs)
 
 
-def get_logger(
-    name: str, log_level: str | None = None
-) -> MultiProcessAdapter:
+def get_logger(name: str, log_level: str | None = None) -> MultiProcessAdapter:
     if log_level is None:
         log_level = os.environ.get("AXOLOTL_LOG_LEVEL", None)
     logger = logging.getLogger(name)

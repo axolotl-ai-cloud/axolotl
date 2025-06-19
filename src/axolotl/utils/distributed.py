@@ -47,13 +47,13 @@ def get_current_device() -> int:
 
 
 def get_distributed_state() -> PartialState | None:
-    global distributed_state
-    return distributed_state  # pylint: disable=global-statement
+    return distributed_state
 
 
 def is_distributed() -> bool:
     """Check if distributed training is initialized."""
-    if not get_distributed_state():
+    global distributed_state  # pylint: disable=global-statement
+    if distributed_state is None:
         timeout = int(os.environ.get("AXOLOTL_NCCL_TIMEOUT", 1800))
         distributed_state = PartialState(timeout=timedelta(seconds=timeout))
 
@@ -73,14 +73,14 @@ def is_main_process() -> bool:
     """
     Check if the current process is the main process. If not in distributed mode,
     always return `True`.
-    
+
     We use a simpler logic when the distributed state is not initialized: we just log
     on the 0-th local rank.
 
     Returns:
         `True` if the current process is the main process, `False` otherwise.
     """
-    if not get_distributed_state():
+    if get_distributed_state() is None:
         return os.environ.get("LOCAL_RANK", "0") == "0"
     if not is_distributed():
         return True
@@ -88,7 +88,7 @@ def is_main_process() -> bool:
 
 
 def is_local_main_process() -> bool:
-    if not get_distributed_state():
+    if get_distributed_state() is None:
         return os.environ.get("LOCAL_RANK", "0") == "0"
     return PartialState().is_local_main_process
 
