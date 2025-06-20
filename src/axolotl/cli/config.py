@@ -233,4 +233,6 @@ def load_cfg(
     setup_comet_env_vars(cfg)
     plugin_set_cfg(cfg)
 
+    LOG.info(f"cfg:\n{json.dumps(cfg, indent=2, default=str)}")
+
     return cfg
