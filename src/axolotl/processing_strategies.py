@@ -142,7 +142,7 @@ class ProcessingStrategy:
                 # TODO: check if it's normal to be single image only for common datasets
                 # From observation, it's usually a list of single image but some datasets may have several columns for images
                 # Temporary solution: take the first image and suggest people convert their datasets to use multi-content Messages
-                if len(processed_example[image_key]) > 0:
+                if len(processed_example[image_key]) > 1:
                     LOG.warning(
                         f"Found {len(processed_example[image_key])} images in a sample. Using the first one."
                         "If you are using a dataset with multiple images per sample, please convert it to use multi-content Messages."

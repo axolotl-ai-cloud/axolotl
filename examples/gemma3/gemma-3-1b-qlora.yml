@@ -13,6 +13,8 @@ load_in_4bit: true
 
 # huggingface repo
 chat_template: gemma3
+eot_tokens:
+  - <end_of_turn>
 datasets:
   - path: cgato/SlimOrcaDedupCleaned
     type: chat_template

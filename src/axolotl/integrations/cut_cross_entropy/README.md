@@ -19,18 +19,10 @@ python scripts/cutcrossentropy_install.py | sh
 
 - If you are installing from pip
 ```bash
-pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/apple/ml-cross-entropy.git@bad6f7b49c75fdec69471abb71b4cddd0f0c6438"
+pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@main"
 ```
 
 ## Usage
-
-**NOTE**: If you are training a VLM model, please use older version of Axolotl as upstream has applied a major VLM refactor, and our patches have not been updated yet.
-
-```bash
-git checkout 787880215b3ab32ccaf81c1b2e9588c6f3e6e764
-
-pip3 install --no-build-isolation -e .
-```
 
 ```yaml
 plugins:
@@ -39,27 +31,29 @@ plugins:
 
 ## Supported Models
 
-- llama
-- llama4
-- llama4_text
-- mllama
-- phi3
+- cohere
+- cohere2
 - gemma
 - gemma2
 - gemma3
 - gemma3_text
+- glm
+- glm4
+- llama
+- llama4
+- llama4_text
 - mistral
 - mistral3
+- mllama
+- phi
+- phi3
+- phi4_multimodal
 - qwen2
-- qwen2_moe
 - qwen2_vl
+- qwen2_moe
 - qwen2_5_vl
 - qwen3
 - qwen3_moe
-- cohere
-- cohere2
-- glm
-- glm4
 
 ## Citation
 

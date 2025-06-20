@@ -6,6 +6,8 @@ load_in_4bit: true
 ddp_find_unused_parameters: true
 
 chat_template: gemma3
+eot_tokens:
+  - <end_of_turn>
 datasets:
   - path: cgato/SlimOrcaDedupCleaned
     type: chat_template
