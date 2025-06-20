@@ -12,6 +12,8 @@ sample_packing: false
 ddp_find_unused_parameters: true
 
 chat_template: gemma3
+eot_tokens:
+  - <end_of_turn>
 datasets:
   - path: HuggingFaceH4/llava-instruct-mix-vsft
     type: chat_template
