@@ -20,6 +20,7 @@ from axolotl.cli.args import (
     TrainerCliArgs,
     VllmServeCliArgs,
 )
+from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.sweeps import generate_sweep_configs
 from axolotl.cli.utils import (
     add_options_from_config,
@@ -40,6 +41,7 @@ LOG = get_logger(__name__)
 @click.version_option(version=axolotl.__version__, prog_name="axolotl")
 def cli():
     """Axolotl CLI - Train and fine-tune large language models"""
+    print_axolotl_text_art()
 
 
 @cli.command()

@@ -22,7 +22,6 @@ from huggingface_hub import split_torch_state_dict_into_shards
 from safetensors.torch import save_file as safe_save_file
 from torch.distributed.checkpoint.format_utils import _EmptyStateDictLoadPlanner
 
-from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
 from axolotl.utils.logging import get_logger
 
@@ -194,7 +193,6 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
         kwargs: Additional keyword arguments to override config file values.
     """
     # pylint: disable=duplicate-code
-    print_axolotl_text_art()
     parsed_cfg = load_cfg(config, **kwargs)
 
     fsdp_dir = Path(parsed_cfg.output_dir) / "pytorch_model_fsdp_0"

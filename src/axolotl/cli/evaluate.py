@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 from transformers.hf_argparser import HfArgumentParser
 
 from axolotl.cli.args import TrainerCliArgs
-from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
 from axolotl.common.datasets import load_datasets, load_preference_datasets
@@ -35,7 +34,6 @@ def do_evaluate(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
     patch_optimized_env()
 
     # pylint: disable=duplicate-code
-    print_axolotl_text_art()
     check_accelerate_default_config()
     if int(os.getenv("LOCAL_RANK", "0")) == 0:
         check_user_token()

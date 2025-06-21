@@ -7,7 +7,6 @@ from typing import Union
 
 from transformers import AutoModelForCausalLM
 
-from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
 from axolotl.loaders import load_tokenizer
 from axolotl.utils.logging import get_logger
@@ -27,7 +26,6 @@ def do_quantize(
         config (Union[Path, str]): The path to the config file
         cli_args (dict): Additional command-line arguments
     """
-    print_axolotl_text_art()
 
     cfg = load_cfg(config)
 

@@ -13,7 +13,6 @@ from dotenv import load_dotenv
 from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 
 from axolotl.cli.args import InferenceCliArgs
-from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
 from axolotl.utils.chat_templates import (
@@ -255,7 +254,6 @@ def do_cli(
         kwargs: Additional keyword arguments to override config file values.
     """
     # pylint: disable=duplicate-code
-    print_axolotl_text_art()
     parsed_cfg = load_cfg(config, inference=True, rl=None, **kwargs)
     parsed_cfg.sample_packing = False
     parser = transformers.HfArgumentParser(InferenceCliArgs)

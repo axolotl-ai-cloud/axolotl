@@ -7,7 +7,6 @@ from typing import Union
 
 import yaml
 
-from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.cloud.modal_ import ModalCloud
 from axolotl.utils.dict import DictDefault
 
@@ -24,7 +23,6 @@ def do_cli_preprocess(
     cloud_config: Union[Path, str],
     config: Union[Path, str],
 ) -> None:
-    print_axolotl_text_art()
     cloud_cfg = load_cloud_cfg(cloud_config)
     cloud = ModalCloud(cloud_cfg)
     with open(config, "r", encoding="utf-8") as file:
@@ -39,7 +37,6 @@ def do_cli_train(
     cwd=None,
     **kwargs,
 ) -> None:
-    print_axolotl_text_art()
     cloud_cfg = load_cloud_cfg(cloud_config)
     cloud = ModalCloud(cloud_cfg)
     with open(config, "r", encoding="utf-8") as file:
@@ -54,7 +51,6 @@ def do_cli_lm_eval(
     cloud_config: Union[Path, str],
     config: Union[Path, str],
 ) -> None:
-    print_axolotl_text_art()
     cloud_cfg = load_cloud_cfg(cloud_config)
     cloud = ModalCloud(cloud_cfg)
     with open(config, "r", encoding="utf-8") as file:

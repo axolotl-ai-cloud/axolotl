@@ -6,7 +6,6 @@ from typing import Union
 import fire
 from dotenv import load_dotenv
 
-from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
 from axolotl.utils.dict import DictDefault
@@ -23,8 +22,6 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
-    print_axolotl_text_art()
-
     model, tokenizer, processor = load_model_and_tokenizer(cfg=cfg)
     safe_serialization = cfg.save_safetensors is True
 
