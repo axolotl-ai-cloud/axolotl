@@ -13,6 +13,7 @@ import torch
 import yaml
 from transformers.utils import is_torch_bf16_gpu_available
 
+from axolotl.cli.redaction import redact_sensitive_info
 from axolotl.integrations.base import PluginManager
 from axolotl.utils.comet_ import setup_comet_env_vars
 from axolotl.utils.config import (
@@ -233,6 +234,10 @@ def load_cfg(
     setup_comet_env_vars(cfg)
     plugin_set_cfg(cfg)
 
-    LOG.info(f"cfg:\n{json.dumps(cfg, indent=2, default=str)}")
+    redacted_cfg = redact_sensitive_info(cfg)
+    LOG.info(
+        "config:\n%s",
+        json.dumps(redacted_cfg, indent=2, default=str, sort_keys=True),
+    )
 
     return cfg
