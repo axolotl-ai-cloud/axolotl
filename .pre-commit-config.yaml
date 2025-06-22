@@ -19,7 +19,7 @@ repos:
     hooks:
       - id: isort
 -   repo: https://github.com/PyCQA/flake8
-    rev: 7.2.0
+    rev: 7.3.0
     hooks:
     - id: flake8
 -   repo: https://github.com/pylint-dev/pylint
@@ -27,7 +27,7 @@ repos:
     hooks:
     - id: pylint
 -   repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.16.0
+    rev: v1.16.1
     hooks:
     - id: mypy
       additional_dependencies:
@@ -36,7 +36,7 @@ repos:
             'pydantic>=2.5.3',
         ]
 -   repo: https://github.com/PyCQA/bandit
-    rev: 1.8.3
+    rev: 1.8.5
     hooks:
     -   id: bandit
         args: [
