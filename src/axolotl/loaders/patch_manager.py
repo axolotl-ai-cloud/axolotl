@@ -53,6 +53,7 @@ class PatchManager:
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
         self._apply_flex_attention_patches()
+        self._apply_sageattn_patches()
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
