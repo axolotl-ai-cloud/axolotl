@@ -106,9 +106,9 @@ def sage_attention_forward(
         sm_scale=scaling,
     )
 
-    # `sageattn` with "HND" layout returns (batch, heads, seq_len, dim).
-    # The transformers modelling code expects the output to be (batch, seq_len, heads, dim).
-    # We transpose dimensions 1 and 2 to match this expectation.
+    # SageAttention with "HND" returns (batch, heads, seq_len, head_dim)
+    # Transformers expects (batch, seq_len, heads, head_dim) for the output
+    # So we need to transpose dimensions 1 and 2
     attn_output = attn_output.transpose(1, 2).contiguous()
 
     return attn_output, None
