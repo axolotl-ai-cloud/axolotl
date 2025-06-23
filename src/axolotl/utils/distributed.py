@@ -46,16 +46,23 @@ def get_current_device() -> int:
     return 0
 
 
+def init_distributed_state():
+    global distributed_state  # pylint: disable=global-statement
+    if distributed_state is None:
+        timeout = int(os.environ.get("AXOLOTL_NCCL_TIMEOUT", 1800))
+        distributed_state = PartialState(timeout=timedelta(seconds=timeout))
+
+
 def get_distributed_state() -> PartialState | None:
     return distributed_state
 
 
 def is_distributed() -> bool:
     """Check if distributed training is initialized."""
-    global distributed_state  # pylint: disable=global-statement
+    init_distributed_state()
+
     if distributed_state is None:
-        timeout = int(os.environ.get("AXOLOTL_NCCL_TIMEOUT", 1800))
-        distributed_state = PartialState(timeout=timedelta(seconds=timeout))
+        return False
 
     return distributed_state.use_distributed and distributed_state.initialized
 
