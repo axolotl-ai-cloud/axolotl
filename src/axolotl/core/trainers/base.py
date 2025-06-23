@@ -122,8 +122,8 @@ class AxolotlTrainer(
         return sampler
 
     def _get_train_sampler(
-        self, train_dataset: Optional[Dataset] = None
-    ) -> Optional[Sampler]:
+        self, train_dataset: Dataset | None = None
+    ) -> Sampler | None:
         """
         Helper method to get the sampler for training. Handles cases for sample packing
         and curriculum sampling (sequential).
