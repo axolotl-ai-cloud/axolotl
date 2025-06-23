@@ -55,6 +55,8 @@ def sage_attention_forward(
     https://github.com/thu-ml/SageAttention/
     """
 
+    _check_sageattn_imported()
+
     if (
         kwargs.get("output_attentions", False)
         or kwargs.get("head_mask", None) is not None
