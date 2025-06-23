@@ -235,6 +235,8 @@ def load_cfg(
     plugin_set_cfg(cfg)
 
     redacted_cfg = redact_sensitive_info(cfg)
+    redacted_cfg = {k: v for k, v in redacted_cfg.items() if v is not None}
+
     LOG.info(
         "config:\n%s",
         json.dumps(redacted_cfg, indent=2, default=str, sort_keys=True),
