@@ -57,10 +57,7 @@ def sage_attention_forward(
 
     _check_sageattn_imported()
 
-    if (
-        kwargs.get("output_attentions", False)
-        or kwargs.get("head_mask", None) is not None
-    ):
+    if kwargs.get("output_attentions", False) or kwargs.get("head_mask") is not None:
         raise NotImplementedError(
             "SageAttention does not support `output_attentions=True` or `head_mask`."
         )
@@ -76,7 +73,7 @@ def sage_attention_forward(
             "The integration requires updating to use `sageattn_varlen`. Please create a feature request."
         )
 
-    if kwargs.get("position_ids", None) is not None:
+    if kwargs.get("position_ids") is not None:
         raise NotImplementedError(
             "Currently, the SageAttention integration does not support `position_ids`. "
             "The integration requires updating to use `sageattn_varlen`. Please create a feature request."
