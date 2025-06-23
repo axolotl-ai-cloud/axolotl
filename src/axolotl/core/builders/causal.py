@@ -215,10 +215,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.auto_find_batch_size
             )
 
-        training_arguments_kwargs["eval_accumulation_steps"] = (
-            self.cfg.gradient_accumulation_steps
-        )
-
         training_arguments_kwargs["load_best_model_at_end"] = (
             (
                 self.cfg.load_best_model_at_end is not False
