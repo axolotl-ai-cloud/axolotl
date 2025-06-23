@@ -523,8 +523,18 @@ class AxolotlInputConfig(
         },
     )
 
-    chunked_cross_entropy: bool | None = None
-    chunked_cross_entropy_num_chunks: int | None = None
+    chunked_cross_entropy: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use chunked cross entropy loss for memory efficiency"
+        },
+    )
+    chunked_cross_entropy_num_chunks: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of chunks to use for chunked cross entropy loss"
+        },
+    )
 
     llama4_linearized_experts: bool | None = None
 
