@@ -1,0 +1,55 @@
+base_model: Qwen/Qwen2.5-VL-7B-Instruct
+processor_type: AutoProcessor
+
+# these 3 lines are needed for now to handle vision chat templates w images
+skip_prepare_dataset: true
+remove_unused_columns: false
+sample_packing: false
+
+chat_template: qwen2_vl
+datasets:
+  - path: HuggingFaceH4/llava-instruct-mix-vsft
+    type: chat_template
+    split: train[:1%]
+    field_messages: messages
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.0
+output_dir: ./outputs/out
+
+adapter: lora
+lora_model_dir:
+
+sequence_len: 8192
+pad_to_sequence_len: false
+
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: true
+fp16:
+tf32: true
+
+gradient_checkpointing: true
+logging_steps: 1
+flash_attention: true
+eager_attention:
+
+warmup_ratio: 0.1
+evals_per_epoch: 1
+saves_per_epoch: 1
+weight_decay: 0.0
