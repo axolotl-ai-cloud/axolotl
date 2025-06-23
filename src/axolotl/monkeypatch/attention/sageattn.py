@@ -117,6 +117,7 @@ def patch_sageattn():
 
     _check_sageattn_imported()
 
-    from transformers.modeling_utils import ATTENTION_FUNCTIONS
+    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
-    ATTENTION_FUNCTIONS["sage_attention"] = sage_attention_forward
+    # Register sage_attention with the global attention interface
+    ALL_ATTENTION_FUNCTIONS.register("sage_attention", sage_attention_forward)
