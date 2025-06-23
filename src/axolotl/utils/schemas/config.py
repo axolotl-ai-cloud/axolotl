@@ -494,6 +494,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "Whether to use bettertransformers"},
     )
+    sage_attention: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use SageAttention https://github.com/thu-ml/SageAttention"
+        },
+    )
 
     eager_attention: bool | None = None
 
@@ -875,6 +881,16 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 "This may work on H100s."
             )
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_sageattn_w_sample_packing(cls, data):
+        if data.get("sample_packing") and data.get("sage_attention"):
+            raise ValueError(
+                "SageAttention does not support sample packing at the moment. "
+                "Please disable sample packing or use a different attention implementation."
+            )
         return data
 
     # pylint: disable=duplicate-code

@@ -547,6 +547,11 @@ class ModelLoader:
             self.model_config._attn_implementation = (  # pylint: disable=protected-access
                 "sdpa"
             )
+        elif self.cfg.sage_attention:
+            self.model_kwargs["attn_implementation"] = "sage_attention"
+            self.model_config._attn_implementation = (  # pylint: disable=protected-access
+                "sage_attention"
+            )
         elif self.cfg.eager_attention:
             self.model_kwargs["attn_implementation"] = "eager"
             self.model_config._attn_implementation = (  # pylint: disable=protected-access

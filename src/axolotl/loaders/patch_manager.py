@@ -104,6 +104,13 @@ class PatchManager:
             patch_flex_wrapper(**flex_attn_compile_kwargs)
             patch_flex_make_mask()
 
+    def _apply_sageattn_patches(self):
+        """Apply patches for SageAttention."""
+        if self.cfg.sage_attention:
+            from axolotl.monkeypatch.attention.sageattn import patch_sageattn
+
+            patch_sageattn()
+
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
         if (
