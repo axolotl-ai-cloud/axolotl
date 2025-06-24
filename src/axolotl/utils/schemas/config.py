@@ -893,6 +893,21 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_compute_capability_w_sageattn(cls, data):
+        if (
+            data.get("sage_attention")
+            and data.get("capabilities")
+            and data.get("capabilities").get("compute_capability")
+            not in ["sm80", "sm86", "sm89", "sm90", "sm120"]
+        ):
+            raise ValueError(
+                "SageAttention supports compute capability between sm80 and sm120. "
+                "Please use a different attention implementation."
+            )
+        return data
+
     # pylint: disable=duplicate-code
     @model_validator(mode="before")
     @classmethod
