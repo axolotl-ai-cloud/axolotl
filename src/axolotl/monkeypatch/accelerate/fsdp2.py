@@ -13,7 +13,7 @@ from axolotl.utils.bench import log_gpu_memory_usage
 LOG = get_logger(__name__)
 
 
-def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dict):
+def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dict, offload_to_cpu: bool = False):
     """
     Loads the full state dict (could be only on rank 0) into the sharded model. This is done by broadcasting the
     parameters from rank 0 to all other ranks. This function modifies the model in-place.
@@ -104,7 +104,8 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
 
         # if "embed_tokens" in param_name or "lm_head" in param_name:
         #     print(f"param_name: {param_name}\nfull_tensor: {full_tensor}\nsharded_param: {sharded_param}\nsharded_meta_param: {sharded_meta_param}")
-
+        if offload_to_cpu:
+            sharded_param = sharded_param.cpu()
         sharded_sd[param_name] = nn.Parameter(sharded_param)
         LOG.info(f"param_name: {param_name}, dtype: {sharded_param.dtype}, inferred dtype: {_infer_parameter_dtype(model, param_name, sharded_param)}")
         del full_tensor
@@ -264,6 +265,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     import functools
     import copy
     from accelerate.utils.fsdp_utils import fsdp2_prepare_auto_wrap_policy
+    from torch.distributed.fsdp import CPUOffloadPolicy
 
     is_type_fsdp = isinstance(model, FSDPModule) or (
         is_compiled_module(model) and isinstance(model._orig_mod, FSDPModule)
@@ -312,6 +314,8 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         # `fully_shard` doesn't accept `None` in case of `MixedPrecisionPolicy`
         "mp_policy": fsdp2_plugin.mixed_precision_policy or MixedPrecisionPolicy(),
     }
+    if torch.distributed.get_rank() == 0:
+        import ipdb; ipdb.set_trace()
 
     model_has_params4bit = False
     for name, param in model.named_parameters():
@@ -342,19 +346,25 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         if hasattr(model, "tie_weights"):
             model.tie_weights()
 
+    is_peft_model = "Peft" in model.__class__.__name__
+    if is_peft_model:
+        from peft.tuners.lora import Linear 
+    else:
+        Linear = None
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, auto_wrap_policy_type, model)
     if auto_wrap_policy is not None:
-        # We skip the model itself, as that one is always wrapped
         for module in get_module_children_bottom_up(model)[:-1]:
+            if is_peft_model and isinstance(module, Linear):
+                fully_shard(module.lora_A, **fsdp2_kwargs)
+                fully_shard(module.lora_B, **fsdp2_kwargs)
             if auto_wrap_policy(module):
                 fully_shard(module, **fsdp2_kwargs)
 
     fully_shard(model, **fsdp2_kwargs)
 
     if fsdp2_plugin.cpu_ram_efficient_loading:
-        # If `cpu_ram_efficient_loading` is enabled, only rank 0 loads the weights
-        # Other ranks have an empty model on `meta` device, so we need to distribute the weights properly
-        fsdp2_load_full_state_dict(accelerator, model, original_sd)
+        offload_to_cpu = isinstance(fsdp2_plugin.cpu_offload, CPUOffloadPolicy)
+        fsdp2_load_full_state_dict(accelerator, model, original_sd, offload_to_cpu=offload_to_cpu)
 
     if fsdp2_plugin.cpu_ram_efficient_loading and not model_has_params4bit:
         # We re-register the buffers, as they may not be in the state_dict
