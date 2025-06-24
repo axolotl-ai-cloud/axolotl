@@ -9,11 +9,11 @@ description: Frequently asked questions
 
 > A: Usually an issue with the GPUs communicating with each other. See the [NCCL doc](nccl.qmd)
 
-**Q: Exitcode -9**
+**Q: exitcode: -9**
 
 > A: This usually happens when you run out of system RAM.
 
-**Q: Exitcode -7 while using deepspeed**
+**Q: exitcode: -7 while using deepspeed**
 
 > A: Try upgrading deepspeed w: `pip install -U deepspeed`
 

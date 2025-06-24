@@ -500,7 +500,7 @@ The input format is a simple JSON input with customizable fields based on the ab
 ### GRPO
 
 ::: {.callout-tip}
-Check out our [GRPO cookbook](https://github.com/axolotl-ai-cloud/axolotl-cookbook/tree/main/grpo#training-an-r1-style-large-language-model-using-grpo).
+Check out our [GRPO cookbook](https://github.com/axolotl-ai-cloud/grpo_code).
 :::
 
 In the latest GRPO implementation, `vLLM` is used to significantly speedup trajectory generation during training. In this example, we're using 4 GPUs - 2 for training, and 2 for vLLM:

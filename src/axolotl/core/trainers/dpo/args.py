@@ -14,3 +14,5 @@ class AxolotlDPOConfig(AxolotlTrainingMixins, DPOConfig):
     """
     DPO config for DPO training
     """
+
+    dpo_norm_loss: bool | None = False

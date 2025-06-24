@@ -8,7 +8,9 @@ on:
     paths:
       - '**/*.md'      # any Markdown file
       - '**/*.qmd'     # any Quarto file
-      - '_quarto.yaml'
+      - '_quarto.yml'
+      - docs/scripts/generate_config_docs.py
+      - src/axolotl/utils/schemas/**.py
 
 permissions:
   checks: write
@@ -38,7 +40,7 @@ jobs:
       - name: Install dependencies
         run: |
           python3 -m pip install jupyter quartodoc
-          python3 -m pip install -e . --no-deps
+          python3 -m pip install -e .
 
       - name: Build autodoc
         run: quartodoc build

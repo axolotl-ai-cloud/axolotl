@@ -81,6 +81,7 @@ class TestBatchedSamplerPacking:
             group_size=100000,
             bin_size=200,
             sequential=sequential,
+            drop_last=False,
         )
 
         loader = DataLoader(

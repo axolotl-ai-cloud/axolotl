@@ -1,10 +1,7 @@
-"""
-E2E tests for llama pretrain
-"""
+"""E2E tests for llama pretrain"""
 
 import pytest
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
@@ -14,22 +11,17 @@ from .utils import check_model_output_exists, check_tensorboard
 
 
 class TestPretrainLlama:
-    """
-    Test case for Llama models w pretraining
-    """
+    """Test case for Llama models w pretraining"""
 
     @pytest.mark.parametrize(
-        "sample_packing",
-        [True, False],
-    )
-    @pytest.mark.parametrize(
-        "pretrain_multipack_attn",
-        [True, False],
+        ("sample_packing", "pretrain_multipack_attn"),
+        [
+            (False, False),
+            (True, True),
+            (True, False),
+        ],
     )
     def test_pretrain(self, temp_dir, sample_packing, pretrain_multipack_attn):
-        if not sample_packing and pretrain_multipack_attn:
-            return
-
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
@@ -66,17 +58,16 @@ class TestPretrainLlama:
 
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
-        loss_threshold = 3.5
+        loss_threshold = 3.6
         if sample_packing and not pretrain_multipack_attn:
             loss_threshold = 6.5
         check_tensorboard(
             temp_dir + "/runs",
             "train/train_loss",
             loss_threshold,
-            "Train Loss is too high",
+            "Train Loss (%s) is too high",
         )

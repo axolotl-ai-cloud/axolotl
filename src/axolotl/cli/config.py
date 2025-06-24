@@ -26,7 +26,7 @@ from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
-LOG = get_logger(__name__, use_environ=True)
+LOG = get_logger(__name__)
 
 
 def check_remote_config(config: Union[str, Path]) -> Union[str, Path]:

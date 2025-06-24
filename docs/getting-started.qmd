@@ -55,7 +55,7 @@ output_dir: ./outputs/lora-out
 - To perform QLoRA finetuning, replace with `load_in_4bit: true` and `adapter: qlora`.
 :::
 
-See our [Config options](config.qmd) for more details.
+See our [config options](config-reference.qmd) for more details.
 
 ### Training {#sec-training}
 
@@ -179,7 +179,7 @@ Now that you have the basics, you might want to:
 
 Check our other guides for details on these topics:
 
-- [Configuration Guide](config.qmd) - Full configuration options
+- [Configuration Guide](config-reference.qmd) - Full configuration options
 - [Dataset Loading](dataset_loading.qmd) - Loading datasets from various sources
 - [Dataset Formats](dataset-formats) - Working with different data formats
 - [Multi-GPU Training](multi-gpu.qmd)

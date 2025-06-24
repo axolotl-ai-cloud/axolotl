@@ -25,6 +25,7 @@ from trl.trainer.utils import pad_to_length
 from typing_extensions import override
 
 from axolotl.core.trainers.mixins import (
+    CheckpointSaveMixin,
     OptimizerMixin,
     RngLoaderMixin,
     SchedulerMixin,
@@ -33,13 +34,16 @@ from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
     sanitize_kwargs_for_tagging,
 )
+from axolotl.utils import get_not_null
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger(__name__)
 
 
-class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
+class AxolotlTrainer(
+    SchedulerMixin, OptimizerMixin, RngLoaderMixin, CheckpointSaveMixin, Trainer
+):
     """Extend the base Trainer for axolotl helpers"""
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
@@ -101,7 +105,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
             )
             batch_max_len = train_batch_size * self.args.max_seq_length
 
-        return MultipackBatchSampler(
+        sampler = MultipackBatchSampler(
             base_sampler,
             lengths=get_dataset_lengths(dataset),
             packing_efficiency_estimate=self.args.sample_packing_efficiency,
@@ -111,7 +115,11 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
             bin_size=self.args.sample_packing_bin_size,
             sequential=self.args.sample_packing_sequentially,
             drop_last=True,
+            num_processes=self.args.dataset_num_proc,
         )
+
+        len(sampler)
+        return sampler
 
     def _get_train_sampler(
         self, train_dataset: Optional[Dataset] = None
@@ -220,7 +228,9 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
         }
 
         if not isinstance(dataset, torch.utils.data.IterableDataset):
-            dataloader_params["drop_last"] = self.args.dataloader_drop_last
+            dataloader_params["drop_last"] = get_not_null(
+                self.args.dataloader_drop_last, True
+            )
             if sampler_fn is not None:
                 sampler = sampler_fn(dataset)
                 if isinstance(sampler, BatchSampler):

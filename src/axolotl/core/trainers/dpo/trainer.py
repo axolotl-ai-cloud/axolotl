@@ -83,3 +83,20 @@ class AxolotlDPOTrainer(
         gc.collect()
         torch.cuda.empty_cache()
         return loss
+
+    def concatenated_forward(
+        self,
+        model: nn.Module,
+        batch: dict[str, Union[list, torch.LongTensor]],
+        is_ref_model: bool = False,
+    ) -> dict[str, torch.Tensor]:
+        if self.args.dpo_norm_loss:
+            # fmt: off
+            loss_type: str = self.loss_type  # type: ignore[has-type]  # pylint: disable=access-member-before-definition
+            # fmt: on
+            # concatenated_forward handles avg token logprob for ipo case already
+            self.loss_type = "ipo"  # pylint: disable=attribute-defined-outside-init
+            res = super().concatenated_forward(model, batch, is_ref_model=is_ref_model)
+            self.loss_type = loss_type  # pylint: disable=attribute-defined-outside-init
+            return res
+        return super().concatenated_forward(model, batch, is_ref_model=is_ref_model)

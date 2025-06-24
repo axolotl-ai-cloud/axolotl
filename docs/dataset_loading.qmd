@@ -36,7 +36,7 @@ This matches the API of [`datasets.load_dataset`](https://github.com/huggingface
 
 For HuggingFace's guide to load different dataset types, see [here](https://huggingface.co/docs/datasets/loading).
 
-For full details on the config, see [config.qmd](config.qmd).
+For full details on the config, see [config-reference.qmd](config-reference.qmd).
 
 ::: {.callout-note}
 

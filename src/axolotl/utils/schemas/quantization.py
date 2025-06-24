@@ -15,17 +15,22 @@ class QATConfig(BaseModel):
     """
 
     activation_dtype: TorchIntDType | None = Field(
-        default=None, description="Activation dtype"
+        default=None,
+        description='Fake quantization layout to use for activation quantization. Valid options are "int4" and "int8"',
     )
     weight_dtype: TorchIntDType = Field(
-        default=TorchIntDType.int8, description="Weight dtype"
+        default=TorchIntDType.int8,
+        description='Fake quantization layout to use for weight quantization. Valid options are "int4" and "int8"',
     )
     quantize_embedding: bool | None = Field(
         default=False, description="Quantize embedding"
     )
-    group_size: int | None = Field(default=32, description="Group size")
+    group_size: int | None = Field(
+        default=32,
+        description="The number of elements in each group for per-group fake quantization",
+    )
     fake_quant_after_n_steps: int | None = Field(
-        default=None, description="Fake quant after n steps"
+        default=None, description="The number of steps to apply fake quantization after"
     )
 
     @field_validator("activation_dtype", "weight_dtype", mode="before")
@@ -44,15 +49,20 @@ class PTQConfig(BaseModel):
     """
 
     weight_dtype: TorchIntDType = Field(
-        default=TorchIntDType.int8, description="Weight dtype"
+        default=TorchIntDType.int8,
+        description="Fake quantization layout to use for weight quantization. Valid options are uintX for X in [1, 2, 3, 4, 5, 6, 7], or int4, or int8",
     )
     activation_dtype: TorchIntDType | None = Field(
-        default=None, description="Activation dtype"
+        default=None,
+        description='Fake quantization layout to use for activation quantization. Valid options are "int4" and "int8"',
     )
     quantize_embedding: bool | None = Field(
-        default=None, description="Quantize embedding"
+        default=None, description="Whether to quantize the embedding layer."
     )
-    group_size: int | None = Field(default=32, description="Group size")
+    group_size: int | None = Field(
+        default=32,
+        description="The number of elements in each group for per-group fake quantization",
+    )
 
     @field_validator("activation_dtype", "weight_dtype", mode="before")
     @classmethod

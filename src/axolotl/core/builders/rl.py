@@ -12,13 +12,9 @@ from axolotl.core.trainers import (
 from axolotl.core.trainers.dpo import DPOStrategy
 from axolotl.core.trainers.dpo.args import AxolotlDPOConfig
 from axolotl.core.trainers.grpo import GRPOStrategy
-from axolotl.core.training_args import (
-    AxolotlCPOConfig,
-    AxolotlKTOConfig,
-    AxolotlORPOConfig,
-)
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import ensure_dtype
+from axolotl.utils.callbacks.qat import QATCallback
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
 
@@ -30,6 +26,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
     def get_callbacks(self):
         callbacks = super().get_callbacks()
+
+        if self.cfg.qat:
+            callbacks.append(QATCallback(self.cfg.qat))
 
         return callbacks
 
@@ -79,6 +78,12 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         """
         Returns training_args and trainer_kwargs
         """
+        from axolotl.core.training_args import (
+            AxolotlCPOConfig,
+            AxolotlKTOConfig,
+            AxolotlORPOConfig,
+        )
+
         training_args_kwargs, trainer_kwargs = self._set_base_training_args(
             total_num_steps=total_num_steps
         )
@@ -89,10 +94,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             )
         else:
             training_args_kwargs["remove_unused_columns"] = False
-
-        # only rlhf
-        if self.cfg.dataset_processes:
-            training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
 
         if self.cfg.trl and self.cfg.trl.beta is not None:
             training_args_kwargs["beta"] = self.cfg.trl.beta
@@ -142,28 +143,19 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             training_args_cls = AxolotlDPOConfig
-            if self.cfg.rl is RLType.IPO:
-                training_args_kwargs["loss_type"] = "ipo"
-
-            # Not compatible with IPO
-            if self.cfg.rl is RLType.DPO and self.cfg.dpo_label_smoothing:
-                training_args_kwargs["label_smoothing"] = self.cfg.dpo_label_smoothing
-
-            training_args_kwargs["max_completion_length"] = None
-            training_args_kwargs["max_prompt_length"] = self.cfg.sequence_len
-            training_args_kwargs["generate_during_eval"] = self.cfg.use_wandb
-            if self.cfg.dpo_use_weighting is not None:
-                training_args_kwargs["use_weighting"] = self.cfg.dpo_use_weighting
-            if self.cfg.dpo_use_logits_to_keep is not None:
-                training_args_kwargs["use_logits_to_keep"] = (
-                    self.cfg.dpo_use_logits_to_keep
-                )
+            training_args_kwargs.update(DPOStrategy.set_training_args_kwargs(self.cfg))
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
 
         for blocklist_key in blocklist_args_kwargs:
             if blocklist_key in training_args_kwargs:
                 del training_args_kwargs[blocklist_key]
+
+        if self.cfg.plugins:
+            plugin_manager = PluginManager.get_instance()
+            plugin_training_args = plugin_manager.get_training_args(self.cfg)
+            if plugin_training_args:
+                training_args_kwargs.update(plugin_training_args)
 
         training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
             logging_first_step=True,

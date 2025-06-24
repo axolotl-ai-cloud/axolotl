@@ -15,6 +15,7 @@
 """
 Module for handling LIGER input arguments.
 """
+
 from typing import Optional
 
 from pydantic import BaseModel, model_validator

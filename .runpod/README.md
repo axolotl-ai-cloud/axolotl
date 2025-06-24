@@ -328,7 +328,7 @@ The following optimizers are supported:
 - Use `gradient_checkpointing: true` to reduce memory usage
 - Adjust `micro_batch_size` and `gradient_accumulation_steps` based on your GPU memory
 
-For more detailed information, please refer to the [documentation](https://axolotl-ai-cloud.github.io/axolotl/docs/config.html).
+For more detailed information, please refer to the [documentation](https://axolotl-ai-cloud.github.io/axolotl/docs/config-reference.html).
 
 ### Errors:
 

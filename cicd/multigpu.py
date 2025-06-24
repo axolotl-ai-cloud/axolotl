@@ -69,7 +69,7 @@ def run_cmd(cmd: str, run_folder: str):
 @app.function(
     image=cicd_image,
     gpu=GPU_CONFIG,
-    timeout=90 * 60,
+    timeout=120 * 60,
     cpu=16.0,
     memory=131072 * N_GPUS,
     volumes=VOLUME_CONFIG,

@@ -2,8 +2,10 @@
 HF Chat Templates prompt strategy
 """
 
+# pylint: disable=too-many-lines
+
 from collections import defaultdict
-from typing import Any, Dict, List, Set, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
 
 from pydantic import BaseModel
 from transformers import ProcessorMixin
@@ -14,6 +16,9 @@ from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import DatasetConfig
+
+if TYPE_CHECKING:
+    from axolotl.utils.mistral_tokenizer import HFMistralTokenizer
 
 # Configure the logger
 LOG = get_logger(__name__)
@@ -34,6 +39,7 @@ class ChatTemplatePrompter(Prompter):
         message_field_training_detail: str | None = None,
         field_messages: str = "messages",
         field_system: str = "system",
+        field_tools: str = "tools",
         roles: dict[str, list[str]] | None = None,
         chat_template_kwargs: dict[str, Any] | None = None,
         drop_system_message: bool = False,
@@ -66,6 +72,7 @@ class ChatTemplatePrompter(Prompter):
         self.message_field_training_detail = message_field_training_detail
         self.field_messages = field_messages
         self.field_system = field_system
+        self.field_tools = field_tools
         self.tokenizer = tokenizer
         self.processor: ProcessorMixin | None = processor
         self.chat_template = chat_template
@@ -77,17 +84,38 @@ class ChatTemplatePrompter(Prompter):
     def chat_template_msg_variables(self) -> Set[str]:
         return self._chat_template_msg_variables
 
-    def build_prompt(self, conversation, add_generation_prompt=False, images=None):
+    def build_prompt(
+        self,
+        conversation: list[dict],
+        add_generation_prompt=False,
+        images=None,
+        tools=None,
+    ):
+        """
+        Build a prompt from a conversation.
+
+        Args:
+            conversation: A list of messages.
+            add_generation_prompt: Whether to add a generation prompt.
+            images: A list of images. (optional)
+            tools: A list of tools. (optional)
+        """
+        chat_template_kwargs = {
+            "chat_template": self.chat_template,
+            "add_generation_prompt": add_generation_prompt,
+        }
+
+        if tools:
+            chat_template_kwargs["tools"] = tools
+
         if self.processor:
             if not callable(self.processor):
                 raise TypeError("Processor must be callable")
 
             text = self.processor.apply_chat_template(
                 conversation,
-                chat_template=self.chat_template,
                 tokenize=False,
-                add_generation_prompt=add_generation_prompt,
-                **self.chat_template_kwargs,
+                **chat_template_kwargs,
             )
             batch = self.processor(
                 text=text,
@@ -104,9 +132,7 @@ class ChatTemplatePrompter(Prompter):
 
         return self.tokenizer.apply_chat_template(
             conversation,
-            add_generation_prompt=add_generation_prompt,
-            chat_template=self.chat_template,
-            **self.chat_template_kwargs,
+            **chat_template_kwargs,
         )
 
     def get_offsets_for_train_detail(
@@ -250,9 +276,15 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         self.train_on_eot = train_on_eot if train_on_eot is not None else train_on_eos
 
         # Default to eos_token if eot_tokens not provided
-        self.eot_tokens = (
-            eot_tokens if eot_tokens is not None else [self.tokenizer.eos_token]
-        )
+        self.eot_tokens = []
+        if eot_tokens is not None:
+            self.eot_tokens = eot_tokens
+        elif (
+            hasattr(self.tokenizer, "eos_token")
+            and self.tokenizer.eos_token is not None
+        ):
+            self.eot_tokens = [self.tokenizer.eos_token]
+
         self.split_thinking = split_thinking
 
         self.images = "images"
@@ -376,7 +408,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             and not self.prompter.message_field_training_detail  # type: ignore
         ):
             turns = self.get_conversation_thread(prompt)
-            images = self.get_images(prompt)
+            images = self._get_images(prompt)
             prompt_ids = self.prompter.build_prompt(  # type: ignore
                 turns[:-1],
                 add_generation_prompt=True,
@@ -405,7 +437,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             return tokenized_prompt
 
         turns = self.get_conversation_thread(prompt)
-        input_ids = self.prompter.build_prompt(turns)  # type: ignore
+        tools = self._get_tools(prompt)
+        input_ids = self.prompter.build_prompt(turns, tools=tools)  # type: ignore
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
 
         last_eos_idx = -1
@@ -444,7 +477,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
                 continue
 
-            turn_start_idx, turn_end_idx = self.find_turn(turns=turns, turn_idx=index)
+            turn_start_idx, turn_end_idx = self.find_turn(
+                turns=turns, turn_idx=index, tools=tools
+            )
 
             LOG.debug(f"Turn indices: start={turn_start_idx}, end={turn_end_idx}")
 
@@ -546,7 +581,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 return i
         return -1
 
-    def find_turn(self, turns: list[dict], turn_idx: int):
+    def find_turn(
+        self, turns: list[dict], turn_idx: int, tools: list[dict] | None = None
+    ):
         """
         Locate the starting and ending indices of the specified turn in a conversation.
         """
@@ -559,11 +596,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         if (
             turn_idx == 0
             and turns[0].get("role") == "system"
-            and (
-                "mistral" in self.tokenizer.name_or_path.lower()
-                or "gemma"
-                in self.tokenizer.name_or_path.lower()  # gemma3 uses gemma tokenizer
-            )
+            and ("mistral" in self.tokenizer.name_or_path.lower())
         ):
             return -1, -1
 
@@ -577,10 +610,10 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         turns_with_content = turns[: turn_idx + 1]
 
         # Generate the conversation up to the turn, with final turn replaced with dummy content
-        dummy_ids = self.prompter.build_prompt(turns_with_empty)  # type: ignore
+        dummy_ids = self.prompter.build_prompt(turns_with_empty, tools=tools)  # type: ignore
 
         # Generate the conversation up to the turn, with final turn included
-        full_ids = self.prompter.build_prompt(turns_with_content)  # type: ignore
+        full_ids = self.prompter.build_prompt(turns_with_content, tools=tools)  # type: ignore
 
         if not full_ids or not dummy_ids:
             LOG.warning(f"Empty template generated for turn {turn_idx}")
@@ -633,9 +666,10 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
     def get_conversation_thread(self, prompt):
         turns = []
 
-        possible_sys_turn = self.transform_message(
-            prompt[self.prompter.field_messages][0]
-        )
+        messages = self._get_messages(prompt)
+
+        possible_sys_turn = self.transform_message(messages[0])
+
         if (
             possible_sys_turn["role"] != "system"
             and self.prompter.field_system in prompt
@@ -643,7 +677,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             turn = {"role": "system", "content": prompt[self.prompter.field_system]}
             turns.append(turn)
 
-        for message in prompt[self.prompter.field_messages]:
+        for message in messages:
             transformed_message = self.transform_message(message)
 
             turn = {
@@ -661,7 +695,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         return turns
 
-    def transform_message(self, message):
+    def transform_message(self, message: dict) -> dict:
         # Build the initial transformed message from the mappings
         transformed_message = {}
         for key, value in self.prompter.message_property_mappings.items():
@@ -738,8 +772,116 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         return transformed_message
 
-    def get_images(self, prompt):
+    def _get_images(self, prompt):
         return prompt.get(self.images, None)
+
+    def _get_tools(self, prompt) -> list[dict] | None:
+        """Get tools from prompt if available."""
+        tools = prompt.get(self.prompter.field_tools, None)
+        if tools is None:
+            return None
+
+        if isinstance(tools, list):
+            return tools
+
+        raise ValueError(
+            "Unknown tools format. Please convert it into a list[dict].\n"
+            f"Current format: {type(tools)}"
+        )
+
+    def _get_messages(self, prompt):
+        messages = prompt.get(self.prompter.field_messages, None)
+        if messages is None:
+            raise ValueError("Messages is null. Please check `field_messages`.")
+
+        if isinstance(messages, list):
+            return messages
+
+        raise ValueError(
+            "Unknown messages format. Please convert it into a list[dict].\n"
+            f"Current format: {type(messages)}"
+        )
+
+
+class MistralStrategy(ChatTemplateStrategy):
+    """
+    Mistral strategy for chat template.
+    """
+
+    def __init__(
+        self,
+        prompter: "ChatTemplatePrompter",
+        tokenizer: "HFMistralTokenizer",
+        train_on_inputs: bool,
+        sequence_len: int,
+        roles_to_train: list[str] | None = None,
+        train_on_eos: str | None = None,
+        train_on_eot: str | None = None,
+        eot_tokens: list[str] | None = None,
+        split_thinking: bool | None = False,
+    ):
+        # Call the parent's parent __init__ (PromptTokenizingStrategy) to skip ChatTemplateStrategy's validation
+        # pylint: disable=non-parent-init-called,super-init-not-called
+        PromptTokenizingStrategy.__init__(
+            self, prompter, tokenizer, train_on_inputs, sequence_len
+        )
+        self.prompter: ChatTemplatePrompter = prompter
+
+        self.roles_to_train = []
+        if roles_to_train:
+            # map roles if exist in prompter.roles else use the role as is
+            self.roles_to_train = [
+                prompter.roles.get(role, role) for role in roles_to_train
+            ]
+
+        self.train_on_eos = train_on_eos
+        # Backward compatibility, load from train_on_eos
+        self.train_on_eot = train_on_eot if train_on_eot is not None else train_on_eos
+
+        # Default to eos_token if eot_tokens not provided
+        self.eot_tokens = []
+        if eot_tokens is not None:
+            self.eot_tokens = eot_tokens
+        else:
+            # set eot_tokens to the eos_token
+            self.eot_tokens = [self.tokenizer.eos_token]
+
+        self.split_thinking = split_thinking
+
+        self.images = "images"
+
+        LOG.debug(
+            f"The chat template uses the following properites on the message: {self.prompter.chat_template_msg_variables}"
+        )
+
+        # Skip the validation that ChatTemplateStrategy calls
+        # TODO: address this in the future with mistral-specific checks
+        # self._validate_eot_and_eos_tokens()
+
+    @property
+    def supports_multiprocessing(self) -> bool:
+        """
+        Whether this tokenizing strategy supports multiprocessing.
+        mistral_common tokenizers cannot be pickled for multiprocessing.
+        """
+
+        return False
+
+    def find_first_eot_token(self, input_ids, start_idx):
+        """Find the first EOT token in the input_ids starting from start_idx."""
+        # mistral-common tokenizer does not support eot_tokens
+        return self.find_first_eos_token(input_ids, start_idx)
+
+
+class MistralPrompter(ChatTemplatePrompter):
+    """
+    Mistral prompter for chat template.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self._chat_template_msg_variables = set(["tool_call_id", "name", "tool_calls"])
 
 
 class StrategyLoader:
@@ -747,8 +889,17 @@ class StrategyLoader:
     Load chat template strategy based on configuration.
     """
 
-    def _get_strategy_cls(self):
+    def _get_strategy_cls(self, cfg):
+        if cfg.tokenizer_use_mistral_common:
+            return MistralStrategy
+
         return ChatTemplateStrategy
+
+    def _get_prompter_cls(self, cfg):
+        if cfg.tokenizer_use_mistral_common:
+            return MistralPrompter
+
+        return ChatTemplatePrompter
 
     def _get_strategy_params(self, cfg, ds_cfg: Dict[str, Any]):
         return {
@@ -775,9 +926,14 @@ class StrategyLoader:
         else:
             dataset_config = ds_cfg
 
-        chat_template_string = get_chat_template_from_config(
-            cfg=cfg, ds_cfg=dataset_config, tokenizer=tokenizer
-        )
+        if cfg.tokenizer_use_mistral_common:
+            # mistral-common does not use this, so we pass an empty string
+            chat_template_string = ""
+        else:
+            chat_template_string = get_chat_template_from_config(
+                cfg=cfg, ds_cfg=dataset_config, tokenizer=tokenizer
+            )
+
         LOG.info(f"Using chat template:\n---\n{chat_template_string!s}\n---")
 
         prompter_params = {
@@ -803,10 +959,11 @@ class StrategyLoader:
         }
 
         strategy_params = self._get_strategy_params(cfg, dataset_config)
-        strategy_cls = self._get_strategy_cls()
+        strategy_cls = self._get_strategy_cls(cfg)
+        prompter_cls = self._get_prompter_cls(cfg)
 
         strategy = strategy_cls(
-            ChatTemplatePrompter(**prompter_params),
+            prompter_cls(**prompter_params),
             tokenizer=tokenizer,
             **strategy_params,
         )

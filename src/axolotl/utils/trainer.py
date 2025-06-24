@@ -11,15 +11,14 @@ from typing import List, Optional
 import numpy as np
 import torch
 import torch.cuda
-from accelerate.logging import get_logger
 from datasets import IterableDataset, disable_caching, enable_caching
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.monkeypatch.trainer_eval_guard import patch_evaluation_loop_for_fsdp2
-from axolotl.utils.distributed import reduce_and_broadcast
+from axolotl.utils.distributed import init_distributed_state, reduce_and_broadcast
 from axolotl.utils.environment import check_cuda_p2p_ib_support
+from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger(__name__)
@@ -467,6 +466,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 bin_size=cfg.sample_packing_bin_size,
                 sequential=cfg.sample_packing_sequentially,
                 drop_last=True,
+                num_processes=cfg.dataset_processes,
             )
 
             data_loader = DataLoader(
@@ -482,6 +482,9 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                     data_loader_len * cfg.num_epochs * cfg.sequence_parallel_degree
                 )
             )
+            if cfg.dataloader_drop_last:
+                # drop the last batch for each epoch
+                total_num_steps -= int(math.ceil(cfg.num_epochs))
 
             def calc_sample_packing_eff_est(estimates: List[float]):
                 LOG.info(f"sample_packing_eff_est across ranks: {repr(estimates)}")
@@ -534,6 +537,12 @@ def setup_deepspeed_env(cfg, stage=None):
         os.environ["ACCELERATE_DEEPSPEED_ZERO_STAGE"] = str(stage)
         if stage == 3:
             os.environ["ACCELERATE_DEEPSPEED_ZERO3_INIT"] = "true"
+
+    # NOTE(djsaunde): The distribued state cannot be initialized prior to the
+    # ACCELERATE_USE_DEEPSPEED assignment, but it must be initialized some time prior
+    # to model load.
+    init_distributed_state()
+
     # If we don't assign this, it doesn't actually get set in the accelerate weakref
     _ = HfTrainerDeepSpeedConfig(cfg.deepspeed)
 
@@ -629,6 +638,8 @@ def setup_trainer(
         A trainer instance (either `HFRLTrainer` or `HFCausalTrainer`) configured based
             on the provided parameters.
     """
+    from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
+
     if (
         cfg.torch_compile
         and cfg.fsdp_config

@@ -1,7 +1,6 @@
 """Module containing Dataset functionality"""
 
 import os
-from typing import List, Optional, Union
 
 import torch
 from datasets import Dataset, IterableDataset
@@ -20,21 +19,21 @@ LOG = get_logger(__name__)
 
 
 class TokenizedPromptDataset(Dataset):
-    """
-    Dataset that returns tokenized prompts from a stream of text files.
-        Args:
-            prompt_tokenizer (PromptTokenizingStrategy): The prompt tokenizing method for processing the data.
-            dataset (dataset.Dataset): Dataset with text files.
-            process_count (int): Number of processes to use for tokenizing.
-            keep_in_memory (bool): Whether to keep the tokenized dataset in memory.
+    """Dataset that returns tokenized prompts from a stream of text files.
+
+    Args:
+        prompt_tokenizer: The prompt tokenizing method for processing the data.
+        dataset: Dataset with text files.
+        process_count: Number of processes to use for tokenizing.
+        keep_in_memory: Whether to keep the tokenized dataset in memory.
     """
 
     def __init__(  # pylint: disable=super-init-not-called
         self,
         prompt_tokenizer: PromptTokenizingStrategy,
         dataset: Dataset,
-        process_count: Optional[int] = None,
-        keep_in_memory: Optional[bool] = False,
+        process_count: int | None = None,
+        keep_in_memory: bool | None = False,
         **kwargs,
     ):
         self.prompt_tokenizer = prompt_tokenizer
@@ -48,6 +47,13 @@ class TokenizedPromptDataset(Dataset):
     def process(self, dataset):
         features = dataset.features.keys()
         num_proc = min(64, self.process_count if self.process_count else os.cpu_count())
+
+        # Disable multiprocessing if the tokenizer doesn't support it (e.g., mistral_common)
+        if not getattr(self.prompt_tokenizer, "supports_multiprocessing", True):
+            LOG.info(
+                "Disabling multiprocessing for tokenizer as it doesn't support it (e.g., mistral_common)"
+            )
+            num_proc = 1
 
         map_kwargs = {}
         if self.prompt_tokenizer.supports_batched:
@@ -76,14 +82,14 @@ class TokenizedPromptDataset(Dataset):
 
 def wrap_dataset_for_tokenized_prompt(
     prompt_tokenizer: PromptTokenizingStrategy,
-    dataset: Union[Dataset, IterableDataset],
+    dataset: Dataset | IterableDataset,
     **kwargs,
 ):
     if isinstance(dataset, IterableDataset):
         map_kwargs = {}
         if prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True
-        features = dataset.features.keys()
+        features = list(dataset.features.keys())
         return dataset.map(
             prompt_tokenizer.tokenize_prompt,
             remove_columns=features,
@@ -94,12 +100,13 @@ def wrap_dataset_for_tokenized_prompt(
 
 # TODO this isn't the best since it can't interleave datasets
 class ConstantLengthDataset(IterableDataset):
-    """
-    Iterable dataset that returns constant length chunks of tokens from stream of text files.
-        Args:
-            tokenizer (Tokenizer): The processor used for processing the data.
-            dataset (dataset.Dataset): Dataset with text files.
-            seq_length (int): Length of token sequences to return.
+    """Iterable dataset that returns constant length chunks of tokens from stream of
+    text files.
+
+    Args:
+        tokenizer: The processor used for processing the data.
+        dataset: Dataset with text files.
+        seq_length: Length of token sequences to return.
     """
 
     def __init__(  # pylint: disable=super-init-not-called
@@ -110,7 +117,7 @@ class ConstantLengthDataset(IterableDataset):
     ):
         self.tokenizer = tokenizer
         self.concat_token_id = tokenizer.eos_token_id
-        self.datasets: List[IterableDataset] = datasets
+        self.datasets: list[IterableDataset] = datasets
         self.seq_length = seq_length
 
         vocab_size = len(tokenizer.get_vocab())
@@ -174,7 +181,10 @@ class ConstantLengthDataset(IterableDataset):
                             }
                         else:
                             LOG.warning(
-                                f"dropping batch due to tensor size mismatch input_ids: {input_ids.size()}, labels: {labels.size()}, attention_mask: {attention_mask.size()}"
+                                "Dropping batch due to tensor size mismatch "
+                                f"input_ids: {input_ids.size()}, "
+                                f"labels: {labels.size()}, "
+                                f"attention_mask: {attention_mask.size()}"
                             )
                     buffer = {
                         "input_ids": [],

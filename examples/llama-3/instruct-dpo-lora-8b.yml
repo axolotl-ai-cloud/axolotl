@@ -5,6 +5,10 @@ tokenizer_type: AutoTokenizer
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
+special_tokens:
+  pad_token: <|finetune_right_pad_id|>
+  eos_token: <|eot_id|>
+
 load_in_8bit: true
 load_in_4bit: false
 

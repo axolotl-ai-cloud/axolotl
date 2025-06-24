@@ -5,9 +5,8 @@ module to freeze/unfreeze parameters by name
 import re
 from typing import Callable, List, Tuple, Union
 
-from accelerate.logging import get_logger
-
 from axolotl.utils.distributed import is_main_process
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 

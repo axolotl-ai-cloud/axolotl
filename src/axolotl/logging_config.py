@@ -25,12 +25,20 @@ class AxolotlOrWarnErrorFilter(logging.Filter):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self.axolotl_level = logging.getLevelNamesMapping()[
-            os.getenv("AXOLOTL_LOG_LEVEL", DEFAULT_AXOLOTL_LOG_LEVEL)
-        ]
-        self.other_level = logging.getLevelNamesMapping()[
-            os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL)
-        ]
+        axolotl_log_level = os.getenv(
+            "AXOLOTL_LOG_LEVEL", DEFAULT_AXOLOTL_LOG_LEVEL
+        ).upper()
+        other_log_level = os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL).upper()
+
+        try:
+            # py311+ only
+            level_mapping = logging.getLevelNamesMapping()
+            self.axolotl_level = level_mapping[axolotl_log_level]
+            self.other_level = level_mapping[other_log_level]
+        except AttributeError:
+            # For py310, use getLevelName directly
+            self.axolotl_level = logging.getLevelName(axolotl_log_level)
+            self.other_level = logging.getLevelName(other_log_level)
 
     def filter(self, record: LogRecord) -> bool:
         # General filter

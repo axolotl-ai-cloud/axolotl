@@ -3,6 +3,7 @@
 import abc
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
+from datasets import Dataset
 from transformers import BatchEncoding, PreTrainedTokenizer
 
 from axolotl.prompters import Prompter
@@ -27,6 +28,16 @@ class DatasetWrappingStrategy(abc.ABC):
     """
     Abstract class for wrapping datasets for Chat Messages
     """
+
+    @abc.abstractmethod
+    def wrap_dataset(
+        self,
+        dataset,
+        process_count: int | None = None,
+        keep_in_memory: bool | None = False,
+        **kwargs,
+    ) -> Dataset:
+        pass
 
 
 class PromptTokenizingStrategy(abc.ABC):
@@ -58,6 +69,14 @@ class PromptTokenizingStrategy(abc.ABC):
     @property
     def supports_batched(self):
         return False
+
+    @property
+    def supports_multiprocessing(self):
+        """
+        Whether this tokenizing strategy supports multiprocessing.
+        Should return False if the tokenizer has unpicklable objects.
+        """
+        return True
 
     def _tokenize(
         self, prompt: str, add_eos_token: bool = True, strip_bos_token: bool = False

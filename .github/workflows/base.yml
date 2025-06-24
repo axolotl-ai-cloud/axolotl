@@ -16,6 +16,7 @@ on:
 jobs:
   build-base:
     if: github.repository_owner == 'axolotl-ai-cloud'
+    timeout-minutes: 480
     # this job needs to be run on self-hosted GPU runners...
     runs-on: ubuntu-latest-m
     strategy:
@@ -47,14 +48,14 @@ jobs:
             cuda_version: 12.6.3
             cudnn_version: ""
             python_version: "3.11"
-            pytorch: 2.7.0
+            pytorch: 2.7.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-base"
           - cuda: "128"
             cuda_version: 12.6.3
             cudnn_version: ""
             python_version: "3.11"
-            pytorch: 2.7.0
+            pytorch: 2.7.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-base"
           - cuda: "128"
@@ -106,6 +107,7 @@ jobs:
             TORCH_CUDA_ARCH_LIST=${{ matrix.torch_cuda_arch_list }}
   build-base-uv:
     if: github.repository_owner == 'axolotl-ai-cloud'
+    timeout-minutes: 480
     runs-on: ubuntu-latest-m
     strategy:
       fail-fast: false
@@ -122,7 +124,7 @@ jobs:
             cuda_version: 12.8.1
             cudnn_version: ""
             python_version: "3.11"
-            pytorch: 2.7.0
+            pytorch: 2.7.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
     steps:

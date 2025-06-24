@@ -380,14 +380,16 @@ class TrainerBuilderBase(abc.ABC):
         )
 
         # eval_strategy and eval_steps
-        if not self.eval_dataset or self.cfg.val_set_size == 0:
-            # do not eval if no eval_dataset or val_set_size=0
+        if not self.eval_dataset and self.cfg.val_set_size == 0:
+            # do not eval if no eval_dataset and val_set_size=0
             training_args_kwargs["eval_strategy"] = "no"
         elif self.cfg.eval_steps:
             training_args_kwargs["eval_strategy"] = "steps"
             training_args_kwargs["eval_steps"] = self.cfg.eval_steps
+            training_args_kwargs["eval_on_start"] = True
         elif self.cfg.eval_strategy:
             training_args_kwargs["eval_strategy"] = self.cfg.eval_strategy
+            training_args_kwargs["eval_on_start"] = True
 
     def _configure_reporting(self, training_args_kwargs: dict):
         report_to = []
@@ -489,6 +491,9 @@ class TrainerBuilderBase(abc.ABC):
 
         training_args_kwargs["max_steps"] = self.cfg.max_steps or total_num_steps or -1
         training_args_kwargs["num_train_epochs"] = self.cfg.num_epochs
+
+        if self.cfg.dataset_processes:
+            training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
 
         # max_length is not used in CausalTrainer
         if self.cfg.reward_model or self.cfg.rl:
