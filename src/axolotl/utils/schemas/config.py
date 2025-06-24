@@ -900,10 +900,10 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             data.get("sage_attention")
             and data.get("capabilities")
             and data.get("capabilities").get("compute_capability")
-            not in ["sm80", "sm86", "sm89", "sm90", "sm120"]
+            not in ["sm_80", "sm_86", "sm_89", "sm_90", "sm_120"]
         ):
             raise ValueError(
-                "SageAttention supports compute capability between sm80 and sm120. "
+                "SageAttention supports compute capability between sm_80 and sm_120. "
                 "Please use a different attention implementation."
             )
         return data
