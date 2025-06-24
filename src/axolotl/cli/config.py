@@ -13,7 +13,6 @@ import torch
 import yaml
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.cli.redaction import redact_sensitive_info
 from axolotl.integrations.base import PluginManager
 from axolotl.utils.comet_ import setup_comet_env_vars
 from axolotl.utils.config import (
@@ -28,6 +27,8 @@ from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
 LOG = get_logger(__name__)
+
+API_KEY_FIELDS = {"comet_api_key"}
 
 
 def check_remote_config(config: Union[str, Path]) -> Union[str, Path]:
@@ -234,12 +235,15 @@ def load_cfg(
     setup_comet_env_vars(cfg)
     plugin_set_cfg(cfg)
 
-    redacted_cfg = redact_sensitive_info(cfg)
-    redacted_cfg = {k: v for k, v in redacted_cfg.items() if v is not None}
+    cfg_to_log = {
+        k: "[REDACTED]" if k in API_KEY_FIELDS else v
+        for k, v in cfg.items()
+        if v is not None
+    }
 
     LOG.info(
         "config:\n%s",
-        json.dumps(redacted_cfg, indent=2, default=str, sort_keys=True),
+        json.dumps(cfg_to_log, indent=2, default=str, sort_keys=True),
     )
 
     return cfg
