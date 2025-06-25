@@ -106,6 +106,8 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
         #     print(f"param_name: {param_name}\nfull_tensor: {full_tensor}\nsharded_param: {sharded_param}\nsharded_meta_param: {sharded_meta_param}")
         if offload_to_cpu:
             sharded_param = sharded_param.cpu()
+
+
         sharded_sd[param_name] = nn.Parameter(sharded_param)
         del full_tensor
         full_sd[param_name] = None
@@ -323,7 +325,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             model_has_params4bit = True
             break
 
-    if fsdp2_plugin.cpu_ram_efficient_loading and not model_has_params4bit:
+    if fsdp2_plugin.cpu_ram_efficient_loading:
         # Context: `fully_shard` moves the model to GPU if it was on CPU, however it can also be on `meta` and then it stays there even after `fully_shard`
         # For this reason, we need to move the model to `meta` device, as then sharding happens on `meta` device
         # If we kept the model on CPU (`cpu_ram_efficient_loading` has model be on CPU on all ranks, though non-main ranks only have `torch.emtpy`), `fully_shard` would move it to GPU
@@ -349,6 +351,9 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     else:
         LoraLayer = None
     
+    if torch.distributed.get_rank() == 0:
+        import ipdb; ipdb.set_trace()
+    torch.distributed.barrier()
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, auto_wrap_policy_type, model)
     if auto_wrap_policy is not None:
         for module in get_module_children_bottom_up(model)[:-1]:

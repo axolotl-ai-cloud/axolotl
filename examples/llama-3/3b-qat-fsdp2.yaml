@@ -3,7 +3,7 @@ base_model: Qwen/Qwen3-8B
 # hub_model_id: username/custom_model_name
 
 load_in_8bit: false
-load_in_4bit: false
+# load_in_4bit: false
 strict: false
 
 plugins:
@@ -17,7 +17,8 @@ liger_fused_linear_cross_entropy: true
 
 
 # peft_use_dora: true
-adapter: lora
+load_in_4bit: true
+adapter: qlora
 lora_model_dir:
 lora_r: 32
 lora_alpha: 16

@@ -552,10 +552,10 @@ class AxolotlInputConfig(
     fsdp_config: dict[str, Any] | None = Field(
         default=None, json_schema_extra={"description": "FSDP configuration options"}
     )
-    fsdp_final_state_dict_type: (
-        Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None,
+    fsdp_final_state_dict_type: Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None = Field(
+        default=None,
         deprecation_message="Configuring FSDP final state dict type using `fsdp_final_state_dict_type` is deprecated. Please use `fsdp_config.fsdp_final_state_dict_type` instead.",
-    ) = None
+    )
 
     val_set_size: float | None = Field(
         default=0.0,
@@ -1103,7 +1103,14 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @classmethod
     def check_fsdp_version(cls, data):
         if data.get("fsdp_config") is not None and str(data.get("fsdp_version")) != "2":
-            LOG.info("We recommend that you use FSDP version 2 for better performance and stability. "
-                     "Please see this link for more details: https://docs.axolotl.ai/docs/multi-gpu.html#sec-fsdp"
-                     "For more details on migrating your config.")
+            LOG.info("FSDP1 will be deprecated in an upcoming release of axolotl." 
+                     "We recommend that you use FSDP version 2 for better performance and compatibility. "
+                     "Please see this link for more details: https://docs.axolotl.ai/docs/multi-gpu.html#sec-fsdp "
+                     "For more details on migrating your config. ")
         return data
+
+    def check_fsdp2_base_model_quant()
+        if self.fsdp_config and self.fsdp_config.fsdp_version == 2:
+            if self.load_in_8bit or self.load_in_4bit:
+                raise ValueError("FSDP2 does not support load_in_8bit or load_in_4bit. Please use DeepSpeed or set `fsdp_config.fsdp_version` to 1.")
+        return self
