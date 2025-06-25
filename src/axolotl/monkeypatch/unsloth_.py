@@ -4,12 +4,12 @@ import inspect
 import types
 
 import torch
-from accelerate.logging import get_logger
 from peft import PeftModelForCausalLM
 from torch import nn
 from transformers.models.llama.modeling_llama import LlamaFlashAttention2
 
 from axolotl.monkeypatch.utils import detab_code
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 

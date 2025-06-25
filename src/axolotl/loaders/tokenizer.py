@@ -273,7 +273,7 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
             {"additional_special_tokens": additional_special_tokens}
         )
 
-    if is_main_process(use_environ=True):
+    if is_main_process():
         LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
         LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
         LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")

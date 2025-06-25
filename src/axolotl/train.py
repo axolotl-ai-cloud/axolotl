@@ -23,7 +23,6 @@ from transformers import PreTrainedModel, PreTrainedTokenizer, ProcessorMixin
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.trainer import Trainer
 
-from axolotl.cli.art import print_axolotl_text_art
 from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
@@ -545,8 +544,6 @@ def train(
     Returns:
         Tuple of (model, tokenizer) after training
     """
-    print_axolotl_text_art()
-
     # Setup model, tokenizer, (causal or RLHF) trainer, etc.
     (
         trainer,

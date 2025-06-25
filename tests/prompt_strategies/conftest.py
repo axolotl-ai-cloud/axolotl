@@ -143,6 +143,12 @@ def fixture_phi35_tokenizer():
     return tokenizer
 
 
+@pytest.fixture(name="phi4_tokenizer", scope="session", autouse=True)
+def fixture_phi4_tokenizer():
+    tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-4-reasoning")
+    return tokenizer
+
+
 @pytest.fixture(name="gemma2_tokenizer", scope="session", autouse=True)
 def fixture_gemma2_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("mlx-community/gemma-2-9b-it-4bit")

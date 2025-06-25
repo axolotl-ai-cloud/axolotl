@@ -26,7 +26,9 @@ from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
-LOG = get_logger(__name__, use_environ=True)
+LOG = get_logger(__name__)
+
+API_KEY_FIELDS = {"comet_api_key"}
 
 
 def check_remote_config(config: Union[str, Path]) -> Union[str, Path]:
@@ -232,5 +234,16 @@ def load_cfg(
     setup_mlflow_env_vars(cfg)
     setup_comet_env_vars(cfg)
     plugin_set_cfg(cfg)
+
+    cfg_to_log = {
+        k: "[REDACTED]" if k in API_KEY_FIELDS else v
+        for k, v in cfg.items()
+        if v is not None
+    }
+
+    LOG.info(
+        "config:\n%s",
+        json.dumps(cfg_to_log, indent=2, default=str, sort_keys=True),
+    )
 
     return cfg

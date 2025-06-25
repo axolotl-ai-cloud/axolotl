@@ -13,9 +13,9 @@ import inspect
 import accelerate
 import torch
 import torch.distributed as dist
-from accelerate.logging import get_logger
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RingAttnFunc
 
 LOG = get_logger(__name__)

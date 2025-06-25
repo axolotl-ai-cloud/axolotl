@@ -50,6 +50,7 @@ class PatchManager:
     def apply_pre_model_load_patches(self):
         """Apply pre-model load patches based on config."""
         self._apply_flash_attention_patches()
+        self._apply_chunked_cross_entropy_patch()
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
         self._apply_flex_attention_patches()
@@ -63,6 +64,7 @@ class PatchManager:
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
         self._apply_self_attention_lora_patch()
+        self._apply_gemma3_conditional_generation_forward_patch()
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
@@ -77,6 +79,15 @@ class PatchManager:
 
             patch_xformers_attn_over_fa2()
             self.cfg.flash_attention = True
+
+    def _apply_chunked_cross_entropy_patch(self):
+        if self.cfg.chunked_cross_entropy:
+            from axolotl.monkeypatch.loss.chunked import patch_chunked_ce_loss_fn
+
+            if self.cfg.chunked_cross_entropy_num_chunks:
+                patch_chunked_ce_loss_fn(self.cfg.chunked_cross_entropy_num_chunks)
+            else:
+                patch_chunked_ce_loss_fn()
 
     def _apply_fsdp_patches(self):
         """Apply patches for FSDP configurations."""
@@ -210,6 +221,15 @@ class PatchManager:
                 model_name=self.cfg.base_model,
                 has_remote_code=has_remote_code,
             )
+
+    def _apply_gemma3_conditional_generation_forward_patch(self):
+        """Apply gemma3 conditional generation forward patch."""
+        if self.model_config.model_type in ["gemma3", "gemma3_text"]:
+            from axolotl.monkeypatch.models.gemma3.modeling import (
+                patch_gemma3_conditional_generation_forward,
+            )
+
+            patch_gemma3_conditional_generation_forward()
 
     def _patch_attention(self):
         """Apply attention-specific patches based on model type."""

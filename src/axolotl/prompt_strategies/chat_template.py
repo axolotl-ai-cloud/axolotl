@@ -596,11 +596,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         if (
             turn_idx == 0
             and turns[0].get("role") == "system"
-            and (
-                "mistral" in self.tokenizer.name_or_path.lower()
-                or "gemma"
-                in self.tokenizer.name_or_path.lower()  # gemma3 uses gemma tokenizer
-            )
+            and ("mistral" in self.tokenizer.name_or_path.lower())
         ):
             return -1, -1
 

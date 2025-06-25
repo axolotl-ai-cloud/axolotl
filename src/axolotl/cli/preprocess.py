@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 from transformers import AutoModelForCausalLM
 
 from axolotl.cli.args import PreprocessCliArgs
-from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
@@ -33,7 +32,6 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
         cfg: Dictionary mapping `axolotl` config keys to values.
         cli_args: Preprocessing-specific CLI arguments.
     """
-    print_axolotl_text_art()
     check_accelerate_default_config()
     check_user_token()
 
