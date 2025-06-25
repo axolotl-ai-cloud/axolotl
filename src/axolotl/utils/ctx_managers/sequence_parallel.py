@@ -304,7 +304,7 @@ class SequenceParallelContextManager:
 
 
 class AllGatherWithGrad(torch.autograd.Function):
-    """Custom autograd function for all-gather with selective gradient flow."""
+    """Custom autograd function for all-gather to preserve gradients."""
 
     @staticmethod
     def forward(
@@ -314,7 +314,6 @@ class AllGatherWithGrad(torch.autograd.Function):
     ) -> torch.Tensor:
         """
         Forward pass of all-gather of data with sequence dimension.
-        Non-local parts are detached to prevent gradient flow.
 
         Args:
             ctx: `torch.autograd` function context.
@@ -352,19 +351,6 @@ class AllGatherWithGrad(torch.autograd.Function):
         # Concatenate tensors along sequence dimension
         result = torch.cat(gathered, dim=1)
 
-        # Detach non-local parts to prevent gradient flow. This preserves VRAM savings
-        # while allowing full sequence access
-        if result.requires_grad:
-            # Create a new tensor with only local part requiring gradients
-            local_start = sum(seq_lens[: ctx.rank])
-            local_end = local_start + seq_lens[ctx.rank]
-
-            # Detach non-local parts
-            if local_start > 0:
-                result[:, :local_start] = result[:, :local_start].detach()
-            if local_end < result.size(1):
-                result[:, local_end:] = result[:, local_end:].detach()
-
         return result
 
     @staticmethod
@@ -374,7 +360,8 @@ class AllGatherWithGrad(torch.autograd.Function):
         """
         Backward pass for all-gather operation.
 
-        Since non-local parts are detached, only gradients for local slice flow back.
+        Extracts the gradient slice corresponding to this rank's original input
+        from the full gradient tensor.
 
         Args:
             ctx: `torch.autograd` function context.
