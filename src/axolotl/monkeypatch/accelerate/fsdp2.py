@@ -107,7 +107,6 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
         if offload_to_cpu:
             sharded_param = sharded_param.cpu()
         sharded_sd[param_name] = nn.Parameter(sharded_param)
-        LOG.info(f"param_name: {param_name}, dtype: {sharded_param.dtype}, inferred dtype: {_infer_parameter_dtype(model, param_name, sharded_param)}")
         del full_tensor
         full_sd[param_name] = None
     # for param_name in param_names:
@@ -314,8 +313,6 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         # `fully_shard` doesn't accept `None` in case of `MixedPrecisionPolicy`
         "mp_policy": fsdp2_plugin.mixed_precision_policy or MixedPrecisionPolicy(),
     }
-    if torch.distributed.get_rank() == 0:
-        import ipdb; ipdb.set_trace()
 
     model_has_params4bit = False
     for name, param in model.named_parameters():
@@ -347,18 +344,28 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             model.tie_weights()
 
     is_peft_model = "Peft" in model.__class__.__name__
-    if is_peft_model:
-        from peft.tuners.lora import Linear 
+    if is_peft_model:  
+        from peft.tuners.lora import LoraLayer 
     else:
-        Linear = None
+        LoraLayer = None
+    
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, auto_wrap_policy_type, model)
     if auto_wrap_policy is not None:
         for module in get_module_children_bottom_up(model)[:-1]:
-            if is_peft_model and isinstance(module, Linear):
-                fully_shard(module.lora_A, **fsdp2_kwargs)
-                fully_shard(module.lora_B, **fsdp2_kwargs)
+            ignored_params = []
+            if is_peft_model and isinstance(module, LoraLayer):
+                for active_adapter in module.active_adapters:
+                    fully_shard(module.lora_A[active_adapter], **fsdp2_kwargs)
+                    fully_shard(module.lora_B[active_adapter], **fsdp2_kwargs)
+                    if module.lora_embedding_A:
+                        fully_shard(module.lora_embedding_A[active_adapter], **fsdp2_kwargs)
+                    if module.lora_embedding_B:
+                        fully_shard(module.lora_embedding_B[active_adapter], **fsdp2_kwargs)
+                ignored_params = {
+                    p for name, p in module.named_parameters() if "magnitude_vector" in name
+                }
             if auto_wrap_policy(module):
-                fully_shard(module, **fsdp2_kwargs)
+                fully_shard(module, ignored_params=ignored_params, **fsdp2_kwargs)
 
     fully_shard(model, **fsdp2_kwargs)
 

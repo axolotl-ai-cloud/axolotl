@@ -544,15 +544,18 @@ class AxolotlInputConfig(
             "description": "Deepspeed config path. e.g., deepspeed_configs/zero3.json"
         },
     )
-    # fsdp: list[str] | None = Field(
-    #     default=None, json_schema_extra={"description": "FSDP configuration"}
-    # )
+    fsdp: list[str] | None = Field(
+        default=None,
+        json_schema_extra={"description": "FSDP configuration"},
+        deprecation_message="Configuring FSDP using `fsdp` is deprecated. Please use `fsdp_config` instead.",
+    )
     fsdp_config: dict[str, Any] | None = Field(
         default=None, json_schema_extra={"description": "FSDP configuration options"}
     )
-    # fsdp_final_state_dict_type: (
-    #     Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None
-    # ) = None
+    fsdp_final_state_dict_type: (
+        Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None,
+        deprecation_message="Configuring FSDP final state dict type using `fsdp_final_state_dict_type` is deprecated. Please use `fsdp_config.fsdp_final_state_dict_type` instead.",
+    ) = None
 
     val_set_size: float | None = Field(
         default=0.0,
