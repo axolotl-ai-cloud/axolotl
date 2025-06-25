@@ -1,6 +1,7 @@
 """Module for testing streaming dataset sequence packing"""
 
 import functools
+import pickle
 import random
 import string
 
@@ -87,6 +88,9 @@ class TestPretrainingPacking:
             batch_size=cfg.micro_batch_size,
             seed=cfg.seed or 42,
         )
+
+        # make sure the dataset is pickleable
+        pickle.dumps(train_dataset)
 
         trainer_loader = DataLoader(
             train_dataset,

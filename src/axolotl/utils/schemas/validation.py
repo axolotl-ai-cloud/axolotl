@@ -462,6 +462,20 @@ class TrainingValidationMixin:
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def pretrain_with_tps(cls, data):
+        if data.get("pretraining_dataset") and data.get(
+            "include_tokens_per_second", False
+        ):
+            # combining these would raise `TypeError: cannot pickle 'dict_keys' object`
+            # due to trying to count the number of tokens total in the dataset
+            raise ValueError(
+                "pretraining_dataset and include_tokens_per_second cannot be used together."
+            )
+
+        return data
+
 
 class LoRAValidationMixin:
     """Validation methods related to LoRA/QLoRA configuration."""
