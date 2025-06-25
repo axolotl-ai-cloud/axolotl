@@ -548,9 +548,10 @@ class ModelLoader:
                 "sdpa"
             )
         elif self.cfg.sage_attention:
-            self.model_kwargs["attn_implementation"] = "sage_attention"
+            # sets FA2 attention to re-use same internal handling like masking
+            self.model_kwargs["attn_implementation"] = "flash_attention_2"
             self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "sage_attention"
+                "flash_attention_2"
             )
         elif self.cfg.eager_attention:
             self.model_kwargs["attn_implementation"] = "eager"
