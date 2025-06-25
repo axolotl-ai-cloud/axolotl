@@ -70,6 +70,12 @@ Start from Stage 1 -> Stage 2 -> Stage 3.
 
 ### FSDP2 (reccomended)
 
+::: {.callout-note}
+
+FSDP2 is recommended for new users. FSDP1 is deprecated and will be removed in an upcoming release of Axolotl. 
+Currently, FSDP2 is not compatible with `load_in_8bit` or `load_in_4bit` and when using QLoRA. Please use DeepSpeed or set `fsdp_version` to 1 instead.
+
+:::
 
 #### Migrating from FSDP1 to FSDP2
 
