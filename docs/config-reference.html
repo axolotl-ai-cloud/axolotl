@@ -1185,523 +1185,526 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-690"><a href="#cb1-690" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing_bin_size</span><span class="kw">:</span><span class="at"> int | None = 200</span></span>
 <span id="cb1-691"><a href="#cb1-691" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to pack samples sequentially</span></span>
 <span id="cb1-692"><a href="#cb1-692" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing_sequentially</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-693"><a href="#cb1-693" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to 'false' if getting errors during eval with sample_packing on</span></span>
-<span id="cb1-694"><a href="#cb1-694" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_sample_packing</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-695"><a href="#cb1-695" aria-hidden="true" tabindex="-1"></a><span class="co"># Pad inputs so each step uses constant sized buffers. This will reduce memory</span></span>
-<span id="cb1-696"><a href="#cb1-696" aria-hidden="true" tabindex="-1"></a><span class="co"># fragmentation and may prevent OOMs, by re-using memory more efficiently</span></span>
-<span id="cb1-697"><a href="#cb1-697" aria-hidden="true" tabindex="-1"></a><span class="fu">pad_to_sequence_len</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-698"><a href="#cb1-698" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use sequential sampling for curriculum learning</span></span>
-<span id="cb1-699"><a href="#cb1-699" aria-hidden="true" tabindex="-1"></a><span class="fu">curriculum_sampling</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-700"><a href="#cb1-700" aria-hidden="true" tabindex="-1"></a><span class="fu">multipack_real_batches</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-701"><a href="#cb1-701" aria-hidden="true" tabindex="-1"></a><span class="co"># whether to concatenate samples during pretraining</span></span>
-<span id="cb1-702"><a href="#cb1-702" aria-hidden="true" tabindex="-1"></a><span class="fu">pretraining_sample_concatenation</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-703"><a href="#cb1-703" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-704"><a href="#cb1-704" aria-hidden="true" tabindex="-1"></a><span class="co"># Use batch flattening for speedups when not using sample_packing</span></span>
-<span id="cb1-705"><a href="#cb1-705" aria-hidden="true" tabindex="-1"></a><span class="fu">batch_flattening</span><span class="kw">:</span><span class="at"> Literal['auto'] | bool | None</span></span>
+<span id="cb1-693"><a href="#cb1-693" aria-hidden="true" tabindex="-1"></a><span class="co"># The multiprocessing start method to use for packing. Should be 'fork', 'spawn' or</span></span>
+<span id="cb1-694"><a href="#cb1-694" aria-hidden="true" tabindex="-1"></a><span class="co"># 'forkserver'</span></span>
+<span id="cb1-695"><a href="#cb1-695" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing_mp_start_method</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-696"><a href="#cb1-696" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to 'false' if getting errors during eval with sample_packing on</span></span>
+<span id="cb1-697"><a href="#cb1-697" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_sample_packing</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-698"><a href="#cb1-698" aria-hidden="true" tabindex="-1"></a><span class="co"># Pad inputs so each step uses constant sized buffers. This will reduce memory</span></span>
+<span id="cb1-699"><a href="#cb1-699" aria-hidden="true" tabindex="-1"></a><span class="co"># fragmentation and may prevent OOMs, by re-using memory more efficiently</span></span>
+<span id="cb1-700"><a href="#cb1-700" aria-hidden="true" tabindex="-1"></a><span class="fu">pad_to_sequence_len</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-701"><a href="#cb1-701" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use sequential sampling for curriculum learning</span></span>
+<span id="cb1-702"><a href="#cb1-702" aria-hidden="true" tabindex="-1"></a><span class="fu">curriculum_sampling</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-703"><a href="#cb1-703" aria-hidden="true" tabindex="-1"></a><span class="fu">multipack_real_batches</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-704"><a href="#cb1-704" aria-hidden="true" tabindex="-1"></a><span class="co"># whether to concatenate samples during pretraining</span></span>
+<span id="cb1-705"><a href="#cb1-705" aria-hidden="true" tabindex="-1"></a><span class="fu">pretraining_sample_concatenation</span><span class="kw">:</span><span class="at"> bool | None</span></span>
 <span id="cb1-706"><a href="#cb1-706" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-707"><a href="#cb1-707" aria-hidden="true" tabindex="-1"></a><span class="fu">use_pose</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-708"><a href="#cb1-708" aria-hidden="true" tabindex="-1"></a><span class="fu">pose_split_on_token_ids</span><span class="kw">:</span><span class="at"> list[int] | None</span></span>
-<span id="cb1-709"><a href="#cb1-709" aria-hidden="true" tabindex="-1"></a><span class="fu">pose_max_context_len</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-710"><a href="#cb1-710" aria-hidden="true" tabindex="-1"></a><span class="fu">pose_num_chunks</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-711"><a href="#cb1-711" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-712"><a href="#cb1-712" aria-hidden="true" tabindex="-1"></a><span class="fu">pretrain_multipack_buffer_size</span><span class="kw">:</span><span class="at"> int | None = 10000</span></span>
-<span id="cb1-713"><a href="#cb1-713" aria-hidden="true" tabindex="-1"></a><span class="co"># whether to prevent cross attention for packed sequences during pretraining</span></span>
-<span id="cb1-714"><a href="#cb1-714" aria-hidden="true" tabindex="-1"></a><span class="fu">pretrain_multipack_attn</span><span class="kw">:</span><span class="at"> bool | None = True</span></span>
-<span id="cb1-715"><a href="#cb1-715" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-716"><a href="#cb1-716" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use xformers attention patch https://github.com/facebookresearch/xformers</span></span>
-<span id="cb1-717"><a href="#cb1-717" aria-hidden="true" tabindex="-1"></a><span class="fu">xformers_attention</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-718"><a href="#cb1-718" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use scaled-dot-product attention https://pytorch.org/docs/stable/generated/</span></span>
-<span id="cb1-719"><a href="#cb1-719" aria-hidden="true" tabindex="-1"></a><span class="co"># torch.nn.functional.scaled_dot_product_attention.html</span></span>
-<span id="cb1-720"><a href="#cb1-720" aria-hidden="true" tabindex="-1"></a><span class="fu">sdp_attention</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-721"><a href="#cb1-721" aria-hidden="true" tabindex="-1"></a><span class="co"># Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf</span></span>
-<span id="cb1-722"><a href="#cb1-722" aria-hidden="true" tabindex="-1"></a><span class="fu">s2_attention</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-723"><a href="#cb1-723" aria-hidden="true" tabindex="-1"></a><span class="fu">flex_attention</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-724"><a href="#cb1-724" aria-hidden="true" tabindex="-1"></a><span class="fu">flex_attn_compile_kwargs</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
-<span id="cb1-725"><a href="#cb1-725" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention</span></span>
-<span id="cb1-726"><a href="#cb1-726" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attention</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-727"><a href="#cb1-727" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use flash-attention cross entropy implementation - advanced use only</span></span>
-<span id="cb1-728"><a href="#cb1-728" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attn_cross_entropy</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-729"><a href="#cb1-729" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use flash-attention rms norm implementation - advanced use only</span></span>
-<span id="cb1-730"><a href="#cb1-730" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attn_rms_norm</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-731"><a href="#cb1-731" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to fuse QKV into a single operation</span></span>
-<span id="cb1-732"><a href="#cb1-732" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attn_fuse_qkv</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-733"><a href="#cb1-733" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to fuse part of the MLP into a single operation</span></span>
-<span id="cb1-734"><a href="#cb1-734" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attn_fuse_mlp</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-735"><a href="#cb1-735" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use bettertransformers</span></span>
-<span id="cb1-736"><a href="#cb1-736" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_optimum</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-737"><a href="#cb1-737" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-738"><a href="#cb1-738" aria-hidden="true" tabindex="-1"></a><span class="fu">eager_attention</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-739"><a href="#cb1-739" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-740"><a href="#cb1-740" aria-hidden="true" tabindex="-1"></a><span class="fu">unsloth_cross_entropy_loss</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-741"><a href="#cb1-741" aria-hidden="true" tabindex="-1"></a><span class="fu">unsloth_lora_mlp</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-742"><a href="#cb1-742" aria-hidden="true" tabindex="-1"></a><span class="fu">unsloth_lora_qkv</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-743"><a href="#cb1-743" aria-hidden="true" tabindex="-1"></a><span class="fu">unsloth_lora_o</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-744"><a href="#cb1-744" aria-hidden="true" tabindex="-1"></a><span class="fu">unsloth_rms_norm</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-745"><a href="#cb1-745" aria-hidden="true" tabindex="-1"></a><span class="fu">unsloth_rope</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-746"><a href="#cb1-746" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-747"><a href="#cb1-747" aria-hidden="true" tabindex="-1"></a><span class="co"># Apply custom LoRA autograd functions and activation function Triton kernels for speed</span></span>
-<span id="cb1-748"><a href="#cb1-748" aria-hidden="true" tabindex="-1"></a><span class="co"># and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html</span></span>
-<span id="cb1-749"><a href="#cb1-749" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_mlp_kernel</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-707"><a href="#cb1-707" aria-hidden="true" tabindex="-1"></a><span class="co"># Use batch flattening for speedups when not using sample_packing</span></span>
+<span id="cb1-708"><a href="#cb1-708" aria-hidden="true" tabindex="-1"></a><span class="fu">batch_flattening</span><span class="kw">:</span><span class="at"> Literal['auto'] | bool | None</span></span>
+<span id="cb1-709"><a href="#cb1-709" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-710"><a href="#cb1-710" aria-hidden="true" tabindex="-1"></a><span class="fu">use_pose</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-711"><a href="#cb1-711" aria-hidden="true" tabindex="-1"></a><span class="fu">pose_split_on_token_ids</span><span class="kw">:</span><span class="at"> list[int] | None</span></span>
+<span id="cb1-712"><a href="#cb1-712" aria-hidden="true" tabindex="-1"></a><span class="fu">pose_max_context_len</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-713"><a href="#cb1-713" aria-hidden="true" tabindex="-1"></a><span class="fu">pose_num_chunks</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-714"><a href="#cb1-714" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-715"><a href="#cb1-715" aria-hidden="true" tabindex="-1"></a><span class="fu">pretrain_multipack_buffer_size</span><span class="kw">:</span><span class="at"> int | None = 10000</span></span>
+<span id="cb1-716"><a href="#cb1-716" aria-hidden="true" tabindex="-1"></a><span class="co"># whether to prevent cross attention for packed sequences during pretraining</span></span>
+<span id="cb1-717"><a href="#cb1-717" aria-hidden="true" tabindex="-1"></a><span class="fu">pretrain_multipack_attn</span><span class="kw">:</span><span class="at"> bool | None = True</span></span>
+<span id="cb1-718"><a href="#cb1-718" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-719"><a href="#cb1-719" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use xformers attention patch https://github.com/facebookresearch/xformers</span></span>
+<span id="cb1-720"><a href="#cb1-720" aria-hidden="true" tabindex="-1"></a><span class="fu">xformers_attention</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-721"><a href="#cb1-721" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use scaled-dot-product attention https://pytorch.org/docs/stable/generated/</span></span>
+<span id="cb1-722"><a href="#cb1-722" aria-hidden="true" tabindex="-1"></a><span class="co"># torch.nn.functional.scaled_dot_product_attention.html</span></span>
+<span id="cb1-723"><a href="#cb1-723" aria-hidden="true" tabindex="-1"></a><span class="fu">sdp_attention</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-724"><a href="#cb1-724" aria-hidden="true" tabindex="-1"></a><span class="co"># Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf</span></span>
+<span id="cb1-725"><a href="#cb1-725" aria-hidden="true" tabindex="-1"></a><span class="fu">s2_attention</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-726"><a href="#cb1-726" aria-hidden="true" tabindex="-1"></a><span class="fu">flex_attention</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-727"><a href="#cb1-727" aria-hidden="true" tabindex="-1"></a><span class="fu">flex_attn_compile_kwargs</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
+<span id="cb1-728"><a href="#cb1-728" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention</span></span>
+<span id="cb1-729"><a href="#cb1-729" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attention</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-730"><a href="#cb1-730" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use flash-attention cross entropy implementation - advanced use only</span></span>
+<span id="cb1-731"><a href="#cb1-731" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attn_cross_entropy</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-732"><a href="#cb1-732" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use flash-attention rms norm implementation - advanced use only</span></span>
+<span id="cb1-733"><a href="#cb1-733" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attn_rms_norm</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-734"><a href="#cb1-734" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to fuse QKV into a single operation</span></span>
+<span id="cb1-735"><a href="#cb1-735" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attn_fuse_qkv</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-736"><a href="#cb1-736" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to fuse part of the MLP into a single operation</span></span>
+<span id="cb1-737"><a href="#cb1-737" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attn_fuse_mlp</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-738"><a href="#cb1-738" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use bettertransformers</span></span>
+<span id="cb1-739"><a href="#cb1-739" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_optimum</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-740"><a href="#cb1-740" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-741"><a href="#cb1-741" aria-hidden="true" tabindex="-1"></a><span class="fu">eager_attention</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-742"><a href="#cb1-742" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-743"><a href="#cb1-743" aria-hidden="true" tabindex="-1"></a><span class="fu">unsloth_cross_entropy_loss</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-744"><a href="#cb1-744" aria-hidden="true" tabindex="-1"></a><span class="fu">unsloth_lora_mlp</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-745"><a href="#cb1-745" aria-hidden="true" tabindex="-1"></a><span class="fu">unsloth_lora_qkv</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-746"><a href="#cb1-746" aria-hidden="true" tabindex="-1"></a><span class="fu">unsloth_lora_o</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-747"><a href="#cb1-747" aria-hidden="true" tabindex="-1"></a><span class="fu">unsloth_rms_norm</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-748"><a href="#cb1-748" aria-hidden="true" tabindex="-1"></a><span class="fu">unsloth_rope</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-749"><a href="#cb1-749" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-750"><a href="#cb1-750" aria-hidden="true" tabindex="-1"></a><span class="co"># Apply custom LoRA autograd functions and activation function Triton kernels for speed</span></span>
 <span id="cb1-751"><a href="#cb1-751" aria-hidden="true" tabindex="-1"></a><span class="co"># and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html</span></span>
-<span id="cb1-752"><a href="#cb1-752" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_qkv_kernel</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-752"><a href="#cb1-752" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_mlp_kernel</span><span class="kw">:</span><span class="at"> bool | None</span></span>
 <span id="cb1-753"><a href="#cb1-753" aria-hidden="true" tabindex="-1"></a><span class="co"># Apply custom LoRA autograd functions and activation function Triton kernels for speed</span></span>
 <span id="cb1-754"><a href="#cb1-754" aria-hidden="true" tabindex="-1"></a><span class="co"># and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html</span></span>
-<span id="cb1-755"><a href="#cb1-755" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_o_kernel</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-756"><a href="#cb1-756" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-757"><a href="#cb1-757" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use chunked cross entropy loss for memory efficiency</span></span>
-<span id="cb1-758"><a href="#cb1-758" aria-hidden="true" tabindex="-1"></a><span class="fu">chunked_cross_entropy</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-759"><a href="#cb1-759" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of chunks to use for chunked cross entropy loss</span></span>
-<span id="cb1-760"><a href="#cb1-760" aria-hidden="true" tabindex="-1"></a><span class="fu">chunked_cross_entropy_num_chunks</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-761"><a href="#cb1-761" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-762"><a href="#cb1-762" aria-hidden="true" tabindex="-1"></a><span class="fu">llama4_linearized_experts</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-763"><a href="#cb1-763" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-764"><a href="#cb1-764" aria-hidden="true" tabindex="-1"></a><span class="co"># Deepspeed config path. e.g., deepspeed_configs/zero3.json</span></span>
-<span id="cb1-765"><a href="#cb1-765" aria-hidden="true" tabindex="-1"></a><span class="fu">deepspeed</span><span class="kw">:</span><span class="at"> str | dict[str, Any] | None</span></span>
-<span id="cb1-766"><a href="#cb1-766" aria-hidden="true" tabindex="-1"></a><span class="co"># FSDP configuration</span></span>
-<span id="cb1-767"><a href="#cb1-767" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp</span><span class="kw">:</span><span class="at"> list[str] | None</span></span>
-<span id="cb1-768"><a href="#cb1-768" aria-hidden="true" tabindex="-1"></a><span class="co"># FSDP configuration options</span></span>
-<span id="cb1-769"><a href="#cb1-769" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
-<span id="cb1-770"><a href="#cb1-770" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_final_state_dict_type</span><span class="kw">:</span><span class="at"> Literal['FULL_STATE_DICT', 'LOCAL_STATE_DICT', 'SHARDED_STATE_DICT'] | None</span></span>
-<span id="cb1-771"><a href="#cb1-771" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-772"><a href="#cb1-772" aria-hidden="true" tabindex="-1"></a><span class="co"># How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc. 0 for</span></span>
-<span id="cb1-773"><a href="#cb1-773" aria-hidden="true" tabindex="-1"></a><span class="co"># no eval.</span></span>
-<span id="cb1-774"><a href="#cb1-774" aria-hidden="true" tabindex="-1"></a><span class="fu">val_set_size</span><span class="kw">:</span><span class="at"> float | None = 0.0</span></span>
-<span id="cb1-775"><a href="#cb1-775" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-776"><a href="#cb1-776" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to a divisor of the number of GPUs available to split sequences into chunks of</span></span>
-<span id="cb1-777"><a href="#cb1-777" aria-hidden="true" tabindex="-1"></a><span class="co"># equal size. Use in long context training to prevent OOM when sequences cannot fit into</span></span>
-<span id="cb1-778"><a href="#cb1-778" aria-hidden="true" tabindex="-1"></a><span class="co"># a single GPU's VRAM. E.g., if 4 GPUs are available, set this value to 2 to split each</span></span>
-<span id="cb1-779"><a href="#cb1-779" aria-hidden="true" tabindex="-1"></a><span class="co"># sequence into two equal-sized subsequences, or set to 4 to split into four equal-sized</span></span>
-<span id="cb1-780"><a href="#cb1-780" aria-hidden="true" tabindex="-1"></a><span class="co"># subsequences. See https://docs.axolotl.ai/docs/sequence_parallelism.html for more</span></span>
-<span id="cb1-781"><a href="#cb1-781" aria-hidden="true" tabindex="-1"></a><span class="co"># details.</span></span>
-<span id="cb1-782"><a href="#cb1-782" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_parallel_degree</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-783"><a href="#cb1-783" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; strides across the key dimension. Larger values use more memory but should</span></span>
-<span id="cb1-784"><a href="#cb1-784" aria-hidden="true" tabindex="-1"></a><span class="co"># make training faster. Must evenly divide the number of KV heads in your model.</span></span>
-<span id="cb1-785"><a href="#cb1-785" aria-hidden="true" tabindex="-1"></a><span class="fu">heads_k_stride</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-786"><a href="#cb1-786" aria-hidden="true" tabindex="-1"></a><span class="co"># One of 'varlen_llama3', 'batch_ring', 'batch_zigzag', 'batch_stripe'. Defaults to</span></span>
-<span id="cb1-787"><a href="#cb1-787" aria-hidden="true" tabindex="-1"></a><span class="co"># 'varlen_llama3' in the sample packing case, and 'batch_ring' in the non-sample packing</span></span>
-<span id="cb1-788"><a href="#cb1-788" aria-hidden="true" tabindex="-1"></a><span class="co"># case.</span></span>
-<span id="cb1-789"><a href="#cb1-789" aria-hidden="true" tabindex="-1"></a><span class="fu">ring_attn_func</span><span class="kw">:</span><span class="at"> RingAttnFunc | None</span></span>
-<span id="cb1-790"><a href="#cb1-790" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-791"><a href="#cb1-791" aria-hidden="true" tabindex="-1"></a><span class="co"># Add or change special tokens. If you add tokens here, you don't need to add them to</span></span>
-<span id="cb1-792"><a href="#cb1-792" aria-hidden="true" tabindex="-1"></a><span class="co"># the `tokens` list.</span></span>
-<span id="cb1-793"><a href="#cb1-793" aria-hidden="true" tabindex="-1"></a><span class="fu">special_tokens</span><span class="kw">:</span><span class="at"> SpecialTokensConfig | None</span></span>
-<span id="cb1-794"><a href="#cb1-794" aria-hidden="true" tabindex="-1"></a><span class="co">  # For SpecialTokensConfig:</span></span>
-<span id="cb1-795"><a href="#cb1-795" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bos_token</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-796"><a href="#cb1-796" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">eos_token</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-797"><a href="#cb1-797" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">pad_token</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-798"><a href="#cb1-798" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">unk_token</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-799"><a href="#cb1-799" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">additional_special_tokens</span><span class="kw">:</span><span class="at"> list[str] | None</span></span>
-<span id="cb1-800"><a href="#cb1-800" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-801"><a href="#cb1-801" aria-hidden="true" tabindex="-1"></a><span class="co"># Add extra tokens to the tokenizer</span></span>
-<span id="cb1-802"><a href="#cb1-802" aria-hidden="true" tabindex="-1"></a><span class="fu">tokens</span><span class="kw">:</span><span class="at"> list[str] | None</span></span>
-<span id="cb1-803"><a href="#cb1-803" aria-hidden="true" tabindex="-1"></a><span class="co"># Mapping token_id to new_token_string to override reserved added_tokens in the</span></span>
-<span id="cb1-804"><a href="#cb1-804" aria-hidden="true" tabindex="-1"></a><span class="co"># tokenizer. Only works for tokens that are not part of the base vocab (aka are</span></span>
-<span id="cb1-805"><a href="#cb1-805" aria-hidden="true" tabindex="-1"></a><span class="co"># added_tokens). Can be checked if they exist in tokenizer.json added_tokens.</span></span>
-<span id="cb1-806"><a href="#cb1-806" aria-hidden="true" tabindex="-1"></a><span class="fu">added_tokens_overrides</span><span class="kw">:</span><span class="at"> dict[int, str] | None</span></span>
-<span id="cb1-807"><a href="#cb1-807" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-808"><a href="#cb1-808" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use torch.compile and which backend to use. setting to `auto` will enable</span></span>
-<span id="cb1-809"><a href="#cb1-809" aria-hidden="true" tabindex="-1"></a><span class="co"># torch compile when torch&gt;=2.5.1</span></span>
-<span id="cb1-810"><a href="#cb1-810" aria-hidden="true" tabindex="-1"></a><span class="fu">torch_compile</span><span class="kw">:</span><span class="at"> Literal['auto'] | bool | None</span></span>
-<span id="cb1-811"><a href="#cb1-811" aria-hidden="true" tabindex="-1"></a><span class="co"># Backend to use for torch.compile</span></span>
-<span id="cb1-812"><a href="#cb1-812" aria-hidden="true" tabindex="-1"></a><span class="fu">torch_compile_backend</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-813"><a href="#cb1-813" aria-hidden="true" tabindex="-1"></a><span class="fu">torch_compile_mode</span><span class="kw">:</span><span class="at"> Literal['default', 'reduce-overhead', 'max-autotune'] | None</span></span>
-<span id="cb1-814"><a href="#cb1-814" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-815"><a href="#cb1-815" aria-hidden="true" tabindex="-1"></a><span class="co"># Maximum number of iterations to train for. It precedes num_epochs which means that if</span></span>
-<span id="cb1-816"><a href="#cb1-816" aria-hidden="true" tabindex="-1"></a><span class="co"># both are set, num_epochs will not be guaranteed. e.g., when 1 epoch is 1000 steps =&gt;</span></span>
-<span id="cb1-817"><a href="#cb1-817" aria-hidden="true" tabindex="-1"></a><span class="co"># `num_epochs: 2` and `max_steps: 100` will train for 100 steps</span></span>
-<span id="cb1-818"><a href="#cb1-818" aria-hidden="true" tabindex="-1"></a><span class="fu">max_steps</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-819"><a href="#cb1-819" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of warmup steps. Cannot use with warmup_ratio</span></span>
-<span id="cb1-820"><a href="#cb1-820" aria-hidden="true" tabindex="-1"></a><span class="fu">warmup_steps</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-821"><a href="#cb1-821" aria-hidden="true" tabindex="-1"></a><span class="co"># Warmup ratio. Cannot use with warmup_steps</span></span>
-<span id="cb1-822"><a href="#cb1-822" aria-hidden="true" tabindex="-1"></a><span class="fu">warmup_ratio</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-823"><a href="#cb1-823" aria-hidden="true" tabindex="-1"></a><span class="co"># Leave empty to eval at each epoch, integer for every N steps. float for fraction of</span></span>
-<span id="cb1-824"><a href="#cb1-824" aria-hidden="true" tabindex="-1"></a><span class="co"># total steps</span></span>
-<span id="cb1-825"><a href="#cb1-825" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_steps</span><span class="kw">:</span><span class="at"> int | float | None</span></span>
-<span id="cb1-826"><a href="#cb1-826" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of times per epoch to run evals, mutually exclusive with eval_steps</span></span>
-<span id="cb1-827"><a href="#cb1-827" aria-hidden="true" tabindex="-1"></a><span class="fu">evals_per_epoch</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-828"><a href="#cb1-828" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to `no` to skip evaluation, `epoch` at end of each epoch, leave empty to infer</span></span>
-<span id="cb1-829"><a href="#cb1-829" aria-hidden="true" tabindex="-1"></a><span class="co"># from `eval_steps`</span></span>
-<span id="cb1-830"><a href="#cb1-830" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_strategy</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-831"><a href="#cb1-831" aria-hidden="true" tabindex="-1"></a><span class="co"># Leave empty to save at each epoch, integer for every N steps. float for fraction of</span></span>
-<span id="cb1-832"><a href="#cb1-832" aria-hidden="true" tabindex="-1"></a><span class="co"># total steps</span></span>
-<span id="cb1-833"><a href="#cb1-833" aria-hidden="true" tabindex="-1"></a><span class="fu">save_steps</span><span class="kw">:</span><span class="at"> int | float | None</span></span>
-<span id="cb1-834"><a href="#cb1-834" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of times per epoch to save a checkpoint, mutually exclusive with save_steps</span></span>
-<span id="cb1-835"><a href="#cb1-835" aria-hidden="true" tabindex="-1"></a><span class="fu">saves_per_epoch</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-836"><a href="#cb1-836" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to `no` to skip checkpoint saves, `epoch` at end of each epoch, `best` when better</span></span>
-<span id="cb1-837"><a href="#cb1-837" aria-hidden="true" tabindex="-1"></a><span class="co"># result is achieved, leave empty to infer from `save_steps`</span></span>
-<span id="cb1-838"><a href="#cb1-838" aria-hidden="true" tabindex="-1"></a><span class="fu">save_strategy</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-839"><a href="#cb1-839" aria-hidden="true" tabindex="-1"></a><span class="co"># Checkpoints saved at a time</span></span>
-<span id="cb1-840"><a href="#cb1-840" aria-hidden="true" tabindex="-1"></a><span class="fu">save_total_limit</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-841"><a href="#cb1-841" aria-hidden="true" tabindex="-1"></a><span class="co"># Logging frequency</span></span>
-<span id="cb1-842"><a href="#cb1-842" aria-hidden="true" tabindex="-1"></a><span class="fu">logging_steps</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-843"><a href="#cb1-843" aria-hidden="true" tabindex="-1"></a><span class="co"># Stop training after this many evaluation losses have increased in a row. https://huggi</span></span>
-<span id="cb1-844"><a href="#cb1-844" aria-hidden="true" tabindex="-1"></a><span class="co"># ngface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppin</span></span>
-<span id="cb1-845"><a href="#cb1-845" aria-hidden="true" tabindex="-1"></a><span class="co"># gCallback</span></span>
-<span id="cb1-846"><a href="#cb1-846" aria-hidden="true" tabindex="-1"></a><span class="fu">early_stopping_patience</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-847"><a href="#cb1-847" aria-hidden="true" tabindex="-1"></a><span class="fu">load_best_model_at_end</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
-<span id="cb1-848"><a href="#cb1-848" aria-hidden="true" tabindex="-1"></a><span class="co"># Save only the model weights, skipping the optimizer. Using this means you can't resume</span></span>
-<span id="cb1-849"><a href="#cb1-849" aria-hidden="true" tabindex="-1"></a><span class="co"># from checkpoints.</span></span>
-<span id="cb1-850"><a href="#cb1-850" aria-hidden="true" tabindex="-1"></a><span class="fu">save_only_model</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
-<span id="cb1-851"><a href="#cb1-851" aria-hidden="true" tabindex="-1"></a><span class="co"># Use tensorboard for logging</span></span>
-<span id="cb1-852"><a href="#cb1-852" aria-hidden="true" tabindex="-1"></a><span class="fu">use_tensorboard</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-853"><a href="#cb1-853" aria-hidden="true" tabindex="-1"></a><span class="co"># Enable the pytorch profiler to capture the first N steps of training to the</span></span>
-<span id="cb1-854"><a href="#cb1-854" aria-hidden="true" tabindex="-1"></a><span class="co"># output_dir. see https://pytorch.org/blog/understanding-gpu-memory-1/ for more</span></span>
-<span id="cb1-855"><a href="#cb1-855" aria-hidden="true" tabindex="-1"></a><span class="co"># information. Snapshots can be visualized @ https://pytorch.org/memory_viz</span></span>
-<span id="cb1-856"><a href="#cb1-856" aria-hidden="true" tabindex="-1"></a><span class="fu">profiler_steps</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-857"><a href="#cb1-857" aria-hidden="true" tabindex="-1"></a><span class="co"># bool of whether to include tokens trainer per second in the training metrics. This</span></span>
-<span id="cb1-858"><a href="#cb1-858" aria-hidden="true" tabindex="-1"></a><span class="co"># iterates over the entire dataset once, so it takes some time.</span></span>
-<span id="cb1-859"><a href="#cb1-859" aria-hidden="true" tabindex="-1"></a><span class="fu">include_tokens_per_second</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-860"><a href="#cb1-860" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-861"><a href="#cb1-861" aria-hidden="true" tabindex="-1"></a><span class="co"># NEFT https://arxiv.org/abs/2310.05914, set this to a number (paper default is 5) to</span></span>
-<span id="cb1-862"><a href="#cb1-862" aria-hidden="true" tabindex="-1"></a><span class="co"># add noise to embeddings. Currently only supported on Llama and Mistral</span></span>
-<span id="cb1-863"><a href="#cb1-863" aria-hidden="true" tabindex="-1"></a><span class="fu">neftune_noise_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-864"><a href="#cb1-864" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-865"><a href="#cb1-865" aria-hidden="true" tabindex="-1"></a><span class="co"># Parameter controlling the relative ratio loss weight in the ORPO loss. Passed to</span></span>
-<span id="cb1-866"><a href="#cb1-866" aria-hidden="true" tabindex="-1"></a><span class="co"># `beta` in `ORPOConfig` due to trl mapping.</span></span>
-<span id="cb1-867"><a href="#cb1-867" aria-hidden="true" tabindex="-1"></a><span class="fu">orpo_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-868"><a href="#cb1-868" aria-hidden="true" tabindex="-1"></a><span class="co"># Weighting of NLL term in loss from RPO paper</span></span>
-<span id="cb1-869"><a href="#cb1-869" aria-hidden="true" tabindex="-1"></a><span class="fu">rpo_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-870"><a href="#cb1-870" aria-hidden="true" tabindex="-1"></a><span class="co"># Target reward margin for the SimPO loss</span></span>
-<span id="cb1-871"><a href="#cb1-871" aria-hidden="true" tabindex="-1"></a><span class="fu">simpo_gamma</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-872"><a href="#cb1-872" aria-hidden="true" tabindex="-1"></a><span class="co"># Weight of the BC regularizer</span></span>
-<span id="cb1-873"><a href="#cb1-873" aria-hidden="true" tabindex="-1"></a><span class="fu">cpo_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-874"><a href="#cb1-874" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-875"><a href="#cb1-875" aria-hidden="true" tabindex="-1"></a><span class="co"># Factor for desirable loss term in KTO loss</span></span>
-<span id="cb1-876"><a href="#cb1-876" aria-hidden="true" tabindex="-1"></a><span class="fu">kto_desirable_weight</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-877"><a href="#cb1-877" aria-hidden="true" tabindex="-1"></a><span class="co"># Factor for undesirable loss term in KTO loss</span></span>
-<span id="cb1-878"><a href="#cb1-878" aria-hidden="true" tabindex="-1"></a><span class="fu">kto_undesirable_weight</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-879"><a href="#cb1-879" aria-hidden="true" tabindex="-1"></a><span class="co"># The beta parameter for the RL training</span></span>
-<span id="cb1-880"><a href="#cb1-880" aria-hidden="true" tabindex="-1"></a><span class="fu">rl_beta</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-881"><a href="#cb1-881" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-882"><a href="#cb1-882" aria-hidden="true" tabindex="-1"></a><span class="co"># Defines the max memory usage per gpu on the system. Passed through to transformers</span></span>
-<span id="cb1-883"><a href="#cb1-883" aria-hidden="true" tabindex="-1"></a><span class="co"># when loading the model.</span></span>
-<span id="cb1-884"><a href="#cb1-884" aria-hidden="true" tabindex="-1"></a><span class="fu">max_memory</span><span class="kw">:</span><span class="at"> dict[int | Literal['cpu', 'disk'], int | str] | None</span></span>
-<span id="cb1-885"><a href="#cb1-885" aria-hidden="true" tabindex="-1"></a><span class="co"># Limit the memory for all available GPUs to this amount (if an integer, expressed in</span></span>
-<span id="cb1-886"><a href="#cb1-886" aria-hidden="true" tabindex="-1"></a><span class="co"># gigabytes); default: unset</span></span>
-<span id="cb1-887"><a href="#cb1-887" aria-hidden="true" tabindex="-1"></a><span class="fu">gpu_memory_limit</span><span class="kw">:</span><span class="at"> int | str | None</span></span>
-<span id="cb1-888"><a href="#cb1-888" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use low_cpu_mem_usage</span></span>
-<span id="cb1-889"><a href="#cb1-889" aria-hidden="true" tabindex="-1"></a><span class="fu">low_cpu_mem_usage</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-890"><a href="#cb1-890" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-891"><a href="#cb1-891" aria-hidden="true" tabindex="-1"></a><span class="co"># The name of the chat template to use for training, following values are supported:</span></span>
-<span id="cb1-892"><a href="#cb1-892" aria-hidden="true" tabindex="-1"></a><span class="co"># tokenizer_default: Uses the chat template that is available in the</span></span>
-<span id="cb1-893"><a href="#cb1-893" aria-hidden="true" tabindex="-1"></a><span class="co"># tokenizer_config.json. If the chat template is not available in the tokenizer, it will</span></span>
-<span id="cb1-894"><a href="#cb1-894" aria-hidden="true" tabindex="-1"></a><span class="co"># raise an error. This is the default value.</span></span>
-<span id="cb1-895"><a href="#cb1-895" aria-hidden="true" tabindex="-1"></a><span class="co"># alpaca/inst/chatml/gemma/cohere/llama3/phi_3/deepseek_v2/jamba: These chat templates</span></span>
-<span id="cb1-896"><a href="#cb1-896" aria-hidden="true" tabindex="-1"></a><span class="co"># are available in the axolotl codebase at src/axolotl/utils/chat_templates.py.</span></span>
-<span id="cb1-897"><a href="#cb1-897" aria-hidden="true" tabindex="-1"></a><span class="co"># tokenizer_default_fallback_*: where * is the name of the chat template to fallback to.</span></span>
-<span id="cb1-898"><a href="#cb1-898" aria-hidden="true" tabindex="-1"></a><span class="co"># E.g. tokenizer_default_fallback_chatml. This is useful when the chat template is not</span></span>
-<span id="cb1-899"><a href="#cb1-899" aria-hidden="true" tabindex="-1"></a><span class="co"># available in the tokenizer. jinja: Uses a custom jinja template for the chat template.</span></span>
-<span id="cb1-900"><a href="#cb1-900" aria-hidden="true" tabindex="-1"></a><span class="co"># The custom jinja template should be provided in the chat_template_jinja field. The</span></span>
-<span id="cb1-901"><a href="#cb1-901" aria-hidden="true" tabindex="-1"></a><span class="co"># selected chat template will be saved to the tokenizer_config.json for easier</span></span>
-<span id="cb1-902"><a href="#cb1-902" aria-hidden="true" tabindex="-1"></a><span class="co"># inferencing</span></span>
-<span id="cb1-903"><a href="#cb1-903" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> ChatTemplate | Annotated[str, StringConstraints(pattern='^tokenizer_default_fallback_')] | None</span></span>
-<span id="cb1-904"><a href="#cb1-904" aria-hidden="true" tabindex="-1"></a><span class="co"># Custom jinja template for chat template. This will be only used if chat_template is</span></span>
-<span id="cb1-905"><a href="#cb1-905" aria-hidden="true" tabindex="-1"></a><span class="co"># set to `jinja` or `null` (in which case chat_template is automatically set to</span></span>
-<span id="cb1-906"><a href="#cb1-906" aria-hidden="true" tabindex="-1"></a><span class="co"># `jinja`). Default is null.</span></span>
-<span id="cb1-907"><a href="#cb1-907" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template_jinja</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-908"><a href="#cb1-908" aria-hidden="true" tabindex="-1"></a><span class="co"># Custom EOT (End-of-Turn) tokens to mask/unmask during training. These tokens mark the</span></span>
-<span id="cb1-909"><a href="#cb1-909" aria-hidden="true" tabindex="-1"></a><span class="co"># boundaries between conversation turns. For example: ['/INST', '&lt;/s&gt;',</span></span>
-<span id="cb1-910"><a href="#cb1-910" aria-hidden="true" tabindex="-1"></a><span class="co"># '[/SYSTEM_PROMPT]']. If not specified, defaults to just the model's eos_token. This is</span></span>
-<span id="cb1-911"><a href="#cb1-911" aria-hidden="true" tabindex="-1"></a><span class="co"># useful for templates that use multiple delimiter tokens.</span></span>
-<span id="cb1-912"><a href="#cb1-912" aria-hidden="true" tabindex="-1"></a><span class="fu">eot_tokens</span><span class="kw">:</span><span class="at"> list[str] | None</span></span>
-<span id="cb1-913"><a href="#cb1-913" aria-hidden="true" tabindex="-1"></a><span class="co"># Changes the default system message. Currently only supports chatml.</span></span>
-<span id="cb1-914"><a href="#cb1-914" aria-hidden="true" tabindex="-1"></a><span class="fu">default_system_message</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-915"><a href="#cb1-915" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-916"><a href="#cb1-916" aria-hidden="true" tabindex="-1"></a><span class="fu">fix_untrained_tokens</span><span class="kw">:</span><span class="at"> int | list[int] | None</span></span>
-<span id="cb1-917"><a href="#cb1-917" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-918"><a href="#cb1-918" aria-hidden="true" tabindex="-1"></a><span class="fu">is_preprocess</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-919"><a href="#cb1-919" aria-hidden="true" tabindex="-1"></a><span class="fu">preprocess_iterable</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-755"><a href="#cb1-755" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_qkv_kernel</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-756"><a href="#cb1-756" aria-hidden="true" tabindex="-1"></a><span class="co"># Apply custom LoRA autograd functions and activation function Triton kernels for speed</span></span>
+<span id="cb1-757"><a href="#cb1-757" aria-hidden="true" tabindex="-1"></a><span class="co"># and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html</span></span>
+<span id="cb1-758"><a href="#cb1-758" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_o_kernel</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-759"><a href="#cb1-759" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-760"><a href="#cb1-760" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use chunked cross entropy loss for memory efficiency</span></span>
+<span id="cb1-761"><a href="#cb1-761" aria-hidden="true" tabindex="-1"></a><span class="fu">chunked_cross_entropy</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-762"><a href="#cb1-762" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of chunks to use for chunked cross entropy loss</span></span>
+<span id="cb1-763"><a href="#cb1-763" aria-hidden="true" tabindex="-1"></a><span class="fu">chunked_cross_entropy_num_chunks</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-764"><a href="#cb1-764" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-765"><a href="#cb1-765" aria-hidden="true" tabindex="-1"></a><span class="fu">llama4_linearized_experts</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-766"><a href="#cb1-766" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-767"><a href="#cb1-767" aria-hidden="true" tabindex="-1"></a><span class="co"># Deepspeed config path. e.g., deepspeed_configs/zero3.json</span></span>
+<span id="cb1-768"><a href="#cb1-768" aria-hidden="true" tabindex="-1"></a><span class="fu">deepspeed</span><span class="kw">:</span><span class="at"> str | dict[str, Any] | None</span></span>
+<span id="cb1-769"><a href="#cb1-769" aria-hidden="true" tabindex="-1"></a><span class="co"># FSDP configuration</span></span>
+<span id="cb1-770"><a href="#cb1-770" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp</span><span class="kw">:</span><span class="at"> list[str] | None</span></span>
+<span id="cb1-771"><a href="#cb1-771" aria-hidden="true" tabindex="-1"></a><span class="co"># FSDP configuration options</span></span>
+<span id="cb1-772"><a href="#cb1-772" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
+<span id="cb1-773"><a href="#cb1-773" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_final_state_dict_type</span><span class="kw">:</span><span class="at"> Literal['FULL_STATE_DICT', 'LOCAL_STATE_DICT', 'SHARDED_STATE_DICT'] | None</span></span>
+<span id="cb1-774"><a href="#cb1-774" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-775"><a href="#cb1-775" aria-hidden="true" tabindex="-1"></a><span class="co"># How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc. 0 for</span></span>
+<span id="cb1-776"><a href="#cb1-776" aria-hidden="true" tabindex="-1"></a><span class="co"># no eval.</span></span>
+<span id="cb1-777"><a href="#cb1-777" aria-hidden="true" tabindex="-1"></a><span class="fu">val_set_size</span><span class="kw">:</span><span class="at"> float | None = 0.0</span></span>
+<span id="cb1-778"><a href="#cb1-778" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-779"><a href="#cb1-779" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to a divisor of the number of GPUs available to split sequences into chunks of</span></span>
+<span id="cb1-780"><a href="#cb1-780" aria-hidden="true" tabindex="-1"></a><span class="co"># equal size. Use in long context training to prevent OOM when sequences cannot fit into</span></span>
+<span id="cb1-781"><a href="#cb1-781" aria-hidden="true" tabindex="-1"></a><span class="co"># a single GPU's VRAM. E.g., if 4 GPUs are available, set this value to 2 to split each</span></span>
+<span id="cb1-782"><a href="#cb1-782" aria-hidden="true" tabindex="-1"></a><span class="co"># sequence into two equal-sized subsequences, or set to 4 to split into four equal-sized</span></span>
+<span id="cb1-783"><a href="#cb1-783" aria-hidden="true" tabindex="-1"></a><span class="co"># subsequences. See https://docs.axolotl.ai/docs/sequence_parallelism.html for more</span></span>
+<span id="cb1-784"><a href="#cb1-784" aria-hidden="true" tabindex="-1"></a><span class="co"># details.</span></span>
+<span id="cb1-785"><a href="#cb1-785" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_parallel_degree</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-786"><a href="#cb1-786" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; strides across the key dimension. Larger values use more memory but should</span></span>
+<span id="cb1-787"><a href="#cb1-787" aria-hidden="true" tabindex="-1"></a><span class="co"># make training faster. Must evenly divide the number of KV heads in your model.</span></span>
+<span id="cb1-788"><a href="#cb1-788" aria-hidden="true" tabindex="-1"></a><span class="fu">heads_k_stride</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-789"><a href="#cb1-789" aria-hidden="true" tabindex="-1"></a><span class="co"># One of 'varlen_llama3', 'batch_ring', 'batch_zigzag', 'batch_stripe'. Defaults to</span></span>
+<span id="cb1-790"><a href="#cb1-790" aria-hidden="true" tabindex="-1"></a><span class="co"># 'varlen_llama3' in the sample packing case, and 'batch_ring' in the non-sample packing</span></span>
+<span id="cb1-791"><a href="#cb1-791" aria-hidden="true" tabindex="-1"></a><span class="co"># case.</span></span>
+<span id="cb1-792"><a href="#cb1-792" aria-hidden="true" tabindex="-1"></a><span class="fu">ring_attn_func</span><span class="kw">:</span><span class="at"> RingAttnFunc | None</span></span>
+<span id="cb1-793"><a href="#cb1-793" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-794"><a href="#cb1-794" aria-hidden="true" tabindex="-1"></a><span class="co"># Add or change special tokens. If you add tokens here, you don't need to add them to</span></span>
+<span id="cb1-795"><a href="#cb1-795" aria-hidden="true" tabindex="-1"></a><span class="co"># the `tokens` list.</span></span>
+<span id="cb1-796"><a href="#cb1-796" aria-hidden="true" tabindex="-1"></a><span class="fu">special_tokens</span><span class="kw">:</span><span class="at"> SpecialTokensConfig | None</span></span>
+<span id="cb1-797"><a href="#cb1-797" aria-hidden="true" tabindex="-1"></a><span class="co">  # For SpecialTokensConfig:</span></span>
+<span id="cb1-798"><a href="#cb1-798" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bos_token</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-799"><a href="#cb1-799" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">eos_token</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-800"><a href="#cb1-800" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">pad_token</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-801"><a href="#cb1-801" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">unk_token</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-802"><a href="#cb1-802" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">additional_special_tokens</span><span class="kw">:</span><span class="at"> list[str] | None</span></span>
+<span id="cb1-803"><a href="#cb1-803" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-804"><a href="#cb1-804" aria-hidden="true" tabindex="-1"></a><span class="co"># Add extra tokens to the tokenizer</span></span>
+<span id="cb1-805"><a href="#cb1-805" aria-hidden="true" tabindex="-1"></a><span class="fu">tokens</span><span class="kw">:</span><span class="at"> list[str] | None</span></span>
+<span id="cb1-806"><a href="#cb1-806" aria-hidden="true" tabindex="-1"></a><span class="co"># Mapping token_id to new_token_string to override reserved added_tokens in the</span></span>
+<span id="cb1-807"><a href="#cb1-807" aria-hidden="true" tabindex="-1"></a><span class="co"># tokenizer. Only works for tokens that are not part of the base vocab (aka are</span></span>
+<span id="cb1-808"><a href="#cb1-808" aria-hidden="true" tabindex="-1"></a><span class="co"># added_tokens). Can be checked if they exist in tokenizer.json added_tokens.</span></span>
+<span id="cb1-809"><a href="#cb1-809" aria-hidden="true" tabindex="-1"></a><span class="fu">added_tokens_overrides</span><span class="kw">:</span><span class="at"> dict[int, str] | None</span></span>
+<span id="cb1-810"><a href="#cb1-810" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-811"><a href="#cb1-811" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use torch.compile and which backend to use. setting to `auto` will enable</span></span>
+<span id="cb1-812"><a href="#cb1-812" aria-hidden="true" tabindex="-1"></a><span class="co"># torch compile when torch&gt;=2.5.1</span></span>
+<span id="cb1-813"><a href="#cb1-813" aria-hidden="true" tabindex="-1"></a><span class="fu">torch_compile</span><span class="kw">:</span><span class="at"> Literal['auto'] | bool | None</span></span>
+<span id="cb1-814"><a href="#cb1-814" aria-hidden="true" tabindex="-1"></a><span class="co"># Backend to use for torch.compile</span></span>
+<span id="cb1-815"><a href="#cb1-815" aria-hidden="true" tabindex="-1"></a><span class="fu">torch_compile_backend</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-816"><a href="#cb1-816" aria-hidden="true" tabindex="-1"></a><span class="fu">torch_compile_mode</span><span class="kw">:</span><span class="at"> Literal['default', 'reduce-overhead', 'max-autotune'] | None</span></span>
+<span id="cb1-817"><a href="#cb1-817" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-818"><a href="#cb1-818" aria-hidden="true" tabindex="-1"></a><span class="co"># Maximum number of iterations to train for. It precedes num_epochs which means that if</span></span>
+<span id="cb1-819"><a href="#cb1-819" aria-hidden="true" tabindex="-1"></a><span class="co"># both are set, num_epochs will not be guaranteed. e.g., when 1 epoch is 1000 steps =&gt;</span></span>
+<span id="cb1-820"><a href="#cb1-820" aria-hidden="true" tabindex="-1"></a><span class="co"># `num_epochs: 2` and `max_steps: 100` will train for 100 steps</span></span>
+<span id="cb1-821"><a href="#cb1-821" aria-hidden="true" tabindex="-1"></a><span class="fu">max_steps</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-822"><a href="#cb1-822" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of warmup steps. Cannot use with warmup_ratio</span></span>
+<span id="cb1-823"><a href="#cb1-823" aria-hidden="true" tabindex="-1"></a><span class="fu">warmup_steps</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-824"><a href="#cb1-824" aria-hidden="true" tabindex="-1"></a><span class="co"># Warmup ratio. Cannot use with warmup_steps</span></span>
+<span id="cb1-825"><a href="#cb1-825" aria-hidden="true" tabindex="-1"></a><span class="fu">warmup_ratio</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-826"><a href="#cb1-826" aria-hidden="true" tabindex="-1"></a><span class="co"># Leave empty to eval at each epoch, integer for every N steps. float for fraction of</span></span>
+<span id="cb1-827"><a href="#cb1-827" aria-hidden="true" tabindex="-1"></a><span class="co"># total steps</span></span>
+<span id="cb1-828"><a href="#cb1-828" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_steps</span><span class="kw">:</span><span class="at"> int | float | None</span></span>
+<span id="cb1-829"><a href="#cb1-829" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of times per epoch to run evals, mutually exclusive with eval_steps</span></span>
+<span id="cb1-830"><a href="#cb1-830" aria-hidden="true" tabindex="-1"></a><span class="fu">evals_per_epoch</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-831"><a href="#cb1-831" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to `no` to skip evaluation, `epoch` at end of each epoch, leave empty to infer</span></span>
+<span id="cb1-832"><a href="#cb1-832" aria-hidden="true" tabindex="-1"></a><span class="co"># from `eval_steps`</span></span>
+<span id="cb1-833"><a href="#cb1-833" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_strategy</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-834"><a href="#cb1-834" aria-hidden="true" tabindex="-1"></a><span class="co"># Leave empty to save at each epoch, integer for every N steps. float for fraction of</span></span>
+<span id="cb1-835"><a href="#cb1-835" aria-hidden="true" tabindex="-1"></a><span class="co"># total steps</span></span>
+<span id="cb1-836"><a href="#cb1-836" aria-hidden="true" tabindex="-1"></a><span class="fu">save_steps</span><span class="kw">:</span><span class="at"> int | float | None</span></span>
+<span id="cb1-837"><a href="#cb1-837" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of times per epoch to save a checkpoint, mutually exclusive with save_steps</span></span>
+<span id="cb1-838"><a href="#cb1-838" aria-hidden="true" tabindex="-1"></a><span class="fu">saves_per_epoch</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-839"><a href="#cb1-839" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to `no` to skip checkpoint saves, `epoch` at end of each epoch, `best` when better</span></span>
+<span id="cb1-840"><a href="#cb1-840" aria-hidden="true" tabindex="-1"></a><span class="co"># result is achieved, leave empty to infer from `save_steps`</span></span>
+<span id="cb1-841"><a href="#cb1-841" aria-hidden="true" tabindex="-1"></a><span class="fu">save_strategy</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-842"><a href="#cb1-842" aria-hidden="true" tabindex="-1"></a><span class="co"># Checkpoints saved at a time</span></span>
+<span id="cb1-843"><a href="#cb1-843" aria-hidden="true" tabindex="-1"></a><span class="fu">save_total_limit</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-844"><a href="#cb1-844" aria-hidden="true" tabindex="-1"></a><span class="co"># Logging frequency</span></span>
+<span id="cb1-845"><a href="#cb1-845" aria-hidden="true" tabindex="-1"></a><span class="fu">logging_steps</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-846"><a href="#cb1-846" aria-hidden="true" tabindex="-1"></a><span class="co"># Stop training after this many evaluation losses have increased in a row. https://huggi</span></span>
+<span id="cb1-847"><a href="#cb1-847" aria-hidden="true" tabindex="-1"></a><span class="co"># ngface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppin</span></span>
+<span id="cb1-848"><a href="#cb1-848" aria-hidden="true" tabindex="-1"></a><span class="co"># gCallback</span></span>
+<span id="cb1-849"><a href="#cb1-849" aria-hidden="true" tabindex="-1"></a><span class="fu">early_stopping_patience</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-850"><a href="#cb1-850" aria-hidden="true" tabindex="-1"></a><span class="fu">load_best_model_at_end</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
+<span id="cb1-851"><a href="#cb1-851" aria-hidden="true" tabindex="-1"></a><span class="co"># Save only the model weights, skipping the optimizer. Using this means you can't resume</span></span>
+<span id="cb1-852"><a href="#cb1-852" aria-hidden="true" tabindex="-1"></a><span class="co"># from checkpoints.</span></span>
+<span id="cb1-853"><a href="#cb1-853" aria-hidden="true" tabindex="-1"></a><span class="fu">save_only_model</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
+<span id="cb1-854"><a href="#cb1-854" aria-hidden="true" tabindex="-1"></a><span class="co"># Use tensorboard for logging</span></span>
+<span id="cb1-855"><a href="#cb1-855" aria-hidden="true" tabindex="-1"></a><span class="fu">use_tensorboard</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-856"><a href="#cb1-856" aria-hidden="true" tabindex="-1"></a><span class="co"># Enable the pytorch profiler to capture the first N steps of training to the</span></span>
+<span id="cb1-857"><a href="#cb1-857" aria-hidden="true" tabindex="-1"></a><span class="co"># output_dir. see https://pytorch.org/blog/understanding-gpu-memory-1/ for more</span></span>
+<span id="cb1-858"><a href="#cb1-858" aria-hidden="true" tabindex="-1"></a><span class="co"># information. Snapshots can be visualized @ https://pytorch.org/memory_viz</span></span>
+<span id="cb1-859"><a href="#cb1-859" aria-hidden="true" tabindex="-1"></a><span class="fu">profiler_steps</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-860"><a href="#cb1-860" aria-hidden="true" tabindex="-1"></a><span class="co"># bool of whether to include tokens trainer per second in the training metrics. This</span></span>
+<span id="cb1-861"><a href="#cb1-861" aria-hidden="true" tabindex="-1"></a><span class="co"># iterates over the entire dataset once, so it takes some time.</span></span>
+<span id="cb1-862"><a href="#cb1-862" aria-hidden="true" tabindex="-1"></a><span class="fu">include_tokens_per_second</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-863"><a href="#cb1-863" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-864"><a href="#cb1-864" aria-hidden="true" tabindex="-1"></a><span class="co"># NEFT https://arxiv.org/abs/2310.05914, set this to a number (paper default is 5) to</span></span>
+<span id="cb1-865"><a href="#cb1-865" aria-hidden="true" tabindex="-1"></a><span class="co"># add noise to embeddings. Currently only supported on Llama and Mistral</span></span>
+<span id="cb1-866"><a href="#cb1-866" aria-hidden="true" tabindex="-1"></a><span class="fu">neftune_noise_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-867"><a href="#cb1-867" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-868"><a href="#cb1-868" aria-hidden="true" tabindex="-1"></a><span class="co"># Parameter controlling the relative ratio loss weight in the ORPO loss. Passed to</span></span>
+<span id="cb1-869"><a href="#cb1-869" aria-hidden="true" tabindex="-1"></a><span class="co"># `beta` in `ORPOConfig` due to trl mapping.</span></span>
+<span id="cb1-870"><a href="#cb1-870" aria-hidden="true" tabindex="-1"></a><span class="fu">orpo_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-871"><a href="#cb1-871" aria-hidden="true" tabindex="-1"></a><span class="co"># Weighting of NLL term in loss from RPO paper</span></span>
+<span id="cb1-872"><a href="#cb1-872" aria-hidden="true" tabindex="-1"></a><span class="fu">rpo_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-873"><a href="#cb1-873" aria-hidden="true" tabindex="-1"></a><span class="co"># Target reward margin for the SimPO loss</span></span>
+<span id="cb1-874"><a href="#cb1-874" aria-hidden="true" tabindex="-1"></a><span class="fu">simpo_gamma</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-875"><a href="#cb1-875" aria-hidden="true" tabindex="-1"></a><span class="co"># Weight of the BC regularizer</span></span>
+<span id="cb1-876"><a href="#cb1-876" aria-hidden="true" tabindex="-1"></a><span class="fu">cpo_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-877"><a href="#cb1-877" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-878"><a href="#cb1-878" aria-hidden="true" tabindex="-1"></a><span class="co"># Factor for desirable loss term in KTO loss</span></span>
+<span id="cb1-879"><a href="#cb1-879" aria-hidden="true" tabindex="-1"></a><span class="fu">kto_desirable_weight</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-880"><a href="#cb1-880" aria-hidden="true" tabindex="-1"></a><span class="co"># Factor for undesirable loss term in KTO loss</span></span>
+<span id="cb1-881"><a href="#cb1-881" aria-hidden="true" tabindex="-1"></a><span class="fu">kto_undesirable_weight</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-882"><a href="#cb1-882" aria-hidden="true" tabindex="-1"></a><span class="co"># The beta parameter for the RL training</span></span>
+<span id="cb1-883"><a href="#cb1-883" aria-hidden="true" tabindex="-1"></a><span class="fu">rl_beta</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-884"><a href="#cb1-884" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-885"><a href="#cb1-885" aria-hidden="true" tabindex="-1"></a><span class="co"># Defines the max memory usage per gpu on the system. Passed through to transformers</span></span>
+<span id="cb1-886"><a href="#cb1-886" aria-hidden="true" tabindex="-1"></a><span class="co"># when loading the model.</span></span>
+<span id="cb1-887"><a href="#cb1-887" aria-hidden="true" tabindex="-1"></a><span class="fu">max_memory</span><span class="kw">:</span><span class="at"> dict[int | Literal['cpu', 'disk'], int | str] | None</span></span>
+<span id="cb1-888"><a href="#cb1-888" aria-hidden="true" tabindex="-1"></a><span class="co"># Limit the memory for all available GPUs to this amount (if an integer, expressed in</span></span>
+<span id="cb1-889"><a href="#cb1-889" aria-hidden="true" tabindex="-1"></a><span class="co"># gigabytes); default: unset</span></span>
+<span id="cb1-890"><a href="#cb1-890" aria-hidden="true" tabindex="-1"></a><span class="fu">gpu_memory_limit</span><span class="kw">:</span><span class="at"> int | str | None</span></span>
+<span id="cb1-891"><a href="#cb1-891" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use low_cpu_mem_usage</span></span>
+<span id="cb1-892"><a href="#cb1-892" aria-hidden="true" tabindex="-1"></a><span class="fu">low_cpu_mem_usage</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-893"><a href="#cb1-893" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-894"><a href="#cb1-894" aria-hidden="true" tabindex="-1"></a><span class="co"># The name of the chat template to use for training, following values are supported:</span></span>
+<span id="cb1-895"><a href="#cb1-895" aria-hidden="true" tabindex="-1"></a><span class="co"># tokenizer_default: Uses the chat template that is available in the</span></span>
+<span id="cb1-896"><a href="#cb1-896" aria-hidden="true" tabindex="-1"></a><span class="co"># tokenizer_config.json. If the chat template is not available in the tokenizer, it will</span></span>
+<span id="cb1-897"><a href="#cb1-897" aria-hidden="true" tabindex="-1"></a><span class="co"># raise an error. This is the default value.</span></span>
+<span id="cb1-898"><a href="#cb1-898" aria-hidden="true" tabindex="-1"></a><span class="co"># alpaca/inst/chatml/gemma/cohere/llama3/phi_3/deepseek_v2/jamba: These chat templates</span></span>
+<span id="cb1-899"><a href="#cb1-899" aria-hidden="true" tabindex="-1"></a><span class="co"># are available in the axolotl codebase at src/axolotl/utils/chat_templates.py.</span></span>
+<span id="cb1-900"><a href="#cb1-900" aria-hidden="true" tabindex="-1"></a><span class="co"># tokenizer_default_fallback_*: where * is the name of the chat template to fallback to.</span></span>
+<span id="cb1-901"><a href="#cb1-901" aria-hidden="true" tabindex="-1"></a><span class="co"># E.g. tokenizer_default_fallback_chatml. This is useful when the chat template is not</span></span>
+<span id="cb1-902"><a href="#cb1-902" aria-hidden="true" tabindex="-1"></a><span class="co"># available in the tokenizer. jinja: Uses a custom jinja template for the chat template.</span></span>
+<span id="cb1-903"><a href="#cb1-903" aria-hidden="true" tabindex="-1"></a><span class="co"># The custom jinja template should be provided in the chat_template_jinja field. The</span></span>
+<span id="cb1-904"><a href="#cb1-904" aria-hidden="true" tabindex="-1"></a><span class="co"># selected chat template will be saved to the tokenizer_config.json for easier</span></span>
+<span id="cb1-905"><a href="#cb1-905" aria-hidden="true" tabindex="-1"></a><span class="co"># inferencing</span></span>
+<span id="cb1-906"><a href="#cb1-906" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> ChatTemplate | Annotated[str, StringConstraints(pattern='^tokenizer_default_fallback_')] | None</span></span>
+<span id="cb1-907"><a href="#cb1-907" aria-hidden="true" tabindex="-1"></a><span class="co"># Custom jinja template for chat template. This will be only used if chat_template is</span></span>
+<span id="cb1-908"><a href="#cb1-908" aria-hidden="true" tabindex="-1"></a><span class="co"># set to `jinja` or `null` (in which case chat_template is automatically set to</span></span>
+<span id="cb1-909"><a href="#cb1-909" aria-hidden="true" tabindex="-1"></a><span class="co"># `jinja`). Default is null.</span></span>
+<span id="cb1-910"><a href="#cb1-910" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template_jinja</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-911"><a href="#cb1-911" aria-hidden="true" tabindex="-1"></a><span class="co"># Custom EOT (End-of-Turn) tokens to mask/unmask during training. These tokens mark the</span></span>
+<span id="cb1-912"><a href="#cb1-912" aria-hidden="true" tabindex="-1"></a><span class="co"># boundaries between conversation turns. For example: ['/INST', '&lt;/s&gt;',</span></span>
+<span id="cb1-913"><a href="#cb1-913" aria-hidden="true" tabindex="-1"></a><span class="co"># '[/SYSTEM_PROMPT]']. If not specified, defaults to just the model's eos_token. This is</span></span>
+<span id="cb1-914"><a href="#cb1-914" aria-hidden="true" tabindex="-1"></a><span class="co"># useful for templates that use multiple delimiter tokens.</span></span>
+<span id="cb1-915"><a href="#cb1-915" aria-hidden="true" tabindex="-1"></a><span class="fu">eot_tokens</span><span class="kw">:</span><span class="at"> list[str] | None</span></span>
+<span id="cb1-916"><a href="#cb1-916" aria-hidden="true" tabindex="-1"></a><span class="co"># Changes the default system message. Currently only supports chatml.</span></span>
+<span id="cb1-917"><a href="#cb1-917" aria-hidden="true" tabindex="-1"></a><span class="fu">default_system_message</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-918"><a href="#cb1-918" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-919"><a href="#cb1-919" aria-hidden="true" tabindex="-1"></a><span class="fu">fix_untrained_tokens</span><span class="kw">:</span><span class="at"> int | list[int] | None</span></span>
 <span id="cb1-920"><a href="#cb1-920" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-921"><a href="#cb1-921" aria-hidden="true" tabindex="-1"></a><span class="co"># Total number of tokens - internal use</span></span>
-<span id="cb1-922"><a href="#cb1-922" aria-hidden="true" tabindex="-1"></a><span class="fu">total_num_tokens</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-923"><a href="#cb1-923" aria-hidden="true" tabindex="-1"></a><span class="fu">total_supervised_tokens</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-924"><a href="#cb1-924" aria-hidden="true" tabindex="-1"></a><span class="co"># You can set these packing optimizations AFTER starting a training at least once. The</span></span>
-<span id="cb1-925"><a href="#cb1-925" aria-hidden="true" tabindex="-1"></a><span class="co"># trainer will provide recommended values for these values.</span></span>
-<span id="cb1-926"><a href="#cb1-926" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing_eff_est</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-927"><a href="#cb1-927" aria-hidden="true" tabindex="-1"></a><span class="fu">axolotl_config_path</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-928"><a href="#cb1-928" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-929"><a href="#cb1-929" aria-hidden="true" tabindex="-1"></a><span class="co"># Internal use only - Used to identify which the model is based on</span></span>
-<span id="cb1-930"><a href="#cb1-930" aria-hidden="true" tabindex="-1"></a><span class="fu">is_falcon_derived_model</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-931"><a href="#cb1-931" aria-hidden="true" tabindex="-1"></a><span class="co"># Internal use only - Used to identify which the model is based on</span></span>
-<span id="cb1-932"><a href="#cb1-932" aria-hidden="true" tabindex="-1"></a><span class="fu">is_llama_derived_model</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-933"><a href="#cb1-933" aria-hidden="true" tabindex="-1"></a><span class="co"># Internal use only - Used to identify which the model is based on. Please note that if</span></span>
-<span id="cb1-934"><a href="#cb1-934" aria-hidden="true" tabindex="-1"></a><span class="co"># you set this to true, `padding_side` will be set to 'left' by default</span></span>
-<span id="cb1-935"><a href="#cb1-935" aria-hidden="true" tabindex="-1"></a><span class="fu">is_mistral_derived_model</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-936"><a href="#cb1-936" aria-hidden="true" tabindex="-1"></a><span class="co"># Internal use only - Used to identify which the model is based on</span></span>
-<span id="cb1-937"><a href="#cb1-937" aria-hidden="true" tabindex="-1"></a><span class="fu">is_qwen_derived_model</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-938"><a href="#cb1-938" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-939"><a href="#cb1-939" aria-hidden="true" tabindex="-1"></a><span class="co"># Add plugins to extend the pipeline. See `src/axolotl/integrations` for the available</span></span>
-<span id="cb1-940"><a href="#cb1-940" aria-hidden="true" tabindex="-1"></a><span class="co"># plugins or doc below for more details.</span></span>
-<span id="cb1-941"><a href="#cb1-941" aria-hidden="true" tabindex="-1"></a><span class="co"># https://docs.axolotl.ai/docs/custom_integrations.html</span></span>
-<span id="cb1-942"><a href="#cb1-942" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span><span class="at"> list[str] | None</span></span>
-<span id="cb1-943"><a href="#cb1-943" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-944"><a href="#cb1-944" aria-hidden="true" tabindex="-1"></a><span class="co"># This is the huggingface model that contains *.pt, *.safetensors, or *.bin files. This</span></span>
-<span id="cb1-945"><a href="#cb1-945" aria-hidden="true" tabindex="-1"></a><span class="co"># can also be a relative path to a model on disk</span></span>
-<span id="cb1-946"><a href="#cb1-946" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> str (required)</span></span>
-<span id="cb1-947"><a href="#cb1-947" aria-hidden="true" tabindex="-1"></a><span class="co"># If the base_model repo on hf hub doesn't include configuration .json files, You can</span></span>
-<span id="cb1-948"><a href="#cb1-948" aria-hidden="true" tabindex="-1"></a><span class="co"># set that here, or leave this empty to default to base_model</span></span>
-<span id="cb1-949"><a href="#cb1-949" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model_config</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-950"><a href="#cb1-950" aria-hidden="true" tabindex="-1"></a><span class="fu">cls_model_config</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-951"><a href="#cb1-951" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional tokenizer configuration path in case you want to use a different tokenizer</span></span>
-<span id="cb1-952"><a href="#cb1-952" aria-hidden="true" tabindex="-1"></a><span class="co"># than the one defined in the base model</span></span>
-<span id="cb1-953"><a href="#cb1-953" aria-hidden="true" tabindex="-1"></a><span class="fu">tokenizer_config</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-954"><a href="#cb1-954" aria-hidden="true" tabindex="-1"></a><span class="co"># use_fast option for tokenizer loading from_pretrained, default to True</span></span>
-<span id="cb1-955"><a href="#cb1-955" aria-hidden="true" tabindex="-1"></a><span class="fu">tokenizer_use_fast</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-956"><a href="#cb1-956" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use the legacy tokenizer setting, defaults to True</span></span>
-<span id="cb1-957"><a href="#cb1-957" aria-hidden="true" tabindex="-1"></a><span class="fu">tokenizer_legacy</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-958"><a href="#cb1-958" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use mistral-common tokenizer. If set to True, it will use the mistral-</span></span>
-<span id="cb1-959"><a href="#cb1-959" aria-hidden="true" tabindex="-1"></a><span class="co"># common tokenizer.</span></span>
-<span id="cb1-960"><a href="#cb1-960" aria-hidden="true" tabindex="-1"></a><span class="fu">tokenizer_use_mistral_common</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-961"><a href="#cb1-961" aria-hidden="true" tabindex="-1"></a><span class="co"># Corresponding tokenizer for the model AutoTokenizer is a good choice</span></span>
-<span id="cb1-962"><a href="#cb1-962" aria-hidden="true" tabindex="-1"></a><span class="fu">tokenizer_type</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-963"><a href="#cb1-963" aria-hidden="true" tabindex="-1"></a><span class="co"># transformers processor class</span></span>
-<span id="cb1-964"><a href="#cb1-964" aria-hidden="true" tabindex="-1"></a><span class="fu">processor_type</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-965"><a href="#cb1-965" aria-hidden="true" tabindex="-1"></a><span class="co"># Trust remote code for untrusted source</span></span>
-<span id="cb1-966"><a href="#cb1-966" aria-hidden="true" tabindex="-1"></a><span class="fu">trust_remote_code</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-967"><a href="#cb1-967" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-968"><a href="#cb1-968" aria-hidden="true" tabindex="-1"></a><span class="co"># Where to save the full-finetuned model to</span></span>
-<span id="cb1-969"><a href="#cb1-969" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="at"> str = ./model-out</span></span>
-<span id="cb1-970"><a href="#cb1-970" aria-hidden="true" tabindex="-1"></a><span class="co"># push checkpoints to hub</span></span>
-<span id="cb1-971"><a href="#cb1-971" aria-hidden="true" tabindex="-1"></a><span class="fu">hub_model_id</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-972"><a href="#cb1-972" aria-hidden="true" tabindex="-1"></a><span class="co"># how to push checkpoints to hub</span></span>
-<span id="cb1-973"><a href="#cb1-973" aria-hidden="true" tabindex="-1"></a><span class="fu">hub_strategy</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-974"><a href="#cb1-974" aria-hidden="true" tabindex="-1"></a><span class="co"># Save model as safetensors (require safetensors package). Default True</span></span>
-<span id="cb1-975"><a href="#cb1-975" aria-hidden="true" tabindex="-1"></a><span class="fu">save_safetensors</span><span class="kw">:</span><span class="at"> bool | None = True</span></span>
-<span id="cb1-976"><a href="#cb1-976" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-977"><a href="#cb1-977" aria-hidden="true" tabindex="-1"></a><span class="co"># This will attempt to quantize the model down to 8 bits and use adam 8 bit optimizer</span></span>
-<span id="cb1-978"><a href="#cb1-978" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_8bit</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
-<span id="cb1-979"><a href="#cb1-979" aria-hidden="true" tabindex="-1"></a><span class="co"># Use bitsandbytes 4 bit</span></span>
-<span id="cb1-980"><a href="#cb1-980" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_4bit</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
-<span id="cb1-981"><a href="#cb1-981" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-982"><a href="#cb1-982" aria-hidden="true" tabindex="-1"></a><span class="co"># If you want to use 'lora' or 'qlora' or leave blank to train all parameters in</span></span>
-<span id="cb1-983"><a href="#cb1-983" aria-hidden="true" tabindex="-1"></a><span class="co"># original model</span></span>
-<span id="cb1-984"><a href="#cb1-984" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-985"><a href="#cb1-985" aria-hidden="true" tabindex="-1"></a><span class="co"># If you already have a lora model trained that you want to load, put that here. This</span></span>
-<span id="cb1-986"><a href="#cb1-986" aria-hidden="true" tabindex="-1"></a><span class="co"># means after training, if you want to test the model, you should set this to the value</span></span>
-<span id="cb1-987"><a href="#cb1-987" aria-hidden="true" tabindex="-1"></a><span class="co"># of `output_dir`. Note that if you merge an adapter to the base model, a new</span></span>
-<span id="cb1-988"><a href="#cb1-988" aria-hidden="true" tabindex="-1"></a><span class="co"># subdirectory `merged` will be created under the `output_dir`.</span></span>
-<span id="cb1-989"><a href="#cb1-989" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_model_dir</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-990"><a href="#cb1-990" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_r</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-991"><a href="#cb1-991" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_alpha</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-992"><a href="#cb1-992" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_fan_in_fan_out</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-993"><a href="#cb1-993" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_modules</span><span class="kw">:</span><span class="at"> str | list[str] | None</span></span>
-<span id="cb1-994"><a href="#cb1-994" aria-hidden="true" tabindex="-1"></a><span class="co"># If true, will target all linear modules</span></span>
-<span id="cb1-995"><a href="#cb1-995" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_linear</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-996"><a href="#cb1-996" aria-hidden="true" tabindex="-1"></a><span class="co"># If you added new tokens to the tokenizer, you may need to save some LoRA modules</span></span>
-<span id="cb1-997"><a href="#cb1-997" aria-hidden="true" tabindex="-1"></a><span class="co"># because they need to know the new tokens. For LLaMA and Mistral, you need to save</span></span>
-<span id="cb1-998"><a href="#cb1-998" aria-hidden="true" tabindex="-1"></a><span class="co"># `embed_tokens` and `lm_head`. It may vary for other models. `embed_tokens` converts</span></span>
-<span id="cb1-999"><a href="#cb1-999" aria-hidden="true" tabindex="-1"></a><span class="co"># tokens to embeddings, and `lm_head` converts embeddings to token probabilities.</span></span>
-<span id="cb1-1000"><a href="#cb1-1000" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_modules_to_save</span><span class="kw">:</span><span class="at"> list[str] | None</span></span>
-<span id="cb1-1001"><a href="#cb1-1001" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_dropout</span><span class="kw">:</span><span class="at"> float | None = 0.0</span></span>
-<span id="cb1-1002"><a href="#cb1-1002" aria-hidden="true" tabindex="-1"></a><span class="co"># The layer indices to transform, otherwise, apply to all layers</span></span>
-<span id="cb1-1003"><a href="#cb1-1003" aria-hidden="true" tabindex="-1"></a><span class="fu">peft_layers_to_transform</span><span class="kw">:</span><span class="at"> list[int] | None</span></span>
-<span id="cb1-1004"><a href="#cb1-1004" aria-hidden="true" tabindex="-1"></a><span class="fu">peft_layers_pattern</span><span class="kw">:</span><span class="at"> list[str] | None</span></span>
-<span id="cb1-1005"><a href="#cb1-1005" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1006"><a href="#cb1-1006" aria-hidden="true" tabindex="-1"></a><span class="fu">peft</span><span class="kw">:</span><span class="at"> PeftConfig | None</span></span>
-<span id="cb1-1007"><a href="#cb1-1007" aria-hidden="true" tabindex="-1"></a><span class="co">  # For PeftConfig:</span></span>
-<span id="cb1-1008"><a href="#cb1-1008" aria-hidden="true" tabindex="-1"></a><span class="co">  # Configuration options for loftq initialization for LoRA</span></span>
-<span id="cb1-1009"><a href="#cb1-1009" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">loftq_config</span><span class="kw">:</span><span class="at"> LoftQConfig | None</span></span>
-<span id="cb1-1010"><a href="#cb1-1010" aria-hidden="true" tabindex="-1"></a><span class="co">    # For LoftQConfig:</span></span>
-<span id="cb1-1011"><a href="#cb1-1011" aria-hidden="true" tabindex="-1"></a><span class="co">    # typically 4 bits</span></span>
-<span id="cb1-1012"><a href="#cb1-1012" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">loftq_bits</span><span class="kw">:</span><span class="at"> int = 4</span></span>
-<span id="cb1-1013"><a href="#cb1-1013" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1014"><a href="#cb1-1014" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use DoRA.</span></span>
-<span id="cb1-1015"><a href="#cb1-1015" aria-hidden="true" tabindex="-1"></a><span class="fu">peft_use_dora</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1016"><a href="#cb1-1016" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use RSLoRA.</span></span>
-<span id="cb1-1017"><a href="#cb1-1017" aria-hidden="true" tabindex="-1"></a><span class="fu">peft_use_rslora</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1018"><a href="#cb1-1018" aria-hidden="true" tabindex="-1"></a><span class="co"># List of layer indices to replicate.</span></span>
-<span id="cb1-1019"><a href="#cb1-1019" aria-hidden="true" tabindex="-1"></a><span class="fu">peft_layer_replication</span><span class="kw">:</span><span class="at"> list[tuple[int, int]] | None</span></span>
-<span id="cb1-1020"><a href="#cb1-1020" aria-hidden="true" tabindex="-1"></a><span class="co"># How to initialize LoRA weights. Default to True which is MS original implementation.</span></span>
-<span id="cb1-1021"><a href="#cb1-1021" aria-hidden="true" tabindex="-1"></a><span class="fu">peft_init_lora_weights</span><span class="kw">:</span><span class="at"> bool | str | None</span></span>
-<span id="cb1-1022"><a href="#cb1-1022" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1023"><a href="#cb1-1023" aria-hidden="true" tabindex="-1"></a><span class="co"># load qlora model in sharded format for FSDP using answer.ai technique.</span></span>
-<span id="cb1-1024"><a href="#cb1-1024" aria-hidden="true" tabindex="-1"></a><span class="fu">qlora_sharded_model_loading</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
-<span id="cb1-1025"><a href="#cb1-1025" aria-hidden="true" tabindex="-1"></a><span class="co"># Do the LoRA/PEFT loading on CPU -- this is required if the base model is so large it</span></span>
-<span id="cb1-1026"><a href="#cb1-1026" aria-hidden="true" tabindex="-1"></a><span class="co"># takes up most or all of the available GPU VRAM, e.g. during a model and LoRA merge</span></span>
-<span id="cb1-1027"><a href="#cb1-1027" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_on_cpu</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1028"><a href="#cb1-1028" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether you are training a 4-bit GPTQ quantized model</span></span>
-<span id="cb1-1029"><a href="#cb1-1029" aria-hidden="true" tabindex="-1"></a><span class="fu">gptq</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1030"><a href="#cb1-1030" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides to the bnb 4bit quantization configuration</span></span>
-<span id="cb1-1031"><a href="#cb1-1031" aria-hidden="true" tabindex="-1"></a><span class="fu">bnb_config_kwargs</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
-<span id="cb1-1032"><a href="#cb1-1032" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1033"><a href="#cb1-1033" aria-hidden="true" tabindex="-1"></a><span class="co"># loraplus learning rate ratio lr_B / lr_A. Recommended value is 2^4.</span></span>
-<span id="cb1-1034"><a href="#cb1-1034" aria-hidden="true" tabindex="-1"></a><span class="fu">loraplus_lr_ratio</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1035"><a href="#cb1-1035" aria-hidden="true" tabindex="-1"></a><span class="co"># loraplus learning rate for lora embedding layers. Default value is 1e-6.</span></span>
-<span id="cb1-1036"><a href="#cb1-1036" aria-hidden="true" tabindex="-1"></a><span class="fu">loraplus_lr_embedding</span><span class="kw">:</span><span class="at"> float | None = 1e-06</span></span>
-<span id="cb1-1037"><a href="#cb1-1037" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1038"><a href="#cb1-1038" aria-hidden="true" tabindex="-1"></a><span class="fu">merge_lora</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1039"><a href="#cb1-1039" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1040"><a href="#cb1-1040" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of steps per ReLoRA restart</span></span>
-<span id="cb1-1041"><a href="#cb1-1041" aria-hidden="true" tabindex="-1"></a><span class="fu">relora_steps</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1042"><a href="#cb1-1042" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of per-restart warmup steps</span></span>
-<span id="cb1-1043"><a href="#cb1-1043" aria-hidden="true" tabindex="-1"></a><span class="fu">relora_warmup_steps</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1044"><a href="#cb1-1044" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of anneal steps for each relora cycle</span></span>
-<span id="cb1-1045"><a href="#cb1-1045" aria-hidden="true" tabindex="-1"></a><span class="fu">relora_anneal_steps</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1046"><a href="#cb1-1046" aria-hidden="true" tabindex="-1"></a><span class="co"># threshold for optimizer magnitude when pruning</span></span>
-<span id="cb1-1047"><a href="#cb1-1047" aria-hidden="true" tabindex="-1"></a><span class="fu">relora_prune_ratio</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1048"><a href="#cb1-1048" aria-hidden="true" tabindex="-1"></a><span class="co"># True to perform lora weight merges on cpu during restarts, for modest gpu memory</span></span>
-<span id="cb1-1049"><a href="#cb1-1049" aria-hidden="true" tabindex="-1"></a><span class="co"># savings</span></span>
-<span id="cb1-1050"><a href="#cb1-1050" aria-hidden="true" tabindex="-1"></a><span class="fu">relora_cpu_offload</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1051"><a href="#cb1-1051" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1052"><a href="#cb1-1052" aria-hidden="true" tabindex="-1"></a><span class="co"># If greater than 1, backpropagation will be skipped and the gradients will be</span></span>
-<span id="cb1-1053"><a href="#cb1-1053" aria-hidden="true" tabindex="-1"></a><span class="co"># accumulated for the given number of steps.</span></span>
-<span id="cb1-1054"><a href="#cb1-1054" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_accumulation_steps</span><span class="kw">:</span><span class="at"> int | None = 1</span></span>
-<span id="cb1-1055"><a href="#cb1-1055" aria-hidden="true" tabindex="-1"></a><span class="co"># The number of samples to include in each batch. This is the number of samples sent to</span></span>
-<span id="cb1-1056"><a href="#cb1-1056" aria-hidden="true" tabindex="-1"></a><span class="co"># each GPU. Batch size per gpu = micro_batch_size * gradient_accumulation_steps</span></span>
-<span id="cb1-1057"><a href="#cb1-1057" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> int | None = 1</span></span>
-<span id="cb1-1058"><a href="#cb1-1058" aria-hidden="true" tabindex="-1"></a><span class="co"># Total batch size, we do not recommended setting this manually</span></span>
-<span id="cb1-1059"><a href="#cb1-1059" aria-hidden="true" tabindex="-1"></a><span class="fu">batch_size</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1060"><a href="#cb1-1060" aria-hidden="true" tabindex="-1"></a><span class="co"># per gpu micro batch size for evals, defaults to value of micro_batch_size</span></span>
-<span id="cb1-1061"><a href="#cb1-1061" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_batch_size</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1062"><a href="#cb1-1062" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1063"><a href="#cb1-1063" aria-hidden="true" tabindex="-1"></a><span class="co"># whether to find batch size that fits in memory. Passed to underlying transformers</span></span>
-<span id="cb1-1064"><a href="#cb1-1064" aria-hidden="true" tabindex="-1"></a><span class="co"># Trainer</span></span>
-<span id="cb1-1065"><a href="#cb1-1065" aria-hidden="true" tabindex="-1"></a><span class="fu">auto_find_batch_size</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1066"><a href="#cb1-1066" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1067"><a href="#cb1-1067" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to mask out or include the human's prompt from the training labels</span></span>
-<span id="cb1-1068"><a href="#cb1-1068" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
-<span id="cb1-1069"><a href="#cb1-1069" aria-hidden="true" tabindex="-1"></a><span class="co"># Group similarly sized data to minimize padding. May be slower to start, as it must</span></span>
-<span id="cb1-1070"><a href="#cb1-1070" aria-hidden="true" tabindex="-1"></a><span class="co"># download and sort the entire dataset. Note that training loss may have an oscillating</span></span>
-<span id="cb1-1071"><a href="#cb1-1071" aria-hidden="true" tabindex="-1"></a><span class="co"># pattern with this enabled.</span></span>
-<span id="cb1-1072"><a href="#cb1-1072" aria-hidden="true" tabindex="-1"></a><span class="fu">group_by_length</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1073"><a href="#cb1-1073" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1074"><a href="#cb1-1074" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> str | float (required)</span></span>
-<span id="cb1-1075"><a href="#cb1-1075" aria-hidden="true" tabindex="-1"></a><span class="fu">embedding_lr</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1076"><a href="#cb1-1076" aria-hidden="true" tabindex="-1"></a><span class="fu">embedding_lr_scale</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1077"><a href="#cb1-1077" aria-hidden="true" tabindex="-1"></a><span class="co"># Specify weight decay</span></span>
-<span id="cb1-1078"><a href="#cb1-1078" aria-hidden="true" tabindex="-1"></a><span class="fu">weight_decay</span><span class="kw">:</span><span class="at"> float | None = 0.0</span></span>
-<span id="cb1-1079"><a href="#cb1-1079" aria-hidden="true" tabindex="-1"></a><span class="co"># Specify optimizer</span></span>
-<span id="cb1-1080"><a href="#cb1-1080" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> OptimizerNames | CustomSupportedOptimizers | None = OptimizerNames.ADAMW_TORCH_FUSED</span></span>
-<span id="cb1-1081"><a href="#cb1-1081" aria-hidden="true" tabindex="-1"></a><span class="co"># Dictionary of arguments to pass to the optimizer</span></span>
-<span id="cb1-1082"><a href="#cb1-1082" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span><span class="at"> str | dict[str, Any] | None</span></span>
-<span id="cb1-1083"><a href="#cb1-1083" aria-hidden="true" tabindex="-1"></a><span class="co"># The target modules to optimize, i.e. the module names that you would like to train,</span></span>
-<span id="cb1-1084"><a href="#cb1-1084" aria-hidden="true" tabindex="-1"></a><span class="co"># right now this is used only for GaLore algorithm</span></span>
-<span id="cb1-1085"><a href="#cb1-1085" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_target_modules</span><span class="kw">:</span><span class="at"> list[str] | Literal['all_linear'] | None</span></span>
-<span id="cb1-1086"><a href="#cb1-1086" aria-hidden="true" tabindex="-1"></a><span class="co"># Path to torch distx for optim 'adamw_anyprecision'</span></span>
-<span id="cb1-1087"><a href="#cb1-1087" aria-hidden="true" tabindex="-1"></a><span class="fu">torchdistx_path</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1088"><a href="#cb1-1088" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_scheduler</span><span class="kw">:</span><span class="at"> SchedulerType | Literal['one_cycle'] | Literal['rex'] | None = SchedulerType.COSINE</span></span>
-<span id="cb1-1089"><a href="#cb1-1089" aria-hidden="true" tabindex="-1"></a><span class="co"># Specify a scheduler and kwargs to use with the optimizer</span></span>
-<span id="cb1-1090"><a href="#cb1-1090" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_scheduler_kwargs</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
-<span id="cb1-1091"><a href="#cb1-1091" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_quadratic_warmup</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1092"><a href="#cb1-1092" aria-hidden="true" tabindex="-1"></a><span class="co"># decay lr to some percentage of the peak lr, e.g. cosine_min_lr_ratio=0.1 for 10% of</span></span>
-<span id="cb1-1093"><a href="#cb1-1093" aria-hidden="true" tabindex="-1"></a><span class="co"># peak lr</span></span>
-<span id="cb1-1094"><a href="#cb1-1094" aria-hidden="true" tabindex="-1"></a><span class="fu">cosine_min_lr_ratio</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1095"><a href="#cb1-1095" aria-hidden="true" tabindex="-1"></a><span class="co"># freeze lr at some percentage of the step, e.g. cosine_constant_lr_ratio=0.8 means</span></span>
-<span id="cb1-1096"><a href="#cb1-1096" aria-hidden="true" tabindex="-1"></a><span class="co"># start cosine_min_lr at 80% of training step</span></span>
-<span id="cb1-1097"><a href="#cb1-1097" aria-hidden="true" tabindex="-1"></a><span class="fu">cosine_constant_lr_ratio</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1098"><a href="#cb1-1098" aria-hidden="true" tabindex="-1"></a><span class="co"># Learning rate div factor</span></span>
-<span id="cb1-1099"><a href="#cb1-1099" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_div_factor</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1100"><a href="#cb1-1100" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1101"><a href="#cb1-1101" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_groups</span><span class="kw">:</span><span class="at"> list[LrGroup] | None</span></span>
-<span id="cb1-1102"><a href="#cb1-1102" aria-hidden="true" tabindex="-1"></a><span class="co">  # For LrGroup:</span></span>
-<span id="cb1-1103"><a href="#cb1-1103" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> str (required)</span></span>
-<span id="cb1-1104"><a href="#cb1-1104" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">modules</span><span class="kw">:</span><span class="at"> list[str] (required)</span></span>
-<span id="cb1-1105"><a href="#cb1-1105" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">lr</span><span class="kw">:</span><span class="at"> float (required)</span></span>
-<span id="cb1-1106"><a href="#cb1-1106" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1107"><a href="#cb1-1107" aria-hidden="true" tabindex="-1"></a><span class="co"># adamw hyperparams</span></span>
-<span id="cb1-1108"><a href="#cb1-1108" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_epsilon</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1109"><a href="#cb1-1109" aria-hidden="true" tabindex="-1"></a><span class="co"># only used for CAME Optimizer</span></span>
-<span id="cb1-1110"><a href="#cb1-1110" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_epsilon2</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1111"><a href="#cb1-1111" aria-hidden="true" tabindex="-1"></a><span class="co"># adamw hyperparams</span></span>
-<span id="cb1-1112"><a href="#cb1-1112" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_beta1</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1113"><a href="#cb1-1113" aria-hidden="true" tabindex="-1"></a><span class="co"># adamw hyperparams</span></span>
-<span id="cb1-1114"><a href="#cb1-1114" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_beta2</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1115"><a href="#cb1-1115" aria-hidden="true" tabindex="-1"></a><span class="co"># only used for CAME Optimizer</span></span>
-<span id="cb1-1116"><a href="#cb1-1116" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_beta3</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1117"><a href="#cb1-1117" aria-hidden="true" tabindex="-1"></a><span class="co"># Gradient clipping max norm</span></span>
-<span id="cb1-1118"><a href="#cb1-1118" aria-hidden="true" tabindex="-1"></a><span class="fu">max_grad_norm</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1119"><a href="#cb1-1119" aria-hidden="true" tabindex="-1"></a><span class="fu">num_epochs</span><span class="kw">:</span><span class="at"> float = 1.0</span></span>
-<span id="cb1-1120"><a href="#cb1-1120" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1121"><a href="#cb1-1121" aria-hidden="true" tabindex="-1"></a><span class="fu">use_wandb</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1122"><a href="#cb1-1122" aria-hidden="true" tabindex="-1"></a><span class="co"># Set the name of your wandb run</span></span>
-<span id="cb1-1123"><a href="#cb1-1123" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1124"><a href="#cb1-1124" aria-hidden="true" tabindex="-1"></a><span class="co"># Set the ID of your wandb run</span></span>
-<span id="cb1-1125"><a href="#cb1-1125" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_run_id</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1126"><a href="#cb1-1126" aria-hidden="true" tabindex="-1"></a><span class="co"># "offline" to save run metadata locally and not sync to the server, "disabled" to turn</span></span>
-<span id="cb1-1127"><a href="#cb1-1127" aria-hidden="true" tabindex="-1"></a><span class="co"># off wandb</span></span>
-<span id="cb1-1128"><a href="#cb1-1128" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_mode</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1129"><a href="#cb1-1129" aria-hidden="true" tabindex="-1"></a><span class="co"># Your wandb project name</span></span>
-<span id="cb1-1130"><a href="#cb1-1130" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_project</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1131"><a href="#cb1-1131" aria-hidden="true" tabindex="-1"></a><span class="co"># A wandb Team name if using a Team</span></span>
-<span id="cb1-1132"><a href="#cb1-1132" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_entity</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1133"><a href="#cb1-1133" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_watch</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1134"><a href="#cb1-1134" aria-hidden="true" tabindex="-1"></a><span class="co"># "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only</span></span>
-<span id="cb1-1135"><a href="#cb1-1135" aria-hidden="true" tabindex="-1"></a><span class="co"># at the end of training</span></span>
-<span id="cb1-1136"><a href="#cb1-1136" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_log_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1137"><a href="#cb1-1137" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1138"><a href="#cb1-1138" aria-hidden="true" tabindex="-1"></a><span class="fu">use_mlflow</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1139"><a href="#cb1-1139" aria-hidden="true" tabindex="-1"></a><span class="co"># URI to mlflow</span></span>
-<span id="cb1-1140"><a href="#cb1-1140" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_tracking_uri</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1141"><a href="#cb1-1141" aria-hidden="true" tabindex="-1"></a><span class="co"># Your experiment name</span></span>
-<span id="cb1-1142"><a href="#cb1-1142" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_experiment_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1143"><a href="#cb1-1143" aria-hidden="true" tabindex="-1"></a><span class="co"># Your run name</span></span>
-<span id="cb1-1144"><a href="#cb1-1144" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_run_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1145"><a href="#cb1-1145" aria-hidden="true" tabindex="-1"></a><span class="co"># set to true to copy each saved checkpoint on each save to mlflow artifact registry</span></span>
-<span id="cb1-1146"><a href="#cb1-1146" aria-hidden="true" tabindex="-1"></a><span class="fu">hf_mlflow_log_artifacts</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1147"><a href="#cb1-1147" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1148"><a href="#cb1-1148" aria-hidden="true" tabindex="-1"></a><span class="co"># Enable or disable Comet integration.</span></span>
-<span id="cb1-1149"><a href="#cb1-1149" aria-hidden="true" tabindex="-1"></a><span class="fu">use_comet</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1150"><a href="#cb1-1150" aria-hidden="true" tabindex="-1"></a><span class="co"># API key for Comet. Recommended to set via `comet login`.</span></span>
-<span id="cb1-1151"><a href="#cb1-1151" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_api_key</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1152"><a href="#cb1-1152" aria-hidden="true" tabindex="-1"></a><span class="co"># Workspace name in Comet. Defaults to the user's default workspace.</span></span>
-<span id="cb1-1153"><a href="#cb1-1153" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_workspace</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1154"><a href="#cb1-1154" aria-hidden="true" tabindex="-1"></a><span class="co"># Project name in Comet. Defaults to Uncategorized.</span></span>
-<span id="cb1-1155"><a href="#cb1-1155" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_project_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1156"><a href="#cb1-1156" aria-hidden="true" tabindex="-1"></a><span class="co"># Identifier for the experiment. Used to append data to an existing experiment or</span></span>
-<span id="cb1-1157"><a href="#cb1-1157" aria-hidden="true" tabindex="-1"></a><span class="co"># control the key of new experiments. Default to a random key.</span></span>
-<span id="cb1-1158"><a href="#cb1-1158" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_experiment_key</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1159"><a href="#cb1-1159" aria-hidden="true" tabindex="-1"></a><span class="co"># Create a new experiment ("create") or log to an existing one ("get"). Default</span></span>
-<span id="cb1-1160"><a href="#cb1-1160" aria-hidden="true" tabindex="-1"></a><span class="co"># ("get_or_create") auto-selects based on configuration.</span></span>
-<span id="cb1-1161"><a href="#cb1-1161" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_mode</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1162"><a href="#cb1-1162" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to True to log data to Comet server, or False for offline storage. Default is</span></span>
-<span id="cb1-1163"><a href="#cb1-1163" aria-hidden="true" tabindex="-1"></a><span class="co"># True.</span></span>
-<span id="cb1-1164"><a href="#cb1-1164" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_online</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1165"><a href="#cb1-1165" aria-hidden="true" tabindex="-1"></a><span class="co"># Dictionary for additional configuration settings, see the doc for more details.</span></span>
-<span id="cb1-1166"><a href="#cb1-1166" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_experiment_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
-<span id="cb1-1167"><a href="#cb1-1167" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1168"><a href="#cb1-1168" aria-hidden="true" tabindex="-1"></a><span class="co"># the number of activate layers in LISA</span></span>
-<span id="cb1-1169"><a href="#cb1-1169" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_n_layers</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1170"><a href="#cb1-1170" aria-hidden="true" tabindex="-1"></a><span class="co"># how often to switch layers in LISA</span></span>
-<span id="cb1-1171"><a href="#cb1-1171" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_step_interval</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1172"><a href="#cb1-1172" aria-hidden="true" tabindex="-1"></a><span class="co"># path under the model to access the layers</span></span>
-<span id="cb1-1173"><a href="#cb1-1173" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_layers_attribute</span><span class="kw">:</span><span class="at"> str | None = model.layers</span></span>
-<span id="cb1-1174"><a href="#cb1-1174" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1175"><a href="#cb1-1175" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_title</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1176"><a href="#cb1-1176" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_share</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1177"><a href="#cb1-1177" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_server_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1178"><a href="#cb1-1178" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_server_port</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1179"><a href="#cb1-1179" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_max_new_tokens</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1180"><a href="#cb1-1180" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_temperature</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1181"><a href="#cb1-1181" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1182"><a href="#cb1-1182" aria-hidden="true" tabindex="-1"></a><span class="fu">use_ray</span><span class="kw">:</span><span class="at"> bool = False</span></span>
-<span id="cb1-1183"><a href="#cb1-1183" aria-hidden="true" tabindex="-1"></a><span class="fu">ray_run_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1184"><a href="#cb1-1184" aria-hidden="true" tabindex="-1"></a><span class="fu">ray_num_workers</span><span class="kw">:</span><span class="at"> int = 1</span></span>
-<span id="cb1-1185"><a href="#cb1-1185" aria-hidden="true" tabindex="-1"></a><span class="fu">resources_per_worker</span><span class="kw">:</span><span class="at"> dict</span></span>
-<span id="cb1-1186"><a href="#cb1-1186" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1187"><a href="#cb1-1187" aria-hidden="true" tabindex="-1"></a><span class="co"># The size of the image to resize to. It can be an integer (resized into padded-square</span></span>
-<span id="cb1-1188"><a href="#cb1-1188" aria-hidden="true" tabindex="-1"></a><span class="co"># image) or a tuple (width, height).If not provided, we will attempt to load from</span></span>
-<span id="cb1-1189"><a href="#cb1-1189" aria-hidden="true" tabindex="-1"></a><span class="co"># preprocessor.size, otherwise, images won't be resized.</span></span>
-<span id="cb1-1190"><a href="#cb1-1190" aria-hidden="true" tabindex="-1"></a><span class="fu">image_size</span><span class="kw">:</span><span class="at"> int | tuple[int, int] | None</span></span>
-<span id="cb1-1191"><a href="#cb1-1191" aria-hidden="true" tabindex="-1"></a><span class="co"># The resampling algorithm to use for image resizing. Default is bilinear. Please refer</span></span>
-<span id="cb1-1192"><a href="#cb1-1192" aria-hidden="true" tabindex="-1"></a><span class="co"># to PIL.Image.Resampling for more details.</span></span>
-<span id="cb1-1193"><a href="#cb1-1193" aria-hidden="true" tabindex="-1"></a><span class="fu">image_resize_algorithm</span><span class="kw">:</span><span class="at"> Literal['bilinear', 'bicubic', 'lanczos'] | Resampling | None</span></span>
-<span id="cb1-1194"><a href="#cb1-1194" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1195"><a href="#cb1-1195" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides to the base model configuration</span></span>
-<span id="cb1-1196"><a href="#cb1-1196" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
-<span id="cb1-1197"><a href="#cb1-1197" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides the base model loading from_pretrained</span></span>
-<span id="cb1-1198"><a href="#cb1-1198" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_kwargs</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
-<span id="cb1-1199"><a href="#cb1-1199" aria-hidden="true" tabindex="-1"></a><span class="co"># If you want to specify the type of model to load, AutoModelForCausalLM is a good</span></span>
-<span id="cb1-1200"><a href="#cb1-1200" aria-hidden="true" tabindex="-1"></a><span class="co"># choice too</span></span>
-<span id="cb1-1201"><a href="#cb1-1201" aria-hidden="true" tabindex="-1"></a><span class="fu">type_of_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1202"><a href="#cb1-1202" aria-hidden="true" tabindex="-1"></a><span class="co"># You can specify to choose a specific model revision from huggingface hub</span></span>
-<span id="cb1-1203"><a href="#cb1-1203" aria-hidden="true" tabindex="-1"></a><span class="fu">revision_of_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1204"><a href="#cb1-1204" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1205"><a href="#cb1-1205" aria-hidden="true" tabindex="-1"></a><span class="fu">max_packed_sequence_len</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1206"><a href="#cb1-1206" aria-hidden="true" tabindex="-1"></a><span class="fu">rope_scaling</span><span class="kw">:</span><span class="at"> Any | None</span></span>
-<span id="cb1-1207"><a href="#cb1-1207" aria-hidden="true" tabindex="-1"></a><span class="fu">noisy_embedding_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1208"><a href="#cb1-1208" aria-hidden="true" tabindex="-1"></a><span class="fu">dpo_beta</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1209"><a href="#cb1-1209" aria-hidden="true" tabindex="-1"></a><span class="fu">evaluation_strategy</span><span class="kw">:</span><span class="at"> str | None</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb1-921"><a href="#cb1-921" aria-hidden="true" tabindex="-1"></a><span class="fu">is_preprocess</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-922"><a href="#cb1-922" aria-hidden="true" tabindex="-1"></a><span class="fu">preprocess_iterable</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-923"><a href="#cb1-923" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-924"><a href="#cb1-924" aria-hidden="true" tabindex="-1"></a><span class="co"># Total number of tokens - internal use</span></span>
+<span id="cb1-925"><a href="#cb1-925" aria-hidden="true" tabindex="-1"></a><span class="fu">total_num_tokens</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-926"><a href="#cb1-926" aria-hidden="true" tabindex="-1"></a><span class="fu">total_supervised_tokens</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-927"><a href="#cb1-927" aria-hidden="true" tabindex="-1"></a><span class="co"># You can set these packing optimizations AFTER starting a training at least once. The</span></span>
+<span id="cb1-928"><a href="#cb1-928" aria-hidden="true" tabindex="-1"></a><span class="co"># trainer will provide recommended values for these values.</span></span>
+<span id="cb1-929"><a href="#cb1-929" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing_eff_est</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-930"><a href="#cb1-930" aria-hidden="true" tabindex="-1"></a><span class="fu">axolotl_config_path</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-931"><a href="#cb1-931" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-932"><a href="#cb1-932" aria-hidden="true" tabindex="-1"></a><span class="co"># Internal use only - Used to identify which the model is based on</span></span>
+<span id="cb1-933"><a href="#cb1-933" aria-hidden="true" tabindex="-1"></a><span class="fu">is_falcon_derived_model</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-934"><a href="#cb1-934" aria-hidden="true" tabindex="-1"></a><span class="co"># Internal use only - Used to identify which the model is based on</span></span>
+<span id="cb1-935"><a href="#cb1-935" aria-hidden="true" tabindex="-1"></a><span class="fu">is_llama_derived_model</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-936"><a href="#cb1-936" aria-hidden="true" tabindex="-1"></a><span class="co"># Internal use only - Used to identify which the model is based on. Please note that if</span></span>
+<span id="cb1-937"><a href="#cb1-937" aria-hidden="true" tabindex="-1"></a><span class="co"># you set this to true, `padding_side` will be set to 'left' by default</span></span>
+<span id="cb1-938"><a href="#cb1-938" aria-hidden="true" tabindex="-1"></a><span class="fu">is_mistral_derived_model</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-939"><a href="#cb1-939" aria-hidden="true" tabindex="-1"></a><span class="co"># Internal use only - Used to identify which the model is based on</span></span>
+<span id="cb1-940"><a href="#cb1-940" aria-hidden="true" tabindex="-1"></a><span class="fu">is_qwen_derived_model</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-941"><a href="#cb1-941" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-942"><a href="#cb1-942" aria-hidden="true" tabindex="-1"></a><span class="co"># Add plugins to extend the pipeline. See `src/axolotl/integrations` for the available</span></span>
+<span id="cb1-943"><a href="#cb1-943" aria-hidden="true" tabindex="-1"></a><span class="co"># plugins or doc below for more details.</span></span>
+<span id="cb1-944"><a href="#cb1-944" aria-hidden="true" tabindex="-1"></a><span class="co"># https://docs.axolotl.ai/docs/custom_integrations.html</span></span>
+<span id="cb1-945"><a href="#cb1-945" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span><span class="at"> list[str] | None</span></span>
+<span id="cb1-946"><a href="#cb1-946" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-947"><a href="#cb1-947" aria-hidden="true" tabindex="-1"></a><span class="co"># This is the huggingface model that contains *.pt, *.safetensors, or *.bin files. This</span></span>
+<span id="cb1-948"><a href="#cb1-948" aria-hidden="true" tabindex="-1"></a><span class="co"># can also be a relative path to a model on disk</span></span>
+<span id="cb1-949"><a href="#cb1-949" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> str (required)</span></span>
+<span id="cb1-950"><a href="#cb1-950" aria-hidden="true" tabindex="-1"></a><span class="co"># If the base_model repo on hf hub doesn't include configuration .json files, You can</span></span>
+<span id="cb1-951"><a href="#cb1-951" aria-hidden="true" tabindex="-1"></a><span class="co"># set that here, or leave this empty to default to base_model</span></span>
+<span id="cb1-952"><a href="#cb1-952" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model_config</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-953"><a href="#cb1-953" aria-hidden="true" tabindex="-1"></a><span class="fu">cls_model_config</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-954"><a href="#cb1-954" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional tokenizer configuration path in case you want to use a different tokenizer</span></span>
+<span id="cb1-955"><a href="#cb1-955" aria-hidden="true" tabindex="-1"></a><span class="co"># than the one defined in the base model</span></span>
+<span id="cb1-956"><a href="#cb1-956" aria-hidden="true" tabindex="-1"></a><span class="fu">tokenizer_config</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-957"><a href="#cb1-957" aria-hidden="true" tabindex="-1"></a><span class="co"># use_fast option for tokenizer loading from_pretrained, default to True</span></span>
+<span id="cb1-958"><a href="#cb1-958" aria-hidden="true" tabindex="-1"></a><span class="fu">tokenizer_use_fast</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-959"><a href="#cb1-959" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use the legacy tokenizer setting, defaults to True</span></span>
+<span id="cb1-960"><a href="#cb1-960" aria-hidden="true" tabindex="-1"></a><span class="fu">tokenizer_legacy</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-961"><a href="#cb1-961" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use mistral-common tokenizer. If set to True, it will use the mistral-</span></span>
+<span id="cb1-962"><a href="#cb1-962" aria-hidden="true" tabindex="-1"></a><span class="co"># common tokenizer.</span></span>
+<span id="cb1-963"><a href="#cb1-963" aria-hidden="true" tabindex="-1"></a><span class="fu">tokenizer_use_mistral_common</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-964"><a href="#cb1-964" aria-hidden="true" tabindex="-1"></a><span class="co"># Corresponding tokenizer for the model AutoTokenizer is a good choice</span></span>
+<span id="cb1-965"><a href="#cb1-965" aria-hidden="true" tabindex="-1"></a><span class="fu">tokenizer_type</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-966"><a href="#cb1-966" aria-hidden="true" tabindex="-1"></a><span class="co"># transformers processor class</span></span>
+<span id="cb1-967"><a href="#cb1-967" aria-hidden="true" tabindex="-1"></a><span class="fu">processor_type</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-968"><a href="#cb1-968" aria-hidden="true" tabindex="-1"></a><span class="co"># Trust remote code for untrusted source</span></span>
+<span id="cb1-969"><a href="#cb1-969" aria-hidden="true" tabindex="-1"></a><span class="fu">trust_remote_code</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-970"><a href="#cb1-970" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-971"><a href="#cb1-971" aria-hidden="true" tabindex="-1"></a><span class="co"># Where to save the full-finetuned model to</span></span>
+<span id="cb1-972"><a href="#cb1-972" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="at"> str = ./model-out</span></span>
+<span id="cb1-973"><a href="#cb1-973" aria-hidden="true" tabindex="-1"></a><span class="co"># push checkpoints to hub</span></span>
+<span id="cb1-974"><a href="#cb1-974" aria-hidden="true" tabindex="-1"></a><span class="fu">hub_model_id</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-975"><a href="#cb1-975" aria-hidden="true" tabindex="-1"></a><span class="co"># how to push checkpoints to hub</span></span>
+<span id="cb1-976"><a href="#cb1-976" aria-hidden="true" tabindex="-1"></a><span class="fu">hub_strategy</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-977"><a href="#cb1-977" aria-hidden="true" tabindex="-1"></a><span class="co"># Save model as safetensors (require safetensors package). Default True</span></span>
+<span id="cb1-978"><a href="#cb1-978" aria-hidden="true" tabindex="-1"></a><span class="fu">save_safetensors</span><span class="kw">:</span><span class="at"> bool | None = True</span></span>
+<span id="cb1-979"><a href="#cb1-979" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-980"><a href="#cb1-980" aria-hidden="true" tabindex="-1"></a><span class="co"># This will attempt to quantize the model down to 8 bits and use adam 8 bit optimizer</span></span>
+<span id="cb1-981"><a href="#cb1-981" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_8bit</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
+<span id="cb1-982"><a href="#cb1-982" aria-hidden="true" tabindex="-1"></a><span class="co"># Use bitsandbytes 4 bit</span></span>
+<span id="cb1-983"><a href="#cb1-983" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_4bit</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
+<span id="cb1-984"><a href="#cb1-984" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-985"><a href="#cb1-985" aria-hidden="true" tabindex="-1"></a><span class="co"># If you want to use 'lora' or 'qlora' or leave blank to train all parameters in</span></span>
+<span id="cb1-986"><a href="#cb1-986" aria-hidden="true" tabindex="-1"></a><span class="co"># original model</span></span>
+<span id="cb1-987"><a href="#cb1-987" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-988"><a href="#cb1-988" aria-hidden="true" tabindex="-1"></a><span class="co"># If you already have a lora model trained that you want to load, put that here. This</span></span>
+<span id="cb1-989"><a href="#cb1-989" aria-hidden="true" tabindex="-1"></a><span class="co"># means after training, if you want to test the model, you should set this to the value</span></span>
+<span id="cb1-990"><a href="#cb1-990" aria-hidden="true" tabindex="-1"></a><span class="co"># of `output_dir`. Note that if you merge an adapter to the base model, a new</span></span>
+<span id="cb1-991"><a href="#cb1-991" aria-hidden="true" tabindex="-1"></a><span class="co"># subdirectory `merged` will be created under the `output_dir`.</span></span>
+<span id="cb1-992"><a href="#cb1-992" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_model_dir</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-993"><a href="#cb1-993" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_r</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-994"><a href="#cb1-994" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_alpha</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-995"><a href="#cb1-995" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_fan_in_fan_out</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-996"><a href="#cb1-996" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_modules</span><span class="kw">:</span><span class="at"> str | list[str] | None</span></span>
+<span id="cb1-997"><a href="#cb1-997" aria-hidden="true" tabindex="-1"></a><span class="co"># If true, will target all linear modules</span></span>
+<span id="cb1-998"><a href="#cb1-998" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_linear</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-999"><a href="#cb1-999" aria-hidden="true" tabindex="-1"></a><span class="co"># If you added new tokens to the tokenizer, you may need to save some LoRA modules</span></span>
+<span id="cb1-1000"><a href="#cb1-1000" aria-hidden="true" tabindex="-1"></a><span class="co"># because they need to know the new tokens. For LLaMA and Mistral, you need to save</span></span>
+<span id="cb1-1001"><a href="#cb1-1001" aria-hidden="true" tabindex="-1"></a><span class="co"># `embed_tokens` and `lm_head`. It may vary for other models. `embed_tokens` converts</span></span>
+<span id="cb1-1002"><a href="#cb1-1002" aria-hidden="true" tabindex="-1"></a><span class="co"># tokens to embeddings, and `lm_head` converts embeddings to token probabilities.</span></span>
+<span id="cb1-1003"><a href="#cb1-1003" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_modules_to_save</span><span class="kw">:</span><span class="at"> list[str] | None</span></span>
+<span id="cb1-1004"><a href="#cb1-1004" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_dropout</span><span class="kw">:</span><span class="at"> float | None = 0.0</span></span>
+<span id="cb1-1005"><a href="#cb1-1005" aria-hidden="true" tabindex="-1"></a><span class="co"># The layer indices to transform, otherwise, apply to all layers</span></span>
+<span id="cb1-1006"><a href="#cb1-1006" aria-hidden="true" tabindex="-1"></a><span class="fu">peft_layers_to_transform</span><span class="kw">:</span><span class="at"> list[int] | None</span></span>
+<span id="cb1-1007"><a href="#cb1-1007" aria-hidden="true" tabindex="-1"></a><span class="fu">peft_layers_pattern</span><span class="kw">:</span><span class="at"> list[str] | None</span></span>
+<span id="cb1-1008"><a href="#cb1-1008" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1009"><a href="#cb1-1009" aria-hidden="true" tabindex="-1"></a><span class="fu">peft</span><span class="kw">:</span><span class="at"> PeftConfig | None</span></span>
+<span id="cb1-1010"><a href="#cb1-1010" aria-hidden="true" tabindex="-1"></a><span class="co">  # For PeftConfig:</span></span>
+<span id="cb1-1011"><a href="#cb1-1011" aria-hidden="true" tabindex="-1"></a><span class="co">  # Configuration options for loftq initialization for LoRA</span></span>
+<span id="cb1-1012"><a href="#cb1-1012" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">loftq_config</span><span class="kw">:</span><span class="at"> LoftQConfig | None</span></span>
+<span id="cb1-1013"><a href="#cb1-1013" aria-hidden="true" tabindex="-1"></a><span class="co">    # For LoftQConfig:</span></span>
+<span id="cb1-1014"><a href="#cb1-1014" aria-hidden="true" tabindex="-1"></a><span class="co">    # typically 4 bits</span></span>
+<span id="cb1-1015"><a href="#cb1-1015" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">loftq_bits</span><span class="kw">:</span><span class="at"> int = 4</span></span>
+<span id="cb1-1016"><a href="#cb1-1016" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1017"><a href="#cb1-1017" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use DoRA.</span></span>
+<span id="cb1-1018"><a href="#cb1-1018" aria-hidden="true" tabindex="-1"></a><span class="fu">peft_use_dora</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1019"><a href="#cb1-1019" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use RSLoRA.</span></span>
+<span id="cb1-1020"><a href="#cb1-1020" aria-hidden="true" tabindex="-1"></a><span class="fu">peft_use_rslora</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1021"><a href="#cb1-1021" aria-hidden="true" tabindex="-1"></a><span class="co"># List of layer indices to replicate.</span></span>
+<span id="cb1-1022"><a href="#cb1-1022" aria-hidden="true" tabindex="-1"></a><span class="fu">peft_layer_replication</span><span class="kw">:</span><span class="at"> list[tuple[int, int]] | None</span></span>
+<span id="cb1-1023"><a href="#cb1-1023" aria-hidden="true" tabindex="-1"></a><span class="co"># How to initialize LoRA weights. Default to True which is MS original implementation.</span></span>
+<span id="cb1-1024"><a href="#cb1-1024" aria-hidden="true" tabindex="-1"></a><span class="fu">peft_init_lora_weights</span><span class="kw">:</span><span class="at"> bool | str | None</span></span>
+<span id="cb1-1025"><a href="#cb1-1025" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1026"><a href="#cb1-1026" aria-hidden="true" tabindex="-1"></a><span class="co"># load qlora model in sharded format for FSDP using answer.ai technique.</span></span>
+<span id="cb1-1027"><a href="#cb1-1027" aria-hidden="true" tabindex="-1"></a><span class="fu">qlora_sharded_model_loading</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
+<span id="cb1-1028"><a href="#cb1-1028" aria-hidden="true" tabindex="-1"></a><span class="co"># Do the LoRA/PEFT loading on CPU -- this is required if the base model is so large it</span></span>
+<span id="cb1-1029"><a href="#cb1-1029" aria-hidden="true" tabindex="-1"></a><span class="co"># takes up most or all of the available GPU VRAM, e.g. during a model and LoRA merge</span></span>
+<span id="cb1-1030"><a href="#cb1-1030" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_on_cpu</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1031"><a href="#cb1-1031" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether you are training a 4-bit GPTQ quantized model</span></span>
+<span id="cb1-1032"><a href="#cb1-1032" aria-hidden="true" tabindex="-1"></a><span class="fu">gptq</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1033"><a href="#cb1-1033" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides to the bnb 4bit quantization configuration</span></span>
+<span id="cb1-1034"><a href="#cb1-1034" aria-hidden="true" tabindex="-1"></a><span class="fu">bnb_config_kwargs</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
+<span id="cb1-1035"><a href="#cb1-1035" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1036"><a href="#cb1-1036" aria-hidden="true" tabindex="-1"></a><span class="co"># loraplus learning rate ratio lr_B / lr_A. Recommended value is 2^4.</span></span>
+<span id="cb1-1037"><a href="#cb1-1037" aria-hidden="true" tabindex="-1"></a><span class="fu">loraplus_lr_ratio</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1038"><a href="#cb1-1038" aria-hidden="true" tabindex="-1"></a><span class="co"># loraplus learning rate for lora embedding layers. Default value is 1e-6.</span></span>
+<span id="cb1-1039"><a href="#cb1-1039" aria-hidden="true" tabindex="-1"></a><span class="fu">loraplus_lr_embedding</span><span class="kw">:</span><span class="at"> float | None = 1e-06</span></span>
+<span id="cb1-1040"><a href="#cb1-1040" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1041"><a href="#cb1-1041" aria-hidden="true" tabindex="-1"></a><span class="fu">merge_lora</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1042"><a href="#cb1-1042" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1043"><a href="#cb1-1043" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of steps per ReLoRA restart</span></span>
+<span id="cb1-1044"><a href="#cb1-1044" aria-hidden="true" tabindex="-1"></a><span class="fu">relora_steps</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1045"><a href="#cb1-1045" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of per-restart warmup steps</span></span>
+<span id="cb1-1046"><a href="#cb1-1046" aria-hidden="true" tabindex="-1"></a><span class="fu">relora_warmup_steps</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1047"><a href="#cb1-1047" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of anneal steps for each relora cycle</span></span>
+<span id="cb1-1048"><a href="#cb1-1048" aria-hidden="true" tabindex="-1"></a><span class="fu">relora_anneal_steps</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1049"><a href="#cb1-1049" aria-hidden="true" tabindex="-1"></a><span class="co"># threshold for optimizer magnitude when pruning</span></span>
+<span id="cb1-1050"><a href="#cb1-1050" aria-hidden="true" tabindex="-1"></a><span class="fu">relora_prune_ratio</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1051"><a href="#cb1-1051" aria-hidden="true" tabindex="-1"></a><span class="co"># True to perform lora weight merges on cpu during restarts, for modest gpu memory</span></span>
+<span id="cb1-1052"><a href="#cb1-1052" aria-hidden="true" tabindex="-1"></a><span class="co"># savings</span></span>
+<span id="cb1-1053"><a href="#cb1-1053" aria-hidden="true" tabindex="-1"></a><span class="fu">relora_cpu_offload</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1054"><a href="#cb1-1054" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1055"><a href="#cb1-1055" aria-hidden="true" tabindex="-1"></a><span class="co"># If greater than 1, backpropagation will be skipped and the gradients will be</span></span>
+<span id="cb1-1056"><a href="#cb1-1056" aria-hidden="true" tabindex="-1"></a><span class="co"># accumulated for the given number of steps.</span></span>
+<span id="cb1-1057"><a href="#cb1-1057" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_accumulation_steps</span><span class="kw">:</span><span class="at"> int | None = 1</span></span>
+<span id="cb1-1058"><a href="#cb1-1058" aria-hidden="true" tabindex="-1"></a><span class="co"># The number of samples to include in each batch. This is the number of samples sent to</span></span>
+<span id="cb1-1059"><a href="#cb1-1059" aria-hidden="true" tabindex="-1"></a><span class="co"># each GPU. Batch size per gpu = micro_batch_size * gradient_accumulation_steps</span></span>
+<span id="cb1-1060"><a href="#cb1-1060" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> int | None = 1</span></span>
+<span id="cb1-1061"><a href="#cb1-1061" aria-hidden="true" tabindex="-1"></a><span class="co"># Total batch size, we do not recommended setting this manually</span></span>
+<span id="cb1-1062"><a href="#cb1-1062" aria-hidden="true" tabindex="-1"></a><span class="fu">batch_size</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1063"><a href="#cb1-1063" aria-hidden="true" tabindex="-1"></a><span class="co"># per gpu micro batch size for evals, defaults to value of micro_batch_size</span></span>
+<span id="cb1-1064"><a href="#cb1-1064" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_batch_size</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1065"><a href="#cb1-1065" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1066"><a href="#cb1-1066" aria-hidden="true" tabindex="-1"></a><span class="co"># whether to find batch size that fits in memory. Passed to underlying transformers</span></span>
+<span id="cb1-1067"><a href="#cb1-1067" aria-hidden="true" tabindex="-1"></a><span class="co"># Trainer</span></span>
+<span id="cb1-1068"><a href="#cb1-1068" aria-hidden="true" tabindex="-1"></a><span class="fu">auto_find_batch_size</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1069"><a href="#cb1-1069" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1070"><a href="#cb1-1070" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to mask out or include the human's prompt from the training labels</span></span>
+<span id="cb1-1071"><a href="#cb1-1071" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
+<span id="cb1-1072"><a href="#cb1-1072" aria-hidden="true" tabindex="-1"></a><span class="co"># Group similarly sized data to minimize padding. May be slower to start, as it must</span></span>
+<span id="cb1-1073"><a href="#cb1-1073" aria-hidden="true" tabindex="-1"></a><span class="co"># download and sort the entire dataset. Note that training loss may have an oscillating</span></span>
+<span id="cb1-1074"><a href="#cb1-1074" aria-hidden="true" tabindex="-1"></a><span class="co"># pattern with this enabled.</span></span>
+<span id="cb1-1075"><a href="#cb1-1075" aria-hidden="true" tabindex="-1"></a><span class="fu">group_by_length</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1076"><a href="#cb1-1076" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1077"><a href="#cb1-1077" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> str | float (required)</span></span>
+<span id="cb1-1078"><a href="#cb1-1078" aria-hidden="true" tabindex="-1"></a><span class="fu">embedding_lr</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1079"><a href="#cb1-1079" aria-hidden="true" tabindex="-1"></a><span class="fu">embedding_lr_scale</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1080"><a href="#cb1-1080" aria-hidden="true" tabindex="-1"></a><span class="co"># Specify weight decay</span></span>
+<span id="cb1-1081"><a href="#cb1-1081" aria-hidden="true" tabindex="-1"></a><span class="fu">weight_decay</span><span class="kw">:</span><span class="at"> float | None = 0.0</span></span>
+<span id="cb1-1082"><a href="#cb1-1082" aria-hidden="true" tabindex="-1"></a><span class="co"># Specify optimizer</span></span>
+<span id="cb1-1083"><a href="#cb1-1083" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> OptimizerNames | CustomSupportedOptimizers | None = OptimizerNames.ADAMW_TORCH_FUSED</span></span>
+<span id="cb1-1084"><a href="#cb1-1084" aria-hidden="true" tabindex="-1"></a><span class="co"># Dictionary of arguments to pass to the optimizer</span></span>
+<span id="cb1-1085"><a href="#cb1-1085" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span><span class="at"> str | dict[str, Any] | None</span></span>
+<span id="cb1-1086"><a href="#cb1-1086" aria-hidden="true" tabindex="-1"></a><span class="co"># The target modules to optimize, i.e. the module names that you would like to train,</span></span>
+<span id="cb1-1087"><a href="#cb1-1087" aria-hidden="true" tabindex="-1"></a><span class="co"># right now this is used only for GaLore algorithm</span></span>
+<span id="cb1-1088"><a href="#cb1-1088" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_target_modules</span><span class="kw">:</span><span class="at"> list[str] | Literal['all_linear'] | None</span></span>
+<span id="cb1-1089"><a href="#cb1-1089" aria-hidden="true" tabindex="-1"></a><span class="co"># Path to torch distx for optim 'adamw_anyprecision'</span></span>
+<span id="cb1-1090"><a href="#cb1-1090" aria-hidden="true" tabindex="-1"></a><span class="fu">torchdistx_path</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1091"><a href="#cb1-1091" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_scheduler</span><span class="kw">:</span><span class="at"> SchedulerType | Literal['one_cycle'] | Literal['rex'] | None = SchedulerType.COSINE</span></span>
+<span id="cb1-1092"><a href="#cb1-1092" aria-hidden="true" tabindex="-1"></a><span class="co"># Specify a scheduler and kwargs to use with the optimizer</span></span>
+<span id="cb1-1093"><a href="#cb1-1093" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_scheduler_kwargs</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
+<span id="cb1-1094"><a href="#cb1-1094" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_quadratic_warmup</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1095"><a href="#cb1-1095" aria-hidden="true" tabindex="-1"></a><span class="co"># decay lr to some percentage of the peak lr, e.g. cosine_min_lr_ratio=0.1 for 10% of</span></span>
+<span id="cb1-1096"><a href="#cb1-1096" aria-hidden="true" tabindex="-1"></a><span class="co"># peak lr</span></span>
+<span id="cb1-1097"><a href="#cb1-1097" aria-hidden="true" tabindex="-1"></a><span class="fu">cosine_min_lr_ratio</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1098"><a href="#cb1-1098" aria-hidden="true" tabindex="-1"></a><span class="co"># freeze lr at some percentage of the step, e.g. cosine_constant_lr_ratio=0.8 means</span></span>
+<span id="cb1-1099"><a href="#cb1-1099" aria-hidden="true" tabindex="-1"></a><span class="co"># start cosine_min_lr at 80% of training step</span></span>
+<span id="cb1-1100"><a href="#cb1-1100" aria-hidden="true" tabindex="-1"></a><span class="fu">cosine_constant_lr_ratio</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1101"><a href="#cb1-1101" aria-hidden="true" tabindex="-1"></a><span class="co"># Learning rate div factor</span></span>
+<span id="cb1-1102"><a href="#cb1-1102" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_div_factor</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1103"><a href="#cb1-1103" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1104"><a href="#cb1-1104" aria-hidden="true" tabindex="-1"></a><span class="fu">lr_groups</span><span class="kw">:</span><span class="at"> list[LrGroup] | None</span></span>
+<span id="cb1-1105"><a href="#cb1-1105" aria-hidden="true" tabindex="-1"></a><span class="co">  # For LrGroup:</span></span>
+<span id="cb1-1106"><a href="#cb1-1106" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> str (required)</span></span>
+<span id="cb1-1107"><a href="#cb1-1107" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">modules</span><span class="kw">:</span><span class="at"> list[str] (required)</span></span>
+<span id="cb1-1108"><a href="#cb1-1108" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">lr</span><span class="kw">:</span><span class="at"> float (required)</span></span>
+<span id="cb1-1109"><a href="#cb1-1109" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1110"><a href="#cb1-1110" aria-hidden="true" tabindex="-1"></a><span class="co"># adamw hyperparams</span></span>
+<span id="cb1-1111"><a href="#cb1-1111" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_epsilon</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1112"><a href="#cb1-1112" aria-hidden="true" tabindex="-1"></a><span class="co"># only used for CAME Optimizer</span></span>
+<span id="cb1-1113"><a href="#cb1-1113" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_epsilon2</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1114"><a href="#cb1-1114" aria-hidden="true" tabindex="-1"></a><span class="co"># adamw hyperparams</span></span>
+<span id="cb1-1115"><a href="#cb1-1115" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_beta1</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1116"><a href="#cb1-1116" aria-hidden="true" tabindex="-1"></a><span class="co"># adamw hyperparams</span></span>
+<span id="cb1-1117"><a href="#cb1-1117" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_beta2</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1118"><a href="#cb1-1118" aria-hidden="true" tabindex="-1"></a><span class="co"># only used for CAME Optimizer</span></span>
+<span id="cb1-1119"><a href="#cb1-1119" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_beta3</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1120"><a href="#cb1-1120" aria-hidden="true" tabindex="-1"></a><span class="co"># Gradient clipping max norm</span></span>
+<span id="cb1-1121"><a href="#cb1-1121" aria-hidden="true" tabindex="-1"></a><span class="fu">max_grad_norm</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1122"><a href="#cb1-1122" aria-hidden="true" tabindex="-1"></a><span class="fu">num_epochs</span><span class="kw">:</span><span class="at"> float = 1.0</span></span>
+<span id="cb1-1123"><a href="#cb1-1123" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1124"><a href="#cb1-1124" aria-hidden="true" tabindex="-1"></a><span class="fu">use_wandb</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1125"><a href="#cb1-1125" aria-hidden="true" tabindex="-1"></a><span class="co"># Set the name of your wandb run</span></span>
+<span id="cb1-1126"><a href="#cb1-1126" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1127"><a href="#cb1-1127" aria-hidden="true" tabindex="-1"></a><span class="co"># Set the ID of your wandb run</span></span>
+<span id="cb1-1128"><a href="#cb1-1128" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_run_id</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1129"><a href="#cb1-1129" aria-hidden="true" tabindex="-1"></a><span class="co"># "offline" to save run metadata locally and not sync to the server, "disabled" to turn</span></span>
+<span id="cb1-1130"><a href="#cb1-1130" aria-hidden="true" tabindex="-1"></a><span class="co"># off wandb</span></span>
+<span id="cb1-1131"><a href="#cb1-1131" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_mode</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1132"><a href="#cb1-1132" aria-hidden="true" tabindex="-1"></a><span class="co"># Your wandb project name</span></span>
+<span id="cb1-1133"><a href="#cb1-1133" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_project</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1134"><a href="#cb1-1134" aria-hidden="true" tabindex="-1"></a><span class="co"># A wandb Team name if using a Team</span></span>
+<span id="cb1-1135"><a href="#cb1-1135" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_entity</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1136"><a href="#cb1-1136" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_watch</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1137"><a href="#cb1-1137" aria-hidden="true" tabindex="-1"></a><span class="co"># "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only</span></span>
+<span id="cb1-1138"><a href="#cb1-1138" aria-hidden="true" tabindex="-1"></a><span class="co"># at the end of training</span></span>
+<span id="cb1-1139"><a href="#cb1-1139" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_log_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1140"><a href="#cb1-1140" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1141"><a href="#cb1-1141" aria-hidden="true" tabindex="-1"></a><span class="fu">use_mlflow</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1142"><a href="#cb1-1142" aria-hidden="true" tabindex="-1"></a><span class="co"># URI to mlflow</span></span>
+<span id="cb1-1143"><a href="#cb1-1143" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_tracking_uri</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1144"><a href="#cb1-1144" aria-hidden="true" tabindex="-1"></a><span class="co"># Your experiment name</span></span>
+<span id="cb1-1145"><a href="#cb1-1145" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_experiment_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1146"><a href="#cb1-1146" aria-hidden="true" tabindex="-1"></a><span class="co"># Your run name</span></span>
+<span id="cb1-1147"><a href="#cb1-1147" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_run_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1148"><a href="#cb1-1148" aria-hidden="true" tabindex="-1"></a><span class="co"># set to true to copy each saved checkpoint on each save to mlflow artifact registry</span></span>
+<span id="cb1-1149"><a href="#cb1-1149" aria-hidden="true" tabindex="-1"></a><span class="fu">hf_mlflow_log_artifacts</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1150"><a href="#cb1-1150" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1151"><a href="#cb1-1151" aria-hidden="true" tabindex="-1"></a><span class="co"># Enable or disable Comet integration.</span></span>
+<span id="cb1-1152"><a href="#cb1-1152" aria-hidden="true" tabindex="-1"></a><span class="fu">use_comet</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1153"><a href="#cb1-1153" aria-hidden="true" tabindex="-1"></a><span class="co"># API key for Comet. Recommended to set via `comet login`.</span></span>
+<span id="cb1-1154"><a href="#cb1-1154" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_api_key</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1155"><a href="#cb1-1155" aria-hidden="true" tabindex="-1"></a><span class="co"># Workspace name in Comet. Defaults to the user's default workspace.</span></span>
+<span id="cb1-1156"><a href="#cb1-1156" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_workspace</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1157"><a href="#cb1-1157" aria-hidden="true" tabindex="-1"></a><span class="co"># Project name in Comet. Defaults to Uncategorized.</span></span>
+<span id="cb1-1158"><a href="#cb1-1158" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_project_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1159"><a href="#cb1-1159" aria-hidden="true" tabindex="-1"></a><span class="co"># Identifier for the experiment. Used to append data to an existing experiment or</span></span>
+<span id="cb1-1160"><a href="#cb1-1160" aria-hidden="true" tabindex="-1"></a><span class="co"># control the key of new experiments. Default to a random key.</span></span>
+<span id="cb1-1161"><a href="#cb1-1161" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_experiment_key</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1162"><a href="#cb1-1162" aria-hidden="true" tabindex="-1"></a><span class="co"># Create a new experiment ("create") or log to an existing one ("get"). Default</span></span>
+<span id="cb1-1163"><a href="#cb1-1163" aria-hidden="true" tabindex="-1"></a><span class="co"># ("get_or_create") auto-selects based on configuration.</span></span>
+<span id="cb1-1164"><a href="#cb1-1164" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_mode</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1165"><a href="#cb1-1165" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to True to log data to Comet server, or False for offline storage. Default is</span></span>
+<span id="cb1-1166"><a href="#cb1-1166" aria-hidden="true" tabindex="-1"></a><span class="co"># True.</span></span>
+<span id="cb1-1167"><a href="#cb1-1167" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_online</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1168"><a href="#cb1-1168" aria-hidden="true" tabindex="-1"></a><span class="co"># Dictionary for additional configuration settings, see the doc for more details.</span></span>
+<span id="cb1-1169"><a href="#cb1-1169" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_experiment_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
+<span id="cb1-1170"><a href="#cb1-1170" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1171"><a href="#cb1-1171" aria-hidden="true" tabindex="-1"></a><span class="co"># the number of activate layers in LISA</span></span>
+<span id="cb1-1172"><a href="#cb1-1172" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_n_layers</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1173"><a href="#cb1-1173" aria-hidden="true" tabindex="-1"></a><span class="co"># how often to switch layers in LISA</span></span>
+<span id="cb1-1174"><a href="#cb1-1174" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_step_interval</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1175"><a href="#cb1-1175" aria-hidden="true" tabindex="-1"></a><span class="co"># path under the model to access the layers</span></span>
+<span id="cb1-1176"><a href="#cb1-1176" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_layers_attribute</span><span class="kw">:</span><span class="at"> str | None = model.layers</span></span>
+<span id="cb1-1177"><a href="#cb1-1177" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1178"><a href="#cb1-1178" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_title</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1179"><a href="#cb1-1179" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_share</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1180"><a href="#cb1-1180" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_server_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1181"><a href="#cb1-1181" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_server_port</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1182"><a href="#cb1-1182" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_max_new_tokens</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1183"><a href="#cb1-1183" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_temperature</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1184"><a href="#cb1-1184" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1185"><a href="#cb1-1185" aria-hidden="true" tabindex="-1"></a><span class="fu">use_ray</span><span class="kw">:</span><span class="at"> bool = False</span></span>
+<span id="cb1-1186"><a href="#cb1-1186" aria-hidden="true" tabindex="-1"></a><span class="fu">ray_run_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1187"><a href="#cb1-1187" aria-hidden="true" tabindex="-1"></a><span class="fu">ray_num_workers</span><span class="kw">:</span><span class="at"> int = 1</span></span>
+<span id="cb1-1188"><a href="#cb1-1188" aria-hidden="true" tabindex="-1"></a><span class="fu">resources_per_worker</span><span class="kw">:</span><span class="at"> dict</span></span>
+<span id="cb1-1189"><a href="#cb1-1189" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1190"><a href="#cb1-1190" aria-hidden="true" tabindex="-1"></a><span class="co"># The size of the image to resize to. It can be an integer (resized into padded-square</span></span>
+<span id="cb1-1191"><a href="#cb1-1191" aria-hidden="true" tabindex="-1"></a><span class="co"># image) or a tuple (width, height).If not provided, we will attempt to load from</span></span>
+<span id="cb1-1192"><a href="#cb1-1192" aria-hidden="true" tabindex="-1"></a><span class="co"># preprocessor.size, otherwise, images won't be resized.</span></span>
+<span id="cb1-1193"><a href="#cb1-1193" aria-hidden="true" tabindex="-1"></a><span class="fu">image_size</span><span class="kw">:</span><span class="at"> int | tuple[int, int] | None</span></span>
+<span id="cb1-1194"><a href="#cb1-1194" aria-hidden="true" tabindex="-1"></a><span class="co"># The resampling algorithm to use for image resizing. Default is bilinear. Please refer</span></span>
+<span id="cb1-1195"><a href="#cb1-1195" aria-hidden="true" tabindex="-1"></a><span class="co"># to PIL.Image.Resampling for more details.</span></span>
+<span id="cb1-1196"><a href="#cb1-1196" aria-hidden="true" tabindex="-1"></a><span class="fu">image_resize_algorithm</span><span class="kw">:</span><span class="at"> Literal['bilinear', 'bicubic', 'lanczos'] | Resampling | None</span></span>
+<span id="cb1-1197"><a href="#cb1-1197" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1198"><a href="#cb1-1198" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides to the base model configuration</span></span>
+<span id="cb1-1199"><a href="#cb1-1199" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
+<span id="cb1-1200"><a href="#cb1-1200" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides the base model loading from_pretrained</span></span>
+<span id="cb1-1201"><a href="#cb1-1201" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_kwargs</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
+<span id="cb1-1202"><a href="#cb1-1202" aria-hidden="true" tabindex="-1"></a><span class="co"># If you want to specify the type of model to load, AutoModelForCausalLM is a good</span></span>
+<span id="cb1-1203"><a href="#cb1-1203" aria-hidden="true" tabindex="-1"></a><span class="co"># choice too</span></span>
+<span id="cb1-1204"><a href="#cb1-1204" aria-hidden="true" tabindex="-1"></a><span class="fu">type_of_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1205"><a href="#cb1-1205" aria-hidden="true" tabindex="-1"></a><span class="co"># You can specify to choose a specific model revision from huggingface hub</span></span>
+<span id="cb1-1206"><a href="#cb1-1206" aria-hidden="true" tabindex="-1"></a><span class="fu">revision_of_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1207"><a href="#cb1-1207" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1208"><a href="#cb1-1208" aria-hidden="true" tabindex="-1"></a><span class="fu">max_packed_sequence_len</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1209"><a href="#cb1-1209" aria-hidden="true" tabindex="-1"></a><span class="fu">rope_scaling</span><span class="kw">:</span><span class="at"> Any | None</span></span>
+<span id="cb1-1210"><a href="#cb1-1210" aria-hidden="true" tabindex="-1"></a><span class="fu">noisy_embedding_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1211"><a href="#cb1-1211" aria-hidden="true" tabindex="-1"></a><span class="fu">dpo_beta</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1212"><a href="#cb1-1212" aria-hidden="true" tabindex="-1"></a><span class="fu">evaluation_strategy</span><span class="kw">:</span><span class="at"> str | None</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 

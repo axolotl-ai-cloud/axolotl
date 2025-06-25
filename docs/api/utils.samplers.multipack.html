@@ -526,8 +526,9 @@ into fixed-capacity batches to optimize memory usage and training throughput.</p
 <span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    bin_size<span class="op">=</span><span class="dv">200</span>,</span>
 <span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    num_processes<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    safe_mode<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    mp_start_method<span class="op">=</span><span class="st">'fork'</span>,</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Batch sampler class for efficient packing of variable-length sequences</p>
 <p>This sampler packs sequences into fixed-capacity bins (batches) to maximize
 GPU memory utilization and training throughput by reducing padding.</p>
@@ -960,7 +961,7 @@ bins.</p>
 <span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>    bin_size,</span>
 <span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>    num_processes<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>    safe_mode<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>    mp_start_method<span class="op">=</span><span class="st">'spawn'</span>,</span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>    mp_start_method<span class="op">=</span><span class="st">'fork'</span>,</span>
 <span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Pack sequences into bins using parallel processing.</p>
 <section id="parameters-4" class="level4 doc-section doc-section-parameters">
@@ -1021,7 +1022,7 @@ bins.</p>
 <td>mp_start_method</td>
 <td>str | None</td>
 <td>Multiprocessing start method (‘fork’, ‘spawn’, ‘forkserver’). ‘spawn’ is often safer with Numba/PyTorch. Set to None to use system default.</td>
-<td><code>'spawn'</code></td>
+<td><code>'fork'</code></td>
 </tr>
 </tbody>
 </table>
