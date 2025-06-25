@@ -7,6 +7,8 @@ import torch
 import torch.distributed as dist
 from torch import nn
 from torch.utils.hooks import RemovableHandle
+from transformers.modeling_outputs import CausalLMOutputWithPast
+from transformers.utils import ModelOutput
 
 from axolotl.monkeypatch.ring_attn import (
     get_ring_attn_group,
@@ -172,6 +174,8 @@ class SequenceParallelContextManager:
         ring_attn_func: Which ring attention function to use. Currently unused.
         heads_k_stride: Sequence parallelism K head stride size. Passed through to
             `varlen_llama3` `ring_flash_attn` implementation.
+        gather_outputs: Whether to gather outputs after model forward pass across the
+            sequence parallel group.
     """
 
     def __init__(
@@ -181,12 +185,15 @@ class SequenceParallelContextManager:
         gradient_accumulation_steps: int,
         ring_attn_func: RingAttnFunc,
         heads_k_stride: int | None,
+        gather_outputs: bool,
     ):
         self.models = models
         self.sequence_parallel_degree = sequence_parallel_degree
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.ring_attn_func = ring_attn_func
         self.heads_k_stride = heads_k_stride
+        self.gather_outputs = gather_outputs
+
         self._register_ring_attn()
 
         # Set distributed info for local rank
@@ -260,6 +267,21 @@ class SequenceParallelContextManager:
 
             return remaining_args, updated_kwargs
 
+        # Forward post-hook to gather outputs
+        def sequence_parallel_post_hook(_, __, output: ModelOutput) -> ModelOutput:
+            # Gather the sharded outputs
+            output = self._gather_outputs(output)
+
+            # Remove padding if it was added
+            if self.pad_len > 0:
+                for key, value in output.items():
+                    if isinstance(value, torch.Tensor) and value.dim() > 1:
+                        if value.size(1) == self.original_seq_len + self.pad_len:
+                            # Slice to remove padding
+                            output[key] = value[:, : self.original_seq_len].contiguous()
+
+            return output
+
         # Register hooks
         for model in self.models:
             self.hook_handles.append(
@@ -267,3 +289,107 @@ class SequenceParallelContextManager:
                     sequence_parallel_pre_hook, with_kwargs=True
                 )
             )
+            if self.gather_outputs:
+                self.hook_handles.append(
+                    model.register_forward_hook(sequence_parallel_post_hook)
+                )
+
+    def _gather_outputs(self, output: CausalLMOutputWithPast) -> CausalLMOutputWithPast:
+        """Gather sharded outputs from all ranks and reconstruct the full tensor."""
+        for key, value in output.items():
+            if isinstance(value, torch.Tensor) and value.dim() > 1:
+                output[key] = AllGatherWithGrad.apply(value, self.process_group)
+
+        return output
+
+
+class AllGatherWithGrad(torch.autograd.Function):
+    """Custom autograd function for all-gather with selective gradient flow."""
+
+    @staticmethod
+    def forward(
+        ctx: torch.autograd.function.FunctionCtx,
+        input_tensor: torch.Tensor,
+        group: dist.ProcessGroup,
+    ) -> torch.Tensor:
+        """
+        Forward pass of all-gather of data with sequence dimension.
+        Non-local parts are detached to prevent gradient flow.
+
+        Args:
+            ctx: `torch.autograd` function context.
+            input_tensor: Tensor from model output with sequence dimension.
+            group: `torch.distributed` process group.
+
+        Returns:
+            Tensor from gathering the `input_tensor` from across the process group and
+                concatenating along the sequence dimension.
+        """
+        ctx.group = group
+        ctx.rank = dist.get_rank(group)
+        world_size = dist.get_world_size(group)
+
+        # Gather shape metadata
+        local_shape = torch.tensor(list(input_tensor.shape), device=input_tensor.device)
+        all_shapes = [torch.zeros_like(local_shape) for _ in range(world_size)]
+        dist.all_gather(all_shapes, local_shape, group=group)
+
+        # Store sequence lengths for backward pass
+        seq_lens = [int(shape[1].item()) for shape in all_shapes]
+        ctx.seq_lens = seq_lens
+
+        # Perform all_gather operation
+        gathered = [
+            torch.zeros(
+                tuple(shape.tolist()),
+                dtype=input_tensor.dtype,
+                device=input_tensor.device,
+            )
+            for shape in all_shapes
+        ]
+        dist.all_gather(gathered, input_tensor, group=group)
+
+        # Concatenate tensors along sequence dimension
+        result = torch.cat(gathered, dim=1)
+
+        # Detach non-local parts to prevent gradient flow. This preserves VRAM savings
+        # while allowing full sequence access
+        if result.requires_grad:
+            # Create a new tensor with only local part requiring gradients
+            local_start = sum(seq_lens[: ctx.rank])
+            local_end = local_start + seq_lens[ctx.rank]
+
+            # Detach non-local parts
+            if local_start > 0:
+                result[:, :local_start] = result[:, :local_start].detach()
+            if local_end < result.size(1):
+                result[:, local_end:] = result[:, local_end:].detach()
+
+        return result
+
+    @staticmethod
+    def backward(
+        ctx: torch.autograd.function.FunctionCtx, grad_output: torch.Tensor
+    ) -> tuple[torch.Tensor, None]:
+        """
+        Backward pass for all-gather operation.
+
+        Since non-local parts are detached, only gradients for local slice flow back.
+
+        Args:
+            ctx: `torch.autograd` function context.
+            grad_output: Gradient from subsequent layers with respect to the
+                concatenated output tensor.
+
+        Returns:
+            Tuple containing the gradient slice for this rank's input tensor and `None`
+                for the process group parameter which doesn't require gradients.
+        """
+        rank = ctx.rank
+        seq_lens = ctx.seq_lens
+
+        # Extract gradient for this rank's chunk
+        offset = sum(seq_lens[:rank])
+        grad_slice = grad_output[:, offset : offset + seq_lens[rank]].contiguous()
+
+        return grad_slice, None
