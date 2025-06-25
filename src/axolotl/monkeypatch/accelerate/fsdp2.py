@@ -5,15 +5,17 @@ monkeypatch for accelerate fsdp2 fix when modifying ordereddict during interatio
 import sys
 
 import torch
-
-from axolotl.utils.logging import get_logger
 import torch.nn as nn
+
 from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
 
-def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dict, offload_to_cpu: bool = False):
+def fsdp2_load_full_state_dict(
+    accelerator, model: torch.nn.Module, full_sd: dict, offload_to_cpu: bool = False
+):
     """
     Loads the full state dict (could be only on rank 0) into the sharded model. This is done by broadcasting the
     parameters from rank 0 to all other ranks. This function modifies the model in-place.
@@ -27,6 +29,7 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
 
     LOG.info("Broadcasting full state dict to all ranks...")
     import time
+
     start_time = time.time()
     # Rank 0 distributes the full state dict to other ranks
 
@@ -72,7 +75,7 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
         #     full_tensor = torch.empty_like(sharded_meta_param, device="cuda")
         #     dist.broadcast(full_tensor, src=0,
         #                    group=sharded_meta_param.device_mesh.get_group())
-            # Clear immediately
+        # Clear immediately
         # elif not hasattr(sharded_meta_param, "device_mesh"):
         #     full_tensor = torch.empty_like(sharded_meta_param, device="cuda")
         #     dist.broadcast(full_tensor, src=0, group=sharded_meta_param.device_mesh.get_group())
@@ -95,7 +98,7 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
                 full_tensor,
                 sharded_meta_param.device_mesh,
                 sharded_meta_param.placements,
-                src_data_rank=0  # This is the default, but being explicit
+                src_data_rank=0,  # This is the default, but being explicit
             )
         else:
             sharded_param = full_tensor
@@ -106,7 +109,6 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
         #     print(f"param_name: {param_name}\nfull_tensor: {full_tensor}\nsharded_param: {sharded_param}\nsharded_meta_param: {sharded_meta_param}")
         if offload_to_cpu:
             sharded_param = sharded_param.cpu()
-
 
         sharded_sd[param_name] = nn.Parameter(sharded_param)
         del full_tensor
@@ -152,7 +154,9 @@ def fsdp2_load_full_state_dict(accelerator, model: torch.nn.Module, full_sd: dic
     # raise ValueError("Stop here")
     model.load_state_dict(sharded_sd, assign=True, strict=True)
     end_time = time.time()
-    LOG.info(f"Time taken to load full state dict: {(end_time - start_time):.2f} seconds")
+    LOG.info(
+        f"Time taken to load full state dict: {(end_time - start_time):.2f} seconds"
+    )
     log_gpu_memory_usage(LOG, "Memory usage after broadcasting full state dict", 0)
     # raise ValueError("Stop here")
     return model
@@ -248,8 +252,6 @@ def get_state_dict(self, model, unwrap=True):
     return state_dict
 
 
-
-
 def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     """Prepares the model for FSDP2 in-place. Also returns the model to avoid misuse of the original model.
 
@@ -260,13 +262,18 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     Returns:
         `torch.nn.Module`: Prepared model
     """
-    from torch.distributed.fsdp import FSDPModule, MixedPrecisionPolicy, fully_shard
-    from accelerate.utils import is_compiled_module, get_module_children_bottom_up
-    from accelerate.utils.modeling import get_non_persistent_buffers
-    import functools
     import copy
+    import functools
+
+    from accelerate.utils import get_module_children_bottom_up, is_compiled_module
     from accelerate.utils.fsdp_utils import fsdp2_prepare_auto_wrap_policy
-    from torch.distributed.fsdp import CPUOffloadPolicy
+    from accelerate.utils.modeling import get_non_persistent_buffers
+    from torch.distributed.fsdp import (
+        CPUOffloadPolicy,
+        FSDPModule,
+        MixedPrecisionPolicy,
+        fully_shard,
+    )
 
     is_type_fsdp = isinstance(model, FSDPModule) or (
         is_compiled_module(model) and isinstance(model._orig_mod, FSDPModule)
@@ -278,7 +285,10 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     original_sd = model.state_dict()
 
-    from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy, transformer_auto_wrap_policy
+    from torch.distributed.fsdp.wrap import (
+        size_based_auto_wrap_policy,
+        transformer_auto_wrap_policy,
+    )
 
     # We need the `auto_wrap_policy` original type to create a custom poilicy function for sharding
     # This is because `fully_shard` doesn't support old auto wrap policies, rather we have to imitate the behaviour
@@ -334,7 +344,9 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         # We need to keep the original non-persistent buffers, as those MAY not be in the state_dict, resulting in them staying on meta device
         # Also, these buffers aren't getting sharded by default
         # We get the FQNs of all non-persistent buffers, to re-register them after
-        non_persistent_buffer_fqns = get_non_persistent_buffers(model, recurse=True, fqns=True)
+        non_persistent_buffer_fqns = get_non_persistent_buffers(
+            model, recurse=True, fqns=True
+        )
         original_non_persistent_buffers = copy.deepcopy(
             {k: v for k, v in model.named_buffers() if k in non_persistent_buffer_fqns}
         )
@@ -346,28 +358,35 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             model.tie_weights()
 
     is_peft_model = "Peft" in model.__class__.__name__
-    if is_peft_model:  
-        from peft.tuners.lora import LoraLayer 
+    if is_peft_model:
+        from peft.tuners.lora import LoraLayer
     else:
         LoraLayer = None
-    
-    if torch.distributed.get_rank() == 0:
-        import ipdb; ipdb.set_trace()
-    torch.distributed.barrier()
-    auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, auto_wrap_policy_type, model)
+
+    auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(
+        fsdp2_plugin, auto_wrap_policy_type, model
+    )
     if auto_wrap_policy is not None:
         for module in get_module_children_bottom_up(model)[:-1]:
             ignored_params = []
             if is_peft_model and isinstance(module, LoraLayer):
                 for active_adapter in module.active_adapters:
-                    fully_shard(module.lora_A[active_adapter], **fsdp2_kwargs)
-                    fully_shard(module.lora_B[active_adapter], **fsdp2_kwargs)
+                    if module.lora_A:
+                        fully_shard(module.lora_A[active_adapter], **fsdp2_kwargs)
+                    if module.lora_B:
+                        fully_shard(module.lora_B[active_adapter], **fsdp2_kwargs)
                     if module.lora_embedding_A:
-                        fully_shard(module.lora_embedding_A[active_adapter], **fsdp2_kwargs)
+                        fully_shard(
+                            module.lora_embedding_A[active_adapter], **fsdp2_kwargs
+                        )
                     if module.lora_embedding_B:
-                        fully_shard(module.lora_embedding_B[active_adapter], **fsdp2_kwargs)
+                        fully_shard(
+                            module.lora_embedding_B[active_adapter], **fsdp2_kwargs
+                        )
                 ignored_params = {
-                    p for name, p in module.named_parameters() if "magnitude_vector" in name
+                    p
+                    for name, p in module.named_parameters()
+                    if "magnitude_vector" in name
                 }
             if auto_wrap_policy(module):
                 fully_shard(module, ignored_params=ignored_params, **fsdp2_kwargs)
@@ -376,7 +395,9 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     if fsdp2_plugin.cpu_ram_efficient_loading:
         offload_to_cpu = isinstance(fsdp2_plugin.cpu_offload, CPUOffloadPolicy)
-        fsdp2_load_full_state_dict(accelerator, model, original_sd, offload_to_cpu=offload_to_cpu)
+        fsdp2_load_full_state_dict(
+            accelerator, model, original_sd, offload_to_cpu=offload_to_cpu
+        )
 
     if fsdp2_plugin.cpu_ram_efficient_loading and not model_has_params4bit:
         # We re-register the buffers, as they may not be in the state_dict
@@ -390,7 +411,9 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
                 local_buffer_name = fqn
                 parent_module = model
 
-            parent_module.register_buffer(local_buffer_name, buffer_tensor, persistent=False)
+            parent_module.register_buffer(
+                local_buffer_name, buffer_tensor, persistent=False
+            )
 
         # We need to tie the weights again, as call to `load_full_state_dict` breaks the tie
         # Needs to be called both here and above
@@ -403,6 +426,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
 def patch_accelerate_fsdp2():
     import accelerate
+
     # from accelerate.utils import fsdp_utils
 
     accelerate.accelerator.fsdp2_prepare_model = fsdp2_prepare_model

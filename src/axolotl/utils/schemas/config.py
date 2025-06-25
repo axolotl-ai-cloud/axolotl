@@ -151,8 +151,8 @@ class AxolotlInputConfig(
         Annotated[
             list[SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset],
             MinLen(1),
-        ] |
-        None
+        ]
+        | None
     ) = Field(
         default=None,
         json_schema_extra={
@@ -164,8 +164,8 @@ class AxolotlInputConfig(
         Annotated[
             list[SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset],
             MinLen(1),
-        ] |
-        None
+        ]
+        | None
     ) = Field(
         default=None,
         json_schema_extra={
@@ -552,7 +552,9 @@ class AxolotlInputConfig(
     fsdp_config: dict[str, Any] | None = Field(
         default=None, json_schema_extra={"description": "FSDP configuration options"}
     )
-    fsdp_final_state_dict_type: Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None = Field(
+    fsdp_final_state_dict_type: (
+        Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None
+    ) = Field(
         default=None,
         deprecation_message="Configuring FSDP final state dict type using `fsdp_final_state_dict_type` is deprecated. Please use `fsdp_config.fsdp_final_state_dict_type` instead.",
     )
@@ -761,8 +763,8 @@ class AxolotlInputConfig(
     )
 
     chat_template: (
-        ChatTemplate |
-        Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")]
+        ChatTemplate
+        | Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")]
     ) | None = Field(
         default=None,
         json_schema_extra={
@@ -863,9 +865,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
         else:
             if (
-                not self.merge_lora and
-                not self.is_preprocess and
-                (self.bf16 is True or self.bfloat16 is True)
+                not self.merge_lora
+                and not self.is_preprocess
+                and (self.bf16 is True or self.bfloat16 is True)
             ):
                 raise ValueError(
                     "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
@@ -876,14 +878,14 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @classmethod
     def check_sample_packing_w_sdpa_bf16(cls, data):
         is_sm_90: bool = (
-            data["capabilities"] and
-            data["capabilities"].get("compute_capability") == "sm_90"
+            data["capabilities"]
+            and data["capabilities"].get("compute_capability") == "sm_90"
         )
         if (
-            data.get("sample_packing") and
-            data.get("sdp_attention") and
-            (data.get("bfloat16") or data.get("bf16")) and
-            not is_sm_90
+            data.get("sample_packing")
+            and data.get("sdp_attention")
+            and (data.get("bfloat16") or data.get("bf16"))
+            and not is_sm_90
         ):
             # https://github.com/pytorch/pytorch/blob/1b03423526536b5f3d35bdfa95ccc6197556cf9b/test/test_transformers.py#L2440-L2450
             LOG.warning(
@@ -898,9 +900,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @classmethod
     def check_multigpu_unsloth(cls, data):
         if (
-            data.get("unsloth_lora_mlp") or
-            data.get("unsloth_lora_qkv") or
-            data.get("unsloth_lora_o")
+            data.get("unsloth_lora_mlp")
+            or data.get("unsloth_lora_qkv")
+            or data.get("unsloth_lora_o")
         ):
             capabilities = data.get("capabilities")
             if capabilities and capabilities.get("n_gpu", 0) > 1:
@@ -914,15 +916,15 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @classmethod
     def check_multigpu_lora_kernels(cls, data):
         if (
-            data.get("lora_mlp_kernel") or
-            data.get("lora_qkv_kernel") or
-            data.get("lora_o_kernel")
+            data.get("lora_mlp_kernel")
+            or data.get("lora_qkv_kernel")
+            or data.get("lora_o_kernel")
         ):
             capabilities = data.get("capabilities")
             is_fsdp = data.get("fsdp") is not None
             is_fsdp2 = (
-                data.get("fsdp_config") is not None and
-                str(data.get("fsdp_config").get("fsdp_version")) == "2"
+                data.get("fsdp_config") is not None
+                and str(data.get("fsdp_config").get("fsdp_version")) == "2"
             )
             if capabilities and capabilities.get("n_gpu", 0) > 1 and not is_fsdp2:
                 if is_fsdp:
@@ -943,10 +945,10 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             unsloth_fields = ["unsloth_lora_mlp", "unsloth_lora_qkv", "unsloth_lora_o"]
             kernel_fields = ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
             if (
-                any(data.get(k) is not None for k in kernel_fields) or
-                any(data.get(k) for k in unsloth_fields) or
-                data.get("adapter") == "lora" and
-                data.get("load_in_8bit")
+                any(data.get(k) is not None for k in kernel_fields)
+                or any(data.get(k) for k in unsloth_fields)
+                or data.get("adapter") == "lora"
+                and data.get("load_in_8bit")
             ):
                 return data
 
@@ -959,14 +961,14 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             is_multi_gpu = capabilities and capabilities.get("n_gpu", 0) > 1
             is_fsdp = data.get("fsdp") is not None
             is_fsdp2 = (
-                data.get("fsdp_config") is not None and
-                str(data.get("fsdp_config").get("fsdp_version")) == "2"
+                data.get("fsdp_config") is not None
+                and str(data.get("fsdp_config").get("fsdp_version")) == "2"
             )
 
             if (
-                not is_multi_gpu or
-                (is_multi_gpu and not is_fsdp) or
-                (is_multi_gpu and is_fsdp2)
+                not is_multi_gpu
+                or (is_multi_gpu and not is_fsdp)
+                or (is_multi_gpu and is_fsdp2)
             ):
                 # Auto-enable kernels if not explicitly set by user
                 if data.get("lora_mlp_kernel") is None:
@@ -979,9 +981,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                     data["lora_o_kernel"] = True
 
                 LOG.warning(
-                    "Auto-enabling LoRA kernel optimizations for faster training. " +
-                    "Please explicitly set `lora_*_kernel` config values to `false` to disable. " +
-                    "See https://docs.axolotl.ai/docs/lora_optims.html for more info."
+                    "Auto-enabling LoRA kernel optimizations for faster training. "
+                    + "Please explicitly set `lora_*_kernel` config values to `false` to disable. "
+                    + "See https://docs.axolotl.ai/docs/lora_optims.html for more info."
                 )
 
         return data
@@ -1085,9 +1087,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
 
         if (
-            data.get("fsdp") and
-            data.get("fsdp_config") and
-            str(data["fsdp_config"].get("fsdp_version")) == "2"
+            data.get("fsdp")
+            and data.get("fsdp_config")
+            and str(data["fsdp_config"].get("fsdp_version")) == "2"
         ):
             if version.parse(torch_version) < version.parse("2.7.0"):
                 raise ValueError(
@@ -1103,14 +1105,20 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @classmethod
     def check_fsdp_version(cls, data):
         if data.get("fsdp_config") is not None and str(data.get("fsdp_version")) != "2":
-            LOG.info("FSDP1 will be deprecated in an upcoming release of axolotl." 
-                     "We recommend that you use FSDP version 2 for better performance and compatibility. "
-                     "Please see this link for more details: https://docs.axolotl.ai/docs/multi-gpu.html#sec-fsdp "
-                     "For more details on migrating your config. ")
+            LOG.info(
+                "FSDP1 will be deprecated in an upcoming release of axolotl."
+                "We recommend that you use FSDP version 2 for better performance and compatibility. "
+                "Please see this link for more details: https://docs.axolotl.ai/docs/multi-gpu.html#sec-fsdp "
+                "For more details on migrating your config. "
+            )
         return data
 
-    def check_fsdp2_base_model_quant()
-        if self.fsdp_config and self.fsdp_config.fsdp_version == 2:
-            if self.load_in_8bit or self.load_in_4bit:
-                raise ValueError("FSDP2 does not support load_in_8bit or load_in_4bit. Please use DeepSpeed or set `fsdp_config.fsdp_version` to 1.")
-        return self
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp2_base_model_quant(cls, data):
+        if data.get("fsdp_config") and data.get("fsdp_config").get("fsdp_version") == 2:
+            if data.get("load_in_8bit") or data.get("load_in_4bit"):
+                raise ValueError(
+                    "FSDP2 does not support load_in_8bit or load_in_4bit. Please use DeepSpeed or set `fsdp_config.fsdp_version` to 1."
+                )
+        return data

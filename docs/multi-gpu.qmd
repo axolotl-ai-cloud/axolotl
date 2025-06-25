@@ -72,7 +72,7 @@ Start from Stage 1 -> Stage 2 -> Stage 3.
 
 ::: {.callout-note}
 
-FSDP2 is recommended for new users. FSDP1 is deprecated and will be removed in an upcoming release of Axolotl. 
+FSDP2 is recommended for new users. FSDP1 is deprecated and will be removed in an upcoming release of Axolotl.
 Currently, FSDP2 is not compatible with `load_in_8bit` or `load_in_4bit` and when using QLoRA. Please use DeepSpeed or set `fsdp_version` to 1 instead.
 
 :::
@@ -80,7 +80,7 @@ Currently, FSDP2 is not compatible with `load_in_8bit` or `load_in_4bit` and whe
 #### Migrating from FSDP1 to FSDP2
 
 To migrate your config from FSDP1 to FSDP2, you must use the `fsdp_version` field in `fsdp_config` to specify the FSDP version, and
-also follow the config field mapping below to update field names. 
+also follow the config field mapping below to update field names.
 
 Config field mapping
 -----------

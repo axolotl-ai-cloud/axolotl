@@ -282,7 +282,7 @@ def save_trained_model(
             else:
                 state_dict_type = cfg.fsdp_config.state_dict_type
             trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
-                
+
         # if fsdp_config.final_state_dict_type:
         #     state_dict_type = fsdp_config.final_state_dict_type
         # elif fsdp_config.state_dict_type:
@@ -294,7 +294,7 @@ def save_trained_model(
         # # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple
         # # processes attempt to write the same file
         # if (
-            # state_dict_type == "SHARDED_STATE_DICT"
+        # state_dict_type == "SHARDED_STATE_DICT"
         #     and cfg.fsdp_config.fsdp_state_dict_type == "SHARDED_STATE_DICT"
         # ):
         #     save_fsdp_model(

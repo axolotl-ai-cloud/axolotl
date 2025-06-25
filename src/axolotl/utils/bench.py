@@ -1,12 +1,13 @@
 """Benchmarking and measurement utilities"""
 
 import functools
+import logging
 
 import torch
 from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.distributed import get_device_type
-import logging
+
 try:
     from pynvml import (
         NVMLError,
@@ -91,7 +92,9 @@ def gpu_memory_usage_smi(device=0):
         return 0.0
 
 
-def log_gpu_memory_usage(log: logging.Logger, msg: str = "", device: int | torch.device = 0):
+def log_gpu_memory_usage(
+    log: logging.Logger, msg: str = "", device: int | torch.device = 0
+):
     cur_device = get_device_type()
     if torch.backends.mps.is_available():
         usage, cache, misc = mps_memory_usage_all()
