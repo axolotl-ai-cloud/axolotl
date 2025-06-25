@@ -108,7 +108,7 @@ class PatchManager:
     def _apply_sageattn_patches(self):
         """Apply patches for SageAttention."""
         if self.cfg.sage_attention:
-            from axolotl.monkeypatch.attention.sageattn import patch_sageattn
+            from axolotl.monkeypatch.attention.sage_attn import patch_sageattn
 
             patch_sageattn()
 
