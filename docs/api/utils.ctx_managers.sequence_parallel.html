@@ -685,7 +685,8 @@ from the full gradient tensor.</p>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    gradient_accumulation_steps,</span>
 <span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    ring_attn_func,</span>
 <span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    heads_k_stride,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    gather_outputs,</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Context manager for sequence parallelism operations.</p>
 <p>This class provides a context that will automatically apply sequence parallelism
 during model forward passes using a pre-forward hook, and gather outputs from
@@ -736,6 +737,12 @@ across the sequence parallelism group using a post-forward hook.</p>
 <td>heads_k_stride</td>
 <td>int | None</td>
 <td>Sequence parallelism K head stride size. Passed through to <code>varlen_llama3</code> <code>ring_flash_attn</code> implementation.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>gather_outputs</td>
+<td>bool</td>
+<td>Whether to gather outputs after model forward pass across the sequence parallel group.</td>
 <td><em>required</em></td>
 </tr>
 </tbody>
