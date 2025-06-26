@@ -1,20 +1,15 @@
-base_model: google/gemma-3-1b-it
+base_model: tiiuae/Falcon-H1-3B-Base
 # optionally might have model_type or tokenizer_type
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
-# gemma3 doesn't seem to play nice with ddp
-ddp_find_unused_parameters: true
-
 load_in_8bit: false
 load_in_4bit: true
 
 # huggingface repo
-chat_template: gemma3
-eot_tokens:
-  - <end_of_turn>
+chat_template: falcon_h1
 datasets:
   - path: cgato/SlimOrcaDedupCleaned
     type: chat_template
@@ -30,10 +25,18 @@ adapter: qlora
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
-lora_target_linear: true
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - in_proj
+  - gate_proj
+  - up_proj
+  - down_proj
 
 sequence_len: 2048
-sample_packing: true
+sample_packing: false
 eval_sample_packing: false
 pad_to_sequence_len: true
 
@@ -62,7 +65,7 @@ logging_steps: 1
 flash_attention: true
 
 warmup_ratio: 0.1
-evals_per_epoch:
+evals_per_epoch: 1
 saves_per_epoch: 1
 weight_decay: 0.0
 special_tokens:

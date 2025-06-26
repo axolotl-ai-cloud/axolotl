@@ -54,6 +54,7 @@ class ChatTemplate(str, Enum):
     jinja = "jinja"
     qwen_25 = "qwen_25"
     qwen3 = "qwen3"
+    falcon_h1 = "falcon_h1"
     tokenizer_default = "tokenizer_default"
     exaone = "exaone"
     metharme = "metharme"
