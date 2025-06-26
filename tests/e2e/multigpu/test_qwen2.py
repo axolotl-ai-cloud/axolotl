@@ -17,13 +17,27 @@ class TestMultiGPUQwen2:
     Test case for Llama models using LoRA
     """
 
-    @pytest.mark.parametrize("base_model", ["Qwen/Qwen2-0.5B", "Qwen/Qwen2.5-0.5B"])
-    def test_qlora_fsdp_dpo(self, base_model, temp_dir):
+    # @pytest.mark.parametrize("base_model", ["Qwen/Qwen2-0.5B", "Qwen/Qwen2.5-0.5B"])
+    # def test_lora_fsdp2(self, base_model, temp_dir):
+    #     # pylint: disable=duplicate-code
+    #     cfg = DictDefault(
+    #         {
+    #             "base_model": base_model,
+    #             "adapter": "lora",
+    #             "lora_r": 8,
+    #             "lora_alpha": 16,
+    #             "lora_dropout": 0.05,
+    #             "lora_target_linear": True,
+    #             "val_set_size": 0.01,
+    #             "fsdp_cpu_ram_efficient_loading": True,
+    #         }
+    #     )
+
+    def test_qlora_fsdp2_dpo(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": base_model,
-                "load_in_4bit": True,
+                "base_model": "Qwen/Qwen2.5-0.5B",
                 "rl": "dpo",
                 "chat_template": "chatml",
                 "sequence_len": 2048,
@@ -33,6 +47,7 @@ class TestMultiGPUQwen2:
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "val_set_size": 0.01,
+                "load_in_4bit": True,
                 "datasets": [
                     {
                         "path": "Intel/orca_dpo_pairs",
@@ -56,16 +71,13 @@ class TestMultiGPUQwen2:
                     "use_reentrant": False,
                 },
                 "fsdp_config": {
-                    "fsdp_version": 1,
-                    "fsdp_limit_all_gathers": True,
-                    "fsdp_offload_params": False,
-                    "fsdp_sync_module_states": True,
-                    "fsdp_use_orig_params": False,
+                    "fsdp_version": 2,
                     "fsdp_cpu_ram_efficient_loading": False,
                     "fsdp_transformer_layer_cls_to_wrap": "Qwen2DecoderLayer",
-                    "fsdp_state_dict_type": "FULL_STATE_DICT",
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
-                    "fsdp_sharding_strategy": "FULL_SHARD",
+                    "fsdp_state_dict_type": "FULL_STATE_DICT",
+                    "fsdp_reshard_after_forward": True,
+                    "fsdp_activation_checkpointing": True,
                 },
             }
         )

@@ -13,7 +13,7 @@ trust_remote_code: true
 
 load_in_8bit: false
 # enable 4bit for QLoRA
-load_in_4bit: true
+# load_in_4bit: true
 gptq: false
 push_dataset_to_hub:
 datasets:
@@ -24,7 +24,7 @@ datasets:
 dataset_prepared_path:
 val_set_size: 0.05
 # enable QLoRA
-adapter: qlora
+adapter: lora
 lora_model_dir:
 sequence_len: 2048
 max_packed_sequence_len:

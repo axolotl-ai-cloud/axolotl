@@ -1104,7 +1104,8 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_fsdp_version(cls, data):
-        if data.get("fsdp_config") is not None and str(data.get("fsdp_version")) != "2":
+        fsdp_config = data.get("fsdp_config")
+        if fsdp_config is not None and str(fsdp_config.get("fsdp_version")) != "2":
             LOG.info(
                 "FSDP1 will be deprecated in an upcoming release of axolotl."
                 "We recommend that you use FSDP version 2 for better performance and compatibility. "
@@ -1113,12 +1114,15 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             )
         return data
 
-    # @model_validator(mode="before")
-    # @classmethod
-    # def check_fsdp2_base_model_quant(cls, data):
-    #     if data.get("fsdp_config") and data.get("fsdp_config").get("fsdp_version") == 2:
-    #         if data.get("load_in_8bit") or data.get("load_in_4bit"):
-    #             raise ValueError(
-    #                 "FSDP2 does not support load_in_8bit or load_in_4bit. Please use DeepSpeed or set `fsdp_config.fsdp_version` to 1."
-    #             )
-    #     return data
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp2_base_model_quant(cls, data):
+        fsdp_config = data.get("fsdp_config")
+        if fsdp_config and fsdp_config.get("fsdp_version") == 2:
+            if fsdp_config.get("fsdp_cpu_ram_efficient_loading") and (data.get("load_in_8bit") or data.get("load_in_4bit")):
+                raise ValueError(
+                    "FSDP2 does not support load_in_8bit or load_in_4bit with cpu_ram_efficient_loading. Please use DeepSpeed or set `fsdp_config.fsdp_version` to 1."
+                )
+        return data
+
+    
