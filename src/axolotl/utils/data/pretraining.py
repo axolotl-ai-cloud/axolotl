@@ -267,6 +267,7 @@ def encode_packed_pretraining(
         batch_size=1,
         batch_max_len=batch_size * max_seq_length,
         drop_last=True,
+        num_processes=1,
     )
 
     chunked_data = defaultdict(list)

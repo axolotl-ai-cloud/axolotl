@@ -381,6 +381,7 @@ def process_pretraining_datasets_for_packing(
     if not skip_position_ids:
         train_dataset = train_dataset.map(
             add_position_ids,
+            batched=True,
             desc="Add position_id column (Pretraining Sample Packing)",
         )
     if drop_attention_mask:
