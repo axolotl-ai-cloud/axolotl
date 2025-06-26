@@ -705,8 +705,7 @@ class ModelLoader:
             )
         if (
             is_deepspeed_zero3_enabled()
-            or self.is_fsdp_enabled
-            and self.fsdp_version == 2
+            or (self.is_fsdp_enabled and self.fsdp_version == 2)
         ):
             skip_move_to_device = True
 

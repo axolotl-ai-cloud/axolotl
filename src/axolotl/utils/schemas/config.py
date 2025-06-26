@@ -1113,12 +1113,12 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             )
         return data
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_fsdp2_base_model_quant(cls, data):
-        if data.get("fsdp_config") and data.get("fsdp_config").get("fsdp_version") == 2:
-            if data.get("load_in_8bit") or data.get("load_in_4bit"):
-                raise ValueError(
-                    "FSDP2 does not support load_in_8bit or load_in_4bit. Please use DeepSpeed or set `fsdp_config.fsdp_version` to 1."
-                )
-        return data
+    # @model_validator(mode="before")
+    # @classmethod
+    # def check_fsdp2_base_model_quant(cls, data):
+    #     if data.get("fsdp_config") and data.get("fsdp_config").get("fsdp_version") == 2:
+    #         if data.get("load_in_8bit") or data.get("load_in_4bit"):
+    #             raise ValueError(
+    #                 "FSDP2 does not support load_in_8bit or load_in_4bit. Please use DeepSpeed or set `fsdp_config.fsdp_version` to 1."
+    #             )
+    #     return data
