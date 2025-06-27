@@ -366,6 +366,12 @@ class AxolotlInputConfig(
             "description": "The maximum length of an input to train with, this should typically be less than 2048 as most models have a token/context limit of 2048"
         },
     )
+    eval_sequence_len: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "The maximum length of an input for evaluation. If not specified, defaults to sequence_len"
+        },
+    )
     min_sample_len: int | None = None
     max_prompt_len: int = Field(
         default=512,

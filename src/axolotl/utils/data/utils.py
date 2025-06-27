@@ -148,11 +148,14 @@ def deduplicate_and_log_datasets(
     return dataset, other_dataset
 
 
-def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault) -> Dataset:
+def drop_long_seq_in_dataset(
+    dataset: Dataset, sequence_len: int, cfg: DictDefault
+) -> Dataset:
     """Remove sequences longer than configured maximum from dataset.
 
     Args:
         dataset: Dataset to filter.
+        sequence_len: Maximum length for sequences to keep
         cfg: Dictionary mapping `axolotl` config keys to values.
 
     Returns:
@@ -167,7 +170,7 @@ def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault) -> Dataset:
 
     drop_long = functools.partial(
         drop_long_seq,
-        sequence_len=cfg.sequence_len,
+        sequence_len=sequence_len,
         min_sequence_len=cfg.min_sample_len,
     )
 
@@ -187,7 +190,7 @@ def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault) -> Dataset:
 
     drop_long_kwargs = {}
     if filter_map_kwargs:
-        drop_long_kwargs["desc"] = "Dropping Long Sequences"
+        drop_long_kwargs["desc"] = f"Dropping Long Sequences (>{sequence_len})"
 
     dataset = dataset.filter(
         drop_long,
