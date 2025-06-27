@@ -151,11 +151,12 @@ class ModelLoader:
         return self.cfg.fsdp_version
 
     @cached_property
-    def is_qlora_and_fsdp_enabled(self):
+    def is_qlora_and_fsdp_enabled_and_fsdp1(self):
         """Property that determines if FSDP with QLoRA is enabled."""
         return (
             self.is_fsdp_enabled
             and self.cfg.adapter == "qlora"
+            and self.fsdp_version == 1
         )
 
     def load(self) -> tuple[PreTrainedModel | PeftModelForCausalLM, PeftConfig | None]:
@@ -204,7 +205,6 @@ class ModelLoader:
         # Handle PeftModel if needed
         if (
             isinstance(self.model, (peft.PeftModel, peft.PeftModelForCausalLM))
-            and not (self.is_qlora_and_fsdp_enabled and self.fsdp_version == 1)
         ):
             self.model = self.model.merge_and_unload()
 
@@ -304,7 +304,6 @@ class ModelLoader:
             # we need to convert them back to fp16/bf16 for flash-attn compatibility.
             (
                 (needs_fa2_dtype or self.cfg.flash_attention or self.cfg.flex_attention)
-                and not self.is_qlora_and_fsdp_enabled
             )
             or
             # CCE requires embedding layers to be in fp16/bf16 for backward pass
@@ -604,13 +603,12 @@ class ModelLoader:
     def _build_model(self) -> bool:
         """Load model, with load strategy depending on config."""
         skip_move_to_device = False
-        if self.is_fsdp_enabled and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+        if self.is_fsdp_enabled and (self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading or self.is_qlora_and_fsdp_enabled_and_fsdp1):
             skip_move_to_device = True
             if "device_map" in self.model_kwargs:
                 del self.model_kwargs["device_map"]
         if (
-            self.is_qlora_and_fsdp_enabled
-            and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+            self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
             and (
                 self.cfg.model_config_type == "dbrx"
                 or self.cfg.qlora_sharded_model_loading
@@ -746,11 +744,8 @@ class ModelLoader:
             skip_prepare_model_for_kbit_training = True
 
         if (
-            self.is_qlora_and_fsdp_enabled
-            or (
-                self.is_fsdp_enabled
-                and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-            )
+            self.is_fsdp_enabled
+            and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
             or is_deepspeed_zero3_enabled()
         ):
             # Make sure everything is in the same dtype
