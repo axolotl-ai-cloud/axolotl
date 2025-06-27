@@ -224,10 +224,10 @@ def wrap_pretraining_dataset(
     remove_columns = []
     if dataset.features is None:
         for first_row in dataset:
-            remove_columns = first_row.keys()
+            remove_columns = list(first_row.keys())
             break
     else:
-        remove_columns = dataset.features.keys()
+        remove_columns = list(dataset.features.keys())
 
     dataset = dataset.map(
         encode,
@@ -267,6 +267,7 @@ def encode_packed_pretraining(
         batch_size=1,
         batch_max_len=batch_size * max_seq_length,
         drop_last=True,
+        num_processes=1,
     )
 
     chunked_data = defaultdict(list)

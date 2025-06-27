@@ -223,6 +223,8 @@ def execute_training(
             )
 
         LOG.info("Starting trainer...")
+        if cfg.bf16:
+            torch.set_default_dtype(torch.bfloat16)
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
 

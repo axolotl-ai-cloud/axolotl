@@ -413,7 +413,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 or self.cfg.micro_batch_size > 1
             ):
                 return DataCollatorForSeq2Seq(self.tokenizer, **kwargs)
-            return None
+            if not (self.cfg.sample_packing and self.cfg.pretrain_multipack_attn):
+                return None
 
         if self.cfg.model_config_type == "mamba":
             return MambaDataCollator(tokenizer=self.tokenizer)
