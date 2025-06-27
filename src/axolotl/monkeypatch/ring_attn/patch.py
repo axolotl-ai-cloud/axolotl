@@ -152,7 +152,7 @@ def update_ring_attn_params(position_ids: torch.Tensor | None):
 def patch_prepare_data_loader():
     """Patch `accelerate.data_loader.prepare_data_loader` to respect the SP degree.
 
-    Raies:
+    Raises:
         RuntimeError: If source code to patch does not exist.
     """
     original_fn = accelerate.data_loader.prepare_data_loader
@@ -168,23 +168,34 @@ def patch_prepare_data_loader():
         ORIGINAL_PREPARE_DATALOADER_CODE, NEW_PREPARE_DATALOADER_CODE
     )
 
+    items_to_import = []
+    for item in dir(accelerate.data_loader):
+        if item in patched_source:
+            items_to_import.append(item)
+
     # Create a new function from the patched source
     namespace = {}
     exec(  # pylint: disable=exec-used  # nosec B102
-        patched_source, accelerate.data_loader.__dict__, namespace
+        f"from accelerate.data_loader import ({', '.join(items_to_import)})",
+        globals(),
     )
-    patched_function = namespace["prepare_data_loader"]
+    exec(  # pylint: disable=exec-used  # nosec B102
+        patched_source, globals(), namespace
+    )
 
-    accelerate.data_loader.prepare_data_loader = patched_function
+    patched_function = namespace["prepare_data_loader"]
+    original_fn.__code__ = patched_function.__code__
+
     LOG.info("Patched accelerate.data_loader.prepare_data_loader for SP support")
 
 
-def patch_prepare_device_mesh(sequence_parallel_degree: int):
+def patch_prepare_device_mesh(sequence_parallel_degree: int, fsdp: bool = False):
     """Patches the `Accelerator._prepare_device_mesh` method to create a device mesh
     that includes sequence parallelism with the specified degree.
 
     Args:
-        sequence_parallel_degree (int): The degree of sequence parallelism to use.
+        sequence_parallel_degree: The degree of sequence parallelism to use.
+        fsdp: Whether to use FSDP.
     """
 
     def _prepare_device_mesh(self):
@@ -207,12 +218,14 @@ def patch_prepare_device_mesh(sequence_parallel_degree: int):
         )
         device_ids = list(range(world_size))
 
-        # Note that we use "cp" instead of "sp" to match the PyTorch native "context
-        # parallelism" implementation naming
+        # NOTE: We use "cp" instead of "sp" to match the PyTorch native "context
+        # parallelism" implementation naming.
+        # NOTE: We have a simplified FSDP handling here; i.e., if FSDP is enabled, we
+        # only use "fsdp" and "cp" for the device mesh.
         return dist.DeviceMesh(
             "cuda",
             torch.tensor(device_ids).reshape(mesh_shape),
-            mesh_dim_names=("dp", "cp"),
+            mesh_dim_names=("dp", "cp") if not fsdp else ("fsdp", "cp"),
         )
 
     # Replace the original method with our new method
