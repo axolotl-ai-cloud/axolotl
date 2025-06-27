@@ -885,12 +885,13 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def check_sageattn_w_sample_packing(cls, data):
-        if data.get("sample_packing") and data.get("sage_attention"):
-            raise ValueError(
-                "SageAttention does not support sample packing at the moment. "
-                "Please disable sample packing or use a different attention implementation."
-            )
+    def check_sageattn_wo_sample_packing(cls, data):
+        if (not data.get("sample_packing", False)) and data.get("sage_attention"):
+            if not data.get("pad_to_sequence_len", False):
+                LOG.warning(
+                    "We recommend turning on `pad_to_sequence_len` for SageAttention without packing."
+                    "This is because there has been signs that the loss explodes after a few steps."
+                )
         return data
 
     @model_validator(mode="before")
