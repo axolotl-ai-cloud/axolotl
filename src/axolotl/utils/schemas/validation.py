@@ -547,15 +547,6 @@ class LoRAValidationMixin:
             raise ValueError("Fused modules are not supported with LoRA/QLoRA")
         return self
 
-    @model_validator(mode="after")
-    def hint_lora_8bit(self):
-        loftq = (
-            self.peft and self.peft.loftq_config and self.peft.loftq_config.loftq_bits
-        )
-        if not self.load_in_8bit and self.adapter == "lora" and not loftq:
-            LOG.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
-        return self
-
     @model_validator(mode="before")
     @classmethod
     def warn_qlora_zero3_w_use_reentrant(cls, data):
