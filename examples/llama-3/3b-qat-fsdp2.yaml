@@ -3,7 +3,7 @@ base_model: Qwen/Qwen2.5-0.5B
 # hub_model_id: username/custom_model_name
 
 load_in_8bit: false
-# load_in_4bit: true
+load_in_4bit: true
 strict: false
 rl: dpo
 chat_template: chatml
@@ -19,8 +19,8 @@ liger_fused_linear_cross_entropy: true
 
 
 # peft_use_dora: true
-load_in_4bit: true
-adapter: lora
+# load_in_4bit: true
+adapter: qlora
 lora_model_dir:
 lora_r: 32
 lora_alpha: 16
@@ -60,7 +60,7 @@ wandb_name:
 wandb_log_model:
 
 gradient_accumulation_steps: 1
-micro_batch_size: 16
+micro_batch_size: 2
 num_epochs: 1
 optimizer: adamw_torch_fused
 
@@ -82,13 +82,16 @@ weight_decay: 0.0
 fsdp_config:
   fsdp_version: 1
   fsdp_offload_params: false
-  fsdp_cpu_ram_efficient_loading: false
+  fsdp_cpu_ram_efficient_loading: true
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
   fsdp_transformer_layer_cls_to_wrap: Qwen2DecoderLayer
   fsdp_state_dict_type: FULL_STATE_DICT
   # fsdp_reshard_after_forward: true
   fsdp_sharding_strategy: FULL_SHARD
   # fsdp_activation_checkpointing: true
-
+  fsdp_limit_all_gathers: true
+  fsdp_sync_module_states: true
+  fsdp_use_orig_params: false
+#
 special_tokens:
   pad_token: <|end_of_text|>

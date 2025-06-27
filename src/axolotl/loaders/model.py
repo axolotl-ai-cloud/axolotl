@@ -204,7 +204,7 @@ class ModelLoader:
         # Handle PeftModel if needed
         if (
             isinstance(self.model, (peft.PeftModel, peft.PeftModelForCausalLM))
-            and not self.is_qlora_and_fsdp_enabled
+            and not (self.is_qlora_and_fsdp_enabled and self.fsdp_version == 1)
         ):
             self.model = self.model.merge_and_unload()
 
@@ -604,6 +604,10 @@ class ModelLoader:
     def _build_model(self) -> bool:
         """Load model, with load strategy depending on config."""
         skip_move_to_device = False
+        if self.is_fsdp_enabled and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+            skip_move_to_device = True
+            if "device_map" in self.model_kwargs:
+                del self.model_kwargs["device_map"]
         if (
             self.is_qlora_and_fsdp_enabled
             and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
@@ -693,9 +697,6 @@ class ModelLoader:
                 **self.model_kwargs,
             )
         else:
-            if self.is_fsdp_enabled and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
-                if "device_map" in self.model_kwargs:
-                    del self.model_kwargs["device_map"]
             # Please don't remove underscore binding without reading the fn docstring.
             _ = self._configure_zero3_memory_efficient_loading()
 
@@ -705,7 +706,7 @@ class ModelLoader:
                 trust_remote_code=self.cfg.trust_remote_code or False,
                 **self.model_kwargs,
             )
-        if is_deepspeed_zero3_enabled() or self.is_fsdp_enabled:
+        if is_deepspeed_zero3_enabled():
             skip_move_to_device = True
 
         # print("--------------------------------")
@@ -747,7 +748,7 @@ class ModelLoader:
         if (
             self.is_qlora_and_fsdp_enabled
             or (
-                self.cfg.is_fsdp_enabled
+                self.is_fsdp_enabled
                 and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
             )
             or is_deepspeed_zero3_enabled()

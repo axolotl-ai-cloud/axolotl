@@ -235,26 +235,6 @@ def normalize_config(cfg):
     ):
         cfg.gradient_checkpointing_kwargs = {"use_reentrant": True}
 
-
-    # TODO @SalmanMohammadi remove the below two checks in 0.12
-    if cfg.get("fsdp"):
-        cfg.fsdp_config = cfg.fsdp
-        del cfg.fsdp
-
-    if cfg.get("fsdp_config"):
-        fsdp_config_keys = cfg.fsdp_config.keys()
-        if "fsdp_version" in fsdp_config_keys:
-            cfg.fsdp_version = cfg.fsdp_config.pop("fsdp_version")
-
-        for key in list(fsdp_config_keys):
-            if key.startswith("fsdp_"):
-                LOG.warning_once("Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
-                                 "Please omit the `fsdp_` prefix from the any fields in `fsdp_config`.")
-                cfg.fsdp_config[key.replace("fsdp_", "")] = cfg.fsdp_config[key]   
-                del cfg.fsdp_config[key]
-        
-
-
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
 
@@ -333,3 +313,21 @@ def prepare_plugins(cfg):
         plugin_manager = PluginManager.get_instance()
         for plugin_name in cfg["plugins"]:
             plugin_manager.register(plugin_name)
+
+
+# TODO @SalmanMohammadi this function in 0.12
+def migrate_fsdp_config(cfg):
+    if cfg.get("fsdp"):
+        cfg.fsdp_config = cfg.fsdp
+        del cfg.fsdp
+
+    if cfg.get("fsdp_config"):
+        fsdp_config_keys = cfg.fsdp_config.keys()
+        if "fsdp_version" in fsdp_config_keys:
+            cfg.fsdp_version = cfg.fsdp_config.pop("fsdp_version")
+
+        for key in list(fsdp_config_keys):
+            if key.startswith("fsdp_"):
+                cfg.fsdp_config[key.replace("fsdp_", "")] = cfg.fsdp_config[key]   
+                del cfg.fsdp_config[key]
+        

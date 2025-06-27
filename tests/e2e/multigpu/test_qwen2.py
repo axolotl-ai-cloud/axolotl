@@ -57,16 +57,16 @@ class TestMultiGPUQwen2:
 
                 "fsdp_config": {
                     "fsdp_version": 2,
-                    "fsdp_limit_all_gathers": True,
+                    # "fsdp_limit_all_gathers": True,
                     "fsdp_offload_params": False,
-                    "fsdp_cpu_ram_efficient_loading": False,
+                    "fsdp_cpu_ram_efficient_loading": True,
                     "fsdp_transformer_layer_cls_to_wrap": "Qwen2DecoderLayer",
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                     "fsdp_state_dict_type": "FULL_STATE_DICT",
                     "reshard_after_forward": True,
                     # "fsdp_sharding_strategy": "FULL_SHARD",
-                    "fsdp_use_orig_params": False,
-                    "fsdp_sync_module_states": True,
+                    # "fsdp_use_orig_params": False,
+                    # "fsdp_sync_module_states": True,
                 },
             }
         )

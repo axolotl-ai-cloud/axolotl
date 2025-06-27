@@ -561,7 +561,7 @@ class AxolotlInputConfig(
         Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None
     ) = Field(
         default=None,
-        deprecation_message="Configuring FSDP final state dict type using `fsdp_final_state_dict_type` is deprecated. Please use `fsdp_config.fsdp_final_state_dict_type` instead.",
+        deprecation_message="Configuring FSDP final state dict type using `fsdp_final_state_dict_type` is deprecated. Please use `fsdp_config.final_state_dict_type` instead.",
     )
 
     val_set_size: float | None = Field(
@@ -1115,7 +1115,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def check_fsdp2_base_model_quant(cls, data):
+    def check_fsdp2_base_model_quant_ram_efficient_loading(cls, data):
         fsdp_config = data.get("fsdp_config")
         if fsdp_config and data.get("fsdp_version") == 2:
             if fsdp_config.get("fsdp_cpu_ram_efficient_loading") and (
@@ -1134,6 +1134,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 raise ValueError("FSDP2 does not support DPO with load_in_4bit or load_in_8bit. Please use LoRA instead.")
         return data
 
+    @model_validator(mode="before")
     def check_fsdp_version_in_fsdp_config(cls, data):
         if fsdp_config := data.get("fsdp_config"):
             if fsdp_config.get("fsdp_version"):
@@ -1141,13 +1142,19 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                             "Please configure `fsdp_version` as a top-level field.")
         return data
 
-    # @model_validator(mode="before")
-    # @classmethod
-    # def check_fsdp_config_kwargs_prefix(cls, data):
-    #     if fsdp_config := data.get("fsdp_config"):
-    #         for key, value in fsdp_config.items():
-    #             if key.startswith("fsdp_"):
-    #                 LOG.warning("Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
-    #                             "Please omit the `fsdp_` prefix from the any fields in `fsdp_config`.")
-    #                 fsdp_config[key.replace("fsdp_", "")] = value
-    #     return data
+    @model_validator(mode="before")
+    def check_fsdp2_dpo_base_model_quant(cls, data):
+        if fsdp_config := data.get("fsdp_config") and data.get("fsdp_version") == 2:
+            if data.get("rl") and (data.get("load_in_4bit") or data.get("load_in_8bit")):
+                raise ValueError("FSDP2 does not support DPO with load_in_4bit or load_in_8bit. Please use LoRA instead.")
+        return data
+    @model_validator(mode="before")
+
+    @classmethod
+    def check_fsdp_config_kwargs_prefix(cls, data):
+        if fsdp_config := data.get("fsdp_config"):
+            for key, value in fsdp_config.items():
+                if key.startswith("fsdp_"):
+                    LOG.warning_once("Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
+                                     "Please omit the `fsdp_` prefix from the any fields in `fsdp_config`.")
+        return data

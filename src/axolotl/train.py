@@ -258,15 +258,6 @@ def save_trained_model(
             "QAT modules have been converted for PTQ. Please ensure you quantize "
             "your model weights with `axolotl quantize`."
         )
-
-    # # Handle FSDP state dict type
-    # state_dict_type = "FULL_STATE_DICT"
-    # if trainer.is_fsdp_enabled and str(cfg.fsdp_config.fsdp_version) != "2":
-    #     if cfg.fsdp_final_state_dict_type:
-    #         state_dict_type = cfg.fsdp_final_state_dict_type
-    #     trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
-    #     LOG.info(f"Set FSDP state dict type to {state_dict_type} for saving.")
-
     # Handle ReLoRA early return case
     if cfg.relora_steps:
         if cfg.adapter == "lora" and not (cfg.load_in_4bit or cfg.load_in_8bit):
@@ -276,34 +267,12 @@ def save_trained_model(
             return
 
     if trainer.is_fsdp_enabled:
-        if cfg.fsdp_config and str(cfg.fsdp_version) != "2":
+        if cfg.fsdp_config:
             if cfg.fsdp_config.final_state_dict_type:
                 state_dict_type = cfg.fsdp_config.final_state_dict_type
             else:
                 state_dict_type = cfg.fsdp_config.state_dict_type
             trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
-
-        # if fsdp_config.final_state_dict_type:
-        #     state_dict_type = fsdp_config.final_state_dict_type
-        # elif fsdp_config.state_dict_type:
-        #     state_dict_type = fsdp_config.state_dict_type
-        # else:
-        #     state_dict_type = "FULL_STATE_DICT"
-
-        # # TODO: do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
-        # # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple
-        # # processes attempt to write the same file
-        # if (
-        # state_dict_type == "SHARDED_STATE_DICT"
-        #     and cfg.fsdp_config.fsdp_state_dict_type == "SHARDED_STATE_DICT"
-        # ):
-        #     save_fsdp_model(
-        #         trainer.accelerator.state.fsdp_plugin,
-        #         trainer.accelerator,
-        #         trainer.model,
-        #         cfg.output_dir,
-        #     )
-        # elif state_dict_type == "FULL_STATE_DICT":
         trainer.save_model(cfg.output_dir)
     elif cfg.deepspeed and is_deepspeed_zero3_enabled():
         # Copied over from: https://github.com/huggingface/accelerate/blob/5ae611118057232f441055f7ef9ba0b0f2b8d533/docs/source/usage_guides/deepspeed.md#saving-and-loading

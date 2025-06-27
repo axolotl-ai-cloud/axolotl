@@ -750,7 +750,7 @@ class OptimizationValidationMixin:
     @classmethod
     def check_fsdp_sharded_state_dict_w_safetensors(cls, data):
         if (
-            data.get("fsdp")
+            data.get("fsdp_config")
             and data.get("save_safetensors")
             and data.get("fsdp_config")
             and data["fsdp_config"].get("fsdp_state_dict_type") == "SHARDED_STATE_DICT"

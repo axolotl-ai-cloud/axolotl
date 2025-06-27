@@ -219,20 +219,3 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         return trainer
 
-
-class HFPPOTrainerBuilder(TrainerBuilderBase):
-    """
-    HF Factory class for PPO Trainer
-    """
-
-    def get_callbacks(self):
-        callbacks = super().get_callbacks()
-        return callbacks
-
-    def get_post_trainer_create_callbacks(self, trainer):
-        callbacks = super().get_post_trainer_create_callbacks(trainer=trainer)
-        return callbacks
-
-    def build(self, total_num_steps):
-        # TODO: build PPOConfig
-        raise NotImplementedError("PPO trainer builder is not implemented yet.")
