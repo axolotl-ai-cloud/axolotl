@@ -148,7 +148,7 @@ class ModelLoader:
     @property
     def fsdp_version(self):
         """Property that determines the version of FSDP."""
-        return self.cfg.fsdp_config.fsdp_version
+        return self.cfg.fsdp_config.fsdp_version if self.cfg.fsdp_config else None
 
     @cached_property
     def is_qlora_and_fsdp_enabled(self):
@@ -360,8 +360,8 @@ class ModelLoader:
         # Place model on accelerator
         if (
             self.is_fsdp_enabled 
-            and not (self.cfg.load_in_4bit or self.cfg.load_in_8bit) 
-            and not self.cfg.rl
+            and not self.cfg.load_in_8bit
+            and not (self.cfg.rl or self.cfg.load_in_4bit)
             and not skip_move_to_device
         ):
             self.model.to(f"{str(get_device_type())}:{self.cfg.local_rank}")
@@ -604,11 +604,6 @@ class ModelLoader:
     def _build_model(self) -> bool:
         """Load model, with load strategy depending on config."""
         skip_move_to_device = False
-        if self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
-            # disabling either of these two still leads to VRAM spike before setting back down
-            skip_move_to_device = True
-            if "device_map" in self.model_kwargs:
-                del self.model_kwargs["device_map"]
         if (
             self.is_qlora_and_fsdp_enabled
             and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
@@ -698,6 +693,9 @@ class ModelLoader:
                 **self.model_kwargs,
             )
         else:
+            if self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+                if "device_map" in self.model_kwargs:
+                    del self.model_kwargs["device_map"]
             # Please don't remove underscore binding without reading the fn docstring.
             _ = self._configure_zero3_memory_efficient_loading()
 
