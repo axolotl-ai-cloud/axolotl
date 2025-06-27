@@ -276,7 +276,7 @@ def save_trained_model(
             return
 
     if trainer.is_fsdp_enabled:
-        if cfg.fsdp_config and str(cfg.fsdp_config.fsdp_version) != "2":
+        if cfg.fsdp_config and str(cfg.fsdp_version) != "2":
             if cfg.fsdp_config.final_state_dict_type:
                 state_dict_type = cfg.fsdp_config.final_state_dict_type
             else:

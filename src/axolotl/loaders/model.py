@@ -148,7 +148,7 @@ class ModelLoader:
     @property
     def fsdp_version(self):
         """Property that determines the version of FSDP."""
-        return self.cfg.fsdp_config.fsdp_version if self.cfg.fsdp_config else None
+        return self.cfg.fsdp_version
 
     @cached_property
     def is_qlora_and_fsdp_enabled(self):
@@ -505,7 +505,7 @@ class ModelLoader:
                 "bnb_4bit_quant_storage": torch.bfloat16,
             }
             if self.cfg.model_config_type in ["jamba", "qwen2_moe"] and not (
-                self.cfg.deepspeed
+                self.cfg.deepspeed or self.is_fsdp_enabled
             ):
                 # for some reason, this causes the loss to be off by an order of magnitude
                 # but deepspeed needs this still in bfloat16
@@ -705,11 +705,14 @@ class ModelLoader:
                 trust_remote_code=self.cfg.trust_remote_code or False,
                 **self.model_kwargs,
             )
-        if is_deepspeed_zero3_enabled() or (
-            self.is_fsdp_enabled 
-        ):
+        if is_deepspeed_zero3_enabled() or self.is_fsdp_enabled:
             skip_move_to_device = True
 
+        # print("--------------------------------")
+        # print(self.cfg.fsdp_config)
+        # print("--------------------------------")
+        # # torch.distributed.barrier()()
+        # exit()
         return skip_move_to_device
 
     def _set_z3_leaf_modules(self):

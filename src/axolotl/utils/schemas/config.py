@@ -549,8 +549,13 @@ class AxolotlInputConfig(
         json_schema_extra={"description": "FSDP configuration"},
         deprecation_message="Configuring FSDP using `fsdp` is deprecated. Please use `fsdp_config` instead.",
     )
+    # TODO @SalmanMohammadi strongly type this as its own schema
     fsdp_config: dict[str, Any] | None = Field(
         default=None, json_schema_extra={"description": "FSDP configuration options"}
+    )
+    fsdp_version: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "FSDP version"},
     )
     fsdp_final_state_dict_type: (
         Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None
@@ -921,11 +926,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             or data.get("lora_o_kernel")
         ):
             capabilities = data.get("capabilities")
-            is_fsdp = data.get("fsdp") is not None
-            is_fsdp2 = (
-                data.get("fsdp_config") is not None
-                and str(data.get("fsdp_config").get("fsdp_version")) == "2"
-            )
+            is_fsdp = data.get("fsdp_config") is not None
+            is_fsdp2 = is_fsdp and str(data.get("fsdp_version")) == "2"
+
             if capabilities and capabilities.get("n_gpu", 0) > 1 and not is_fsdp2:
                 if is_fsdp:
                     raise ValueError(
@@ -959,11 +962,8 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             # Check multi-GPU compatibility
             capabilities = data.get("capabilities")
             is_multi_gpu = capabilities and capabilities.get("n_gpu", 0) > 1
-            is_fsdp = data.get("fsdp") is not None
-            is_fsdp2 = (
-                data.get("fsdp_config") is not None
-                and str(data.get("fsdp_config").get("fsdp_version")) == "2"
-            )
+            is_fsdp = data.get("fsdp_config") is not None
+            is_fsdp2 = is_fsdp and str(data.get("fsdp_version")) == "2"
 
             if (
                 not is_multi_gpu
@@ -1087,9 +1087,8 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
 
         if (
-            data.get("fsdp")
-            and data.get("fsdp_config")
-            and str(data["fsdp_config"].get("fsdp_version")) == "2"
+            data.get("fsdp_config")
+            and str(data.get("fsdp_version")) == "2"
         ):
             if version.parse(torch_version) < version.parse("2.7.0"):
                 raise ValueError(
@@ -1105,7 +1104,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @classmethod
     def check_fsdp_version(cls, data):
         fsdp_config = data.get("fsdp_config")
-        if fsdp_config is not None and str(fsdp_config.get("fsdp_version")) != "2":
+        if fsdp_config is not None and str(data.get("fsdp_version")) != "2":
             LOG.info(
                 "FSDP1 will be deprecated in an upcoming release of axolotl."
                 "We recommend that you use FSDP version 2 for better performance and compatibility. "
@@ -1118,21 +1117,28 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @classmethod
     def check_fsdp2_base_model_quant(cls, data):
         fsdp_config = data.get("fsdp_config")
-        if fsdp_config and fsdp_config.get("fsdp_version") == 2:
+        if fsdp_config and data.get("fsdp_version") == 2:
             if fsdp_config.get("fsdp_cpu_ram_efficient_loading") and (
                 data.get("load_in_8bit") or data.get("load_in_4bit")
             ):
                 raise ValueError(
-                    "FSDP2 does not support load_in_8bit or load_in_4bit with cpu_ram_efficient_loading. Please use DeepSpeed or set `fsdp_config.fsdp_version` to 1."
+                    "FSDP2 does not support load_in_8bit or load_in_4bit with cpu_ram_efficient_loading. Please use DeepSpeed or set `fsdp_version` to 1."
                 )
         return data
 
     @model_validator(mode="before")
     @classmethod
     def check_fsdp2_qlora_dpo(cls, data):
-        if data.get("fsdp_config") and data.get("fsdp_config").get("fsdp_version") == 2:
+        if data.get("fsdp_config") and data.get("fsdp_version") == 2:
             if data.get("rl") == "dpo" and (data.get("load_in_4bit") or data.get("load_in_8bit")):
                 raise ValueError("FSDP2 does not support DPO with load_in_4bit or load_in_8bit. Please use LoRA instead.")
+        return data
+
+    def check_fsdp_version_in_fsdp_config(cls, data):
+        if fsdp_config := data.get("fsdp_config"):
+            if fsdp_config.get("fsdp_version"):
+                LOG.warning("Configuring `fsdp_version` in `fsdp_config` is deprecated. "
+                            "Please configure `fsdp_version` as a top-level field.")
         return data
 
     # @model_validator(mode="before")
