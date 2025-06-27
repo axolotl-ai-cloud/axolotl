@@ -778,6 +778,12 @@ class AxolotlInputConfig(
             "description": "Custom jinja template for chat template. This will be only used if chat_template is set to `jinja` or `null` (in which case chat_template is automatically set to `jinja`). Default is null."
         },
     )
+    chat_template_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Additional kwargs to pass to the chat template. This is useful for customizing the chat template. For example, you can pass `thinking=False` to add a generation prompt to the chat template."
+        },
+    )
     eot_tokens: list[str] | None = Field(
         default=None,
         json_schema_extra={

@@ -103,6 +103,7 @@ class ChatTemplatePrompter(Prompter):
         chat_template_kwargs = {
             "chat_template": self.chat_template,
             "add_generation_prompt": add_generation_prompt,
+            **self.chat_template_kwargs,
         }
 
         if tools:
