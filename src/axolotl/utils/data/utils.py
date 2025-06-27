@@ -190,7 +190,7 @@ def drop_long_seq_in_dataset(
 
     drop_long_kwargs = {}
     if filter_map_kwargs:
-        drop_long_kwargs["desc"] = "Dropping Long Sequences"
+        drop_long_kwargs["desc"] = f"Dropping Long Sequences (>{sequence_len})"
 
     dataset = dataset.filter(
         drop_long,
