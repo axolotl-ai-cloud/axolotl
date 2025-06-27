@@ -73,12 +73,8 @@ def sage_attention_forward(
         value = repeat_kv(value, module.num_key_value_groups)
 
     # Calculate is_causal following transformers
-    if is_causal is None:
-        is_causal = (
-            query.shape[2] > 1
-            and attention_mask is None
-            and getattr(module, "is_causal", True)
-        )
+    assert is_causal is not False, "is_causal must be True or None"
+    is_causal = True
 
     position_ids = kwargs.get("position_ids", None)
     query_length = query.shape[2]
@@ -127,6 +123,7 @@ def sage_attention_forward(
             max_seqlen_k=max_length_k,
             is_causal=is_causal,
             sm_scale=scaling,
+            smooth_k=False,  # reduces loss 0 / nan grad norms
             tensor_layout="NHD",
         )
 
@@ -135,6 +132,8 @@ def sage_attention_forward(
         )
 
     elif attention_mask is not None:
+        # NOTE: When used without `pad_to_sequence_len`, the loss becomes unstable after a few steps.
+
         assert attention_mask.ndim == 2, "Attention mask must be 2D"
 
         from transformers.modeling_flash_attention_utils import (
@@ -170,7 +169,6 @@ def sage_attention_forward(
         from flash_attn.bert_padding import pad_input
 
         attn_output = pad_input(attn_output_unpad, indices_q, batch_size, query_length)
-
     else:
         # Use standard sageattn
         # The input layout for transformers models is (batch_size, num_heads, seq_len, head_dim),
