@@ -60,7 +60,6 @@ class TestMultiGPULlama:
                 "max_steps": 2,
                 "micro_batch_size": 1,
                 "gradient_accumulation_steps": 2,
-                # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
@@ -344,10 +343,6 @@ class TestMultiGPULlama:
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
-                "fsdp": [
-                    "full_shard",
-                    "auto_wrap",
-                ],
                 "fsdp_config": {
                     "fsdp_limit_all_gathers": True,
                     "fsdp_offload_params": False,
@@ -357,6 +352,7 @@ class TestMultiGPULlama:
                     "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
                     "fsdp_state_dict_type": "FULL_STATE_DICT",
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                    "fsdp_sharding_strategy": "FULL_SHARD",
                 },
                 "use_tensorboard": True,
             }
@@ -416,10 +412,6 @@ class TestMultiGPULlama:
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
-                "fsdp": [
-                    "full_shard",
-                    "auto_wrap",
-                ],
                 "fsdp_config": {
                     "fsdp_limit_all_gathers": True,
                     "fsdp_offload_params": False,
@@ -429,6 +421,7 @@ class TestMultiGPULlama:
                     "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
                     "fsdp_state_dict_type": fsdp_state_dict_type,
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                    "fsdp_sharding_strategy": "FULL_SHARD",
                 },
                 "use_tensorboard": True,
             }
@@ -494,9 +487,6 @@ class TestMultiGPULlama:
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_8bit",
                 "lr_scheduler": "cosine",
-                "fsdp": [
-                    "auto_wrap",
-                ],
                 "fsdp_config": {
                     "fsdp_version": 2,
                     # "fsdp_forward_prefetch": True,  # not yet implemented in accelerate
@@ -506,6 +496,7 @@ class TestMultiGPULlama:
                     "fsdp_state_dict_type": "SHARDED_STATE_DICT",
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                     "fsdp_reshard_after_forward": fsdp_reshard_after_forward,
+                    "fsdp_sharding_strategy": "FULL_SHARD",
                 },
                 "use_tensorboard": True,
             }
@@ -548,10 +539,6 @@ class TestMultiGPULlama:
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                # "lora_modules_to_save": [
-                #     "embed_tokens",
-                #     "lm_head",
-                # ],
                 "sample_packing": True,
                 "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
@@ -571,16 +558,11 @@ class TestMultiGPULlama:
                 "max_steps": 2,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 2,
-                # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
-                "fsdp": [
-                    "full_shard",
-                    "auto_wrap",
-                ],
                 "fsdp_config": {
                     "fsdp_limit_all_gathers": True,
                     "fsdp_offload_params": False,
@@ -590,6 +572,7 @@ class TestMultiGPULlama:
                     "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
                     "fsdp_state_dict_type": "SHARDED_STATE_DICT",
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                    "fsdp_sharding_strategy": "FULL_SHARD",
                 },
                 "use_tensorboard": True,
             }

@@ -19,6 +19,7 @@ from axolotl.utils.config import (
     normalize_cfg_datasets,
     normalize_config,
     validate_config,
+    migrate_fsdp_config,
 )
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
@@ -226,6 +227,7 @@ def load_cfg(
         },
     )
 
+    migrate_fsdp_config(cfg)
     prepare_optim_env(cfg)
     prepare_opinionated_env(cfg)
     normalize_config(cfg)

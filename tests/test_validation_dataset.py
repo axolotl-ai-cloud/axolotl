@@ -357,9 +357,9 @@ class TestOptimizerValidation(BaseValidation):
                     }
                 ],
                 "optimizer": "muon",
-                "fsdp": ["full_shard"],
                 "fsdp_config": {
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                    "fsdp_sharding_strategy": "FULL_SHARD",
                 },
             }
         )

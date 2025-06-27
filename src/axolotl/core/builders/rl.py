@@ -208,7 +208,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             callbacks=self.get_callbacks(),
             **trainer_kwargs,
         )
-        if self.cfg.fsdp:
+        if self.cfg.fsdp_config:
             ensure_dtype(trainer.model, dtype=self.cfg.torch_dtype)
             if self.cfg.rl in [RLType.DPO, RLType.IPO] and trainer.ref_model:
                 ensure_dtype(trainer.ref_model, dtype=self.cfg.torch_dtype)
@@ -219,20 +219,3 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         return trainer
 
-
-class HFPPOTrainerBuilder(TrainerBuilderBase):
-    """
-    HF Factory class for PPO Trainer
-    """
-
-    def get_callbacks(self):
-        callbacks = super().get_callbacks()
-        return callbacks
-
-    def get_post_trainer_create_callbacks(self, trainer):
-        callbacks = super().get_post_trainer_create_callbacks(trainer=trainer)
-        return callbacks
-
-    def build(self, total_num_steps):
-        # TODO: build PPOConfig
-        raise NotImplementedError("PPO trainer builder is not implemented yet.")

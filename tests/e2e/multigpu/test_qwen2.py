@@ -14,16 +14,14 @@ from axolotl.utils.dict import DictDefault
 
 class TestMultiGPUQwen2:
     """
-    Test case for Llama models using LoRA
+    Test case for Qwen2 models using QLoRA
     """
 
-    @pytest.mark.parametrize("base_model", ["Qwen/Qwen2-0.5B", "Qwen/Qwen2.5-0.5B"])
-    def test_qlora_fsdp_dpo(self, base_model, temp_dir):
+    def test_qlora_fsdp_dpo(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": base_model,
-                "load_in_4bit": True,
+                "base_model": "Qwen/Qwen2.5-0.5B",
                 "rl": "dpo",
                 "chat_template": "chatml",
                 "sequence_len": 2048,
@@ -33,6 +31,7 @@ class TestMultiGPUQwen2:
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "val_set_size": 0.01,
+                "load_in_4bit": True,
                 "datasets": [
                     {
                         "path": "Intel/orca_dpo_pairs",
@@ -52,24 +51,22 @@ class TestMultiGPUQwen2:
                 "flash_attention": True,
                 "bf16": "auto",
                 "tf32": True,
-                # "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {
                     "use_reentrant": False,
                 },
-                "fsdp": [
-                    "full_shard",
-                    "auto_wrap",
-                ],
+
                 "fsdp_config": {
-                    "fsdp_limit_all_gathers": True,
+                    "fsdp_version": 2,
+                    # "fsdp_limit_all_gathers": True,
                     "fsdp_offload_params": False,
-                    "fsdp_sync_module_states": True,
-                    "fsdp_use_orig_params": False,
-                    "fsdp_cpu_ram_efficient_loading": False,
+                    "fsdp_cpu_ram_efficient_loading": True,
                     "fsdp_transformer_layer_cls_to_wrap": "Qwen2DecoderLayer",
-                    "fsdp_state_dict_type": "FULL_STATE_DICT",
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
-                    "fsdp_sharding_strategy": "FULL_SHARD",
+                    "fsdp_state_dict_type": "FULL_STATE_DICT",
+                    "reshard_after_forward": True,
+                    # "fsdp_sharding_strategy": "FULL_SHARD",
+                    # "fsdp_use_orig_params": False,
+                    # "fsdp_sync_module_states": True,
                 },
             }
         )

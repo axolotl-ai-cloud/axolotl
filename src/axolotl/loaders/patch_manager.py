@@ -91,7 +91,7 @@ class PatchManager:
 
     def _apply_fsdp_patches(self):
         """Apply patches for FSDP configurations."""
-        if self.cfg.fsdp_config and str(self.cfg.fsdp_config.fsdp_version) == "2":
+        if self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2":
             from axolotl.monkeypatch.accelerate.fsdp2 import patch_accelerate_fsdp2
 
             patch_accelerate_fsdp2()
