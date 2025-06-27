@@ -153,7 +153,11 @@ class ModelLoader:
     @cached_property
     def qlora_fsdp_1(self):
         """Property that determines if FSDP with QLoRA is enabled."""
-        return self.is_fsdp_enabled and self.fsdp_version == 1 and self.cfg.adapter == "qlora"
+        return (
+            self.is_fsdp_enabled
+            and self.fsdp_version == 1
+            and self.cfg.adapter == "qlora"
+        )
 
     def load(self) -> tuple[PreTrainedModel | PeftModelForCausalLM, PeftConfig | None]:
         """Load and prepare the model with all configurations and patches.
@@ -201,7 +205,7 @@ class ModelLoader:
         # Handle PeftModel if needed
         if (
             isinstance(self.model, (peft.PeftModel, peft.PeftModelForCausalLM))
-            and not self.qlora_fsdp_1
+            # and not self.qlora_fsdp_1
         ):
             self.model = self.model.merge_and_unload()
 
@@ -699,12 +703,8 @@ class ModelLoader:
                 trust_remote_code=self.cfg.trust_remote_code or False,
                 **self.model_kwargs,
             )
-        if (
-            is_deepspeed_zero3_enabled()
-            or (
-                self.is_fsdp_enabled
-                and self.fsdp_version == 2
-            )
+        if is_deepspeed_zero3_enabled() or (
+            self.is_fsdp_enabled and self.fsdp_version == 2
         ):
             skip_move_to_device = True
 

@@ -1119,10 +1119,18 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     def check_fsdp2_base_model_quant(cls, data):
         fsdp_config = data.get("fsdp_config")
         if fsdp_config and fsdp_config.get("fsdp_version") == 2:
-            if fsdp_config.get("fsdp_cpu_ram_efficient_loading") and (data.get("load_in_8bit") or data.get("load_in_4bit")):
+            if fsdp_config.get("fsdp_cpu_ram_efficient_loading") and (
+                data.get("load_in_8bit") or data.get("load_in_4bit")
+            ):
                 raise ValueError(
                     "FSDP2 does not support load_in_8bit or load_in_4bit with cpu_ram_efficient_loading. Please use DeepSpeed or set `fsdp_config.fsdp_version` to 1."
                 )
         return data
 
-    
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp2_qlora_dpo(cls, data):
+        if data.get("fsdp_config") and data.get("fsdp_config").get("fsdp_version") == 2:
+            if data.get("rl") == "dpo" and (data.get("load_in_4bit") or data.get("load_in_8bit")):
+                raise ValueError("FSDP2 does not support DPO with load_in_4bit or load_in_8bit. Please use LoRA instead.")
+        return data

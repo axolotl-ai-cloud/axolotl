@@ -3,8 +3,10 @@ base_model: Qwen/Qwen2.5-0.5B
 # hub_model_id: username/custom_model_name
 
 load_in_8bit: false
-load_in_4bit: true
+# load_in_4bit: true
 strict: false
+rl: dpo
+chat_template: chatml
 
 plugins:
   - axolotl.integrations.liger.LigerPlugin
@@ -18,20 +20,26 @@ liger_fused_linear_cross_entropy: true
 
 # peft_use_dora: true
 # load_in_4bit: true
-adapter: qlora
+adapter: lora
 lora_model_dir:
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
 lora_target_linear: true
 
+# datasets:
+#   - path: yahma/alpaca-cleaned
+#     type: alpaca
+
 datasets:
-  - path: yahma/alpaca-cleaned
-    type: alpaca
+  - path: Intel/orca_dpo_pairs
+    split: train
+    type: chatml.intel
+
 
 output_dir: ./outputs/qat_out/
 
-sample_packing: true
+# sample_packing: true
 pad_to_sequence_len: true
 sequence_len: 512
 
@@ -78,7 +86,6 @@ fsdp_config:
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
   fsdp_transformer_layer_cls_to_wrap: Qwen2DecoderLayer
   fsdp_state_dict_type: FULL_STATE_DICT
-  fsdp_sharding_strategy: FULL_SHARD
   fsdp_reshard_after_forward: true
   fsdp_activation_checkpointing: true
 
