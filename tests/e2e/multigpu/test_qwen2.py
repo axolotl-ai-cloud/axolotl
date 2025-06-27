@@ -64,7 +64,7 @@ class TestMultiGPUQwen2:
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                     "fsdp_state_dict_type": "FULL_STATE_DICT",
                     "fsdp_sharding_strategy": "FULL_SHARD",
-                    "fsdp_use_orig_params": False,
+                    "fsdp_use_orig_params": True,
                     "fsdp_sync_module_states": True,
                 },
             }

@@ -86,13 +86,13 @@ Config field mapping
 -----------
 FSDP1 | FSDP2
 -------- | --------
-fsdp_sharding_strategy | fsdp_reshard_after_forward
+fsdp_sharding_strategy | reshard_after_forward
 fsdp_backward_prefetch_policy | **REMOVED**
 fsdp_backward_prefetch | **REMOVED**
 fsdp_forward_prefetch | **REMOVED**
 fsdp_sync_module_states | **REMOVED**
-fsdp_cpu_ram_efficient_loading | fsdp_cpu_ram_efficient_loading
-fsdp_state_dict_type | fsdp_state_dict_type
+fsdp_cpu_ram_efficient_loading | cpu_ram_efficient_loading
+fsdp_state_dict_type | state_dict_type
 fsdp_use_orig_params | **REMOVED**
 
 
@@ -114,12 +114,12 @@ You can migrate to the following FSDP2 config:
 ```{.yaml}
 fsdp_config:
   fsdp_version: 2
-  fsdp_offload_params: false
-  fsdp_cpu_ram_efficient_loading: true
-  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  fsdp_transformer_layer_cls_to_wrap: Qwen3DecoderLayer
-  fsdp_state_dict_type: FULL_STATE_DICT
-  fsdp_reshard_after_forward: true
+  offload_params: false
+  cpu_ram_efficient_loading: true
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3DecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  reshard_after_forward: true
 ```
 
 ### FSDP1 {#sec-fsdp-config}

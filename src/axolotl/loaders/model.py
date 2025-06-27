@@ -359,9 +359,9 @@ class ModelLoader:
         """Apply final optimizations and patches."""
         # Place model on accelerator
         if (
-            self.is_fsdp_enabled 
+            self.cfg.ddp 
             and not self.cfg.load_in_8bit
-            and not (self.cfg.rl or self.cfg.load_in_4bit)
+            and not (self.cfg.rl and self.cfg.load_in_4bit)
             and not skip_move_to_device
         ):
             self.model.to(f"{str(get_device_type())}:{self.cfg.local_rank}")
@@ -505,7 +505,7 @@ class ModelLoader:
                 "bnb_4bit_quant_storage": torch.bfloat16,
             }
             if self.cfg.model_config_type in ["jamba", "qwen2_moe"] and not (
-                self.cfg.deepspeed or self.is_fsdp_enabled
+                self.cfg.deepspeed
             ):
                 # for some reason, this causes the loss to be off by an order of magnitude
                 # but deepspeed needs this still in bfloat16
@@ -693,7 +693,7 @@ class ModelLoader:
                 **self.model_kwargs,
             )
         else:
-            if self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+            if self.is_fsdp_enabled and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
                 if "device_map" in self.model_kwargs:
                     del self.model_kwargs["device_map"]
             # Please don't remove underscore binding without reading the fn docstring.
@@ -706,7 +706,7 @@ class ModelLoader:
                 **self.model_kwargs,
             )
         if is_deepspeed_zero3_enabled() or (
-            self.is_fsdp_enabled and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+            self.is_fsdp_enabled 
         ):
             skip_move_to_device = True
 

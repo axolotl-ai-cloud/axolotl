@@ -235,6 +235,16 @@ def normalize_config(cfg):
     ):
         cfg.gradient_checkpointing_kwargs = {"use_reentrant": True}
 
+    if cfg.get("fsdp_config"):
+        fsdp_config_keys = cfg.fsdp_config.keys()
+        for key in list(fsdp_config_keys):
+            if key.startswith("fsdp_"):
+                # TODO @SalmanMohammadi remove in 0.12
+                LOG.warning_once("Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
+                            "Please omit the `fsdp_` prefix from the any fields in `fsdp_config`.")
+                cfg.fsdp_config[key.replace("fsdp_", "")] = cfg.fsdp_config[key]   
+                del cfg.fsdp_config[key]
+
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
 

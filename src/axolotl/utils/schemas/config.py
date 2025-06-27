@@ -1134,3 +1134,14 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             if data.get("rl") == "dpo" and (data.get("load_in_4bit") or data.get("load_in_8bit")):
                 raise ValueError("FSDP2 does not support DPO with load_in_4bit or load_in_8bit. Please use LoRA instead.")
         return data
+
+    # @model_validator(mode="before")
+    # @classmethod
+    # def check_fsdp_config_kwargs_prefix(cls, data):
+    #     if fsdp_config := data.get("fsdp_config"):
+    #         for key, value in fsdp_config.items():
+    #             if key.startswith("fsdp_"):
+    #                 LOG.warning("Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
+    #                             "Please omit the `fsdp_` prefix from the any fields in `fsdp_config`.")
+    #                 fsdp_config[key.replace("fsdp_", "")] = value
+    #     return data
