@@ -152,7 +152,7 @@ class ModelLoader:
             A tuple with the loaded model and its LoRA configuration (if applicable).
         """
         # Initial setup and patches
-        self.patch_manager.apply_pre_model_load_patches()
+        self.patch_manager.apply_pre_model_load_patches(self.cfg.model_config_type)
         self._apply_pre_model_load_setup()
 
         # Build the model
