@@ -64,6 +64,7 @@ class TestMultiGPUGemma3:
                 },
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.0001,
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
