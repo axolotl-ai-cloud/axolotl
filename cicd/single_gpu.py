@@ -32,6 +32,8 @@ df_args = {
     "NIGHTLY_BUILD": os.environ.get("NIGHTLY_BUILD", ""),
     "CODECOV_TOKEN": os.environ.get("CODECOV_TOKEN", ""),
     "HF_HOME": "/workspace/data/huggingface-cache/hub",
+    "PYTHONUNBUFFERED": os.environ.get("PYTHONUNBUFFERED", "1"),
+    "DEEPSPEED_LOG_LEVEL": os.environ.get("DEEPSPEED_LOG_LEVEL", "WARNING"),
 }
 
 dockerfile_contents = df_template.render(**df_args)
