@@ -421,6 +421,11 @@ def temp_dir() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="function", autouse=True)
+def unique_triton_cache_dir(temp_dir):
+    os.environ["TRITON_CACHE_DIR"] = temp_dir + "/~.triton/cache"
+
+
+@pytest.fixture(scope="function", autouse=True)
 def cleanup_monkeypatches():
     from transformers import Trainer
     from transformers.models.llama.modeling_llama import (  # LlamaFlashAttention2,
