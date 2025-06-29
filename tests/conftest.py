@@ -4,6 +4,7 @@ shared pytest fixtures
 
 import functools
 import importlib
+import logging
 import os
 import shutil
 import sys
@@ -24,6 +25,8 @@ from tests.hf_offline_utils import (
     enable_hf_offline,
     hf_offline_context,
 )
+
+logging.getLogger("filelock").setLevel(logging.CRITICAL)
 
 
 def retry_on_request_exceptions(max_retries=3, delay=1):
