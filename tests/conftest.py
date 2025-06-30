@@ -4,12 +4,14 @@ shared pytest fixtures
 
 import functools
 import importlib
+import logging
 import os
 import shutil
 import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Generator
 
 import datasets
 import pytest
@@ -23,6 +25,8 @@ from tests.hf_offline_utils import (
     enable_hf_offline,
     hf_offline_context,
 )
+
+logging.getLogger("filelock").setLevel(logging.CRITICAL)
 
 
 def retry_on_request_exceptions(max_retries=3, delay=1):
@@ -411,12 +415,17 @@ def tokenizer_mistral_7b_instruct_chatml(tokenizer_mistral_7b_instruct):
 
 
 @pytest.fixture
-def temp_dir():
+def temp_dir() -> Generator[str, None, None]:
     # Create a temporary directory
     _temp_dir = tempfile.mkdtemp()
     yield _temp_dir
     # Clean up the directory after the test
     shutil.rmtree(_temp_dir)
+
+
+@pytest.fixture(scope="function", autouse=True)
+def unique_triton_cache_dir(temp_dir):
+    os.environ["TRITON_CACHE_DIR"] = temp_dir + "/~.triton/cache"
 
 
 @pytest.fixture(scope="function", autouse=True)
