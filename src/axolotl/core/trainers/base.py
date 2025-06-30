@@ -27,6 +27,7 @@ from typing_extensions import override
 from axolotl.core.trainers.mixins import (
     CheckpointSaveMixin,
     OptimizerMixin,
+    PackingMixin,
     RngLoaderMixin,
     SchedulerMixin,
 )
@@ -42,7 +43,12 @@ LOG = get_logger(__name__)
 
 
 class AxolotlTrainer(
-    SchedulerMixin, OptimizerMixin, RngLoaderMixin, CheckpointSaveMixin, Trainer
+    PackingMixin,
+    SchedulerMixin,
+    OptimizerMixin,
+    RngLoaderMixin,
+    CheckpointSaveMixin,
+    Trainer,
 ):
     """Extend the base Trainer for axolotl helpers"""
 
