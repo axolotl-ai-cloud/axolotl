@@ -212,7 +212,11 @@ class AxolotlTrainer(
 
         if dataset.column_names and "length" in dataset.column_names:
             dataset = dataset.remove_columns(["length"])
-        if self.args.sample_packing:
+        if (
+            dataset.column_names
+            and "position_ids" in dataset.column_names
+            and self.args.sample_packing
+        ):
             dataset = dataset.remove_columns(["attention_mask"])
 
         if isinstance(dataset, datasets.Dataset):
