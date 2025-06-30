@@ -28,7 +28,7 @@ class DPOStrategy:
         training_args_kwargs["max_completion_length"] = None
         training_args_kwargs["max_length"] = cfg.sequence_len
         training_args_kwargs["max_prompt_length"] = cfg.sequence_len
-        training_args_kwargs["generate_during_eval"] = cfg.use_wandb or cfg.use_mlflow
+        training_args_kwargs["generate_during_eval"] = cfg.dpo_generate_during_eval
         if cfg.dpo_use_weighting is not None:
             training_args_kwargs["use_weighting"] = cfg.dpo_use_weighting
         if cfg.dpo_padding_free is not None:
