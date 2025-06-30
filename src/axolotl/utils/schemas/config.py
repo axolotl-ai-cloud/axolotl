@@ -506,6 +506,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "Whether to use bettertransformers"},
     )
+    sage_attention: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use SageAttention https://github.com/thu-ml/SageAttention"
+        },
+    )
 
     eager_attention: bool | None = None
 
@@ -906,6 +912,32 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 "This may work on H100s."
             )
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_sageattn_wo_sample_packing(cls, data):
+        if (not data.get("sample_packing", False)) and data.get("sage_attention"):
+            if not data.get("pad_to_sequence_len", False):
+                LOG.warning(
+                    "We recommend turning on `pad_to_sequence_len` for SageAttention without packing."
+                    "This is because there has been signs that the loss explodes after a few steps."
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_compute_capability_w_sageattn(cls, data):
+        if (
+            data.get("sage_attention")
+            and data.get("capabilities")
+            and data.get("capabilities").get("compute_capability")
+            not in ["sm_80", "sm_86", "sm_89", "sm_90", "sm_120"]
+        ):
+            raise ValueError(
+                "SageAttention supports compute capability between sm_80 and sm_120. "
+                "Please use a different attention implementation."
+            )
         return data
 
     # pylint: disable=duplicate-code
