@@ -537,6 +537,11 @@ def merge_datasets(datasets: list[Dataset], cfg: DictDefault) -> Dataset:
 
     if cfg.shuffle_merged_datasets:
         LOG.debug("Shuffling merged datasets...")
+        if cfg.curriculum_sampling:
+            LOG.warning(
+                "Shuffling merged datasets with curriculum sampling is not recommended. "
+                "This will randomize the order of samples."
+            )
         merged_dataset = merged_dataset.shuffle(seed=cfg.seed)
     else:
         LOG.debug("Not shuffling merged datasets.")
