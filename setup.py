@@ -111,9 +111,9 @@ def get_package_version():
 
 
 extras_require = {
-    "flash-attn": ["flash-attn==2.7.4.post1"],
+    "flash-attn": ["flash-attn==2.8.0.post2"],
     "ring-flash-attn": [
-        "flash-attn==2.7.4.post1",
+        "flash-attn==2.8.0.post2",
         "ring-flash-attn>=0.1.4",
         "yunchang==0.6.0",
     ],
