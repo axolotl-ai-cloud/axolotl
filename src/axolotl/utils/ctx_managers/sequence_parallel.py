@@ -12,8 +12,6 @@ from transformers.utils import ModelOutput
 
 from axolotl.monkeypatch.ring_attn import (
     get_ring_attn_group,
-    patch_prepare_data_loader,
-    patch_prepare_device_mesh,
     register_ring_attn,
     update_ring_attn_params,
 )
@@ -236,12 +234,6 @@ class SequenceParallelContextManager:
             sequence_parallel_degree=self.sequence_parallel_degree,
             heads_k_stride=self.heads_k_stride,
             ring_attn_func=self.ring_attn_func,
-        )
-
-        # Patches for accelerate functionality
-        patch_prepare_data_loader()
-        patch_prepare_device_mesh(
-            sequence_parallel_degree=self.sequence_parallel_degree
         )
 
     def _register_model_hooks(self):
