@@ -65,6 +65,7 @@ class PatchManager:
         self._apply_mistral_cross_entropy_patch()
         self._apply_self_attention_lora_patch()
         self._apply_gemma3_conditional_generation_forward_patch()
+        self._apply_sequence_parallel_patches()
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
@@ -230,6 +231,17 @@ class PatchManager:
             )
 
             patch_gemma3_conditional_generation_forward()
+
+    def _apply_sequence_parallel_patches(self):
+        """Apply sequence parallelism patches."""
+        if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
+            from axolotl.monkeypatch.ring_attn.patch import (
+                patch_prepare_data_loader,
+                patch_prepare_device_mesh,
+            )
+
+            patch_prepare_data_loader()
+            patch_prepare_device_mesh(self.cfg.sequence_parallel_degree, self.cfg.fsdp)
 
     def _patch_attention(self):
         """Apply attention-specific patches based on model type."""
