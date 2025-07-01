@@ -297,7 +297,12 @@ class ModelLoader:
             # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so
             # we need to convert them back to fp16/bf16 for flash-attn compatibility.
             (
-                (needs_fa2_dtype or self.cfg.flash_attention or self.cfg.flex_attention)
+                (
+                    needs_fa2_dtype
+                    or self.cfg.flash_attention
+                    or self.cfg.flex_attention
+                    or self.cfg.sage_attention
+                )
                 and not self.qlora_fsdp
             )
             # CCE requires embedding layers to be in fp16/bf16 for backward pass
