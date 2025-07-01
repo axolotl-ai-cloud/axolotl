@@ -221,6 +221,7 @@ def register_ring_attn(
         create_ring_flash_attention_forward_orig = (  # noqa: F811,F841
             create_ring_flash_attention_forward
         )
+        ring_flash_attn.adapters.hf_adapter.create_ring_flash_attention_forward = create_ring_flash_attention_forward
         # fmt: on
 
         ring_flash_attn.adapters.hf_adapter.substitute_hf_flash_attn(
