@@ -33,7 +33,7 @@ RING_ATTN_FUNC_MAPPING = {
 }
 
 
-def create_flash_attn_forward(
+def create_flash_attn_forward_varlen_llama3(
     process_group: dist.ProcessGroup, ring_attn_func: RingAttnFunc
 ) -> Callable:
     """
@@ -163,7 +163,7 @@ def substitute_hf_flash_attn(
         old_flash_attention_forward = (
             transformers.modeling_flash_attention_utils._flash_attention_forward
         )
-        new_flash_attention_forward = create_flash_attn_forward(
+        new_flash_attention_forward = create_flash_attn_forward_varlen_llama3(
             process_group=process_group, ring_attn_func=ring_attn_func
         )
 
