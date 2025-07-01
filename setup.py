@@ -114,7 +114,7 @@ extras_require = {
     "flash-attn": ["flash-attn==2.8.0.post2"],
     "ring-flash-attn": [
         "flash-attn==2.8.0.post2",
-        "ring-flash-attn>=0.1.4",
+        "ring-flash-attn>=0.1.5",
         "yunchang==0.6.0",
     ],
     "deepspeed": [
