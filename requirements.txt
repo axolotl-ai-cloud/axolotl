@@ -68,4 +68,4 @@ schedulefree==1.4.1
 axolotl-contribs-lgpl==0.0.6
 axolotl-contribs-mit==0.0.3
 
-mistral-common==1.7.0
+mistral-common==1.6.3
