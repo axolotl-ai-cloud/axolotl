@@ -29,5 +29,5 @@ UV_PREFIX = "uv " if USE_UV else ""
 
 print(
     UNINSTALL_PREFIX
-    + f'{UV_PREFIX}pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@35bd9c39121a1c90b4e4495c0c3d89078c6bd05e"'
+    + f'{UV_PREFIX}pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@967711de6d8891de1fb543037cecc36e5b5b755e"'
 )
