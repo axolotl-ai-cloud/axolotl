@@ -12,13 +12,13 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 ORIGINAL_TRAINER_CODE = """
-             if delay_optimizer_creation:
-                self.optimizer = self.accelerator.prepare(self.optimizer)
+                if delay_optimizer_creation:
+                    self.optimizer = self.accelerator.prepare(self.optimizer)
 """
 
 PATCHED_TRAINER_CODE = """
-             if delay_optimizer_creation:
-                model = self.accelerator.prepare(self.model)
+                if delay_optimizer_creation:
+                    model = self.accelerator.prepare(self.model)
 """
 
 
