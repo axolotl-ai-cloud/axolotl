@@ -211,11 +211,17 @@ def register_ring_attn(
         LOG.info(f"Sequence parallel group assignments: {group_assignments}")
 
     if ring_attn_func is RingAttnFunc.VARLEN_LLAMA3:
+        # fmt: off
         import ring_flash_attn.adapters.hf_adapter
 
-        ring_flash_attn.adapters.hf_adapter.create_ring_flash_attention_forward = (
+        from ring_flash_attn.adapters.hf_adapter import (  # isort: skip  # pylint: disable=unused-import
+            create_ring_flash_attention_forward as create_ring_flash_attention_forward_orig,
+        )
+
+        create_ring_flash_attention_forward_orig = (  # noqa: F811,F841
             create_ring_flash_attention_forward
         )
+        # fmt: on
 
         ring_flash_attn.adapters.hf_adapter.substitute_hf_flash_attn(
             process_group=get_ring_attn_group(), heads_k_stride=heads_k_stride or 1
