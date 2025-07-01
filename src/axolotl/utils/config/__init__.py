@@ -59,8 +59,13 @@ def choose_device(cfg):
 
 
 def resolve_dtype(cfg):
+    print(cfg.bf16)
+
     if (
-        not cfg.fp16 and cfg.bf16 == "auto" and not cfg.use_ray
+        not cfg.mixed_precision == "fp8"
+        or not cfg.fp16
+        and cfg.bf16 == "auto"
+        and not cfg.use_ray
     ):  # if we use ray we want to defer this check to the worker node
         if is_torch_bf16_gpu_available():
             LOG.debug("bf16 support detected, enabling for this configuration.")
