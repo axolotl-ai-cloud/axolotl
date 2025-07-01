@@ -127,7 +127,7 @@ def pack_parallel(
     bin_size: int,
     num_processes: int | None = None,
     safe_mode: bool = True,
-    mp_start_method: str | None = "spawn",
+    mp_start_method: str | None = "fork",
 ) -> list[list[int]]:
     """Pack sequences into bins using parallel processing.
 
@@ -266,6 +266,7 @@ class MultipackBatchSampler(BatchSampler):
         bin_size: int = 200,  # The max number of samples that can be packed in a single bin
         num_processes: int | None = None,  # Number of processes for parallel packing
         safe_mode: bool = True,  # Conservative packing to prevent training instability
+        mp_start_method: str = "fork",
         **kwargs,  # pylint: disable=unused-argument
     ):
         super().__init__(sampler, batch_size, drop_last)
@@ -278,6 +279,7 @@ class MultipackBatchSampler(BatchSampler):
         self.bin_size = bin_size
         self.num_processes = num_processes
         self.safe_mode = safe_mode
+        self.mp_start_method = mp_start_method
 
         assert isinstance(self.lengths, np.ndarray)
 
@@ -338,8 +340,9 @@ class MultipackBatchSampler(BatchSampler):
                 bin_capacity=self.batch_max_len,
                 group_size=self.group_size,
                 bin_size=self.bin_size,
-                num_processes=self.num_processes,
+                num_processes=max(4, self.num_processes) if self.num_processes else 4,
                 safe_mode=self.safe_mode,
+                mp_start_method=self.mp_start_method,
             )
 
             # Map bin indices back to original indices

@@ -9,7 +9,7 @@ order: 3
 Chat Template strategy uses a jinja2 template that converts a list of messages into a prompt. Support using tokenizer's template, a supported template, or custom jinja2.
 
 ```{.json filename="data.jsonl"}
-{"conversations": [{"role": "...", "content": "..."}]}
+{"messages": [{"role": "...", "content": "..."}, {"role": "...", "content": "..."}, ...]}
 ```
 
 See [configs](../config-reference.qmd) for full configs and supported templates.

@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.monkeypatch.trainer_eval_guard import patch_evaluation_loop_for_fsdp2
-from axolotl.utils.distributed import reduce_and_broadcast
+from axolotl.utils.distributed import init_distributed_state, reduce_and_broadcast
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
@@ -467,6 +467,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 sequential=cfg.sample_packing_sequentially,
                 drop_last=True,
                 num_processes=cfg.dataset_processes,
+                mp_start_method=cfg.sample_packing_mp_start_method or "fork",
             )
 
             data_loader = DataLoader(
@@ -537,6 +538,12 @@ def setup_deepspeed_env(cfg, stage=None):
         os.environ["ACCELERATE_DEEPSPEED_ZERO_STAGE"] = str(stage)
         if stage == 3:
             os.environ["ACCELERATE_DEEPSPEED_ZERO3_INIT"] = "true"
+
+    # NOTE(djsaunde): The distribued state cannot be initialized prior to the
+    # ACCELERATE_USE_DEEPSPEED assignment, but it must be initialized some time prior
+    # to model load.
+    init_distributed_state()
+
     # If we don't assign this, it doesn't actually get set in the accelerate weakref
     _ = HfTrainerDeepSpeedConfig(cfg.deepspeed)
 

@@ -31,8 +31,8 @@ from .args import CutCrossEntropyArgs  # pylint: disable=unused-import. # noqa: 
 LOG = get_logger(__name__)
 
 _CCE_INSTALL_MESSAGE = (
-    "Please install cut_cross_entropy with transformers support using "
-    '`pip install "cut-cross-entropy[transformers] @ git+https://github.com/apple/ml-cross-entropy.git@bad6f7b49c75fdec69471abb71b4cddd0f0c6438"`'
+    "Please install Axolotl's fork of cut_cross_entropy with transformers support using "
+    '`pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@7f6afce"`'
 )
 
 
@@ -64,16 +64,28 @@ class CutCrossEntropyPlugin(BasePlugin):
             "cut_cross_entropy.transformers"
         )
         if cce_spec_transformers is None:
-            raise ImportError(_CCE_INSTALL_MESSAGE)
+            raise ImportError(
+                "Transformers support is not installed. " + _CCE_INSTALL_MESSAGE
+            )
+
+        # Check if Axolotl's cce fork is installed
+        try:
+            from cut_cross_entropy.transformers.patch import AXOLOTL_CCE_FORK
+
+            if not AXOLOTL_CCE_FORK:
+                raise ImportError
+        except ImportError as e:
+            raise ImportError(
+                "Axolotl's fork of cut_cross_entropy is not installed. "
+                + _CCE_INSTALL_MESSAGE
+            ) from e
 
     def pre_model_load(self, cfg):
         """Apply cut cross entropy before model loading if enabled."""
         if cfg.cut_cross_entropy:
             self._check_requirements()
 
-            from axolotl.integrations.cut_cross_entropy.monkeypatch.patch import (
-                cce_patch,
-            )
+            from cut_cross_entropy.transformers.patch import cce_patch
 
             LOG.info(
                 f"Applying Cut Cross Entropy to model type: {cfg.model_config_type}"

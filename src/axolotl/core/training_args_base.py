@@ -38,6 +38,10 @@ class AxolotlTrainingMixins:
             "help": "Use next-fit sample packing that preserves the order of samples coming from the sampler. Use in combination with curriculum_sampling for fully sequential packing."
         },
     )
+    sample_packing_mp_start_method: str | None = field(
+        default=None,
+        metadata={"help": "The multiprocessing start method to use."},
+    )
     multipack_real_batches: bool = field(
         default=False,
         metadata={"help": "Use real batches for efficient training."},

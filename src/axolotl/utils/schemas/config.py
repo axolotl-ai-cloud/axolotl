@@ -393,6 +393,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "Whether to pack samples sequentially"},
     )
+    sample_packing_mp_start_method: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "The multiprocessing start method to use for packing. Should be 'fork', 'spawn' or 'forkserver'"
+        },
+    )
     eval_sample_packing: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -526,6 +532,19 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Apply custom LoRA autograd functions and activation function Triton kernels for speed and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html"
+        },
+    )
+
+    chunked_cross_entropy: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use chunked cross entropy loss for memory efficiency"
+        },
+    )
+    chunked_cross_entropy_num_chunks: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of chunks to use for chunked cross entropy loss"
         },
     )
 
