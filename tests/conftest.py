@@ -10,7 +10,7 @@ import shutil
 import sys
 import tempfile
 import time
-from pathlib import Path
+from pathlib import Path, PosixPath
 from typing import Generator
 
 import datasets
@@ -424,8 +424,8 @@ def temp_dir() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="function", autouse=True)
-def unique_triton_cache_dir(temp_dir):
-    os.environ["TRITON_CACHE_DIR"] = temp_dir + "/~.triton/cache"
+def unique_triton_cache_dir(temp_dir: str | PosixPath) -> None:
+    os.environ["TRITON_CACHE_DIR"] = str(temp_dir) + "/.triton/cache"
 
 
 @pytest.fixture(scope="function", autouse=True)
