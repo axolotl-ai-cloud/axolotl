@@ -146,6 +146,7 @@ class AxolotlInputConfig(
     dpo_label_smoothing: float | None = None
     dpo_norm_loss: bool | None = None
     dpo_padding_free: bool | None = None
+    dpo_generate_during_eval: bool | None = None
 
     datasets: (
         Annotated[
