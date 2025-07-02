@@ -72,6 +72,7 @@ axolotl fetch deepspeed_configs  # OPTIONAL
 
 #### Using Docker
 
+Installing with Docker can be less error prone than installing in your own environment.
 ```bash
 docker run --gpus '"all"' --rm -it axolotlai/axolotl:main-latest
 ```
