@@ -59,6 +59,8 @@ Features:
 
 ### Installation
 
+#### Using pip
+
 ```bash
 pip3 install -U packaging==23.2 setuptools==75.8.0 wheel ninja
 pip3 install --no-build-isolation axolotl[flash-attn,deepspeed]
@@ -66,6 +68,13 @@ pip3 install --no-build-isolation axolotl[flash-attn,deepspeed]
 # Download example axolotl configs, deepspeed configs
 axolotl fetch examples
 axolotl fetch deepspeed_configs  # OPTIONAL
+```
+
+#### Using Docker
+
+Installing with Docker can be less error prone than installing in your own environment.
+```bash
+docker run --gpus '"all"' --rm -it axolotlai/axolotl:main-latest
 ```
 
 Other installation approaches are described [here](https://docs.axolotl.ai/docs/installation.html).
