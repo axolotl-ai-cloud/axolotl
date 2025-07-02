@@ -9,7 +9,7 @@ format:
 This section describes the different Docker images that are released by AxolotlAI at [Docker Hub](https://hub.docker.com/u/axolotlai).
 
 ::: {.callout-important}
-For Blackwell GPUs, please use the tags with Pytorch 2.7.1 and CUDA 12.8.
+For Blackwell GPUs, please use the tags with PyTorch 2.7.1 and CUDA 12.8.
 :::
 
 ## Base
@@ -34,6 +34,7 @@ Tags examples:
 
 - `main-base-py3.11-cu128-2.7.1`
 - `main-base-py3.11-cu126-2.7.1`
+- `main-base-py3.11-cu126-2.6.0`
 - `main-base-py3.11-cu124-2.6.0`
 - `main-base-py3.11-cu124-2.5.1`
 
@@ -73,13 +74,15 @@ There may be some extra tags appended to the image, like `-vllm` which installs 
 
 Tags examples:
 
-- `main-py3.11-cu126-2.7.0`
+- `main-py3.11-cu128-2.7.1`
+- `main-py3.11-cu126-2.7.1`
+- `main-py3.11-cu126-2.6.0`
 - `main-py3.11-cu124-2.6.0`
 - `main-py3.11-cu124-2.5.1`
 - `main-latest`
 - `main-20250303-py3.11-cu124-2.6.0`
 - `main-20250303-py3.11-cu124-2.5.1`
-- `0.9.2`
+- `0.10.1`
 
 ## Cloud
 
