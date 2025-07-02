@@ -115,14 +115,20 @@ class PatchManager:
     def _apply_flex_attention_patches(self):
         """Apply patches for flexible attention."""
         if self.cfg.flex_attention:
-            from axolotl.monkeypatch.attention.flex_attn import (
-                patch_flex_make_mask,
-                patch_flex_wrapper,
-            )
+            # from axolotl.monkeypatch.attention.flex_attn import (
+            #     patch_flex_make_mask,
+            #     patch_flex_wrapper,
+            # )
+            #
+            # flex_attn_compile_kwargs = self.cfg.flex_attn_compile_kwargs or {}
+            # patch_flex_wrapper(**flex_attn_compile_kwargs)
+            # patch_flex_make_mask()
+            if self.cfg.sample_packing:
+                from axolotl.core.attention.flex_block_mask import (
+                    patch_create_causal_mask,
+                )
 
-            flex_attn_compile_kwargs = self.cfg.flex_attn_compile_kwargs or {}
-            patch_flex_wrapper(**flex_attn_compile_kwargs)
-            patch_flex_make_mask()
+                patch_create_causal_mask()
 
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
