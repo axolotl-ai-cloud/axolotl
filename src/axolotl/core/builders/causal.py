@@ -253,6 +253,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["eval_sample_packing"] = bool(
             self.cfg.eval_sample_packing
         )
+        if self.cfg.sample_packing_sequentially is not None:
+            training_arguments_kwargs["sample_packing_sequentially"] = (
+                self.cfg.sample_packing_sequentially
+            )
         if self.cfg.sample_packing_bin_size is not None:
             training_arguments_kwargs["sample_packing_bin_size"] = (
                 self.cfg.sample_packing_bin_size
