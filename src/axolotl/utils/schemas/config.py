@@ -203,7 +203,7 @@ class AxolotlInputConfig(
         },
     )
     dataset_processes: int | None = Field(
-        default=min(32, os.cpu_count()),  # type: ignore[type-var]
+        default=min(int(os.environ.get("AXOLOTL_DATASET_PROCESSES", 32)), os.cpu_count()),  # type: ignore[type-var]
         json_schema_extra={
             "description": "The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set."
         },
