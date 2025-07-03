@@ -323,14 +323,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.accelerator_config
             )
 
-        import torch.distributed as dist
-
-        if dist.get_rank() == 0:
-            import ipdb
-
-            ipdb.set_trace()
-        dist.barrier()
-
         if self.cfg.image_size:
             training_arguments_kwargs["image_size"] = self.cfg.image_size
         if self.cfg.image_resize_algorithm:
