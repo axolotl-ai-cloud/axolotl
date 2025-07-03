@@ -609,6 +609,9 @@ def prepare_opinionated_env(cfg):
     if cfg.qlora_sharded_model_loading:
         # model loading is forked after the tokenizer
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    if cfg.sample_packing:
+        # multipack parallel packing sampler defaults to using fork
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def setup_trainer(
