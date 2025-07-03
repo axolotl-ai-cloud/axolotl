@@ -6,6 +6,7 @@ import torch.distributed as dist
 
 def patch_tiled_mlp(model_type):
     from deepspeed.runtime.sequence_parallel.ulysses_sp import (
+        SequenceTiledCompute,
         TiledMLP,
         sequence_tiled_compute,
     )
@@ -35,25 +36,6 @@ def patch_tiled_mlp(model_type):
     #     )
     #     return down_res
 
-    def mlp_forward_sequence_tiled_compute(self, x):
-        kwargs_to_shard = dict(x=x)
-        kwargs_to_pass = dict(self=self)
-        grad_requiring_tensor_key = "x"
-        compute_params = [self.down_proj.weight, self.up_proj.weight]
-        seqlen = x.shape[1]
-        num_shards = 4
-
-        return sequence_tiled_compute(
-            mlp_forward_orig,
-            seqlen,
-            num_shards,
-            kwargs_to_shard,
-            kwargs_to_pass,
-            grad_requiring_tensor_key,
-            compute_params,
-            output_unshard_dimension=1,  # x
-            output_reduction=None,
-        )
 
     try:
         # Dynamically import the module and MLP class
@@ -63,6 +45,44 @@ def patch_tiled_mlp(model_type):
         )
         module = __import__(module_path, fromlist=[f"{model_cls_prefix}MLP"])
         mlp_cls = getattr(module, f"{model_cls_prefix}MLP")
+
+        mlp_forward_orig = mlp_cls.forward
+
+        def mlp_forward_sequence_tiled_compute(self, x):
+            kwargs_to_shard = dict(x=x)
+            kwargs_to_pass = dict(self=self)
+            grad_requiring_tensor_key = "x"
+            compute_params = [self.down_proj.weight, self.gate_proj.weight, self.up_proj.weight]
+            seqlen = x.shape[1]
+            num_shards = 4
+
+            def mlp_forward_orig(self, x):
+                return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+
+            return SequenceTiledCompute.apply(
+                mlp_forward_orig,
+                seqlen,
+                num_shards,
+                keys_to_shard,
+                keys_to_pass,
+                grad_requiring_tensor_key,
+                compute_params,
+                output_unshard_dimension,
+                output_reduction,
+                *args_to_shard,
+                *args_to_pass,
+            )
+            return sequence_tiled_compute(
+                mlp_forward_orig,
+                seqlen,
+                num_shards,
+                kwargs_to_shard,
+                kwargs_to_pass,
+                grad_requiring_tensor_key,
+                compute_params,
+                output_unshard_dimension=1,  # x
+                output_reduction=None,
+            )
 
         mlp_cls.forward = mlp_forward_sequence_tiled_compute
     except (ImportError, AttributeError) as e:
