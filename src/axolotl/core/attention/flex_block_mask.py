@@ -2,7 +2,6 @@
 monkeypatch for flex + packing
 """
 
-import importlib
 import sys
 from typing import Callable, Optional, Union
 
@@ -139,9 +138,6 @@ def patch_create_causal_mask(model_type):
     import transformers.masking_utils
 
     transformers.masking_utils.create_causal_mask = create_causal_mask
-    sys.modules["transformers.masking_utils"] = importlib.reload(
-        sys.modules["transformers.masking_utils"]
-    )
 
     if model_type:
         try:
