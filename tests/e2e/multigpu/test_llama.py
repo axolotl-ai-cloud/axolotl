@@ -364,6 +364,7 @@ class TestMultiGPULlama:
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
                 "use_tensorboard": True,
+                "seed": 42,
             }
         )
 
@@ -759,6 +760,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero2.json"),
                 "use_tensorboard": True,
+                "seed": 42,
                 **adapter,
             }
         )
