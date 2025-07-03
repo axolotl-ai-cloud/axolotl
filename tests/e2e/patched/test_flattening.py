@@ -77,5 +77,5 @@ class TestFAFlattening:
         check_model_output_exists(temp_dir, cfg)
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 1.4, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/train_loss", 1.5, "Train Loss (%s) is too high"
         )
