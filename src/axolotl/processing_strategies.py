@@ -264,6 +264,23 @@ class Gemma3ProcessingStrategy(ProcessingStrategy):
         return labels
 
 
+class Phi35VLProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for Phi-3.5-vision-instruct"""
+
+    def __init__(
+        self,
+        processor: ProcessorMixin,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
+        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        self.image_token = "<|image|>"  # nosec
+        self.image_token_id = processor.tokenizer.convert_tokens_to_ids(
+            self.image_token
+        )
+
+
 def get_processing_strategy(
     processor: ProcessorMixin,
     chat_template,
@@ -277,6 +294,10 @@ def get_processing_strategy(
         )
     if chat_template_type == "gemma3":
         return Gemma3ProcessingStrategy(
+            processor, chat_template, image_size, image_resize_algorithm
+        )
+    if chat_template_type == "phi_35_vl":
+        return Phi35VLProcessingStrategy(
             processor, chat_template, image_size, image_resize_algorithm
         )
     if chat_template_type in [

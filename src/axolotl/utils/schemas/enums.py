@@ -48,6 +48,8 @@ class ChatTemplate(str, Enum):
     llama4 = "llama4"
     phi_3 = "phi_3"
     phi_35 = "phi_35"
+    phi_35_vl = "phi_35_vl"
+    phi_4 = "phi_4"
     deepseek_v2 = "deepseek_v2"
     deepseek_v3 = "deepseek_v3"
     jamba = "jamba"

@@ -1,6 +1,7 @@
 """Shared constants for axolotl.loaders module"""
 
 from transformers import (
+    AutoModelForCausalLM,
     Gemma3ForConditionalGeneration,
     Llama4ForConditionalGeneration,
     LlavaForConditionalGeneration,
@@ -18,4 +19,6 @@ MULTIMODAL_AUTO_MODEL_MAPPING = {
     "qwen2_5_vl": Qwen2_5_VLForConditionalGeneration,
     "mistral3": Mistral3ForConditionalGeneration,
     "gemma3": Gemma3ForConditionalGeneration,
+    # phi3_v modeling code is not available in transformers yet
+    "phi3_v": AutoModelForCausalLM,
 }
