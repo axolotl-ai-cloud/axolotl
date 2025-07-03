@@ -620,6 +620,12 @@ class ModelLoader:
 
     def _build_model(self) -> bool:
         """Load model, with load strategy depending on config."""
+        import torch.distributed as dist
+        if dist.get_rank() == 0:
+            import ipdb
+            ipdb.set_trace()
+        dist.barrier()
+
         skip_move_to_device = False
         if self.is_fsdp_enabled:
             if self.cfg.fsdp_config.cpu_ram_efficient_loading:
