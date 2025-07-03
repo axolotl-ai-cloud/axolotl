@@ -2,6 +2,8 @@
 monkeypatch for flex + packing
 """
 
+import importlib
+import sys
 from typing import Callable, Optional, Union
 
 import torch
@@ -133,7 +135,23 @@ def create_causal_mask(
     return causal_mask
 
 
-def patch_create_causal_mask():
+def patch_create_causal_mask(model_type):
     import transformers.masking_utils
 
     transformers.masking_utils.create_causal_mask = create_causal_mask
+    sys.modules["transformers.masking_utils"] = importlib.reload(
+        sys.modules["transformers.masking_utils"]
+    )
+
+    if model_type:
+        try:
+            # Dynamically import the module and attention class
+            module_path = f"transformers.models.{model_type}.modeling_{model_type}"
+            module = __import__(module_path)
+            module.create_causal_mask = create_causal_mask
+            del sys.modules[module_path]
+        except (ImportError, AttributeError) as e:
+            raise ValueError(
+                f"Could not import attention class for model_type: {model_type}. "
+                f"Error: {str(e)}"
+            ) from e

@@ -49,11 +49,11 @@ class PatchManager:
 
     def apply_pre_model_load_patches(self):
         """Apply pre-model load patches based on config."""
+        self._apply_flex_attention_patches()
         self._apply_flash_attention_patches()
         self._apply_chunked_cross_entropy_patch()
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
-        self._apply_flex_attention_patches()
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
@@ -128,7 +128,7 @@ class PatchManager:
                     patch_create_causal_mask,
                 )
 
-                patch_create_causal_mask()
+                patch_create_causal_mask(self.cfg.model_config_type)
 
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
