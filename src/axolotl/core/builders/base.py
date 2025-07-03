@@ -214,14 +214,6 @@ class TrainerBuilderBase(abc.ABC):
         training_args_kwargs["warmup_steps"] = warmup_steps
 
     def _configure_precision_settings(self, training_args_kwargs: dict):
-        import torch.distributed as dist
-
-        if dist.get_rank() == 0:
-            import ipdb
-
-            ipdb.set_trace()
-        dist.barrier()
-
         training_args_kwargs["fp16"] = (self.cfg.fp16 and not self.cfg.bf16) or False
         training_args_kwargs["tf32"] = self.cfg.tf32
         if self.cfg.bf16 == "full":
