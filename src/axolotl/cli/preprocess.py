@@ -35,6 +35,11 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
     check_accelerate_default_config()
     check_user_token()
 
+    if cfg.skip_prepare_dataset:
+        raise ValueError(
+            "You have set `skip_prepare_dataset: true`. Preprocessing is not needed. Run the `axolotl train` CLI directly instead."
+        )
+
     if not cfg.dataset_prepared_path:
         msg = (
             Fore.RED
