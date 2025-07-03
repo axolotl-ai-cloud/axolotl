@@ -51,6 +51,10 @@ description: Frequently asked questions
 >   pad_token: "..."
 > ```
 
+**Q: `IterableDataset error` or `KeyError: 'input_ids'` when using `preprocess` CLI**
+
+> A: This is because you may be using `preprocess` CLI with `pretraining_dataset:` or `skip_prepare_dataset: true` respectively. Please use `axolotl train` CLI directly instead as these datasets are prepared on demand.
+
 ### Chat templates
 
 **Q: `jinja2.exceptions.UndefinedError: 'dict object' has no attribute 'content' / 'role' / ____`**
