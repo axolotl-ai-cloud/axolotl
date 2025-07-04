@@ -49,7 +49,7 @@ class PatchManager:
 
     def apply_pre_model_load_patches(self):
         """Apply pre-model load patches based on config."""
-        self._apply_flex_attention_patches()
+        # self._apply_flex_attention_patches()
         self._apply_flash_attention_patches()
         self._apply_chunked_cross_entropy_patch()
         self._apply_fsdp_patches()
@@ -97,13 +97,13 @@ class PatchManager:
 
             patch_accelerate_fsdp2()
 
-        if self.cfg.fsdp_config:
-            # see transformers#39152
-            from axolotl.monkeypatch.trainer_fsdp_optim import (
-                patch_training_loop_for_fsdp,
-            )
-
-            patch_training_loop_for_fsdp()
+        # if self.cfg.fsdp_config:
+        #     # see transformers#39152
+        #     from axolotl.monkeypatch.trainer_fsdp_optim import (
+        #         patch_training_loop_for_fsdp,
+        #     )
+        #
+        #     patch_training_loop_for_fsdp()
 
     def _apply_adapter_patches(self):
         """Apply patches for adapter configurations."""
