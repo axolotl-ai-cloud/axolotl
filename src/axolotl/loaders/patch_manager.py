@@ -47,7 +47,7 @@ class PatchManager:
         """Check if flash attention is installed."""
         return importlib.util.find_spec("flash_attn") is not None
 
-    def apply_pre_model_load_patches(self, model_type: str | None):
+    def apply_pre_model_load_patches(self):
         """Apply pre-model load patches based on config."""
         self._apply_flash_attention_patches()
         self._apply_chunked_cross_entropy_patch()
@@ -66,8 +66,7 @@ class PatchManager:
         self._apply_self_attention_lora_patch()
         self._apply_gemma3_conditional_generation_forward_patch()
         self._apply_sequence_parallel_patches()
-        if model_type:
-            self._apply_tiled_mlp(model_type)
+        self._apply_tiled_mlp(self.cfg.model_config_type)
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
