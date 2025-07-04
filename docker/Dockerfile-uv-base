@@ -34,6 +34,3 @@ RUN uv pip install packaging setuptools wheel psutil \
     && uv pip install --no-build-isolation "causal_conv1d @ git+https://github.com/Dao-AILab/causal-conv1d.git@main" \
     && uv pip install "mamba_ssm @ git+https://github.com/state-spaces/mamba.git@main" \
     && uv pip install awscli pydantic
-
-# Configure shell to display current virtual environment
-RUN echo 'export PS1="(axolotl-venv) \u@\h:\w\$ "' >> ~/.bashrc
