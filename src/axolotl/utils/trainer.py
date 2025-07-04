@@ -535,7 +535,7 @@ def setup_deepspeed_env(cfg, stage=None):
 
     os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
     os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
-    os.environ["ACCELERATE_GRADIENT_ACCUMULATION_STEPS"] = (
+    os.environ["ACCELERATE_GRADIENT_ACCUMULATION_STEPS"] = str(
         cfg.gradient_accumulation_steps
     )
     if stage:
