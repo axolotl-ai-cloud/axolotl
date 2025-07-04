@@ -219,7 +219,9 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.bf16 == "full":
             training_args_kwargs["bf16_full_eval"] = True
         else:
-            training_args_kwargs["bf16"] = self.cfg.bf16 or self.cfg.bfloat16
+            bf16 = self.cfg.bf16 or self.cfg.bfloat16
+            bf16 = bf16 if bf16 is not None else False
+            training_args_kwargs["bf16"] = bf16
 
     def _configure_scheduler(self, training_args_kwargs: dict):
         if self.cfg.lr_scheduler in ["one_cycle", "rex"]:
