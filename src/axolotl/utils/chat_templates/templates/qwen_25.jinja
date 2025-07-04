@@ -23,7 +23,9 @@
         {{- '<|im_start|>' + message.role + '\n' + message.content + '<|im_end|>' + '\n' }}
     {%- elif message.role == "assistant" %}
         {{- '<|im_start|>' + message.role }}
-        {%- if message.content %}{{- '\n' + message.content }}{%- endif %}
+        {%- if message.content %}
+            {{- '\n' + message.content }}
+        {%- endif %}
         {%- for tool_call in message.tool_calls %}
             {%- if tool_call.function is defined %}
                 {%- set tool_call = tool_call.function %}
@@ -36,11 +38,17 @@
         {%- endfor %}
         {{- '<|im_end|>\n' }}
     {%- elif message.role == "tool" %}
-        {%- if (loop.index0 == 0) or (messages[loop.index0 - 1].role != "tool") %}{{- '<|im_start|>user' }}{%- endif %}
+        {%- if (loop.index0 == 0) or (messages[loop.index0 - 1].role != "tool") %}
+            {{- '<|im_start|>user' }}
+        {%- endif %}
         {{- '\n<tool_response>\n' }}
         {{- message.content }}
         {{- '\n</tool_response>' }}
-        {%- if loop.last or (messages[loop.index0 + 1].role != "tool") %}{{- '<|im_end|>\n' }}{%- endif %}
+        {%- if loop.last or (messages[loop.index0 + 1].role != "tool") %}
+            {{- '<|im_end|>\n' }}
+        {%- endif %}
     {%- endif %}
 {%- endfor %}
-{%- if add_generation_prompt %}{{- '<|im_start|>assistant\n' }}{%- endif %}
+{%- if add_generation_prompt %}
+    {{- '<|im_start|>assistant\n' }}
+{%- endif %}

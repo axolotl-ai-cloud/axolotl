@@ -4,15 +4,17 @@
 {%- else %}
     {%- set loop_messages = messages %}
 {%- endif %}
+
 {{- bos_token }}
 {%- for message in loop_messages %}
     {%- if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}
-        {{- raise_exception("After the optional system message, conversation roles must alternate user/assistant/user/assistant/...") }}
+        {{- raise_exception('After the optional system message, conversation roles must alternate user/assistant/user/assistant/...') }}
     {%- endif %}
     {%- if message["role"] == "user" %}
         {%- if loop.last and system_message is defined %}
             {{- "[INST]" + system_message + "
-            " }}
+
+" }}
         {%- else %}
             {{- "[INST]" }}
         {%- endif %}
@@ -31,20 +33,20 @@
         {%- endif %}
         {{- "[/INST]" }}
     {%- elif message["role"] == "assistant" %}
-        {%- if message["content"] is not string %}
-            {%- for chunk in message["content"] %}
-                {%- if chunk["type"] == "text" %}
-                    {{- chunk["text"] }}
-                {%- elif chunk["type"] == "image" %}
-                    {{- "[IMG]" }}
-                {%- else %}
-                    {{- raise_exception("Unrecognized content type!") }}
-                {%- endif %}
-            {%- endfor %}
-            {{- eos_token }}
-        {%- else %}
-            {{- message["content"] + eos_token }}
-        {%- endif %}
+ {%- if message["content"] is not string %}
+ {%- for chunk in message["content"] %}
+ {%- if chunk["type"] == "text" %}
+ {{- chunk["text"] }}
+ {%- elif chunk["type"] == "image" %}
+ {{- "[IMG]" }}
+ {%- else %}
+ {{- raise_exception("Unrecognized content type!") }}
+{%- endif %}
+{%- endfor %}
+{{- eos_token }}
+{%- else %}
+{{- message["content"] + eos_token }}
+{%- endif %}
     {%- else %}
         {{- raise_exception("Only user and assistant roles are supported, with the exception of an initial optional system message!") }}
     {%- endif %}

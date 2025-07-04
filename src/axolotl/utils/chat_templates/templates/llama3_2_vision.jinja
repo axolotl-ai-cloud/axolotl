@@ -15,6 +15,7 @@
 {%- if not tools is defined %}
     {%- set tools = none %}
 {%- endif %}
+
 {#- This block extracts the system message, so we can slot it into the right place. #}
 {%- if messages[0]['role'] == 'system' %}
     {%- set system_message = messages[0]['content']|trim %}
@@ -22,6 +23,7 @@
 {%- else %}
     {%- set system_message = "" %}
 {%- endif %}
+
 {#- Find out if there are any images #}
 {% set image_ns = namespace(has_images=false) %}
 {%- for message in messages %}
@@ -31,14 +33,18 @@
         {%- endif %}
     {%- endfor %}
 {%- endfor %}
+
 {#- Error out if there are images and system message #}
 {%- if image_ns.has_images and not system_message == "" %}
     {{- raise_exception("Prompting with images is incompatible with system messages.") }}
 {%- endif %}
+
 {#- System message if there are no images #}
 {%- if not image_ns.has_images %}
     {{- "<|start_header_id|>system<|end_header_id|>\n\n" }}
-    {%- if tools is not none %}{{- "Environment: ipython\n" }}{%- endif %}
+    {%- if tools is not none %}
+        {{- "Environment: ipython\n" }}
+    {%- endif %}
     {{- "Cutting Knowledge Date: December 2023\n" }}
     {{- "Today Date: " + date_string + "\n\n" }}
     {%- if tools is not none and not tools_in_user_message %}
@@ -53,6 +59,7 @@
     {{- system_message }}
     {{- "<|eot_id|>" }}
 {%- endif %}
+
 {#- Custom tools are passed in a user message with some extra guidance #}
 {%- if tools_in_user_message and not tools is none %}
     {#- Extract the first user message so we can plug it in here #}
@@ -61,7 +68,7 @@
         {%- set messages = messages[1:] %}
     {%- else %}
         {{- raise_exception("Cannot put tools in the first user message when there's no first user message!") }}
-    {%- endif %}
+{%- endif %}
     {{- '<|start_header_id|>user<|end_header_id|>\n\n' -}}
     {{- "Given the following functions, please respond with a JSON for a function call " }}
     {{- "with its proper arguments that best answers the given prompt.\n\n" }}
@@ -73,9 +80,10 @@
     {%- endfor %}
     {{- first_user_message + "<|eot_id|>"}}
 {%- endif %}
+
 {%- for message in messages %}
     {%- if not (message.role == 'ipython' or message.role == 'tool' or 'tool_calls' in message) %}
-        {{- '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' }}
+    {{- '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' }}
         {%- if message['content'] is string %}
             {{- message['content'] }}
         {%- else %}
@@ -109,4 +117,6 @@
         {{- "<|eot_id|>" }}
     {%- endif %}
 {%- endfor %}
-{%- if add_generation_prompt %}{{- '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{%- endif %}
+{%- if add_generation_prompt %}
+    {{- '<|start_header_id|>assistant<|end_header_id|>\n\n' }}
+{%- endif %}
