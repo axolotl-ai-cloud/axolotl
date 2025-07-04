@@ -115,10 +115,11 @@ def normalize_config(cfg):
         "chrf",
     ]
     choose_device(cfg)
-    cfg.ddp = cfg.ddp if cfg.ddp is not None else cfg.world_size != 1
-    if cfg.ddp:
+    # cfg.ddp = cfg.ddp if cfg.ddp is not None else cfg.world_size != 1
+    if cfg.world_size != 1:
         cfg.device_map = {"": int(os.environ.get("LOCAL_RANK", 0))}
-        cfg.batch_size = cfg.batch_size * cfg.world_size
+        if cfg.fsdp or cfg.fsdp_config or cfg.ddp:
+            cfg.batch_size = cfg.batch_size * cfg.world_size
 
     if not cfg.use_ray:
         # delay resolving dtype until on worker node when launching with ray
@@ -313,3 +314,16 @@ def prepare_plugins(cfg):
         plugin_manager = PluginManager.get_instance()
         for plugin_name in cfg["plugins"]:
             plugin_manager.register(plugin_name)
+
+
+# TODO @SalmanMohammadi remove this function in 0.12
+def migrate_fsdp_config(cfg):
+    if cfg.get("fsdp_config"):
+        fsdp_config_keys = cfg.fsdp_config.keys()
+        if "fsdp_version" in fsdp_config_keys:
+            cfg.fsdp_version = cfg.fsdp_config.get("fsdp_version")
+
+        for key in list(fsdp_config_keys):
+            if key.startswith("fsdp_"):
+                cfg.fsdp_config[key.replace("fsdp_", "")] = cfg.fsdp_config[key]
+                del cfg.fsdp_config[key]
