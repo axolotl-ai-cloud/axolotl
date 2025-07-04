@@ -54,6 +54,7 @@ class PatchManager:
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
         self._apply_flex_attention_patches()
+        self._apply_sageattn_patches()
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
@@ -115,6 +116,13 @@ class PatchManager:
             flex_attn_compile_kwargs = self.cfg.flex_attn_compile_kwargs or {}
             patch_flex_wrapper(**flex_attn_compile_kwargs)
             patch_flex_make_mask()
+
+    def _apply_sageattn_patches(self):
+        """Apply patches for SageAttention."""
+        if self.cfg.sage_attention:
+            from axolotl.monkeypatch.attention.sage_attn import patch_sageattn
+
+            patch_sageattn()
 
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
