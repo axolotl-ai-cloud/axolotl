@@ -6,6 +6,10 @@ from typing import Optional, Tuple, Union
 import torch
 import transformers
 
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
+
 
 def patch_flex_wrapper(**flex_attn_compile_kwargs):
     # TODO remove this patch when transformers#37285 is merged and in a release
@@ -46,10 +50,15 @@ def patch_flex_wrapper(**flex_attn_compile_kwargs):
                 # cause errors. The suggested fix is to compile with "max-autotune-no-cudagraphs"
                 # see https://github.com/pytorch/pytorch/issues/146260 for training
                 self.training = training
+                LOG.info(
+                    "Compiling flex attention with kwargs: %s. This may take a while...",
+                    flex_attn_compile_kwargs,
+                )
                 self._compiled_flex_attention = torch.compile(
                     flex_attention,
                     **flex_attn_compile_kwargs,
                 )
+                LOG.info("Flex attention compiled successfully.")
                 self._is_flex_compiled = True
 
         def __call__(self):

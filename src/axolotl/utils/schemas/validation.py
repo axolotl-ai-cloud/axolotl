@@ -561,15 +561,6 @@ class LoRAValidationMixin:
             raise ValueError("Fused modules are not supported with LoRA/QLoRA")
         return self
 
-    @model_validator(mode="after")
-    def hint_lora_8bit(self):
-        loftq = (
-            self.peft and self.peft.loftq_config and self.peft.loftq_config.loftq_bits
-        )
-        if not self.load_in_8bit and self.adapter == "lora" and not loftq:
-            LOG.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
-        return self
-
     @model_validator(mode="before")
     @classmethod
     def warn_qlora_zero3_w_use_reentrant(cls, data):
@@ -773,7 +764,7 @@ class OptimizationValidationMixin:
     @classmethod
     def check_fsdp_sharded_state_dict_w_safetensors(cls, data):
         if (
-            data.get("fsdp")
+            data.get("fsdp_config")
             and data.get("save_safetensors")
             and data.get("fsdp_config")
             and data["fsdp_config"].get("fsdp_state_dict_type") == "SHARDED_STATE_DICT"
@@ -987,7 +978,7 @@ class ComplexValidationMixin:
             if self.adapter not in ("lora", "qlora"):
                 raise ValueError("cfg.adapter must be lora or qlora to use ReLoRA")
 
-            if self.fsdp:
+            if self.fsdp or self.fsdp_config:
                 raise ValueError("fsdp not supported with ReLoRA")
 
             if self.deepspeed:

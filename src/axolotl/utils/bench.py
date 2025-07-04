@@ -1,6 +1,7 @@
 """Benchmarking and measurement utilities"""
 
 import functools
+import logging
 
 import torch
 from transformers.utils.import_utils import is_torch_npu_available
@@ -91,7 +92,11 @@ def gpu_memory_usage_smi(device=0):
         return 0.0
 
 
-def log_gpu_memory_usage(log, msg, device):
+def log_gpu_memory_usage(
+    log: logging.Logger | logging.LoggerAdapter,
+    msg: str = "",
+    device: int | torch.device = 0,
+):
     cur_device = get_device_type()
     if torch.backends.mps.is_available():
         usage, cache, misc = mps_memory_usage_all()
@@ -104,8 +109,9 @@ def log_gpu_memory_usage(log, msg, device):
         extras.append(f"+{cache:.03f}GB cache")
     if misc > 0:
         extras.append(f"+{misc:.03f}GB misc")
+    msg = f"{str(cur_device)} memory usage:" if not msg else msg
     log.info(
-        f"{str(cur_device)} memory usage {msg}: {usage:.03f}GB ({', '.join(extras)})",
+        f"{msg} {usage:.03f}GB ({', '.join(extras)})",
         stacklevel=2,
     )
     return usage, cache, misc

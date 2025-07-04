@@ -122,7 +122,7 @@ def load_lora(
     rank = int(os.environ.get("LOCAL_RANK", 0))
 
     if (
-        cfg.fsdp
+        (cfg.fsdp_config or cfg.fsdp)
         and cfg.adapter
         and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
         and rank != 0
@@ -152,7 +152,7 @@ def load_lora(
                 "Exception caught during model.print_trainable_parameters(): %s", exc
             )
     elif (
-        cfg.fsdp
+        cfg.fsdp_config
         and cfg.adapter
         and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
         and rank != 0
