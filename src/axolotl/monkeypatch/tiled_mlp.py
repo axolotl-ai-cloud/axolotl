@@ -6,7 +6,7 @@ import torch
 import torch.distributed as dist
 
 
-def patch_tiled_mlp(model_type, use_original_mlp=False):
+def patch_tiled_mlp(model_type, use_original_mlp=False, cfg_num_shards=None):
     from deepspeed.runtime.sequence_parallel.ulysses_sp import TiledMLP
 
     try:
@@ -33,10 +33,13 @@ def patch_tiled_mlp(model_type, use_original_mlp=False):
             input_shape = x.shape
             seqlen = input_shape[-2]
             hidden = input_shape[-1]
-            num_shards = math.ceil(seqlen / hidden)
-            num_shards_tensor = torch.tensor(num_shards, device=x.device)
-            dist.all_reduce(num_shards_tensor, op=dist.ReduceOp.MAX)
-            num_shards = num_shards_tensor.item()
+            if cfg_num_shards is None:
+                num_shards = math.ceil(seqlen / hidden)
+                num_shards_tensor = torch.tensor(num_shards, device=x.device)
+                dist.all_reduce(num_shards_tensor, op=dist.ReduceOp.MAX)
+                num_shards = num_shards_tensor.item()
+            else:
+                num_shards = cfg_num_shards
 
             compute_params = [
                 self.down_proj.weight,
