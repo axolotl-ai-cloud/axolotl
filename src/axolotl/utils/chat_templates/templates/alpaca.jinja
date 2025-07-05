@@ -1,0 +1,8 @@
+{{ bos_token }}{% for message in messages %}{% if message['role'] == 'system' and loop.first %}{{ message['content'] }}{% elif message['role'] == 'user' %}{{ '### Instruction:
+' + message['content'] }}{% elif message['role'] == 'assistant' %}{{ '### Response:
+' + message['content'] + eos_token }}{% endif %}{% if not loop.last %}{{ '
+
+' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ '
+
+### Response:
+' }}{% endif %}

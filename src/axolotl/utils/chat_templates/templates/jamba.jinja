@@ -1,0 +1,255 @@
+{# Variables #}
+{% set ns = namespace(message_count=0, is_last_checked_defined=False) %}
+{##}
+{% set bom_str = bom_str or "<|bom|>" %}
+{% set eom_str = eom_str or "<|eom|>" %}
+{% set default_system_message = "" %}
+{##}
+{% set documents_prefix = "<documents>" %}
+{% set documents_suffix = "</documents>" %}
+{% set tool_definitions_prefix = "<tool_definitions>" %}
+{% set tool_definitions_suffix = "</tool_definitions>" %}
+{% set active_modes_prefix = "<active_output_modes>" %}
+{% set active_modes_suffix = "</active_output_modes>" %}
+{##}
+{% set tool_calls_prefix = "<tool_calls>" %}
+{% set tool_calls_suffix = "</tool_calls>" %}
+{% set citations_prefix = "<citations>" %}
+{% set citations_suffix = "</citations>" %}
+{##}
+{% if add_generation_prompt is not defined %}
+  {% set add_generation_prompt = True %}
+{% endif %}
+{% set role_to_predict = role_to_predict or "assistant" %}
+{% if messages|length > 0 and messages[0].role == "system" %}
+  {% set system_message = messages[0].content %}
+  {% set loop_messages = messages[1:] %}
+{% else %}
+  {% set system_message = default_system_message %}
+  {% set loop_messages = messages %}
+{% endif %}
+{##}
+{##}
+{# Macros #}
+{% macro handle_tool_definitions(tools) %}
+  {{- tool_definitions_prefix -}}
+  {{- "\n# Tools" -}}
+  {{- "\n\n## Functions" -}}
+  {% for tool in tools %}
+    {% set _ = is_param_set(tool, field="type") %}
+    {% set is_tool_type_set = ns.is_last_checked_defined %}
+    {% if is_tool_type_set %}
+      {% if tool.type == "function" %}
+        {% set tool = tool.function %}
+      {% else %}
+        {{ raise_exception("Currently, the only supported tool type is `function`") }}
+      {% endif %}
+    {% endif %}
+    {{- "\n\n" + (tool|tojson(indent=2)) -}}
+  {% endfor %}
+  {{- "\n" + tool_definitions_suffix -}}
+{% endmacro %}
+{##}
+{% macro handle_first_system_message(system_message, tools) %}
+  {{- bom_str + handle_role("system") -}}
+  {% set _ = is_param_set(system_message) %}
+  {% set is_system_message_set = ns.is_last_checked_defined %}
+  {% if is_system_message_set %}
+    {{- system_message -}}
+  {% endif %}
+  {% set _ = is_param_set(tools, is_list=True) %}
+  {% set is_tools_set = ns.is_last_checked_defined %}
+  {% if is_tools_set %}
+    {% if system_message %}
+      {{- "\n\n" -}}
+    {% endif %}
+    {{- handle_tool_definitions(tools) -}}
+  {% endif %}
+  {% set ns.message_count = ns.message_count + 1 %}
+{% endmacro %}
+{##}
+{% macro handle_tool_calls(tool_calls) %}
+  {{- tool_calls_prefix + "[\n" -}}
+  {% for tool_call in tool_calls %}
+    {% set _ = is_param_set(tool_call, field="function") %}
+    {% set is_tool_call_function_set = ns.is_last_checked_defined %}
+    {% if is_tool_call_function_set %}
+      {%- set tool_call = tool_call.function %}
+    {%- endif %}
+    {% set arguments = tool_call.arguments %}
+    {% if arguments is not string %}
+      {%- set arguments = arguments|tojson -%}
+    {%- endif %}
+    {{ "{\"name\": \"" + tool_call.name + "\", \"arguments\": " + arguments + "}" -}}
+    {% if not loop.last %}
+      {{- "," }}
+    {% endif %}
+  {% endfor %}
+  {{- "\n]" + tool_calls_suffix -}}
+{% endmacro %}
+{##}
+{% macro handle_documents(documents) %}
+  {{- documents_prefix -}}
+  {{- "\n# Documents" -}}
+  {{- "\n\nYou can use the following documents for reference:" -}}
+  {% for doc in documents %}
+    {{- "\n\n## Document ID: " + loop.index0|string -}}
+    {% set _ = is_param_set(doc, field="title") %}
+    {% set is_doc_title_set = ns.is_last_checked_defined %}
+    {% if is_doc_title_set %}
+      {{- "\nTitle: " + doc.title -}}
+    {% endif %}
+    {% for key, value in doc.items() %}
+      {% if key not in ["title", "text"] %}
+        {{- "\n" + key|title + ": " + value|string -}}
+      {% endif %}
+    {% endfor %}
+    {{- "\nText: " + doc.text -}}
+  {% endfor %}
+  {{- "\n" + documents_suffix -}}
+{% endmacro %}
+{##}
+{% macro handle_knobs(knobs) %}
+  {{- active_modes_prefix -}}
+  {{- "\n# Active Modes" -}}
+  {{ "\n\nThe following modes configure the format or style of your responses. You should adhere to all currently" -}}
+  {{ " active modes simultaneously." -}}
+  {% if knobs.citation_mode == "fast" %}
+    {{- "\n\n## Citation Mode" -}}
+    {{- "\n\nProvide a list of references only for the documents you base your response on. Format your response" -}}
+    {{ " with the original answer followed by a citation section. Use this template:" -}}
+    {{ " `{answer}" + citations_prefix + "DOCUMENT_IDS" + citations_suffix + "`, where DOCUMENT_IDS are the relevant document numbers" -}}
+    {{ " (e.g. [2, 5, 9]), or [] if the answer cannot be supported by the provided documents." -}}
+  {% endif %}
+  {% if knobs.response_format == "json_object" %}
+    {{- "\n\n## JSON Mode" -}}
+    {{ "\n\nProvide your response in JSON format. Adhere strictly to any schema given by the user." -}}
+    {{ " If an appropriate JSON format exists, use it without modification." -}}
+  {% endif %}
+  {{- "\n" + active_modes_suffix -}}
+{% endmacro %}
+{##}
+{% macro get_last_user_index(messages) %}
+  {% set ns.last_user_index = 0 %}
+  {% for message in messages %}
+    {% if message.role == 'user' %}
+      {% set ns.last_user_index = loop.index0 %}
+    {% endif %}
+  {% endfor %}
+  {{- ns.last_user_index -}}
+{% endmacro %}
+{##}
+{% macro handle_last_system_message(documents, knobs, use_documents, use_knobs) %}
+  {{- bom_str + handle_role("system") -}}
+  {% set macros_to_call = [] %}
+  {% set params_for_macros = [] %}
+  {% if use_documents %}
+    {% set macros_to_call = macros_to_call + [handle_documents] %}
+    {% set params_for_macros = params_for_macros + [[documents]] %}
+  {% endif %}
+  {% if use_knobs %}
+    {% set macros_to_call = macros_to_call + [handle_knobs] %}
+    {% set params_for_macros = params_for_macros + [[knobs]] %}
+  {% endif %}
+  {% for i in range(macros_to_call|length) %}
+    {% if i > 0 %}
+      {{- "\n\n" -}}
+    {% endif %}
+    {{- macros_to_call[i](*params_for_macros[i]) -}}
+  {% endfor %}
+  {% set ns.message_count = ns.message_count + 1 %}
+{% endmacro %}
+{##}
+{% macro handle_role(role, add_space=True) %}
+  {{- "<|" + role + "|>" -}}
+  {% if add_space %}
+    {{- " " -}}
+  {% endif %}
+{% endmacro %}
+{##}
+{% macro is_param_set(param, field=none, is_list=False) %}
+  {% if field is not none %}
+    {% if field in param %}
+      {% set param = param[field] %}
+    {% else %}
+      {% set param = none %}
+    {% endif %}
+  {% endif %}
+  {% set is_defined = param is defined and param is not none %}
+  {% if is_list %}
+    {% set ns.is_last_checked_defined = is_defined and param|length > 0 %}
+  {% else %}
+    {% set ns.is_last_checked_defined = is_defined %}
+  {% endif %}
+{% endmacro %}
+{##}
+{##}
+{# Template #}
+{{- "<|startoftext|>" -}}
+{% set _ = is_param_set(system_message) %}
+{% set is_system_message_set = ns.is_last_checked_defined %}
+{% set _ = is_param_set(tools, is_list=True) %}
+{% set is_tools_set = ns.is_last_checked_defined %}
+{% set has_system_message = (is_system_message_set or is_tools_set) %}
+{% if has_system_message %}
+  {{- handle_first_system_message(system_message, tools) -}}
+{% endif %}
+{% set last_user_index = get_last_user_index(loop_messages)|int %}
+{% for message in loop_messages %}
+  {% if loop.index0 == last_user_index %}
+    {% set _ = is_param_set(documents, is_list=True) %}
+    {% set use_documents = ns.is_last_checked_defined %}
+    {% set _ = is_param_set(knobs) %}
+    {% set use_knobs = ns.is_last_checked_defined and knobs.is_set %}
+    {% set add_last_system_message = use_documents or use_knobs %}
+    {% if add_last_system_message %}
+      {% if ns.message_count > 0 %}
+        {{- eom_str -}}
+      {% endif %}
+      {{- handle_last_system_message(documents, knobs, use_documents, use_knobs) -}}
+    {% endif %}
+  {% endif %}
+  {% set role = message.role %}
+  {% set _ = is_param_set(message, field="name") %}
+  {% set is_message_name_set = ns.is_last_checked_defined %}
+  {% if is_message_name_set %}
+    {% set message_prefix = handle_role(role) + "(" + message.name + ")" %}
+  {% else %}
+    {% set message_prefix = handle_role(role) %}
+  {% endif %}
+  {% set content = (message.content or "") %}
+  {% if content is not string %}
+    {% set content = content|tojson %}
+  {% endif %}
+  {% if ns.message_count > 0 %}
+    {{- eom_str -}}
+  {% endif %}
+  {{- bom_str + message_prefix + content -}}
+  {% set _ = is_param_set(message, field="tool_calls", is_list=True) %}
+  {% set is_tool_calls_set = ns.is_last_checked_defined %}
+  {% if role == "assistant" and is_tool_calls_set %}
+    {{- handle_tool_calls(message.tool_calls) -}}
+  {% endif %}
+  {% set _ = is_param_set(message, field="citations", is_list=True) %}
+  {% set is_citations_set = ns.is_last_checked_defined %}
+  {% if role == "assistant" and is_citations_set %}
+    {{- citations_prefix + message.citations|map(attribute="document_id")|list|string + citations_suffix -}}
+  {% endif %}
+  {% set ns.message_count = ns.message_count + 1 %}
+{% endfor %}
+{% if add_generation_prompt %}
+  {% if ns.message_count > 0 %}
+    {{- eom_str -}}
+  {% endif %}
+  {{- bom_str + handle_role(role_to_predict, add_space=False) -}}
+  {% set _ = is_param_set(generation_preamble) %}
+  {% set is_generation_preamble_set = ns.is_last_checked_defined %}
+  {% if is_generation_preamble_set and generation_preamble.strip() != "" %}
+    {{- " " + generation_preamble -}}
+  {% endif %}
+  {% set ns.message_count = ns.message_count + 1 %}
+{% else %}
+  {% if ns.message_count > 0 %}
+    {{- eom_str -}}
+  {% endif %}
+{% endif %}
