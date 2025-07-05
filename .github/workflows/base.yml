@@ -6,10 +6,12 @@ on:
       - "main"
     paths:
       - 'Dockerfile-base'
+      - 'Dockerfile-uv-base'
       - '.github/workflows/base.yml'
   pull_request:
     paths:
       - 'Dockerfile-base'
+      - 'Dockerfile-uv-base'
       - '.github/workflows/base.yml'
   workflow_dispatch:
 
