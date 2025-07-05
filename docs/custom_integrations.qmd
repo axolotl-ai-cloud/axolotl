@@ -7,6 +7,7 @@ toc-depth: 3
 ```{python}
 #| echo: false
 
+import os
 import re
 
 def process_readme(integration_name):
