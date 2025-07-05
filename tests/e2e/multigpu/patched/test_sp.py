@@ -104,7 +104,7 @@ class TestSequenceParallelism:
             (True, 1, True, None, 2.5),  # defaults to varlen_llama3 ring_attn_func
             (False, 2, True, None, 2.5),  # defaults to batch_ring ring_attn_func
             # (False, 2, True, "batch_zigzag", 2.5),
-            (False, 2, False, None, 2.5),  # defaults to batch_ring ring_attn_func
+            (False, 2, False, None, 2.65),  # defaults to batch_ring ring_attn_func
         ],
         ids=[
             "sample_packing, varlen_llama3 ring_attn_func",

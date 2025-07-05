@@ -27,6 +27,7 @@ from typing_extensions import override
 from axolotl.core.trainers.mixins import (
     CheckpointSaveMixin,
     OptimizerMixin,
+    PackingMixin,
     RngLoaderMixin,
     SchedulerMixin,
 )
@@ -42,7 +43,12 @@ LOG = get_logger(__name__)
 
 
 class AxolotlTrainer(
-    SchedulerMixin, OptimizerMixin, RngLoaderMixin, CheckpointSaveMixin, Trainer
+    PackingMixin,
+    SchedulerMixin,
+    OptimizerMixin,
+    RngLoaderMixin,
+    CheckpointSaveMixin,
+    Trainer,
 ):
     """Extend the base Trainer for axolotl helpers"""
 
@@ -206,6 +212,14 @@ class AxolotlTrainer(
 
         if dataset.column_names and "length" in dataset.column_names:
             dataset = dataset.remove_columns(["length"])
+        if (
+            dataset.column_names
+            and "position_ids" in dataset.column_names
+            and "attention_mask" in dataset.column_names
+            and self.args.sample_packing
+            and self.args.sample_packing_drop_attention_mask
+        ):
+            dataset = dataset.remove_columns(["attention_mask"])
 
         if isinstance(dataset, datasets.Dataset):
             if is_training:

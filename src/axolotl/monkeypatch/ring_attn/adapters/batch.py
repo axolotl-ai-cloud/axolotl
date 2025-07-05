@@ -33,7 +33,7 @@ RING_ATTN_FUNC_MAPPING = {
 }
 
 
-def create_flash_attn_forward(
+def create_flash_attn_forward_varlen_llama3(
     process_group: dist.ProcessGroup, ring_attn_func: RingAttnFunc
 ) -> Callable:
     """
@@ -71,6 +71,7 @@ def create_flash_attn_forward(
         max_length_q: int | None = None,
         max_length_k: int | None = None,
         target_dtype: torch.dtype | None = None,
+        attn_implementation: str | None = None,
         **kwargs,
     ):
         """
@@ -97,6 +98,7 @@ def create_flash_attn_forward(
             max_length_q: Not used in this implementation.
             max_length_k: Not used in this implementation.
             target_dtype: Not used in this implementation.
+            attn_implementation: Not used in this implementation.
             **kwargs: Additional keyword arguments. Not used in this implementation.
 
         Returns:
@@ -161,7 +163,7 @@ def substitute_hf_flash_attn(
         old_flash_attention_forward = (
             transformers.modeling_flash_attention_utils._flash_attention_forward
         )
-        new_flash_attention_forward = create_flash_attn_forward(
+        new_flash_attention_forward = create_flash_attn_forward_varlen_llama3(
             process_group=process_group, ring_attn_func=ring_attn_func
         )
 

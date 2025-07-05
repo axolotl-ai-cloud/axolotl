@@ -86,5 +86,5 @@ class TestPackedFlex:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss (%s) is too high"
         )

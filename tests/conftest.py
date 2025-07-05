@@ -10,12 +10,13 @@ import shutil
 import sys
 import tempfile
 import time
-from pathlib import Path, PosixPath
+from pathlib import Path
 from typing import Generator
 
 import datasets
 import pytest
 import requests
+import torch
 from huggingface_hub import snapshot_download
 from huggingface_hub.errors import LocalEntryNotFoundError
 from tokenizers import AddedToken
@@ -424,8 +425,8 @@ def temp_dir() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="function", autouse=True)
-def unique_triton_cache_dir(temp_dir: str | PosixPath) -> None:
-    os.environ["TRITON_CACHE_DIR"] = str(temp_dir) + "/.triton/cache"
+def torch_manual_seed():
+    torch.manual_seed(42)
 
 
 @pytest.fixture(scope="function", autouse=True)

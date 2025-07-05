@@ -42,6 +42,10 @@ class AxolotlTrainingMixins:
         default=None,
         metadata={"help": "The multiprocessing start method to use."},
     )
+    sample_packing_drop_attention_mask: bool = field(
+        default=False,
+        metadata={"help": "Drop attention mask from inputs when using packing."},
+    )
     multipack_real_batches: bool = field(
         default=False,
         metadata={"help": "Use real batches for efficient training."},
