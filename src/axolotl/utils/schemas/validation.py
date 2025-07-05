@@ -476,6 +476,13 @@ class TrainingValidationMixin:
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_tiled_mlp_deepspeed(cls, data):
+        if data.get("tiled_mlp", False) and not data.get("deepspeed"):
+            raise ValueError("tiled_mlp requires deepspeed ZeRO to be enabled")
+        return data
+
 
 class LoRAValidationMixin:
     """Validation methods related to LoRA/QLoRA configuration."""
