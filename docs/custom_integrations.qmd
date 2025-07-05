@@ -53,6 +53,24 @@ sections = [
     ("LLMCompressor", "llm_compressor")
 ]
 
+for folder_name in os.listdir("../src/axolotl/integrations/"):
+    if folder_name in [path for name, path in sections]:
+        # skip if already in sections
+        continue
+    if os.path.exists(f"../src/axolotl/integrations/{folder_name}/README.md"):
+        # grab the first heading in README.md as the section name
+        with open(f"../src/axolotl/integrations/{folder_name}/README.md", "r") as f:
+            txt = f.read()
+            matches = re.search(r'^# (.*)\n?', txt, flags=re.MULTILINE)
+            if matches:
+                name = matches.group(1)
+            else:
+                continue
+            sections.append((name, folder_name))
+
+# sort sections by name
+sections = sorted(sections, key=lambda x: x[0])
+
 for section_name, folder_name in sections:
     print(print_section(section_name, folder_name))
 ```
