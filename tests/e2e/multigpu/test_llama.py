@@ -33,6 +33,7 @@ def download_model():
 def sft_base_cfg():
     cfg = DictDefault(
         base_model="HuggingFaceTB/SmolLM2-135M",
+        tokenizer_config="HuggingFaceTB/SmolLM2-135M",  # this has to be manually set since we haven't done validation
         sequence_len=2048,
         special_tokens={
             "pad_token": "<|endoftext|>",
