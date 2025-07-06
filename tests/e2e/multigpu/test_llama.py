@@ -50,6 +50,7 @@ def sft_base_cfg():
         flash_attention=True,
         learning_rate=0.00001,
         optimizer="adamw_8bit",
+        micro_batch_size=2,
     )
     return cfg
 
@@ -73,31 +74,42 @@ class TestMultiGPULlama:
     Test case for Llama models using LoRA
     """
 
-    def test_lora_ddp(self, temp_dir, sft_prepared_dataset_alpaca_cfg):
+    def test_lora_ddp(self, temp_dir):
         # pylint: disable=duplicate-code
-        cfg = (
-            DictDefault(
-                {
-                    "adapter": "lora",
-                    "lora_r": 8,
-                    "lora_alpha": 16,
-                    "lora_dropout": 0.05,
-                    "lora_target_linear": True,
-                    "num_epochs": 1,
-                    "max_steps": 2,
-                    "micro_batch_size": 1,
-                    "gradient_accumulation_steps": 2,
-                    # "gradient_checkpointing": True,
-                    "output_dir": temp_dir,
-                    "learning_rate": 0.00001,
-                    "optimizer": "adamw_8bit",
-                    "lr_scheduler": "cosine",
-                    "flash_attention": True,
-                    "use_tensorboard": True,
-                    "bf16": True,
-                }
-            )
-            | sft_prepared_dataset_alpaca_cfg
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "sequence_len": 2048,
+                "adapter": "lora",
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
+                "val_set_size": 0.01,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "datasets": [
+                    {
+                        "path": "tatsu-lab/alpaca",
+                        "type": "alpaca",
+                        "split": "train[:10%]",
+                    },
+                ],
+                "num_epochs": 1,
+                "max_steps": 2,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 2,
+                # "gradient_checkpointing": True,
+                "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_8bit",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+                "use_tensorboard": True,
+                "bf16": True,
+            }
         )
 
         # write cfg to yaml file
