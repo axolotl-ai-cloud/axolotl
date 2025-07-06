@@ -33,7 +33,7 @@ def get_chat_template(
 
     Args:
         user_choice (str): The user's choice of template.
-        jinja_template (Optional[str], optional): The jinja template string. Defaults to None.
+        jinja_template (Optional[str], optional): The jinja template string or Path to a valid jinja template file. Defaults to None.
         tokenizer (Optional[PreTrainedTokenizerBase], optional): The tokenizer. Defaults to None.
 
     Returns:
@@ -47,6 +47,9 @@ def get_chat_template(
             raise ValueError(
                 f"`jinja_template` cannot be None when `chat_template` choice is {_JINJA_TEMPALTE_CHOICE}"
             )
+        if os.path.exists(jinja_template) and os.path.isfile(jinja_template):
+            with open(jinja_template, "r", encoding="utf-8") as file:
+                jinja_template = file.read()
         return jinja_template
 
     if user_choice == _DEFAULT_TEMPLATE_CHOICE:

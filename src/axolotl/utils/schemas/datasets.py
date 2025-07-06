@@ -1,6 +1,5 @@
 """Pydantic models for datasets-related configuration"""
 
-import os
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -213,13 +212,6 @@ class SFTDataset(BaseModel):
         # If chat_template_jinja is set, set chat_template to jinja
         if data.get("chat_template_jinja") and not data.get("chat_template"):
             data["chat_template"] = ChatTemplate.jinja
-
-        if chat_template_jinja := data.get("chat_template_jinja"):
-            if os.path.exists(chat_template_jinja) and os.path.isfile(
-                chat_template_jinja
-            ):
-                with open(chat_template_jinja, "r", encoding="utf-8") as file:
-                    data["chat_template_jinja"] = file.read()
 
         return data
 
