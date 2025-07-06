@@ -197,14 +197,13 @@ def load_cfg(
     # If there are any options passed in the cli, if it is something that seems valid
     # from the yaml, then overwrite the value
     cfg_keys = cfg.keys()
-    for k, _ in kwargs.items():
-        # if not strict, allow writing to cfg even if it's not in the yml already
-        if k in cfg_keys or not cfg.strict:
-            # handle booleans
-            if isinstance(cfg[k], bool):
-                cfg[k] = bool(kwargs[k])
+    for key, value in kwargs.items():
+        # If not strict, allow writing to cfg even if it's not in the yml already
+        if key in cfg_keys or not cfg.strict:
+            if isinstance(cfg[key], bool):
+                cfg[key] = bool(value)
             else:
-                cfg[k] = kwargs[k]
+                cfg[key] = value
 
     try:
         device_props = torch.cuda.get_device_properties("cuda")
