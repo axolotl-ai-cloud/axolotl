@@ -18,11 +18,10 @@ def test_build_command():
     assert result == [
         "accelerate",
         "launch",
-        "--learning-rate",
-        "0.0001",
-        "--batch-size",
-        "8",
-        "--debug",
+        "--learning-rate=0.0001",
+        "--batch-size=8",
+        "--debug=True",
+        "--use-fp16=False",
     ]
 
 

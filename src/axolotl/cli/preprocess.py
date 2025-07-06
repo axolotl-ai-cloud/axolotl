@@ -9,7 +9,6 @@ import fire
 import transformers
 from accelerate import init_empty_weights
 from colorama import Fore
-from dotenv import load_dotenv
 from transformers import AutoModelForCausalLM
 
 from axolotl.cli.args import PreprocessCliArgs
@@ -109,5 +108,4 @@ def do_cli(
 
 
 if __name__ == "__main__":
-    load_dotenv()
     fire.Fire(do_cli)

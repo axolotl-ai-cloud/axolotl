@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Union
 
 import fire
-from dotenv import load_dotenv
 
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
@@ -88,5 +87,4 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
 
 
 if __name__ == "__main__":
-    load_dotenv()
     fire.Fire(do_cli)

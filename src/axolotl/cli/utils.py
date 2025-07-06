@@ -156,12 +156,7 @@ def build_command(base_cmd: list[str], options: dict[str, Any]) -> list[str]:
             continue
 
         key = key.replace("_", "-")
-
-        if isinstance(value, bool):
-            if value:
-                cmd.append(f"--{key}")
-        else:
-            cmd.extend([f"--{key}", str(value)])
+        cmd.append(f"--{key}={value}")
 
     return cmd
 

@@ -8,7 +8,7 @@ import os
 import subprocess  # nosec B404
 from pathlib import Path
 from random import randint
-from typing import Optional
+from typing import Literal
 
 import modal
 
@@ -230,8 +230,8 @@ class ModalCloud(Cloud):
     def train(
         self,
         config_yaml: str,
-        accelerate: bool = True,
-        local_dirs: Optional[dict[str, str]] = None,
+        launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
+        local_dirs: dict[str, str] | None = None,
         **kwargs,
     ):
         modal_fn = self.get_train_env(local_dirs)(_train)
@@ -239,7 +239,7 @@ class ModalCloud(Cloud):
             with self.app.run(detach=True):
                 modal_fn.remote(
                     config_yaml,
-                    accelerate=accelerate,
+                    launcher=launcher,
                     volumes={k: v[0] for k, v in self.volumes.items()},
                     **kwargs,
                 )
@@ -270,20 +270,27 @@ def _preprocess(config_yaml: str, volumes=None):
     )
 
 
-def _train(config_yaml: str, accelerate: bool = True, volumes=None, **kwargs):
+def _train(
+    config_yaml: str,
+    launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
+    volumes=None,
+    **kwargs,
+):
     Path("/workspace/mounts").mkdir(parents=True, exist_ok=True)
     with open("/workspace/mounts/config.yaml", "w", encoding="utf-8") as f_out:
         f_out.write(config_yaml)
     run_folder = "/workspace/mounts"
-    if accelerate:
-        accelerate_args = "--accelerate"
+    if launcher == "accelerate":
+        launcher_arg = "--launcher accelerate"
+    elif launcher == "torchrun":
+        launcher_arg = "--launcher torchrun"
     else:
-        accelerate_args = "--no-accelerate"
+        launcher_arg = "--launcher python"
     num_processes_args = ""
     if num_processes := kwargs.pop("num_processes", None):
         num_processes_args = f"--num-processes {num_processes}"
     run_cmd(
-        f"axolotl train {accelerate_args} {num_processes_args} /workspace/mounts/config.yaml",
+        f"axolotl train {launcher_arg} {num_processes_args} /workspace/mounts/config.yaml",
         run_folder,
         volumes,
     )

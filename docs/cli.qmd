@@ -80,7 +80,7 @@ axolotl train config.yml \
     --num-epochs 3
 
 # Training without accelerate
-axolotl train config.yml --no-accelerate
+axolotl train config.yml --launcher python
 
 # Resume training from checkpoint
 axolotl train config.yml --resume-from-checkpoint path/to/checkpoint
@@ -288,7 +288,7 @@ axolotl preprocess config.yml --cloud cloud_config.yml
 axolotl train config.yml --cloud cloud_config.yml
 
 # Train without accelerate on cloud
-axolotl train config.yml --cloud cloud_config.yml --no-accelerate
+axolotl train config.yml --cloud cloud_config.yml --launcher python
 
 # Run lm-eval on cloud
 axolotl lm-eval config.yml --cloud cloud_config.yml

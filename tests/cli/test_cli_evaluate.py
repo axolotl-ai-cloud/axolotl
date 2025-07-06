@@ -18,7 +18,9 @@ class TestEvaluateCommand(BaseCliTest):
 
     def test_evaluate_basic_execution(self, cli_runner, tmp_path, valid_test_config):
         """Test basic successful execution"""
-        self._test_basic_execution(cli_runner, tmp_path, valid_test_config, "evaluate")
+        self._test_basic_execution(
+            cli_runner, tmp_path, valid_test_config, "evaluate", train=False
+        )
 
     def test_evaluate_basic_execution_no_accelerate(
         self, cli_runner, tmp_path, valid_test_config
@@ -27,13 +29,15 @@ class TestEvaluateCommand(BaseCliTest):
         config_path = tmp_path / "config.yml"
         config_path.write_text(valid_test_config)
 
+        # pylint: disable=duplicate-code
         with patch("axolotl.cli.evaluate.do_evaluate") as mock_evaluate:
             result = cli_runner.invoke(
                 cli,
                 [
                     "evaluate",
                     str(config_path),
-                    "--no-accelerate",
+                    "--launcher",
+                    "python",
                 ],
                 catch_exceptions=False,
             )
@@ -55,7 +59,8 @@ class TestEvaluateCommand(BaseCliTest):
                     "2",
                     "--sequence-len",
                     "128",
-                    "--no-accelerate",
+                    "--launcher",
+                    "python",
                 ],
                 catch_exceptions=False,
             )

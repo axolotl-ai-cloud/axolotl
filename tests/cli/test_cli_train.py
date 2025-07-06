@@ -18,7 +18,9 @@ class TestTrainCommand(BaseCliTest):
 
     def test_train_basic_execution(self, cli_runner, tmp_path, valid_test_config):
         """Test basic successful execution"""
-        self._test_basic_execution(cli_runner, tmp_path, valid_test_config, "train")
+        self._test_basic_execution(
+            cli_runner, tmp_path, valid_test_config, "train", train=True
+        )
 
     def test_train_basic_execution_no_accelerate(
         self, cli_runner, tmp_path, valid_test_config
@@ -37,7 +39,8 @@ class TestTrainCommand(BaseCliTest):
                     [
                         "train",
                         str(config_path),
-                        "--no-accelerate",
+                        "--launcher",
+                        "python",
                     ],
                     catch_exceptions=False,
                 )
@@ -59,11 +62,10 @@ class TestTrainCommand(BaseCliTest):
                     [
                         "train",
                         str(config_path),
-                        "--learning-rate",
-                        "1e-4",
-                        "--micro-batch-size",
-                        "2",
-                        "--no-accelerate",
+                        "--learning-rate=1e-4",
+                        "--micro-batch-size=2",
+                        "--launcher",
+                        "python",
                     ],
                     catch_exceptions=False,
                 )
