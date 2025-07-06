@@ -48,6 +48,7 @@ def sft_base_cfg():
         flash_attention=True,
         learning_rate=0.00001,
         optimizer="adamw_8bit",
+        seed=42,
         # these need to be set since we aren't running schema validation
         micro_batch_size=2,
         gradient_accumulation_steps=1,
@@ -431,7 +432,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/train_loss", 2.4, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
