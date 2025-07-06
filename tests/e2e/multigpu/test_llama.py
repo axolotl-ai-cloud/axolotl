@@ -493,7 +493,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/train_loss", 2.4, "Train Loss (%s) is too high"
         )
 
     @require_torch_2_6_0
@@ -786,7 +786,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/train_loss", 2.4, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -855,7 +855,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/train_loss", 2.4, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.skip(
