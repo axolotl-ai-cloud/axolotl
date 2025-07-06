@@ -29,7 +29,6 @@ class TestFusedLlama(unittest.TestCase):
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "flash_attention": True,
                 "pad_to_sequence_len": True,
-                "flash_attn_fuse_qkv": True,
                 "flash_attn_fuse_mlp": True,
                 "sample_packing": True,
                 "sequence_len": 1024,
