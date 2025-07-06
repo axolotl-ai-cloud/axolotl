@@ -32,7 +32,7 @@ def sft_base_cfg():
     cfg = DictDefault(
         base_model="HuggingFaceTB/SmolLM2-135M",
         tokenizer_config="HuggingFaceTB/SmolLM2-135M",  # this has to be manually set since we haven't done validation
-        sequence_len=2048,
+        sequence_len=1024,
         special_tokens={
             "pad_token": "<|endoftext|>",
         },
@@ -442,36 +442,38 @@ class TestMultiGPULlama:
         self, temp_dir, sft_prepared_dataset_alpaca_cfg, fsdp_state_dict_type
     ):
         # pylint: disable=duplicate-code
-        cfg = DictDefault(
-            {
-                "pad_to_sequence_len": True,
-                "num_epochs": 1,
-                "max_steps": 2,
-                "micro_batch_size": 2,
-                "gradient_accumulation_steps": 2,
-                # "gradient_checkpointing": True,
-                "output_dir": temp_dir,
-                "dataset_prepared_path": temp_dir + "/last_run_prepared",
-                "learning_rate": 0.00001,
-                "optimizer": "adamw_torch_fused",
-                "lr_scheduler": "cosine",
-                "flash_attention": True,
-                "fsdp": [
-                    "full_shard",
-                    "auto_wrap",
-                ],
-                "fsdp_config": {
-                    "fsdp_limit_all_gathers": True,
-                    "fsdp_offload_params": False,
-                    "fsdp_sync_module_states": True,
-                    "fsdp_use_orig_params": False,
-                    "fsdp_cpu_ram_efficient_loading": False,
-                    "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
-                    "fsdp_state_dict_type": fsdp_state_dict_type,
-                    "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
-                },
-                "use_tensorboard": True,
-            }
+        cfg = (
+            DictDefault(
+                {
+                    "pad_to_sequence_len": True,
+                    "num_epochs": 1,
+                    "max_steps": 2,
+                    "micro_batch_size": 2,
+                    "gradient_accumulation_steps": 2,
+                    # "gradient_checkpointing": True,
+                    "output_dir": temp_dir,
+                    "dataset_prepared_path": temp_dir + "/last_run_prepared",
+                    "learning_rate": 0.00001,
+                    "optimizer": "adamw_torch_fused",
+                    "lr_scheduler": "cosine",
+                    "flash_attention": True,
+                    "fsdp": [
+                        "full_shard",
+                        "auto_wrap",
+                    ],
+                    "fsdp_config": {
+                        "fsdp_limit_all_gathers": True,
+                        "fsdp_offload_params": False,
+                        "fsdp_sync_module_states": True,
+                        "fsdp_use_orig_params": False,
+                        "fsdp_cpu_ram_efficient_loading": False,
+                        "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
+                        "fsdp_state_dict_type": fsdp_state_dict_type,
+                        "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                    },
+                    "use_tensorboard": True,
+                }
+            )
             | sft_prepared_dataset_alpaca_cfg
         )
 
