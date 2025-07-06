@@ -15,6 +15,6 @@ class PackingMixin(Trainer):
             and self.args.sample_packing
             and self.args.sample_packing_drop_attention_mask
         ):
-            self._signature_columns = list(
-                set(self._signature_columns).remove("attention_mask")
-            )
+            set_sig_columns = set(self._signature_columns)
+            set_sig_columns.remove("attention_mask")
+            self._signature_columns = list(set_sig_columns)
