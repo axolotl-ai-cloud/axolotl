@@ -17,7 +17,6 @@ from accelerate.utils import (
     WEIGHTS_NAME,
     is_torch_version,
 )
-from dotenv import load_dotenv
 from huggingface_hub import split_torch_state_dict_into_shards
 from safetensors.torch import save_file as safe_save_file
 from torch.distributed.checkpoint.format_utils import _EmptyStateDictLoadPlanner
@@ -204,5 +203,4 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
 
 
 if __name__ == "__main__":
-    load_dotenv()
     fire.Fire(do_cli)
