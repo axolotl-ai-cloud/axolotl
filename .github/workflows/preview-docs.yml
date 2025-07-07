@@ -54,7 +54,7 @@ jobs:
         with:
           publish-dir: './_site'
           enable-pull-request-comment: false
-          enable-github-deployment: true
+          enable-github-deployment: false
           github-token: ${{ secrets.GITHUB_TOKEN }}
           deploy-message: "Deployed On Netlify"
           github-deployment-environment: 'preview'
