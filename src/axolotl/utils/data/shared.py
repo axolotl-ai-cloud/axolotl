@@ -526,8 +526,9 @@ def merge_datasets(datasets: list[Dataset], cfg: DictDefault) -> Dataset:
     if len(datasets) == 1:
         ds = datasets[0]
 
-        # Do not shuffle if curriculum sampling is enabled
-        if cfg.curriculum_sampling:
+        # Do not shuffle if curriculum sampling is enabled or
+        # shuffle_merged_datasets is disabled
+        if cfg.curriculum_sampling or not cfg.shuffle_merged_datasets:
             return ds
 
         return ds.shuffle(seed=cfg.seed)
