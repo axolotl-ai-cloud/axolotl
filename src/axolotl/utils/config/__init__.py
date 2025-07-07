@@ -321,9 +321,9 @@ def migrate_fsdp_config(cfg):
     if cfg.get("fsdp_config"):
         fsdp_config_keys = cfg.fsdp_config.keys()
         if "fsdp_version" in fsdp_config_keys:
-            cfg.fsdp_version = cfg.fsdp_config.get("fsdp_version")
+            cfg.fsdp_version = cfg.fsdp_config.pop("fsdp_version")
 
         for key in list(fsdp_config_keys):
-            if key.startswith("fsdp_"):
+            if key.startswith("fsdp_") and key != "fsdp_version":
                 cfg.fsdp_config[key.replace("fsdp_", "")] = cfg.fsdp_config[key]
                 del cfg.fsdp_config[key]

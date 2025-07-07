@@ -2,18 +2,50 @@
 
 # pylint: disable=duplicate-code
 
+import os
 from pathlib import Path
 
 import pytest
+import torch
 import yaml
 from accelerate.test_utils import execute_subprocess_async
+from tbparse import SummaryReader
 from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import require_torch_2_7_0
+from tests.e2e.utils import most_recent_subdir, require_torch_2_7_0
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
+
+
+def verify_training_success(temp_dir):
+    """Verify that training completed successfully by checking artifacts and loss."""
+    output_path = Path(temp_dir)
+
+    model_files = list(output_path.glob("*.bin")) + list(
+        output_path.glob("*.safetensors")
+    )
+    assert len(model_files) > 0, "No model files found - training may have failed"
+
+    checkpoint_files = list(output_path.glob("checkpoint-*"))
+    assert (
+        len(checkpoint_files) > 0
+    ), "No checkpoint files found - training may have failed"
+
+    tb_log_path = most_recent_subdir(temp_dir + "/runs")
+    if tb_log_path:
+        event_files = sorted(os.listdir(tb_log_path))
+        if event_files:
+            event_file = os.path.join(tb_log_path, event_files[0])
+            reader = SummaryReader(event_file)
+            df = reader.scalars
+            train_loss_df = df[df.tag == "train/train_loss"]
+            if len(train_loss_df) > 0:
+                final_loss = train_loss_df.value.values[-1]
+                assert not torch.isnan(
+                    torch.tensor(final_loss)
+                ), f"Training loss is NaN: {final_loss}"
 
 
 class TestFSDP2:
@@ -77,8 +109,11 @@ class TestFSDP2:
             ]
         )
 
+        verify_training_success(temp_dir)
+
     @require_torch_2_7_0
-    def test_lora_sft(self, temp_dir):
+    @pytest.mark.parametrize("peft_use_dora", [True, False])
+    def test_lora_sft(self, temp_dir, peft_use_dora):
         cfg = DictDefault(
             {
                 "base_model": "Qwen/Qwen2.5-0.5B",
@@ -91,6 +126,7 @@ class TestFSDP2:
                         "split": "train[:10%]",
                     },
                 ],
+                "peft_use_dora": peft_use_dora,
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
@@ -135,6 +171,8 @@ class TestFSDP2:
                 f"{get_torch_dist_unique_port()}",
             ]
         )
+
+        verify_training_success(temp_dir)
 
     @require_torch_2_7_0
     def test_qlora_sft(self, temp_dir):
@@ -196,6 +234,8 @@ class TestFSDP2:
             ]
         )
 
+        verify_training_success(temp_dir)
+
     @require_torch_2_7_0
     def test_dpo_fft(self, temp_dir):
         cfg = DictDefault(
@@ -249,6 +289,8 @@ class TestFSDP2:
                 f"{get_torch_dist_unique_port()}",
             ]
         )
+
+        verify_training_success(temp_dir)
 
     @require_torch_2_7_0
     def test_dpo_lora(self, temp_dir):
@@ -307,3 +349,5 @@ class TestFSDP2:
                 f"{get_torch_dist_unique_port()}",
             ]
         )
+
+        verify_training_success(temp_dir)
