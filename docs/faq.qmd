@@ -55,7 +55,7 @@ description: Frequently asked questions
 
 > A: This is because you may be using `preprocess` CLI with `pretraining_dataset:` or `skip_prepare_dataset: true` respectively. Please use `axolotl train` CLI directly instead as these datasets are prepared on demand.
 
-**Q: vllm is not working with Axolotl**
+**Q: vLLM is not working with Axolotl**
 
 > A: We currently recommend torch 2.6.0 for use with `vllm`. Please ensure you use the right version. For Docker, please use the `main-py3.11-cu124-2.6.0` tag.
 
