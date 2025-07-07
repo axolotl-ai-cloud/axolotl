@@ -551,6 +551,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <blockquote class="blockquote">
 <p>A: This is because you may be using <code>preprocess</code> CLI with <code>pretraining_dataset:</code> or <code>skip_prepare_dataset: true</code> respectively. Please use <code>axolotl train</code> CLI directly instead as these datasets are prepared on demand.</p>
 </blockquote>
+<p><strong>Q: vLLM is not working with Axolotl</strong></p>
+<blockquote class="blockquote">
+<p>A: We currently recommend torch 2.6.0 for use with <code>vllm</code>. Please ensure you use the right version. For Docker, please use the <code>main-py3.11-cu124-2.6.0</code> tag.</p>
+</blockquote>
+<p><strong>Q: FA2 2.8.0 <code>undefined symbol</code> runtime error on CUDA 12.4</strong></p>
+<blockquote class="blockquote">
+<p>A: There seems to be a wheel issue with FA2 2.8.0 on CUDA 12.4. Try CUDA 12.6 instead or downgrade to FA2 2.7.4. Please refer to the upstream issue: https://github.com/Dao-AILab/flash-attention/issues/1717.</p>
+</blockquote>
 </section>
 <section id="chat-templates" class="level3">
 <h3 class="anchored" data-anchor-id="chat-templates">Chat templates</h3>
