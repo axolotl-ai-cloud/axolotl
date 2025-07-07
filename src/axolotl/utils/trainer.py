@@ -535,6 +535,9 @@ def setup_deepspeed_env(cfg, stage=None):
 
     os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
     os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
+    os.environ["ACCELERATE_GRADIENT_ACCUMULATION_STEPS"] = str(
+        cfg.gradient_accumulation_steps
+    )
     if stage:
         os.environ["ACCELERATE_DEEPSPEED_ZERO_STAGE"] = str(stage)
         if stage == 3:
@@ -610,6 +613,9 @@ def prepare_optim_env(cfg):
 def prepare_opinionated_env(cfg):
     if cfg.qlora_sharded_model_loading:
         # model loading is forked after the tokenizer
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    if cfg.sample_packing:
+        # multipack parallel packing sampler defaults to using fork
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 

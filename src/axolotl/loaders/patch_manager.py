@@ -49,11 +49,11 @@ class PatchManager:
 
     def apply_pre_model_load_patches(self):
         """Apply pre-model load patches based on config."""
+        # self._apply_flex_attention_patches()
         self._apply_flash_attention_patches()
         self._apply_chunked_cross_entropy_patch()
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
-        self._apply_flex_attention_patches()
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
@@ -101,6 +101,14 @@ class PatchManager:
 
                 patch_trl_prepare_fsdp2()
 
+        # if self.cfg.fsdp_config:
+        #     # see transformers#39152
+        #     from axolotl.monkeypatch.trainer_fsdp_optim import (
+        #         patch_training_loop_for_fsdp,
+        #     )
+        #
+        #     patch_training_loop_for_fsdp()
+
     def _apply_adapter_patches(self):
         """Apply patches for adapter configurations."""
         if self.cfg.adapter and self.cfg.embeddings_skip_upcast:
@@ -111,14 +119,20 @@ class PatchManager:
     def _apply_flex_attention_patches(self):
         """Apply patches for flexible attention."""
         if self.cfg.flex_attention:
-            from axolotl.monkeypatch.attention.flex_attn import (
-                patch_flex_make_mask,
-                patch_flex_wrapper,
-            )
+            # from axolotl.monkeypatch.attention.flex_attn import (
+            #     patch_flex_make_mask,
+            #     patch_flex_wrapper,
+            # )
+            #
+            # flex_attn_compile_kwargs = self.cfg.flex_attn_compile_kwargs or {}
+            # patch_flex_wrapper(**flex_attn_compile_kwargs)
+            # patch_flex_make_mask()
+            if self.cfg.sample_packing:
+                from axolotl.core.attention.flex_block_mask import (
+                    patch_create_causal_mask,
+                )
 
-            flex_attn_compile_kwargs = self.cfg.flex_attn_compile_kwargs or {}
-            patch_flex_wrapper(**flex_attn_compile_kwargs)
-            patch_flex_make_mask()
+                patch_create_causal_mask(self.cfg.model_config_type)
 
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""

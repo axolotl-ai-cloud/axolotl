@@ -203,7 +203,9 @@ class AxolotlInputConfig(
         },
     )
     dataset_processes: int | None = Field(
-        default=min(32, os.cpu_count()),  # type: ignore[type-var]
+        default=min(
+            int(os.environ.get("AXOLOTL_DATASET_PROCESSES", 32)), os.cpu_count()
+        ),  # type: ignore[type-var]
         json_schema_extra={
             "description": "The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set."
         },
@@ -792,7 +794,7 @@ class AxolotlInputConfig(
     chat_template_jinja: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Custom jinja template for chat template. This will be only used if chat_template is set to `jinja` or `null` (in which case chat_template is automatically set to `jinja`). Default is null."
+            "description": "Custom jinja template or path to jinja file for chat template. This will be only used if chat_template is set to `jinja` or `null` (in which case chat_template is automatically set to `jinja`). Default is null."
         },
     )
     chat_template_kwargs: dict[str, Any] | None = Field(
@@ -1168,6 +1170,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
         return data
 
+    @model_validator(mode="before")
     @classmethod
     def check_fsdp_config_kwargs_prefix(cls, data):
         if fsdp_config := data.get("fsdp_config"):
@@ -1201,4 +1204,19 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 raise ValueError(
                     "FSDP2 does not support LoRA with torch version < 2.7.0"
                 )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_dataloader_opts(cls, data):
+        if (
+            data.get("dataloader_num_workers") is None
+            and data.get("dataloader_pin_memory") is None
+            and data.get("dataloader_prefetch_factor") is None
+        ):
+            data["dataloader_num_workers"] = data.get("capabilities").get("n_gpu", 1)
+            data["dataloader_pin_memory"] = True
+            data["dataloader_prefetch_factor"] = 256
+
         return data

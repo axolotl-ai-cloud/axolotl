@@ -16,6 +16,7 @@ from typing import Generator
 import datasets
 import pytest
 import requests
+import torch
 from huggingface_hub import snapshot_download
 from huggingface_hub.errors import LocalEntryNotFoundError
 from tokenizers import AddedToken
@@ -421,6 +422,11 @@ def temp_dir() -> Generator[str, None, None]:
     yield _temp_dir
     # Clean up the directory after the test
     shutil.rmtree(_temp_dir)
+
+
+@pytest.fixture(scope="function", autouse=True)
+def torch_manual_seed():
+    torch.manual_seed(42)
 
 
 @pytest.fixture(scope="function", autouse=True)
