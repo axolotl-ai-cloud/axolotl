@@ -547,6 +547,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="co">  # str. If you're not sure, set to same as `eos_token`.</span></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">pad_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"..."</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </blockquote>
+<p><strong>Q: <code>IterableDataset error</code> or <code>KeyError: 'input_ids'</code> when using <code>preprocess</code> CLI</strong></p>
+<blockquote class="blockquote">
+<p>A: This is because you may be using <code>preprocess</code> CLI with <code>pretraining_dataset:</code> or <code>skip_prepare_dataset: true</code> respectively. Please use <code>axolotl train</code> CLI directly instead as these datasets are prepared on demand.</p>
+</blockquote>
 </section>
 <section id="chat-templates" class="level3">
 <h3 class="anchored" data-anchor-id="chat-templates">Chat templates</h3>
