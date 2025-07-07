@@ -64,10 +64,11 @@ jobs:
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
 
       - name: Update PR with preview link
+        if: ${{ steps.netlify.outcome == 'success' }}
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           message: |
             📖 **Documentation Preview**: ${{ steps.netlify.outputs.deploy-url }}
 
-            Deployed on Netlify
+            Deployed on Netlify from commit ${{ github.sha }}
