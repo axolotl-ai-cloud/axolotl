@@ -782,7 +782,7 @@ class AxolotlInputConfig(
     chat_template_jinja: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Custom jinja template for chat template. This will be only used if chat_template is set to `jinja` or `null` (in which case chat_template is automatically set to `jinja`). Default is null."
+            "description": "Custom jinja template or path to jinja file for chat template. This will be only used if chat_template is set to `jinja` or `null` (in which case chat_template is automatically set to `jinja`). Default is null."
         },
     )
     chat_template_kwargs: dict[str, Any] | None = Field(
