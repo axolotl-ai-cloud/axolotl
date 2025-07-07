@@ -549,6 +549,20 @@ class AxolotlInputConfig(
         },
     )
 
+    tiled_mlp: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use ALST tiled mlp for memory efficient long context"
+        },
+    )
+
+    tiled_mlp_num_shards: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of shards to use for ALST tiled mlp. If unset, it will be set based on seqlen/hidden_size"
+        },
+    )
+
     llama4_linearized_experts: bool | None = None
 
     deepspeed: str | dict[str, Any] | None = Field(
