@@ -10,7 +10,6 @@ execute:
   enabled: false
 ---
 
-REMOVE THIS - Testing doc deployments
 This guide covers advanced training configurations for multi-GPU setups using Axolotl.
 
 ## Overview {#sec-overview}
