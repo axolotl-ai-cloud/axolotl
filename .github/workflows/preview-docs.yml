@@ -28,6 +28,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up Quarto
         uses: quarto-dev/quarto-actions/setup@v2
@@ -71,4 +73,4 @@ jobs:
           message: |
             📖 **Documentation Preview**: ${{ steps.netlify.outputs.deploy-url }}
 
-            Deployed on Netlify from commit ${{ github.sha }}
+            Deployed on Netlify from commit ${{ github.event.pull_request.head.sha }}
