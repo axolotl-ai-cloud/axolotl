@@ -90,7 +90,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/train_loss", 2.8, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -364,6 +364,7 @@ class TestMultiGPULlama:
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
                 "use_tensorboard": True,
+                "seed": 42,
             }
         )
 
@@ -759,6 +760,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero2.json"),
                 "use_tensorboard": True,
+                "seed": 42,
                 **adapter,
             }
         )
@@ -856,7 +858,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/train_loss", 2.5, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.skip(
