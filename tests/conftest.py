@@ -10,7 +10,7 @@ import shutil
 import sys
 import tempfile
 import time
-from pathlib import Path, PosixPath
+from pathlib import Path
 from typing import Generator
 
 import datasets
@@ -423,9 +423,13 @@ def temp_dir() -> Generator[str, None, None]:
     shutil.rmtree(_temp_dir)
 
 
-@pytest.fixture(scope="function", autouse=True)
-def unique_triton_cache_dir(temp_dir: str | PosixPath) -> None:
-    os.environ["TRITON_CACHE_DIR"] = str(temp_dir) + "/.triton/cache"
+@pytest.fixture(scope="module")
+def module_temp_dir() -> Generator[str, None, None]:
+    # Create a temporary directory
+    _temp_dir = tempfile.mkdtemp()
+    yield _temp_dir
+    # Clean up the directory after the test
+    shutil.rmtree(_temp_dir)
 
 
 @pytest.fixture(scope="function", autouse=True)
