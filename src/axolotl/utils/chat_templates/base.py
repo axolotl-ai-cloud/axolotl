@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 LOG = get_logger("axolotl.utils.chat_templates")
 
-_JINJA_TEMPALTE_CHOICE = "jinja"
+_JINJA_TEMPLATE_CHOICE = "jinja"
 _DEFAULT_TEMPLATE_CHOICE = "tokenizer_default"
 _DEFAULT_FALLBACK_CHATML_TEMPLATE_CHOICE_PREFIX = "tokenizer_default_fallback_"
 
@@ -25,7 +25,7 @@ for filename in [f for f in os.listdir(TEMPLATE_DIR) if f.endswith(".jinja")]:
 
 def get_chat_template(
     user_choice: str,
-    jinja_template: Optional[str] = None,
+    jinja_template: str | None = None,
     tokenizer: Optional["PreTrainedTokenizerBase"] = None,
 ) -> str:
     """
@@ -33,8 +33,8 @@ def get_chat_template(
 
     Args:
         user_choice (str): The user's choice of template.
-        jinja_template (Optional[str], optional): The jinja template string or Path to a valid jinja template file. Defaults to None.
-        tokenizer (Optional[PreTrainedTokenizerBase], optional): The tokenizer. Defaults to None.
+        jinja_template (str, optional): The jinja template string or Path to a valid jinja template file. Defaults to None.
+        tokenizer (PreTrainedTokenizerBase, optional): The tokenizer. Defaults to None.
 
     Returns:
         str: The chosen template string.
@@ -42,10 +42,10 @@ def get_chat_template(
     Raises:
         ValueError: If the user_choice is not found in the templates.
     """
-    if user_choice == _JINJA_TEMPALTE_CHOICE:
+    if user_choice == _JINJA_TEMPLATE_CHOICE:
         if not jinja_template:
             raise ValueError(
-                f"`jinja_template` cannot be None when `chat_template` choice is {_JINJA_TEMPALTE_CHOICE}"
+                f"`jinja_template` cannot be None when `chat_template` choice is {_JINJA_TEMPLATE_CHOICE}"
             )
         if os.path.exists(jinja_template) and os.path.isfile(jinja_template):
             with open(jinja_template, "r", encoding="utf-8") as file:
@@ -85,7 +85,7 @@ def get_chat_template(
     raise ValueError(f"Template '{user_choice}' not found.")
 
 
-def extract_chat_template_args(cfg, ds_cfg: Optional[Dict[str, Any]] = None):
+def extract_chat_template_args(cfg, ds_cfg: Dict[str, Any] | None = None):
     if ds_cfg and ds_cfg.get("chat_template"):
         chat_template_choice = ds_cfg.get("chat_template") or _DEFAULT_TEMPLATE_CHOICE
         chat_template_jinja = ds_cfg.get("chat_template_jinja")
@@ -97,7 +97,7 @@ def extract_chat_template_args(cfg, ds_cfg: Optional[Dict[str, Any]] = None):
 
 def get_chat_template_from_config(
     cfg,
-    ds_cfg: Optional[Dict[str, Any]] = None,
+    ds_cfg: Dict[str, Any] | None = None,
     tokenizer: Optional["PreTrainedTokenizerBase"] = None,
 ) -> str:
     chat_template_choice, chat_template_jinja = extract_chat_template_args(
