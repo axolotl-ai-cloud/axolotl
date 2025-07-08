@@ -62,6 +62,7 @@ class ChatTemplate(str, Enum):
     llava = "llava"
     qwen2_vl = "qwen2_vl"
     gemma3 = "gemma3"
+    gemma3n = "gemma3n"
     command_a = "command_a"
     command_a_tool_use = "command_a_tool_use"
     command_a_rag = "command_a_rag"

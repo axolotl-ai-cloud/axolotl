@@ -264,6 +264,26 @@ class Gemma3ProcessingStrategy(ProcessingStrategy):
         return labels
 
 
+class Gemma3nProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for Gemma3n"""
+
+    def process_labels(self, input_ids):
+        labels = input_ids.clone()
+
+        # Follows https://colab.research.google.com/github/huggingface/huggingface-gemma-recipes/blob/main/notebooks/fine_tune_gemma3n_on_t4.ipynb
+        labels[labels == self.processor.tokenizer.pad_token_id] = -100
+        if hasattr(self.processor.tokenizer, "image_token_id"):
+            labels[labels == self.processor.tokenizer.image_token_id] = -100
+        if hasattr(self.processor.tokenizer, "audio_token_id"):
+            labels[labels == self.processor.tokenizer.audio_token_id] = -100
+        if hasattr(self.processor.tokenizer, "boi_token_id"):
+            labels[labels == self.processor.tokenizer.boi_token_id] = -100
+        if hasattr(self.processor.tokenizer, "eoi_token_id"):
+            labels[labels == self.processor.tokenizer.eoi_token_id] = -100
+
+        return labels
+
+
 def get_processing_strategy(
     processor: ProcessorMixin,
     chat_template,
@@ -277,6 +297,10 @@ def get_processing_strategy(
         )
     if chat_template_type == "gemma3":
         return Gemma3ProcessingStrategy(
+            processor, chat_template, image_size, image_resize_algorithm
+        )
+    if chat_template_type == "gemma3n":
+        return Gemma3nProcessingStrategy(
             processor, chat_template, image_size, image_resize_algorithm
         )
     if chat_template_type in [
