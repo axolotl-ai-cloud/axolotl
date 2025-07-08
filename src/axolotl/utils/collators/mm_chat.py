@@ -50,7 +50,7 @@ class MultiModalChatDataCollator(DataCollatorMixin):
             # This method requires transformers>=4.49.0
             result = self.processing_strategy.processor.apply_chat_template(
                 example["messages"],
-                add_generation_prompt=True,
+                add_generation_prompt=False,
                 tokenize=True,
                 return_tensors="pt",
                 padding=True,
