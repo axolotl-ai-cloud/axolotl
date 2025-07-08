@@ -65,7 +65,7 @@ def do_vllm_serve(
         cli_args.get("enable_reasoning") or cfg.vllm.enable_reasoning or False
     )
     enforce_eager = (
-        cli_args.get("enforce_eager") or cfg.vllm.enforce_eager or True
+        cli_args.get("enforce_eager") or cfg.vllm.enforce_eager
     )
 
     # pylint: disable=unexpected-keyword-arg
