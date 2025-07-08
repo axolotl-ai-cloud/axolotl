@@ -21,13 +21,7 @@ pip3 install packaging==23.2 setuptools==75.8.0 wheel ninja
 pip3 install --no-build-isolation -e '.[flash-attn]'
 ```
 
-2. Download the example config:
-
-```bash
-axolotl fetch examples
-```
-
-3. Run the finetuning example:
+2. Run the finetuning example:
 
 ```bash
 axolotl train examples/magistral/magistral-small-qlora.yaml
@@ -42,7 +36,7 @@ Let us know how it goes. Happy finetuning! 🚀
 - For inference, the official MistralAI team recommends `top_p: 0.95` and `temperature: 0.7` with `max_tokens: 40960`.
 - You can run a full finetuning by removing the `adapter: qlora` and `load_in_4bit: true` from the config.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
-- The dataset format is the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
+- The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
 
 ## Optimization Guides
 
@@ -54,7 +48,7 @@ Let us know how it goes. Happy finetuning! 🚀
 
 We only support the `mistral-common` tokenizer for Supervised Fine-tuning at the moment and for `type: chat_template` only.
 
-The tokenizer does not work with `dataset.map` with multiprocessing, so we had to disable it. In addition, we do not support overriding tokens yet.
+In addition, we do not support overriding tokens yet.
 
 ## Related Resources
 
