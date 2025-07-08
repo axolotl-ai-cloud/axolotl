@@ -63,6 +63,9 @@ def do_vllm_serve(
     enable_reasoning = (
         cli_args.get("enable_reasoning") or cfg.vllm.enable_reasoning or False
     )
+    enforce_eager = (
+        cli_args.get("enforce_eager") or cfg.vllm.enforce_eager or True
+    )
 
     # pylint: disable=unexpected-keyword-arg
     vllm_script_args = AxolotlScriptArguments(
@@ -76,6 +79,7 @@ def do_vllm_serve(
         enable_prefix_caching=enable_prefix_caching,
         reasoning_parser=reasoning_parser,
         enable_reasoning=enable_reasoning,
+        enforce_eager=enforce_eager,
     )
     vllm_serve_main(vllm_script_args)
 
