@@ -223,6 +223,7 @@ class TestFSDP1:
                     "fsdp_sync_module_states": True,
                     "fsdp_use_orig_params": False,
                 },
+                "use_tensorboard": True,
             }
         )
 
@@ -299,6 +300,7 @@ class TestFSDP1:
                     "fsdp_sync_module_states": True,
                     "fsdp_use_orig_params": False,
                 },
+                "use_tensorboard": True,
                 "bf16": "auto",
                 "tf32": True,
             }

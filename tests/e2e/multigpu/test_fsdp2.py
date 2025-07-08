@@ -270,6 +270,7 @@ class TestFSDP2:
                     "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                     "reshard_after_forward": True,
                 },
+                "use_tensorboard": True,
             }
         )
 
@@ -330,6 +331,7 @@ class TestFSDP2:
                     "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                     "reshard_after_forward": True,
                 },
+                "use_tensorboard": True,
             }
         )
 

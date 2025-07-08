@@ -155,20 +155,20 @@ def get_state_dict(self, model, unwrap=True):
 def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
     """Helper function to process LoRA modules for FSDP2."""
     from torch.distributed.fsdp import fully_shard
+    from torch.distributed.tensor import DTensor, distribute_module
 
     log_bias_dtype_mismatch = False
-    ignored_params = []
+
+    # Linear4Bit will keep it's bias term in fp32. If the weight dtype is in bf16 we are not able to
+    # wrap this. Therefore we must ensure the bias has the same dtype as the weight
+    if module.base_layer.bias is not None:
+        if module.base_layer.weight.dtype != module.base_layer.bias.dtype:
+            log_bias_dtype_mismatch = True
+            module.base_layer.bias.data = module.base_layer.bias.data.to(
+                module.base_layer.weight.dtype
+            )
 
     for active_adapter in module.active_adapters:
-        # Linear4Bit will keep it's bias term in fp32. If the weight dtype is in bf16 we are not able to
-        # wrap this. Therefore we must ensure the bias has the same dtype as the weight
-        if module.base_layer.bias is not None:
-            if module.base_layer.weight.dtype != module.base_layer.bias.dtype:
-                log_bias_dtype_mismatch = True
-                module.base_layer.bias.data = module.base_layer.bias.data.to(
-                    module.base_layer.weight.dtype
-                )
-
         if module.lora_A:
             fully_shard(module.lora_A[active_adapter], **fsdp2_kwargs)
         if module.lora_B:
@@ -177,12 +177,9 @@ def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
             fully_shard(module.lora_embedding_A[active_adapter], **fsdp2_kwargs)
         if module.lora_embedding_B:
             fully_shard(module.lora_embedding_B[active_adapter], **fsdp2_kwargs)
-
-    ignored_params = {
-        p for name, p in module.named_parameters() if "magnitude_vector" in name
-    }
-
-    return log_bias_dtype_mismatch, ignored_params
+        if module.lora_magnitude_vector:
+            fully_shard(module.lora_magnitude_vector[active_adapter], **fsdp2_kwargs)
+    return log_bias_dtype_mismatch
 
 
 def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
@@ -209,8 +206,8 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     )
 
     is_type_fsdp = isinstance(model, FSDPModule) or (
-        is_compiled_module(model)
-        and isinstance(model._orig_mod, FSDPModule)  # pylint: disable=protected-access
+        is_compiled_module(model) and
+        isinstance(model._orig_mod, FSDPModule)  # pylint: disable=protected-access
     )
     if is_type_fsdp:
         return model
@@ -302,20 +299,33 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     log_bias_dtype_mismatch = False
     if auto_wrap_policy is not None:
         for module in get_module_children_bottom_up(model)[:-1]:
-            ignored_params = []
             if is_peft_model and isinstance(module, lora_layer):
-                module_log_bias_mismatch, ignored_params = (
+                module_log_bias_mismatch = (
                     _process_lora_module_for_fsdp(module, fsdp2_kwargs)
                 )
                 log_bias_dtype_mismatch |= module_log_bias_mismatch
+                # torch.distributed.breakpoint()
             if auto_wrap_policy(module) and not isinstance(module, FSDPModule):
-                if ignored_params:
-                    fully_shard(module, ignored_params=ignored_params, **fsdp2_kwargs)
-                else:
-                    fully_shard(module, **fsdp2_kwargs)
+                fully_shard(module, **fsdp2_kwargs)
+                # if is_peft_model:
+                #     ignored_params = []
+                #     for name, param in module.named_parameters():
+                #         if "magnitude_vector" in name:
 
-    # if not isinstance(model, FSDPModule):
+                #     fully_shard(module, ignored_params=set(
+                #         ignored_params), **fsdp2_kwargs)
+
+                # else:
+                #     fully_shard(module, **fsdp2_kwargs)
+
+                # torch.distributed.breakpoint()
+
+    # if torch.distributed.get_rank() == 0:
+    #     import pdb; pdb.set_trace()
+
     fully_shard(model, **fsdp2_kwargs)
+
+    # torch.distributed.breakpoint()
 
     if log_bias_dtype_mismatch:
         LOG.warning(
@@ -327,6 +337,8 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         fsdp2_load_full_state_dict(
             accelerator, model, original_sd, offload_to_cpu=offload_to_cpu
         )
+
+    # torch.distributed.breakpoint()
 
     if fsdp2_plugin.cpu_ram_efficient_loading and not model_has_params4bit:
         # We re-register the buffers, as they may not be in the state_dict
