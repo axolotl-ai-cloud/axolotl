@@ -860,14 +860,14 @@ class MistralStrategy(ChatTemplateStrategy):
         # TODO: address this in the future with mistral-specific checks
         # self._validate_eot_and_eos_tokens()
 
-    @property
-    def supports_multiprocessing(self) -> bool:
-        """
-        Whether this tokenizing strategy supports multiprocessing.
-        mistral_common tokenizers cannot be pickled for multiprocessing.
-        """
+    # @property
+    # def supports_multiprocessing(self) -> bool:
+    #     """
+    #     Whether this tokenizing strategy supports multiprocessing.
+    #     mistral_common tokenizers cannot be pickled for multiprocessing.
+    #     """
 
-        return False
+    #     return False
 
     def find_first_eot_token(self, input_ids, start_idx):
         """Find the first EOT token in the input_ids starting from start_idx."""
