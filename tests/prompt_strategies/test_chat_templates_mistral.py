@@ -422,22 +422,16 @@ def test_magistral_tokenizer_pad_method(magistral_tokenizer: "HFMistralTokenizer
         {"input_ids": [1, 2, 3], "labels": [4, 5, 6], "unsupported_field": [7, 8, 9]},
     ]
 
-    try:
+    with pytest.raises(NotImplementedError, match="unsupported_field"):
         magistral_tokenizer.pad(features_unsupported, padding=True, return_tensors="pt")
-        assert False, "Should have raised NotImplementedError"
-    except NotImplementedError as e:
-        assert "unsupported_field" in str(e)
 
     # Test token_type_ids rejection
     features_token_type = [
         {"input_ids": [1, 2, 3], "labels": [4, 5, 6], "token_type_ids": [0, 0, 0]},
     ]
 
-    try:
+    with pytest.raises(ValueError, match="token_type_ids is not supported"):
         magistral_tokenizer.pad(features_token_type, padding=True, return_tensors="pt")
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "token_type_ids is not supported" in str(e)
 
 
 def test_magistral_tool_calling(magistral_tokenizer: "HFMistralTokenizer"):
