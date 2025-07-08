@@ -474,7 +474,7 @@ class HFMistralTokenizer:
             result = {}
             for k, v in final_batch.items():
                 if isinstance(v, torch.Tensor):
-                    result[k] = v.numpy().astype(np.long)
+                    result[k] = v.numpy().astype(np.int64)
                 else:
                     result[k] = v
             return result

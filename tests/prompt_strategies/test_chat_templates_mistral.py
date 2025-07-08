@@ -286,5 +286,141 @@ def test_magistral_chat_template(magistral_tokenizer: "HFMistralTokenizer"):
     assert res == ["Hello", ",", " how", " are", " you", "?"]
 
 
+def test_mistral_tokenizer_pad_method(magistral_tokenizer: "HFMistralTokenizer"):
+    """Test the pad method with various field combinations."""
+    from axolotl.utils.collators.core import IGNORE_INDEX
+
+    magistral_pad_token_id = 11  # taken from tokenizer.pad_token_id
+
+    # Test padding with input_ids and labels only
+    features = [
+        {"input_ids": [1, 2, 3], "labels": [4, 5, 6]},
+        {"input_ids": [7, 8], "labels": [9, 10]},
+    ]
+
+    result = magistral_tokenizer.pad(features, padding=True, return_tensors="pt")
+
+    # Check that input_ids are padded correctly
+    assert result["input_ids"].shape == (2, 3)
+    assert result["input_ids"].tolist() == [[1, 2, 3], [7, 8, magistral_pad_token_id]]
+
+    # Check that labels are padded correctly
+    assert result["labels"].shape == (2, 3)
+    assert result["labels"].tolist() == [[4, 5, 6], [9, 10, IGNORE_INDEX]]
+
+    # Check that attention_mask and position_ids are NOT created
+    assert "attention_mask" not in result
+    assert "position_ids" not in result
+
+    # Test padding with attention_mask
+    features_with_attention = [
+        {"input_ids": [1, 2, 3], "labels": [4, 5, 6], "attention_mask": [1, 1, 1]},
+        {"input_ids": [7, 8], "labels": [9, 10], "attention_mask": [1, 1]},
+    ]
+
+    result = magistral_tokenizer.pad(
+        features_with_attention, padding=True, return_tensors="pt"
+    )
+
+    # Check that attention_mask is padded correctly
+    assert result["attention_mask"].shape == (2, 3)
+    assert result["attention_mask"].tolist() == [[1, 1, 1], [1, 1, 0]]
+
+    # Test padding with position_ids
+    features_with_position = [
+        {"input_ids": [1, 2, 3], "labels": [4, 5, 6], "position_ids": [0, 1, 2]},
+        {"input_ids": [7, 8], "labels": [9, 10], "position_ids": [0, 1]},
+    ]
+
+    result = magistral_tokenizer.pad(
+        features_with_position, padding=True, return_tensors="pt"
+    )
+
+    # Check that position_ids are padded correctly (continuing sequence)
+    assert result["position_ids"].shape == (2, 3)
+    assert result["position_ids"].tolist() == [[0, 1, 2], [0, 1, 2]]
+
+    # Test padding with all fields
+    features_all = [
+        {
+            "input_ids": [1, 2, 3],
+            "labels": [4, 5, 6],
+            "attention_mask": [1, 1, 1],
+            "position_ids": [0, 1, 2],
+        },
+        {
+            "input_ids": [7, 8],
+            "labels": [9, 10],
+            "attention_mask": [1, 1],
+            "position_ids": [0, 1],
+        },
+    ]
+
+    result = magistral_tokenizer.pad(features_all, padding=True, return_tensors="pt")
+
+    # All fields should be present and correctly padded
+    assert "input_ids" in result
+    assert "labels" in result
+    assert "attention_mask" in result
+    assert "position_ids" in result
+
+    # Test padding with all sequences same length
+    features_same_length = [
+        {"input_ids": [1, 2, 3], "labels": [4, 5, 6]},
+        {"input_ids": [7, 8, 9], "labels": [10, 11, 12]},
+    ]
+
+    result = magistral_tokenizer.pad(
+        features_same_length, padding=True, return_tensors="pt"
+    )
+
+    # Check match when no padding is needed
+    assert result["input_ids"][0].tolist() == features_same_length[0]["input_ids"]
+    assert result["labels"][0].tolist() == features_same_length[0]["labels"]
+
+    assert result["input_ids"][1].tolist() == features_same_length[1]["input_ids"]
+    assert result["labels"][1].tolist() == features_same_length[1]["labels"]
+
+    # Test padding with max_length parameter
+    result = magistral_tokenizer.pad(
+        features, padding="max_length", max_length=5, return_tensors="pt"
+    )
+
+    # Should pad to max_length
+    assert result["input_ids"].shape == (2, 5)
+    assert result["labels"].shape == (2, 5)
+
+    # Test numpy return type
+    result = magistral_tokenizer.pad(features, padding=True, return_tensors="np")
+
+    # Should return numpy arrays
+    import numpy as np
+
+    assert isinstance(result["input_ids"], np.ndarray)
+    assert isinstance(result["labels"], np.ndarray)
+
+    # Test unsupported field rejection
+    features_unsupported = [
+        {"input_ids": [1, 2, 3], "labels": [4, 5, 6], "unsupported_field": [7, 8, 9]},
+    ]
+
+    try:
+        magistral_tokenizer.pad(features_unsupported, padding=True, return_tensors="pt")
+        assert False, "Should have raised NotImplementedError"
+    except NotImplementedError as e:
+        assert "unsupported_field" in str(e)
+
+    # Test token_type_ids rejection
+    features_token_type = [
+        {"input_ids": [1, 2, 3], "labels": [4, 5, 6], "token_type_ids": [0, 0, 0]},
+    ]
+
+    try:
+        magistral_tokenizer.pad(features_token_type, padding=True, return_tensors="pt")
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "token_type_ids is not supported" in str(e)
+
+
 if __name__ == "__main__":
     unittest.main()
