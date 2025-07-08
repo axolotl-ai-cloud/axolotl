@@ -3,32 +3,50 @@
 import unittest
 from typing import TYPE_CHECKING
 
+import pytest
+
 if TYPE_CHECKING:
     from axolotl.utils.mistral_tokenizer import HFMistralTokenizer
 
 
-def test_magistral_chat_template(magistral_tokenizer: "HFMistralTokenizer"):
+# fmt: off
+@pytest.mark.parametrize(
+    ("tokenizer_str", "assistant_toolcall_ids"),
+    (
+        ("magistral_tokenizer", (9, 44627, 3684, 33, 19881, 1049, 1050, 1051, 1052, 1053, 32, 19227, 12856, 2811, 1032, 1049, 1054, 1044, 1429, 33319, 2811, 1032, 1050, 1125, 2)),
+        ("devstral_tokenizer", (9, 1091, 19227, 2391, 2811, 1429, 44627, 3684, 1897, 1429, 61906, 2811, 16753, 12856, 2811, 1032, 1049, 1054, 1044, 1429, 33319, 2811, 1032, 1050, 4179, 1429, 1327, 2811, 1429, 19881, 1049, 1050, 1051, 1052, 1053, 1034, 27028, 2))
+    )
+)
+# fmt: on
+def test_mistral_chat_template(
+    tokenizer_str: str,
+    assistant_toolcall_ids: tuple[int, ...],
+    request: pytest.FixtureRequest,
+):
+    """Test chat template with the Magistral/Devstral tokenizer"""
     # pylint: disable=duplicate-code
     from axolotl.prompt_strategies.chat_template import MistralPrompter, MistralStrategy
 
-    # check bos, eos, pad, unk are accessible properties
-    assert magistral_tokenizer.bos_token_id == 1
-    assert magistral_tokenizer.eos_token_id == 2
-    assert magistral_tokenizer.pad_token_id == 11
-    assert magistral_tokenizer.unk_token_id == 0
+    tokenizer: HFMistralTokenizer = request.getfixturevalue(tokenizer_str)
 
-    assert magistral_tokenizer.pad_token == "<pad>"
-    assert magistral_tokenizer.eos_token == "</s>"
-    assert magistral_tokenizer.bos_token == "<s>"
-    assert magistral_tokenizer.unk_token == "<unk>"
+    # check bos, eos, pad, unk are accessible properties
+    assert tokenizer.bos_token_id == 1
+    assert tokenizer.eos_token_id == 2
+    assert tokenizer.pad_token_id == 11
+    assert tokenizer.unk_token_id == 0
+
+    assert tokenizer.pad_token == "<pad>"
+    assert tokenizer.eos_token == "</s>"
+    assert tokenizer.bos_token == "<s>"
+    assert tokenizer.unk_token == "<unk>"
 
     strategy = MistralStrategy(
         MistralPrompter(
-            magistral_tokenizer,
+            tokenizer,
             chat_template=None,
             message_property_mappings={"role": "role", "content": "content"},
         ),
-        tokenizer=magistral_tokenizer,
+        tokenizer=tokenizer,
         train_on_inputs=False,
         train_on_eos="turn",
         sequence_len=512,
@@ -219,7 +237,7 @@ def test_magistral_chat_template(magistral_tokenizer: "HFMistralTokenizer"):
         1,  # bos
         5, 1091, 19227, 4994, 2811, 1429, 5165, 1897, 1429, 5165, 2811, 16753, 2391, 2811, 1429, 44627, 3684, 1897, 1429, 14653, 2811, 1429, 10639, 2130, 1261, 2951, 1307, 1747, 1278, 60092, 1307, 1261, 2782, 1455, 1584, 4289, 2224, 1261, 4265, 6139, 39249, 1429, 26204, 2811, 16753, 4994, 2811, 1429, 6371, 1897, 1429, 48649, 2811, 16753, 12856, 2811, 16753, 4994, 2811, 1429, 49039, 1897, 1429, 14653, 2811, 1429, 1784, 2782, 1317, 3081, 60092, 1307, 2613, 4179, 1429, 33319, 2811, 16753, 4994, 2811, 1429, 49039, 1897, 1429, 14653, 2811, 1429, 1784, 9229, 6139, 1394, 1278, 60092, 2613, 47579, 1429, 15760, 2811, 12161, 12856, 1897, 1429, 33319, 4964, 2821, 27028, 6,  # tool prompt
         3, 46634, 1044, 1710, 1636, 5628, 1639, 1261, 44433, 1307, 2606, 1317, 5388, 1420, 54191, 2424, 1286, 8967, 1063, 15621, 1044, 2549, 30305, 2196, 3560, 1044, 1321, 2606, 1710, 1362, 2016, 8605, 2015, 1317, 5524, 118931, 2036, 32951, 1063, 1362, 2933, 2269, 12106, 1408, 101987, 1044, 6939, 1044, 1321, 9216, 1455, 2084, 3180, 1278, 8967, 119141, 1689, 5935, 1033, 4,  # user
-        9, 44627, 3684, 33, 19881, 1049, 1050, 1051, 1052, 1053, 32, 19227, 12856, 2811, 1032, 1049, 1054, 1044, 1429, 33319, 2811, 1032, 1050, 1125, 2,  # assistant tool calling
+        *assistant_toolcall_ids,  # assistant tool calling
         7, 19881, 1049, 1050, 1051, 1052, 1053, 19, 1049, 1044, 1050, 8,  # tool result
         1784, 60092, 1307, 1032, 1049, 1054, 1395, 1032, 1049, 1321, 1032, 1050, 1046,  # assistant
         2  # eos
@@ -229,7 +247,7 @@ def test_magistral_chat_template(magistral_tokenizer: "HFMistralTokenizer"):
         -100,  # bos
         -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100,  # tool prompt
         -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100,  # user prompt
-        9, 44627, 3684, 33, 19881, 1049, 1050, 1051, 1052, 1053, 32, 19227, 12856, 2811, 1032, 1049, 1054, 1044, 1429, 33319, 2811, 1032, 1050, 1125, 2,  # assistant tool calling
+        *assistant_toolcall_ids,  # assistant tool calling
         -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100,  # tool result
         1784, 60092, 1307, 1032, 1049, 1054, 1395, 1032, 1049, 1321, 1032, 1050, 1046,  # assistant
         2  # eos
@@ -237,7 +255,7 @@ def test_magistral_chat_template(magistral_tokenizer: "HFMistralTokenizer"):
     # fmt: on
 
     # test chat template with tokenize=False
-    res = magistral_tokenizer.apply_chat_template(
+    res = tokenizer.apply_chat_template(
         [
             {"role": "user", "content": "Hello, how are you?"},
             {"role": "assistant", "content": "I'm doing great, thank you!"},
@@ -248,7 +266,7 @@ def test_magistral_chat_template(magistral_tokenizer: "HFMistralTokenizer"):
     assert res == "<s>[INST]Hello, how are you?[/INST]I'm doing great, thank you!</s>"
 
     # test encode
-    res = magistral_tokenizer.encode("Hello, how are you?", add_special_tokens=True)
+    res = tokenizer.encode("Hello, how are you?", add_special_tokens=True)
     assert res == [
         1,  # bos
         22177,  # Hello
@@ -261,16 +279,16 @@ def test_magistral_chat_template(magistral_tokenizer: "HFMistralTokenizer"):
     ]
 
     # test decode no skip special tokens
-    decoded_res = magistral_tokenizer.decode(res, skip_special_tokens=False)
+    decoded_res = tokenizer.decode(res, skip_special_tokens=False)
 
     assert decoded_res == "<s>Hello, how are you?</s>"
 
     # test decode skip special tokens
-    decoded_res = magistral_tokenizer.decode(res, skip_special_tokens=True)
+    decoded_res = tokenizer.decode(res, skip_special_tokens=True)
     assert decoded_res == "Hello, how are you?"
 
     # test encode no special tokens
-    res = magistral_tokenizer.encode("Hello, how are you?", add_special_tokens=False)
+    res = tokenizer.encode("Hello, how are you?", add_special_tokens=False)
     assert res == [
         22177,  # Hello
         1044,  # ,
@@ -281,13 +299,13 @@ def test_magistral_chat_template(magistral_tokenizer: "HFMistralTokenizer"):
     ]
 
     # test convert ids to tokens
-    res = magistral_tokenizer.convert_ids_to_tokens(res)
+    res = tokenizer.convert_ids_to_tokens(res)
     # spacing are needed as we are converting without decoding
     assert res == ["Hello", ",", " how", " are", " you", "?"]
 
 
-def test_mistral_tokenizer_pad_method(magistral_tokenizer: "HFMistralTokenizer"):
-    """Test the pad method with various field combinations."""
+def test_magistral_tokenizer_pad_method(magistral_tokenizer: "HFMistralTokenizer"):
+    """Test the MistralTokenizer pad method"""
     from axolotl.utils.collators.core import IGNORE_INDEX
 
     magistral_pad_token_id = 11  # taken from tokenizer.pad_token_id
@@ -422,8 +440,8 @@ def test_mistral_tokenizer_pad_method(magistral_tokenizer: "HFMistralTokenizer")
         assert "token_type_ids is not supported" in str(e)
 
 
-def test_mistral_tool_calling(magistral_tokenizer: "HFMistralTokenizer"):
-    """Test comprehensive tool calling scenarios with the Mistral tokenizer."""
+def test_magistral_tool_calling(magistral_tokenizer: "HFMistralTokenizer"):
+    """Test tool calling with the Magistral tokenizer"""
     from axolotl.prompt_strategies.chat_template import MistralPrompter, MistralStrategy
 
     strategy = MistralStrategy(
