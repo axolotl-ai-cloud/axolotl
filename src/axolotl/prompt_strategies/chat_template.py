@@ -681,13 +681,14 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         for message in messages:
             transformed_message = self.transform_message(message)
 
-            turn = {
-                **transformed_message,
-                "training": message.get(self.prompter.message_field_training),
-                "training_detail": message.get(
-                    self.prompter.message_field_training_detail
-                ),
-            }
+            turn = transformed_message
+
+            training = message.get(self.prompter.message_field_training)
+            training_detail = message.get(self.prompter.message_field_training_detail)
+            if training is not None:
+                turn["training"] = training
+            if training_detail is not None:
+                turn["training_detail"] = training_detail
 
             turns.append(turn)
 
