@@ -422,5 +422,317 @@ def test_mistral_tokenizer_pad_method(magistral_tokenizer: "HFMistralTokenizer")
         assert "token_type_ids is not supported" in str(e)
 
 
+def test_mistral_tool_calling(magistral_tokenizer: "HFMistralTokenizer"):
+    """Test comprehensive tool calling scenarios with the Mistral tokenizer."""
+    from axolotl.prompt_strategies.chat_template import MistralPrompter, MistralStrategy
+
+    strategy = MistralStrategy(
+        MistralPrompter(
+            magistral_tokenizer,
+            chat_template=None,
+            message_property_mappings={"role": "role", "content": "content"},
+        ),
+        tokenizer=magistral_tokenizer,
+        train_on_inputs=False,
+        train_on_eos="turn",
+        sequence_len=512,
+        roles_to_train=["assistant"],
+    )
+
+    # Test basic tool calling with single function
+    basic_tool_calling = {
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Get the current weather for a location",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "location": {
+                                "type": "string",
+                                "description": "The city and state, e.g. San Francisco, CA",
+                            },
+                        },
+                        "required": ["location"],
+                    },
+                },
+            },
+        ],
+        "messages": [
+            {
+                "role": "user",
+                "content": "What's the weather like in San Francisco?",
+            },
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "call12345",
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": {
+                                "location": "San Francisco, CA",
+                            },
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call12345",
+                "name": "get_weather",
+                "content": "Sunny, 72°F",
+            },
+            {
+                "role": "assistant",
+                "content": "The weather in San Francisco is sunny and 72°F.",
+            },
+        ],
+    }
+
+    res = strategy.tokenize_prompt(basic_tool_calling)
+
+    # Basic validation
+    assert "input_ids" in res
+    assert "labels" in res
+    assert len(res["input_ids"]) > 0
+    assert len(res["labels"]) == len(res["input_ids"])
+
+    # Decode and verify structure
+    decoded = magistral_tokenizer.decode(res["input_ids"])
+    assert (
+        '<s>[AVAILABLE_TOOLS][{"type": "function", "function": {"name": "get_weather", "description": "Get the current weather for a location", "parameters": {"type": "object", "properties": {"location": {"type": "string", "description": "The city and state, e.g. San Francisco, CA"}}, "required": ["location"]}}}][/AVAILABLE_TOOLS]'
+        in decoded
+    )
+    assert (
+        '[TOOL_CALLS]get_weather[CALL_ID]call12345[ARGS]{"location": "San Francisco, CA"}</s>'
+        in decoded
+    )
+    assert "[TOOL_RESULTS]call12345[TOOL_CONTENT]Sunny, 72°F[/TOOL_RESULTS]" in decoded
+    assert "The weather in San Francisco is sunny and 72°F.</s>" in decoded
+
+    # Test multiple tool calls in sequence
+    multi_tool_calling = {
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "add_numbers",
+                    "description": "Add two numbers together",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "a": {"type": "number", "description": "First number"},
+                            "b": {"type": "number", "description": "Second number"},
+                        },
+                        "required": ["a", "b"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "multiply_numbers",
+                    "description": "Multiply two numbers",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "x": {"type": "number", "description": "First number"},
+                            "y": {"type": "number", "description": "Second number"},
+                        },
+                        "required": ["x", "y"],
+                    },
+                },
+            },
+        ],
+        "messages": [
+            {
+                "role": "user",
+                "content": "Add 5 and 3, then multiply the result by 2",
+            },
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "call12345",
+                        "type": "function",
+                        "function": {
+                            "name": "add_numbers",
+                            "arguments": {"a": 5, "b": 3},
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call12345",
+                "name": "add_numbers",
+                "content": "8",
+            },
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "call23456",
+                        "type": "function",
+                        "function": {
+                            "name": "multiply_numbers",
+                            "arguments": {"x": 8, "y": 2},
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call23456",
+                "name": "multiply_numbers",
+                "content": "16",
+            },
+            {
+                "role": "assistant",
+                "content": "The result is 16. I first added 5 and 3 to get 8, then multiplied 8 by 2 to get 16.",
+            },
+        ],
+    }
+
+    res = strategy.tokenize_prompt(multi_tool_calling)
+
+    # Validation
+    assert len(res["input_ids"]) > 0
+    assert len(res["labels"]) == len(res["input_ids"])
+
+    decoded = magistral_tokenizer.decode(res["input_ids"])
+    assert (
+        '<s>[AVAILABLE_TOOLS][{"type": "function", "function": {"name": "add_numbers", "description": "Add two numbers together", "parameters": {"type": "object", "properties": {"a": {"type": "number", "description": "First number"}, "b": {"type": "number", "description": "Second number"}}, "required": ["a", "b"]}}}, {"type": "function", "function": {"name": "multiply_numbers", "description": "Multiply two numbers", "parameters": {"type": "object", "properties": {"x": {"type": "number", "description": "First number"}, "y": {"type": "number", "description": "Second number"}}, "required": ["x", "y"]}}}][/AVAILABLE_TOOLS]'
+        in decoded
+    )
+    assert (
+        '[TOOL_CALLS]add_numbers[CALL_ID]call12345[ARGS]{"a": 5, "b": 3}</s>' in decoded
+    )
+    assert "[TOOL_RESULTS]call12345[TOOL_CONTENT]8[/TOOL_RESULTS]" in decoded
+    assert (
+        '[TOOL_CALLS]multiply_numbers[CALL_ID]call23456[ARGS]{"x": 8, "y": 2}</s>'
+        in decoded
+    )
+    assert "[TOOL_RESULTS]call23456[TOOL_CONTENT]16[/TOOL_RESULTS]" in decoded
+    assert (
+        "The result is 16. I first added 5 and 3 to get 8, then multiplied 8 by 2 to get 16.</s>"
+        in decoded
+    )
+
+    # Test tool calling with system message
+    system_tool_calling = {
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_database",
+                    "description": "Search for information in database",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Search query"},
+                        },
+                        "required": ["query"],
+                    },
+                },
+            },
+        ],
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant with access to a database.",
+            },
+            {
+                "role": "user",
+                "content": "Find information about Python programming",
+            },
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "search123",
+                        "type": "function",
+                        "function": {
+                            "name": "search_database",
+                            "arguments": {"query": "Python programming"},
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "search123",
+                "name": "search_database",
+                "content": "Python is a high-level programming language known for its simplicity.",
+            },
+            {
+                "role": "assistant",
+                "content": "Based on the database search, Python is a high-level programming language known for its simplicity and readability.",
+            },
+        ],
+    }
+
+    res = strategy.tokenize_prompt(system_tool_calling)
+
+    # Validation
+    assert len(res["input_ids"]) > 0
+    assert len(res["labels"]) == len(res["input_ids"])
+
+    decoded = magistral_tokenizer.decode(res["input_ids"])
+
+    assert (
+        '<s>[SYSTEM_PROMPT]You are a helpful assistant with access to a database.[/SYSTEM_PROMPT][AVAILABLE_TOOLS][{"type": "function", "function": {"name": "search_database", "description": "Search for information in database", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "Search query"}}, "required": ["query"]}}}][/AVAILABLE_TOOLS]'
+        in decoded
+    )
+
+    # Test error handling - missing tool response
+    incomplete_tool_calling = {
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_time",
+                    "description": "Get current time",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
+        ],
+        "messages": [
+            {
+                "role": "user",
+                "content": "What time is it?",
+            },
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "time12345",
+                        "type": "function",
+                        "function": {
+                            "name": "get_time",
+                            "arguments": {},
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "The current time is 12:00 PM.",
+            },
+        ],
+    }
+
+    from mistral_common.exceptions import InvalidMessageStructureException
+
+    try:
+        strategy.tokenize_prompt(incomplete_tool_calling)
+    except InvalidMessageStructureException as e:
+        assert "Not the same number of function calls and responses" in str(e)
+
+
 if __name__ == "__main__":
     unittest.main()
