@@ -21,6 +21,7 @@ class AxolotlScriptArguments(ScriptArguments):
 
     reasoning_parser: str = field(default="", kw_only=True)
     enable_reasoning: bool | None = field(default=None, kw_only=True)
+    enforce_eager: bool = field(default=True, kw_only=True)
 
 
 def do_vllm_serve(
