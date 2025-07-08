@@ -18,7 +18,7 @@ git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 
 pip3 install packaging==23.2 setuptools==75.8.0 wheel ninja
-pip3 install --no-build-isolation -e '.[flash-attn,mistral]'
+pip3 install --no-build-isolation -e '.[flash-attn]'
 ```
 
 2. Download the example config:
