@@ -89,7 +89,7 @@ class SFTDataset(BaseModel):
     chat_template_jinja: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Custom jinja chat template. Used only if `chat_template: jinja` or empty."
+            "description": "Custom jinja chat template or path to jinja file. Used only if `chat_template: jinja` or empty."
         },
     )
     data_files: str | list[str] | None = Field(

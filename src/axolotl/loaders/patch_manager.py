@@ -49,11 +49,11 @@ class PatchManager:
 
     def apply_pre_model_load_patches(self):
         """Apply pre-model load patches based on config."""
+        # self._apply_flex_attention_patches()
         self._apply_flash_attention_patches()
         self._apply_chunked_cross_entropy_patch()
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
-        self._apply_flex_attention_patches()
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
@@ -66,6 +66,7 @@ class PatchManager:
         self._apply_self_attention_lora_patch()
         self._apply_gemma3_conditional_generation_forward_patch()
         self._apply_sequence_parallel_patches()
+        self._apply_tiled_mlp(self.cfg.model_config_type)
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
@@ -97,6 +98,14 @@ class PatchManager:
 
             patch_accelerate_fsdp2()
 
+        # if self.cfg.fsdp_config:
+        #     # see transformers#39152
+        #     from axolotl.monkeypatch.trainer_fsdp_optim import (
+        #         patch_training_loop_for_fsdp,
+        #     )
+        #
+        #     patch_training_loop_for_fsdp()
+
     def _apply_adapter_patches(self):
         """Apply patches for adapter configurations."""
         if self.cfg.adapter and self.cfg.embeddings_skip_upcast:
@@ -107,14 +116,20 @@ class PatchManager:
     def _apply_flex_attention_patches(self):
         """Apply patches for flexible attention."""
         if self.cfg.flex_attention:
-            from axolotl.monkeypatch.attention.flex_attn import (
-                patch_flex_make_mask,
-                patch_flex_wrapper,
-            )
+            # from axolotl.monkeypatch.attention.flex_attn import (
+            #     patch_flex_make_mask,
+            #     patch_flex_wrapper,
+            # )
+            #
+            # flex_attn_compile_kwargs = self.cfg.flex_attn_compile_kwargs or {}
+            # patch_flex_wrapper(**flex_attn_compile_kwargs)
+            # patch_flex_make_mask()
+            if self.cfg.sample_packing:
+                from axolotl.core.attention.flex_block_mask import (
+                    patch_create_causal_mask,
+                )
 
-            flex_attn_compile_kwargs = self.cfg.flex_attn_compile_kwargs or {}
-            patch_flex_wrapper(**flex_attn_compile_kwargs)
-            patch_flex_make_mask()
+                patch_create_causal_mask(self.cfg.model_config_type)
 
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
@@ -242,6 +257,12 @@ class PatchManager:
 
             patch_prepare_data_loader()
             patch_prepare_device_mesh(self.cfg.sequence_parallel_degree, self.cfg.fsdp)
+
+    def _apply_tiled_mlp(self, model_type: str):
+        if self.cfg.tiled_mlp:
+            from axolotl.monkeypatch.tiled_mlp import patch_tiled_mlp
+
+            patch_tiled_mlp(model_type, cfg_num_shards=self.cfg.tiled_mlp_num_shards)
 
     def _patch_attention(self):
         """Apply attention-specific patches based on model type."""
