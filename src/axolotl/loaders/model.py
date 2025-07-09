@@ -620,7 +620,7 @@ class ModelLoader:
                 skip_move_to_device = True
 
         if (
-            self.is_fsdp_enabled
+            self.is_qlora_and_fsdp_enabled
             and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
             and (
                 self.cfg.model_config_type == "dbrx"

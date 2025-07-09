@@ -40,13 +40,13 @@ use_cpu: false
 
 Configure your model to use FSDP in the Axolotl yaml. For example:
 ```yaml
+fsdp_version: 2
 fsdp_config:
-  fsdp_version: 2
-  fsdp_offload_params: true
-  fsdp_state_dict_type: FULL_STATE_DICT
-  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
-  fsdp_reshard_after_forward: true
+  offload_params: true
+  state_dict_type: FULL_STATE_DICT
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: LlamaDecoderLayer
+  reshard_after_forward: true
 ```
 
 All you have to do now is launch using accelerate as you would usually do on each machine and voila, the processes will start once you have launched accelerate on every machine.
