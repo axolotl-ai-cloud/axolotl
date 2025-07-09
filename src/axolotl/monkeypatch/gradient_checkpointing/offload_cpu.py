@@ -80,6 +80,7 @@ class CPU_Offloaded_Gradient_Checkpointer(  # pylint: disable=invalid-name
 
 # Copyright 2025 Snowflake Inc.
 # SPDX-License-Identifier: Apache-2.0
+# https://github.com/snowflakedb/ArcticTraining/blob/main/arctic_training/monkey_patches.py
 class CheckpointFunctionWithCPUOffload(torch.autograd.Function):
     """
     This is a torch/utils/checkpoint.py CheckpointFunction monkey patch that offloads the first tensor to cpu during forward and back to cuda during backward. This allows significant memory savings when using a very long seqlen. e.g. for llama 8b at 100k it's 24GB saved per gpu: `((100_000*4096)*2*32/2**30)`
