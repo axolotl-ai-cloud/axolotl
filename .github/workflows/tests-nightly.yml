@@ -80,9 +80,9 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/
-          pytest -v tests/patched/
-          pytest -v tests/cli/
+          pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/
+          pytest -v --durations=10 tests/patched/
+          pytest -v --durations=10 tests/cli/
 
       - name: cleanup pip cache
         run: |

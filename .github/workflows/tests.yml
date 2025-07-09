@@ -102,9 +102,9 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/ --cov=axolotl --cov-report=xml
-          pytest -v tests/patched/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v tests/cli/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/ --cov=axolotl --cov-report=xml
+          pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -175,9 +175,9 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/
-          pytest -v tests/patched/
-          pytest -v tests/cli/
+          pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/
+          pytest -v --durations=10 tests/patched/
+          pytest -v --durations=10 tests/cli/
 
       - name: cleanup pip cache
         run: |
