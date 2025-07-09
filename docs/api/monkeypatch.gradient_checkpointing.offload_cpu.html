@@ -472,6 +472,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
   <li><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer" id="toc-axolotl.monkeypatch.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer" class="nav-link" data-scroll-target="#axolotl.monkeypatch.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer">CPU_Offloaded_Gradient_Checkpointer</a></li>
+  <li><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_cpu.CheckpointFunctionWithCPUOffload" id="toc-axolotl.monkeypatch.gradient_checkpointing.offload_cpu.CheckpointFunctionWithCPUOffload" class="nav-link" data-scroll-target="#axolotl.monkeypatch.gradient_checkpointing.offload_cpu.CheckpointFunctionWithCPUOffload">CheckpointFunctionWithCPUOffload</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -501,6 +502,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer">CPU_Offloaded_Gradient_Checkpointer</a></td>
 <td>Saves VRAM by smartly offloading to RAM.</td>
 </tr>
+<tr class="even">
+<td><a href="#axolotl.monkeypatch.gradient_checkpointing.offload_cpu.CheckpointFunctionWithCPUOffload">CheckpointFunctionWithCPUOffload</a></td>
+<td>This is a torch/utils/checkpoint.py CheckpointFunction monkey patch that offloads the first tensor to cpu during forward and back to cuda during backward. This allows significant memory savings when using a very long seqlen. e.g.&nbsp;for llama 8b at 100k it’s 24GB saved per gpu: <code>((100_000*4096)*2*32/2**30)</code></td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.monkeypatch.gradient_checkpointing.offload_cpu.CPU_Offloaded_Gradient_Checkpointer" class="level3">
@@ -509,6 +514,13 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Saves VRAM by smartly offloading to RAM.
 Tiny hit to performance, since we mask the movement via non blocking calls.</p>
+</section>
+<section id="axolotl.monkeypatch.gradient_checkpointing.offload_cpu.CheckpointFunctionWithCPUOffload" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.gradient_checkpointing.offload_cpu.CheckpointFunctionWithCPUOffload">CheckpointFunctionWithCPUOffload</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.gradient_checkpointing.offload_cpu.CheckpointFunctionWithCPUOffload(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>This is a torch/utils/checkpoint.py CheckpointFunction monkey patch that offloads the first tensor to cpu during forward and back to cuda during backward. This allows significant memory savings when using a very long seqlen. e.g.&nbsp;for llama 8b at 100k it’s 24GB saved per gpu: <code>((100_000*4096)*2*32/2**30)</code>
+In the case of a very long seqlen 100k+ the copying to/from cpu overhead is not big, because dense quadratic attention compute will dominate.</p>
 
 
 </section>
