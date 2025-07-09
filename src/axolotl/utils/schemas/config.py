@@ -627,7 +627,7 @@ class AxolotlInputConfig(
     torch_compile: Literal["auto"] | bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Whether to use torch.compile and which backend to use. setting to `auto` will enable torch compile when torch>=2.5.1"
+            "description": "Whether to use torch.compile and which backend to use. setting to `auto` will enable torch compile when torch>=2.6.0"
         },
     )
     torch_compile_backend: str | None = Field(
@@ -1083,9 +1083,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     def check_min_torch_version(self):
         if self.env_capabilities and self.env_capabilities.torch_version:
             torch_version = self.env_capabilities.torch_version
-            if version.parse(torch_version) < version.parse("2.5.1"):
+            if version.parse(torch_version) < version.parse("2.6.0"):
                 LOG.warning(
-                    f"torch=={torch_version} may not be supported in future versions. Please consider upgrading to torch>=2.5.1."
+                    f"torch=={torch_version} not be supported. Please upgrade to torch>=2.6.0."
                 )
 
         return self
