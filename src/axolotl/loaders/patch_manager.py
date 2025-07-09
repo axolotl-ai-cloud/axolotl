@@ -7,6 +7,7 @@ import importlib.util
 from functools import cached_property
 
 import addict
+import torch
 import transformers
 from transformers import PretrainedConfig, PreTrainedModel
 
@@ -171,6 +172,7 @@ class PatchManager:
             transformers.modeling_utils.checkpoint.CheckpointFunction = (
                 CheckpointFunctionWithCPUOffload
             )
+            torch.utils.checkpoint.CheckpointFunction = CheckpointFunctionWithCPUOffload
         if self.cfg.gradient_checkpointing == "offload_disk":
             from axolotl.monkeypatch.gradient_checkpointing import (
                 hf_grad_checkpoint_disk_offload_wrapper,
