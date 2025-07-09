@@ -167,12 +167,24 @@ class PatchManager:
         if self.cfg.gradient_checkpointing in ["unsloth", "offload"]:
             from axolotl.monkeypatch.gradient_checkpointing import (
                 CheckpointFunctionWithCPUOffload,
+                hf_grad_checkpoint_offload_wrapper,
             )
 
-            transformers.modeling_utils.checkpoint.CheckpointFunction = (
-                CheckpointFunctionWithCPUOffload
-            )
-            torch.utils.checkpoint.CheckpointFunction = CheckpointFunctionWithCPUOffload
+            if (
+                self.cfg.gradient_checkpointing_kwargs
+                and "use_reentrant" in self.cfg.gradient_checkpointing_kwargs
+                and self.cfg.gradient_checkpointing_kwargs["use_reentrant"] is False
+            ):
+                transformers.modeling_utils.checkpoint = (
+                    hf_grad_checkpoint_offload_wrapper
+                )
+            else:
+                transformers.modeling_utils.checkpoint.CheckpointFunction = (
+                    CheckpointFunctionWithCPUOffload
+                )
+                torch.utils.checkpoint.CheckpointFunction = (
+                    CheckpointFunctionWithCPUOffload
+                )
         if self.cfg.gradient_checkpointing == "offload_disk":
             from axolotl.monkeypatch.gradient_checkpointing import (
                 hf_grad_checkpoint_disk_offload_wrapper,
