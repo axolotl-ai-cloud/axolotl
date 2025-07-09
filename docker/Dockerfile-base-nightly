@@ -22,9 +22,11 @@ RUN apt-get update \
     && mkdir /root/.conda \
     && bash Miniconda3-latest-Linux-x86_64.sh -b \
     && rm -f Miniconda3-latest-Linux-x86_64.sh \
-    && conda create -n "py${PYTHON_VERSION}" python="${PYTHON_VERSION}"
+    && conda create -n "axolotl-py${PYTHON_VERSION}" python="${PYTHON_VERSION}" \
+    && conda init bash \
+    && echo "conda activate axolotl-py${PYTHON_VERSION}" >> ~/.bashrc
 
-ENV PATH="/root/miniconda3/envs/py${PYTHON_VERSION}/bin:${PATH}"
+ENV PATH="/root/miniconda3/envs/axolotl-py${PYTHON_VERSION}/bin:${PATH}"
 
 WORKDIR /workspace
 
