@@ -1,6 +1,7 @@
 """Monkeypatch for Tiled MLP implementation"""
 
 import math
+import os
 
 import torch
 import torch.distributed as dist
@@ -29,15 +30,18 @@ def patch_tiled_mlp(model_type, use_original_mlp=False, cfg_num_shards=None):
 
             mlp_forward = torch.compile(generic_mlp_forward)
 
+        is_distributed = int(os.environ.get("WORLD_SIZE", 1)) > 1
+
         def tiled_mlp_forward(self, x):
             input_shape = x.shape
             seqlen = input_shape[-2]
             hidden = input_shape[-1]
             if cfg_num_shards is None:
                 num_shards = math.ceil(seqlen / hidden)
-                num_shards_tensor = torch.tensor(num_shards, device=x.device)
-                dist.all_reduce(num_shards_tensor, op=dist.ReduceOp.MAX)
-                num_shards = num_shards_tensor.item()
+                if is_distributed:
+                    num_shards_tensor = torch.tensor(num_shards, device=x.device)
+                    dist.all_reduce(num_shards_tensor, op=dist.ReduceOp.MAX)
+                    num_shards = num_shards_tensor.item()
             else:
                 num_shards = cfg_num_shards
 
