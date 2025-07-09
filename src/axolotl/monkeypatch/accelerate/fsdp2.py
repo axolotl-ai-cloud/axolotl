@@ -155,7 +155,6 @@ def get_state_dict(self, model, unwrap=True):
 def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
     """Helper function to process LoRA modules for FSDP2."""
     from torch.distributed.fsdp import fully_shard
-    from torch.distributed.tensor import DTensor, distribute_module
 
     log_bias_dtype_mismatch = False
 
@@ -206,8 +205,8 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     )
 
     is_type_fsdp = isinstance(model, FSDPModule) or (
-        is_compiled_module(model) and
-        isinstance(model._orig_mod, FSDPModule)  # pylint: disable=protected-access
+        is_compiled_module(model)
+        and isinstance(model._orig_mod, FSDPModule)  # pylint: disable=protected-access
     )
     if is_type_fsdp:
         return model
@@ -300,8 +299,8 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     if auto_wrap_policy is not None:
         for module in get_module_children_bottom_up(model)[:-1]:
             if is_peft_model and isinstance(module, lora_layer):
-                module_log_bias_mismatch = (
-                    _process_lora_module_for_fsdp(module, fsdp2_kwargs)
+                module_log_bias_mismatch = _process_lora_module_for_fsdp(
+                    module, fsdp2_kwargs
                 )
                 log_bias_dtype_mismatch |= module_log_bias_mismatch
                 # torch.distributed.breakpoint()
