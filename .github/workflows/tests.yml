@@ -198,7 +198,7 @@ jobs:
           - cuda: 126
             cuda_version: 12.6.3
             python_version: "3.11"
-            pytorch: 2.6.0
+            pytorch: 2.7.1
             num_gpus: 1
             axolotl_extras:
           - cuda: 126
@@ -251,12 +251,6 @@ jobs:
             cuda_version: 12.6.3
             python_version: "3.11"
             pytorch: 2.6.0
-            num_gpus: 1
-            axolotl_extras: llmcompressor
-          - cuda: 126
-            cuda_version: 12.6.3
-            python_version: "3.11"
-            pytorch: 2.7.1
             num_gpus: 1
             axolotl_extras:
           - cuda: 128
