@@ -68,7 +68,7 @@ Start from Stage 1 -> Stage 2 -> Stage 3.
 
 ## Fully Sharded Data Parallel (FSDP) {#sec-fsdp}
 
-### FSDP2 (reccomended)
+### FSDP2 (recommended)
 
 ::: {.callout-note}
 
