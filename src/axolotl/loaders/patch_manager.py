@@ -165,10 +165,12 @@ class PatchManager:
         """Apply patches for gradient checkpointing."""
         if self.cfg.gradient_checkpointing in ["unsloth", "offload"]:
             from axolotl.monkeypatch.gradient_checkpointing import (
-                hf_grad_checkpoint_offload_wrapper,
+                CheckpointFunctionWithCPUOffload,
             )
 
-            transformers.modeling_utils.checkpoint = hf_grad_checkpoint_offload_wrapper
+            transformers.modeling_utils.checkpoint.CheckpointFunction = (
+                CheckpointFunctionWithCPUOffload
+            )
         if self.cfg.gradient_checkpointing == "offload_disk":
             from axolotl.monkeypatch.gradient_checkpointing import (
                 hf_grad_checkpoint_disk_offload_wrapper,
