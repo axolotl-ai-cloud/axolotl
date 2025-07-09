@@ -303,28 +303,10 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
                     module, fsdp2_kwargs
                 )
                 log_bias_dtype_mismatch |= module_log_bias_mismatch
-                # torch.distributed.breakpoint()
             if auto_wrap_policy(module) and not isinstance(module, FSDPModule):
                 fully_shard(module, **fsdp2_kwargs)
-                # if is_peft_model:
-                #     ignored_params = []
-                #     for name, param in module.named_parameters():
-                #         if "magnitude_vector" in name:
-
-                #     fully_shard(module, ignored_params=set(
-                #         ignored_params), **fsdp2_kwargs)
-
-                # else:
-                #     fully_shard(module, **fsdp2_kwargs)
-
-                # torch.distributed.breakpoint()
-
-    # if torch.distributed.get_rank() == 0:
-    #     import pdb; pdb.set_trace()
 
     fully_shard(model, **fsdp2_kwargs)
-
-    # torch.distributed.breakpoint()
 
     if log_bias_dtype_mismatch:
         LOG.warning(
@@ -336,8 +318,6 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         fsdp2_load_full_state_dict(
             accelerator, model, original_sd, offload_to_cpu=offload_to_cpu
         )
-
-    # torch.distributed.breakpoint()
 
     if fsdp2_plugin.cpu_ram_efficient_loading and not model_has_params4bit:
         # We re-register the buffers, as they may not be in the state_dict
