@@ -47,7 +47,7 @@ logging_steps: 1
 xformers_attention:
 flash_attention: true
 
-warmup_steps: 100
+warmup_ratio: 0.1
 evals_per_epoch: 2
 eval_table_size:
 saves_per_epoch: 1
