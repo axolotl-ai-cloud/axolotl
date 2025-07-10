@@ -1,6 +1,5 @@
 ---
 title: Gradient Checkpointing and Activation Offloading
-description:
 ---
 
 Gradient checkpointing and activation offloading are techniques used to optimize the performance of deep learning
