@@ -57,6 +57,7 @@ In addition, we do not support overriding tokens yet.
 ## Related Resources
 
 - [MistralAI Devstral Blog](https://mistral.ai/news/devstral)
+- [MistralAI Devstral 1.1 Blog](https://mistral.ai/news/devstral-2507)
 - [Axolotl Docs](https://docs.axolotl.ai)
 - [Axolotl GitHub](https://github.com/axolotl-ai-cloud/axolotl)
 - [Axolotl Website](https://axolotl.ai)
