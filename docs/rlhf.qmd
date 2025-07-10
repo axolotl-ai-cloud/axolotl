@@ -275,15 +275,14 @@ rl: dpo
 datasets:
   - path: ...
     split: train
-    type: user_defined.default
-
-    field_prompt: "prompt"
-    field_system: "system"
-    field_chosen: "chosen"
-    field_rejected: "rejected"
-    prompt_format: "{prompt}"
-    chosen_format: "{chosen}"
-    rejected_format: "{rejected}"
+    type:
+      field_prompt: "prompt"
+      field_system: "system"
+      field_chosen: "chosen"
+      field_rejected: "rejected"
+      prompt_format: "{prompt}"
+      chosen_format: "{chosen}"
+      rejected_format: "{rejected}"
 ```
 
 The input format is a simple JSON input with customizable fields based on the above config.
@@ -476,14 +475,13 @@ rl: kto
 datasets:
   - path: ...
     split: train
-    type: user_defined.default
-
-    field_prompt: "prompt"
-    field_system: "system"
-    field_completion: "completion"
-    field_label: "label"
-    prompt_format: "{prompt}"
-    completion_format: "{completion}"
+    type:
+      field_prompt: "prompt"
+      field_system: "system"
+      field_completion: "completion"
+      field_label: "label"
+      prompt_format: "{prompt}"
+      completion_format: "{completion}"
 ```
 
 The input format is a simple JSON input with customizable fields based on the above config.
