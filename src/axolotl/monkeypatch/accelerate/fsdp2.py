@@ -2,6 +2,8 @@
 monkeypatch for accelerate fsdp2 fix when modifying ordereddict during interation, and saving full state dicts
 """
 
+import copy
+import functools
 import sys
 
 import torch
@@ -55,7 +57,7 @@ def fsdp2_load_full_state_dict(
         full_sd[param_name] = None
     model.load_state_dict(sharded_sd, assign=True, strict=True)
     end_time = time.time()
-    LOG.info(
+    LOG.debug(
         f"Time taken to load full state dict: {(end_time - start_time):.2f} seconds"
     )
     log_gpu_memory_usage(LOG, "Memory usage after broadcasting full state dict", 0)
@@ -191,12 +193,11 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     Returns:
         `torch.nn.Module`: Prepared model
     """
-    import copy
-    import functools
-
     from accelerate.utils import get_module_children_bottom_up, is_compiled_module
     from accelerate.utils.fsdp_utils import fsdp2_prepare_auto_wrap_policy
     from accelerate.utils.modeling import get_non_persistent_buffers
+    from peft import PeftModel
+    from peft.tuners.lora import LoraLayer
     from torch.distributed.fsdp import (
         CPUOffloadPolicy,
         FSDPModule,
@@ -286,19 +287,13 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         if hasattr(model, "tie_weights"):
             model.tie_weights()
 
-    is_peft_model = "Peft" in model.__class__.__name__
-    if is_peft_model:
-        from peft.tuners.lora import LoraLayer
-
-        lora_layer = LoraLayer
-    else:
-        lora_layer = None
+    is_peft_model = isinstance(model, PeftModel)
 
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, model)
     log_bias_dtype_mismatch = False
     if auto_wrap_policy is not None:
         for module in get_module_children_bottom_up(model)[:-1]:
-            if is_peft_model and isinstance(module, lora_layer):
+            if is_peft_model and isinstance(module, LoraLayer):
                 module_log_bias_mismatch = _process_lora_module_for_fsdp(
                     module, fsdp2_kwargs
                 )
@@ -310,7 +305,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     if log_bias_dtype_mismatch:
         LOG.warning(
-            "Bias dtype mismatch detected in LoRA base linear layer, casting bias to weight dtype"
+            "Bias dtype mismatch detected in LoRA base linear layer. Bias parameters have been cast to weight dtype."
         )
 
     if fsdp2_plugin.cpu_ram_efficient_loading:

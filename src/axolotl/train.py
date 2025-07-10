@@ -276,6 +276,11 @@ def save_trained_model(
                 state_dict_type = cfg.fsdp_config.state_dict_type
             trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
         trainer.save_model(cfg.output_dir)
+        if state_dict_type == "SHARDED_STATE_DICT":
+            LOG.info(
+                "The final model was saved with a sharded state dict. Please ensure you merge "
+                "the sharded weights with `merge-sharded-fsdp-weights`."
+            )
     elif cfg.deepspeed and is_deepspeed_zero3_enabled():
         # Copied over from: https://github.com/huggingface/accelerate/blob/5ae611118057232f441055f7ef9ba0b0f2b8d533/docs/source/usage_guides/deepspeed.md#saving-and-loading
         trainer.accelerator.wait_for_everyone()

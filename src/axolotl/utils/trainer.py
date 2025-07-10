@@ -650,7 +650,7 @@ def setup_trainer(
     """
     from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 
-    if cfg.torch_compile and cfg.fsdp_config and str(cfg.fsdp_version) == "2":
+    if cfg.torch_compile and cfg.fsdp_config and cfg.fsdp_version == 2:
         patch_evaluation_loop_for_fsdp2()
     if cfg.rl:
         trainer_builder = HFRLTrainerBuilder(cfg, model, tokenizer, processor)

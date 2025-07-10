@@ -145,7 +145,7 @@ class ModelLoader:
         """Property that determines if FSDP is enabled."""
         return self.cfg.fsdp_config is not None or self.cfg.fsdp is not None
 
-    @cached_property
+    @property
     def is_qlora_and_fsdp_enabled(self):
         """Property that determines if FSDP with QLoRA is enabled."""
         return self.is_fsdp_enabled and self.cfg.adapter == "qlora"
@@ -612,7 +612,7 @@ class ModelLoader:
         """Load model, with load strategy depending on config."""
         skip_move_to_device = False
         if self.is_fsdp_enabled:
-            if self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+            if self.cfg.fsdp_config.cpu_ram_efficient_loading:
                 skip_move_to_device = True
                 if "device_map" in self.model_kwargs:
                     del self.model_kwargs["device_map"]
@@ -621,7 +621,7 @@ class ModelLoader:
 
         if (
             self.is_qlora_and_fsdp_enabled
-            and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+            and self.cfg.fsdp_config.cpu_ram_efficient_loading
             and (
                 self.cfg.model_config_type == "dbrx"
                 or self.cfg.qlora_sharded_model_loading

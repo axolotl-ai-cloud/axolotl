@@ -97,21 +97,22 @@ def log_gpu_memory_usage(
     msg: str = "",
     device: int | torch.device = 0,
 ):
-    cur_device = get_device_type()
+    cur_device_type = str(get_device_type())
     if torch.backends.mps.is_available():
         usage, cache, misc = mps_memory_usage_all()
-    elif "npu" in str(cur_device) and is_torch_npu_available():
+    elif "npu" in cur_device_type and is_torch_npu_available():
         usage, cache, misc = npu_memory_usage_all(device)
-    else:
+    elif "gpu" in cur_device_type and torch.cuda.is_available():
         usage, cache, misc = gpu_memory_usage_all(device)
+    else:
+        return
     extras = []
     if cache > 0:
         extras.append(f"+{cache:.03f}GB cache")
     if misc > 0:
         extras.append(f"+{misc:.03f}GB misc")
-    msg = f"{str(cur_device)} memory usage:" if not msg else msg
+    msg = f"{cur_device_type} memory usage:" if not msg else msg
     log.info(
         f"{msg} {usage:.03f}GB ({', '.join(extras)})",
         stacklevel=2,
     )
-    return usage, cache, misc

@@ -23,8 +23,6 @@ Axolotl supports several methods for multi-GPU training:
 
 ## DeepSpeed {#sec-deepspeed}
 
-DeepSpeed is the recommended approach for multi-GPU training due to its stability and performance. It provides various optimization levels through ZeRO stages.
-
 ### Configuration {#sec-deepspeed-config}
 
 Add to your YAML config:
@@ -32,7 +30,6 @@ Add to your YAML config:
 ```{.yaml}
 deepspeed: deepspeed_configs/zero1.json
 ```
-
 ### Usage {#sec-deepspeed-usage}
 
 ```{.bash}
@@ -77,7 +74,7 @@ Currently, FSDP2 is not compatible with `load_in_8bit` or `load_in_4bit` and whe
 
 :::
 
-#### Migrating from FSDP1 to FSDP2
+#### Migrating from FSDP1 to FSDP2 {#sec-migrate-fsdp1-fsdp2}
 
 To migrate your config from FSDP1 to FSDP2, you must use the `fsdp_version` field in `fsdp_config` to specify the FSDP version, and
 also follow the config field mapping below to update field names.

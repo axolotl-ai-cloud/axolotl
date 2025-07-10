@@ -154,10 +154,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.adapter == "qlora":
             training_arguments_kwargs["qlora"] = True
 
-        if self.cfg.fsdp_config or self.cfg.fsdp:
-            training_arguments_kwargs["fsdp_config"] = self.cfg.fsdp_config
-            training_arguments_kwargs["fsdp"] = self.cfg.fsdp if self.cfg.fsdp else True
-
         # deepspeed
         if self.cfg.deepspeed:
             training_arguments_kwargs["deepspeed"] = self.cfg.deepspeed

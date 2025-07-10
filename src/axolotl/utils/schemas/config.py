@@ -562,7 +562,7 @@ class AxolotlInputConfig(
     fsdp: list[str] | None = Field(
         default=None,
         json_schema_extra={"description": "FSDP configuration"},
-        deprecated="Configuring FSDP using `fsdp` is deprecated. Please use `fsdp_config` instead.",
+        deprecated="Configuring FSDP using `fsdp` is deprecated. Please use `fsdp_config` instead. ",
     )
     # TODO @SalmanMohammadi strongly type this as its own schema
     fsdp_config: dict[str, Any] | None = Field(
@@ -1124,7 +1124,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         fsdp_config = data.get("fsdp_config", {})
         if fsdp_config and str(data.get("fsdp_version")) != "2":
             LOG.info(
-                "FSDP1 will be deprecated in an upcoming release of axolotl."
+                "FSDP1 will be deprecated in an upcoming release of Axolotl."
                 "We recommend that you use FSDP version 2 for better performance and compatibility. "
                 "Please see this link for more details: https://docs.axolotl.ai/docs/multi-gpu.html#sec-fsdp "
                 "For more details on migrating your config. "
@@ -1140,7 +1140,8 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 data.get("load_in_8bit") or data.get("load_in_4bit")
             ):
                 raise ValueError(
-                    "FSDP2 does not support load_in_8bit or load_in_4bit with cpu_ram_efficient_loading. Please use DeepSpeed or set `fsdp_version` to 1."
+                    "FSDP2 does not support load_in_8bit or load_in_4bit with cpu_ram_efficient_loading. Please do one of the following: use DeepSpeed, "
+                    "set fsdp_version to 1, or disable cpu_ram_efficient_loading."
                 )
         return data
 
@@ -1151,6 +1152,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             RLType.DPO,
             RLType.KTO,
             RLType.ORPO,
+            RLType.IPO,
         ]:
             if data.get("load_in_8bit") or data.get("load_in_4bit"):
                 raise ValueError(
@@ -1180,31 +1182,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                         "Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
                         "Please omit the `fsdp_` prefix from the any fields in `fsdp_config`."
                     )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_fsdp2_lora_torch_2_7(cls, data):
-
-        if (
-            data.get("fsdp_version") == 2
-            and data.get("fsdp_config")
-            and data.get("adapter") == "lora"
-        ):
-
-            env_capabilities = data.get("env_capabilities", {})
-            torch_version = env_capabilities.get("torch_version")
-
-            if torch_version is None:
-                import torch
-
-                torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
-
-            if version.parse(torch_version) < version.parse("2.7.0"):
-                raise ValueError(
-                    "FSDP2 does not support LoRA with torch version < 2.7.0"
-                )
-
         return data
 
     @model_validator(mode="before")
