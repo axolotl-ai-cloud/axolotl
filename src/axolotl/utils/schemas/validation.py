@@ -949,6 +949,12 @@ class ModelCompatibilityValidationMixin:
         return self
 
     @model_validator(mode="after")
+    def check_activation_offloading_wo_gc(self):
+        if self.activation_offloading and not self.gradient_checkpointing:
+            raise ValueError("activation_offloading requires gradient_checkpointing")
+        return self
+
+    @model_validator(mode="after")
     def check_better_transformers(self):
         if self.flash_optimum is True:
             if self.adapter:
