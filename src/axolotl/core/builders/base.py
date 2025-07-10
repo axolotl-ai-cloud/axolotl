@@ -427,7 +427,8 @@ class TrainerBuilderBase(abc.ABC):
                 training_args_kwargs["torch_compile_mode"] = self.cfg.torch_compile_mode
 
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
-        if self.cfg.gradient_checkpointing == "streams":
+        if self.cfg.activation_offloading is True:
+            # don't use the HF gradient checkpointing, manually wrap
             training_args_kwargs["gradient_checkpointing"] = False
             training_args_kwargs["activation_offloading"] = True
         elif self.cfg.gradient_checkpointing:

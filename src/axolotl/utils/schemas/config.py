@@ -320,7 +320,12 @@ class AxolotlInputConfig(
         },
     )
 
-    gc_steps: int | None = None
+    gc_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Run garbage collection every `gc_steps` steps. -1 will run on epoch end and before evaluations. Default is 0 (disabled)."
+        },
+    )
 
     bf16: Literal["auto"] | bool | None = Field(
         default="auto",
@@ -360,6 +365,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Additional kwargs to pass to the trainer for gradient checkpointing"
+        },
+    )
+    activation_offloading: Literal["legacy", "disk"] | bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Whether to offload activations. Available options are: true, false, 'legacy', 'disk'."
         },
     )
 

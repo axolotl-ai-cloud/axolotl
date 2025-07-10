@@ -207,7 +207,7 @@ class ModelLoader:
         log_gpu_memory_usage(LOG, "Memory usage after model load", 0)
 
     def _apply_activation_checkpointing(self):
-        if self.cfg.gradient_checkpointing == "streams":
+        if self.cfg.activation_offloading is True:
             ac_wrap_hf_model(self.model)
 
     def _resize_token_embeddings(self):
