@@ -276,6 +276,7 @@ website:
             - docs/torchao.qmd
             - docs/custom_integrations.qmd
             - docs/sequence_parallelism.qmd
+            - docs/gradient_checkpointing.qmd
 
         - section: "Troubleshooting"
           contents:
