@@ -112,13 +112,6 @@ class TrainerBuilderBase(abc.ABC):
             plugin_manager.add_callbacks_pre_trainer(cfg=self.cfg, model=self.model)
         )
 
-        if self.cfg.profiler_steps:
-            callbacks.append(
-                PytorchProfilerCallback(
-                    steps_to_profile=self.cfg.profiler_steps,
-                )
-            )
-
         if self.cfg.gc_steps:
             callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
 
@@ -144,6 +137,14 @@ class TrainerBuilderBase(abc.ABC):
             )
 
         callbacks.append(GPUStatsCallback(cfg=self.cfg))
+
+        if self.cfg.profiler_steps:
+            callbacks.append(
+                PytorchProfilerCallback(
+                    steps_to_profile=self.cfg.profiler_steps,
+                    profiler_steps_start=self.cfg.profiler_steps_start,
+                )
+            )
 
         return callbacks
 

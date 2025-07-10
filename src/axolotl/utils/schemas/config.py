@@ -730,6 +730,12 @@ class AxolotlInputConfig(
             "description": "Enable the pytorch profiler to capture the first N steps of training to the output_dir. see https://pytorch.org/blog/understanding-gpu-memory-1/ for more information. Snapshots can be visualized @ https://pytorch.org/memory_viz"
         },
     )
+    profiler_steps_start: int | None = Field(
+        default=0,
+        json_schema_extra={
+            "description": "Which step to start the profiler at. Useful for only capturing a few steps mid-run."
+        },
+    )
     include_tokens_per_second: bool | None = Field(
         default=None,
         json_schema_extra={
