@@ -5,7 +5,10 @@ Trainer mixin for activation checkpointing w offloading
 import contextlib
 
 from torch import nn
-from torchtune.training import set_activation_checkpointing
+from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+    apply_activation_checkpointing,
+)
+from torch.distributed.fsdp.wrap import ModuleWrapPolicy
 from transformers import GradientCheckpointingLayer, Trainer
 from trl.models.activation_offloading import get_act_offloading_ctx_manager
 
@@ -32,7 +35,6 @@ class ActivationOffloadingMixin(Trainer):
         return ctx_stack
 
 
-def ac_wrap_hf_model(model: nn.Module):
-    set_activation_checkpointing(
-        model, auto_wrap_policy=set(GradientCheckpointingLayer)
-    )
+def ac_wrap_hf_model(model: nn.Module, **kwargs):
+    auto_wrap_policy = ModuleWrapPolicy(set(GradientCheckpointingLayer))
+    apply_activation_checkpointing(model, auto_wrap_policy=auto_wrap_policy, **kwargs)
