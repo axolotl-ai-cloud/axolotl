@@ -681,13 +681,14 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         for message in messages:
             transformed_message = self.transform_message(message)
 
-            turn = {
-                **transformed_message,
-                "training": message.get(self.prompter.message_field_training),
-                "training_detail": message.get(
-                    self.prompter.message_field_training_detail
-                ),
-            }
+            turn = transformed_message
+
+            training = message.get(self.prompter.message_field_training)
+            training_detail = message.get(self.prompter.message_field_training_detail)
+            if training is not None:
+                turn["training"] = training
+            if training_detail is not None:
+                turn["training_detail"] = training_detail
 
             turns.append(turn)
 
@@ -858,15 +859,6 @@ class MistralStrategy(ChatTemplateStrategy):
         # Skip the validation that ChatTemplateStrategy calls
         # TODO: address this in the future with mistral-specific checks
         # self._validate_eot_and_eos_tokens()
-
-    @property
-    def supports_multiprocessing(self) -> bool:
-        """
-        Whether this tokenizing strategy supports multiprocessing.
-        mistral_common tokenizers cannot be pickled for multiprocessing.
-        """
-
-        return False
 
     def find_first_eot_token(self, input_ids, start_idx):
         """Find the first EOT token in the input_ids starting from start_idx."""

@@ -7,6 +7,7 @@ import importlib.util
 from functools import cached_property
 
 import addict
+import torch
 import transformers
 from transformers import PretrainedConfig, PreTrainedModel
 
@@ -66,6 +67,7 @@ class PatchManager:
         self._apply_self_attention_lora_patch()
         self._apply_gemma3_conditional_generation_forward_patch()
         self._apply_sequence_parallel_patches()
+        self._apply_tiled_mlp(self.cfg.model_config_type)
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
@@ -168,10 +170,25 @@ class PatchManager:
         """Apply patches for gradient checkpointing."""
         if self.cfg.gradient_checkpointing in ["unsloth", "offload"]:
             from axolotl.monkeypatch.gradient_checkpointing import (
+                CheckpointFunctionWithCPUOffload,
                 hf_grad_checkpoint_offload_wrapper,
             )
 
-            transformers.modeling_utils.checkpoint = hf_grad_checkpoint_offload_wrapper
+            if (
+                self.cfg.gradient_checkpointing_kwargs
+                and "use_reentrant" in self.cfg.gradient_checkpointing_kwargs
+                and self.cfg.gradient_checkpointing_kwargs["use_reentrant"] is False
+            ):
+                transformers.modeling_utils.checkpoint = (
+                    hf_grad_checkpoint_offload_wrapper
+                )
+            else:
+                transformers.modeling_utils.checkpoint.CheckpointFunction = (
+                    CheckpointFunctionWithCPUOffload
+                )
+                torch.utils.checkpoint.CheckpointFunction = (
+                    CheckpointFunctionWithCPUOffload
+                )
         if self.cfg.gradient_checkpointing == "offload_disk":
             from axolotl.monkeypatch.gradient_checkpointing import (
                 hf_grad_checkpoint_disk_offload_wrapper,
@@ -260,6 +277,12 @@ class PatchManager:
 
             patch_prepare_data_loader()
             patch_prepare_device_mesh(self.cfg.sequence_parallel_degree, self.cfg.fsdp)
+
+    def _apply_tiled_mlp(self, model_type: str):
+        if self.cfg.tiled_mlp:
+            from axolotl.monkeypatch.tiled_mlp import patch_tiled_mlp
+
+            patch_tiled_mlp(model_type, cfg_num_shards=self.cfg.tiled_mlp_num_shards)
 
     def _patch_attention(self):
         """Apply attention-specific patches based on model type."""

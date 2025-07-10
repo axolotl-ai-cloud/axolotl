@@ -546,6 +546,15 @@ def setup_deepspeed_env(cfg, stage=None):
     # NOTE(djsaunde): The distribued state cannot be initialized prior to the
     # ACCELERATE_USE_DEEPSPEED assignment, but it must be initialized some time prior
     # to model load.
+    if int(os.environ.get("WORLD_SIZE", "1")) == 1:
+        os.environ["WORLD_SIZE"] = "1"  # force it in case not set
+        os.environ["LOCAL_RANK"] = "0"  # force it in case not set
+        os.environ["RANK"] = os.environ.get("LOCAL_RANK", "0")
+        import deepspeed.comm as dist
+
+        dist.init_distributed(
+            dist_backend="nccl", auto_mpi_discovery=False, dist_init_required=True
+        )
     init_distributed_state()
 
     # If we don't assign this, it doesn't actually get set in the accelerate weakref

@@ -108,7 +108,7 @@ class DataCollatorForSeq2Seq:
             pad_to_multiple_of=self.pad_to_multiple_of,
             return_tensors=return_tensors,
         )
-        if not has_attn_mask:
+        if not has_attn_mask and "attention_mask" in features:
             del features["attention_mask"]
 
         # prepare decoder_input_ids
