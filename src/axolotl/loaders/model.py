@@ -36,6 +36,7 @@ from transformers.integrations.deepspeed import (
 )
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
+from axolotl.core.trainers.mixins.activation_checkpointing import ac_wrap_hf_model
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.adapter import load_adapter, load_lora
 from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
@@ -198,11 +199,16 @@ class ModelLoader:
         ):
             self.model = self.model.merge_and_unload()
 
+        self._apply_activation_checkpointing()
         self._resize_token_embeddings()
         self._adjust_model_config()
         self._configure_embedding_dtypes()
         self._configure_qat()
         log_gpu_memory_usage(LOG, "Memory usage after model load", 0)
+
+    def _apply_activation_checkpointing(self):
+        if self.cfg.gradient_checkpointing == "streams":
+            ac_wrap_hf_model(self.model)
 
     def _resize_token_embeddings(self):
         """Resize token embeddings if needed."""

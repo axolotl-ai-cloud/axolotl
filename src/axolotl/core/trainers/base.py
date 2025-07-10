@@ -31,6 +31,9 @@ from axolotl.core.trainers.mixins import (
     RngLoaderMixin,
     SchedulerMixin,
 )
+from axolotl.core.trainers.mixins.activation_checkpointing import (
+    ActivationOffloadingMixin,
+)
 from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
     sanitize_kwargs_for_tagging,
@@ -48,6 +51,7 @@ class AxolotlTrainer(
     OptimizerMixin,
     RngLoaderMixin,
     CheckpointSaveMixin,
+    ActivationOffloadingMixin,
     Trainer,
 ):
     """Extend the base Trainer for axolotl helpers"""

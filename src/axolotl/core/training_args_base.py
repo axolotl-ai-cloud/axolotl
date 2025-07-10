@@ -18,6 +18,10 @@ class AxolotlTrainingMixins:
     model_type: Optional[str] = field(
         default=None, metadata={"help": "HF model configuration model_type."}
     )
+    activation_offloading: bool | None = field(
+        default=None,
+        metadata={"help": "Use activation offloading with CUDA streams for training."},
+    )
     lr_quadratic_warmup: bool = field(
         default=False,
         metadata={"help": "Use quadratic warmup for cosine scheduling."},
