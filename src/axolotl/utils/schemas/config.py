@@ -353,9 +353,7 @@ class AxolotlInputConfig(
     )
     float32: bool | None = None
 
-    gradient_checkpointing: (
-        Literal["offload", "offload_disk", "streams"] | bool | None
-    ) = Field(
+    gradient_checkpointing: Literal["offload", "offload_disk"] | bool | None = Field(
         default=False,
         json_schema_extra={
             "description": "Whether to use gradient checkpointing. Available options are: true, false, 'streams', 'offload', 'offload_disk'. https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing"

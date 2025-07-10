@@ -26,5 +26,5 @@ to overlap the communications and computations when offloading.
 
 The `activation_offloading: legacy` naively offloads activations to CPU and without additional optimizations.
 
-For resource constrained environments with limited CPU memory, `activation_offloading: offload_disk` offloads
+For resource constrained environments with limited CPU memory, `activation_offloading: disk` offloads
 activations to disk instead of CPU RAM so that much larger context lengths can be trained with minimal memory.
