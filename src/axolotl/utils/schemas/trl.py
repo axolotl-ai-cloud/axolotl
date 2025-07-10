@@ -1,5 +1,7 @@
 """Pydantic models for TRL trainer configuration"""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -27,7 +29,7 @@ class TRLConfig(BaseModel):
         default=False,
         json_schema_extra={"description": "Whether to use VLLM for RL training."},
     )
-    vllm_mode: str | None = Field(
+    vllm_mode: Literal["server", "colocate"] | None = Field(
         default=None,
         json_schema_extra={
             "description": "VLLM mode to use, one of 'server' or 'colocate'"
