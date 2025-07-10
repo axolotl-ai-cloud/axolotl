@@ -22,7 +22,7 @@ class ActivationOffloadingMixin(Trainer):
         super().__init__(*args, **kwargs)
         if self.args.activation_offloading:
             self.activation_offload_context = get_act_offloading_ctx_manager(
-                self.model, use_streams=False
+                self.model, use_streams=True
             )
         else:
             self.activation_offload_context = contextlib.nullcontext()
