@@ -109,6 +109,7 @@ def ray_train_func(kwargs: dict):
     # initialize accelerator before model instantiation
     Accelerator(gradient_accumulation_steps=cfg.gradient_accumulation_steps)
 
+    # Register plugins in Ray workers
     if cfg.get("plugins"):
         from axolotl.cli.config import prepare_plugins, plugin_set_cfg
         prepare_plugins(cfg)
