@@ -19,9 +19,25 @@ class PytorchProfilerCallback(TrainerCallback):
     PyTorch Profiler callback to create snapshots of GPU memory usage at specified steps.
     """
 
-    def __init__(self, steps_to_profile: int = 5):
-        self.steps_to_profile = steps_to_profile
-        if self.steps_to_profile:
+    def __init__(self, steps_to_profile: int = 5, profiler_steps_start: int = 0):
+        self.profiler_steps_end = steps_to_profile
+        self.profiler_steps_start = -1
+        if self.steps_to_profile and profiler_steps_start == 0:
+            torch.cuda.memory._record_memory_history(  # pylint: disable=protected-access
+                enabled="all"
+            )
+        elif profiler_steps_start > 0:
+            self.profiler_steps_end = profiler_steps_start + steps_to_profile
+            self.profiler_steps_start = profiler_steps_start
+
+    def on_step_begin(  # pylint: disable=unused-argument
+        self,
+        args: TrainingArguments,  # pylint: disable=unused-argument
+        state: TrainerState,
+        control: TrainerControl,  # pylint: disable=unused-argument
+        **kwargs,  # pylint: disable=unused-argument
+    ):
+        if state.global_step == self.profiler_steps_start:
             torch.cuda.memory._record_memory_history(  # pylint: disable=protected-access
                 enabled="all"
             )
@@ -33,7 +49,7 @@ class PytorchProfilerCallback(TrainerCallback):
         control: TrainerControl,  # pylint: disable=unused-argument
         **kwargs,  # pylint: disable=unused-argument
     ):
-        if state.global_step == self.steps_to_profile:
+        if state.global_step == self.profiler_steps_end:
             snapshot = torch.cuda.memory._snapshot()  # pylint: disable=protected-access
             with open(Path(args.output_dir) / "snapshot.pickle", "wb") as fout:
                 dump(snapshot, fout)
