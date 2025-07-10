@@ -18,21 +18,16 @@ class ActivationOffloadingMixin(Trainer):
     Trainer mixin class for activation checkpointing w offloading
     """
 
-    def compute_loss_context_manager(self):
-        """
-        A helper wrapper to group together context managers.
-        """
-        ctx_stack = contextlib.ExitStack()
-
-        autocast_ctx = self.autocast_smart_context_manager()
-        if not isinstance(autocast_ctx, contextlib.nullcontext):
-            ctx_stack.enter_context(autocast_ctx)
-
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         if self.args.activation_offloading:
-            activations_handling_ctx = get_act_offloading_ctx_manager(self.model)
-            ctx_stack.enter_context(activations_handling_ctx)
+            self.activation_offload_context = get_act_offloading_ctx_manager(self.model)
+        else:
+            self.activation_offload_context = contextlib.nullcontext()
 
-        return ctx_stack
+    def training_step(self, *args, **kwargs):
+        with self.activation_offload_context:
+            return super().training_step(*args, **kwargs)
 
 
 def ac_wrap_hf_model(model: nn.Module, **kwargs):
