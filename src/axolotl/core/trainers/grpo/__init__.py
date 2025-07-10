@@ -14,6 +14,7 @@ from axolotl.core.trainers.grpo.trainer import (
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.trl import TRLConfig
+from axolotl.utils.schemas.vllm import VllmConfig
 
 LOG = get_logger(__name__)
 
@@ -41,10 +42,18 @@ class GRPOStrategy:
             return grpo_args_kwargs
 
         trl: TRLConfig = cfg.trl  # type: ignore
+        vllm_cfg: VllmConfig = cfg.vllm  # type: ignore
 
         if trl.use_vllm:
             grpo_args_kwargs["use_vllm"] = trl.use_vllm
             grpo_args_kwargs["vllm_mode"] = trl.vllm_mode
+            if trl.vllm_mode == "colocate":
+                grpo_args_kwargs["vllm_gpu_memory_utilization"] = (
+                    vllm_cfg.gpu_memory_utilization
+                )
+                grpo_args_kwargs["vllm_tensor_parallel_size"] = (
+                    vllm_cfg.tensor_parallel_size
+                )
             grpo_args_kwargs["vllm_server_host"] = trl.vllm_server_host or trl.vllm.host  # type: ignore[attr-defined]
             grpo_args_kwargs["vllm_server_port"] = trl.vllm_server_port or trl.vllm.port  # type: ignore[attr-defined]
             if trl.vllm_server_timeout:
