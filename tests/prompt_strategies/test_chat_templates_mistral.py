@@ -754,10 +754,12 @@ def test_magistral_tokenizer_call_method(
     magistral_tokenizer: "HFMistralTokenizer", llama3_tokenizer: "PreTrainedTokenizer"
 ):
     """Test the __call__ method behavior matches HuggingFace standards"""
+    from copy import deepcopy
+
     import numpy as np
     import torch
 
-    hf_tokenizer = llama3_tokenizer
+    hf_tokenizer = deepcopy(llama3_tokenizer)
     hf_tokenizer.pad_token = hf_tokenizer.eos_token
 
     test_text = "Hello, how are you?"
