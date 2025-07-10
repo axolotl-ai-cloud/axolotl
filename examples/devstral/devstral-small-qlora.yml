@@ -1,4 +1,4 @@
-base_model: mistralai/Devstral-Small-2505
+base_model: mistralai/Devstral-Small-2507
 
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name

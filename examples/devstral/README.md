@@ -1,8 +1,12 @@
 # Finetune Devstral with Axolotl
 
-Devstral Small is a 24B parameter opensource model from MistralAI found on HuggingFace [Devstral-Small-2505](https://huggingface.co/mistralai/Devstral-Small-2505). This guide shows how to fine-tune it with Axolotl with multi-turn conversations with proper masking.
+Devstral Small is a 24B parameter opensource model from MistralAI found on HuggingFace [Devstral-Small-2505](https://huggingface.co/mistralai/Devstral-Small-2505) and [Devstral-Small-2507](https://huggingface.co/mistralai/Devstral-Small-2507). `Devstral-Small-2507` is the latest version of the model and has [function calling](https://mistralai.github.io/mistral-common/usage/tools/) support.
 
-The model was fine-tuned ontop of [Mistral-Small-3.1](https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Base-2503) without the vision layer and has a context of upto 128k tokens.
+This guide shows how to fine-tune it with Axolotl with multi-turn conversations with proper masking.
+
+The model was fine-tuned ontop of [Mistral-Small-3.1](https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Base-2503) without the vision layer and has a context of up to 128k tokens.
+
+Thanks to the team at MistralAI for giving us early access to prepare for this release.
 
 ## Getting started
 
@@ -17,11 +21,6 @@ cd axolotl
 
 pip3 install packaging==23.2 setuptools==75.8.0 wheel ninja
 pip3 install --no-build-isolation -e '.[flash-attn]'
-
-# Install the latest mistral-common from source
-pip3 uninstall mistral-common
-pip3 install git+https://github.com/mistralai/mistral-common.git@039465d
-
 ```
 
 2. Run the finetuning example:
@@ -39,6 +38,7 @@ Let us know how it goes. Happy finetuning! 🚀
 - You can run a full finetuning by removing the `adapter: qlora` and `load_in_4bit: true` from the config.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
+- Learn how to use function calling with Axolotl at [docs](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#using-tool-use).
 
 ## Optimization Guides
 
