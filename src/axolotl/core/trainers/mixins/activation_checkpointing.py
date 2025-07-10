@@ -36,5 +36,5 @@ class ActivationOffloadingMixin(Trainer):
 
 
 def ac_wrap_hf_model(model: nn.Module, **kwargs):
-    auto_wrap_policy = ModuleWrapPolicy(set(GradientCheckpointingLayer))
+    auto_wrap_policy = ModuleWrapPolicy(set((GradientCheckpointingLayer,)))
     apply_activation_checkpointing(model, auto_wrap_policy=auto_wrap_policy, **kwargs)
