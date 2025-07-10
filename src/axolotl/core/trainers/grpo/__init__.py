@@ -44,6 +44,7 @@ class GRPOStrategy:
 
         if trl.use_vllm:
             grpo_args_kwargs["use_vllm"] = trl.use_vllm
+            grpo_args_kwargs["vllm_mode"] = trl.vllm_mode
             grpo_args_kwargs["vllm_server_host"] = trl.vllm_server_host or trl.vllm.host  # type: ignore[attr-defined]
             grpo_args_kwargs["vllm_server_port"] = trl.vllm_server_port or trl.vllm.port  # type: ignore[attr-defined]
             if trl.vllm_server_timeout:
