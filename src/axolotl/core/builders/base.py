@@ -426,6 +426,12 @@ class TrainerBuilderBase(abc.ABC):
             if self.cfg.torch_compile_mode:
                 training_args_kwargs["torch_compile_mode"] = self.cfg.torch_compile_mode
 
+    def _configure_accelerator_config(self, training_args_kwargs: dict):
+        if self.cfg.accelerator_config:
+            training_args_kwargs["accelerator_config"] = (
+                self.cfg.accelerator_config
+            )
+
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
         if self.cfg.gradient_checkpointing:
             training_args_kwargs["gradient_checkpointing"] = (
@@ -506,5 +512,6 @@ class TrainerBuilderBase(abc.ABC):
         self._configure_scheduler(training_args_kwargs)
         self._configure_optimizer(training_args_kwargs, trainer_kwargs)
         self._configure_torch_compile(training_args_kwargs)
+        self._configure_accelerator_config(training_args_kwargs)
 
         return training_args_kwargs, trainer_kwargs
