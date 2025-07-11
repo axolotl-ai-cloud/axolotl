@@ -79,7 +79,6 @@ ZeRO Stage 3 can be used for training on a single GPU by manually setting the en
 ::: {.callout-note}
 
 FSDP2 is recommended for new users. FSDP1 is deprecated and will be removed in an upcoming release of Axolotl.
-Currently, FSDP2 is not compatible with `load_in_8bit` or `load_in_4bit` and when using QLoRA. Please use DeepSpeed or set `fsdp_version` to 1 instead.
 
 :::
 
