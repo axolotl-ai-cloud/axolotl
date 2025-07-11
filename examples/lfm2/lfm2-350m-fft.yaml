@@ -15,8 +15,8 @@ val_set_size: 0.05
 output_dir: ./outputs/out
 
 sequence_len: 4096
-sample_packing: false  # not currently supported yet due to conv1d not supporting varlen
-pad_to_sequence_len: false
+sample_packing: true
+pad_to_sequence_len: true
 
 wandb_project:
 wandb_entity:
