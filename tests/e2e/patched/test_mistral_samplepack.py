@@ -9,7 +9,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import check_model_output_exists, with_temp_dir
+from ..utils import check_model_output_exists, require_torch_2_6_0, with_temp_dir
 
 
 class TestMistral(unittest.TestCase):
@@ -17,6 +17,7 @@ class TestMistral(unittest.TestCase):
     Test case for Llama models using LoRA
     """
 
+    @require_torch_2_6_0
     @with_temp_dir
     def test_lora_packing(self, temp_dir):
         # pylint: disable=duplicate-code
