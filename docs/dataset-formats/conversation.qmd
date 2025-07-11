@@ -187,6 +187,7 @@ Instead of passing `tools` via the system prompt, an alternative method would be
             "role": "assistant", // call the function via assistant
             "tool_calls": [
                 {
+                    "id": "...",  // required only for mistral
                     "type": "function",
                     "function": {
                         "name": "...",
@@ -199,6 +200,7 @@ Instead of passing `tools` via the system prompt, an alternative method would be
         },
         {
             "role": "tool",
+            "tool_call_id": "...",  // required only for mistral
             "name": "...",
             "content": "..."
         },
