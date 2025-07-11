@@ -28,6 +28,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up Quarto
         uses: quarto-dev/quarto-actions/setup@v2
@@ -50,10 +52,11 @@ jobs:
 
       - name: Netlify Publish
         uses: nwtgck/actions-netlify@v3.0
+        id: netlify
         with:
           publish-dir: './_site'
-          enable-pull-request-comment: true
-          enable-github-deployment: true
+          enable-pull-request-comment: false
+          enable-github-deployment: false
           github-token: ${{ secrets.GITHUB_TOKEN }}
           deploy-message: "Deployed On Netlify"
           github-deployment-environment: 'preview'
@@ -61,3 +64,13 @@ jobs:
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+      - name: Update PR with preview link
+        if: ${{ steps.netlify.outcome == 'success' }}
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          message: |
+            📖 **Documentation Preview**: ${{ steps.netlify.outputs.deploy-url }}
+
+            Deployed on Netlify from commit ${{ github.event.pull_request.head.sha }}
