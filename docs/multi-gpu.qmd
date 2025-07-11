@@ -82,7 +82,7 @@ FSDP2 is recommended for new users. FSDP1 is deprecated and will be removed in a
 
 ### Migrating from FSDP1 to FSDP2 {#sec-migrate-fsdp1-fsdp2}
 
-To migrate your config from FSDP1 to FSDP2, you must use the `fsdp_version` field in `fsdp_config` to specify the FSDP version, and
+To migrate your config from FSDP1 to FSDP2, you must use the `fsdp_version` top-level config field to specify the FSDP version, and
 also follow the config field mapping below to update field names.
 
 #### Config mapping
