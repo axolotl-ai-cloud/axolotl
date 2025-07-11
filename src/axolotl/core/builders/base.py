@@ -418,6 +418,9 @@ class TrainerBuilderBase(abc.ABC):
             torch._dynamo.config.suppress_errors = (  # pylint: disable=protected-access
                 True
             )
+            torch._dynamo.config.accumulated_cache_size_limit = (  # pylint: disable=protected-access
+                256
+            )
             training_args_kwargs["torch_compile"] = self.cfg.torch_compile
             if self.cfg.torch_compile_backend:
                 training_args_kwargs["torch_compile_backend"] = (
