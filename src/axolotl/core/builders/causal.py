@@ -310,11 +310,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.neftune_noise_alpha
             )
 
-        if self.cfg.accelerator_config:
-            training_arguments_kwargs["accelerator_config"] = (
-                self.cfg.accelerator_config
-            )
-
         if self.cfg.image_size:
             training_arguments_kwargs["image_size"] = self.cfg.image_size
         if self.cfg.image_resize_algorithm:
