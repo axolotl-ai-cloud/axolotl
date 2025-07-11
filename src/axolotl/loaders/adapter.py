@@ -122,9 +122,9 @@ def load_lora(
     rank = int(os.environ.get("LOCAL_RANK", 0))
 
     if (
-        (cfg.fsdp_config or cfg.fsdp)
+        cfg.fsdp_config
         and cfg.adapter
-        and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        and cfg.fsdp_config.cpu_ram_efficient_loading
         and rank != 0
     ):
         setup_quantized_meta_for_peft(model)
@@ -154,7 +154,7 @@ def load_lora(
     elif (
         cfg.fsdp_config
         and cfg.adapter
-        and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        and cfg.fsdp_config.cpu_ram_efficient_loading
         and rank != 0
     ):
         setup_quantized_peft_meta_for_training(model)

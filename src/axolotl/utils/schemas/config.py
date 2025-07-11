@@ -1150,7 +1150,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     def check_fsdp2_base_model_quant_ram_efficient_loading(cls, data):
         fsdp_config = data.get("fsdp_config")
         if fsdp_config and data.get("fsdp_version") == 2:
-            if fsdp_config.get("fsdp_cpu_ram_efficient_loading") and (
+            if fsdp_config.get("cpu_ram_efficient_loading") and (
                 data.get("load_in_8bit") or data.get("load_in_4bit")
             ):
                 raise ValueError(

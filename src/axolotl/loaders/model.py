@@ -614,7 +614,8 @@ class ModelLoader:
         if self.is_fsdp_enabled:
             if self.cfg.fsdp_config.cpu_ram_efficient_loading:
                 skip_move_to_device = True
-                if "device_map" in self.model_kwargs:
+                # Don't delete device_map for QLoRA + FSDP - it was set correctly in _set_device_map
+                if "device_map" in self.model_kwargs and not self.is_qlora_and_fsdp_enabled:
                     del self.model_kwargs["device_map"]
             elif self.is_qlora_and_fsdp_enabled:
                 skip_move_to_device = True
@@ -751,12 +752,10 @@ class ModelLoader:
             skip_prepare_model_for_kbit_training = True
 
         if (
-            self.is_fsdp_enabled
-            and (
-                self.cfg.adapter == "qlora"
-                or self.cfg.fsdp_config.cpu_ram_efficient_loading
-            )
-        ) or is_deepspeed_zero3_enabled():
+            self.is_qlora_and_fsdp_enabled
+            or (self.is_fsdp_enabled and self.cfg.fsdp_config.cpu_ram_efficient_loading)
+            or is_deepspeed_zero3_enabled()
+        ):
             # Make sure everything is in the same dtype
             skip_prepare_model_for_kbit_training = True
 
