@@ -14,7 +14,7 @@ from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import most_recent_subdir, require_torch_2_7_0
+from tests.e2e.utils import most_recent_subdir
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
@@ -51,7 +51,6 @@ def verify_training_success(temp_dir):
 class TestFSDP2:
     """Test class for FSDP2 functionality."""
 
-    @require_torch_2_7_0
     @pytest.mark.parametrize(
         "fsdp_cpu_ram_efficient_loading",
         [True, False],
@@ -111,7 +110,6 @@ class TestFSDP2:
 
         verify_training_success(temp_dir)
 
-    @require_torch_2_7_0
     @pytest.mark.parametrize("peft_use_dora", [True, False])
     def test_lora_sft(self, temp_dir, peft_use_dora):
         cfg = DictDefault(
@@ -174,7 +172,6 @@ class TestFSDP2:
 
         verify_training_success(temp_dir)
 
-    @require_torch_2_7_0
     def test_qlora_sft(self, temp_dir):
         cfg = DictDefault(
             {
@@ -236,7 +233,6 @@ class TestFSDP2:
 
         verify_training_success(temp_dir)
 
-    @require_torch_2_7_0
     def test_dpo_fft(self, temp_dir):
         cfg = DictDefault(
             {
@@ -293,7 +289,6 @@ class TestFSDP2:
 
         verify_training_success(temp_dir)
 
-    @require_torch_2_7_0
     def test_dpo_lora(self, temp_dir):
         cfg = DictDefault(
             {
