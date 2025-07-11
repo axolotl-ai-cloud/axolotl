@@ -77,6 +77,7 @@ class AxolotlTrainer(
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
 
+
     def _create_multipack_sampler(
         self, base_sampler: Sampler, dataset: Dataset
     ) -> MultipackBatchSampler:
