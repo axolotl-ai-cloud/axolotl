@@ -223,6 +223,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -317,6 +318,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -409,6 +411,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 

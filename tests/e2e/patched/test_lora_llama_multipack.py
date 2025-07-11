@@ -55,6 +55,7 @@ class TestLoraLlama(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -108,6 +109,7 @@ class TestLoraLlama(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
