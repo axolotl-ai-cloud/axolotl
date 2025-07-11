@@ -64,7 +64,7 @@ class SaveBetterTransformerModelCallback(
         state: TrainerState,
         control: TrainerControl,
         **kwargs,
-    ):
+    ) -> TrainerControl:
         # Save
         if (
             args.save_strategy == IntervalStrategy.STEPS
@@ -100,11 +100,11 @@ class GPUStatsCallback(
 
     def on_step_end(
         self,
-        args: TrainingArguments,
+        args: TrainingArguments,  # pylint: disable=unused-argument
         state: TrainerState,
         control: TrainerControl,
         **kwargs,
-    ):
+    ) -> TrainerControl:
         if not self.logged and state.global_step > 1:
             log_gpu_memory_usage(LOG, "while training", self.cfg.device)
             self.logged = True
@@ -116,18 +116,17 @@ class LossWatchDogCallback(TrainerCallback):
 
     def __init__(self, cfg):
         self.cfg = cfg
-        self.logged = False
         self.violations = 0
         self.threshold = cfg.loss_watchdog_threshold
         self.patience = cfg.loss_watchdog_patience or 3
 
     def on_step_end(
         self,
-        _args: TrainingArguments,
+        args: TrainingArguments,  # pylint: disable=unused-argument
         state: TrainerState,
         control: TrainerControl,
         **_kwargs,
-    ):
+    ) -> TrainerControl:
         if len(state.log_history) > 0 and "loss" in state.log_history[-1]:
             if state.log_history[-1]["loss"] > self.threshold:
                 self.violations += 1
@@ -138,6 +137,24 @@ class LossWatchDogCallback(TrainerCallback):
                     control.should_training_stop = True
             else:
                 self.violations = 0
+        return control
+
+
+class SaveModelOnFirstStepCallback(TrainerCallback):
+    """Callback to save the model on the first step of training if enabled"""
+
+    def on_step_end(
+        self,
+        args: TrainingArguments,  # pylint: disable=unused-argument
+        state: TrainerState,
+        control: TrainerControl,
+        **_kwargs,
+    ) -> TrainerControl:
+        print("in SaveModelOnFirstStepCallback.on_step_end")
+        print(state.global_step)
+        if state.global_step == 1:
+            print("state.global_step == 0")
+            control.should_save = True
         return control
 
 
