@@ -61,6 +61,7 @@ class TestFAFlattening:
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():

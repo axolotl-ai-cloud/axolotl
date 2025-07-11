@@ -62,6 +62,7 @@ class TestUnslothQLoRA:
                 "lr_scheduler": "cosine",
                 "use_tensorboard": True,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
 
@@ -112,6 +113,7 @@ class TestUnslothQLoRA:
                 "lr_scheduler": "cosine",
                 "use_tensorboard": True,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
 
@@ -167,6 +169,7 @@ class TestUnslothQLoRA:
                 "lr_scheduler": "cosine",
                 "use_tensorboard": True,
                 "fp16": True,
+                "save_first_step": False,
             }
         )
 

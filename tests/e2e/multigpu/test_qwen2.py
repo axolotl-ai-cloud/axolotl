@@ -72,6 +72,7 @@ class TestMultiGPUQwen2:
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                     "fsdp_sharding_strategy": "FULL_SHARD",
                 },
+                "save_first_step": False,
             }
         )
 

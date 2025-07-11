@@ -69,6 +69,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
 
@@ -135,6 +136,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
 
@@ -210,6 +212,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
 
@@ -289,6 +292,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
 
@@ -365,6 +369,7 @@ class TestMultiGPULlama:
                 },
                 "use_tensorboard": True,
                 "seed": 42,
+                "save_first_step": False,
             }
         )
 
@@ -438,6 +443,7 @@ class TestMultiGPULlama:
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -516,6 +522,7 @@ class TestMultiGPULlama:
                     "fsdp_reshard_after_forward": fsdp_reshard_after_forward,
                 },
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
         if attention_backend == "flash":
@@ -601,6 +608,7 @@ class TestMultiGPULlama:
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -685,6 +693,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "deepspeed": str(AXOLOTL_ROOT / deepspeed),
                 "use_tensorboard": True,
+                "save_first_step": False,
                 **adapter,
             }
         )
@@ -761,6 +770,7 @@ class TestMultiGPULlama:
                 "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero2.json"),
                 "use_tensorboard": True,
                 "seed": 42,
+                "save_first_step": False,
                 **adapter,
             }
         )
@@ -836,6 +846,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero1.json"),
                 "use_tensorboard": True,
+                "save_first_step": False,
                 **adapter,
             }
         )
@@ -904,6 +915,7 @@ class TestMultiGPULlama:
                 "save_safetensors": True,
                 # "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero1.json"),
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 

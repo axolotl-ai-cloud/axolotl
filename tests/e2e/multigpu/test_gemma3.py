@@ -71,6 +71,7 @@ class TestMultiGPUGemma3:
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
 

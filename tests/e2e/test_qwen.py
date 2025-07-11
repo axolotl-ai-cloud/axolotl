@@ -59,6 +59,7 @@ class TestE2eQwen:
                 "bf16": "auto",
                 "tf32": True,
                 "gradient_checkpointing": True,
+                "save_first_step": False,
             }
         )
 

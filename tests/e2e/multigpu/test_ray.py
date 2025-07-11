@@ -56,6 +56,7 @@ class TestMultiGPURay:
                 "use_tensorboard": True,
                 "use_ray": True,
                 "ray_num_workers": 2,
+                "save_first_step": False,
             }
         )
 
@@ -115,6 +116,7 @@ class TestMultiGPURay:
                 "flash_attention": True,
                 "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero2.json"),
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 

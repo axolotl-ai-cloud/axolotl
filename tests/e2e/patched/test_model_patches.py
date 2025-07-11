@@ -45,6 +45,7 @@ class TestModelPatches(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
@@ -78,6 +79,7 @@ class TestModelPatches(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

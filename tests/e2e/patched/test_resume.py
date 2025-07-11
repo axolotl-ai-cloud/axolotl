@@ -58,6 +58,7 @@ class TestResumeLlama:
                 "max_steps": 15,
                 "use_tensorboard": True,
                 "save_safetensors": True,
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():
