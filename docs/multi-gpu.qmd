@@ -85,8 +85,8 @@ FSDP2 is recommended for new users. FSDP1 is deprecated and will be removed in a
 To migrate your config from FSDP1 to FSDP2, you must use the `fsdp_version` top-level config field to specify the FSDP version, and
 also follow the config field mapping below to update field names.
 
-### Config mapping
------------
+#### Config mapping
+
 FSDP1 | FSDP2
 -------- | --------
 fsdp_sharding_strategy | reshard_after_forward
