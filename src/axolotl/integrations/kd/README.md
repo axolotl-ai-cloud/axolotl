@@ -11,7 +11,7 @@ kd_ce_alpha: 0.1
 kd_alpha: 0.9
 kd_temperature: 1.0
 
-torch_compile: True  # torch>=2.5.1, recommended to reduce vram
+torch_compile: True  # torch>=2.6.0, recommended to reduce vram
 
 datasets:
   - path: ...

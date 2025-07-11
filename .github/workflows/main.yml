@@ -15,15 +15,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 124
-            cuda_version: 12.4.1
-            python_version: "3.11"
-            pytorch: 2.5.1
-            axolotl_extras:
           - cuda: 126
             cuda_version: 12.6.3
             python_version: "3.11"
             pytorch: 2.6.0
+            axolotl_extras:
+          - cuda: 126
+            cuda_version: 12.6.3
+            python_version: "3.11"
+            pytorch: 2.7.0
             axolotl_extras: vllm
           - cuda: 126
             cuda_version: 12.6.3
@@ -82,17 +82,17 @@ jobs:
     strategy:
       matrix:
         include:
-          - cuda: 124
-            cuda_version: 12.4.1
-            python_version: "3.11"
-            pytorch: 2.5.1
-            axolotl_extras:
           - cuda: 126
             cuda_version: 12.6.3
             python_version: "3.11"
             pytorch: 2.6.0
             axolotl_extras:
             is_latest: true
+          - cuda: 126
+            cuda_version: 12.6.3
+            python_version: "3.11"
+            pytorch: 2.7.0
+            axolotl_extras:
           - cuda: 126
             cuda_version: 12.6.3
             python_version: "3.11"

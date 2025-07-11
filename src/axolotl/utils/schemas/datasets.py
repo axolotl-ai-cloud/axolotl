@@ -34,12 +34,6 @@ class UserDefinedPrompterType(BaseModel):
         default=None,
         json_schema_extra={"description": "'no_input_format' cannot include {input}"},
     )
-    field: str | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "For `completion` datsets only, uses the provided field instead of `text` column"
-        },
-    )
 
 
 class SFTDataset(BaseModel):
@@ -104,7 +98,12 @@ class SFTDataset(BaseModel):
         default=None,
         json_schema_extra={"description": "defines the datatype when path is a file"},
     )
-    field: str | None = None
+    field: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "For `completion` datasets only, uses the provided field instead of `text` column"
+        },
+    )
     field_human: str | None = None
     field_model: str | None = None
     field_messages: str | None = Field(

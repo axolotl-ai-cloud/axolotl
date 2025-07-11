@@ -692,7 +692,7 @@ class TestValidation(BaseValidation):
                     "bf16": True,
                     "capabilities": {"bf16": False},
                     "env_capabilities": {
-                        "torch_version": "2.5.1",
+                        "torch_version": "2.6.0",
                     },
                 }
             )
@@ -1202,7 +1202,7 @@ class TestValidation(BaseValidation):
                 cfg, capabilities=capabilities, env_capabilities=env_capabilities
             )
 
-        env_capabilities = {"torch_version": "2.5.1"}
+        env_capabilities = {"torch_version": "2.6.0"}
         capabilities = {"bf16": False}
         _ = validate_config(
             cfg, capabilities=capabilities, env_capabilities=env_capabilities
@@ -1244,7 +1244,7 @@ class TestTorchCompileValidation(BaseValidation):
             | minimal_cfg
         )
 
-        env_capabilities = {"torch_version": "2.5.1"}
+        env_capabilities = {"torch_version": "2.6.0"}
         capabilities = {"bf16": True}
         updated_cfg = validate_config(
             cfg, capabilities=capabilities, env_capabilities=env_capabilities
