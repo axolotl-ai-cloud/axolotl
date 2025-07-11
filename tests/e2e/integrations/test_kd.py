@@ -67,6 +67,7 @@ def min_cfg(temp_dir):
         "output_dir": temp_dir,
         "save_safetensors": True,
         "use_tensorboard": True,
+        "save_first_step": False,
     }
 
 

@@ -58,6 +58,7 @@ class TestFalconPatched(unittest.TestCase):
                 "save_steps": 10,
                 "eval_steps": 10,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
@@ -99,6 +100,7 @@ class TestFalconPatched(unittest.TestCase):
                 "save_steps": 10,
                 "eval_steps": 10,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

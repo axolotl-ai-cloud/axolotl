@@ -55,6 +55,7 @@ class Test4dMultipackLlama(unittest.TestCase):
                 "save_steps": 3,
                 "eval_steps": 4,
                 "fp16": True,
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
@@ -102,6 +103,7 @@ class Test4dMultipackLlama(unittest.TestCase):
                 "save_steps": 3,
                 "eval_steps": 4,
                 "fp16": True,
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

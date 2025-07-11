@@ -45,6 +45,7 @@ class TestLlama:
                 "sample_packing": True,
                 "bf16": True,
                 "save_safetensors": True,
+                "save_first_step": False,
             }
         )
 
@@ -92,6 +93,7 @@ class TestLlama:
                 "sample_packing": True,
                 "bf16": True,
                 "save_safetensors": True,
+                "save_first_step": False,
             }
         )
 
@@ -136,6 +138,7 @@ class TestLlama:
                 "sample_packing": True,
                 "bf16": True,
                 "save_safetensors": True,
+                "save_first_step": False,
             }
         )
 
@@ -176,6 +179,7 @@ class TestLlama:
                 "batch_flattening": True,
                 "bf16": True,
                 "save_safetensors": True,
+                "save_first_step": False,
             }
         )
 

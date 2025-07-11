@@ -47,6 +47,7 @@ def fixture_cfg():
             "special_tokens": {
                 "pad_token": "<|endoftext|>",
             },
+            "save_first_step": False,
         }
     )
 

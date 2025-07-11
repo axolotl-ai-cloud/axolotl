@@ -1,8 +1,11 @@
 """
-E2E tests for mixtral
+E2E tests for relora llama
 """
 
 import unittest
+from pathlib import Path
+
+import pytest
 
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
@@ -12,91 +15,88 @@ from axolotl.utils.dict import DictDefault
 from ..utils import check_model_output_exists, with_temp_dir
 
 
-class TestMixtral(unittest.TestCase):
-    """
-    Test case for Llama models using LoRA
-    """
+class TestSaveFirstStepCallback(unittest.TestCase):
+    """Test cases for save_first_step callback config."""
 
     @with_temp_dir
-    def test_qlora(self, temp_dir):
+    def test_save_first_step(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "hf-internal-testing/Mixtral-tiny",
-                "tokenizer_config": "LoneStriker/Mixtral-8x7B-v0.1-HF",
-                "flash_attention": True,
-                "sample_packing": True,
-                "sequence_len": 2048,
-                "load_in_4bit": True,
-                "adapter": "qlora",
-                "lora_r": 16,
-                "lora_alpha": 32,
-                "lora_dropout": 0.1,
-                "lora_target_linear": True,
-                "val_set_size": 0.05,
-                "special_tokens": {},
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
+                "sequence_len": 512,
+                "val_set_size": 0.02,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "datasets": [
                     {
                         "path": "mhenrichsen/alpaca_2k_test",
                         "type": "alpaca",
                     },
                 ],
-                "num_epochs": 2,
+                "num_epochs": 1,
+                "max_steps": 3,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
-                "max_steps": 5,
-                "save_steps": 3,
-                "eval_steps": 4,
-                "bf16": "auto",
-                "save_first_step": False,
+                "flash_attention": True,
+                "sample_packing": True,
+                "bf16": True,
+                "save_safetensors": True,
+                "save_first_step": True,
             }
         )
+
         cfg = validate_config(cfg)
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
-        check_model_output_exists(temp_dir, cfg)
+        check_model_output_exists(str(Path(temp_dir) / "checkpoint-1"), cfg)
 
     @with_temp_dir
-    def test_ft(self, temp_dir):
+    def test_no_save_first_step(self, temp_dir):
         # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "hf-internal-testing/Mixtral-tiny",
-                "tokenizer_config": "LoneStriker/Mixtral-8x7B-v0.1-HF",
-                "flash_attention": True,
-                "sample_packing": True,
-                "sequence_len": 2048,
-                "val_set_size": 0.05,
-                "special_tokens": {},
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
+                "sequence_len": 512,
+                "val_set_size": 0.02,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "datasets": [
                     {
                         "path": "mhenrichsen/alpaca_2k_test",
                         "type": "alpaca",
                     },
                 ],
-                "num_epochs": 2,
+                "num_epochs": 1,
+                "max_steps": 3,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
-                "max_steps": 5,
-                "save_steps": 3,
-                "eval_steps": 4,
-                "bf16": "auto",
+                "flash_attention": True,
+                "sample_packing": True,
+                "bf16": True,
+                "save_safetensors": True,
                 "save_first_step": False,
             }
         )
+
         cfg = validate_config(cfg)
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
-        check_model_output_exists(temp_dir, cfg)
+        with pytest.raises(AssertionError):
+            check_model_output_exists(str(Path(temp_dir) / "checkpoint-1"), cfg)

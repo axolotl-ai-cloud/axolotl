@@ -58,6 +58,7 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
                 "save_steps": 5,
                 "eval_steps": 5,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
 
@@ -100,6 +101,7 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
                 "save_steps": 5,
                 "eval_steps": 5,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
 

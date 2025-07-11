@@ -48,6 +48,7 @@ class TestEmbeddingsLrScale(unittest.TestCase):
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -93,6 +94,7 @@ class TestEmbeddingsLrScale(unittest.TestCase):
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

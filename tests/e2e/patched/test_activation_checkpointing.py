@@ -69,6 +69,7 @@ class TestActivationCheckpointing:
                 "bf16": True,
                 "save_safetensors": True,
                 "gradient_checkpointing": gradient_checkpointing,
+                "save_first_step": False,
             }
         )
 

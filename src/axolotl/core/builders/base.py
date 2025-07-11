@@ -36,6 +36,7 @@ from axolotl.utils.callbacks import (
     GCCallback,
     GPUStatsCallback,
     SaveAxolotlConfigtoWandBCallback,
+    SaveModelOnFirstStepCallback,
 )
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
@@ -118,7 +119,6 @@ class TrainerBuilderBase(abc.ABC):
                     steps_to_profile=self.cfg.profiler_steps,
                 )
             )
-
         if self.cfg.gc_steps:
             callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
 
@@ -142,6 +142,8 @@ class TrainerBuilderBase(abc.ABC):
             callbacks.append(
                 SaveAxolotlConfigtoCometCallback(self.cfg.axolotl_config_path)
             )
+        if self.cfg.save_first_step:
+            callbacks.append(SaveModelOnFirstStepCallback())
 
         callbacks.append(GPUStatsCallback(cfg=self.cfg))
 
