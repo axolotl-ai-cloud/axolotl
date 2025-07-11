@@ -150,10 +150,7 @@ class SaveModelOnFirstStepCallback(TrainerCallback):
         control: TrainerControl,
         **_kwargs,
     ) -> TrainerControl:
-        print("in SaveModelOnFirstStepCallback.on_step_end")
-        print(state.global_step)
         if state.global_step == 1:
-            print("state.global_step == 0")
             control.should_save = True
         return control
 
