@@ -111,7 +111,8 @@ def ray_train_func(kwargs: dict):
 
     # Register plugins in Ray workers
     if cfg.get("plugins"):
-        from axolotl.cli.config import prepare_plugins, plugin_set_cfg
+        from axolotl.cli.config import plugin_set_cfg, prepare_plugins
+
         prepare_plugins(cfg)
         plugin_set_cfg(cfg)
 
