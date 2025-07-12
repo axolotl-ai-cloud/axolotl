@@ -98,13 +98,13 @@ class AxolotlTrainingMixins:
         default=None,
         metadata={"help": "how often to reset for jagged restarts"},
     )
-    jagged_restarts_warmup_steps: Optional[int] = field(
+    jagged_restart_warmup_steps: Optional[int] = field(
         default=None,
         metadata={
             "help": "how many warmup steps to take after reset for jagged restarts"
         },
     )
-    jagged_restarts_anneal_steps: Optional[int] = field(
+    jagged_restart_anneal_steps: Optional[int] = field(
         default=None,
         metadata={
             "help": "how many anneal steps to take before reset for jagged restarts"
