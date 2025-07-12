@@ -166,8 +166,11 @@ class LigerPlugin(BasePlugin):
         elif cfg.liger_fused_linear_cross_entropy:
             try:
                 patch_lce_forward(cfg.model_config_type)
-                LOG.info(
-                    f"Applied ONLY liger_fused_linear_cross_entropy patches for model type: {cfg.model_config_type}"
+                LOG.warning_once(
+                    f"Applied ONLY liger_fused_linear_cross_entropy genericpatches for model type: {cfg.model_config_type}"
+                )
+                LOG.warning_once(
+                    f"Liger + {cfg.model_config_type} generic FLCE support is experimental and may not work as expected."
                 )
             except RuntimeError:
                 LOG.warning(
