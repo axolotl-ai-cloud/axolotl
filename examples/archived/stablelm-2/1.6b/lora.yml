@@ -51,7 +51,7 @@ flash_attention: true
 flash_attn_cross_entropy: false
 flash_attn_rms_norm: true
 
-warmup_steps: 10
+warmup_ratio: 0.1
 evals_per_epoch: 4
 saves_per_epoch: 1
 weight_decay: 0.0

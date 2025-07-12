@@ -20,7 +20,7 @@ special_tokens:
 datasets:
   - path: mhenrichsen/alpaca_2k_test
     type: alpaca
-warmup_steps: 10
+warmup_ratio: 0.1
 
 # Iterations
 num_epochs: 1
