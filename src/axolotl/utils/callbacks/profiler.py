@@ -20,15 +20,8 @@ class PytorchProfilerCallback(TrainerCallback):
     """
 
     def __init__(self, steps_to_profile: int = 5, profiler_steps_start: int = 0):
-        self.profiler_steps_end = steps_to_profile
-        self.profiler_steps_start = -1
-        if self.steps_to_profile and profiler_steps_start == 0:
-            torch.cuda.memory._record_memory_history(  # pylint: disable=protected-access
-                enabled="all"
-            )
-        elif profiler_steps_start > 0:
-            self.profiler_steps_end = profiler_steps_start + steps_to_profile
-            self.profiler_steps_start = profiler_steps_start
+        self.profiler_steps_start = profiler_steps_start
+        self.profiler_steps_end = profiler_steps_start + steps_to_profile
 
     def on_step_begin(  # pylint: disable=unused-argument
         self,
