@@ -47,7 +47,7 @@ def patch_tiled_mlp(model_type, use_original_mlp=False, cfg_num_shards=None):
 
             if not self._compute_params:  # pylint: disable=protected-access
                 self._compute_params = [  # pylint: disable=protected-access
-                    p.weight for p in self.parameters() if p.requires_grad
+                    p for p in self.parameters() if p.requires_grad
                 ]
 
             compute_params = self._compute_params  # pylint: disable=protected-access
