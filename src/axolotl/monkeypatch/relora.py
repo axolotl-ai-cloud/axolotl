@@ -84,7 +84,7 @@ class ReLoRACallback(TrainerCallback):
     """Callback to merge LoRA weights into the base model and save full-weight checkpoints"""
 
     def __init__(self, cfg: DictDefault):
-        self.relora_steps = cfg.relora_steps
+        self.relora_steps = cfg.jagged_restart_steps
         self.cpu_offload = cfg.relora_cpu_offload
         self.quantized = cfg.load_in_4bit or cfg.load_in_8bit
         self.last_full_model = cfg.base_model
