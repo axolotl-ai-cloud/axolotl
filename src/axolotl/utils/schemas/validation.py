@@ -777,7 +777,7 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_fsdp2_base_model_quant_dpo(cls, data):
+    def check_fsdp2_base_model_quant_rl(cls, data):
         if data.get("fsdp_version") == 2 and data.get("rl") in [
             RLType.DPO,
             RLType.KTO,
@@ -786,7 +786,7 @@ class OptimizationValidationMixin:
         ]:
             if data.get("load_in_8bit") or data.get("load_in_4bit"):
                 raise ValueError(
-                    "FSDP2 does not support load_in_8bit or load_in_4bit with DPO. Please use DeepSpeed or set `fsdp_version` to 1."
+                    f"FSDP2 does not support load_in_8bit or load_in_4bit with {data.get('rl')}. Please use DeepSpeed or set `fsdp_version` to 1."
                 )
 
         return data
@@ -827,8 +827,6 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="after")
     def check_fsdp_offload_w_8bit_optimizer(self):
-        print(self)
-
         if (
             hasattr(self, "fsdp_config")
             and self.fsdp_config

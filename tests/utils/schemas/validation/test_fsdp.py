@@ -109,3 +109,47 @@ class TestFSDPValidation:
             match="FSDP2 does not support load_in_8bit or load_in_4bit with cpu_ram_efficient_loading.",
         ):
             validate_config(cfg)
+
+    def test_fsdp_prefixes_removed(self, fsdp_base_cfg):
+        cfg = fsdp_base_cfg | DictDefault(
+            fsdp_config={
+                "fsdp_version": 2,
+                "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
+                "fsdp_reshard_after_forward": True,
+            }
+        )
+        cfg = validate_config(cfg)
+        assert cfg.fsdp_version == 2
+        assert cfg.fsdp_config.fsdp_version is None
+        for keys in cfg.fsdp_config.keys():
+            assert not keys.startswith("fsdp_")
+        assert cfg.fsdp_config.auto_wrap_policy == "TRANSFORMER_BASED_WRAP"
+        assert cfg.fsdp_config.transformer_layer_cls_to_wrap == "LlamaDecoderLayer"
+        assert cfg.fsdp_config.reshard_after_forward is True
+
+    @pytest.mark.parametrize(
+        "rl",
+        [
+            "dpo",
+            "kto",
+            "orpo",
+            "ipo",
+        ],
+    )
+    def test_fsdp2_dpo(self, fsdp_base_cfg, rl):
+        cfg = fsdp_base_cfg | DictDefault(
+            fsdp_version=2,
+            fsdp_config={
+                "reshard_after_forward": True,
+            },
+            rl=rl,
+            load_in_8bit=True,
+            adapter="lora",
+            remove_unused_columns=False,
+        )
+        with pytest.raises(
+            ValueError,
+            match="FSDP2 does not support load_in_8bit or load_in_4bit with ",
+        ):
+            validate_config(cfg)
