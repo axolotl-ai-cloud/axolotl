@@ -74,7 +74,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-2fef5ea3f8957b3e4ecc936fc74692ca.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-ed9d63b928ec3538d7b05c99c63ac09f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-4286dd70669dc30dbb11cd1e43bae81e.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -476,7 +476,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.core.trainers.trl.AxolotlORPOTrainer" id="toc-axolotl.core.trainers.trl.AxolotlORPOTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.trl.AxolotlORPOTrainer">AxolotlORPOTrainer</a></li>
   <li><a href="#axolotl.core.trainers.trl.AxolotlPRMTrainer" id="toc-axolotl.core.trainers.trl.AxolotlPRMTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.trl.AxolotlPRMTrainer">AxolotlPRMTrainer</a></li>
   <li><a href="#axolotl.core.trainers.trl.AxolotlRewardTrainer" id="toc-axolotl.core.trainers.trl.AxolotlRewardTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.trl.AxolotlRewardTrainer">AxolotlRewardTrainer</a></li>
-  <li><a href="#axolotl.core.trainers.trl.TRLPPOTrainer" id="toc-axolotl.core.trainers.trl.TRLPPOTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.trl.TRLPPOTrainer">TRLPPOTrainer</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -491,7 +490,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.core.trainers.trl" class="level1">
 <h1>core.trainers.trl</h1>
 <p><code>core.trainers.trl</code></p>
-<p>Module for TRL PPO trainer</p>
+<p>Module for TRL RL trainers</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -522,10 +521,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.core.trainers.trl.AxolotlRewardTrainer">AxolotlRewardTrainer</a></td>
 <td>Extend the base RewardTrainer for axolotl helpers</td>
 </tr>
-<tr class="even">
-<td><a href="#axolotl.core.trainers.trl.TRLPPOTrainer">TRLPPOTrainer</a></td>
-<td>Wrapper for TRL PPO trainer to handle customizations</td>
-</tr>
 </tbody>
 </table>
 <section id="axolotl.core.trainers.trl.AxolotlCPOTrainer" class="level3">
@@ -552,11 +547,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.trl.AxolotlRewardTrainer">AxolotlRewardTrainer</h3>
 <div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>core.trainers.trl.AxolotlRewardTrainer(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Extend the base RewardTrainer for axolotl helpers</p>
-</section>
-<section id="axolotl.core.trainers.trl.TRLPPOTrainer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.trl.TRLPPOTrainer">TRLPPOTrainer</h3>
-<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>core.trainers.trl.TRLPPOTrainer()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Wrapper for TRL PPO trainer to handle customizations</p>
 
 
 </section>
