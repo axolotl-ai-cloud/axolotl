@@ -378,12 +378,20 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         """
         Public method that can handle either a single prompt or a batch of prompts.
         """
+        def _remove_none_values(obj):
+            if hasattr(obj, "items"):
+                return {k: _remove_none_values(v) for k, v in obj.items() if v is not None}
+            elif isinstance(obj, list):
+                return [_remove_none_values(elem) for elem in obj]
+            return obj
 
         if not self.is_prompt_batched(prompt) or not self.supports_batched:
             return self._tokenize_single_prompt(prompt)
 
         res = defaultdict(lambda: [])
         feature_names = list(prompt.keys())
+
+        prompt = _remove_none_values(prompt)
 
         # Process each prompt individually
         for row in zip(*prompt.values()):
