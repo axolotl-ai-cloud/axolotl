@@ -18,10 +18,6 @@ class AxolotlTrainingMixins:
     model_type: Optional[str] = field(
         default=None, metadata={"help": "HF model configuration model_type."}
     )
-    activation_offloading: bool | None = field(
-        default=None,
-        metadata={"help": "Use activation offloading with CUDA streams for training."},
-    )
     lr_quadratic_warmup: bool = field(
         default=False,
         metadata={"help": "Use quadratic warmup for cosine scheduling."},
@@ -154,6 +150,10 @@ class AxolotlTrainingMixins:
     embedding_lr: Optional[float] = field(
         default=None,
         metadata={"help": "absolute learning rate for the embedding layers."},
+    )
+    activation_offloading: bool | None = field(
+        default=None,
+        metadata={"help": "Use activation offloading with CUDA streams for training."},
     )
     qlora: bool = field(
         default=False,
