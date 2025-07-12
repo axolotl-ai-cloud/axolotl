@@ -25,6 +25,7 @@ from trl.trainer.utils import pad_to_length
 from typing_extensions import override
 
 from axolotl.core.trainers.mixins import (
+    ActivationOffloadingMixin,
     CheckpointSaveMixin,
     OptimizerMixin,
     PackingMixin,
@@ -48,6 +49,7 @@ class AxolotlTrainer(
     OptimizerMixin,
     RngLoaderMixin,
     CheckpointSaveMixin,
+    ActivationOffloadingMixin,
     Trainer,
 ):
     """Extend the base Trainer for axolotl helpers"""

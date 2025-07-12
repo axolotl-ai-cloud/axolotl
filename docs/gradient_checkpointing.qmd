@@ -1,0 +1,29 @@
+---
+title: Gradient Checkpointing and Activation Offloading
+---
+
+Gradient checkpointing and activation offloading are techniques used to optimize the performance of deep learning
+models by reducing the memory footprint and improving computational efficiency.
+
+### Enabling Gradient Checkpointing
+
+```yaml
+gradient_checkpointing: true
+```
+
+### Enabling Activation Offloading
+
+```yaml
+gradient_checkpointing: true  # required for activation offloading
+activation_offloading: true
+```
+
+Activation offloading variants:
+
+The default `activation_offloading: true` offloads activations to CPU and uses CUDA streams
+to overlap the communications and computations when offloading.
+
+The `activation_offloading: legacy` naively offloads activations to CPU and without additional optimizations.
+
+For resource constrained environments with limited CPU memory, `activation_offloading: disk` offloads
+activations to disk instead of CPU RAM so that much larger context lengths can be trained with minimal memory.
