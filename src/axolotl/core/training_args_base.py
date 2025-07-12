@@ -151,10 +151,6 @@ class AxolotlTrainingMixins:
         default=None,
         metadata={"help": "absolute learning rate for the embedding layers."},
     )
-    activation_offloading: bool | None = field(
-        default=None,
-        metadata={"help": "Use activation offloading with CUDA streams for training."},
-    )
     qlora: bool = field(
         default=False,
         metadata={"help": "whether this is a qlora training"},
@@ -219,6 +215,11 @@ class AxolotlTrainingMixins:
         metadata={
             "help": "The epsilon2 hyperparameter used in some optimizers such as CAME"
         },
+    )
+
+    activation_offloading: bool | None = field(
+        default=None,
+        metadata={"help": "Use activation offloading with CUDA streams for training."},
     )
 
     # multi-modal section

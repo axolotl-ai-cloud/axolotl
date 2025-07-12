@@ -25,14 +25,12 @@ from trl.trainer.utils import pad_to_length
 from typing_extensions import override
 
 from axolotl.core.trainers.mixins import (
+    ActivationOffloadingMixin,
     CheckpointSaveMixin,
     OptimizerMixin,
     PackingMixin,
     RngLoaderMixin,
     SchedulerMixin,
-)
-from axolotl.core.trainers.mixins.activation_checkpointing import (
-    ActivationOffloadingMixin,
 )
 from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,

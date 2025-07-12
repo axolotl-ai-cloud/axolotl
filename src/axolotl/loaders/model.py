@@ -36,7 +36,6 @@ from transformers.integrations.deepspeed import (
 )
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
-from axolotl.core.trainers.mixins.activation_checkpointing import ac_wrap_hf_model
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.adapter import load_adapter, load_lora
 from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
@@ -208,6 +207,11 @@ class ModelLoader:
 
     def _apply_activation_checkpointing(self):
         if self.cfg.activation_offloading is True:
+            from axolotl.core.trainers.mixins.activation_checkpointing import (
+                ac_wrap_hf_model,
+            )
+
+            # ^^ importing this at the module level breaks plugins
             ac_wrap_hf_model(self.model)
 
     def _resize_token_embeddings(self):
