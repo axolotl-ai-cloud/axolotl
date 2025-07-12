@@ -37,7 +37,6 @@ def do_vllm_serve(
     Returns:
         process_id: the process id of the started VLLM server
     """
-    patch_vllm_worker()
     cfg = load_cfg(config)
     model = cfg.base_model
 
@@ -46,6 +45,9 @@ def do_vllm_serve(
 
     tensor_parallel_size = (
         cli_args.get("tensor_parallel_size") or cfg.vllm.tensor_parallel_size
+    )
+    data_parallel_size = (
+        cli_args.get("data_parallel_size") or cfg.vllm.data_parallel_size
     )
     host = cli_args.get("host") or cfg.vllm.host
     port = cli_args.get("port") or cfg.vllm.port
@@ -68,6 +70,7 @@ def do_vllm_serve(
     vllm_script_args = AxolotlScriptArguments(
         model=model,
         tensor_parallel_size=tensor_parallel_size,
+        data_parallel_size=data_parallel_size,
         host=host,
         port=port,
         gpu_memory_utilization=gpu_memory_utilization,

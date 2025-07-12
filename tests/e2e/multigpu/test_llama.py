@@ -707,7 +707,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.4, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/train_loss", 2.45, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(

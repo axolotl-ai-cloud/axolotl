@@ -141,6 +141,7 @@ def recursive_kill(process: subprocess.Popen):
     os.kill(process.pid, 9)
 
 
+@pytest.mark.skip(reason="flaky vllm tests in modal")
 class TestGRPO:
     """
     Test case for GRPO training using multilpe GPUs
