@@ -126,10 +126,10 @@ class SchedulerMixin(Trainer):
 
         if self.args.jagged_restart_steps:
             warmup_steps = (
-                self.args.jagged_restarts_warmup_steps or 10
+                self.args.jagged_restart_warmup_steps or 10
             )
             anneal_steps = (
-                self.args.jagged_restarts_anneal_steps or 1
+                self.args.jagged_restart_anneal_steps or 1
             )
             if not self.lr_scheduler:
                 super().create_scheduler(num_training_steps, optimizer)

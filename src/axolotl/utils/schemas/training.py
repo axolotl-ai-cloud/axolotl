@@ -160,3 +160,24 @@ class HyperparametersConfig(BaseModel):
         if learning_rate and isinstance(learning_rate, str):
             learning_rate = float(learning_rate)
         return learning_rate
+
+
+class JaggedLRConfig(BaseModel):
+    """JaggedLR configuration subset, can be used w/ ReLoRA training"""
+
+    jagged_restart_steps: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "how often to reset for jagged restarts"},
+    )
+    jagged_restart_warmup_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "how many warmup steps to take after reset for jagged restarts"
+        },
+    )
+    jagged_restart_anneal_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "how many anneal steps to take before reset for jagged restarts"
+        },
+    )
