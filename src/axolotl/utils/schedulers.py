@@ -301,16 +301,16 @@ class JaggedLRRestartScheduler(LRScheduler):
         self,
         optimizer: Optimizer,
         inner_schedule: LRScheduler,
-        jagged_restarts_steps: int,
-        jagged_restarts_warmup_steps: int,
-        jagged_restarts_anneal_steps: int = 1,
+        jagged_restart_steps: int,
+        jagged_restart_warmup_steps: int,
+        jagged_restart_anneal_steps: int = 1,
         min_lr_scale: float = 0.001,
     ) -> None:
         # pylint: disable=duplicate-code
         self.inner_schedule = inner_schedule
-        self.restarts_steps = jagged_restarts_steps
-        self.warmup_steps = jagged_restarts_warmup_steps
-        self.anneal_steps = jagged_restarts_anneal_steps
+        self.restarts_steps = jagged_restart_steps
+        self.warmup_steps = jagged_restart_warmup_steps
+        self.anneal_steps = jagged_restart_anneal_steps
         self.min_lr_scale = min_lr_scale
         super().__init__(optimizer, inner_schedule.last_epoch, inner_schedule.verbose)
 
