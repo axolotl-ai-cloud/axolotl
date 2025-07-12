@@ -267,7 +267,7 @@ def save_trained_model(
             "your model weights with `axolotl quantize`."
         )
     # Handle ReLoRA early return case
-    if cfg.relora_steps:
+    if cfg.relora:
         if cfg.adapter == "lora" and not (cfg.load_in_4bit or cfg.load_in_8bit):
             model = model.merge_and_unload()
         else:
