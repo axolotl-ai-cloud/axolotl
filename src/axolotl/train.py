@@ -15,7 +15,6 @@ from typing import Any, Dict
 
 import torch
 import transformers.modelcard
-from accelerate.utils import save_fsdp_model
 from datasets import Dataset
 from huggingface_hub.errors import OfflineModeIsEnabled
 from peft import PeftConfig, PeftModel
@@ -68,7 +67,7 @@ def setup_model_and_tokenizer(
             `None`), and processor (if multimodal, else `None`).
     """
     # Load tokenizer
-    LOG.debug(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
+    LOG.debug(f"Loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
     tokenizer = load_tokenizer(cfg)
 
     # Load processor for multimodal models if needed
@@ -76,11 +75,8 @@ def setup_model_and_tokenizer(
     if cfg.is_multimodal:
         processor = load_processor(cfg, tokenizer)
 
-    # Load the model and peft_config
-    msg = "loading model"
-    if cfg.adapter:
-        msg += " and peft_config..."
-    LOG.debug(msg)
+    # Load the model
+    LOG.debug("Loading model")
 
     model_loader = ModelLoader(cfg, tokenizer, processor=processor)
     model, peft_config = model_loader.load()
@@ -264,15 +260,6 @@ def save_trained_model(
             "QAT modules have been converted for PTQ. Please ensure you quantize "
             "your model weights with `axolotl quantize`."
         )
-
-    # Handle FSDP state dict type
-    state_dict_type = "FULL_STATE_DICT"
-    if trainer.is_fsdp_enabled and str(cfg.fsdp_config.fsdp_version) != "2":
-        if cfg.fsdp_final_state_dict_type:
-            state_dict_type = cfg.fsdp_final_state_dict_type
-        trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
-        LOG.info(f"Set FSDP state dict type to {state_dict_type} for saving.")
-
     # Handle ReLoRA early return case
     if cfg.relora_steps:
         if cfg.adapter == "lora" and not (cfg.load_in_4bit or cfg.load_in_8bit):
@@ -281,22 +268,19 @@ def save_trained_model(
             # final model weights have already been saved by `ReLoRACallback.on_train_end`
             return
 
-    if cfg.fsdp:
-        # TODO: do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
-        # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple
-        # processes attempt to write the same file
-        if (
-            state_dict_type == "SHARDED_STATE_DICT"
-            and cfg.fsdp_config.fsdp_state_dict_type == "SHARDED_STATE_DICT"
-        ):
-            save_fsdp_model(
-                trainer.accelerator.state.fsdp_plugin,
-                trainer.accelerator,
-                trainer.model,
-                cfg.output_dir,
+    if trainer.is_fsdp_enabled:
+        if cfg.fsdp_config or cfg.fsdp:
+            if cfg.fsdp_config.final_state_dict_type:
+                state_dict_type = cfg.fsdp_config.final_state_dict_type
+            else:
+                state_dict_type = cfg.fsdp_config.state_dict_type
+            trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
+        trainer.save_model(cfg.output_dir)
+        if state_dict_type == "SHARDED_STATE_DICT":
+            LOG.info(
+                "The final model was saved with a sharded state dict. Please ensure you merge "
+                "the sharded weights with `merge-sharded-fsdp-weights`."
             )
-        elif state_dict_type == "FULL_STATE_DICT":
-            trainer.save_model(cfg.output_dir)
     elif cfg.deepspeed and is_deepspeed_zero3_enabled():
         # Copied over from: https://github.com/huggingface/accelerate/blob/5ae611118057232f441055f7ef9ba0b0f2b8d533/docs/source/usage_guides/deepspeed.md#saving-and-loading
         trainer.accelerator.wait_for_everyone()

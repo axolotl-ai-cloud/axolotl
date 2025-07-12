@@ -195,9 +195,11 @@ def ensure_dtype(model: PreTrainedModel, dtype: torch.dtype = torch.bfloat16):
             bias_mismatch = module.bias.dtype != dtype
 
         if weight_mismatch:
-            print(f"Converting module {name}.weight: {module.weight.dtype} -> {dtype}")
+            LOG.debug(
+                f"Converting module {name}.weight: {module.weight.dtype} -> {dtype}"
+            )
         if bias_mismatch:
-            print(f"Converting module {name}.bias: {module.bias.dtype} -> {dtype}")
+            LOG.debug(f"Converting module {name}.bias: {module.bias.dtype} -> {dtype}")
         if weight_mismatch or bias_mismatch:
             module.to(dtype)
 

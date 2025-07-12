@@ -501,6 +501,10 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.reward_model or self.cfg.rl:
             training_args_kwargs["max_length"] = self.cfg.sequence_len
 
+        if self.cfg.fsdp_config or self.cfg.fsdp:
+            training_args_kwargs["fsdp_config"] = self.cfg.fsdp_config
+            training_args_kwargs["fsdp"] = self.cfg.fsdp if self.cfg.fsdp else True
+
         self._configure_reporting(training_args_kwargs)
         self._configure_hub_parameters(training_args_kwargs)
         self._configure_scheduler(training_args_kwargs)

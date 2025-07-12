@@ -14,5 +14,4 @@ from .trl import (
     AxolotlORPOTrainer,
     AxolotlPRMTrainer,
     AxolotlRewardTrainer,
-    TRLPPOTrainer,
 )

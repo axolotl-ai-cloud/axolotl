@@ -203,7 +203,9 @@ class AxolotlInputConfig(
         },
     )
     dataset_processes: int | None = Field(
-        default=min(int(os.environ.get("AXOLOTL_DATASET_PROCESSES", 32)), os.cpu_count()),  # type: ignore[type-var]
+        default=min(
+            int(os.environ.get("AXOLOTL_DATASET_PROCESSES", 32)), os.cpu_count()
+        ),  # type: ignore[type-var]
         json_schema_extra={
             "description": "The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set."
         },
@@ -572,14 +574,24 @@ class AxolotlInputConfig(
         },
     )
     fsdp: list[str] | None = Field(
-        default=None, json_schema_extra={"description": "FSDP configuration"}
+        default=None,
+        json_schema_extra={"description": "FSDP configuration"},
+        deprecated="Configuring FSDP using `fsdp` is deprecated. Please use `fsdp_config` instead. ",
     )
+    # TODO @SalmanMohammadi strongly type this as its own schema
     fsdp_config: dict[str, Any] | None = Field(
         default=None, json_schema_extra={"description": "FSDP configuration options"}
     )
+    fsdp_version: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "FSDP version"},
+    )
     fsdp_final_state_dict_type: (
         Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None
-    ) = None
+    ) = Field(
+        default=None,
+        deprecated="Configuring FSDP final state dict type using `fsdp_final_state_dict_type` is deprecated. Please use `fsdp_config.final_state_dict_type` instead.",
+    )
 
     val_set_size: float | None = Field(
         default=0.0,
@@ -949,11 +961,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             or data.get("lora_o_kernel")
         ):
             capabilities = data.get("capabilities")
-            is_fsdp = data.get("fsdp") is not None
-            is_fsdp2 = (
-                data.get("fsdp_config") is not None
-                and str(data.get("fsdp_config").get("fsdp_version")) == "2"
-            )
+            is_fsdp = data.get("fsdp_config") is not None
+            is_fsdp2 = is_fsdp and str(data.get("fsdp_version")) == "2"
+
             if capabilities and capabilities.get("n_gpu", 0) > 1 and not is_fsdp2:
                 if is_fsdp:
                     raise ValueError(
@@ -987,11 +997,8 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             # Check multi-GPU compatibility
             capabilities = data.get("capabilities")
             is_multi_gpu = capabilities and capabilities.get("n_gpu", 0) > 1
-            is_fsdp = data.get("fsdp") is not None
-            is_fsdp2 = (
-                data.get("fsdp_config") is not None
-                and str(data.get("fsdp_config").get("fsdp_version")) == "2"
-            )
+            is_fsdp = data.get("fsdp_config") is not None
+            is_fsdp2 = is_fsdp and str(data.get("fsdp_version")) == "2"
 
             if (
                 not is_multi_gpu
@@ -1114,19 +1121,92 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
             torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
 
-        if (
-            data.get("fsdp")
-            and data.get("fsdp_config")
-            and str(data["fsdp_config"].get("fsdp_version")) == "2"
-        ):
-            if version.parse(torch_version) < version.parse("2.7.0"):
-                raise ValueError(
-                    "FSDP2 and QAT are not supported on torch version < 2.7.0"
-                )
-
         if version.parse(torch_version) < version.parse("2.6.0"):
             raise ValueError("QAT is not supported on torch version < 2.6.0")
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_torch_version(cls, data):
+        env_capabilities = data.get("env_capabilities", {})
+        torch_version = env_capabilities.get("torch_version")
+
+        if torch_version is None:
+            import torch
+
+            torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+
+        if data.get("fsdp_config") and str(data.get("fsdp_version")) == "2":
+            if version.parse(torch_version) < version.parse("2.7.0"):
+                raise ValueError("FSDP2 is not supported on torch version < 2.7.0")
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_version(cls, data):
+        fsdp_config = data.get("fsdp_config", {})
+        if fsdp_config and str(data.get("fsdp_version")) != "2":
+            LOG.info(
+                "FSDP1 will be deprecated in an upcoming release of Axolotl."
+                "We recommend that you use FSDP version 2 for better performance and compatibility. "
+                "Please see this link for more details: https://docs.axolotl.ai/docs/multi-gpu.html#sec-fsdp "
+                "For more details on migrating your config. "
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp2_base_model_quant_ram_efficient_loading(cls, data):
+        fsdp_config = data.get("fsdp_config")
+        if fsdp_config and data.get("fsdp_version") == 2:
+            if fsdp_config.get("cpu_ram_efficient_loading") and (
+                data.get("load_in_8bit") or data.get("load_in_4bit")
+            ):
+                raise ValueError(
+                    "FSDP2 does not support load_in_8bit or load_in_4bit with cpu_ram_efficient_loading. Please do one of the following: use DeepSpeed, "
+                    "set fsdp_version to 1, or disable cpu_ram_efficient_loading."
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp2_base_model_quant_dpo(cls, data):
+        if data.get("fsdp_version") == 2 and data.get("rl") in [
+            RLType.DPO,
+            RLType.KTO,
+            RLType.ORPO,
+            RLType.IPO,
+        ]:
+            if data.get("load_in_8bit") or data.get("load_in_4bit"):
+                raise ValueError(
+                    "FSDP2 does not support load_in_8bit or load_in_4bit with DPO. Please use DeepSpeed or set `fsdp_version` to 1."
+                )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_version_in_fsdp_config(cls, data):
+        if fsdp_config := data.get("fsdp_config"):
+            if fsdp_config.get("fsdp_version"):
+                LOG.warning(
+                    "Configuring `fsdp_version` in `fsdp_config` is deprecated. "
+                    "Please configure `fsdp_version` as a top-level field."
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_config_kwargs_prefix(cls, data):
+        if fsdp_config := data.get("fsdp_config"):
+            for key, _ in fsdp_config.items():
+                if key.startswith("fsdp_"):
+                    LOG.warning_once(
+                        "Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
+                        "Please omit the `fsdp_` prefix from the any fields in `fsdp_config`."
+                    )
         return data
 
     @model_validator(mode="before")
