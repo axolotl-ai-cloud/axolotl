@@ -58,7 +58,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
     def get_callbacks(self):
         callbacks = super().get_callbacks()
 
-        if self.cfg.relora_steps:
+        if self.cfg.relora:
             callbacks.append(ReLoRACallback(self.cfg))
 
         if (
@@ -131,7 +131,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
             if trainer_cls:
                 return trainer_cls
-        if self.cfg.relora_steps:
+        if self.cfg.relora and self.cfg.jagged_restart_steps:
             return ReLoRATrainer
         if self.cfg.model_config_type == "mamba":
             return AxolotlMambaTrainer
