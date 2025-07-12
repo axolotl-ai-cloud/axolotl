@@ -135,5 +135,10 @@ class CutCrossEntropyPlugin(BasePlugin):
                 ) from e
 
         if model_type not in PATCH_FNS:
-            LOG.warning("Setting up generic cce patch for model type: %s", model_type)
+            LOG.warning_once(
+                "Setting up generic cce patch for model type: %s", model_type
+            )
+            LOG.warning_once(
+                f"Generic Cut Cross Entropy + {model_type} support is experimental and may not work as expected."
+            )
             PATCH_FNS[model_type] = partial(patch_generic, model_type=model_type)
