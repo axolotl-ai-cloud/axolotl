@@ -127,6 +127,7 @@ class CutCrossEntropyPlugin(BasePlugin):
                 )
 
                 model_cls.forward = cce_forward
+            # pylint: disable=duplicate-code
             except (ImportError, AttributeError) as e:
                 raise RuntimeError(
                     f"Could not import ForCausalLM class for model_type: {model_type}. "

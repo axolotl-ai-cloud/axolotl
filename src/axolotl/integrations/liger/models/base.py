@@ -183,6 +183,7 @@ def patch_lce_forward(
         model_cls = getattr(module, f"{model_cls_prefix}ForCausalLM")
 
         model_cls.forward = lce_forward
+    # pylint: disable=duplicate-code
     except (ImportError, AttributeError) as e:
         raise RuntimeError(
             f"Could not import ForCausalLM class for model_type: {model_type}. "
