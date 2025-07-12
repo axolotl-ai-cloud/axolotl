@@ -105,14 +105,12 @@ class LigerPlugin(BasePlugin):
                 # The DeepseekV2 version of RoPE is different than upstream LLaMA.
                 # See https://github.com/linkedin/Liger-Kernel/issues/129#issuecomment-2313763528
                 LOG.warning("Fused liger_rope is not supported for DeepseekV2.")
-            if cfg.liger_glu_activation:
-                LOG.warning("liger_glu_activation is not supported for DeepseekV2.")
             if cfg.liger_rms_norm:
                 modeling_mod.DeepseekV2RMSNorm = LigerRMSNorm
             if cfg.liger_glu_activation:
                 modeling_mod.DeepseekV2MLP.forward = LigerSwiGLUMLP.forward
             if cfg.liger_layer_norm:
-                modeling_mod.DeepseekV2MLP.forward = LigerLayerNorm.forward
+                LOG.warning("liger_layer_norm is not supported for DeepseekV2.")
             if cfg.liger_cross_entropy:
                 # We do not patch `nn.functional.cross_entropy` for DeepseekV2 as it still uses
                 # nn.CrossEntropyLoss in the forward method.
