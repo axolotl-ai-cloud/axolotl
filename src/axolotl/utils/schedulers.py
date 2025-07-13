@@ -2,6 +2,7 @@
 
 import math
 from functools import partial
+from typing import Sequence
 
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR, LRScheduler
@@ -314,13 +315,13 @@ class JaggedLRRestartScheduler(LRScheduler):
         self.min_lr_scale = min_lr_scale
         super().__init__(optimizer, inner_schedule.last_epoch, inner_schedule.verbose)
 
-    def get_lr(self) -> float:
+    def get_lr(self) -> float | Sequence[float]:
         self.inner_schedule.last_epoch = self.last_epoch
 
         original = self.inner_schedule.get_lr()
         step = self.last_epoch
 
-        if step < self.restarts_steps:
+        if step < self.restarts_steps - self.anneal_steps:
             scale = 1
         else:
             per_restart_progress = step % self.restarts_steps
@@ -335,6 +336,7 @@ class JaggedLRRestartScheduler(LRScheduler):
                 cycle_t = 1
             scale = cycle_t * (1 - self.min_lr_scale) + self.min_lr_scale
 
-        # if isinstance(original, Sequence):
-        #     return [lr * scale for lr in original]
+        if isinstance(original, Sequence):
+            return [lr * scale for lr in original]
+
         return original * scale
