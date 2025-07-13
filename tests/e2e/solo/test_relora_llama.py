@@ -35,6 +35,7 @@ class TestReLoraLlama(unittest.TestCase):
                 "lora_dropout": 0.05,
                 "lora_target_modules": ["q_proj", "v_proj"],
                 "relora": True,
+                "jagged_restart_steps": 50,
                 "jagged_restart_warmup_steps": 10,
                 "jagged_restart_anneal_steps": 10,
                 "relora_prune_ratio": 0.9,
