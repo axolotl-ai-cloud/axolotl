@@ -59,7 +59,6 @@ quartodoc:
         - core.trainers.base
         - core.trainers.trl
         - core.trainers.mamba
-        - core.trainers.relora
         - core.trainers.dpo.trainer
         - core.trainers.grpo.trainer
         - core.trainers.grpo.sampler
