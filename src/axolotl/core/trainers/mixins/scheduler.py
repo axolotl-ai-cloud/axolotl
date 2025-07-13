@@ -139,7 +139,7 @@ class SchedulerMixin(Trainer):
                 self.args.jagged_restart_steps,
                 warmup_steps,
                 anneal_steps,
-                min_lr_scale=self.args.cosine_min_lr_ratio,
+                min_lr_scale=self.args.cosine_min_lr_ratio or 0.001,
             )
 
         return self.lr_scheduler  # type: ignore
