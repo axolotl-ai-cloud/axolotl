@@ -25,9 +25,12 @@ lora_alpha: 16
 lora_dropout: 0.05
 lora_target_linear: true
 
-relora_steps: 150
-relora_warmup_ratio: 0.1
+relora: true
+relora_prune_ratio: 0.9
 relora_cpu_offload: false
+jagged_restart_steps: 150
+jagged_restart_warmup_steps: 10
+jagged_restart_anneal_steps: false
 
 wandb_project:
 wandb_entity:
