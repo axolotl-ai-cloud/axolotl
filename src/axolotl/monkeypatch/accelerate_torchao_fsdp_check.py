@@ -23,7 +23,6 @@ PATCHED_ACCELERATE_CODE = """
 """
 
 
-
 def get_accelerator_constructor_code() -> str:
     constructor = inspect.getsource(Accelerator.__init__)
     return constructor
@@ -45,14 +44,14 @@ def patch_accelerator_constructor_code_for_fp8():
     except OSError:
         return
 
-    Accelerator._original__init__ = (  # pylint: disable=protected-access
-        constructor_code
-    )
+    Accelerator._original__init__ = constructor_code  # pylint: disable=protected-access
     constructor_code, _ = detab_code(constructor_code)
     if ORIGINAL_ACCELERATE_CODE not in constructor_code:
         return
 
-    constructor_code = constructor_code.replace(ORIGINAL_ACCELERATE_CODE, PATCHED_ACCELERATE_CODE)
+    constructor_code = constructor_code.replace(
+        ORIGINAL_ACCELERATE_CODE, PATCHED_ACCELERATE_CODE
+    )
     constructor_code = constructor_code.replace(
         "def __init__(",
         "def _patched__init__(",
