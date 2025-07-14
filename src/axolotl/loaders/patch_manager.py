@@ -157,7 +157,9 @@ class PatchManager:
                 patch_create_accelerate_code_for_fp8,
             )
 
-            patch_create_accelerate_code_for_fp8()
+            patch_create_accelerate_code_for_fp8(
+                self.cfg.fp8_enable_fsdp_float8_all_gather
+            )
             patch_accelerator_constructor_code_for_fp8()
 
     def _apply_flash_attention_peft_patches(self):

@@ -523,14 +523,19 @@ class AxolotlTrainer(
         return res
 
     def additional_accelerator_args(
-        self, fp8=None, **kwargs
+        self, fp8: bool = False, enable_fsdp_float8_all_gather: bool = False, **kwargs
     ):  # pylint: disable=unused-argument
         ret_kwargs = {}
         if fp8:
             from accelerate.utils import AORecipeKwargs
+            from torchao.float8 import Float8LinearConfig
+
+            config = Float8LinearConfig(
+                enable_fsdp_float8_all_gather=enable_fsdp_float8_all_gather
+            )
 
             ret_kwargs["mixed_precision"] = "fp8"
-            ret_kwargs["kwargs_handlers"] = [AORecipeKwargs()]
+            ret_kwargs["kwargs_handlers"] = [AORecipeKwargs(config=config)]
             os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
 
         return ret_kwargs
