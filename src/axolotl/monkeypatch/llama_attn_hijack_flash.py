@@ -84,7 +84,7 @@ def replace_llama_mlp_with_swiglu(model):
 
 def patch_mlp_with_swiglu(model_type):
     if is_xformers_swiglu_available():
-        from axolotl.monkeypatch.xformers_ import FusedMLP
+        from axolotl.monkeypatch.xformers_ import FusedMLPv2 as FusedMLP
     else:
         raise RuntimeError("xformers SwiGLU not available for this environment")
 
