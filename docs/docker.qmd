@@ -34,6 +34,7 @@ Tags examples:
 
 - `main-base-py3.11-cu128-2.7.1`
 - `main-base-py3.11-cu126-2.7.1`
+- `main-base-py3.11-cu126-2.7.0`
 - `main-base-py3.11-cu126-2.6.0`
 - `main-base-py3.11-cu124-2.6.0`
 
@@ -75,6 +76,7 @@ Tags examples:
 
 - `main-py3.11-cu128-2.7.1`
 - `main-py3.11-cu126-2.7.1`
+- `main-py3.11-cu126-2.7.0`
 - `main-py3.11-cu126-2.6.0`
 - `main-py3.11-cu124-2.6.0`
 - `main-latest`

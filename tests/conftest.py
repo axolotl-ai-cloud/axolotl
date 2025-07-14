@@ -22,6 +22,8 @@ from huggingface_hub.errors import LocalEntryNotFoundError
 from tokenizers import AddedToken
 from transformers import AutoTokenizer
 
+from axolotl.utils.dict import DictDefault
+
 from tests.hf_offline_utils import (
     enable_hf_offline,
     hf_offline_context,
@@ -537,6 +539,22 @@ def dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff(
         / "fozziethebeat__alpaca_messages_2k_dpo_test__rev_ea82cff"
     )
     return datasets.load_from_disk(ds_path)["train"]
+
+
+@pytest.fixture(name="min_base_cfg")
+def fixture_min_base_cfg():
+    return DictDefault(
+        base_model="HuggingFaceTB/SmolLM2-135M",
+        learning_rate=1e-3,
+        datasets=[
+            {
+                "path": "mhenrichsen/alpaca_2k_test",
+                "type": "alpaca",
+            },
+        ],
+        micro_batch_size=1,
+        gradient_accumulation_steps=1,
+    )
 
 
 # # pylint: disable=redefined-outer-name,unused-argument

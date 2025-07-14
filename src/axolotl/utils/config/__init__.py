@@ -116,9 +116,10 @@ def normalize_config(cfg):
     ]
     choose_device(cfg)
     cfg.ddp = cfg.ddp if cfg.ddp is not None else cfg.world_size != 1
-    if cfg.ddp:
+    if cfg.world_size != 1:
         cfg.device_map = {"": int(os.environ.get("LOCAL_RANK", 0))}
-        cfg.batch_size = cfg.batch_size * cfg.world_size
+        if cfg.fsdp or cfg.fsdp_config or cfg.ddp:
+            cfg.batch_size = cfg.batch_size * cfg.world_size
 
     if not cfg.use_ray:
         # delay resolving dtype until on worker node when launching with ray
@@ -274,7 +275,7 @@ def validate_config(
     # Convert datasets to proper format if needed
     if cfg.get("datasets"):
         for idx, ds_cfg in enumerate(cfg["datasets"]):
-            if cfg.get("rl") == "dpo" and not isinstance(ds_cfg, DPODataset):
+            if cfg.get("rl") in ["dpo", "simpo"] and not isinstance(ds_cfg, DPODataset):
                 cfg["datasets"][idx] = DPODataset(**ds_cfg)
             elif cfg.get("rl") == "kto" and not isinstance(ds_cfg, KTODataset):
                 cfg["datasets"][idx] = KTODataset(**dict(ds_cfg))
