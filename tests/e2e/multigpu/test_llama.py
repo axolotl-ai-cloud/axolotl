@@ -601,7 +601,7 @@ class TestMultiGPULlama:
                     "fsdp_use_orig_params": False,
                     "fsdp_cpu_ram_efficient_loading": True,
                     "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
-                    "fsdp_state_dict_type": "SHARDED_STATE_DICT",
+                    "fsdp_state_dict_type": "FULL_STATE_DICT",
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
                 "use_tensorboard": True,
