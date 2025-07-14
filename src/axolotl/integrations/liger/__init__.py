@@ -20,3 +20,8 @@ It is designed to be performant, correct, and light-weight.
 """
 from .args import LigerArgs  # pylint: disable=unused-import. # noqa: F401
 from .plugin import LigerPlugin  # pylint: disable=unused-import. # noqa: F401
+
+__all__ = [
+    "LigerArgs",
+    "LigerPlugin",
+]

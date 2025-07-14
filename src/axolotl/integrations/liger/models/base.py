@@ -37,8 +37,6 @@ def lce_forward(
             token can save memory, which becomes pretty significant for long sequences or large vocabulary size.
             If a `torch.Tensor`, must be 1D corresponding to the indices to keep in the sequence length dimension.
             This is useful when using packed tensor format (single dimension for batch and sequence length).
-
-    Returns:
     """
 
     # pylint: disable=duplicate-code
