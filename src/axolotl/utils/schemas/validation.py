@@ -886,8 +886,19 @@ class OptimizationValidationMixin:
                 )
             with open(data.get("deepspeed"), "r", encoding="utf-8") as ds_fin:
                 ds_config = json.load(ds_fin)
+                should_save = False
                 if "tensor_parallel" not in ds_config:
                     ds_config["tensor_parallel"] = {"autotp_size": tensor_parallel_size}
+                    should_save = True
+                if (
+                    "gather_16bit_weights_on_model_save"
+                    not in ds_config["zero_optimization"]
+                ):
+                    ds_config["zero_optimization"][
+                        "gather_16bit_weights_on_model_save"
+                    ] = True
+                    should_save = True
+                if should_save:
                     temp_dir = tempfile.mkdtemp()
                     with open(
                         Path(temp_dir) / "autotp_ds.json", "w", encoding="utf-8"
