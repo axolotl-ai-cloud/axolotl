@@ -228,6 +228,9 @@ def execute_training(
         #     torch.set_default_dtype(torch.bfloat16)
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
+        plugin_manager = PluginManager.get_instance()
+        plugin_manager.post_train(cfg, trainer.model)
+
 
 def save_trained_model(
     cfg: DictDefault,
@@ -581,8 +584,5 @@ def train(
     create_model_card(cfg, trainer)
     if not cfg.use_ray:
         cleanup_distributed()
-
-    plugin_manager = PluginManager.get_instance()
-    plugin_manager.post_train(cfg, model)
 
     return model, tokenizer, trainer
