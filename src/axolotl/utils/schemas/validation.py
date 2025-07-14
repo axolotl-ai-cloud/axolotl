@@ -1172,6 +1172,12 @@ class ComplexValidationMixin:
         return self
 
     @model_validator(mode="after")
+    def check_tensor_parallel_size(self):
+        if not self.tensor_parallel_size:
+            self.tensor_parallel_size = 1
+        return self
+
+    @model_validator(mode="after")
     def check_sequence_parallel_degree(self):
         if not self.sequence_parallel_degree:
             self.sequence_parallel_degree = 1
