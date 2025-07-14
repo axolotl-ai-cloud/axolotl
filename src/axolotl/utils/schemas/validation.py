@@ -877,7 +877,7 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_tensor_parallel_size(cls, data):
+    def check_tensor_parallel_size_update_ds_json(cls, data):
         tensor_parallel_size = data.get("tensor_parallel_size")
         if tensor_parallel_size is not None and tensor_parallel_size > 1:
             if not data.get("deepspeed"):
