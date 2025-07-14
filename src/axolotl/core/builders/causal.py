@@ -268,16 +268,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.sample_packing_eff_est
             )
 
-        if self.cfg.relora:
-            training_arguments_kwargs["relora_steps"] = self.cfg.jagged_restart_steps
-            if self.cfg.jagged_restart_warmup_steps:
-                training_arguments_kwargs["relora_warmup_steps"] = (
-                    self.cfg.jagged_restart_warmup_steps
-                )
-            if self.cfg.jagged_restart_anneal_steps:
-                training_arguments_kwargs["relora_anneal_steps"] = (
-                    self.cfg.jagged_restart_anneal_steps
-                )
+        if self.cfg.relora and self.cfg.jagged_restart_steps:
             if self.cfg.relora_prune_ratio:
                 training_arguments_kwargs["relora_prune_ratio"] = (
                     self.cfg.relora_prune_ratio
