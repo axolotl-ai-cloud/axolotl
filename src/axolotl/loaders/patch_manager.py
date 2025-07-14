@@ -153,8 +153,12 @@ class PatchManager:
             from axolotl.monkeypatch.trainer_accelerator_args import (
                 patch_create_accelerate_code_for_fp8,
             )
+            from axolotl.monkeypatch.accelerate_torchao_fsdp_check import (
+                patch_accelerator_constructor_code_for_fp8
+            )
 
             patch_create_accelerate_code_for_fp8()
+            patch_accelerator_constructor_code_for_fp8()
 
     def _apply_flash_attention_peft_patches(self):
         """Apply patches for Flash Attention with PEFT."""
