@@ -7,21 +7,16 @@ from axolotl.utils.dict import DictDefault
 
 
 @pytest.fixture(name="train_base_cfg")
-def fixture_train_base_cfg():
-    return DictDefault(
-        base_model="gpt2",
-        learning_rate=1e-3,
-        datasets=[
-            {
-                "path": "mhenrichsen/alpaca_2k_test",
-                "type": "alpaca",
-            },
-        ],
-        micro_batch_size=2,
-        gradient_accumulation_steps=4,
-        sequence_len=2048,
-        sample_packing=True,
-        num_epochs=1,
+def fixture_train_base_cfg(min_base_cfg):
+    return (
+        DictDefault(
+            micro_batch_size=2,
+            gradient_accumulation_steps=4,
+            sequence_len=2048,
+            sample_packing=True,
+            num_epochs=1,
+        )
+        | min_base_cfg
     )
 
 
