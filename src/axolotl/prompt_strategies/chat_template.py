@@ -380,6 +380,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         """
 
         def _remove_none_values(obj):
+            """
+            Remove null from a dictionary-like obj or list.
+            These can appear due to Dataset loading causing schema merge.
+            See https://github.com/axolotl-ai-cloud/axolotl/pull/2909
+            """
             if hasattr(obj, "items"):
                 return {
                     k: _remove_none_values(v) for k, v in obj.items() if v is not None
