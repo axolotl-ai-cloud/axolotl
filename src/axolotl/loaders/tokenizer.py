@@ -189,10 +189,15 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
 
     # Qwen base only has single token, so we need to set the special tokens
     if cfg.is_qwen_derived_model:
+        default_tok_id = getattr(tokenizer, "eod_id", tokenizer.eos_token_id)
+        assert default_tok_id is not None, (
+            "Qwen tokenizer does not have an eos_token_id set. "
+            "Please check the tokenizer configuration."
+        )
         token_ids = ["bos_token_id", "eos_token_id", "pad_token_id", "unk_token_id"]
         for attr_name in token_ids:
             if getattr(tokenizer, attr_name) is None:
-                setattr(tokenizer, attr_name, tokenizer.eod_id)
+                setattr(tokenizer, attr_name, default_tok_id)
 
         token_names = ["bos_token", "eos_token", "pad_token", "unk_token"]
         for attr_name in token_names:

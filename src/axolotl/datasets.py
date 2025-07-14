@@ -46,7 +46,7 @@ class TokenizedPromptDataset(Dataset):
 
     def process(self, dataset):
         features = dataset.features.keys()
-        num_proc = min(64, self.process_count if self.process_count else os.cpu_count())
+        num_proc = self.process_count if self.process_count else os.cpu_count()
 
         map_kwargs = {}
         if self.prompt_tokenizer.supports_batched:

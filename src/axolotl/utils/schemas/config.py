@@ -193,6 +193,10 @@ class AxolotlInputConfig(
         json_schema_extra={"description": "Index of shard to use for whole dataset"},
     )
     skip_prepare_dataset: bool | None = False
+    num_save_shards: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "Number of shards to save the prepared dataset"}
+    )
 
     pretraining_dataset: (
         Annotated[list[PretrainingDataset | SFTDataset], MinLen(1)] | None
@@ -203,9 +207,7 @@ class AxolotlInputConfig(
         },
     )
     dataset_processes: int | None = Field(
-        default=min(
-            int(os.environ.get("AXOLOTL_DATASET_PROCESSES", 32)), os.cpu_count()
-        ),  # type: ignore[type-var]
+        default=int(os.environ.get("AXOLOTL_DATASET_PROCESSES", os.cpu_count())),  # type: ignore[type-var]
         json_schema_extra={
             "description": "The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set."
         },
