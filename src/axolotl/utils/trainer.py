@@ -546,7 +546,10 @@ def setup_deepspeed_env(cfg, stage=None):
     # NOTE(djsaunde): The distribued state cannot be initialized prior to the
     # ACCELERATE_USE_DEEPSPEED assignment, but it must be initialized some time prior
     # to model load.
-    if int(os.environ.get("WORLD_SIZE", "1")) == 1:
+    if (
+        int(os.environ.get("WORLD_SIZE", "1")) == 1
+        and os.environ.get("AXOLOTL_IS_PREPROCESS", "0") != "1"
+    ):
         os.environ["WORLD_SIZE"] = "1"  # force it in case not set
         os.environ["LOCAL_RANK"] = "0"  # force it in case not set
         os.environ["RANK"] = os.environ.get("LOCAL_RANK", "0")

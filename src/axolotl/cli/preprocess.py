@@ -1,5 +1,6 @@
 """CLI to run preprocessing of a dataset."""
 
+import os
 import warnings
 from pathlib import Path
 from typing import Union
@@ -95,6 +96,7 @@ def do_cli(
         kwargs: Additional keyword arguments to override config file values.
     """
     # pylint: disable=duplicate-code
+    os.environ["AXOLOTL_IS_PREPROCESS"] = "1"
     parsed_cfg = load_cfg(config, **kwargs)
     parsed_cfg.is_preprocess = True
     parser = transformers.HfArgumentParser(PreprocessCliArgs)
