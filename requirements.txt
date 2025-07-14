@@ -11,14 +11,14 @@ liger-kernel==0.5.10
 
 packaging==23.2
 
-huggingface_hub==0.32.2
+huggingface_hub>=0.33.0
 peft==0.15.2
-transformers==4.53.1
+transformers==4.53.2
 tokenizers>=0.21.1
 accelerate==1.8.1
 datasets==3.6.0
 deepspeed>=0.17.0
-trl==0.18.2
+trl==0.19.1
 hf_xet==1.1.2
 
 optimum==1.16.2
