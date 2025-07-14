@@ -584,6 +584,12 @@ class AxolotlInputConfig(
             "description": "Deepspeed config path. e.g., deepspeed_configs/zero3.json"
         },
     )
+    deepcompile: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use deepcompile for faster training with deepspeed"
+        },
+    )
     fsdp: list[str] | None = Field(
         default=None,
         json_schema_extra={"description": "FSDP configuration"},

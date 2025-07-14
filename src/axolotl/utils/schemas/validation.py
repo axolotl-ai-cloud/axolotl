@@ -897,6 +897,26 @@ class OptimizationValidationMixin:
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_deepcompile(cls, data):
+        deepcompile = data.get("deepcompile")
+        if deepcompile:
+            if not data.get("deepspeed"):
+                raise ValueError("DeepCompile is only supported with DeepSpeed")
+            with open(data.get("deepspeed"), "r", encoding="utf-8") as ds_fin:
+                ds_config = json.load(ds_fin)
+                if "compile" not in ds_config:
+                    ds_config["compile"] = {"deepcompile": True}
+                    temp_dir = tempfile.mkdtemp()
+                    with open(
+                        Path(temp_dir) / "deepcompile_ds.json", "w", encoding="utf-8"
+                    ) as ds_fout:
+                        json.dump(ds_config, ds_fout, indent=4)
+                    data["deepspeed"] = str(Path(temp_dir) / "deepcompile_ds.json")
+
+        return data
+
 
 class SystemValidationMixin:
     """Validation methods related to system and hardware configuration."""
