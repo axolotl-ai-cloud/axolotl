@@ -431,9 +431,7 @@ class TrainerBuilderBase(abc.ABC):
 
     def _configure_accelerator_config(self, training_args_kwargs: dict):
         if self.cfg.accelerator_config:
-            training_args_kwargs["accelerator_config"] = (
-                self.cfg.accelerator_config
-            )
+            training_args_kwargs["accelerator_config"] = self.cfg.accelerator_config
 
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
         if self.cfg.gradient_checkpointing:
