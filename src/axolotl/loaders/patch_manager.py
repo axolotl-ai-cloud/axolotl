@@ -150,11 +150,11 @@ class PatchManager:
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
         if self.cfg.fp8:
+            from axolotl.monkeypatch.accelerate_torchao_fsdp_check import (
+                patch_accelerator_constructor_code_for_fp8,
+            )
             from axolotl.monkeypatch.trainer_accelerator_args import (
                 patch_create_accelerate_code_for_fp8,
-            )
-            from axolotl.monkeypatch.accelerate_torchao_fsdp_check import (
-                patch_accelerator_constructor_code_for_fp8
             )
 
             patch_create_accelerate_code_for_fp8()
