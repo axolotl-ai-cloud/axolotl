@@ -314,16 +314,3 @@ def prepare_plugins(cfg):
         plugin_manager = PluginManager.get_instance()
         for plugin_name in cfg["plugins"]:
             plugin_manager.register(plugin_name)
-
-
-# TODO @SalmanMohammadi remove this function in 0.12
-def migrate_fsdp_config(cfg):
-    if cfg.get("fsdp_config"):
-        fsdp_config_keys = cfg.fsdp_config.keys()
-        if "fsdp_version" in fsdp_config_keys:
-            cfg.fsdp_version = cfg.fsdp_config.pop("fsdp_version")
-
-        for key in list(fsdp_config_keys):
-            if key.startswith("fsdp_") and key != "fsdp_version":
-                cfg.fsdp_config[key.replace("fsdp_", "")] = cfg.fsdp_config[key]
-                del cfg.fsdp_config[key]
