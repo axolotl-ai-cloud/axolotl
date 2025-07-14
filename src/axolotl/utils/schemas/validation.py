@@ -865,6 +865,7 @@ class OptimizationValidationMixin:
             and hasattr(self, "save_safetensors")
             and self.save_safetensors
             and self.fsdp_config.get("state_dict_type", "") == "SHARDED_STATE_DICT"
+            and str(getattr(self, "fsdp_version", "1")) != "2"
         ):
             raise ValueError(
                 "FSDP SHARDED_STATE_DICT not compatible with save_safetensors"
