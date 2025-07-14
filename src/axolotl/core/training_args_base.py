@@ -82,14 +82,6 @@ class AxolotlTrainingMixins:
         default=None,
         metadata={"help": "how often to reset for ReLoRA"},
     )
-    relora_warmup_steps: Optional[int] = field(
-        default=None,
-        metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
-    )
-    relora_anneal_steps: Optional[int] = field(
-        default=None,
-        metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
-    )
     relora_prune_ratio: Optional[float] = field(
         default=0.9,
         metadata={"help": "prune ratio for magnitude pruning of the optimizer"},
