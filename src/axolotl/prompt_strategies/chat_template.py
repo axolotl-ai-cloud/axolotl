@@ -388,14 +388,13 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 return [_remove_none_values(elem) for elem in obj]
             return obj
 
+        prompt = _remove_none_values(prompt)
+
         if not self.is_prompt_batched(prompt) or not self.supports_batched:
-            prompt = _remove_none_values(prompt)
             return self._tokenize_single_prompt(prompt)
 
         res = defaultdict(lambda: [])
         feature_names = list(prompt.keys())
-
-        prompt = _remove_none_values(prompt)
 
         # Process each prompt individually
         for row in zip(*prompt.values()):
