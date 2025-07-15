@@ -75,3 +75,5 @@ llmcompressor:
           ]
           start: 0
   save_compressed: true
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

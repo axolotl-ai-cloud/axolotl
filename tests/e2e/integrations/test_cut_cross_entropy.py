@@ -44,6 +44,7 @@ def min_cfg(temp_dir):
         "save_safetensors": True,
         "max_steps": 10,
         "bf16": "auto",
+        "save_first_step": False,
     }
 
 
@@ -98,6 +99,7 @@ class TestCutCrossEntropyIntegration:
                 "save_safetensors": True,
                 "max_steps": 10,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

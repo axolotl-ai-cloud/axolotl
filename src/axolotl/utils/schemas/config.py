@@ -706,6 +706,7 @@ class AxolotlInputConfig(
             "description": "Set to `no` to skip evaluation, `epoch` at end of each epoch, leave empty to infer from `eval_steps`"
         },
     )
+
     save_steps: int | float | None = Field(
         default=None,
         json_schema_extra={
@@ -727,6 +728,13 @@ class AxolotlInputConfig(
     save_total_limit: int | None = Field(
         default=None, json_schema_extra={"description": "Checkpoints saved at a time"}
     )
+    save_first_step: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to checkpoint a model after the first step of training. Defaults to False."
+        },
+    )
+
     logging_steps: int | None = Field(
         default=None, json_schema_extra={"description": "Logging frequency"}
     )
