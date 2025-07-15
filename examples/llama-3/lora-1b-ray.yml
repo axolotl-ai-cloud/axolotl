@@ -64,3 +64,5 @@ special_tokens:
 
 use_ray: true
 ray_num_workers: 4
+
+# save_first_step: True  # uncomment this to validate checkpoint saving works with your config

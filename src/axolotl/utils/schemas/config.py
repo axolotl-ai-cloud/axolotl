@@ -718,9 +718,9 @@ class AxolotlInputConfig(
         default=None, json_schema_extra={"description": "Checkpoints saved at a time"}
     )
     save_first_step: bool | None = Field(
-        default=True,
+        default=None,
         json_schema_extra={
-            "description": "Whether to checkpoint a model after the first step of training. Default to True."
+            "description": "Whether to checkpoint a model after the first step of training. Defaults to False."
         },
     )
 

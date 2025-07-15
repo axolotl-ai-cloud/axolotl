@@ -60,3 +60,5 @@ fsdp_config:
   fsdp_sharding_strategy: FULL_SHARD
 special_tokens:
   pad_token: <|finetune_right_pad_id|>
+
+# save_first_step: True  # uncomment this to validate checkpoint saving works with your config

@@ -79,3 +79,5 @@ fsdp_config:
   fsdp_transformer_layer_cls_to_wrap: DeepseekV2DecoderLayer
   fsdp_state_dict_type: FULL_STATE_DICT
   fsdp_sharding_strategy: FULL_SHARD
+
+# save_first_step: True  # uncomment this to validate checkpoint saving works with your config

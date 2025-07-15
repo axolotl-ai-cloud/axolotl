@@ -60,3 +60,5 @@ saves_per_epoch: 1
 weight_decay: 0.0
 special_tokens:
   pad_token: "<|end_of_text|>"
+
+# save_first_step: True  # uncomment this to validate checkpoint saving works with your config

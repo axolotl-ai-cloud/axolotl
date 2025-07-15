@@ -80,3 +80,5 @@ weight_decay: 0.0
 special_tokens:
   bos_token: "<|im_start|>"
   eos_token: "<|im_end|>"
+
+# save_first_step: True  # uncomment this to validate checkpoint saving works with your config

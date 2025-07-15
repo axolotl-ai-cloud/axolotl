@@ -66,3 +66,5 @@ fsdp_config:
   fsdp_state_dict_type: FULL_STATE_DICT
   fsdp_sharding_strategy: FULL_SHARD
 special_tokens:
+
+# save_first_step: True  # uncomment this to validate checkpoint saving works with your config

@@ -26,3 +26,5 @@ timeout: 86400
 # Preprocess specific configurations
 memory_preprocess: 32
 timeout_preprocess: 14400
+
+# save_first_step: True  # uncomment this to validate checkpoint saving works with your config

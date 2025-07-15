@@ -59,3 +59,5 @@ warmup_ratio: 0.2
 debug: true
 weight_decay: 0.1
 resize_token_embeddings_to_32x: true
+
+# save_first_step: True  # uncomment this to validate checkpoint saving works with your config
