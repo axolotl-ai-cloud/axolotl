@@ -1,8 +1,11 @@
 """Module with validation methods for config pydantic model."""
 
-# pylint: disable=too-many-lines,too-many-boolean-expressions
+# pylint: disable=too-many-boolean-expressions
 
+import json
 import logging
+import tempfile
+from pathlib import Path
 
 from pydantic import (
     field_validator,
@@ -11,6 +14,8 @@ from pydantic import (
 from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
+
+# pylint: disable=too-many-lines
 
 LOG = logging.getLogger(__name__)
 
@@ -872,6 +877,59 @@ class OptimizationValidationMixin:
             )
         return self
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_tensor_parallel_size_update_ds_json(cls, data):
+        tensor_parallel_size = data.get("tensor_parallel_size")
+        if tensor_parallel_size is not None and tensor_parallel_size > 1:
+            if not data.get("deepspeed"):
+                raise ValueError(
+                    "Tensor parallelism (TP) is only supported with DeepSpeed"
+                )
+            with open(data.get("deepspeed"), "r", encoding="utf-8") as ds_fin:
+                ds_config = json.load(ds_fin)
+                should_save = False
+                if "tensor_parallel" not in ds_config:
+                    ds_config["tensor_parallel"] = {"autotp_size": tensor_parallel_size}
+                    should_save = True
+                if (
+                    "gather_16bit_weights_on_model_save"
+                    not in ds_config["zero_optimization"]
+                ):
+                    ds_config["zero_optimization"][
+                        "gather_16bit_weights_on_model_save"
+                    ] = True
+                    should_save = True
+                if should_save:
+                    temp_dir = tempfile.mkdtemp()
+                    with open(
+                        Path(temp_dir) / "autotp_ds.json", "w", encoding="utf-8"
+                    ) as ds_fout:
+                        json.dump(ds_config, ds_fout, indent=4)
+                    data["deepspeed"] = str(Path(temp_dir) / "autotp_ds.json")
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_deepcompile(cls, data):
+        deepcompile = data.get("deepcompile")
+        if deepcompile:
+            if not data.get("deepspeed"):
+                raise ValueError("DeepCompile is only supported with DeepSpeed")
+            with open(data.get("deepspeed"), "r", encoding="utf-8") as ds_fin:
+                ds_config = json.load(ds_fin)
+                if "compile" not in ds_config:
+                    ds_config["compile"] = {"deepcompile": True}
+                    temp_dir = tempfile.mkdtemp()
+                    with open(
+                        Path(temp_dir) / "deepcompile_ds.json", "w", encoding="utf-8"
+                    ) as ds_fout:
+                        json.dump(ds_config, ds_fout, indent=4)
+                    data["deepspeed"] = str(Path(temp_dir) / "deepcompile_ds.json")
+
+        return data
+
 
 class SystemValidationMixin:
     """Validation methods related to system and hardware configuration."""
@@ -1124,6 +1182,12 @@ class ComplexValidationMixin:
                 raise ValueError(
                     "`early_stopping_patience` requires that eval_steps should evenly divide save_steps."
                 )
+        return self
+
+    @model_validator(mode="after")
+    def check_tensor_parallel_size(self):
+        if not self.tensor_parallel_size:
+            self.tensor_parallel_size = 1
         return self
 
     @model_validator(mode="after")

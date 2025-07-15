@@ -443,6 +443,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 )
                 * cfg.num_epochs
                 * cfg.sequence_parallel_degree
+                * cfg.tensor_parallel_size
             )
             LOG.debug(
                 f"total_num_tokens: {cfg.total_num_tokens:_}, total_num_steps: {total_num_steps:_}"
@@ -481,7 +482,10 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             # on the agreed on value for sample_packing_eff_est
             total_num_steps = int(
                 math.floor(
-                    data_loader_len * cfg.num_epochs * cfg.sequence_parallel_degree
+                    data_loader_len
+                    * cfg.num_epochs
+                    * cfg.sequence_parallel_degree
+                    * cfg.tensor_parallel_size
                 )
             )
             if cfg.dataloader_drop_last:
@@ -508,6 +512,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 len(train_dataset)
                 * cfg.num_epochs
                 * cfg.sequence_parallel_degree
+                * cfg.tensor_parallel_size
                 / cfg.batch_size
             )
         )
