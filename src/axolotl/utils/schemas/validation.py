@@ -1,5 +1,7 @@
 """Module with validation methods for config pydantic model."""
 
+# pylint: disable=too-many-boolean-expressions
+
 import json
 import logging
 import tempfile
