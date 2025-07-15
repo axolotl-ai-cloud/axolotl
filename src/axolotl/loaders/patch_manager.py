@@ -7,7 +7,6 @@ import importlib.util
 from functools import cached_property
 
 import addict
-import torch
 import transformers
 from transformers import PretrainedConfig, PreTrainedModel
 
@@ -168,28 +167,19 @@ class PatchManager:
 
     def _apply_gradient_checkpointing_patches(self):
         """Apply patches for gradient checkpointing."""
-        if self.cfg.gradient_checkpointing in ["unsloth", "offload"]:
+        if (
+            self.cfg.gradient_checkpointing
+            and self.cfg.activation_offloading == "legacy"
+        ):
             from axolotl.monkeypatch.gradient_checkpointing import (
-                CheckpointFunctionWithCPUOffload,
                 hf_grad_checkpoint_offload_wrapper,
             )
 
-            if (
-                self.cfg.gradient_checkpointing_kwargs
-                and "use_reentrant" in self.cfg.gradient_checkpointing_kwargs
-                and self.cfg.gradient_checkpointing_kwargs["use_reentrant"] is False
-            ):
-                transformers.modeling_utils.checkpoint = (
-                    hf_grad_checkpoint_offload_wrapper
-                )
-            else:
-                transformers.modeling_utils.checkpoint.CheckpointFunction = (
-                    CheckpointFunctionWithCPUOffload
-                )
-                torch.utils.checkpoint.CheckpointFunction = (
-                    CheckpointFunctionWithCPUOffload
-                )
-        if self.cfg.gradient_checkpointing == "offload_disk":
+            transformers.modeling_utils.checkpoint = hf_grad_checkpoint_offload_wrapper
+        elif (
+            self.cfg.gradient_checkpointing
+            and self.cfg.activation_offloading == "offload_disk"
+        ):
             from axolotl.monkeypatch.gradient_checkpointing import (
                 hf_grad_checkpoint_disk_offload_wrapper,
             )

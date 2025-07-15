@@ -443,6 +443,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 )
                 * cfg.num_epochs
                 * cfg.sequence_parallel_degree
+                * cfg.tensor_parallel_size
             )
             LOG.debug(
                 f"total_num_tokens: {cfg.total_num_tokens:_}, total_num_steps: {total_num_steps:_}"
@@ -481,7 +482,10 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             # on the agreed on value for sample_packing_eff_est
             total_num_steps = int(
                 math.floor(
-                    data_loader_len * cfg.num_epochs * cfg.sequence_parallel_degree
+                    data_loader_len
+                    * cfg.num_epochs
+                    * cfg.sequence_parallel_degree
+                    * cfg.tensor_parallel_size
                 )
             )
             if cfg.dataloader_drop_last:
@@ -508,6 +512,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 len(train_dataset)
                 * cfg.num_epochs
                 * cfg.sequence_parallel_degree
+                * cfg.tensor_parallel_size
                 / cfg.batch_size
             )
         )
@@ -546,7 +551,10 @@ def setup_deepspeed_env(cfg, stage=None):
     # NOTE(djsaunde): The distribued state cannot be initialized prior to the
     # ACCELERATE_USE_DEEPSPEED assignment, but it must be initialized some time prior
     # to model load.
-    if int(os.environ.get("WORLD_SIZE", "1")) == 1:
+    if (
+        int(os.environ.get("WORLD_SIZE", "1")) == 1
+        and os.environ.get("AXOLOTL_IS_PREPROCESS", "0") != "1"
+    ):
         os.environ["WORLD_SIZE"] = "1"  # force it in case not set
         os.environ["LOCAL_RANK"] = "0"  # force it in case not set
         os.environ["RANK"] = os.environ.get("LOCAL_RANK", "0")

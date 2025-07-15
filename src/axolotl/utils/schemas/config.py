@@ -322,7 +322,12 @@ class AxolotlInputConfig(
         },
     )
 
-    gc_steps: int | None = None
+    gc_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Run garbage collection every `gc_steps` steps. -1 will run on epoch end and before evaluations. Default is 0 (disabled)."
+        },
+    )
 
     bf16: Literal["auto"] | bool | None = Field(
         default="auto",
@@ -360,6 +365,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Additional kwargs to pass to the trainer for gradient checkpointing"
+        },
+    )
+    activation_offloading: Literal["legacy", "disk"] | bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Whether to offload activations. Available options are: true, false, 'legacy', 'disk'."
         },
     )
 
@@ -575,6 +586,12 @@ class AxolotlInputConfig(
             "description": "Deepspeed config path. e.g., deepspeed_configs/zero3.json"
         },
     )
+    deepcompile: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use deepcompile for faster training with deepspeed"
+        },
+    )
     fsdp: list[str] | None = Field(
         default=None,
         json_schema_extra={"description": "FSDP configuration"},
@@ -620,7 +637,12 @@ class AxolotlInputConfig(
             "description": "One of 'varlen_llama3', 'batch_ring', 'batch_zigzag', 'batch_stripe'. Defaults to 'varlen_llama3' in the sample packing case, and 'batch_ring' in the non-sample packing case."
         },
     )
-
+    tensor_parallel_size: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of tensor parallel processes in TP group. Only supported with DeepSpeed AutoTP."
+        },
+    )
     special_tokens: SpecialTokensConfig | None = Field(
         default=None,
         json_schema_extra={
@@ -730,6 +752,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Enable the pytorch profiler to capture the first N steps of training to the output_dir. see https://pytorch.org/blog/understanding-gpu-memory-1/ for more information. Snapshots can be visualized @ https://pytorch.org/memory_viz"
+        },
+    )
+    profiler_steps_start: int | None = Field(
+        default=0,
+        json_schema_extra={
+            "description": "Which step to start the profiler at. Useful for only capturing a few steps mid-run."
         },
     )
     include_tokens_per_second: bool | None = Field(

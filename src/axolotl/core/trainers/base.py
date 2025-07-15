@@ -25,6 +25,7 @@ from trl.trainer.utils import pad_to_length
 from typing_extensions import override
 
 from axolotl.core.trainers.mixins import (
+    ActivationOffloadingMixin,
     CheckpointSaveMixin,
     OptimizerMixin,
     PackingMixin,
@@ -48,6 +49,7 @@ class AxolotlTrainer(
     OptimizerMixin,
     RngLoaderMixin,
     CheckpointSaveMixin,
+    ActivationOffloadingMixin,
     Trainer,
 ):
     """Extend the base Trainer for axolotl helpers"""
@@ -74,18 +76,6 @@ class AxolotlTrainer(
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
-
-    def _wrap_model(self, model, training=True, dataloader=None):
-        if self.args.torch_compile:
-            torch._dynamo.config.accumulated_cache_size_limit = (  # pylint: disable=protected-access
-                256
-            )
-            model = torch.compile(
-                model,
-                backend=self.args.torch_compile_backend,
-                mode=self.args.torch_compile_mode,
-            )
-        return super()._wrap_model(model, training=training, dataloader=dataloader)
 
     def _create_multipack_sampler(
         self, base_sampler: Sampler, dataset: Dataset

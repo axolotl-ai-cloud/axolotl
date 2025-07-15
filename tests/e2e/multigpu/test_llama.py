@@ -391,7 +391,10 @@ class TestMultiGPULlama:
 
     @pytest.mark.parametrize(
         "fsdp_state_dict_type",
-        ["FULL_STATE_DICT", "SHARDED_STATE_DICT"],
+        [
+            "FULL_STATE_DICT",
+            # "SHARDED_STATE_DICT",  # not supported since intermediate checkpoints fail with fsdp1
+        ],
     )
     def test_fsdp_packed(self, temp_dir, fsdp_state_dict_type):
         # pylint: disable=duplicate-code
@@ -413,7 +416,8 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 3,
+                "save_steps": 2,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 2,
                 # "gradient_checkpointing": True,
@@ -597,7 +601,7 @@ class TestMultiGPULlama:
                     "fsdp_use_orig_params": False,
                     "fsdp_cpu_ram_efficient_loading": True,
                     "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
-                    "fsdp_state_dict_type": "SHARDED_STATE_DICT",
+                    "fsdp_state_dict_type": "FULL_STATE_DICT",
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
                 "use_tensorboard": True,
