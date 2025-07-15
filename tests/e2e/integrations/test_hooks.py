@@ -153,7 +153,6 @@ class TestPluginHooks:
                 "max_steps": 5,
                 "flash_attention": True,
                 "bf16": "auto",
-                "save_first_step": False,
             }
         )
 

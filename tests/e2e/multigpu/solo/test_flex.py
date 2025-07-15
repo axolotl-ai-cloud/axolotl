@@ -61,7 +61,6 @@ class TestPackedFlex:
                 "max_steps": 2,
                 "use_tensorboard": True,
                 "save_strategy": "no",
-                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():

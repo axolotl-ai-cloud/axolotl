@@ -49,7 +49,6 @@ class TestLoraLlama(unittest.TestCase):
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
-                "save_first_step": False,
             }
         )
 

@@ -50,5 +50,3 @@ weight_decay: 0.05
 
 special_tokens:
   pad_token: <custom_token_7>
-
-# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

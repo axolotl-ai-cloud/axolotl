@@ -54,7 +54,6 @@ class TestPhiMultipack(unittest.TestCase):
                 "eval_steps": 3,
                 "save_steps": 4,
                 "bf16": "auto",
-                "save_first_step": False,
             }
         )
 
@@ -106,7 +105,6 @@ class TestPhiMultipack(unittest.TestCase):
                 "eval_steps": 3,
                 "save_steps": 4,
                 "bf16": "auto",
-                "save_first_step": False,
             }
         )
 

@@ -65,7 +65,6 @@ class TestReLoraLlama(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "use_tensorboard": True,
-                "save_first_step": False,
             }
         )
 

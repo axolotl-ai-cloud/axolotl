@@ -55,5 +55,3 @@ saves_per_epoch: 1
 deepspeed: #deepspeed_configs/zero2.json # multi-gpu only
 weight_decay: 0.1
 special_tokens:
-
-# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

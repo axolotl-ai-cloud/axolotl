@@ -67,7 +67,6 @@ class TestDeepseekV3:
                 "max_steps": 5,
                 "save_safetensors": True,
                 "bf16": True,
-                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
@@ -117,7 +116,6 @@ class TestDeepseekV3:
                 "max_steps": 5,
                 "save_safetensors": True,
                 "bf16": True,
-                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

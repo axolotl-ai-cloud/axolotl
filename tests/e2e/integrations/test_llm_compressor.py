@@ -81,7 +81,6 @@ class TestLLMCompressorIntegration:
                     },
                     "save_compressed": save_compressed,
                 },
-                "save_first_step": False,
             }
         )
 

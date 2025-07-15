@@ -49,7 +49,6 @@ class TestProcessRewardSmolLM2(unittest.TestCase):
                 "use_tensorboard": True,
                 "special_tokens": {"pad_token": "<|endoftext|>"},
                 "seed": 42,
-                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

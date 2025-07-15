@@ -60,7 +60,6 @@ class TestFalcon(unittest.TestCase):
                 "save_steps": 10,
                 "eval_steps": 10,
                 "bf16": "auto",
-                "save_first_step": False,
             }
         )
 
@@ -116,7 +115,6 @@ class TestFalcon(unittest.TestCase):
                 "save_steps": 10,
                 "eval_steps": 10,
                 "bf16": "auto",
-                "save_first_step": False,
             }
         )
 
@@ -158,7 +156,6 @@ class TestFalcon(unittest.TestCase):
                 "save_steps": 10,
                 "eval_steps": 10,
                 "bf16": "auto",
-                "save_first_step": False,
             }
         )
 

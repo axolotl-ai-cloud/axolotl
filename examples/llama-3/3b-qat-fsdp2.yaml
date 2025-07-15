@@ -77,5 +77,3 @@ fsdp_config:
 
 special_tokens:
   pad_token: <|end_of_text|>
-
-# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

@@ -50,7 +50,6 @@ class LigerIntegrationTestCase:
                 "save_safetensors": True,
                 "bf16": "auto",
                 "max_steps": 5,
-                "save_first_step": False,
             }
         )
         # pylint: disable=duplicate-code
@@ -97,7 +96,6 @@ class LigerIntegrationTestCase:
                 "save_safetensors": True,
                 "bf16": "auto",
                 "max_steps": 5,
-                "save_first_step": False,
             }
         )
         # pylint: disable=duplicate-code

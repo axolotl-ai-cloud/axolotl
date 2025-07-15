@@ -56,7 +56,6 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
-                "save_first_step": False,
             }
         )
 
@@ -106,7 +105,6 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
-                "save_first_step": False,
             }
         )
 
@@ -156,7 +154,6 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
-                "save_first_step": False,
             }
         )
 
@@ -206,7 +203,6 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
-                "save_first_step": False,
             }
         )
 
@@ -255,7 +251,6 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
-                "save_first_step": False,
             }
         )
 
@@ -307,7 +302,6 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
-                "save_first_step": False,
             }
         )
 
@@ -376,7 +370,6 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
-                "save_first_step": False,
             }
         )
 

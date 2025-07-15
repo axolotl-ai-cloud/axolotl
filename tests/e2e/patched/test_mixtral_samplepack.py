@@ -52,7 +52,6 @@ class TestMixtral(unittest.TestCase):
                 "save_steps": 3,
                 "eval_steps": 4,
                 "bf16": "auto",
-                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
@@ -91,7 +90,6 @@ class TestMixtral(unittest.TestCase):
                 "save_steps": 3,
                 "eval_steps": 4,
                 "bf16": "auto",
-                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

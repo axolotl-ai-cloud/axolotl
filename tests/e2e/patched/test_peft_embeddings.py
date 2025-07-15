@@ -49,7 +49,6 @@ class TestLlamaPeftEmbeddings:
                 "bf16": "auto",
                 "save_safetensors": True,
                 "embeddings_skip_upcast": True,
-                "save_first_step": False,
             }
         )
 

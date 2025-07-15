@@ -60,5 +60,3 @@ special_tokens:
   bos_token: "<s>"
   eos_token: "</s>"
   unk_token: "<unk>"
-
-# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

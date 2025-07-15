@@ -49,7 +49,6 @@ class TestPackedFlex(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
                 "use_tensorboard": True,
-                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():

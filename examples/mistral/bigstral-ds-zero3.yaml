@@ -53,5 +53,3 @@ special_tokens:
   eos_token: "<|im_end|>"
 tokens:
   - "<|im_start|>"
-
-# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

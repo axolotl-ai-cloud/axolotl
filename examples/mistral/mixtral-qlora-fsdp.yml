@@ -77,5 +77,3 @@ fsdp_config:
   fsdp_forward_prefetch: false
   fsdp_backward_prefetch: BACKWARD_PRE
 special_tokens:
-
-# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

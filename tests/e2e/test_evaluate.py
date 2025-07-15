@@ -36,7 +36,6 @@ class TestE2eEvaluate:
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "max_steps": 20,
-                "save_first_step": False,
             }
         )
 

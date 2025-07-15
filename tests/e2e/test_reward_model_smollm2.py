@@ -58,7 +58,6 @@ class TestRewardModelLoraSmolLM2(unittest.TestCase):
                 "gradient_checkpointing": True,
                 "warmup_ratio": 0.1,
                 "use_tensorboard": True,
-                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

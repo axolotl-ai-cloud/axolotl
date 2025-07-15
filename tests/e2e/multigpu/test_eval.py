@@ -67,7 +67,6 @@ class TestMultiGPUEval:
                 "logging_steps": 1,
                 "weight_decay": 0.0,
                 "use_tensorboard": True,
-                "save_first_step": False,
             }
         )
 
@@ -139,7 +138,6 @@ class TestMultiGPUEval:
                 "logging_steps": 1,
                 "weight_decay": 0.0,
                 "use_tensorboard": True,
-                "save_first_step": False,
             }
         )
 
