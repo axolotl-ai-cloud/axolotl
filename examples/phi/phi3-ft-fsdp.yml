@@ -72,4 +72,4 @@ resize_token_embeddings_to_32x: true
 special_tokens:
   pad_token: "<|endoftext|>"
 
-# save_first_step: True  # uncomment this to validate checkpoint saving works with your config
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

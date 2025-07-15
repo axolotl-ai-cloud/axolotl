@@ -75,4 +75,4 @@ fsdp_config:
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
 special_tokens:
 
-# save_first_step: True  # uncomment this to validate checkpoint saving works with your config
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

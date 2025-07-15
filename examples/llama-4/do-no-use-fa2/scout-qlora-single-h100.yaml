@@ -84,4 +84,4 @@ special_tokens:
   pad_token: <|finetune_right_pad_id|>
   eos_token: <|eot|>
 
-# save_first_step: True  # uncomment this to validate checkpoint saving works with your config
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

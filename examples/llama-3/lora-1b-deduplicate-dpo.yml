@@ -84,4 +84,4 @@ evals_per_epoch: 4
 saves_per_epoch: 1
 weight_decay: 0.0
 
-# save_first_step: True  # uncomment this to validate checkpoint saving works with your config
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

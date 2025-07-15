@@ -71,4 +71,4 @@ fsdp_config:
   fsdp_transformer_layer_cls_to_wrap: MistralDecoderLayer
   fsdp_activation_checkpointing: true
 
-# save_first_step: True  # uncomment this to validate checkpoint saving works with your config
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

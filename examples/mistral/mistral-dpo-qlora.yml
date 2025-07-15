@@ -81,4 +81,4 @@ special_tokens:
   bos_token: "<|im_start|>"
   eos_token: "<|im_end|>"
 
-# save_first_step: True  # uncomment this to validate checkpoint saving works with your config
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config
