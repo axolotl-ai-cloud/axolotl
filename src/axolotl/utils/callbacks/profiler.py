@@ -19,9 +19,27 @@ class PytorchProfilerCallback(TrainerCallback):
     PyTorch Profiler callback to create snapshots of GPU memory usage at specified steps.
     """
 
-    def __init__(self, steps_to_profile: int = 5):
-        self.steps_to_profile = steps_to_profile
-        if self.steps_to_profile:
+    def __init__(self, steps_to_profile: int = 5, profiler_steps_start: int = 0):
+        # steps are 0 indexed, so to start at 0-th step, we start at beginning of first step,
+        # and finish at end of last step, so 5 steps_to_profile is steps [0, 1, 2, 3, 4]
+        self.profiler_steps_end = profiler_steps_start + steps_to_profile - 1
+        if profiler_steps_start == 0:
+            # start recording memory allocations before everything is allocated, because if we start
+            # at the beginning of step 0, we won't have any memory allocations in the traces
+            torch.cuda.memory._record_memory_history(  # pylint: disable=protected-access
+                enabled="all"
+            )
+            profiler_steps_start = -1
+        self.profiler_steps_start = profiler_steps_start
+
+    def on_step_begin(  # pylint: disable=unused-argument
+        self,
+        args: TrainingArguments,  # pylint: disable=unused-argument
+        state: TrainerState,
+        control: TrainerControl,  # pylint: disable=unused-argument
+        **kwargs,  # pylint: disable=unused-argument
+    ):
+        if state.global_step == self.profiler_steps_start:
             torch.cuda.memory._record_memory_history(  # pylint: disable=protected-access
                 enabled="all"
             )
@@ -33,7 +51,28 @@ class PytorchProfilerCallback(TrainerCallback):
         control: TrainerControl,  # pylint: disable=unused-argument
         **kwargs,  # pylint: disable=unused-argument
     ):
-        if state.global_step == self.steps_to_profile:
+        if state.global_step == self.profiler_steps_end:
+            snapshot = torch.cuda.memory._snapshot()  # pylint: disable=protected-access
+            with open(Path(args.output_dir) / "snapshot.pickle", "wb") as fout:
+                dump(snapshot, fout)
+
+            # tell CUDA to stop recording memory allocations now
+            torch.cuda.memory._record_memory_history(  # pylint: disable=protected-access
+                enabled=None
+            )
+
+    def on_train_end(  # pylint: disable=unused-argument
+        self,
+        args: TrainingArguments,  # pylint: disable=unused-argument
+        state: TrainerState,
+        control: TrainerControl,  # pylint: disable=unused-argument
+        **kwargs,  # pylint: disable=unused-argument
+    ):
+        # make sure to record if we happen to have more steps than steps to profile
+        if (
+            state.global_step >= self.profiler_steps_start
+            and state.global_step < self.profiler_steps_end
+        ):
             snapshot = torch.cuda.memory._snapshot()  # pylint: disable=protected-access
             with open(Path(args.output_dir) / "snapshot.pickle", "wb") as fout:
                 dump(snapshot, fout)
