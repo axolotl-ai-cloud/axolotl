@@ -426,7 +426,7 @@ def save_preprocessed_dataset(
             str(prepared_ds_path),
             num_proc=num_workers,
             max_shard_size=None,
-            num_shards=cfg.num_dataset_shards_to_save, 
+            num_shards=cfg.num_dataset_shards_to_save,
         )
     else:
         os.makedirs(prepared_ds_path, exist_ok=True)
@@ -434,7 +434,7 @@ def save_preprocessed_dataset(
             str(prepared_ds_path),
             num_proc=num_workers,
             max_shard_size=None,
-            num_shards=cfg.num_dataset_shards_to_save, 
+            num_shards=cfg.num_dataset_shards_to_save,
         )
     if cfg.push_dataset_to_hub:
         LOG.info(

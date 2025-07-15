@@ -195,7 +195,9 @@ class AxolotlInputConfig(
     skip_prepare_dataset: bool | None = False
     num_dataset_shards_to_save: int | None = Field(
         default=None,
-        json_schema_extra={"description": "Number of shards to save the prepared dataset"}
+        json_schema_extra={
+            "description": "Number of shards to save the prepared dataset"
+        },
     )
 
     pretraining_dataset: (
