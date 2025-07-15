@@ -841,21 +841,35 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
 class GCCallback(TrainerCallback):
     """Callback to garbage collect torch cache"""
 
-    def __init__(self, gc_steps=None):
-        self.gc_steps = gc_steps
+    def __init__(self, gc_steps: int | None = -1):
+        self.gc_steps: int = gc_steps or -1
+        self.next_gc_on_begin_step: int = -1
+
+    def _gc(self):
+        torch.cuda.empty_cache()
+        gc.collect()
+
+    def on_step_begin(
+        self, args, state, control, **kwargs  # pylint: disable=unused-argument
+    ):
+        if self.next_gc_on_begin_step == state.global_step:
+            self._gc()
 
     def on_step_end(
         self, args, state, control, **kwargs  # pylint: disable=unused-argument
     ):
-        if self.gc_steps > 0 and state.global_step % self.gc_steps == 0:
-            torch.cuda.empty_cache()
-            gc.collect()
+        if control.should_evaluate:
+            # automatically GC before evals so the eval memory spike from the CEL doesn't OOM the trainer
+            self._gc()
+            # also GC on the start of the next step after the eval
+            self.next_gc_on_begin_step = state.global_step + 1
+        elif self.gc_steps > 0 and state.global_step % self.gc_steps == 0:
+            self._gc()
 
     def on_epoch_end(
         self, args, state, control, **kwargs  # pylint: disable=unused-argument
     ):
-        torch.cuda.empty_cache()
-        gc.collect()
+        self._gc()
 
 
 def colab_inference_post_train_callback(trainer: Trainer):

@@ -1018,6 +1018,28 @@ class ModelCompatibilityValidationMixin:
         return self
 
     @model_validator(mode="after")
+    def check_gradient_checkpointing_w_offload(self):
+        if self.gradient_checkpointing == "offload":
+            LOG.warning(
+                "`offload` is deprecated for gradient_checkpointing, use `activation_offloading: true`"
+            )
+            self.gradient_checkpointing = True
+            self.activation_offloading = True
+        if self.gradient_checkpointing == "offload_disk":
+            LOG.warning(
+                "`offload_disk` is deprecated for gradient_checkpointing, use `activation_offloading: disk`"
+            )
+            self.gradient_checkpointing = True
+            self.activation_offloading = "disk"
+        return self
+
+    @model_validator(mode="after")
+    def check_activation_offloading_wo_gc(self):
+        if self.activation_offloading and not self.gradient_checkpointing:
+            raise ValueError("activation_offloading requires gradient_checkpointing")
+        return self
+
+    @model_validator(mode="after")
     def check_better_transformers(self):
         if self.flash_optimum is True:
             if self.adapter:
