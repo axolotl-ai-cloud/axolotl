@@ -6,6 +6,8 @@ import os
 import torch
 import torch.distributed as dist
 
+from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
+
 
 def patch_tiled_mlp(model_type, use_original_mlp=False, cfg_num_shards=None):
     from deepspeed.runtime.sequence_parallel.ulysses_sp import TiledMLP
@@ -13,9 +15,7 @@ def patch_tiled_mlp(model_type, use_original_mlp=False, cfg_num_shards=None):
     try:
         # Dynamically import the module and MLP class
         module_path = f"transformers.models.{model_type}.modeling_{model_type}"
-        model_cls_prefix = "".join(
-            [part.capitalize() for part in model_type.split("_")]
-        )
+        model_cls_prefix, _ = get_causal_lm_model_cls_prefix(model_type)
         module = __import__(module_path, fromlist=[f"{model_cls_prefix}MLP"])
         mlp_cls = getattr(module, f"{model_cls_prefix}MLP")
 

@@ -22,6 +22,8 @@ except ImportError:
         TransformersKwargs,
     )
 
+from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
+
 
 def kldiv_forward_llama_like(
     self,
@@ -97,7 +99,7 @@ def kldiv_forward_llama_like(
 def apply_kernel(model_type):
     # Dynamically import the module and attention class
     module_path = f"transformers.models.{model_type}.modeling_{model_type}"
-    model_cls_prefix = "".join([part.capitalize() for part in model_type.split("_")])
+    model_cls_prefix, _ = get_causal_lm_model_cls_prefix(model_type)
     module = __import__(module_path, fromlist=[f"{model_cls_prefix}ForCausalLM"])
     model_cls = getattr(module, f"{model_cls_prefix}ForCausalLM")
     model_cls.forward = kldiv_forward_llama_like

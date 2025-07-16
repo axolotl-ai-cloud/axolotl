@@ -12,6 +12,8 @@ from peft.utils import ModulesToSaveWrapper
 from torch.distributed.fsdp import FullyShardedDataParallel
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
+from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
+
 
 def lce_forward(
     self,
@@ -174,9 +176,7 @@ def patch_lce_forward(
     try:
         # Dynamically import the module and MLP class
         module_path = f"transformers.models.{model_type}.modeling_{model_type}"
-        model_cls_prefix = "".join(
-            [part.capitalize() for part in model_type.split("_")]
-        )
+        model_cls_prefix, _ = get_causal_lm_model_cls_prefix(model_type)
         module = __import__(module_path, fromlist=[f"{model_cls_prefix}ForCausalLM"])
         model_cls = getattr(module, f"{model_cls_prefix}ForCausalLM")
 

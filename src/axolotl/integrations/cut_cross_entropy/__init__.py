@@ -27,6 +27,7 @@ from axolotl.integrations.base import BasePlugin
 from axolotl.utils import get_pytorch_version
 from axolotl.utils.logging import get_logger
 
+from ...utils.callbacks.models import get_causal_lm_model_cls_prefix
 from .args import CutCrossEntropyArgs  # pylint: disable=unused-import. # noqa: F401
 
 LOG = get_logger(__name__)
@@ -114,9 +115,7 @@ class CutCrossEntropyPlugin(BasePlugin):
             try:
                 # Dynamically import the module and CausalLM class
                 module_path = f"transformers.models.{model_type}.modeling_{model_type}"
-                model_cls_prefix = "".join(
-                    [part.capitalize() for part in model_type.split("_")]
-                )
+                model_cls_prefix, _ = get_causal_lm_model_cls_prefix(model_type)
                 module = __import__(
                     module_path, fromlist=[f"{model_cls_prefix}ForCausalLM"]
                 )
