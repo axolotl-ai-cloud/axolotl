@@ -18,8 +18,8 @@ Module for the Plugin for LIGER integraton with Axolotl.
 Liger Kernel is the collection of Triton-native kernels for LLM Training.
 It is designed to be performant, correct, and light-weight.
 """
-from .args import LigerArgs  # pylint: disable=unused-import. # noqa: F401
-from .plugin import LigerPlugin  # pylint: disable=unused-import. # noqa: F401
+from .args import LigerArgs
+from .plugin import LigerPlugin
 
 __all__ = [
     "LigerArgs",
