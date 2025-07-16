@@ -4,6 +4,7 @@ Trainer mixin for activation checkpointing w offloading
 
 import contextlib
 
+from peft import PeftModel
 from torch import nn
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     apply_activation_checkpointing,
@@ -13,6 +14,7 @@ from transformers import GradientCheckpointingLayer, Trainer
 from trl.models.activation_offloading import (
     NoOpManager,
     OffloadActivations,
+    get_act_offloading_ctx_manager,
 )
 
 from axolotl.utils.logging import get_logger
@@ -28,9 +30,14 @@ class ActivationOffloadingMixin(Trainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.args.activation_offloading:
-            self.activation_offload_context = get_act_offloading_ctx_manager(
-                self.model, use_streams=True
-            )
+            if isinstance(self.model, PeftModel):
+                self.activation_offload_context = get_lora_act_offloading_ctx_manager(
+                    self.model, use_streams=True
+                )
+            else:
+                self.activation_offload_context = get_act_offloading_ctx_manager(
+                    self.model, use_streams=True
+                )
         else:
             self.activation_offload_context = contextlib.nullcontext()
 
@@ -44,7 +51,7 @@ def ac_wrap_hf_model(model: nn.Module, **kwargs):
     apply_activation_checkpointing(model, auto_wrap_policy=auto_wrap_policy, **kwargs)
 
 
-def get_act_offloading_ctx_manager(
+def get_lora_act_offloading_ctx_manager(
     model: nn.Module,
     use_pin_memory: bool = True,
     use_streams: bool = True,
@@ -199,7 +206,7 @@ def get_act_offloading_ctx_manager(
             module.register_forward_hook(
                 lambda *args: noop_ctx.__exit__(), always_call=True
             )
-        # disable offloading for any
+        # disable offloading for any submodules to fix LoRA training
         if name.endswith("._checkpoint_wrapped_module"):
             for _, sub_module in module.named_modules():
                 sub_module.register_forward_pre_hook(lambda *args: noop_ctx.__enter__())
