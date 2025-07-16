@@ -136,3 +136,7 @@ description: Frequently asked questions
 >   dynamic: false
 >   mode: max-autotune-no-cudagraphs
 > ```
+
+**Q: `ValueError("Backward pass should have cleared tracker of all tensors")`
+
+> A: This may happen due to edge cases in using the modern OffloadActivations context manager for CUDA streams. If you encounter this error, you may have success using the naive implementation with `offload_activations: legacy` in your YAML.
