@@ -55,6 +55,7 @@ class TestCustomOptimizers(unittest.TestCase):
                 "optimizer": "optimi_adamw",
                 "max_steps": 5,
                 "lr_scheduler": "cosine",
+                "save_first_step": False,
             }
         )
 
@@ -100,6 +101,7 @@ class TestCustomOptimizers(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adopt_adamw",
                 "lr_scheduler": "cosine",
+                "save_first_step": False,
             }
         )
 
@@ -146,6 +148,7 @@ class TestCustomOptimizers(unittest.TestCase):
                 "optimizer": "muon",
                 "lr_scheduler": "cosine",
                 "weight_decay": 0.01,
+                "save_first_step": False,
             }
         )
 
@@ -184,6 +187,7 @@ class TestCustomOptimizers(unittest.TestCase):
                 "lr_scheduler": "constant",
                 "save_safetensors": True,
                 "max_steps": 10,
+                "save_first_step": False,
             }
         )
         # pylint: disable=duplicate-code
@@ -232,6 +236,7 @@ class TestCustomOptimizers(unittest.TestCase):
                 "adam_epsilon2": 1e-16,
                 "max_steps": 5,
                 "lr_scheduler": "cosine",
+                "save_first_step": False,
             }
         )
 

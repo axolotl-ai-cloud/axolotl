@@ -217,6 +217,11 @@ class AxolotlTrainingMixins:
         },
     )
 
+    activation_offloading: bool | None = field(
+        default=None,
+        metadata={"help": "Use activation offloading with CUDA streams for training."},
+    )
+
     # multi-modal section
 
     image_size: int | tuple[int, int] | None = field(

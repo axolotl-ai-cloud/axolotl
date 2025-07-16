@@ -73,9 +73,9 @@ def parse_requirements(extras_require_map):
                 extras_require_map["vllm"] = ["vllm>=0.9.0"]
             elif (major, minor) >= (2, 6):
                 _install_requires.pop(_install_requires.index(xformers_version))
-                _install_requires.append(
-                    "xformers==0.0.29.post2"
-                )  # vllm needs post2 w torch 2.6
+                _install_requires.append("xformers==0.0.29.post3")
+                # since we only support 2.6.0+cu126
+                _dependency_links.append("https://download.pytorch.org/whl/cu126")
                 extras_require_map["vllm"] = ["vllm==0.8.5.post1"]
             elif (major, minor) >= (2, 5):
                 _install_requires.pop(_install_requires.index(xformers_version))
@@ -121,7 +121,7 @@ extras_require = {
         "yunchang==0.6.0",
     ],
     "deepspeed": [
-        "deepspeed==0.17.1",
+        "deepspeed==0.17.2",
         "deepspeed-kernels",
     ],
     "mamba-ssm": [

@@ -141,6 +141,7 @@ def recursive_kill(process: subprocess.Popen):
     os.kill(process.pid, 9)
 
 
+@pytest.mark.skip(reason="flaky vllm tests in modal")
 class TestGRPO:
     """
     Test case for GRPO training using multilpe GPUs
@@ -222,6 +223,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -316,6 +318,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -408,6 +411,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 

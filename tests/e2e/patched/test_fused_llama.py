@@ -53,6 +53,7 @@ class TestFusedLlama(unittest.TestCase):
                 "max_steps": 10,
                 "save_steps": 5,
                 "eval_steps": 5,
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():

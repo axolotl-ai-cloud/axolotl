@@ -6,19 +6,19 @@ triton>=3.0.0
 mamba-ssm==1.2.0.post1
 xformers>=0.0.23.post1
 autoawq==0.2.7.post3
-liger-kernel==0.5.10
+liger-kernel==0.6.0
 # END section
 
 packaging==23.2
 
-huggingface_hub==0.32.2
-peft==0.15.2
-transformers==4.53.1
+huggingface_hub>=0.33.0
+peft==0.16.0
+transformers==4.53.2
 tokenizers>=0.21.1
 accelerate==1.8.1
-datasets==3.6.0
+datasets==4.0.0
 deepspeed>=0.17.0
-trl==0.18.2
+trl==0.19.1
 hf_xet==1.1.2
 
 optimum==1.16.2
@@ -26,7 +26,7 @@ hf_transfer
 sentencepiece
 gradio==5.23.3
 
-modal==0.70.5
+modal==1.0.2
 pydantic==2.10.6
 addict
 fire

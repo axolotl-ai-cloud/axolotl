@@ -61,3 +61,5 @@ flash_attention: true
 warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config
