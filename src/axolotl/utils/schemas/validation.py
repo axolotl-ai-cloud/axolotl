@@ -1074,20 +1074,10 @@ class ModelCompatibilityValidationMixin:
                 "`offload` is deprecated for gradient_checkpointing, use `activation_offloading: true` or `activation_offloading: legacy`"
             )
             self.gradient_checkpointing = True
-            if (
-                False  # pylint: disable=condition-evals-to-constant
-                and self.adapter
-                and "lora" in self.adapter
-            ):
-                LOG.warning(
-                    "offloading with CUDA streams is not supported for LoRA adapters, using the `activation_offloading: legacy` implementation."
-                )
-                self.activation_offloading = "legacy"
-            else:
-                LOG.warning(
-                    "`offload` uses a new stream implementation; to use the previous implementation, use `activation_offloading: legacy`"
-                )
-                self.activation_offloading = True
+            LOG.warning(
+                "`offload` now uses a new stream implementation; to use the previous implementation, use `activation_offloading: legacy`"
+            )
+            self.activation_offloading = True
         if self.gradient_checkpointing == "offload_disk":
             LOG.warning(
                 "`offload_disk` is deprecated for gradient_checkpointing, use `activation_offloading: disk`"
@@ -1096,19 +1086,6 @@ class ModelCompatibilityValidationMixin:
             self.activation_offloading = "disk"
         return self
 
-    # @model_validator(mode="after")
-    # def check_activation_offloading_w_lora(self):
-    #     if (
-    #         self.activation_offloading is True
-    #         and self.adapter
-    #         and "lora" in self.adapter
-    #     ):
-    #         LOG.warning(
-    #             "activation_offloading with CUDA streams is not supported for LoRA adapters. Setting `activation_offloading: legacy`"
-    #         )
-    #         self.activation_offloading = "legacy"
-    #     return self
-    #
     @model_validator(mode="after")
     def check_activation_offloading_wo_gc(self):
         if self.activation_offloading and not self.gradient_checkpointing:
