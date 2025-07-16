@@ -235,7 +235,8 @@ class ModelLoader:
                 resize_kwargs["mean_resizing"] = self.cfg.mean_resizing_embeddings
             self.model.resize_token_embeddings(embeddings_len, **resize_kwargs)
         else:
-            self.model.tie_weights()
+            if hasattr(self.model, "tie_weights"):
+                self.model.tie_weights()
 
     def _adjust_model_config(self):
         if (
