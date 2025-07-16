@@ -163,6 +163,15 @@ class ModelLoader:
         # Build the model
         PLUGIN_MANAGER.pre_model_load(self.cfg)
         skip_move_to_device = self._build_model()
+        
+        # Check if the model is a GraniteConfig object
+        if hasattr(self, 'model') and self.model.__class__.__name__ == "GraniteConfig":
+            LOG.error("The model loaded is a GraniteConfig object, not a proper model.")
+            LOG.error("This is likely because the model type 'GraniteConfig' is not supported.")
+            LOG.error("Please use a different model type or ensure the model is properly configured.")
+            LOG.error("Setting trust_remote_code=True might help if the model requires custom code.")
+            raise ValueError("Model loaded is a GraniteConfig object, not a proper model. Use a supported model type or set trust_remote_code=True.")
+            
         PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
 
         # Post-build model configuration

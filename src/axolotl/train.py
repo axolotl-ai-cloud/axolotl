@@ -80,6 +80,14 @@ def setup_model_and_tokenizer(
 
     model_loader = ModelLoader(cfg, tokenizer, processor=processor)
     model, peft_config = model_loader.load()
+    
+    # Check if model is actually a GraniteConfig object
+    if model.__class__.__name__ == "GraniteConfig":
+        LOG.error("The model loaded is a GraniteConfig object, not a proper model.")
+        LOG.error("This is likely because the model type 'GraniteConfig' is not supported.")
+        LOG.error("Please use a different model type or ensure the model is properly configured.")
+        raise ValueError("Model loaded is a GraniteConfig object, not a proper model. Use a supported model type.")
+        
     if hasattr(model, "generation_config") and model.generation_config is not None:
         model.generation_config.do_sample = True
 
