@@ -26,7 +26,7 @@ hf_transfer
 sentencepiece
 gradio==5.23.3
 
-modal==0.70.5
+modal==1.0.2
 pydantic==2.10.6
 addict
 fire

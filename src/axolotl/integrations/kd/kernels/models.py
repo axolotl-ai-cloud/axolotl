@@ -6,15 +6,23 @@ from typing import Optional, Union, Unpack
 
 import torch
 from transformers import Cache
-from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
 from transformers.modeling_outputs import CausalLMOutputWithPast
-from transformers.utils import LossKwargs
 
+try:
+    from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
+    from transformers.utils import LossKwargs
 
-class KwargsForCausalLM(FlashAttentionKwargs, LossKwargs):
-    """
-    placeholder kwargs for hf model classes
-    """
+    class TransformersKwargs(FlashAttentionKwargs, LossKwargs):
+        """
+        placeholder kwargs for hf model classes
+        """
+
+except ImportError:
+    from transformers.utils.generic import (  # type: ignore[no-redef]
+        TransformersKwargs,
+    )
+
+from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
 
 
 def kldiv_forward_llama_like(
@@ -33,7 +41,7 @@ def kldiv_forward_llama_like(
     output_hidden_states: Optional[bool] = None,
     cache_position: Optional[torch.LongTensor] = None,
     logits_to_keep: Union[int, torch.Tensor] = 0,  # pylint: disable=unused-argument
-    **kwargs: Unpack[KwargsForCausalLM],  # type: ignore[misc]
+    **kwargs: Unpack[TransformersKwargs],  # type: ignore[misc]
 ) -> CausalLMOutputWithPast:
     # pylint: disable=duplicate-code
     output_attentions = (
@@ -91,7 +99,7 @@ def kldiv_forward_llama_like(
 def apply_kernel(model_type):
     # Dynamically import the module and attention class
     module_path = f"transformers.models.{model_type}.modeling_{model_type}"
-    model_cls_prefix = "".join([part.capitalize() for part in model_type.split("_")])
+    model_cls_prefix, _ = get_causal_lm_model_cls_prefix(model_type)
     module = __import__(module_path, fromlist=[f"{model_cls_prefix}ForCausalLM"])
     model_cls = getattr(module, f"{model_cls_prefix}ForCausalLM")
     model_cls.forward = kldiv_forward_llama_like

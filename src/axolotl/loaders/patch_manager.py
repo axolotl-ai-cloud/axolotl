@@ -272,7 +272,11 @@ class PatchManager:
         if self.cfg.tiled_mlp:
             from axolotl.monkeypatch.tiled_mlp import patch_tiled_mlp
 
-            patch_tiled_mlp(model_type, cfg_num_shards=self.cfg.tiled_mlp_num_shards)
+            patch_tiled_mlp(
+                model_type,
+                use_original_mlp=self.cfg.tiled_mlp_use_original_mlp,
+                cfg_num_shards=self.cfg.tiled_mlp_num_shards,
+            )
 
     def _patch_attention(self):
         """Apply attention-specific patches based on model type."""
