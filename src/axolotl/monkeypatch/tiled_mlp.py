@@ -6,6 +6,8 @@ import os
 import torch
 import torch.distributed as dist
 
+from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
+
 
 def patch_tiled_mlp(model_type, use_original_mlp=False, cfg_num_shards=None):
     from deepspeed.runtime.sequence_parallel.ulysses_sp import TiledMLP
@@ -13,9 +15,7 @@ def patch_tiled_mlp(model_type, use_original_mlp=False, cfg_num_shards=None):
     try:
         # Dynamically import the module and MLP class
         module_path = f"transformers.models.{model_type}.modeling_{model_type}"
-        model_cls_prefix = "".join(
-            [part.capitalize() for part in model_type.split("_")]
-        )
+        model_cls_prefix, _ = get_causal_lm_model_cls_prefix(model_type)
         module = __import__(module_path, fromlist=[f"{model_cls_prefix}MLP"])
         mlp_cls = getattr(module, f"{model_cls_prefix}MLP")
 
@@ -45,11 +45,12 @@ def patch_tiled_mlp(model_type, use_original_mlp=False, cfg_num_shards=None):
             else:
                 num_shards = cfg_num_shards
 
-            compute_params = [
-                self.down_proj.weight,
-                self.gate_proj.weight,
-                self.up_proj.weight,
-            ]
+            if not self._compute_params:  # pylint: disable=protected-access
+                self._compute_params = [  # pylint: disable=protected-access
+                    p for p in self.parameters() if p.requires_grad
+                ]
+
+            compute_params = self._compute_params  # pylint: disable=protected-access
 
             down_res = TiledMLP.apply(
                 mlp_forward,
@@ -61,6 +62,7 @@ def patch_tiled_mlp(model_type, use_original_mlp=False, cfg_num_shards=None):
             return down_res
 
         mlp_cls.forward = tiled_mlp_forward
+        mlp_cls._compute_params = []  # pylint: disable=protected-access
     except (ImportError, AttributeError) as e:
         raise RuntimeError(
             f"Could not import MLP class for model_type: {model_type}. "
