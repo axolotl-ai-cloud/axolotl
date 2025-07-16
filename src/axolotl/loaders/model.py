@@ -798,7 +798,7 @@ class ModelLoader:
             if before_kbit_train_or_finetune:
                 if name.endswith(".gate"):
                     module.to(dist_dtype)
-                if self.model_config.model_type == "btlm":
+                if self.model_config.model_type == "btlm" and "lm_head" in name:
                     # don't upcast lm_head for btlm
                     continue
             if any(m in name for m in embedding_modules) and hasattr(module, "weight"):
