@@ -344,6 +344,7 @@ class AxolotlInputConfig(
         default=None, json_schema_extra={"description": "Use CUDA fp16"}
     )
     fp8: bool | None = None
+    fp8_enable_fsdp_float8_all_gather: bool | None = None
     bfloat16: bool | None = Field(
         default=None,
         json_schema_extra={
