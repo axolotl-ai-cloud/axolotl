@@ -740,6 +740,10 @@ class ModelLoader:
             and self.model_type != "AutoModelForCausalLM"
             and not self.cfg.trust_remote_code
         ):
+            if self.model_type == "GraniteSpeechConfig" and not hasattr(self.model_config, 'vocab_size'):
+                # Set vocab_size from tokenizer or use a reasonable default
+                self.model_config.vocab_size = getattr(self.model_config, 'vocab_size', 50257)
+
             if self.cfg.gptq:
                 self.model = self.auto_model_loader.from_pretrained(
                     self.base_model,
