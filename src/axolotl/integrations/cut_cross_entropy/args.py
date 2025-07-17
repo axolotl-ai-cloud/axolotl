@@ -50,3 +50,4 @@ class CutCrossEntropyArgs(BaseModel):
                 "Cut Cross Entropy does not support chunked cross entropy. "
                 "Please set `chunked_cross_entropy` to `False` or disable Cut Cross Entropy."
             )
+        return data
