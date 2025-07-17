@@ -52,7 +52,7 @@ flash_attn_rms_norm: true
 flash_attn_fuse_qkv: false
 flash_attn_fuse_mlp: true
 
-warmup_steps: 100
+warmup_ratio: 0.1
 evals_per_epoch: 4
 saves_per_epoch: 1
 weight_decay: 0.1
