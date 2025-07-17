@@ -151,6 +151,11 @@ def get_attention_cls_from_config(cfg: DictDefault) -> Type[nn.Module]:
 
         return MllamaTextSelfAttention
 
+    if model_type == "llama4":
+        from transformers.models.llama4.modeling_llama4 import Llama4TextAttention
+
+        return Llama4TextAttention
+
     try:
         # Dynamically import the module and attention class
         module_path = f"transformers.models.{model_type}.modeling_{model_type}"
