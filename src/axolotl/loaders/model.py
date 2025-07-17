@@ -762,6 +762,10 @@ class ModelLoader:
                 )
 
             else:
+                if not hasattr(self.model_config, 'vocab_size'):
+                    LOG.warning("Model config does not have vocab_size attribute, setting to 50257")
+                    self.model_config.vocab_size = 50257
+
                 self.model = getattr(transformers, self.model_type).from_pretrained(
                     self.base_model,
                     config=self.model_config,
