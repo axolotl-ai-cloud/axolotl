@@ -209,9 +209,12 @@ class AxolotlInputConfig(
         },
     )
     dataset_processes: int | None = Field(
-        default=int(os.environ.get("AXOLOTL_DATASET_PROCESSES", os.cpu_count())),  # type: ignore[type-var]
+        default=None,
         json_schema_extra={
-            "description": "The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set."
+            "description": (
+                "The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set.\n"
+                "For Runpod VMs, it will default to number of vCPUs via RUNPOD_CPU_COUNT."
+            )
         },
     )
     dataset_exact_deduplication: bool | None = Field(
@@ -1201,5 +1204,18 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             data["dataloader_num_workers"] = data.get("capabilities").get("n_gpu", 1)
             data["dataloader_pin_memory"] = True
             data["dataloader_prefetch_factor"] = 256
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_dataset_processes(cls, data):
+        if data.get("dataset_processes") is None:
+            if axolotl_dataset_processes := os.environ.get("AXOLOTL_DATASET_PROCESSES"):
+                data["dataset_processes"] = int(axolotl_dataset_processes)
+            elif runpod_cpu_count := os.environ.get("RUNPOD_CPU_COUNT"):
+                data["dataset_processes"] = int(runpod_cpu_count)
+            else:
+                data["dataset_processes"] = os.cpu_count()
 
         return data
