@@ -184,16 +184,13 @@ class GRPOStrategy:
         except ModuleNotFoundError as exc:
             # the user has passed a string (ideally indicating the path of a reward model)
             # check if it's a local dir path and not empty dir to a reward model
+            pretrained_log_msg = f"Reward function {reward_func_fqn} is a pre-trained model path - if this is unexpected, please check the reward function path."
             if os.path.isdir(reward_func_fqn) and os.listdir(reward_func_fqn):
-                LOG.info(
-                    f"Reward function {reward_func_fqn} is a pre-trained model path - if this is unexpected, please check the reward function path."
-                )
+                LOG.info(pretrained_log_msg)
                 return reward_func_fqn
             try:
                 snapshot_download(reward_func_fqn, repo_type="model")
-                LOG.info(
-                    f"Reward function {reward_func_fqn} is a pre-trained model path - if this is unexpected, please check the reward function path."
-                )
+                LOG.info(pretrained_log_msg)
                 return reward_func_fqn
             except HTTPError:
                 raise ValueError(
