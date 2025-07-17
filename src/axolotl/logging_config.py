@@ -113,7 +113,7 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
     "loggers": {
         "axolotl": {
             "handlers": ["color_console"],
-            "level": os.getenv("AXOLOTL_LOG_LEVEL", DEFAULT_AXOLOTL_LOG_LEVEL),
+            "level": os.getenv("AXOLOTL_LOG_LEVEL", DEFAULT_AXOLOTL_LOG_LEVEL).upper(),
             "propagate": False,
         },
     },
