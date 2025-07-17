@@ -58,8 +58,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             trainer_cls_args.extend(GRPOStrategy.set_trainer_args(self.cfg))
 
             trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))
-            if "include_tokens_per_second" in trainer_kwargs:
-                del trainer_kwargs["include_tokens_per_second"]
 
         elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             trainer_cls = DPOStrategy.get_trainer_class()
