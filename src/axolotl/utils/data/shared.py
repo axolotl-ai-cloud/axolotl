@@ -410,9 +410,8 @@ def save_preprocessed_dataset(
 ) -> None:
     """Save preprocessed dataset to disk and optionally push to the HF Hub."""
     prepared_ds_path = get_prepared_dataset_path(cfg, dataset_hash)
+    num_workers = cfg.dataset_processes
     if isinstance(dataset, IterableDataset):
-        num_workers = cfg.dataset_processes
-
         ds_from_iter = Dataset.from_generator(
             functools.partial(_generate_from_iterable_dataset, dataset),
             features=dataset.features,
@@ -423,10 +422,20 @@ def save_preprocessed_dataset(
                 "num_workers": [num_workers] * num_workers,
             },
         )
-        ds_from_iter.save_to_disk(str(prepared_ds_path))
+        ds_from_iter.save_to_disk(
+            str(prepared_ds_path),
+            num_proc=num_workers,
+            max_shard_size=None,
+            num_shards=cfg.num_dataset_shards_to_save,
+        )
     else:
         os.makedirs(prepared_ds_path, exist_ok=True)
-        dataset.save_to_disk(str(prepared_ds_path))
+        dataset.save_to_disk(
+            str(prepared_ds_path),
+            num_proc=num_workers,
+            max_shard_size=None,
+            num_shards=cfg.num_dataset_shards_to_save,
+        )
     if cfg.push_dataset_to_hub:
         LOG.info(
             "Pushing merged prepared dataset to Huggingface hub at "

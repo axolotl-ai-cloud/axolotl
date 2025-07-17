@@ -148,8 +148,6 @@ def normalize_config(cfg):
                 f"Invalid value for eval_steps ({eval_steps}) from evals_per_epoch and/or num_epochs. Skipping evaluations."
             )
 
-    cfg.dataset_processes = cfg.dataset_processes or os.cpu_count()
-
     if not cfg.base_model_config:
         cfg.base_model_config = cfg.base_model
 

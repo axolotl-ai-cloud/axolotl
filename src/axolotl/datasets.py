@@ -1,7 +1,5 @@
 """Module containing Dataset functionality"""
 
-import os
-
 import torch
 from datasets import Dataset, IterableDataset
 
@@ -46,7 +44,6 @@ class TokenizedPromptDataset(Dataset):
 
     def process(self, dataset):
         features = dataset.features.keys()
-        num_proc = min(64, self.process_count if self.process_count else os.cpu_count())
 
         map_kwargs = {}
         if self.prompt_tokenizer.supports_batched:
@@ -59,13 +56,13 @@ class TokenizedPromptDataset(Dataset):
         ):
             dataset = dataset.filter(
                 self.prompt_tokenizer.filter_rows,
-                num_proc=num_proc,
+                num_proc=self.process_count,
                 desc="Strategy Filtering Rows",
             )
 
         return dataset.map(
             self.prompt_tokenizer.tokenize_prompt,
-            num_proc=num_proc,
+            num_proc=self.process_count,
             remove_columns=features,
             keep_in_memory=self.keep_in_memory,
             desc="Tokenizing Prompts",
