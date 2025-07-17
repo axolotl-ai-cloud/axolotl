@@ -43,7 +43,7 @@ def do_quantize(
             "No quantization configuration found. Please specify either qat or quantization in your config file."
         )
 
-    model_path = cli_args.get("model_path") or cfg.output_dir
+    model_path = cli_args.get("base_model") or cfg.output_dir
     if weight_dtype := cli_args.get("weight_dtype"):
         weight_dtype = TorchIntDType[weight_dtype]
     else:
