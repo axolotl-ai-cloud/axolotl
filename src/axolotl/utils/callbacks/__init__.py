@@ -798,7 +798,7 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,  # pylint: disable=unused-argument
     ):
-        if is_main_process():
+        if state.is_world_process_zero:
             try:
                 # sync config to top level in run, cannot delete file right away because wandb schedules it to be synced even w/policy = 'now', so let OS delete it later.
                 with NamedTemporaryFile(
