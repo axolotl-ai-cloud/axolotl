@@ -22,6 +22,7 @@ coverage:
         only_pulls: true
         flags: null
         paths: null
+        informational: true
     patch:
       default:
         # basic
