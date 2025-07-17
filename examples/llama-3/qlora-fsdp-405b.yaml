@@ -18,7 +18,7 @@ adapter: qlora
 
 sequence_len: 2048
 sample_packing: true
-pad_to_sequence_len: true
+
 
 lora_r: 16
 lora_alpha: 16

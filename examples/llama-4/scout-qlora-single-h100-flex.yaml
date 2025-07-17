@@ -51,7 +51,7 @@ output_dir: ./outputs/out
 
 sequence_len: 4096  # up to 8k will work on a single H100
 sample_packing: true
-pad_to_sequence_len: true
+
 
 gradient_accumulation_steps: 1
 micro_batch_size: 1

@@ -47,7 +47,7 @@ output_dir: ./outputs/out
 
 sequence_len: 4096
 sample_packing: true
-pad_to_sequence_len: true
+
 
 gradient_accumulation_steps: 1
 micro_batch_size: 1

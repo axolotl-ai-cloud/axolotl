@@ -435,7 +435,7 @@ class AxolotlInputConfig(
     pad_to_sequence_len: bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Pad inputs so each step uses constant sized buffers. This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently"
+            "description": "Pad inputs so each step uses constant sized buffers. This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently. Defaults to the value of `sample_packing`"
         },
     )
     curriculum_sampling: bool | None = Field(

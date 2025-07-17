@@ -22,7 +22,7 @@ datasets:
 output_dir: ./outputs/qat_out/
 
 sample_packing: true
-pad_to_sequence_len: true
+
 sequence_len: 512
 
 flex_attention: true
