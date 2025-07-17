@@ -460,13 +460,13 @@ def load_preprocessed_dataset(cfg: DictDefault, dataset_hash: str) -> Dataset | 
     ):
         LOG.info(
             f"Loading prepared dataset from disk at {prepared_ds_path}...",
-            main_process_only=False,
+            main_process_only=True,
         )
         return load_from_disk(str(prepared_ds_path))
 
     LOG.info(
         f"Unable to find prepared dataset in {prepared_ds_path}",
-        main_process_only=False,
+        main_process_only=True,
     )
     return None
 
