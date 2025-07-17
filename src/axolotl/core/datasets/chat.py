@@ -2,7 +2,6 @@
 chat dataset module
 """
 
-import os
 from typing import Callable, Optional, Union
 
 from datasets import Dataset

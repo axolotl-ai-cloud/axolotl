@@ -1,7 +1,5 @@
 """Module containing Dataset functionality"""
 
-import os
-
 import torch
 from datasets import Dataset, IterableDataset
 
