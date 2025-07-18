@@ -633,6 +633,7 @@ class ModelLoader:
             )
             device_mesh = dist_parallel.get_device_mesh()
             self.model_kwargs["device_mesh"] = device_mesh
+            self.model_kwargs["device_map"] = torch.get_default_device()
 
         skip_move_to_device = False
         if self.is_fsdp_enabled:
