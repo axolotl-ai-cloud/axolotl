@@ -193,6 +193,12 @@ class AxolotlInputConfig(
         json_schema_extra={"description": "Index of shard to use for whole dataset"},
     )
     skip_prepare_dataset: bool | None = False
+    num_dataset_shards_to_save: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of shards to save the prepared dataset"
+        },
+    )
 
     pretraining_dataset: (
         Annotated[list[PretrainingDataset | SFTDataset], MinLen(1)] | None
@@ -203,11 +209,12 @@ class AxolotlInputConfig(
         },
     )
     dataset_processes: int | None = Field(
-        default=min(
-            int(os.environ.get("AXOLOTL_DATASET_PROCESSES", 32)), os.cpu_count()
-        ),  # type: ignore[type-var]
+        default=None,
         json_schema_extra={
-            "description": "The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set."
+            "description": (
+                "The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set.\n"
+                "For Runpod VMs, it will default to number of vCPUs via RUNPOD_CPU_COUNT."
+            )
         },
     )
     dataset_exact_deduplication: bool | None = Field(
@@ -320,7 +327,12 @@ class AxolotlInputConfig(
         },
     )
 
-    gc_steps: int | None = None
+    gc_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Run garbage collection every `gc_steps` steps. -1 will run on epoch end and before evaluations. Default is 0 (disabled)."
+        },
+    )
 
     bf16: Literal["auto"] | bool | None = Field(
         default="auto",
@@ -358,6 +370,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Additional kwargs to pass to the trainer for gradient checkpointing"
+        },
+    )
+    activation_offloading: Literal["legacy", "disk"] | bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Whether to offload activations. Available options are: true, false, 'legacy', 'disk'."
         },
     )
 
@@ -565,12 +583,25 @@ class AxolotlInputConfig(
         },
     )
 
+    tiled_mlp_use_original_mlp: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use original mlp for ALST tiled mlp. Otherwise uses a generic MLP based on llama."
+        },
+    )
+
     llama4_linearized_experts: bool | None = None
 
     deepspeed: str | dict[str, Any] | None = Field(
         default=None,
         json_schema_extra={
             "description": "Deepspeed config path. e.g., deepspeed_configs/zero3.json"
+        },
+    )
+    deepcompile: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use deepcompile for faster training with deepspeed"
         },
     )
     fsdp: list[str] | None = Field(
@@ -618,7 +649,12 @@ class AxolotlInputConfig(
             "description": "One of 'varlen_llama3', 'batch_ring', 'batch_zigzag', 'batch_stripe'. Defaults to 'varlen_llama3' in the sample packing case, and 'batch_ring' in the non-sample packing case."
         },
     )
-
+    tensor_parallel_size: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of tensor parallel processes in TP group. Only supported with DeepSpeed AutoTP."
+        },
+    )
     special_tokens: SpecialTokensConfig | None = Field(
         default=None,
         json_schema_extra={
@@ -684,6 +720,7 @@ class AxolotlInputConfig(
             "description": "Set to `no` to skip evaluation, `epoch` at end of each epoch, leave empty to infer from `eval_steps`"
         },
     )
+
     save_steps: int | float | None = Field(
         default=None,
         json_schema_extra={
@@ -705,6 +742,13 @@ class AxolotlInputConfig(
     save_total_limit: int | None = Field(
         default=None, json_schema_extra={"description": "Checkpoints saved at a time"}
     )
+    save_first_step: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to checkpoint a model after the first step of training. Defaults to False."
+        },
+    )
+
     logging_steps: int | None = Field(
         default=None, json_schema_extra={"description": "Logging frequency"}
     )
@@ -728,6 +772,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Enable the pytorch profiler to capture the first N steps of training to the output_dir. see https://pytorch.org/blog/understanding-gpu-memory-1/ for more information. Snapshots can be visualized @ https://pytorch.org/memory_viz"
+        },
+    )
+    profiler_steps_start: int | None = Field(
+        default=0,
+        json_schema_extra={
+            "description": "Which step to start the profiler at. Useful for only capturing a few steps mid-run."
         },
     )
     include_tokens_per_second: bool | None = Field(
@@ -1145,72 +1195,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def check_fsdp_version(cls, data):
-        fsdp_config = data.get("fsdp_config", {})
-        if fsdp_config and str(data.get("fsdp_version")) != "2":
-            LOG.info(
-                "FSDP1 will be deprecated in an upcoming release of Axolotl."
-                "We recommend that you use FSDP version 2 for better performance and compatibility. "
-                "Please see this link for more details: https://docs.axolotl.ai/docs/multi-gpu.html#sec-fsdp "
-                "For more details on migrating your config. "
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_fsdp2_base_model_quant_ram_efficient_loading(cls, data):
-        fsdp_config = data.get("fsdp_config")
-        if fsdp_config and data.get("fsdp_version") == 2:
-            if fsdp_config.get("cpu_ram_efficient_loading") and (
-                data.get("load_in_8bit") or data.get("load_in_4bit")
-            ):
-                raise ValueError(
-                    "FSDP2 does not support load_in_8bit or load_in_4bit with cpu_ram_efficient_loading. Please do one of the following: use DeepSpeed, "
-                    "set fsdp_version to 1, or disable cpu_ram_efficient_loading."
-                )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_fsdp2_base_model_quant_dpo(cls, data):
-        if data.get("fsdp_version") == 2 and data.get("rl") in [
-            RLType.DPO,
-            RLType.KTO,
-            RLType.ORPO,
-            RLType.IPO,
-        ]:
-            if data.get("load_in_8bit") or data.get("load_in_4bit"):
-                raise ValueError(
-                    "FSDP2 does not support load_in_8bit or load_in_4bit with DPO. Please use DeepSpeed or set `fsdp_version` to 1."
-                )
-
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_fsdp_version_in_fsdp_config(cls, data):
-        if fsdp_config := data.get("fsdp_config"):
-            if fsdp_config.get("fsdp_version"):
-                LOG.warning(
-                    "Configuring `fsdp_version` in `fsdp_config` is deprecated. "
-                    "Please configure `fsdp_version` as a top-level field."
-                )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_fsdp_config_kwargs_prefix(cls, data):
-        if fsdp_config := data.get("fsdp_config"):
-            for key, _ in fsdp_config.items():
-                if key.startswith("fsdp_"):
-                    LOG.warning_once(
-                        "Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
-                        "Please omit the `fsdp_` prefix from the any fields in `fsdp_config`."
-                    )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def default_dataloader_opts(cls, data):
         if (
             data.get("dataloader_num_workers") is None
@@ -1220,5 +1204,18 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             data["dataloader_num_workers"] = data.get("capabilities").get("n_gpu", 1)
             data["dataloader_pin_memory"] = True
             data["dataloader_prefetch_factor"] = 256
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_dataset_processes(cls, data):
+        if data.get("dataset_processes") is None:
+            if axolotl_dataset_processes := os.environ.get("AXOLOTL_DATASET_PROCESSES"):
+                data["dataset_processes"] = int(axolotl_dataset_processes)
+            elif runpod_cpu_count := os.environ.get("RUNPOD_CPU_COUNT"):
+                data["dataset_processes"] = int(runpod_cpu_count)
+            else:
+                data["dataset_processes"] = os.cpu_count()
 
         return data

@@ -69,6 +69,7 @@ class TestSequenceParallelism:
                 "use_tensorboard": True,
                 "sequence_parallel_degree": 2,
                 "ring_attn_func": ring_attn_func,
+                "save_first_step": False,
             }
         )
 

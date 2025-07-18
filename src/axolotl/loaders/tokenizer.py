@@ -188,7 +188,8 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
         tokenizer.padding_side = "left"
 
     # Qwen base only has single token, so we need to set the special tokens
-    if cfg.is_qwen_derived_model:
+    # the following check is for Qwen1 base models
+    if cfg.is_qwen_derived_model and hasattr(tokenizer, "eod_id"):
         token_ids = ["bos_token_id", "eos_token_id", "pad_token_id", "unk_token_id"]
         for attr_name in token_ids:
             if getattr(tokenizer, attr_name) is None:

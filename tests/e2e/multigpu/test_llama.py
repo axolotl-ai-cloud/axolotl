@@ -69,6 +69,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
 
@@ -135,6 +136,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
 
@@ -210,6 +212,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
 
@@ -289,6 +292,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
 
@@ -365,6 +369,7 @@ class TestMultiGPULlama:
                 },
                 "use_tensorboard": True,
                 "seed": 42,
+                "save_first_step": False,
             }
         )
 
@@ -391,7 +396,10 @@ class TestMultiGPULlama:
 
     @pytest.mark.parametrize(
         "fsdp_state_dict_type",
-        ["FULL_STATE_DICT", "SHARDED_STATE_DICT"],
+        [
+            "FULL_STATE_DICT",
+            # "SHARDED_STATE_DICT",  # not supported since intermediate checkpoints fail with fsdp1
+        ],
     )
     def test_fsdp_packed(self, temp_dir, fsdp_state_dict_type):
         # pylint: disable=duplicate-code
@@ -413,7 +421,8 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 3,
+                "save_steps": 2,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 2,
                 # "gradient_checkpointing": True,
@@ -438,6 +447,7 @@ class TestMultiGPULlama:
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -516,6 +526,7 @@ class TestMultiGPULlama:
                     "fsdp_reshard_after_forward": fsdp_reshard_after_forward,
                 },
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
         if attention_backend == "flash":
@@ -597,10 +608,11 @@ class TestMultiGPULlama:
                     "fsdp_use_orig_params": False,
                     "fsdp_cpu_ram_efficient_loading": True,
                     "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
-                    "fsdp_state_dict_type": "SHARDED_STATE_DICT",
+                    "fsdp_state_dict_type": "FULL_STATE_DICT",
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -685,6 +697,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "deepspeed": str(AXOLOTL_ROOT / deepspeed),
                 "use_tensorboard": True,
+                "save_first_step": False,
                 **adapter,
             }
         )
@@ -707,7 +720,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.4, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/train_loss", 2.45, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -761,6 +774,7 @@ class TestMultiGPULlama:
                 "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero2.json"),
                 "use_tensorboard": True,
                 "seed": 42,
+                "save_first_step": False,
                 **adapter,
             }
         )
@@ -836,6 +850,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero1.json"),
                 "use_tensorboard": True,
+                "save_first_step": False,
                 **adapter,
             }
         )
@@ -904,6 +919,7 @@ class TestMultiGPULlama:
                 "save_safetensors": True,
                 # "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero1.json"),
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 

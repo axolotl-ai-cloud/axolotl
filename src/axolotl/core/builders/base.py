@@ -36,6 +36,7 @@ from axolotl.utils.callbacks import (
     GCCallback,
     GPUStatsCallback,
     SaveAxolotlConfigtoWandBCallback,
+    SaveModelOnFirstStepCallback,
 )
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
@@ -112,13 +113,6 @@ class TrainerBuilderBase(abc.ABC):
             plugin_manager.add_callbacks_pre_trainer(cfg=self.cfg, model=self.model)
         )
 
-        if self.cfg.profiler_steps:
-            callbacks.append(
-                PytorchProfilerCallback(
-                    steps_to_profile=self.cfg.profiler_steps,
-                )
-            )
-
         if self.cfg.gc_steps:
             callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
 
@@ -142,8 +136,18 @@ class TrainerBuilderBase(abc.ABC):
             callbacks.append(
                 SaveAxolotlConfigtoCometCallback(self.cfg.axolotl_config_path)
             )
+        if self.cfg.save_first_step:
+            callbacks.append(SaveModelOnFirstStepCallback())
 
         callbacks.append(GPUStatsCallback(cfg=self.cfg))
+
+        if self.cfg.profiler_steps:
+            callbacks.append(
+                PytorchProfilerCallback(
+                    steps_to_profile=self.cfg.profiler_steps,
+                    profiler_steps_start=self.cfg.profiler_steps_start,
+                )
+            )
 
         return callbacks
 
@@ -418,6 +422,9 @@ class TrainerBuilderBase(abc.ABC):
             torch._dynamo.config.suppress_errors = (  # pylint: disable=protected-access
                 True
             )
+            torch._dynamo.config.accumulated_cache_size_limit = (  # pylint: disable=protected-access
+                256
+            )
             training_args_kwargs["torch_compile"] = self.cfg.torch_compile
             if self.cfg.torch_compile_backend:
                 training_args_kwargs["torch_compile_backend"] = (
@@ -426,8 +433,16 @@ class TrainerBuilderBase(abc.ABC):
             if self.cfg.torch_compile_mode:
                 training_args_kwargs["torch_compile_mode"] = self.cfg.torch_compile_mode
 
+    def _configure_accelerator_config(self, training_args_kwargs: dict):
+        if self.cfg.accelerator_config:
+            training_args_kwargs["accelerator_config"] = self.cfg.accelerator_config
+
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
-        if self.cfg.gradient_checkpointing:
+        if self.cfg.activation_offloading is True:
+            # don't use the HF gradient checkpointing, manually wrap
+            training_args_kwargs["gradient_checkpointing"] = False
+            training_args_kwargs["activation_offloading"] = True
+        elif self.cfg.gradient_checkpointing:
             training_args_kwargs["gradient_checkpointing"] = (
                 self.cfg.gradient_checkpointing
             )
@@ -510,5 +525,6 @@ class TrainerBuilderBase(abc.ABC):
         self._configure_scheduler(training_args_kwargs)
         self._configure_optimizer(training_args_kwargs, trainer_kwargs)
         self._configure_torch_compile(training_args_kwargs)
+        self._configure_accelerator_config(training_args_kwargs)
 
         return training_args_kwargs, trainer_kwargs

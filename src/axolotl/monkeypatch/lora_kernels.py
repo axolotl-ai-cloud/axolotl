@@ -18,6 +18,7 @@ from axolotl.kernels.lora import (
     apply_lora_qkv,
 )
 from axolotl.monkeypatch.utils import detab_code
+from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
@@ -150,12 +151,15 @@ def get_attention_cls_from_config(cfg: DictDefault) -> Type[nn.Module]:
 
         return MllamaTextSelfAttention
 
+    if model_type == "llama4":
+        from transformers.models.llama4.modeling_llama4 import Llama4TextAttention
+
+        return Llama4TextAttention
+
     try:
         # Dynamically import the module and attention class
         module_path = f"transformers.models.{model_type}.modeling_{model_type}"
-        model_cls_prefix = "".join(
-            [part.capitalize() for part in model_type.split("_")]
-        )
+        model_cls_prefix, _ = get_causal_lm_model_cls_prefix(model_type)
         module = __import__(module_path, fromlist=[f"{model_cls_prefix}Attention"])
         attention_cls = getattr(module, f"{model_cls_prefix}Attention")
 

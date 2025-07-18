@@ -92,7 +92,7 @@ jobs:
     if: github.repository_owner == 'axolotl-ai-cloud'
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
-    timeout-minutes: 60
+    timeout-minutes: 120
     needs: [pre-commit, pytest]
 
     strategy:
@@ -106,6 +106,13 @@ jobs:
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
+          - cuda: 126
+            cuda_version: 12.6.3
+            python_version: "3.11"
+            pytorch: 2.7.1
+            num_gpus: 1
+            axolotl_extras:
+            nightly_build: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -116,7 +123,7 @@ jobs:
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
-          pip install modal==0.71.8 jinja2
+          pip install modal==1.0.2 jinja2
       - name: Update env vars
         run: |
           echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
@@ -130,3 +137,45 @@ jobs:
       - name: Run tests job on Modal
         run: |
           modal run cicd.e2e_tests
+  docker-e2e-multigpu-tests:
+    if: github.repository_owner == 'axolotl-ai-cloud'
+    # this job needs to be run on self-hosted GPU runners...
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 120
+    needs: [pre-commit, pytest, docker-e2e-tests]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 126
+            cuda_version: 12.6.3
+            python_version: "3.11"
+            pytorch: 2.7.1
+            num_gpus: 2
+            axolotl_extras:
+            nightly_build: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Modal
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==1.0.2 jinja2
+      - name: Update env vars
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
+          echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
+      - name: Run tests job on Modal
+        run: |
+          modal run cicd.multigpu

@@ -16,7 +16,6 @@ from transformers.utils import is_torch_bf16_gpu_available
 from axolotl.integrations.base import PluginManager
 from axolotl.utils.comet_ import setup_comet_env_vars
 from axolotl.utils.config import (
-    migrate_fsdp_config,
     normalize_cfg_datasets,
     normalize_config,
     validate_config,
@@ -227,7 +226,6 @@ def load_cfg(
         },
     )
 
-    migrate_fsdp_config(cfg)
     prepare_optim_env(cfg)
     prepare_opinionated_env(cfg)
     normalize_config(cfg)
