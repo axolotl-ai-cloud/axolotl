@@ -187,18 +187,10 @@ class LoraConfig(BaseModel):
 class ReLoRAConfig(BaseModel):
     """ReLoRA configuration subset"""
 
-    relora_steps: int | None = Field(
-        default=None,
-        json_schema_extra={"description": "Number of steps per ReLoRA restart"},
-    )
-    relora_warmup_steps: int | None = Field(
-        default=None,
-        json_schema_extra={"description": "Number of per-restart warmup steps"},
-    )
-    relora_anneal_steps: int | None = Field(
+    relora: bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Number of anneal steps for each relora cycle"
+            "description": "Whether to use ReLoRA. Use with jagged_restart_*steps options."
         },
     )
     relora_prune_ratio: float | None = Field(
