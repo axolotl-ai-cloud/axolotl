@@ -37,6 +37,8 @@ plugins:
 - gemma2
 - gemma3
 - gemma3_text
+- gemma3n
+- gemma3n_text
 - glm
 - glm4
 - llama
