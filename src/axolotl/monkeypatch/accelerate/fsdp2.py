@@ -8,6 +8,7 @@ import sys
 
 import torch
 from torch import nn
+from torch.distributed import DeviceMesh
 
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.logging import get_logger
@@ -255,6 +256,15 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         # `fully_shard` doesn't accept `None` in case of `MixedPrecisionPolicy`
         "mp_policy": fsdp2_plugin.mixed_precision_policy or MixedPrecisionPolicy(),
     }
+
+    device_mesh: DeviceMesh = accelerator._prepare_device_mesh()
+    try:
+        dp_mesh_dim_names = ("dp_replicate", "dp_shard_cp")
+        dp_mesh = device_mesh[dp_mesh_dim_names]
+    except KeyError:
+        dp_mesh_dim_names = ("dp_shard_cp",)
+        dp_mesh = device_mesh[dp_mesh_dim_names]
+    fsdp2_kwargs["mesh"] = dp_mesh
 
     model_has_params4bit = False
     for _, param in model.named_parameters():

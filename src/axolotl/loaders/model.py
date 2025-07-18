@@ -36,6 +36,7 @@ from transformers.integrations.deepspeed import (
 )
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
+from axolotl.core.parallel import DistParallel
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.adapter import load_adapter, load_lora
 from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
@@ -620,6 +621,19 @@ class ModelLoader:
 
     def _build_model(self) -> bool:
         """Load model, with load strategy depending on config."""
+
+        if self.cfg.tp_size > 1:
+            # from pretrained only needs to know about Tensor Parallelism for sharding weights
+            dist_parallel = DistParallel.build(
+                dp_shard_size=self.cfg.dp_shard_size,
+                tp_size=self.cfg.tp_size,
+                cp_size=self.cfg.cp_size,
+                fsdp=bool(self.cfg.fsdp_config),
+                world_size=None,
+            )
+            device_mesh = dist_parallel.get_device_mesh()
+            self.model_kwargs["device_mesh"] = device_mesh
+
         skip_move_to_device = False
         if self.is_fsdp_enabled:
             if self.cfg.fsdp_config.cpu_ram_efficient_loading:
