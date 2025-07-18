@@ -10,7 +10,7 @@ def test_inference_basic(cli_runner, config_path):
     with patch("axolotl.cli.inference.do_inference") as mock:
         result = cli_runner.invoke(
             cli,
-            ["inference", str(config_path), "--no-accelerate"],
+            ["inference", str(config_path), "--launcher", "python"],
             catch_exceptions=False,
         )
 
@@ -23,7 +23,7 @@ def test_inference_gradio(cli_runner, config_path):
     with patch("axolotl.cli.inference.do_inference_gradio") as mock:
         result = cli_runner.invoke(
             cli,
-            ["inference", str(config_path), "--no-accelerate", "--gradio"],
+            ["inference", str(config_path), "--launcher", "python", "--gradio"],
             catch_exceptions=False,
         )
 
