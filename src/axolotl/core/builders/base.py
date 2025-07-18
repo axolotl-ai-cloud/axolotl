@@ -29,6 +29,7 @@ from transformers import (
 )
 from transformers.training_args import OptimizerNames
 
+from axolotl.core.parallel import DistParallel
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
 from axolotl.utils import is_comet_available, is_mlflow_available
@@ -465,6 +466,7 @@ class TrainerBuilderBase(abc.ABC):
         self._configure_precision_settings(training_args_kwargs)
         self._configure_save_and_eval_strategy(training_args_kwargs)
         self._configure_gradient_checkpointing(training_args_kwargs)
+        self._configure_dist_parallel(training_args_kwargs)
 
         # set arg into trainer_args_kwargs with same name if value not None
         for arg in [
@@ -528,3 +530,20 @@ class TrainerBuilderBase(abc.ABC):
         self._configure_accelerator_config(training_args_kwargs)
 
         return training_args_kwargs, trainer_kwargs
+
+    def _configure_dist_parallel(self, training_args_kwargs: dict):
+        if (
+            self.cfg.tp_size > 1
+            or self.cfg.dp_shard_size > 1
+            or self.cfg.sequence_parallel_degree > 1
+        ):
+            dist_parallel = DistParallel.build(
+                dp_shard_size=self.cfg.dp_shard_size,
+                tp_size=self.cfg.tp_size,
+                cp_size=self.cfg.cp_size,
+                fsdp=bool(self.cfg.fsdp_config),
+                world_size=None,
+            )
+            mesh_dims, mesh_dim_names = dist_parallel.get_mesh()
+            training_args_kwargs["dist_parallel_dim_names"] = mesh_dim_names
+            training_args_kwargs["dist_parallel_dims"] = mesh_dims
