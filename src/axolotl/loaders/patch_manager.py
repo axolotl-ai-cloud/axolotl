@@ -65,7 +65,7 @@ class PatchManager:
         self._apply_mistral_cross_entropy_patch()
         self._apply_self_attention_lora_patch()
         self._apply_gemma3_conditional_generation_forward_patch()
-        self._apply_sequence_parallel_patches()
+        self._apply_dist_parallel_patches()
         self._apply_tiled_mlp(self.cfg.model_config_type)
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
@@ -259,16 +259,25 @@ class PatchManager:
 
             patch_gemma3_conditional_generation_forward()
 
-    def _apply_sequence_parallel_patches(self):
-        """Apply sequence parallelism patches."""
+    def _apply_dist_parallel_patches(self):
+        """Apply distributed parallelism patches."""
+        should_patch = False
         if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
+            should_patch = True
+        if self.cfg.fsdp_config and self.cfg.dp_shard_size:
+            should_patch = True
+        if should_patch:
+            from axolotl.monkeypatch.dist_parallel.patch import (
+                patch_prepare_device_mesh,
+            )
             from axolotl.monkeypatch.ring_attn.patch import (
                 patch_prepare_data_loader,
-                patch_prepare_device_mesh,
             )
 
             patch_prepare_data_loader()
-            patch_prepare_device_mesh(self.cfg.sequence_parallel_degree, self.cfg.fsdp)
+            patch_prepare_device_mesh(
+                self.cfg.sequence_parallel_degree, self.cfg.dp_shard_size, self.cfg.fsdp
+            )
 
     def _apply_tiled_mlp(self, model_type: str):
         if self.cfg.tiled_mlp:
