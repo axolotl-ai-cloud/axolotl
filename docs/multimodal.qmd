@@ -132,7 +132,9 @@ For multi-modal datasets, we adopt an extended `chat_template` format similar to
 
 - A message is a list of `role` and `content`.
 - `role` can be `system`, `user`, `assistant`, etc.
-- `content` is a list of `type` and (`text` or `image` or `path` or `url` or `base64`).
+- `content` is a list of `type` and (`text`, `image`, `path`, `url`, `base64`, or `audio`).
+
+### Image
 
 ::: {.callout-note}
 For backwards compatibility:
@@ -141,14 +143,22 @@ For backwards compatibility:
 - If `content` is a string, it will be converted to a list with `type` as `text`.
 :::
 
-::: {.callout-tip}
 For image loading, you can use the following keys within `content` alongside `"type": "image"`:
 
 - `"path": "/path/to/image.jpg"`
 - `"url": "https://example.com/image.jpg"`
 - `"base64": "..."`
 - `"image": PIL.Image`
-:::
+
+### Audio
+
+For audio loading, you can use the following keys within `content` alongside `"type": "audio"`:
+
+- `"path": "/path/to/audio.mp3"`
+- `"url": "https://example.com/audio.mp3"`
+- `"audio": np.ndarray`
+
+### Example
 
 Here is an example of a multi-modal dataset:
 ```json
