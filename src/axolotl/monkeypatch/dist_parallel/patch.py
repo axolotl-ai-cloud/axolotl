@@ -1,85 +1,87 @@
 """Monkey patch for Accelerate to add support for ND parallelism."""
 
+import inspect
+
 import accelerate
-import torch
-import torch.distributed as dist
 
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+ORIGINAL_PREPARE_DATALOADER_CODE = """
+            submesh_fsdp_size = 1
+            submesh_dp_size = 1
+            submesh_tp_size = 1
+            if "tp" in torch_device_mesh.mesh_dim_names:
+                submesh_tp_size = torch_device_mesh["tp"].size()
+            if "dp" in torch_device_mesh.mesh_dim_names:
+                submesh_dp_size = torch_device_mesh["dp"].size()
+            if "fsdp" in torch_device_mesh.mesh_dim_names:
+                submesh_fsdp_size = torch_device_mesh["fsdp"].size()
+            process_index = process_index // submesh_tp_size""".lstrip(
+    "\n"
+)
 
-def patch_prepare_device_mesh(
-    sequence_parallel_degree: int = 1,
-    dp_shard_size: int | None = None,
-    fsdp: bool = False,
-):
-    """Patches the `Accelerator._prepare_device_mesh` method to create a device mesh
-    that includes sequence parallelism with the specified degree.
+NEW_PREPARE_DATALOADER_CODE = """
+        submesh_dp_fsdp_size = 1
+        submesh_fsdp_size = 1
+        submesh_dp_size = 1
+        submesh_tp_size = 1
+        submesh_cp_size = 1
+        if "tp" in torch_device_mesh.mesh_dim_names:
+            submesh_tp_size = torch_device_mesh["tp"].size()
+        if "cp" in torch_device_mesh.mesh_dim_names:
+            submesh_cp_size = torch_device_mesh["cp"].size()
+        if "dp" in torch_device_mesh.mesh_dim_names:
+            submesh_dp_size = torch_device_mesh["dp"].size()
+        if "fsdp" in torch_device_mesh.mesh_dim_names:
+            submesh_fsdp_size = torch_device_mesh["fsdp"].size()
+        try:
+            submesh_dp_fsdp_size = torch_device_mesh["dp_fsdp"].size()
+        except KeyError:
+            pass
+        process_index = process_index // (submesh_tp_size * submesh_cp_size)
+        num_processes = submesh_dp_fsdp_size if submesh_dp_fsdp_size > 1 else submesh_fsdp_size * submesh_dp_size
+""".strip(
+    "\n"
+)
 
-    Args:
-        sequence_parallel_degree: The degree of sequence parallelism to use.
-        dp_shard_size: The number of data parallel replicas.
-        fsdp: Whether to use FSDP.
+
+def patch_prepare_data_loader():
+    """Patch `accelerate.data_loader.prepare_data_loader` to respect the SP degree.
+
+    Raises:
+        RuntimeError: If source code to patch does not exist.
     """
+    original_fn = accelerate.data_loader.prepare_data_loader
+    original_source = inspect.getsource(original_fn)
 
-    def _prepare_device_mesh(self):
-        """Prepare the device mesh for distributed training. The dataloader will
-        determine how to load data based on the device mesh.
-        """
-        if self.state.torch_tp_plugin:
-            return self.state.torch_tp_plugin.torch_device_mesh
-        if (
-            self.distributed_type == accelerate.accelerator.DistributedType.DEEPSPEED
-            and hasattr(self.state, "ds_device_mesh")
-        ):
-            return self.state.ds_device_mesh
-
-        # Create device mesh with sequence parallelism
-        world_size = dist.get_world_size()
-
-        dp_replicate_size = 1
-        dp_shard_size_ = dp_shard_size  # workaround for closure modifying variable
-
-        # if dp_shard_size isn't defined, we use assume there are no dp_replicas
-        if dp_shard_size_ is None:
-            dp_shard_size_ = world_size // sequence_parallel_degree
-        else:
-            dp_replicate_size = world_size // (
-                dp_shard_size_ * sequence_parallel_degree
-            )
-
-        if dp_shard_size_ == 1:
-            raise ValueError("dp_shard_size must be greater than 1")
-
-        mesh_shape: tuple[int, ...] = ()
-        mesh_dim_names: tuple[str, ...] = ()
-        if dp_replicate_size > 1:
-            mesh_shape += (dp_replicate_size,)
-            mesh_dim_names += ("dp_replicate",)
-        mesh_shape += (dp_shard_size,)
-        mesh_dim_names += ("dp",) if not fsdp else ("fsdp",)
-        if sequence_parallel_degree > 1:
-            mesh_shape += (sequence_parallel_degree,)
-            mesh_dim_names += ("sp",)
-        device_ids = list(range(world_size))
-
-        # NOTE: We use "cp" instead of "sp" to match the PyTorch native "context
-        # parallelism" implementation naming.
-        # NOTE: We have a simplified FSDP handling here; i.e., if FSDP is enabled, we
-        # only use "fsdp" and "cp" for the device mesh.
-        return dist.DeviceMesh(
-            "cuda",
-            torch.tensor(device_ids).reshape(mesh_shape),
-            mesh_dim_names=mesh_dim_names,
+    if ORIGINAL_PREPARE_DATALOADER_CODE not in original_source:
+        raise RuntimeError(
+            "SP patch failed - target snippet not found. "
+            "Check accelerate's version or update the patch."
         )
 
-    # Replace the original method with our new method
-    # pylint: disable=protected-access
-    accelerate.accelerator.Accelerator._prepare_device_mesh = _prepare_device_mesh
-
-    LOG.info(
-        "Successfully patched Accelerator._prepare_device_mesh "
-        f"with sequence_parallel_degree={sequence_parallel_degree} and "
-        f"dp_shard_size={dp_shard_size} "
+    patched_source = original_source.replace(
+        ORIGINAL_PREPARE_DATALOADER_CODE, NEW_PREPARE_DATALOADER_CODE
     )
+
+    items_to_import = []
+    for item in dir(accelerate.data_loader):
+        if item in patched_source:
+            items_to_import.append(item)
+
+    # Create a new function from the patched source
+    namespace = {}
+    exec(  # pylint: disable=exec-used  # nosec B102
+        f"from accelerate.data_loader import ({', '.join(items_to_import)})",
+        globals(),
+    )
+    exec(  # pylint: disable=exec-used  # nosec B102
+        patched_source, globals(), namespace
+    )
+
+    patched_function = namespace["prepare_data_loader"]
+    original_fn.__code__ = patched_function.__code__
+
+    LOG.info("Patched accelerate.data_loader.prepare_data_loader for SP support")

@@ -235,3 +235,12 @@ class AxolotlTrainingMixins:
     )
 
     # end of multi-modal section
+
+    dist_parallel_dims: tuple[int, ...] | None = field(
+        default=None,
+        metadata={"help": "The dimension sizes for distributed parallel training"},
+    )
+    dist_parallel_dim_names: tuple[str, ...] | None = field(
+        default=None,
+        metadata={"help": "The dimension names for distributed parallel training"},
+    )

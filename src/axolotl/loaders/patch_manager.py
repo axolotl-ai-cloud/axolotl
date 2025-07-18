@@ -267,17 +267,11 @@ class PatchManager:
         if self.cfg.fsdp_config and self.cfg.dp_shard_size:
             should_patch = True
         if should_patch:
-            from axolotl.monkeypatch.dist_parallel.patch import (
-                patch_prepare_device_mesh,
-            )
-            from axolotl.monkeypatch.ring_attn.patch import (
+            from axolotl.monkeypatch.dist_parallel import (
                 patch_prepare_data_loader,
             )
 
             patch_prepare_data_loader()
-            patch_prepare_device_mesh(
-                self.cfg.sequence_parallel_degree, self.cfg.dp_shard_size, self.cfg.fsdp
-            )
 
     def _apply_tiled_mlp(self, model_type: str):
         if self.cfg.tiled_mlp:
