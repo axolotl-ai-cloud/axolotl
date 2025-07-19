@@ -27,7 +27,7 @@ output_dir: ./outputs/dpo-out
 
 sequence_len: 2048
 sample_packing: false
-pad_to_sequence_len: true
+
 
 wandb_project:
 wandb_entity:

@@ -18,7 +18,7 @@ output_dir: ./outputs/out
 
 sequence_len: 4096
 sample_packing: true
-pad_to_sequence_len: true
+
 
 wandb_project:
 wandb_entity:

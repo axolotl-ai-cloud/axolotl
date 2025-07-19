@@ -24,7 +24,7 @@ sample_packing: true
 sample_packing_sequentially: true
 curriculum_sampling: true
 eval_sample_packing: false
-pad_to_sequence_len: true
+
 
 adapter: lora
 lora_model_dir:
