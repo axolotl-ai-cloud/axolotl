@@ -82,6 +82,7 @@ def fixture_base_cfg():
             "ddp_timeout": 1800,
             "ddp_bucket_cap_mb": 25,
             "ddp_broadcast_buffers": False,
+            "dataset_processes": 4,
         }
     )
 
@@ -440,6 +441,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
             ]
         else:
             raise ValueError(f"Unhandled cfg_string: {cfg_string}")
+        cfg["dataset_processes"] = 4
 
         if cfg_string == "grpo_cfg":
             rewards_dir = tmp_path / "rewards_test"

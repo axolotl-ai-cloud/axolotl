@@ -141,6 +141,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_processes": 4,
                 }
             )
 
@@ -179,6 +180,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_processes": 4,
                 }
             )
 
@@ -217,6 +219,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_processes": 4,
                 }
             )
 
@@ -249,6 +252,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_processes": 4,
                 }
             )
 
@@ -281,6 +285,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_processes": 4,
                 }
             )
 
@@ -365,6 +370,7 @@ class TestDatasetPreparation:
                 "rl": "dpo",
                 "chat_template": "llama3",
                 "datasets": [ALPACA_MESSAGES_CONFIG_REVISION],
+                "dataset_processes": 4,
             }
         )
 
@@ -466,6 +472,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_processes": 4,
                 }
             )
 

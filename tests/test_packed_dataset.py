@@ -99,6 +99,7 @@ class TestPacking(unittest.TestCase):
                         "type": "alpaca",
                     },
                 ],
+                "dataset_processes": 4,
                 "num_epochs": 1,
                 "max_steps": 20,
                 "save_steps": 10,
