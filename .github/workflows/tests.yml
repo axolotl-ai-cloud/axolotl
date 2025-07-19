@@ -78,7 +78,7 @@ jobs:
 
       - name: Install PyTorch
         run: |
-          pip3 install torch==${{ matrix.pytorch_version }}
+          pip3 install torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Install dependencies
         run: |
@@ -151,7 +151,7 @@ jobs:
 
       - name: Install PyTorch
         run: |
-          pip3 install torch==${{ matrix.pytorch_version }}
+          pip3 install torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Install dependencies
         run: |
