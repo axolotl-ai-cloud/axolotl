@@ -632,7 +632,7 @@ class ModelLoader:
                 world_size=None,
             )
             device_mesh = dist_parallel.get_device_mesh()
-            self.model_kwargs["device_mesh"] = device_mesh
+            self.model_kwargs["device_mesh"] = device_mesh[("tp",)]
             self.model_kwargs["device_map"] = torch.get_default_device()
 
         skip_move_to_device = False
