@@ -1,5 +1,7 @@
 """Utility methods for axolotl CLI."""
 
+from __future__ import annotations
+
 import concurrent.futures
 import dataclasses
 import hashlib
@@ -7,22 +9,22 @@ import json
 from functools import wraps
 from pathlib import Path
 from types import NoneType
-from typing import Any, Callable, Type, Union, get_args, get_origin
+from typing import TYPE_CHECKING, Any, Callable, Type, Union, get_args, get_origin
 
 import click
 import requests
 from pydantic import BaseModel
-from transformers import (
-    PreTrainedModel,
-    PreTrainedTokenizer,
-    PreTrainedTokenizerFast,
-    ProcessorMixin,
-)
 
-from axolotl.loaders import load_processor, load_tokenizer
-from axolotl.loaders.model import ModelLoader
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    from transformers import (
+        PreTrainedModel,
+        PreTrainedTokenizer,
+        PreTrainedTokenizerFast,
+        ProcessorMixin,
+    )
 
 LOG = get_logger(__name__)
 
@@ -300,9 +302,9 @@ def load_model_and_tokenizer(
     cfg: DictDefault,
     inference: bool = False,
 ) -> tuple[
-    PreTrainedModel,
-    PreTrainedTokenizer | PreTrainedTokenizerFast | Any,
-    ProcessorMixin | None,
+    "PreTrainedModel",
+    "PreTrainedTokenizer" | "PreTrainedTokenizerFast" | Any,
+    "ProcessorMixin" | None,
 ]:
     """
     Helper function for loading a model, tokenizer, and processor specified in the given `axolotl`
@@ -315,6 +317,9 @@ def load_model_and_tokenizer(
     Returns:
         Tuple of (PreTrainedModel, PreTrainedTokenizer, ProcessorMixin).
     """
+    from axolotl.loaders import load_processor, load_tokenizer
+    from axolotl.loaders.model import ModelLoader
+
     LOG.info(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
     tokenizer = load_tokenizer(cfg)
 
