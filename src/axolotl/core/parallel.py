@@ -40,6 +40,7 @@ class DistParallel:
             dp_total_size = dp_total_size // tp_size
         if cp_size and cp_size > 1:
             dp_total_size = dp_total_size // cp_size
+
         if dp_shard_size and dp_shard_size > 1:
             dp_replicate_size = dp_total_size // dp_shard_size
         elif dp_replicate_size and dp_replicate_size > 1:
@@ -47,6 +48,8 @@ class DistParallel:
         elif dp_shard_size is None and fsdp:
             # assume FSDP across all remaining dims
             dp_shard_size = dp_total_size
+        elif (tp_size and tp_size > 1) or (cp_size and cp_size > 1):
+            dp_replicate_size = dp_total_size
         else:
             raise ValueError("Unhandled distributed parallelism configuration")
 
