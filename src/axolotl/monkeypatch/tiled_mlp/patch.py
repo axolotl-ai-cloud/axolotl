@@ -2,15 +2,20 @@
 
 import math
 import os
+from functools import partial
 
 import torch
 import torch.distributed as dist
+from deepspeed.runtime.sequence_parallel.ulysses_sp import TiledMLP
 
 from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
 
+from .fsdp import TiledMLPFSDP
 
-def patch_tiled_mlp(model_type, use_original_mlp=False, cfg_num_shards=None):
-    from deepspeed.runtime.sequence_parallel.ulysses_sp import TiledMLP
+
+def patch_tiled_mlp_distributed(
+    tiled_mlp_cls, model_type, use_original_mlp=False, cfg_num_shards=None
+):
 
     try:
         # Dynamically import the module and MLP class
@@ -52,7 +57,7 @@ def patch_tiled_mlp(model_type, use_original_mlp=False, cfg_num_shards=None):
 
             compute_params = self._compute_params  # pylint: disable=protected-access
 
-            down_res = TiledMLP.apply(
+            down_res = tiled_mlp_cls.apply(
                 mlp_forward,
                 self,
                 x,
@@ -68,3 +73,7 @@ def patch_tiled_mlp(model_type, use_original_mlp=False, cfg_num_shards=None):
             f"Could not import MLP class for model_type: {model_type}. "
             f"Error: {str(e)}"
         ) from e
+
+
+patch_tiled_mlp_deepspeed = partial(patch_tiled_mlp_distributed, TiledMLP)
+patch_tiled_mlp_fsdp = partial(patch_tiled_mlp_distributed, TiledMLPFSDP)
