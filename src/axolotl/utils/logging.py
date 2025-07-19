@@ -4,8 +4,6 @@ import functools
 import logging
 import os
 
-from axolotl.utils.distributed import is_main_process
-
 # Adapted from Accelerate
 # https://github.com/huggingface/accelerate/blob/main/src/accelerate/logging.py
 
@@ -17,6 +15,8 @@ class MultiProcessAdapter(logging.LoggerAdapter):
 
     @staticmethod
     def _should_log(main_process_only: bool):
+        from axolotl.utils.distributed import is_main_process
+
         return not main_process_only or is_main_process()
 
     def log(self, level, msg, *args, **kwargs):
