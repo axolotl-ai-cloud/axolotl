@@ -534,7 +534,7 @@ class TrainerBuilderBase(abc.ABC):
     def _configure_dist_parallel(self, training_args_kwargs: dict):
         if (
             self.cfg.tensor_parallel_size > 1
-            or self.cfg.dp_shard_size > 1
+            or (self.cfg.dp_shard_size and self.cfg.dp_shard_size > 1)
             or self.cfg.sequence_parallel_degree > 1
         ):
             dist_parallel = DistParallel.build(
