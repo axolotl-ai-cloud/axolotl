@@ -19,6 +19,9 @@ class DistParallel:
     tp_size: int | None = field(default=1)
     cp_size: int | None = field(default=1)
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}(dp_replicate_size={self.dp_replicate_size}, dp_shard_size={self.dp_shard_size}, tp_size={self.tp_size}, cp_size={self.cp_size})"
+
     @classmethod
     def build(
         cls,
@@ -47,12 +50,14 @@ class DistParallel:
         else:
             raise ValueError("Unhandled distributed parallelism configuration")
 
-        return cls(
+        res = cls(
             dp_replicate_size=dp_replicate_size or 1,
             dp_shard_size=dp_shard_size or 1,
             tp_size=tp_size or 1,
             cp_size=cp_size or 1,
         )
+        LOG.debug(res, main_process_only=True)
+        return res
 
     def get_mesh(self):
         mesh_dims = ()
