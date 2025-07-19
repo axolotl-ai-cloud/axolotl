@@ -25,9 +25,6 @@ import importlib
 import traceback
 from typing import TYPE_CHECKING, Callable, OrderedDict, Union
 
-from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LRScheduler
-
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
@@ -35,6 +32,8 @@ LOG = get_logger(__name__)
 
 if TYPE_CHECKING:
     from peft import PeftModel
+    from torch.optim import Optimizer
+    from torch.optim.lr_scheduler import LRScheduler
     from transformers import PreTrainedModel, Trainer
 
     from axolotl.common.datasets import TrainDatasetMeta
