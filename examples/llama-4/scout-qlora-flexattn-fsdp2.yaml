@@ -74,7 +74,7 @@ fsdp:
 fsdp_config:
   fsdp_version: 2
   fsdp_offload_params: false
-  fsdp_cpu_ram_efficient_loading: true
+  # fsdp_cpu_ram_efficient_loading: true # does not work with load_in_8bit/4bit
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
   fsdp_transformer_layer_cls_to_wrap: Llama4TextDecoderLayer
   fsdp_state_dict_type: SHARDED_STATE_DICT
