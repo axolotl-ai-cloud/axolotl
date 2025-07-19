@@ -8,16 +8,17 @@ from datetime import timedelta
 import torch
 import torch.distributed as dist
 from accelerate import PartialState
-from transformers.utils.import_utils import (
-    is_torch_cuda_available,
-    is_torch_mps_available,
-    is_torch_npu_available,
-)
 
 distributed_state = None  # pylint: disable=invalid-name
 
 
 def get_device_type() -> torch.device:
+    from transformers.utils.import_utils import (
+        is_torch_cuda_available,
+        is_torch_mps_available,
+        is_torch_npu_available,
+    )
+
     device = torch.device("cpu")
     if is_torch_cuda_available():
         device = torch.device("cuda")
