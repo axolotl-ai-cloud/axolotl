@@ -658,7 +658,8 @@ also follow the config field mapping below to update field names.</p>
 </tr>
 </tbody>
 </table>
-<p>For example, if you were using the following FSDP1 config:</p>
+<p>For more details, please see the migration guide in the <a href="https://github.com/pytorch/torchtitan/blob/main/docs/fsdp.md">torchtitan repo</a>. In Axolotl,
+if you were using the following FSDP1 config:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
@@ -1308,8 +1309,8 @@ single sequence causes OOM errors during model training.</p>
 <span id="cb6-98"><a href="#cb6-98" aria-hidden="true" tabindex="-1"></a>fsdp_state_dict_type | state_dict_type</span>
 <span id="cb6-99"><a href="#cb6-99" aria-hidden="true" tabindex="-1"></a>fsdp_use_orig_params | **REMOVED**</span>
 <span id="cb6-100"><a href="#cb6-100" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-101"><a href="#cb6-101" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-102"><a href="#cb6-102" aria-hidden="true" tabindex="-1"></a>For example, if you were using the following FSDP1 config:</span>
+<span id="cb6-101"><a href="#cb6-101" aria-hidden="true" tabindex="-1"></a>For more details, please see the migration guide in the <span class="co">[</span><span class="ot">torchtitan repo</span><span class="co">](https://github.com/pytorch/torchtitan/blob/main/docs/fsdp.md)</span>. In Axolotl,</span>
+<span id="cb6-102"><a href="#cb6-102" aria-hidden="true" tabindex="-1"></a>if you were using the following FSDP1 config:</span>
 <span id="cb6-103"><a href="#cb6-103" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb6-104"><a href="#cb6-104" aria-hidden="true" tabindex="-1"></a><span class="in">```{.yaml}</span></span>
 <span id="cb6-105"><a href="#cb6-105" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
