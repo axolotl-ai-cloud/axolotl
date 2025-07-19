@@ -3,7 +3,6 @@
 # pylint: disable=too-many-boolean-expressions
 
 import json
-import logging
 import tempfile
 from pathlib import Path
 
@@ -13,11 +12,12 @@ from pydantic import (
 )
 from transformers.utils.import_utils import is_torch_npu_available
 
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
 
 # pylint: disable=too-many-lines
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
 
@@ -116,7 +116,8 @@ class DatasetValidationMixin:
             and not data.get("eval_table_size")
         ):
             LOG.info(
-                "explicitly setting `eval_sample_packing` to match `sample_packing`"
+                "explicitly setting `eval_sample_packing` to match `sample_packing`",
+                main_process_only=True,
             )
             data["eval_sample_packing"] = True
 

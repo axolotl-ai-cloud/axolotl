@@ -295,4 +295,9 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
         LOG.info(
             "No Chat template selected. Consider adding a chat template for easier inference."
         )
+
+    # make the tokenizer.pad call quieter 🤐
+    if hasattr(tokenizer, "deprecation_warnings"):
+        tokenizer.deprecation_warnings["Asking-to-pad-a-fast-tokenizer"] = True
+
     return tokenizer

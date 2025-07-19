@@ -7,6 +7,9 @@ import torch
 import torch.distributed as dist
 
 from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 def patch_tiled_mlp(model_type, use_original_mlp=False, cfg_num_shards=None):
@@ -63,6 +66,10 @@ def patch_tiled_mlp(model_type, use_original_mlp=False, cfg_num_shards=None):
 
         mlp_cls.forward = tiled_mlp_forward
         mlp_cls._compute_params = []  # pylint: disable=protected-access
+        LOG.info(
+            f"Successfully monkey-patched TiledMLP for model_type: {model_type}",
+            main_process_only=True,
+        )
     except (ImportError, AttributeError) as e:
         raise RuntimeError(
             f"Could not import MLP class for model_type: {model_type}. "

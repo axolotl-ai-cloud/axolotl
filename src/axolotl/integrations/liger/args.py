@@ -53,3 +53,12 @@ class LigerArgs(BaseModel):
             )
             data["liger_glu_activation"] = data.pop("liger_swiglu")
         return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_tiled_mlp_conflict(cls, data):
+        if data.get("liger_glu_activation") is True and data.get("tiled_mlp") is True:
+            raise ValueError(
+                "You cannot have both `liger_glu_activation` and `tiled_mlp` set."
+            )
+        return data
