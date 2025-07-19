@@ -867,6 +867,11 @@ class GCCallback(TrainerCallback):
         torch.cuda.empty_cache()
         gc.collect()
 
+    def on_train_begin(
+        self, args, state, control, **kwargs  # pylint: disable=unused-argument
+    ):
+        self._gc()
+
     def on_step_begin(
         self, args, state, control, **kwargs  # pylint: disable=unused-argument
     ):
