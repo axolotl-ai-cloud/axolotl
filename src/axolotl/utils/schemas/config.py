@@ -644,12 +644,6 @@ class AxolotlInputConfig(
         },
     )
 
-    tp_size: int | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Number of devices to shard across. If not set, defaults to no Tensor Parallelism"
-        },
-    )
     dp_shard_size: int | None = Field(
         default=None,
         json_schema_extra={

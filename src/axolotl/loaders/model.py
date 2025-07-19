@@ -622,11 +622,11 @@ class ModelLoader:
     def _build_model(self) -> bool:
         """Load model, with load strategy depending on config."""
 
-        if self.cfg.tp_size > 1:
+        if self.cfg.tensor_parallel_size and self.cfg.tensor_parallel_size > 1:
             # from pretrained only needs to know about Tensor Parallelism for sharding weights
             dist_parallel = DistParallel.build(
                 dp_shard_size=self.cfg.dp_shard_size,
-                tp_size=self.cfg.tp_size,
+                tp_size=self.cfg.tensor_parallel_size,
                 cp_size=self.cfg.cp_size,
                 fsdp=bool(self.cfg.fsdp_config),
                 world_size=None,
