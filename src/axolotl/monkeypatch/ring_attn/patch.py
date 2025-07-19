@@ -8,11 +8,9 @@ We also provide some patches for accelerate functions to prepare the dataloader 
 sequence parallelism training.
 """
 
-import inspect
 import os
 from typing import Optional
 
-import accelerate
 import torch
 import torch.distributed as dist
 from transformers.modeling_flash_attention_utils import _flash_supports_window_size
@@ -25,31 +23,6 @@ LOG = get_logger(__name__)
 
 
 RING_ATTN_GROUP = None
-
-ORIGINAL_PREPARE_DATALOADER_CODE = """            submesh_fsdp_size = 1
-            submesh_dp_size = 1
-            submesh_tp_size = 1
-            if "tp" in torch_device_mesh.mesh_dim_names:
-                submesh_tp_size = torch_device_mesh["tp"].size()
-            if "dp" in torch_device_mesh.mesh_dim_names:
-                submesh_dp_size = torch_device_mesh["dp"].size()
-            if "fsdp" in torch_device_mesh.mesh_dim_names:
-                submesh_fsdp_size = torch_device_mesh["fsdp"].size()
-            process_index = process_index // submesh_tp_size"""
-
-NEW_PREPARE_DATALOADER_CODE = """            submesh_fsdp_size = 1
-            submesh_dp_size = 1
-            submesh_tp_size = 1
-            submesh_cp_size = 1
-            if "cp" in torch_device_mesh.mesh_dim_names:
-                submesh_cp_size = torch_device_mesh["cp"].size()
-            if "tp" in torch_device_mesh.mesh_dim_names:
-                submesh_tp_size = torch_device_mesh["tp"].size()
-            if "dp" in torch_device_mesh.mesh_dim_names:
-                submesh_dp_size = torch_device_mesh["dp"].size()
-            if "fsdp" in torch_device_mesh.mesh_dim_names:
-                submesh_fsdp_size = torch_device_mesh["fsdp"].size()
-            process_index = process_index // (submesh_tp_size * submesh_cp_size)"""
 
 
 def get_ring_attn_group() -> dist.ProcessGroup:
@@ -251,92 +224,3 @@ def update_ring_attn_params(position_ids: torch.Tensor | None):
     cu_seqlens, _ = get_cu_seqlens_from_pos_ids(position_ids)
     cu_seqlens = cu_seqlens.squeeze().to(device=torch.cuda.current_device())
     update_ring_flash_attn_params(cu_seqlens, get_ring_attn_group())
-
-
-def patch_prepare_data_loader():
-    """Patch `accelerate.data_loader.prepare_data_loader` to respect the SP degree.
-
-    Raises:
-        RuntimeError: If source code to patch does not exist.
-    """
-    original_fn = accelerate.data_loader.prepare_data_loader
-    original_source = inspect.getsource(original_fn)
-
-    if ORIGINAL_PREPARE_DATALOADER_CODE not in original_source:
-        raise RuntimeError(
-            "SP patch failed - target snippet not found. "
-            "Check accelerate's version or update the patch."
-        )
-
-    patched_source = original_source.replace(
-        ORIGINAL_PREPARE_DATALOADER_CODE, NEW_PREPARE_DATALOADER_CODE
-    )
-
-    items_to_import = []
-    for item in dir(accelerate.data_loader):
-        if item in patched_source:
-            items_to_import.append(item)
-
-    # Create a new function from the patched source
-    namespace = {}
-    exec(  # pylint: disable=exec-used  # nosec B102
-        f"from accelerate.data_loader import ({', '.join(items_to_import)})",
-        globals(),
-    )
-    exec(  # pylint: disable=exec-used  # nosec B102
-        patched_source, globals(), namespace
-    )
-
-    patched_function = namespace["prepare_data_loader"]
-    original_fn.__code__ = patched_function.__code__
-
-    LOG.info("Patched accelerate.data_loader.prepare_data_loader for SP support")
-
-
-def patch_prepare_device_mesh(sequence_parallel_degree: int, fsdp: bool = False):
-    """Patches the `Accelerator._prepare_device_mesh` method to create a device mesh
-    that includes sequence parallelism with the specified degree.
-
-    Args:
-        sequence_parallel_degree: The degree of sequence parallelism to use.
-        fsdp: Whether to use FSDP.
-    """
-
-    def _prepare_device_mesh(self):
-        """Prepare the device mesh for distributed training. The dataloader will
-        determine how to load data based on the device mesh.
-        """
-        if self.state.torch_tp_plugin:
-            return self.state.torch_tp_plugin.torch_device_mesh
-        if (
-            self.distributed_type == accelerate.accelerator.DistributedType.DEEPSPEED
-            and hasattr(self.state, "ds_device_mesh")
-        ):
-            return self.state.ds_device_mesh
-
-        # Create device mesh with sequence parallelism
-        world_size = dist.get_world_size()
-        mesh_shape = (
-            world_size // sequence_parallel_degree,
-            sequence_parallel_degree,
-        )
-        device_ids = list(range(world_size))
-
-        # NOTE: We use "cp" instead of "sp" to match the PyTorch native "context
-        # parallelism" implementation naming.
-        # NOTE: We have a simplified FSDP handling here; i.e., if FSDP is enabled, we
-        # only use "fsdp" and "cp" for the device mesh.
-        return dist.DeviceMesh(
-            "cuda",
-            torch.tensor(device_ids).reshape(mesh_shape),
-            mesh_dim_names=("dp", "cp") if not fsdp else ("fsdp", "cp"),
-        )
-
-    # Replace the original method with our new method
-    # pylint: disable=protected-access
-    accelerate.accelerator.Accelerator._prepare_device_mesh = _prepare_device_mesh
-
-    LOG.info(
-        "Successfully patched Accelerator._prepare_device_mesh "
-        f"with sequence_parallel_degree={sequence_parallel_degree}"
-    )
