@@ -870,7 +870,8 @@ class GCCallback(TrainerCallback):
     def on_step_begin(
         self, args, state, control, **kwargs  # pylint: disable=unused-argument
     ):
-        if self.next_gc_on_begin_step == state.global_step:
+        # pylint: disable=consider-using-in
+        if self.next_gc_on_begin_step == state.global_step or state.global_step == 0:
             self._gc()
 
     def on_step_end(

@@ -272,13 +272,23 @@ class PatchManager:
 
     def _apply_tiled_mlp(self, model_type: str):
         if self.cfg.tiled_mlp:
-            from axolotl.monkeypatch.tiled_mlp import patch_tiled_mlp
-
-            patch_tiled_mlp(
-                model_type,
-                use_original_mlp=self.cfg.tiled_mlp_use_original_mlp,
-                cfg_num_shards=self.cfg.tiled_mlp_num_shards,
+            from axolotl.monkeypatch.tiled_mlp import (
+                patch_tiled_mlp_deepspeed,
+                patch_tiled_mlp_fsdp,
             )
+
+            if self.cfg.deepspeed:
+                patch_tiled_mlp_deepspeed(
+                    model_type,
+                    use_original_mlp=self.cfg.tiled_mlp_use_original_mlp,
+                    cfg_num_shards=self.cfg.tiled_mlp_num_shards,
+                )
+            if self.cfg.fsdp:
+                patch_tiled_mlp_fsdp(
+                    model_type,
+                    use_original_mlp=self.cfg.tiled_mlp_use_original_mlp,
+                    cfg_num_shards=self.cfg.tiled_mlp_num_shards,
+                )
 
     def _patch_attention(self):
         """Apply attention-specific patches based on model type."""

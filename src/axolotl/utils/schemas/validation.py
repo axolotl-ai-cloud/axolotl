@@ -519,9 +519,11 @@ class TrainingValidationMixin:
         n_gpu = 0
         if capabilities and capabilities.get("n_gpu", 0) >= 1:
             n_gpu = capabilities.get("n_gpu", 0)
-        if data.get("tiled_mlp", False) and (n_gpu > 1 and not data.get("deepspeed")):
+        if data.get("tiled_mlp", False) and (
+            n_gpu > 1 and not data.get("deepspeed") and not data.get("fsdp_config")
+        ):
             raise ValueError(
-                "tiled_mlp requires deepspeed ZeRO to be enabled for multi-gpu"
+                "tiled_mlp requires single GPU, FSDP, or deepspeed ZeRO to be enabled for multi-gpu"
             )
         return data
 
