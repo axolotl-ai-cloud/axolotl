@@ -4,10 +4,6 @@ import json
 import os
 from typing import Optional
 
-import torch
-from transformers.utils import is_torch_bf16_gpu_available
-from transformers.utils.import_utils import is_torch_npu_available
-
 from axolotl.integrations.base import PluginManager
 from axolotl.integrations.config import merge_input_args
 from axolotl.loaders import MULTIMODAL_AUTO_MODEL_MAPPING
@@ -25,6 +21,9 @@ LOG = get_logger(__name__)
 
 
 def choose_device(cfg):
+    import torch
+    from transformers.utils.import_utils import is_torch_npu_available
+
     def get_device():
         try:
             if torch.cuda.is_available():
@@ -59,6 +58,9 @@ def choose_device(cfg):
 
 
 def resolve_dtype(cfg):
+    import torch
+    from transformers.utils import is_torch_bf16_gpu_available
+
     if (
         not cfg.fp16 and cfg.bf16 == "auto" and not cfg.use_ray
     ):  # if we use ray we want to defer this check to the worker node
