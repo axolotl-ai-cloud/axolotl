@@ -432,7 +432,7 @@ def save_preprocessed_dataset(
         os.makedirs(prepared_ds_path, exist_ok=True)
         dataset.save_to_disk(
             str(prepared_ds_path),
-            num_proc=num_workers,
+            num_proc=min(len(dataset) // 4, num_workers),
             max_shard_size=None,
             num_shards=cfg.num_dataset_shards_to_save,
         )
