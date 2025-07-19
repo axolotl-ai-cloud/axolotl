@@ -297,6 +297,7 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
         )
 
     # make the tokenizer.pad call quieter 🤐
-    tokenizer.deprecation_warnings["Asking-to-pad-a-fast-tokenizer"] = True
+    if hasattr(tokenizer, "deprecation_warnings"):
+        tokenizer.deprecation_warnings["Asking-to-pad-a-fast-tokenizer"] = True
 
     return tokenizer
