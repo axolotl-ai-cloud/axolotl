@@ -22,6 +22,8 @@ RUN apt-get update \
     && mkdir /root/.conda \
     && bash Miniconda3-latest-Linux-x86_64.sh -b \
     && rm -f Miniconda3-latest-Linux-x86_64.sh \
+    && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main \
+    && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r \
     && conda create -n "py${PYTHON_VERSION}" python="${PYTHON_VERSION}"
 
 ENV PATH="/root/miniconda3/envs/py${PYTHON_VERSION}/bin:${PATH}"
