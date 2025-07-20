@@ -910,6 +910,13 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_dp_shard_size_fsdp(cls, data):
+        if data.get("fsdp_config", {}) and data.get("dp_shard_size", 1) <= 1:
+            raise ValueError("dp_shard_size must be greater than 1 when using FSDP")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_tensor_parallel_size_update_ds_json(cls, data):
         tensor_parallel_size = data.get("tensor_parallel_size")
         if tensor_parallel_size is not None and tensor_parallel_size > 1:

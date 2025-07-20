@@ -264,7 +264,7 @@ class PatchManager:
         should_patch = False
         if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
             should_patch = True
-        if self.cfg.fsdp_config and self.cfg.dp_shard_size:
+        if self.cfg.fsdp_config and self.cfg.dp_shard_size > 1:
             should_patch = True
         if should_patch:
             from axolotl.monkeypatch.dist_parallel import (
