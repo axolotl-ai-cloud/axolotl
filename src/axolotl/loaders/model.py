@@ -632,8 +632,11 @@ class ModelLoader:
                 world_size=None,
             )
             device_mesh = dist_parallel.get_device_mesh()
+            self.model_kwargs["tp_size"] = self.cfg.tensor_parallel_size
+            self.model_kwargs["tp_plan"] = "auto"
             self.model_kwargs["device_mesh"] = device_mesh[("tp",)]
-            self.model_kwargs["device_map"] = torch.get_default_device()
+            if "device_map" in self.model_kwargs:
+                del self.model_kwargs["device_map"]  # not compatible with `tp_plan`
 
         skip_move_to_device = False
         if self.is_fsdp_enabled:
