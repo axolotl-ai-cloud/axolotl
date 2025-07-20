@@ -16,8 +16,6 @@
 Module for handling LIGER input arguments.
 """
 
-from typing import Optional
-
 from pydantic import BaseModel, model_validator
 
 from axolotl.utils.logging import get_logger
@@ -30,13 +28,13 @@ class LigerArgs(BaseModel):
     Input args for LIGER.
     """
 
-    liger_rope: Optional[bool] = None
-    liger_rms_norm: Optional[bool] = None
-    liger_layer_norm: Optional[bool] = None
-    liger_swiglu: Optional[bool] = None
-    liger_glu_activation: Optional[bool] = None
-    liger_cross_entropy: Optional[bool] = None
-    liger_fused_linear_cross_entropy: Optional[bool] = None
+    liger_rope: bool | None = None
+    liger_rms_norm: bool | None = None
+    liger_layer_norm: bool | None = None
+    liger_swiglu: bool | None = None
+    liger_glu_activation: bool | None = None
+    liger_cross_entropy: bool | None = None
+    liger_fused_linear_cross_entropy: bool | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -53,3 +51,12 @@ class LigerArgs(BaseModel):
             )
             data["liger_glu_activation"] = data.pop("liger_swiglu")
         return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_liger_rms_norm_tensor_parallel(cls, data):
+        if data.get("liger_rms_norm") and data.get("tensor_parallel_size", 1) <= 1:
+            raise ValueError(
+                "`liger_rms_norm` is incompatible with tensor parallelism, "
+                "see https://github.com/linkedin/Liger-Kernel/issues/826"
+            )
