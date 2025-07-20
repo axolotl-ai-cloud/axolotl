@@ -10,9 +10,10 @@ from torch.utils.hooks import RemovableHandle
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.utils import ModelOutput
 
+from axolotl.core.parallel import DistParallel
 from axolotl.monkeypatch.ring_attn import (
     get_ring_attn_group,
-    register_ring_attn,
+    register_ring_attn_from_device_mesh,
     update_ring_attn_params,
 )
 from axolotl.utils.schemas.enums import RingAttnFunc
@@ -230,8 +231,10 @@ class SequenceParallelContextManager:
 
     def _register_ring_attn(self):
         # Initialize ring attn for sequence parallelism
-        register_ring_attn(
-            sequence_parallel_degree=self.sequence_parallel_degree,
+        device_mesh = DistParallel().get_device_mesh()
+        register_ring_attn_from_device_mesh(
+            device_mesh,
+            sequence_parallel_dim=("cp",),
             heads_k_stride=self.heads_k_stride,
             ring_attn_func=self.ring_attn_func,
         )

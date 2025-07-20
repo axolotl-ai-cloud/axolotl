@@ -217,6 +217,86 @@ def register_ring_attn(
         )
 
 
+def register_ring_attn_from_device_mesh(
+    device_mesh: "DeviceMesh",
+    sequence_parallel_dim: str,
+    heads_k_stride: int | None,
+    ring_attn_func: RingAttnFunc | None,
+):
+    """Create ring attention group using DeviceMesh and substitute flash attn with ring flash attn.
+
+    Args:
+        device_mesh: DeviceMesh object containing the parallelism topology.
+        sequence_parallel_dim: Name of the sequence parallel dimension in the device mesh.
+        heads_k_stride: Sequence parallelism K head stride size. Passed through to
+            `varlen_llama3` `ring_flash_attn` implementation.
+        ring_attn_func: `ring_flash_attn` ring attention implemention. If sample
+            packing is enabled, it must be a `varlen` function; otherwise, it must be a
+            `batch` function.
+    """
+    rank = dist.get_rank()
+
+    if rank == 0:
+        LOG.info(
+            f"Enabling ring attention sequence parallelism using DeviceMesh "
+            f"dimension '{sequence_parallel_dim}'"
+        )
+
+    # Extract the sequence parallel submesh
+    try:
+        sequence_mesh = device_mesh[sequence_parallel_dim]
+    except (KeyError, IndexError) as e:
+        raise ValueError(
+            f"Dimension '{sequence_parallel_dim}' not found in device_mesh. "
+            f"Available dimensions: {device_mesh.mesh_dim_names}"
+        ) from e
+
+    # Get the process group for sequence parallelism
+    sequence_pg = sequence_mesh.get_group()
+    sequence_parallel_degree = sequence_mesh.size()
+
+    if rank == 0:
+        LOG.info(
+            f"Sequence parallel degree: {sequence_parallel_degree}, "
+            f"mesh shape: {sequence_mesh.mesh.shape}"
+        )
+
+        # Log which ranks are in the current process group
+        if sequence_pg != dist.GroupMember.WORLD:
+            ranks_in_group = dist.get_process_group_ranks(sequence_pg)
+            LOG.info(f"Current sequence parallel group ranks: {ranks_in_group}")
+
+    # Set the ring attention group
+    set_ring_attn_group(sequence_pg)
+
+    if ring_attn_func is RingAttnFunc.VARLEN_LLAMA3:
+        # fmt: off
+        import ring_flash_attn.adapters.hf_adapter
+
+        from ring_flash_attn.adapters.hf_adapter import (  # isort: skip  # pylint: disable=unused-import
+            create_ring_flash_attention_forward as create_ring_flash_attention_forward_orig,
+        )
+
+        create_ring_flash_attention_forward_orig = (  # noqa: F811,F841
+            create_ring_flash_attention_forward
+        )
+        ring_flash_attn.adapters.hf_adapter.create_ring_flash_attention_forward = create_ring_flash_attention_forward
+        # fmt: on
+
+        ring_flash_attn.adapters.hf_adapter.substitute_hf_flash_attn(
+            process_group=get_ring_attn_group(), heads_k_stride=heads_k_stride or 1
+        )
+    elif ring_attn_func is RingAttnFunc.BATCH_RING:
+        from axolotl.monkeypatch.ring_attn.adapters.batch import (
+            substitute_hf_flash_attn,
+        )
+
+        substitute_hf_flash_attn(
+            process_group=get_ring_attn_group(),
+            ring_attn_func=ring_attn_func,
+        )
+
+
 def update_ring_attn_params(position_ids: torch.Tensor | None):
     """
     Calculate the cumulative sequence lengths for the current forward pass and pass the
