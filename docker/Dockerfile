@@ -10,7 +10,8 @@ ARG PYTORCH_VERSION="2.1.2"
 ENV PYTORCH_VERSION=$PYTORCH_VERSION
 
 RUN apt-get update && \
-    apt-get install -y --allow-change-held-packages vim curl nano libnccl2 libnccl-dev rsync s3fs
+    apt-get install -y --allow-change-held-packages vim curl nano libnccl2 libnccl-dev rsync s3fs && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
 
@@ -23,17 +24,13 @@ RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         pip install --no-build-isolation -e .[deepspeed,flash-attn,ring-flash-attn,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
     else \
         pip install --no-build-isolation -e .[deepspeed,flash-attn,ring-flash-attn,optimizers,ray] $AXOLOTL_ARGS; \
-    fi
-
-RUN python scripts/unsloth_install.py | sh
-RUN python scripts/cutcrossentropy_install.py | sh
-
-# So we can test the Docker image
-RUN pip install pytest
+    fi && \
+    python scripts/unsloth_install.py | sh && \
+    python scripts/cutcrossentropy_install.py | sh && \
+    pip install pytest && \
+    pip cache purge
 
 # fix so that git fetch/pull from remote works
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
-    git config --get remote.origin.fetch
-
-# helper for huggingface-login cli
-RUN git config --global credential.helper store
+    git config --get remote.origin.fetch && \
+    git config --global credential.helper store
