@@ -35,3 +35,6 @@ RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
     git config --get remote.origin.fetch && \
     git config --global credential.helper store
+
+COPY .axolotl-complete.bash /root/.axolotl-complete.bash
+RUN echo 'source /root/.axolotl-complete.bash' >> ~/.bashrc
