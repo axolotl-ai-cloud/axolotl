@@ -15,7 +15,7 @@
     "stage3_param_persistence_threshold": "auto",
     "stage3_max_live_parameters": 0,
     "stage3_max_reuse_distance": 0,
-    "stage3_gather_16bit_weights_on_model_save": true
+    "gather_16bit_weights_on_model_save": true
   },
   "bf16": {
     "enabled": true
