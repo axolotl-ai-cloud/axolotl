@@ -1,14 +1,18 @@
+"""Axolotl Trainer mixin to patch Accelerator for distributed parallel training"""
+
 import transformers.trainer
-from accelerate import PartialState
 
 from axolotl.core.parallel import DistParallel
 from axolotl.monkeypatch.accelerate.axolotl import AxolotlAccelerator
 
 
 class DistParallelMixin(transformers.trainer.Trainer):
+    """
+    Trainer mixin to patch Accelerator for distributed parallel training
+    """
+
     def create_accelerator_and_postprocess(self):
         transformers.trainer.Accelerator = AxolotlAccelerator
-        PartialState().distributed_type = "TP"
         res = super().create_accelerator_and_postprocess()
 
         if self.args.world_size > 1:
@@ -26,8 +30,10 @@ class DistParallelMixin(transformers.trainer.Trainer):
                 **dist_parallel_kwargs,
             )
             self.accelerator.world_device_mesh = dist_parallel.get_device_mesh()
-            if "tp_size" in dist_parallel_kwargs:
+            if (
+                "tp_size" in dist_parallel_kwargs
+                and dist_parallel_kwargs["tp_size"] > 1
+            ):
                 self.accelerator.state.distributed_type = "TP"
-                PartialState._shared_state["distributed_type"] = "TP"
 
         return res
