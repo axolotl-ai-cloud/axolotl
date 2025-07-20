@@ -1,6 +1,7 @@
 import os
 from dataclasses import dataclass, field
 
+from test_dict import DictDefaultTest
 from torch.distributed import init_device_mesh
 
 from axolotl.utils.logging import get_logger
@@ -18,6 +19,13 @@ class DistParallel:
     dp_shard_size: int | None = field(default=1)
     tp_size: int | None = field(default=1)
     cp_size: int | None = field(default=1)
+
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls, *args, **kwargs)
+        return cls._instance
 
     def __repr__(self):
         return f"{self.__class__.__name__}(dp_replicate_size={self.dp_replicate_size}, dp_shard_size={self.dp_shard_size}, tp_size={self.tp_size}, cp_size={self.cp_size})"
