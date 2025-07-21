@@ -308,7 +308,7 @@ def _load_raw_datasets(
 ) -> tuple[Dataset, list[Prompter | None]]:
     """Load, process, merge, and save raw datasets."""
     LOG.info("Loading raw datasets...", main_process_only=False)
-    if not cfg.is_preprocess:
+    if not cfg.is_preprocess and not cfg.skip_prepare_dataset:
         LOG.warning(
             "Processing datasets during training can lead to VRAM instability. Please "
             "pre-process your dataset using `axolotl preprocess path/to/config.yml`."
