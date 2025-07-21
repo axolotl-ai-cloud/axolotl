@@ -26,6 +26,7 @@ from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
+from axolotl.core.parallel import DistParallel
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders import (
     ModelLoader,
@@ -207,10 +208,18 @@ def execute_training(
             if hasattr(trainer, "ref_model") and trainer.ref_model:
                 models.append(trainer.ref_model)
 
+            device_mesh = DistParallel.build(
+                dp_shard_size=cfg.dp_shard_size,
+                tp_size=cfg.tensor_parallel_size,
+                cp_size=cfg.cp_size,
+                fsdp=bool(cfg.fsdp_config),
+                world_size=None,
+            ).get_device_mesh()
             stack.enter_context(
                 SequenceParallelContextManager(
                     models=models,
                     sequence_parallel_degree=cfg.sequence_parallel_degree,
+                    device_mesh=device_mesh,
                     gradient_accumulation_steps=cfg.gradient_accumulation_steps,
                     ring_attn_func=cfg.ring_attn_func,
                     heads_k_stride=cfg.heads_k_stride,

@@ -14,6 +14,7 @@ from typing import Optional
 import torch
 import torch.distributed as dist
 
+from torch.distributed import DeviceMesh
 try:
     from transformers.modeling_flash_attention_utils import _flash_supports_window
 except ImportError:
@@ -219,7 +220,7 @@ def register_ring_attn(
 
 def register_ring_attn_from_device_mesh(
     device_mesh: "DeviceMesh",
-    sequence_parallel_dim: str,
+    sequence_parallel_dim: tuple[str, ...],
     heads_k_stride: int | None,
     ring_attn_func: RingAttnFunc | None,
 ):

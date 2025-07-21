@@ -6,11 +6,11 @@ import inspect
 import torch
 import torch.distributed as dist
 from torch import nn
+from torch.distributed import DeviceMesh
 from torch.utils.hooks import RemovableHandle
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.utils import ModelOutput
 
-from axolotl.core.parallel import DistParallel
 from axolotl.monkeypatch.ring_attn import (
     get_ring_attn_group,
     register_ring_attn_from_device_mesh,
@@ -169,6 +169,7 @@ class SequenceParallelContextManager:
         models: List of models to apply sequence parallelism to pre- and post- forward
             hooks.
         sequence_parallel_degree: Number of processes to split sequences over.
+        device_mesh: Device mesh to use for distributed parallelism.
         gradient_accumulation_steps: Number of steps to accumulate gradients over.
         ring_attn_func: Which ring attention function to use. Currently unused.
         heads_k_stride: Sequence parallelism K head stride size. Passed through to
@@ -181,6 +182,7 @@ class SequenceParallelContextManager:
         self,
         models: list[nn.Module],
         sequence_parallel_degree: int,
+        device_mesh: "DeviceMesh",
         gradient_accumulation_steps: int,
         ring_attn_func: RingAttnFunc,
         heads_k_stride: int | None,
@@ -188,6 +190,7 @@ class SequenceParallelContextManager:
     ):
         self.models = models
         self.sequence_parallel_degree = sequence_parallel_degree
+        self.device_mesh = device_mesh
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.ring_attn_func = ring_attn_func
         self.heads_k_stride = heads_k_stride
@@ -231,9 +234,8 @@ class SequenceParallelContextManager:
 
     def _register_ring_attn(self):
         # Initialize ring attn for sequence parallelism
-        device_mesh = DistParallel().get_device_mesh()
         register_ring_attn_from_device_mesh(
-            device_mesh,
+            self.device_mesh,
             sequence_parallel_dim=("cp",),
             heads_k_stride=self.heads_k_stride,
             ring_attn_func=self.ring_attn_func,
