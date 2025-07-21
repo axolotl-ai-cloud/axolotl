@@ -2,7 +2,6 @@
 
 # pylint: disable=too-many-lines
 
-import os
 from typing import Annotated, Any, Literal
 
 from annotated_types import MinLen
@@ -15,6 +14,7 @@ from pydantic import (
     model_validator,
 )
 
+from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
@@ -1211,11 +1211,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @classmethod
     def default_dataset_processes(cls, data):
         if data.get("dataset_processes") is None:
-            if axolotl_dataset_processes := os.environ.get("AXOLOTL_DATASET_PROCESSES"):
-                data["dataset_processes"] = int(axolotl_dataset_processes)
-            elif runpod_cpu_count := os.environ.get("RUNPOD_CPU_COUNT"):
-                data["dataset_processes"] = int(runpod_cpu_count)
-            else:
-                data["dataset_processes"] = os.cpu_count()
+            data["dataset_processes"] = get_default_process_count()
 
         return data
