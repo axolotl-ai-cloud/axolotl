@@ -31,10 +31,11 @@ RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
     pip install pytest && \
     pip cache purge
 
-# fix so that git fetch/pull from remote works
+# fix so that git fetch/pull from remote works with shallow clone
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
     git config --get remote.origin.fetch && \
     git config --global credential.helper store
 
 COPY .axolotl-complete.bash /root/.axolotl-complete.bash
-RUN echo 'source /root/.axolotl-complete.bash' >> ~/.bashrc
+RUN chmod +x /root/.axolotl-complete.bash && \
+    echo 'source /root/.axolotl-complete.bash' >> ~/.bashrc
