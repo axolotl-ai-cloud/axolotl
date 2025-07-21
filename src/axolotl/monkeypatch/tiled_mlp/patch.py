@@ -8,12 +8,11 @@ import torch
 import torch.distributed as dist
 from deepspeed.runtime.sequence_parallel.ulysses_sp import TiledMLP
 
+from axolotl.monkeypatch.tiled_mlp.fsdp import TiledMLPFSDP
 from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
-
-from .fsdp import TiledMLPFSDP
 
 
 def patch_tiled_mlp_distributed(
