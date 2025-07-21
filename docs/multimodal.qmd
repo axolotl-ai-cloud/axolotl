@@ -158,6 +158,12 @@ For audio loading, you can use the following keys within `content` alongside `"t
 - `"url": "https://example.com/audio.mp3"`
 - `"audio": np.ndarray`
 
+::: {.callout-tip}
+
+You may need to install `librosa` via `pip install librosa`.
+
+:::
+
 ### Example
 
 Here is an example of a multi-modal dataset:
@@ -188,3 +194,9 @@ Here is an example of a multi-modal dataset:
   }
 ]
 ```
+
+## FAQ
+
+1. `PIL.UnidentifiedImageError: cannot identify image file ...`
+
+`PIL` could not retrieve the file at `url` using `requests`. Please check for typo. One alternative reason is that the request is blocked by the server.
