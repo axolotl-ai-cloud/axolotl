@@ -24,7 +24,7 @@ output_dir: ./outputs/qat_out/
 sequence_len: 2048
 sample_packing: true
 flex_attention: true
-pad_to_sequence_len: true
+
 
 flex_attn_compile_kwargs:
   dynamic: false
