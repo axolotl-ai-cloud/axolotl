@@ -11,6 +11,7 @@ ENV PYTORCH_VERSION=$PYTORCH_VERSION
 
 RUN apt-get update && \
     apt-get install -y --allow-change-held-packages vim curl nano libnccl2 libnccl-dev rsync s3fs && \
+    rm -rf /var/cache/apt/archives && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
