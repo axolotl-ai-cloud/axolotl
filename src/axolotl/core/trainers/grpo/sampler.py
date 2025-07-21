@@ -20,7 +20,7 @@ class SequenceParallelRepeatRandomSampler(Sampler):
     - Data is properly distributed across SP groups.
 
     In the table below, the values represent dataset indices. Each SP group has
-    `sequence_parallel_size = 2` GPUs working together on the same data. There are 2
+    `context_parallel_size = 2` GPUs working together on the same data. There are 2
     SP groups (SP0 and SP1), with `world_size = 4` total GPUs.
 
                                                Sequence Parallel Groups
@@ -45,7 +45,7 @@ class SequenceParallelRepeatRandomSampler(Sampler):
         rank: Rank of current process.
         batch_size: Number of samples per batch.
         repeat_count: How many times to repeat the full sampling process.
-        sequence_parallel_size: Number of ranks in a sequence parallel group.
+        context_parallel_size: Number of ranks in a sequence parallel group.
         shuffle: Whether to shuffle the dataset.
         seed: Random seed for shuffling.
         drop_last: Whether to drop the last incomplete batch.
@@ -59,7 +59,7 @@ class SequenceParallelRepeatRandomSampler(Sampler):
         rank: int,
         batch_size: int = 1,
         repeat_count: int = 1,
-        sequence_parallel_size: int = 1,
+        context_parallel_size: int = 1,
         shuffle: bool = True,
         seed: int = 0,
         drop_last: bool = False,
@@ -77,9 +77,9 @@ class SequenceParallelRepeatRandomSampler(Sampler):
         self.rank = rank
 
         # Sequence parallelism parameters
-        self.sequence_parallel_size = sequence_parallel_size
-        self.num_sp_groups = world_size // sequence_parallel_size
-        self.sp_group_id = rank // sequence_parallel_size
+        self.context_parallel_size = context_parallel_size
+        self.num_sp_groups = world_size // context_parallel_size
+        self.sp_group_id = rank // context_parallel_size
 
         # Adjust dataset size for distributed sampling
         self.num_samples = len(self.dataset)

@@ -262,7 +262,7 @@ class PatchManager:
     def _apply_dist_parallel_patches(self):
         """Apply distributed parallelism patches."""
         should_patch = False
-        if self.cfg.sequence_parallel_size and self.cfg.sequence_parallel_size > 1:
+        if self.cfg.context_parallel_size and self.cfg.context_parallel_size > 1:
             should_patch = True
         if self.cfg.fsdp_config and self.cfg.dp_shard_size > 1:
             should_patch = True

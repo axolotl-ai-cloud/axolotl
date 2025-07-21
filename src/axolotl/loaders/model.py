@@ -628,7 +628,7 @@ class ModelLoader:
             dist_parallel = DistParallel.build(
                 dp_shard_size=self.cfg.dp_shard_size,
                 tp_size=self.cfg.tensor_parallel_size,
-                cp_size=self.cfg.sequence_parallel_size,
+                cp_size=self.cfg.context_parallel_size,
                 fsdp=bool(self.cfg.fsdp_config),
                 world_size=None,
             )
