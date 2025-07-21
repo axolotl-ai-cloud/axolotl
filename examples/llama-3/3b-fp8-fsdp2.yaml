@@ -68,7 +68,7 @@ fsdp_config:
   fsdp_state_dict_type: FULL_STATE_DICT
   fsdp_sharding_strategy: FULL_SHARD
   fsdp_reshard_after_forward: true
-  fsdp_activation_checkpointing: true
+  fsdp_activation_checkpointing: false
 
 special_tokens:
   pad_token: <|end_of_text|>

@@ -144,6 +144,6 @@ Always validate your mixed precision setup:
   - FP8 + FSDP2 + `torch.compile` + FSDP2 activation checkpointing is _slower_ than the BF16 equivalent training
   - Flash Attention 2 does not play nicely with `torch.compile`
 
-See `examples/llama-3/3b-fp8-fsdp2.yaml` for an optimized example config. Enabling FP8 training results in ~50% faster iterations per second vs. BF16.
+See `examples/llama-3/3b-fp8-fsdp2.yaml` for an optimized example config. Enabling FP8 mixed precision + FP8 all-gather training results in ~10% faster iterations per second vs. BF16 for a relatively small (3B param) model
 
 For more information on multi-GPU training, see our [Multi-GPU guide](multi-gpu.qmd).
