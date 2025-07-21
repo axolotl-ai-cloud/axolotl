@@ -1,8 +1,14 @@
+"""Axolotl subclass of accelerate's Accelerator for handling n-d parallel training"""
+
 import accelerate
 from accelerate import Accelerator
 
 
 class AxolotlAccelerator(Accelerator):
+    """
+    Axolotl subclass of accelerate's Accelerator for handling n-d parallel training
+    """
+
     _world_device_mesh = None
 
     @property

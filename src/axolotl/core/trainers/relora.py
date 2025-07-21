@@ -7,7 +7,7 @@ from axolotl.core.trainers.base import AxolotlTrainer
 from axolotl.monkeypatch.relora import ReLoRAScheduler
 
 
-class ReLoRATrainer(AxolotlTrainer):
+class ReLoRATrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
     """Trainer subclass that uses the `OneCycleLR` scheduler"""
 
     tag_names = ["axolotl", "relora"]

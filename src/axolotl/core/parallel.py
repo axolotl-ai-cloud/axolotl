@@ -102,6 +102,7 @@ class DistParallel:
             dp_shard_cp_mesh_dim_names.append("cp")
             dp_cp_mesh_dim_names.append("cp")
 
+        # pylint: disable=use-implicit-booleaness-not-comparison,protected-access
         if self.dp_shard_size > 1:
             # legacy support for fsdp
             mesh[("dp_shard",)]._flatten(mesh_dim_name="fsdp")

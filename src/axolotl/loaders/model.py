@@ -624,6 +624,7 @@ class ModelLoader:
 
         if self.cfg.tensor_parallel_size and self.cfg.tensor_parallel_size > 1:
             # from pretrained only needs to know about Tensor Parallelism for sharding weights
+            # pylint: disable=duplicate-code
             dist_parallel = DistParallel.build(
                 dp_shard_size=self.cfg.dp_shard_size,
                 tp_size=self.cfg.tensor_parallel_size,

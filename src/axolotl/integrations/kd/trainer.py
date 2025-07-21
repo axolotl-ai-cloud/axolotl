@@ -21,7 +21,7 @@ from axolotl.core.trainers.base import AxolotlTrainer
 from .kernels.liger import LigerFusedLinearKLTopKLogprobLoss
 
 
-class AxolotlKDTrainer(AxolotlTrainer):
+class AxolotlKDTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
     """
     Custom trainer subclass for Knowledge Distillation (KD)
     """

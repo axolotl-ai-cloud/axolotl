@@ -257,7 +257,9 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         "mp_policy": fsdp2_plugin.mixed_precision_policy or MixedPrecisionPolicy(),
     }
 
-    device_mesh: DeviceMesh = accelerator._prepare_device_mesh()
+    device_mesh: DeviceMesh = (
+        accelerator._prepare_device_mesh()  # pylint: disable=protected-access
+    )
     try:
         dp_mesh_dim_names = ("dp_replicate", "dp_shard_cp")
         dp_mesh = device_mesh[dp_mesh_dim_names]

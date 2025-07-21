@@ -537,6 +537,7 @@ class TrainerBuilderBase(abc.ABC):
             or (self.cfg.dp_shard_size and self.cfg.dp_shard_size > 1)
             or self.cfg.sequence_parallel_degree > 1
         ):
+            # pylint: disable=duplicate-code
             dist_parallel = DistParallel.build(
                 dp_shard_size=self.cfg.dp_shard_size,
                 tp_size=self.cfg.tensor_parallel_size,
