@@ -2,762 +2,762 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://docs.axolotl.ai/TODO.html</loc>
-    <lastmod>2025-07-21T15:05:09.015Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.517Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/index.html</loc>
-    <lastmod>2025-07-21T15:05:09.035Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.537Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/debugging.html</loc>
-    <lastmod>2025-07-21T15:05:09.017Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.519Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/amd_hpc.html</loc>
-    <lastmod>2025-07-21T15:05:09.016Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.518Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.callbacks.mlflow_.html</loc>
-    <lastmod>2025-07-21T15:08:31.528Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.473Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.llama_expand_mask.html</loc>
-    <lastmod>2025-07-21T15:08:30.956Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.908Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/loaders.patch_manager.html</loc>
-    <lastmod>2025-07-21T15:08:30.561Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.517Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.chat.format.llama3x.html</loc>
-    <lastmod>2025-07-21T15:08:30.252Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.213Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/cli.train.html</loc>
-    <lastmod>2025-07-21T15:08:30.306Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.266Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.callbacks.perplexity.html</loc>
-    <lastmod>2025-07-21T15:08:31.519Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.465Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.chat.messages.html</loc>
-    <lastmod>2025-07-21T15:08:30.249Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.210Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.callbacks.lisa.html</loc>
-    <lastmod>2025-07-21T15:08:31.525Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.470Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/cli.merge_sharded_fsdp_weights.html</loc>
-    <lastmod>2025-07-21T15:08:30.393Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.352Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/cli.sweeps.html</loc>
-    <lastmod>2025-07-21T15:08:30.408Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.366Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.chat_templates.html</loc>
-    <lastmod>2025-07-21T15:08:31.054Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.004Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.chat.format.shared.html</loc>
-    <lastmod>2025-07-21T15:08:30.254Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.214Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.trainers.mixins.optimizer.html</loc>
-    <lastmod>2025-07-21T15:08:30.568Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.524Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.collators.mamba.html</loc>
-    <lastmod>2025-07-21T15:08:31.467Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.413Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/logging_config.html</loc>
-    <lastmod>2025-07-21T15:08:30.198Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.159Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.collators.mm_chat.html</loc>
-    <lastmod>2025-07-21T15:08:31.472Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.418Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.completion.html</loc>
-    <lastmod>2025-07-21T15:08:30.690Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.644Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/kernels.utils.html</loc>
-    <lastmod>2025-07-21T15:08:30.905Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.857Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.dpo.chat_template.html</loc>
-    <lastmod>2025-07-21T15:08:30.723Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.677Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/kernels.swiglu.html</loc>
-    <lastmod>2025-07-21T15:08:30.896Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.848Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/common.const.html</loc>
-    <lastmod>2025-07-21T15:08:31.427Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.374Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/cli.cloud.base.html</loc>
-    <lastmod>2025-07-21T15:08:30.450Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.408Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.callbacks.comet_.html</loc>
-    <lastmod>2025-07-21T15:08:31.532Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.477Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.gradient_checkpointing.offload_cpu.html</loc>
-    <lastmod>2025-07-21T15:08:31.020Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.970Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/common.architectures.html</loc>
-    <lastmod>2025-07-21T15:08:31.426Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.372Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.pygmalion.html</loc>
-    <lastmod>2025-07-21T15:08:30.718Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.671Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.schemas.peft.html</loc>
-    <lastmod>2025-07-21T15:08:31.230Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.178Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.dpo.user_defined.html</loc>
-    <lastmod>2025-07-21T15:08:30.747Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.701Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.schemas.datasets.html</loc>
-    <lastmod>2025-07-21T15:08:31.221Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.170Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.alpaca_w_system.html</loc>
-    <lastmod>2025-07-21T15:08:30.663Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.618Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.base.html</loc>
-    <lastmod>2025-07-21T15:08:30.603Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.559Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.lora.html</loc>
-    <lastmod>2025-07-21T15:08:31.059Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.009Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.input_output.html</loc>
-    <lastmod>2025-07-21T15:08:30.696Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.650Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.schemas.trl.html</loc>
-    <lastmod>2025-07-21T15:08:31.233Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.182Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.dpo.zephyr.html</loc>
-    <lastmod>2025-07-21T15:08:30.746Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.699Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/integrations.kd.trainer.html</loc>
-    <lastmod>2025-07-21T15:08:31.414Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.361Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.gradient_checkpointing.offload_disk.html</loc>
-    <lastmod>2025-07-21T15:08:31.046Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.996Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.optimizers.adopt.html</loc>
-    <lastmod>2025-07-21T15:08:31.149Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.098Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.data.batch_dataset_fetcher.html</loc>
-    <lastmod>2025-07-21T15:08:31.015Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.965Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/cli.cloud.modal_.html</loc>
-    <lastmod>2025-07-21T15:08:30.457Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.414Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.alpaca_chat.html</loc>
-    <lastmod>2025-07-21T15:08:30.649Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.604Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.freeze.html</loc>
-    <lastmod>2025-07-21T15:08:31.076Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.026Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.bradley_terry.llama3.html</loc>
-    <lastmod>2025-07-21T15:08:30.791Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.744Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/integrations.base.html</loc>
-    <lastmod>2025-07-21T15:08:31.403Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.349Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.unsloth_.html</loc>
-    <lastmod>2025-07-21T15:08:31.013Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.964Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.kto.chatml.html</loc>
-    <lastmod>2025-07-21T15:08:30.765Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.718Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/cli.main.html</loc>
-    <lastmod>2025-07-21T15:08:30.298Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.258Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/common.datasets.html</loc>
-    <lastmod>2025-07-21T15:08:31.442Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.388Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/train.html</loc>
-    <lastmod>2025-07-21T15:08:30.112Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.074Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.trainers.base.html</loc>
-    <lastmod>2025-07-21T15:08:30.472Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.429Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.trainers.mixins.scheduler.html</loc>
-    <lastmod>2025-07-21T15:08:30.578Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.534Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.ctx_managers.sequence_parallel.html</loc>
-    <lastmod>2025-07-21T15:08:30.602Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.557Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.schemas.config.html</loc>
-    <lastmod>2025-07-21T15:08:31.191Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.140Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/loaders.tokenizer.html</loc>
-    <lastmod>2025-07-21T15:08:30.546Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.502Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/integrations.liger.args.html</loc>
-    <lastmod>2025-07-21T15:08:31.418Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.364Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/cli.config.html</loc>
-    <lastmod>2025-07-21T15:08:30.358Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.318Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/loaders.processor.html</loc>
-    <lastmod>2025-07-21T15:08:30.547Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.504Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.utils.html</loc>
-    <lastmod>2025-07-21T15:08:30.993Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.944Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/integrations.cut_cross_entropy.args.html</loc>
-    <lastmod>2025-07-21T15:08:31.406Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.352Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.trainers.dpo.trainer.html</loc>
-    <lastmod>2025-07-21T15:08:30.503Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.460Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/loaders.adapter.html</loc>
-    <lastmod>2025-07-21T15:08:30.553Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.509Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.dpo.llama3.html</loc>
-    <lastmod>2025-07-21T15:08:30.734Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.688Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.datasets.transforms.chat_builder.html</loc>
-    <lastmod>2025-07-21T15:08:30.266Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.227Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.transformers_fa_utils.html</loc>
-    <lastmod>2025-07-21T15:08:31.012Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.962Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/datasets.html</loc>
-    <lastmod>2025-07-21T15:08:30.133Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.095Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.btlm_attn_hijack_flash.html</loc>
-    <lastmod>2025-07-21T15:08:30.994Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.945Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/cli.inference.html</loc>
-    <lastmod>2025-07-21T15:08:30.373Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.332Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/cli.utils.html</loc>
-    <lastmod>2025-07-21T15:08:30.440Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.398Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/cli.preprocess.html</loc>
-    <lastmod>2025-07-21T15:08:30.402Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.360Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/loaders.model.html</loc>
-    <lastmod>2025-07-21T15:08:30.538Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.494Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.trainers.grpo.sampler.html</loc>
-    <lastmod>2025-07-21T15:08:30.526Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.483Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.trainers.grpo.trainer.html</loc>
-    <lastmod>2025-07-21T15:08:30.514Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.471Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/batch_vs_grad.html</loc>
-    <lastmod>2025-07-21T15:05:09.016Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.518Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/custom_integrations.html</loc>
-    <lastmod>2025-07-21T15:05:09.016Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.518Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/quantize.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/unsloth.html</loc>
-    <lastmod>2025-07-21T15:05:09.021Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/ray-integration.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/dataset-formats/stepwise_supervised.html</loc>
-    <lastmod>2025-07-21T15:05:09.016Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.518Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/dataset-formats/template_free.html</loc>
-    <lastmod>2025-07-21T15:05:09.016Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.518Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/dataset-formats/index.html</loc>
-    <lastmod>2025-07-21T15:05:09.016Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.518Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/dataset-formats/pretraining.html</loc>
-    <lastmod>2025-07-21T15:05:09.016Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.518Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/multi-gpu.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/torchao.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/cli.html</loc>
-    <lastmod>2025-07-21T15:05:09.016Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.518Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/nccl.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/dataset_preprocessing.html</loc>
-    <lastmod>2025-07-21T15:05:09.017Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.519Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/faq.html</loc>
-    <lastmod>2025-07-21T15:05:09.017Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.519Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/qat.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/gradient_checkpointing.html</loc>
-    <lastmod>2025-07-21T15:05:09.017Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.519Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/input_output.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/src/axolotl/integrations/LICENSE.html</loc>
-    <lastmod>2025-07-21T15:05:09.039Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.541Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/src/axolotl/integrations/cut_cross_entropy/ACKNOWLEDGEMENTS.html</loc>
-    <lastmod>2025-07-21T15:05:09.040Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.542Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/mac.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/lr_groups.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/dataset_loading.html</loc>
-    <lastmod>2025-07-21T15:05:09.017Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.519Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/getting-started.html</loc>
-    <lastmod>2025-07-21T15:05:09.017Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.519Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/lora_optims.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/multi-node.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/fsdp_qlora.html</loc>
-    <lastmod>2025-07-21T15:05:09.017Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.519Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/inference.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/sequence_parallelism.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/rlhf.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/dataset-formats/tokenized.html</loc>
-    <lastmod>2025-07-21T15:05:09.017Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.519Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/dataset-formats/conversation.html</loc>
-    <lastmod>2025-07-21T15:05:09.016Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.518Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/dataset-formats/inst_tune.html</loc>
-    <lastmod>2025-07-21T15:05:09.016Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.518Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/reward_modelling.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/docker.html</loc>
-    <lastmod>2025-07-21T15:05:09.017Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.519Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/installation.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/multimodal.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/config-reference.html</loc>
-    <lastmod>2025-07-21T15:08:44.185Z</lastmod>
+    <lastmod>2025-07-21T15:45:48.903Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_tokenizers.html</loc>
-    <lastmod>2025-07-21T15:08:30.188Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.150Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.schedulers.html</loc>
-    <lastmod>2025-07-21T15:08:31.118Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.067Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.samplers.multipack.html</loc>
-    <lastmod>2025-07-21T15:08:31.513Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.459Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.orcamini.html</loc>
-    <lastmod>2025-07-21T15:08:30.711Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.665Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.trainers.trl.html</loc>
-    <lastmod>2025-07-21T15:08:30.487Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.444Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.metharme.html</loc>
-    <lastmod>2025-07-21T15:08:30.707Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.661Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.callbacks.profiler.html</loc>
-    <lastmod>2025-07-21T15:08:31.523Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.468Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.schemas.enums.html</loc>
-    <lastmod>2025-07-21T15:08:31.262Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.209Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.trainers.mamba.html</loc>
-    <lastmod>2025-07-21T15:08:30.492Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.449Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.llama_attn_hijack_flash.html</loc>
-    <lastmod>2025-07-21T15:08:30.930Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.883Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.relora.html</loc>
-    <lastmod>2025-07-21T15:08:30.955Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.906Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.stablelm_attn_hijack_flash.html</loc>
-    <lastmod>2025-07-21T15:08:31.002Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.953Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/loaders.constants.html</loc>
-    <lastmod>2025-07-21T15:08:30.563Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.519Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.callbacks.qat.html</loc>
-    <lastmod>2025-07-21T15:08:31.538Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.484Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.schemas.model.html</loc>
-    <lastmod>2025-07-21T15:08:31.198Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.147Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.stepwise_supervised.html</loc>
-    <lastmod>2025-07-21T15:08:30.700Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.654Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/integrations.grokfast.optimizer.html</loc>
-    <lastmod>2025-07-21T15:08:31.407Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.353Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/convert.html</loc>
-    <lastmod>2025-07-21T15:08:30.147Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.108Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/kernels.quantize.html</loc>
-    <lastmod>2025-07-21T15:08:30.903Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.856Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.training_args.html</loc>
-    <lastmod>2025-07-21T15:08:30.226Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.187Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.chat_template.html</loc>
-    <lastmod>2025-07-21T15:08:30.636Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.591Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/index.html</loc>
-    <lastmod>2025-07-21T15:08:30.050Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.013Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.llama2_chat.html</loc>
-    <lastmod>2025-07-21T15:08:30.684Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.638Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.trainer.html</loc>
-    <lastmod>2025-07-21T15:08:31.093Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.043Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.messages.chat.html</loc>
-    <lastmod>2025-07-21T15:08:30.722Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.676Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.lora_kernels.html</loc>
-    <lastmod>2025-07-21T15:08:30.985Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.936Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/kernels.lora.html</loc>
-    <lastmod>2025-07-21T15:08:30.875Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.828Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/cli.vllm_serve.html</loc>
-    <lastmod>2025-07-21T15:08:30.447Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.405Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.schemas.multimodal.html</loc>
-    <lastmod>2025-07-21T15:08:31.239Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.187Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.schemas.utils.html</loc>
-    <lastmod>2025-07-21T15:08:31.267Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.215Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.llama_attn_hijack_xformers.html</loc>
-    <lastmod>2025-07-21T15:08:30.932Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.884Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/integrations.lm_eval.args.html</loc>
-    <lastmod>2025-07-21T15:08:31.421Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.367Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.mistral_attn_hijack_flash.html</loc>
-    <lastmod>2025-07-21T15:08:30.946Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.898Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.collators.core.html</loc>
-    <lastmod>2025-07-21T15:08:31.445Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.391Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.chat.format.chatml.html</loc>
-    <lastmod>2025-07-21T15:08:30.251Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.211Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.dpo.passthrough.html</loc>
-    <lastmod>2025-07-21T15:08:30.749Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.702Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.datasets.chat.html</loc>
-    <lastmod>2025-07-21T15:08:30.259Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.219Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.bench.html</loc>
-    <lastmod>2025-07-21T15:08:31.068Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.018Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.schemas.training.html</loc>
-    <lastmod>2025-07-21T15:08:31.203Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.152Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.collators.batching.html</loc>
-    <lastmod>2025-07-21T15:08:31.464Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.410Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.llama_patch_multipack.html</loc>
-    <lastmod>2025-07-21T15:08:30.996Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.947Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.multipack.html</loc>
-    <lastmod>2025-07-21T15:08:30.948Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.900Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.builders.causal.html</loc>
-    <lastmod>2025-07-21T15:08:30.209Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.170Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/cli.evaluate.html</loc>
-    <lastmod>2025-07-21T15:08:30.314Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.274Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.trainer_fsdp_optim.html</loc>
-    <lastmod>2025-07-21T15:08:31.005Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.956Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.trainers.utils.html</loc>
-    <lastmod>2025-07-21T15:08:30.528Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.485Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.schemas.integrations.html</loc>
-    <lastmod>2025-07-21T15:08:31.251Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.199Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.dict.html</loc>
-    <lastmod>2025-07-21T15:08:31.141Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.090Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.builders.rl.html</loc>
-    <lastmod>2025-07-21T15:08:30.213Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.175Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.orpo.chat_template.html</loc>
-    <lastmod>2025-07-21T15:08:30.787Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.740Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.trainers.relora.html</loc>
-    <lastmod>2025-07-21T15:08:30.497Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.454Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/integrations.spectrum.args.html</loc>
-    <lastmod>2025-07-21T15:08:31.424Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.371Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/cli.quantize.html</loc>
-    <lastmod>2025-07-21T15:08:30.461Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.419Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/cli.checks.html</loc>
-    <lastmod>2025-07-21T15:08:30.340Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.300Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.kto.llama3.html</loc>
-    <lastmod>2025-07-21T15:08:30.757Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.710Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.model_shard_quant.html</loc>
-    <lastmod>2025-07-21T15:08:31.064Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.015Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.quantization.html</loc>
-    <lastmod>2025-07-21T15:08:31.178Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.127Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.trainers.mixins.rng_state_loader.html</loc>
-    <lastmod>2025-07-21T15:08:30.571Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.527Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/kernels.geglu.html</loc>
-    <lastmod>2025-07-21T15:08:30.885Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.838Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.data.pretraining.html</loc>
-    <lastmod>2025-07-21T15:08:31.151Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.099Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.kto.user_defined.html</loc>
-    <lastmod>2025-07-21T15:08:30.766Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.720Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/core.builders.base.html</loc>
-    <lastmod>2025-07-21T15:08:30.204Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.165Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/cli.merge_lora.html</loc>
-    <lastmod>2025-07-21T15:08:30.381Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.340Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/monkeypatch.mixtral.html</loc>
-    <lastmod>2025-07-21T15:08:31.016Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.967Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.data.sft.html</loc>
-    <lastmod>2025-07-21T15:08:31.157Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.106Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.user_defined.html</loc>
-    <lastmod>2025-07-21T15:08:30.671Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.626Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.tokenization.html</loc>
-    <lastmod>2025-07-21T15:08:31.052Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.003Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.dpo.chatml.html</loc>
-    <lastmod>2025-07-21T15:08:30.744Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.698Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/models.mamba.modeling_mamba.html</loc>
-    <lastmod>2025-07-21T15:08:31.443Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.389Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/cli.args.html</loc>
-    <lastmod>2025-07-21T15:08:30.334Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.294Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/evaluate.html</loc>
-    <lastmod>2025-07-21T15:08:30.122Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.084Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/prompt_strategies.alpaca_instruct.html</loc>
-    <lastmod>2025-07-21T15:08:30.651Z</lastmod>
+    <lastmod>2025-07-21T15:45:35.606Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/api/utils.distributed.html</loc>
-    <lastmod>2025-07-21T15:08:31.138Z</lastmod>
+    <lastmod>2025-07-21T15:45:36.087Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/docs/multipack.html</loc>
-    <lastmod>2025-07-21T15:05:09.020Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.522Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/examples/colab-notebooks/colab-axolotl-example.html</loc>
-    <lastmod>2025-07-21T15:05:09.024Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.526Z</lastmod>
   </url>
   <url>
     <loc>https://docs.axolotl.ai/FAQS.html</loc>
-    <lastmod>2025-07-21T15:05:09.014Z</lastmod>
+    <lastmod>2025-07-21T15:42:15.517Z</lastmod>
   </url>
 </urlset>
