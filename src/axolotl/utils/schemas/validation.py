@@ -362,6 +362,26 @@ class TrainingValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_fp8_config(cls, data):
+        if data.get("fp8") and not data.get("torch_compile"):
+            LOG.warning(
+                "torch_compile is strongly recommended for FP8 training in order to "
+                "see speed improvements. Please consider setting `torch_compile: "
+                "true` in your config."
+            )
+        if (
+            data.get("fp8")
+            and data.get("fsdp_config", {}).get("activation_checkpointing") is True
+        ):
+            LOG.warning(
+                "FSDP activation checkpointing may be slower with FP8 training. Please "
+                "proceed with caution."
+            )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_use_reentrant_mismatch(cls, data):
         if (
             data.get("unfrozen_parameters")

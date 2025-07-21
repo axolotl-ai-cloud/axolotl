@@ -138,10 +138,10 @@ Always validate your mixed precision setup:
   - Multi GPU training with FSDP2 or Deepspeed
 - Speedups
   - Please refer to the [TorchAO FP8 training benchmarks](https://github.com/pytorch/ao/tree/main/torchao/float8#rowwise-scaling) for expected matmul speedups for different (M, K, N) settings
-  - Concrete number for LLaMA 3 8B can be found [here](https://github.com/pytorch/ao/tree/main/torchao/float8#training-benchmarks)
+  - Concrete number for LLaMA 3 8B training can be found [here](https://github.com/pytorch/ao/tree/main/torchao/float8#training-benchmarks)
 - Known issues:
   - FP8 + DDP + `torch.compile` (causes [error](https://gist.github.com/djsaunde/0c1664c32e44a64d31b5e01b4aafe5c4))
-  - FP8 + FSDP2 + `torch.compile` + FSDP2 activation checkpointing is _slower_ than the BF16 equivalent training
+  - FP8 + FSDP2 + `torch.compile` + FSDP2 activation checkpointing tends to be _slower_ than the BF16 equivalent training
   - Flash Attention 2 does not play nicely with `torch.compile`
 
 See `examples/llama-3/3b-fp8-fsdp2.yaml` for an optimized example config. Enabling FP8 mixed precision + FP8 all-gather training results in ~10% faster iterations per second vs. BF16 for a relatively small (3B param) model
