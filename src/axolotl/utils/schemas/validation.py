@@ -911,8 +911,12 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_dp_shard_size_fsdp(cls, data):
-        if data.get("fsdp_config", {}) and data.get("dp_shard_size", 1) <= 1:
-            raise ValueError("dp_shard_size must be greater than 1 when using FSDP")
+        if data.get("fsdp_config", {}):
+            dp_shard_size = data.get("dp_shard_size", None)
+            if dp_shard_size and dp_shard_size <= 1:
+                raise ValueError("dp_shard_size must be greater than 1 when using FSDP")
+        if not data.get("fsdp_config", {}) and data.get("dp_shard_size", 1) > 1:
+            raise ValueError("FSDP should be enabled when using dp_shard_size > 1")
         return data
 
     @model_validator(mode="before")

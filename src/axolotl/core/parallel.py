@@ -17,7 +17,7 @@ class DistParallel:
     """
 
     dp_replicate_size: int | None = field(default=1)
-    dp_shard_size: int | None = field(default=1)
+    dp_shard_size: int | None = field(default=None)
     tp_size: int | None = field(default=1)
     cp_size: int | None = field(default=1)
 
@@ -43,7 +43,9 @@ class DistParallel:
         if cp_size and cp_size > 1:
             dp_total_size = dp_total_size // cp_size
 
-        if dp_shard_size and dp_shard_size > 1:
+        if dp_shard_size is None and dp_replicate_size == 1:
+            dp_shard_size = dp_total_size
+        elif dp_shard_size and dp_shard_size > 1:
             dp_replicate_size = dp_total_size // dp_shard_size
         elif dp_replicate_size and dp_replicate_size > 1:
             dp_shard_size = dp_total_size // dp_replicate_size

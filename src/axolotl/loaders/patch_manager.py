@@ -65,7 +65,7 @@ class PatchManager:
         self._apply_mistral_cross_entropy_patch()
         self._apply_self_attention_lora_patch()
         self._apply_gemma3_conditional_generation_forward_patch()
-        self._apply_dist_parallel_patches()
+        self._apply_distributed_parallel_patches()
         self._apply_tiled_mlp(self.cfg.model_config_type)
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
@@ -259,12 +259,14 @@ class PatchManager:
 
             patch_gemma3_conditional_generation_forward()
 
-    def _apply_dist_parallel_patches(self):
+    def _apply_distributed_parallel_patches(self):
         """Apply distributed parallelism patches."""
         should_patch = False
         if self.cfg.context_parallel_size and self.cfg.context_parallel_size > 1:
             should_patch = True
-        if self.cfg.fsdp_config and self.cfg.dp_shard_size > 1:
+        if self.cfg.fsdp_config and (
+            self.cfg.dp_shard_size is None or self.cfg.dp_shard_size > 1
+        ):
             should_patch = True
         if should_patch:
             from axolotl.monkeypatch.dist_parallel import (
