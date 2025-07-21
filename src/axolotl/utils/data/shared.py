@@ -25,6 +25,7 @@ from huggingface_hub.errors import (
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
+from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
@@ -410,7 +411,7 @@ def save_preprocessed_dataset(
 ) -> None:
     """Save preprocessed dataset to disk and optionally push to the HF Hub."""
     prepared_ds_path = get_prepared_dataset_path(cfg, dataset_hash)
-    num_workers = cfg.dataset_processes
+    num_workers = cfg.dataset_processes or get_default_process_count()
     if isinstance(dataset, IterableDataset):
         ds_from_iter = Dataset.from_generator(
             functools.partial(_generate_from_iterable_dataset, dataset),
@@ -432,7 +433,7 @@ def save_preprocessed_dataset(
         os.makedirs(prepared_ds_path, exist_ok=True)
         dataset.save_to_disk(
             str(prepared_ds_path),
-            num_proc=num_workers,
+            num_proc=min(max(1, len(dataset) // 8), num_workers),
             max_shard_size=None,
             num_shards=cfg.num_dataset_shards_to_save,
         )

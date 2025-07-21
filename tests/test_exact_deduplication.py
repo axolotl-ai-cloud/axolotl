@@ -210,6 +210,7 @@ class TestDeduplicateRLDataset:
                     ALPACA_MESSAGES_CONFIG_REVISION,
                     ALPACA_MESSAGES_CONFIG_REVISION,
                 ],
+                "dataset_processes": 4,
             }
         )
         yield fixture
