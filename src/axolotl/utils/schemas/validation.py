@@ -99,16 +99,6 @@ class DatasetValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def default_pad_to_sequence_len_value(cls, data):
-        if (
-            data.get("sample_packing") is not None
-            and data.get("pad_to_sequence_len") is None
-        ):
-            data["pad_to_sequence_len"] = data["sample_packing"]
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_eval_packing(cls, data):
         # TODO also should check test_datasets and val_set_size as we can skip
         # if there are no eval datasets/splits
