@@ -110,6 +110,18 @@ base_model: google/gemma-3-4b-it
 chat_template: gemma3
 ```
 
+### Gemma-3n {#sec-gemma-3n}
+
+::: {.callout-note}
+The model's initial loss and grad norm will be very high. We suspect this to be due to the Conv in the vision layers.
+:::
+
+```yaml
+base_model: google/gemma-3n-E2B-it
+
+chat_template: gemma3n
+```
+
 ### Qwen2-VL {#sec-qwen2-vl}
 
 ```yaml
