@@ -203,7 +203,7 @@ def execute_training(
                 )
             )
 
-        if cfg.sequence_parallel_degree > 1:
+        if cfg.sequence_parallel_size > 1:
             models = [trainer.model]
             if hasattr(trainer, "ref_model") and trainer.ref_model:
                 models.append(trainer.ref_model)
@@ -211,14 +211,14 @@ def execute_training(
             device_mesh = DistParallel.build(
                 dp_shard_size=cfg.dp_shard_size,
                 tp_size=cfg.tensor_parallel_size,
-                cp_size=cfg.sequence_parallel_degree,
+                cp_size=cfg.sequence_parallel_size,
                 fsdp=bool(cfg.fsdp_config),
                 world_size=None,
             ).get_device_mesh()
             stack.enter_context(
                 SequenceParallelContextManager(
                     models=models,
-                    sequence_parallel_degree=cfg.sequence_parallel_degree,
+                    sequence_parallel_size=cfg.sequence_parallel_size,
                     device_mesh=device_mesh,
                     gradient_accumulation_steps=cfg.gradient_accumulation_steps,
                     ring_attn_func=cfg.ring_attn_func,

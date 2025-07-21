@@ -442,7 +442,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                     - 1
                 )
                 * cfg.num_epochs
-                * cfg.sequence_parallel_degree
+                * cfg.sequence_parallel_size
                 * cfg.tensor_parallel_size
             )
             LOG.debug(
@@ -484,7 +484,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 math.floor(
                     data_loader_len
                     * cfg.num_epochs
-                    * cfg.sequence_parallel_degree
+                    * cfg.sequence_parallel_size
                     * cfg.tensor_parallel_size
                 )
             )
@@ -511,7 +511,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             math.ceil(
                 len(train_dataset)
                 * cfg.num_epochs
-                * cfg.sequence_parallel_degree
+                * cfg.sequence_parallel_size
                 * cfg.tensor_parallel_size
                 / cfg.batch_size
             )

@@ -111,7 +111,7 @@ class TestRingAttention:
 
         # Call register_ring_attn with size 4
         register_ring_attn(
-            sequence_parallel_degree=4,
+            sequence_parallel_size=4,
             heads_k_stride=1,
             ring_attn_func=RingAttnFunc.VARLEN_LLAMA3,
         )
@@ -156,24 +156,24 @@ class TestConfigValidation:
         [
             # Valid configuration
             (
-                {"sequence_parallel_degree": 2, "flash_attention": True},
-                {"sequence_parallel_degree": 2, "flash_attention": True},
+                {"sequence_parallel_size": 2, "flash_attention": True},
+                {"sequence_parallel_size": 2, "flash_attention": True},
                 True,
                 None,
             ),
-            # Default sequence_parallel_degree
-            ({}, {"sequence_parallel_degree": 1}, True, None),
-            # Invalid: sequence_parallel_degree > 1 without flash_attention
+            # Default sequence_parallel_size
+            ({}, {"sequence_parallel_size": 1}, True, None),
+            # Invalid: sequence_parallel_size > 1 without flash_attention
             (
-                {"sequence_parallel_degree": 2, "flash_attention": False},
+                {"sequence_parallel_size": 2, "flash_attention": False},
                 None,
                 False,
                 "flash_attention: true must be set",
             ),
-            # Invalid: sequence_parallel_degree > 1 with sample_packing and micro_batch_size > 1
+            # Invalid: sequence_parallel_size > 1 with sample_packing and micro_batch_size > 1
             (
                 {
-                    "sequence_parallel_degree": 2,
+                    "sequence_parallel_size": 2,
                     "flash_attention": True,
                     "sample_packing": True,
                     "micro_batch_size": 2,
@@ -186,13 +186,13 @@ class TestConfigValidation:
             # Valid: Basic GRPO config
             (
                 {
-                    "sequence_parallel_degree": 2,
+                    "sequence_parallel_size": 2,
                     "flash_attention": True,
                     "micro_batch_size": 2,
                     "trl": {"use_liger_loss": True},
                 },
                 {
-                    "sequence_parallel_degree": 2,
+                    "sequence_parallel_size": 2,
                     "flash_attention": True,
                     "micro_batch_size": 2,
                     "trl": TRLConfig(use_liger_loss=True),
@@ -204,7 +204,7 @@ class TestConfigValidation:
             (
                 {
                     "rl": "grpo",
-                    "sequence_parallel_degree": 2,
+                    "sequence_parallel_size": 2,
                     "flash_attention": True,
                     "micro_batch_size": 2,
                     "trl": {"use_liger_loss": True},
@@ -262,7 +262,7 @@ class TestConfigValidation:
 
         # Apply updates to base config
         cfg = base_cfg | {
-            "sequence_parallel_degree": 2,
+            "sequence_parallel_size": 2,
             "flash_attention": True,
             "sample_packing": sample_packing,
         }
@@ -282,7 +282,7 @@ class TestConfigValidation:
 
         # Invalid configuration with invalid ring_attn_func
         cfg = base_cfg | {
-            "sequence_parallel_degree": 2,
+            "sequence_parallel_size": 2,
             "flash_attention": True,
             "ring_attn_func": "INVALID_FUNC",
         }

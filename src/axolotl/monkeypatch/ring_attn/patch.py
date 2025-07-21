@@ -136,14 +136,14 @@ def create_ring_flash_attention_forward(
 
 
 def register_ring_attn(
-    sequence_parallel_degree: int,
+    sequence_parallel_size: int,
     heads_k_stride: int | None,
     ring_attn_func: RingAttnFunc | None,
 ):
     """Create ring attention group and substitute flash attn with ring flash attn.
 
     Args:
-        sequence_parallel_degree: Sequence parallelism factor.
+        sequence_parallel_size: Sequence parallelism factor.
         heads_k_stride: Sequence parallelism K head stride size. Passed through to
             `varlen_llama3` `ring_flash_attn` implementation.
         ring_attn_func: `ring_flash_attn` ring attention implemention. If sample
@@ -156,25 +156,25 @@ def register_ring_attn(
     if rank == 0:
         LOG.info(
             "Enabling ring attention sequence parallelism: "
-            f"each sequence will be processed across {sequence_parallel_degree} GPUs"
+            f"each sequence will be processed across {sequence_parallel_size} GPUs"
         )
 
-    assert sequence_parallel_degree <= world_size, (
-        f"sequence_parallel_degree ({sequence_parallel_degree}) "
+    assert sequence_parallel_size <= world_size, (
+        f"sequence_parallel_size ({sequence_parallel_size}) "
         f"must be less than or equal to world_size ({world_size})"
     )
-    assert world_size % sequence_parallel_degree == 0, (
-        f"sequence_parallel_degree ({sequence_parallel_degree}) "
+    assert world_size % sequence_parallel_size == 0, (
+        f"sequence_parallel_size ({sequence_parallel_size}) "
         f"must evenly divide world_size ({world_size})"
     )
 
     # Assign ranks to sequence parallel groups
     group_assignments = {}
-    for i in range(world_size // sequence_parallel_degree):
+    for i in range(world_size // sequence_parallel_size):
         ring_attn_ranks = list(
             range(
-                i * sequence_parallel_degree,
-                (i + 1) * sequence_parallel_degree,
+                i * sequence_parallel_size,
+                (i + 1) * sequence_parallel_size,
             )
         )
         group = dist.new_group(ranks=ring_attn_ranks, backend="nccl")
@@ -254,11 +254,11 @@ def register_ring_attn_from_device_mesh(
 
     # Get the process group for sequence parallelism
     sequence_pg = sequence_mesh.get_group()
-    sequence_parallel_degree = sequence_mesh.size()
+    sequence_parallel_size = sequence_mesh.size()
 
     if rank == 0:
         LOG.info(
-            f"Sequence parallel degree: {sequence_parallel_degree}, "
+            f"Sequence parallel degree: {sequence_parallel_size}, "
             f"mesh shape: {sequence_mesh.mesh.shape}"
         )
 

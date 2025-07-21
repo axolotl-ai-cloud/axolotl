@@ -61,7 +61,7 @@ class DistParallel:
             tp_size=tp_size or 1,
             cp_size=cp_size or 1,
         )
-        LOG.debug(res, main_process_only=True)
+        LOG.info(res, main_process_only=True)
         return res
 
     def get_mesh(self):

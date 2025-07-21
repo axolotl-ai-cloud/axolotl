@@ -168,7 +168,7 @@ class SequenceParallelContextManager:
     Args:
         models: List of models to apply sequence parallelism to pre- and post- forward
             hooks.
-        sequence_parallel_degree: Number of processes to split sequences over.
+        sequence_parallel_size: Number of processes to split sequences over.
         device_mesh: Device mesh to use for distributed parallelism.
         gradient_accumulation_steps: Number of steps to accumulate gradients over.
         ring_attn_func: Which ring attention function to use. Currently unused.
@@ -181,7 +181,7 @@ class SequenceParallelContextManager:
     def __init__(
         self,
         models: list[nn.Module],
-        sequence_parallel_degree: int,
+        sequence_parallel_size: int,
         device_mesh: "DeviceMesh",
         gradient_accumulation_steps: int,
         ring_attn_func: RingAttnFunc,
@@ -189,7 +189,7 @@ class SequenceParallelContextManager:
         gather_outputs: bool,
     ):
         self.models = models
-        self.sequence_parallel_degree = sequence_parallel_degree
+        self.sequence_parallel_size = sequence_parallel_size
         self.device_mesh = device_mesh
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.ring_attn_func = ring_attn_func
