@@ -36,12 +36,8 @@ NEW_PREPARE_DATALOADER_CODE = """
                 submesh_dp_size = torch_device_mesh["dp"].size()
             if "fsdp" in torch_device_mesh.mesh_dim_names:
                 submesh_fsdp_size = torch_device_mesh["fsdp"].size()
-            try:
-                submesh_dp_fsdp_size = torch_device_mesh["dp_fsdp"].size()
-            except KeyError:
-                pass
             process_index = process_index // (submesh_tp_size * submesh_cp_size)
-            num_processes = submesh_dp_fsdp_size if submesh_dp_fsdp_size > 1 else submesh_fsdp_size * submesh_dp_size
+            num_processes = submesh_fsdp_size * submesh_dp_size
 """.strip(
     "\n"
 )
