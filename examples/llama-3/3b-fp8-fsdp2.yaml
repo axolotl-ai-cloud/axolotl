@@ -32,11 +32,6 @@ flex_attn_compile_kwargs:
 
 torch_compile: true
 
-qat:
-  activation_dtype: int8
-  weight_dtype: int4
-  group_size: 32
-
 wandb_project:
 wandb_entity:
 wandb_watch:
