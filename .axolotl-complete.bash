@@ -10,8 +10,11 @@ _axolotl_completions() {
         return 0
     fi
 
-    # If the previous word was "train" or "preprocess"
-    if [[ "$prev" == "train" || "$prev" == "preprocess" ]]; then
+    # Commands that should complete with directories and YAML files
+    local yaml_commands=("merge-sharded-fsdp-weights" "quantize" "vllm-serve" "evaluate" "inference" "merge-lora" "preprocess" "train")
+
+    # Check if previous word is in our list
+    if [[ " ${yaml_commands[*]} " =~ " $prev " ]]; then
         # Complete with directories and YAML files
         COMPREPLY=($(compgen -d -- "$cur"))  # directories
         COMPREPLY+=($(compgen -f -X "!*.yaml" -- "$cur"))  # .yaml files
