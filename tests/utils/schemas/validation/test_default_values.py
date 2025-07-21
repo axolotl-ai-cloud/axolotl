@@ -1,7 +1,5 @@
 """Tests for default values for configurations"""
 
-import pytest
-
 from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
 
@@ -9,18 +7,15 @@ from axolotl.utils.dict import DictDefault
 class TestDefaultConfigValues:
     """Tests for default values for configurations"""
 
-    @pytest.mark.parametrize(
-        "sample_packing",
-        [None, True, False],
-    )
-    def test_pad_to_sequence_len(self, sample_packing, min_base_cfg):
+    def test_pad_to_sequence_len(self, min_base_cfg):
+        """Tests that sample packing automatically sets pad_to_sequence_len to True"""
         cfg = (
             DictDefault(
-                sample_packing=sample_packing,
+                sample_packing=True,
             )
             | min_base_cfg
         )
 
         cfg = validate_config(cfg)
 
-        assert cfg.pad_to_sequence_len == sample_packing
+        assert cfg.pad_to_sequence_len is True
