@@ -211,7 +211,7 @@ def execute_training(
             device_mesh = DistParallel.build(
                 dp_shard_size=cfg.dp_shard_size,
                 tp_size=cfg.tensor_parallel_size,
-                cp_size=cfg.cp_size,
+                cp_size=cfg.sequence_parallel_degree,
                 fsdp=bool(cfg.fsdp_config),
                 world_size=None,
             ).get_device_mesh()
