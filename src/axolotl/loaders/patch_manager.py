@@ -273,8 +273,8 @@ class PatchManager:
     def _apply_tiled_mlp(self, model_type: str):
         if self.cfg.tiled_mlp:
             from axolotl.monkeypatch.tiled_mlp import (
+                patch_tiled_mlp,
                 patch_tiled_mlp_deepspeed,
-                patch_tiled_mlp_fsdp,
             )
 
             if self.cfg.deepspeed:
@@ -283,8 +283,8 @@ class PatchManager:
                     use_original_mlp=self.cfg.tiled_mlp_use_original_mlp,
                     cfg_num_shards=self.cfg.tiled_mlp_num_shards,
                 )
-            if self.cfg.fsdp:
-                patch_tiled_mlp_fsdp(
+            else:
+                patch_tiled_mlp(
                     model_type,
                     use_original_mlp=self.cfg.tiled_mlp_use_original_mlp,
                     cfg_num_shards=self.cfg.tiled_mlp_num_shards,

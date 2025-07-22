@@ -6,9 +6,9 @@ from functools import partial
 
 import torch
 import torch.distributed as dist
-from deepspeed.runtime.sequence_parallel.ulysses_sp import TiledMLP
+from deepspeed.runtime.sequence_parallel.ulysses_sp import TiledMLP as DeepSpeedTiledMLP
 
-from axolotl.monkeypatch.tiled_mlp.fsdp import TiledMLPFSDP
+from axolotl.monkeypatch.tiled_mlp.base import TiledMLP
 from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
 from axolotl.utils.logging import get_logger
 
@@ -81,5 +81,5 @@ def patch_tiled_mlp_distributed(
         ) from e
 
 
-patch_tiled_mlp_deepspeed = partial(patch_tiled_mlp_distributed, TiledMLP)
-patch_tiled_mlp_fsdp = partial(patch_tiled_mlp_distributed, TiledMLPFSDP)
+patch_tiled_mlp_deepspeed = partial(patch_tiled_mlp_distributed, DeepSpeedTiledMLP)
+patch_tiled_mlp = partial(patch_tiled_mlp_distributed, TiledMLP)

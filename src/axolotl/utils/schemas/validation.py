@@ -512,21 +512,6 @@ class TrainingValidationMixin:
 
         return data
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_tiled_mlp_deepspeed(cls, data):
-        capabilities = data.get("capabilities")
-        n_gpu = 0
-        if capabilities and capabilities.get("n_gpu", 0) >= 1:
-            n_gpu = capabilities.get("n_gpu", 0)
-        if data.get("tiled_mlp", False) and (
-            n_gpu > 1 and not data.get("deepspeed") and not data.get("fsdp_config")
-        ):
-            raise ValueError(
-                "tiled_mlp requires single GPU, FSDP, or deepspeed ZeRO to be enabled for multi-gpu"
-            )
-        return data
-
 
 class LoRAValidationMixin:
     """Validation methods related to LoRA/QLoRA configuration."""

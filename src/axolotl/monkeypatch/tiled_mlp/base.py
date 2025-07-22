@@ -1,5 +1,5 @@
 """
-TiledMLP support for FSDP
+TiledMLP support for DDP, FSDP, and single GPU
 """
 
 import threading
@@ -8,9 +8,9 @@ from typing import List
 import torch
 
 
-class TiledMLPFSDP(torch.autograd.Function):
+class TiledMLP(torch.autograd.Function):
     """
-    TiledMLP implementation for FSDP using gradient hooks
+    TiledMLP implementation using gradient hooks
     """
 
     @staticmethod
@@ -52,7 +52,7 @@ class TiledMLPFSDP(torch.autograd.Function):
         x_shards = list(torch.chunk(x, chunks=shards, dim=1))
 
         # Create a gradient accumulator for parameters
-        grad_accumulator = GradientAccumulator(compute_params, shards)
+        grad_accumulator = GradientAccumulator(compute_params, shards, dtype=x.dtype)
 
         shard_step = x_shards[0].numel()
         for i, x_shard in enumerate(x_shards):
@@ -80,45 +80,61 @@ class TiledMLPFSDP(torch.autograd.Function):
 
         # Clean up hooks
         grad_accumulator.cleanup()
+        del grad_accumulator
 
         return (None, None, x_grad, None, None)
 
 
 class GradientAccumulator:
     """
-    Manual gradient accumulator for TiledMLP using parameter hooks
+    Manual gradient accumulator for TiledMLP with configurable precision
+    Accumulates in specified dtype and rescales the gradient at the end
     """
 
-    def __init__(self, params: List[torch.nn.Parameter], total_shards: int):
+    def __init__(
+        self,
+        params: List[torch.nn.Parameter],
+        total_shards: int,
+        dtype: torch.dtype | None = None,
+    ):
         self.params = params
         self.total_shards = total_shards
+        self.grad_accumulation_dtype = dtype or torch.float32
         self.accumulated_grads = {}
         self.hooks = []
         self.lock = threading.Lock()
+        self.gradient_scale = 1.0 / total_shards
 
-        # Initialize accumulated gradients
+        # Initialize accumulated gradients in the specified dtype
         for param in self.params:
             if param.grad is not None:
-                self.accumulated_grads[param] = param.grad.clone()
+                self.accumulated_grads[param] = param.grad.to(
+                    self.grad_accumulation_dtype
+                )
                 param.grad = None
             else:
-                self.accumulated_grads[param] = torch.zeros_like(param)
+                self.accumulated_grads[param] = torch.zeros_like(
+                    param, dtype=self.grad_accumulation_dtype
+                )
 
     def install_hooks(self, is_last_shard: bool):
-        """Install gradient hooks that accumulate gradients and only assign on last shard"""
+        """Install gradient hooks that accumulate gradients in higher precision"""
 
         def create_hook(param):
             def hook(grad):
                 with self.lock:
-                    if param in self.accumulated_grads:
-                        self.accumulated_grads[param] += grad
-                    else:
-                        self.accumulated_grads[param] = grad.clone()
+                    grad_to_accum_dtype = grad.to(self.grad_accumulation_dtype)
+                    scaled_grad = grad_to_accum_dtype * self.gradient_scale
 
-                    # Only assign the accumulated gradient on the last shard
+                    if param in self.accumulated_grads:
+                        self.accumulated_grads[param] += scaled_grad
+                    else:
+                        self.accumulated_grads[param] = scaled_grad.clone()
+
+                    # Only assign the averaged gradient on the last shard
                     if is_last_shard:
-                        param.grad = self.accumulated_grads[param]
-                        return self.accumulated_grads[param]
+                        param.grad = self.accumulated_grads[param].to(param.dtype)
+                        return param.grad
                     return None
 
             return hook
@@ -134,3 +150,4 @@ class GradientAccumulator:
         for hook in self.hooks:
             hook.remove()
         self.hooks.clear()
+        del self.accumulated_grads
