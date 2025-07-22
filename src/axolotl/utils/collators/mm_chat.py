@@ -84,34 +84,16 @@ class MultiModalChatDataCollator(DataCollatorMixin):
             "attention_mask": attention_mask,
         }
 
-        if "token_type_ids" in batch:
-            final_batch["token_type_ids"] = torch.nn.utils.rnn.pad_sequence(
-                batch["token_type_ids"], batch_first=True, padding_value=0
-            )
+        for key, val in batch.items():
+            if key in ["input_ids", "attention_mask"]:
+                continue
 
-        if "pixel_values" in batch:
-            final_batch["pixel_values"] = torch.stack(batch["pixel_values"])
-
-        # mllama
-        if "aspect_ratio_ids" in batch:
-            final_batch["aspect_ratio_ids"] = torch.stack(batch["aspect_ratio_ids"])
-
-        if "aspect_ratio_mask" in batch:
-            final_batch["aspect_ratio_mask"] = torch.stack(batch["aspect_ratio_mask"])
-
-        if "cross_attention_mask" in batch:
-            final_batch["cross_attention_mask"] = torch.nn.utils.rnn.pad_sequence(
-                batch["cross_attention_mask"], batch_first=True, padding_value=0
-            )
-
-        # gemma3n
-        if "input_features" in batch:
-            final_batch["input_features"] = torch.stack(batch["input_features"])
-
-        if "input_features_mask" in batch:
-            final_batch["input_features_mask"] = torch.stack(
-                batch["input_features_mask"]
-            )
+            if key in ["token_type_ids", "cross_attention_mask"]:
+                final_batch[key] = torch.nn.utils.rnn.pad_sequence(
+                    val, batch_first=True, padding_value=0
+                )
+            else:
+                final_batch[key] = torch.stack(val)
 
         # Process the labels
         final_batch["labels"] = self.processing_strategy.process_labels(
