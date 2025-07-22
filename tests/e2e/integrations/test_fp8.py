@@ -7,7 +7,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import check_model_output_exists, require_torch_2_4_1
+from tests.e2e.utils import check_model_output_exists, require_torch_2_7_0
 
 
 class FP8IntegrationTestCase:
@@ -15,7 +15,7 @@ class FP8IntegrationTestCase:
     e2e smoke tests for FP8 mixed precision training with Axolotl
     """
 
-    @require_torch_2_4_1
+    @require_torch_2_7_0
     def test_fp8_single_gpu_smoke(self, temp_dir):
         """Smoke test for single GPU FP8 + torch.compile training"""
         # pylint: disable=duplicate-code
