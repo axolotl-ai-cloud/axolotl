@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 from collections import defaultdict
 from functools import partial, wraps
-from typing import Callable, Literal, Optional
+from typing import Any, Callable, Literal, Optional
 
 import datasets
 import torch
@@ -522,15 +522,25 @@ class AxolotlTrainer(
 
         return res
 
+    # pylint: disable=unused-argument
     def additional_accelerator_args(
-        self, fp8=None, **kwargs
-    ):  # pylint: disable=unused-argument
+        self, fp8: bool = False, enable_fsdp_float8_all_gather: bool = False, **kwargs
+    ) -> dict[str, Any]:
         ret_kwargs = {}
         if fp8:
             from accelerate.utils import AORecipeKwargs
+            from torchao.float8 import Float8LinearConfig
+
+            # By default, Float8LinearConfig is instantiated using the "tensorwise"
+            # scaling strategy. See more details here:
+            # https://github.com/pytorch/ao/tree/main/torchao/float8.
+            config = Float8LinearConfig(
+                enable_fsdp_float8_all_gather=enable_fsdp_float8_all_gather,
+                force_recompute_fp8_weight_in_bwd=enable_fsdp_float8_all_gather is True,
+            )
 
             ret_kwargs["mixed_precision"] = "fp8"
-            ret_kwargs["kwargs_handlers"] = [AORecipeKwargs()]
+            ret_kwargs["kwargs_handlers"] = [AORecipeKwargs(config=config)]  # type: ignore
             os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
 
         return ret_kwargs

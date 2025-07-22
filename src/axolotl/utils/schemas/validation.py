@@ -362,6 +362,36 @@ class TrainingValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_fp8_config(cls, data):
+        if data.get("fp8") and not data.get("torch_compile"):
+            LOG.warning(
+                "torch_compile is strongly recommended for FP8 training in order to "
+                "see speed improvements. Please consider setting `torch_compile: "
+                "true` in your config."
+            )
+        if data.get("fp8") and (
+            data.get("fsdp_config", {}).get("activation_checkpointing", False) is True
+            or data.get("fsdp_config", {}).get("fsdp_activation_checkpointing", False)
+            is True
+        ):
+            LOG.warning(
+                "FP8 + FSDP2 + activation checkpointing may be slower than BF16 "
+                "training. Please considering setting `activation_checkpointing: false` "
+                "in your FSDP config."
+            )
+        if (
+            data.get("fp8_enable_fsdp_float8_all_gather")
+            and not data.get("fsdp_version", None) == 2
+        ):
+            raise ValueError(
+                "fp8_enable_fsdp_float8_all_gather requires FSDP2 (fsdp_version: 2) "
+                "to be used."
+            )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_use_reentrant_mismatch(cls, data):
         if (
             data.get("unfrozen_parameters")

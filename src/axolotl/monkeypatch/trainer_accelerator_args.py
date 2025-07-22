@@ -18,7 +18,7 @@ ORIGINAL_TRAINER_CODE = """
 
 PATCHED_TRAINER_CODE = """
     if hasattr(self, "additional_accelerator_args"):
-        additional_args = self.additional_accelerator_args(fp8=True, **args)
+        additional_args = self.additional_accelerator_args(fp8=True, enable_fsdp_float8_all_gather={enable_fsdp_float8_all_gather}, **args)
         if additional_args:
             args.update(additional_args)
 
@@ -38,9 +38,9 @@ def check_create_accelerate_code_is_patchable() -> bool:
     return ORIGINAL_TRAINER_CODE in create_code
 
 
-def patch_create_accelerate_code_for_fp8():
+def patch_create_accelerate_code_for_fp8(enable_fsdp_float8_all_gather: bool):
     """
-    monkeypatch create_accelerator_and_postprocess so it checks for additional kwargs
+    Monkeypatch create_accelerator_and_postprocess so it checks for additional kwargs.
     """
 
     try:
@@ -54,7 +54,10 @@ def patch_create_accelerate_code_for_fp8():
     if ORIGINAL_TRAINER_CODE not in create_code:
         return
 
-    create_code = create_code.replace(ORIGINAL_TRAINER_CODE, PATCHED_TRAINER_CODE)
+    patched_trainer_code = PATCHED_TRAINER_CODE.format(
+        enable_fsdp_float8_all_gather=enable_fsdp_float8_all_gather
+    )
+    create_code = create_code.replace(ORIGINAL_TRAINER_CODE, patched_trainer_code)
     create_code = create_code.replace(
         "def create_accelerator_and_postprocess(",
         "def fixed_create_accelerator_and_postprocess(",
