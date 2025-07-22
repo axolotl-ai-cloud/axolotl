@@ -283,11 +283,6 @@ class PatchManager:
 
             replace_stablelm_attn_with_flash_attn(self.cfg.base_model)
 
-        if self.model_config.model_type == "mllama":
-            from axolotl.monkeypatch.mllama_attn_patch import patch_mllama_attention
-
-            patch_mllama_attention()
-
     def _patch_loss_llama(self):
         """Patch loss functions and other optimizations for LLaMA models."""
         if not self.cfg.is_llama_derived_model:
