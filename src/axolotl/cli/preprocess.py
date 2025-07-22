@@ -38,9 +38,10 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
 
     for key in ["skip_prepare_dataset", "pretraining_dataset"]:
         if cfg.get(key):
-            raise ValueError(
+            LOG.warning(
                 f"You have set `{key}:`. `preprocess` is not needed. Run the `axolotl train` CLI directly instead."
             )
+            return
 
     if not cfg.dataset_prepared_path:
         msg = (
