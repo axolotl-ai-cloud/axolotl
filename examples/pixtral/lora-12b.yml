@@ -11,8 +11,7 @@ datasets:
   - path: HuggingFaceH4/llava-instruct-mix-vsft
     type: chat_template
     split: train[:1%]
-    field_messages: messages
-dataset_prepared_path: last_run_prepared
+dataset_prepared_path:
 val_set_size: 0.0
 output_dir: ./outputs/out
 
@@ -36,7 +35,7 @@ wandb_log_model:
 gradient_accumulation_steps: 4
 micro_batch_size: 1
 num_epochs: 1
-optimizer: adamw_bnb_8bit
+optimizer: muon
 lr_scheduler: cosine
 learning_rate: 0.0002
 
@@ -46,8 +45,8 @@ tf32: true
 
 gradient_checkpointing: true
 logging_steps: 1
-flash_attention: false # PixtralVisionModel does not support Flash Attention 2.0 yet
-eager_attention:
+# flash_attention:  # PixtralVisionModel does not support Flash Attention 2.0 yet
+sdp_attention: true
 
 warmup_ratio: 0.1
 evals_per_epoch: 1
