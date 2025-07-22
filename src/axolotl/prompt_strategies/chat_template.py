@@ -18,7 +18,7 @@ from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import DatasetConfig
 
 if TYPE_CHECKING:
-    from axolotl.utils.mistral_tokenizer import HFMistralTokenizer
+    from axolotl.utils.mistral.mistral_tokenizer import HFMistralTokenizer
 
 # Configure the logger
 LOG = get_logger(__name__)
