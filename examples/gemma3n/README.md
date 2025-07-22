@@ -4,13 +4,13 @@
 
 In addition to Axolotl's requirements, Gemma-3n requires
 
-```
+```bash
 pip3 install timm==1.0.17
 ```
 
 If you will load audio datasets, please also install
 
-```
+```bash
 pip3 install librosa==0.11.0
 ```
 
