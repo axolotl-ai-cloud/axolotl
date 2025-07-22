@@ -40,7 +40,7 @@ wandb_log_model:
 gradient_accumulation_steps: 4
 micro_batch_size: 1
 num_epochs: 1
-optimizer: adamw_bnb_8bit
+optimizer: muon
 lr_scheduler: cosine
 learning_rate: 0.0002
 
@@ -50,8 +50,8 @@ tf32: true
 
 gradient_checkpointing: true
 logging_steps: 1
-flash_attention: true
-eager_attention:
+# flash_attention: true  # use for text-only mode
+sdp_attention: true
 
 warmup_ratio: 0.1
 evals_per_epoch: 1
