@@ -343,8 +343,20 @@ class AxolotlInputConfig(
     fp16: bool | None = Field(
         default=None, json_schema_extra={"description": "Use CUDA fp16"}
     )
-    fp8: bool | None = None
-    fp8_enable_fsdp_float8_all_gather: bool | None = None
+    fp8: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable FP8 mixed precision training using TorchAO. Best "
+            "used in combination with torch.compile."
+        },
+    )
+    fp8_enable_fsdp_float8_all_gather: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable FSDP float8 all-gather optimization for FP8 training. Can "
+            "improve training speed by 10-15% when FSDP is enabled."
+        },
+    )
     bfloat16: bool | None = Field(
         default=None,
         json_schema_extra={
