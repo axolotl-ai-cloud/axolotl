@@ -41,12 +41,13 @@ class FP8IntegrationTestCase:
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch_fused",  # Use standard optimizer for stability
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
-                "flash_attention": True,
+                "sdp_attention": True,
+                "pad_to_seq_len": True,
                 "sample_packing": True,
-                "fp8": True,  # Enable FP8 mixed precision
-                "torch_compile": True,  # Essential for FP8 performance
+                "fp8": True,
+                "torch_compile": True,
                 "save_safetensors": True,
                 "save_first_step": False,
             }

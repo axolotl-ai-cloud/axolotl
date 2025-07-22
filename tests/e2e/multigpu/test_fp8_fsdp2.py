@@ -77,18 +77,19 @@ class TestFP8FSDP2:
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",  # Use standard optimizer for stability
                 "lr_scheduler": "cosine",
-                "flash_attention": True,
+                "sdp_attention": True,
+                "pad_to_seq_len": True,
                 "sample_packing": True,
                 # FP8 configuration
-                "fp8": True,  # Enable FP8 mixed precision
-                "fp8_enable_fsdp_float8_all_gather": True,  # Enable FP8 all-gather
-                "torch_compile": True,  # Essential for FP8 performance
+                "fp8": True,
+                "fp8_enable_fsdp_float8_all_gather": True,
+                "torch_compile": True,
                 # FSDP2 configuration
                 "fsdp_version": 2,
                 "fsdp_config": {
                     "offload_params": False,
                     "cpu_ram_efficient_loading": False,
-                    "transformer_layer_cls_to_wrap": "LlamaDecoderLayer",  # SmolLM2 uses Llama architecture
+                    "transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
                     "state_dict_type": "FULL_STATE_DICT",
                     "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                     "reshard_after_forward": True,
