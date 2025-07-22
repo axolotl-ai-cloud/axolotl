@@ -535,7 +535,8 @@ class AxolotlTrainer(
             # scaling strategy. See more details here:
             # https://github.com/pytorch/ao/tree/main/torchao/float8.
             config = Float8LinearConfig(
-                enable_fsdp_float8_all_gather=enable_fsdp_float8_all_gather
+                enable_fsdp_float8_all_gather=enable_fsdp_float8_all_gather,
+                force_recompute_fp8_weight_in_bwd=enable_fsdp_float8_all_gather is True,
             )
 
             ret_kwargs["mixed_precision"] = "fp8"
