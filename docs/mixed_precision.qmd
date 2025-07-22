@@ -93,7 +93,7 @@ FP8 training requires `torch_compile: true` to see meaningful speedups. Without 
 
 ### Advanced FP8 Configs {#sec-fp8-advanced}
 
-For FSDP (Fully Sharded Data Parallel) training:
+For [FSDP](multi-gpu.qmd#sec-fsdp) (Fully Sharded Data Parallel) training:
 
 ```{.yaml}
 fp8: true
