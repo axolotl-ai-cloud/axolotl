@@ -131,7 +131,7 @@ Always validate your mixed precision setup:
 - **Compare with FP32 baseline** when possible
 - **Test evaluation metrics** match expectations
 
-### FP8 Particulars (#sec-fp8-details)
+### FP8 Particulars {#sec-fp8-details}
 
 - Use cases
   - Single GPU training

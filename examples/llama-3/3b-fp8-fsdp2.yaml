@@ -60,15 +60,15 @@ saves_per_epoch: 1
 warmup_steps: 10
 weight_decay: 0.0
 
+fsdp_version: 2
 fsdp_config:
-  fsdp_version: 2
-  fsdp_offload_params: false
-  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
-  fsdp_state_dict_type: FULL_STATE_DICT
-  fsdp_sharding_strategy: FULL_SHARD
-  fsdp_reshard_after_forward: true
-  fsdp_activation_checkpointing: false
+  offload_params: false
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: LlamaDecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  sharding_strategy: FULL_SHARD
+  reshard_after_forward: true
+  activation_checkpointing: false
 
 special_tokens:
   pad_token: <|end_of_text|>
