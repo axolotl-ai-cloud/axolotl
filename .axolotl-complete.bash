@@ -1,3 +1,5 @@
+#!/bin/bash
+
 _axolotl_completions() {
     local cur prev
     COMPREPLY=()
@@ -6,7 +8,7 @@ _axolotl_completions() {
 
     # If we're completing the first argument (the command)
     if [[ $COMP_CWORD -eq 1 ]]; then
-        COMPREPLY=($(compgen -W "delinearize-llama4 fetch lm-eval merge-sharded-fsdp-weights quantize vllm-serve evaluate inference merge-lora preprocess train" -- "$cur"))
+        mapfile -t COMPREPLY < <(compgen -W "delinearize-llama4 fetch lm-eval merge-sharded-fsdp-weights quantize vllm-serve evaluate inference merge-lora preprocess train" -- "$cur")
         return 0
     fi
 
@@ -17,7 +19,7 @@ _axolotl_completions() {
     if [[ " ${yaml_commands[*]} " =~ (^|[[:space:]])$prev($|[[:space:]]) ]]; then
         # Use filename completion which handles directories properly
         compopt -o filenames
-        COMPREPLY=($(compgen -f -- "$cur"))
+        mapfile -t COMPREPLY < <(compgen -f -- "$cur")
 
         # Filter to only include directories and YAML files
         local -a filtered=()
