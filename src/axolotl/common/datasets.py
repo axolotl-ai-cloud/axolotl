@@ -64,15 +64,13 @@ def load_datasets(
         preprocess_iterable=preprocess_iterable,
     )
 
-    should_debug_labels = (
+    if (
         cfg.debug
         or getattr(cli_args, "debug", False)
         or getattr(cli_args, "debug_text_only", False)
         or getattr(cli_args, "debug_num_examples", 0) > 0
         or debug
-    )
-
-    if should_debug_labels and not cfg.skip_prepare_dataset:
+    ):
         LOG.info("check_dataset_labels...")
 
         num_examples = cli_args.debug_num_examples if cli_args else 1
@@ -124,7 +122,7 @@ def load_preference_datasets(
             math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
         )
 
-    if ((cli_args and cli_args.debug) or cfg.debug) and not cfg.skip_prepare_dataset:
+    if (cli_args and cli_args.debug) or cfg.debug:
         LOG.info("check_dataset_labels...")
 
         num_examples = cli_args.debug_num_examples if cli_args else 1
