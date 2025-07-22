@@ -92,6 +92,9 @@ class MultiModalChatDataCollator(DataCollatorMixin):
         if "pixel_values" in batch:
             final_batch["pixel_values"] = torch.stack(batch["pixel_values"])
 
+        if "aspect_ratio_ids" in batch:
+            final_batch["aspect_ratio_ids"] = torch.stack(batch["aspect_ratio_ids"])
+
         if "input_features" in batch:
             final_batch["input_features"] = torch.stack(batch["input_features"])
 
