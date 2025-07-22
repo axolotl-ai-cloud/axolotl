@@ -369,13 +369,22 @@ class TrainingValidationMixin:
                 "see speed improvements. Please consider setting `torch_compile: "
                 "true` in your config."
             )
-        if (
-            data.get("fp8")
-            and data.get("fsdp_config", {}).get("activation_checkpointing") is True
+        if data.get("fp8") and (
+            data.get("fsdp_config", {}).get("activation_checkpointing", False) is True
+            or data.get("fsdp_config", {}).get("fsdp_activation_checkpointing", False)
+            is True
         ):
             LOG.warning(
-                "FSDP activation checkpointing may be slower with FP8 training. Please "
-                "proceed with caution."
+                "FP8 + FSDP2 + activation checkpointing may be slower than BF16 "
+                "training. Please proceed with caution."
+            )
+        if (
+            data.get("fp8_enable_fsdp_float8_all_gather")
+            and not data.get("fsdp_version", None) == 2
+        ):
+            raise ValueError(
+                "fp8_enable_fsdp_float8_all_gather requires FSDP2 (fsdp_version: 2) "
+                "to be used."
             )
 
         return data
