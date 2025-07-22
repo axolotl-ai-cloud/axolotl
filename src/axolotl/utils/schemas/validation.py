@@ -376,7 +376,8 @@ class TrainingValidationMixin:
         ):
             LOG.warning(
                 "FP8 + FSDP2 + activation checkpointing may be slower than BF16 "
-                "training. Please proceed with caution."
+                "training. Please considering setting `activation_checkpointing: false` "
+                "in your FSDP config."
             )
         if (
             data.get("fp8_enable_fsdp_float8_all_gather")
