@@ -92,9 +92,19 @@ class MultiModalChatDataCollator(DataCollatorMixin):
         if "pixel_values" in batch:
             final_batch["pixel_values"] = torch.stack(batch["pixel_values"])
 
+        # mllama
         if "aspect_ratio_ids" in batch:
             final_batch["aspect_ratio_ids"] = torch.stack(batch["aspect_ratio_ids"])
 
+        if "aspect_ratio_mask" in batch:
+            final_batch["aspect_ratio_mask"] = torch.stack(batch["aspect_ratio_mask"])
+
+        if "cross_attention_mask" in batch:
+            final_batch["cross_attention_mask"] = torch.nn.utils.rnn.pad_sequence(
+                batch["cross_attention_mask"], batch_first=True, padding_value=0
+            )
+
+        # gemma3n
         if "input_features" in batch:
             final_batch["input_features"] = torch.stack(batch["input_features"])
 
