@@ -415,6 +415,26 @@ class ModelLoader:
         device_mesh = torch.distributed.init_device_mesh(
             "cuda", mesh_shape, mesh_dim_names=mesh_dim_names
         )
+        submeshes = [
+            tuple(parallelism_config.dp_dim_names),
+            tuple(parallelism_config.dp_shard_cp_dim_names),
+            tuple(parallelism_config.dp_cp_dim_names),
+        ]
+        submesh_names = [
+            # create a submesh which is only used for distributing data across data parallel dims (no comms)
+            "dp",
+            # create a submesh which is used *just* for FSDP parameter gathering/scattering
+            # and gradients reduce-scattering
+            "dp_shard_cp",
+            # create a submesh which is used for correctly reducing loss across data replica/context parallel
+            "dp_cp",
+        ]
+        for submesh, submesh_name in zip(submeshes, submesh_names):
+            if submesh:
+                device_mesh[submesh]._flatten(  # pylint: disable=protected-access
+                    submesh_name
+                )
+
         PartialState().parallelism_config = parallelism_config
         PartialState().device_mesh = device_mesh
 
