@@ -3,6 +3,7 @@ on:
   # check on PRs, and manual triggers
   merge_group:
   pull_request:
+      types: [opened, synchronize, reopened, ready_for_review]
       paths:
        - '**.py'
        - 'requirements.txt'
