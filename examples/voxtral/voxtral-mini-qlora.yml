@@ -8,19 +8,16 @@ tokenizer_use_mistral_common: true
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
-cut_cross_entropy: true
 
 load_in_8bit: false
 load_in_4bit: true
 
 # for use with fft to only train on language model layers
 # unfrozen_parameters:
-  # - model.language_model.*
+  # - language_model.model.*
   # - lm_head
   # - embed_tokens
 
-
-chat_template: voxtral
 eot_tokens:
   - <end_of_turn>
 datasets:
@@ -39,7 +36,6 @@ adapter: qlora
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
-# lora_target_linear: # Does not work with gemma3n currently
 lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
 
 sequence_len: 2048
@@ -56,7 +52,7 @@ wandb_log_model:
 gradient_accumulation_steps: 1
 micro_batch_size: 1
 num_epochs: 4
-optimizer: muon
+optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
@@ -68,7 +64,7 @@ gradient_checkpointing_kwargs:
   use_reentrant: false
 resume_from_checkpoint:
 logging_steps: 1
-# flash_attention: true  # Any attention impl does not work with gemma3n now
+flash_attention: true
 
 warmup_ratio: 0.1
 evals_per_epoch:
