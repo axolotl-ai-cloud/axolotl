@@ -73,3 +73,4 @@ class LigerArgs(BaseModel):
                 "`liger_rms_norm` is incompatible with tensor parallelism, "
                 "see https://github.com/linkedin/Liger-Kernel/issues/826"
             )
+        return data
