@@ -27,6 +27,7 @@ import torch
 from transformers import (
     TrainerCallback,
 )
+from transformers.trainer_pt_utils import AcceleratorConfig
 from transformers.training_args import OptimizerNames
 
 from axolotl.integrations.base import PluginManager
@@ -434,8 +435,18 @@ class TrainerBuilderBase(abc.ABC):
                 training_args_kwargs["torch_compile_mode"] = self.cfg.torch_compile_mode
 
     def _configure_accelerator_config(self, training_args_kwargs: dict):
+        use_configured_state = True
         if self.cfg.accelerator_config:
-            training_args_kwargs["accelerator_config"] = self.cfg.accelerator_config
+            use_configured_state = self.cfg.accelerator_config.pop(
+                "use_configured_state", use_configured_state
+            )
+            training_args_kwargs["accelerator_config"] = AcceleratorConfig(
+                use_configured_state=use_configured_state, **self.cfg.accelerator_config
+            )
+        else:
+            training_args_kwargs["accelerator_config"] = AcceleratorConfig(
+                use_configured_state=True,
+            )
 
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
         if self.cfg.activation_offloading is True:
