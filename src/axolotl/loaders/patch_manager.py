@@ -261,14 +261,14 @@ class PatchManager:
 
     def _apply_sequence_parallel_patches(self):
         """Apply sequence parallelism patches."""
-        if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
+        if self.cfg.context_parallel_size and self.cfg.context_parallel_size > 1:
             from axolotl.monkeypatch.ring_attn.patch import (
                 patch_prepare_data_loader,
                 patch_prepare_device_mesh,
             )
 
             patch_prepare_data_loader()
-            patch_prepare_device_mesh(self.cfg.sequence_parallel_degree, self.cfg.fsdp)
+            patch_prepare_device_mesh(self.cfg.context_parallel_size, self.cfg.fsdp)
 
     def _apply_tiled_mlp(self, model_type: str):
         if self.cfg.tiled_mlp:

@@ -644,7 +644,7 @@ class AxolotlInputConfig(
         },
     )
 
-    sequence_parallel_degree: int | None = Field(
+    context_parallel_size: int | None = Field(
         default=None,
         json_schema_extra={
             "description": "Set to a divisor of the number of GPUs available to split sequences into chunks of equal size. Use in long context training to prevent OOM when sequences cannot fit into a single GPU's VRAM. E.g., if 4 GPUs are available, set this value to 2 to split each sequence into two equal-sized subsequences, or set to 4 to split into four equal-sized subsequences. See https://docs.axolotl.ai/docs/sequence_parallelism.html for more details."

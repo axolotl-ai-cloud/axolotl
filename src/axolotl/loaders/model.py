@@ -13,7 +13,8 @@ import peft
 import torch
 import transformers
 import transformers.modeling_utils
-from accelerate import init_empty_weights
+from accelerate import PartialState, init_empty_weights
+from accelerate.utils.dataclasses import ParallelismConfig
 from peft import (
     PeftConfig,
     PeftMixedModel,
@@ -51,6 +52,7 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
     get_device_count,
     get_device_type,
+    get_world_size,
 )
 from axolotl.utils.logging import get_logger
 from axolotl.utils.model_shard_quant import load_sharded_model_quant
@@ -182,6 +184,7 @@ class ModelLoader:
 
     def _apply_pre_model_load_setup(self):
         """Apply patches and setup configurations before model loading."""
+        self._set_parallel_config()
         self._set_auto_model_loader()
         self._set_device_map_config()
         if self.cfg.revision_of_model:
@@ -388,6 +391,32 @@ class ModelLoader:
         for _ in range(3):
             gc.collect()
             torch.cuda.empty_cache()
+
+    def _set_parallel_config(self):
+        """Set parallelism configuration (DP, FSDP, TP, CP) in PartialState/Accelerator"""
+        dp_replicate_size = get_world_size()
+        pc_kwargs = {}
+        if self.cfg.dp_shard_size > 1:
+            pc_kwargs["dp_shard_size"] = self.cfg.dp_shard_size
+            dp_replicate_size = dp_replicate_size // self.cfg.dp_shard_size
+        if self.cfg.tensor_parallel_size > 1:
+            pc_kwargs["tp_size"] = self.cfg.tensor_parallel_size
+            dp_replicate_size = dp_replicate_size // self.cfg.tensor_parallel_size
+        if self.cfg.context_parallel_size > 1:
+            pc_kwargs["cp_size"] = self.cfg.context_parallel_size
+            dp_replicate_size = dp_replicate_size // self.cfg.context_parallel_size
+        if dp_replicate_size > 1:
+            pc_kwargs["dp_replicate_size"] = dp_replicate_size
+
+        parallelism_config = ParallelismConfig(
+            **pc_kwargs,
+        )
+        mesh_dim_names, mesh_shape = parallelism_config.get_mesh()
+        device_mesh = torch.distributed.init_device_mesh(
+            "cuda", mesh_shape, mesh_dim_names=mesh_dim_names
+        )
+        PartialState().parallelism_config = parallelism_config
+        PartialState().device_mesh = device_mesh
 
     def _set_auto_model_loader(self):
         """Set `self.auto_model_loader`. Defaults to `transformers.AutoModelForCausalLM`
