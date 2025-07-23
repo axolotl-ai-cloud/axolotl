@@ -122,7 +122,7 @@ def load_preference_datasets(
             math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
         )
 
-    if (cli_args and cli_args.debug) or cfg.debug:
+    if ((cli_args and cli_args.debug) or cfg.debug) and cfg.rl != RLType.ORPO:
         LOG.info("check_dataset_labels...")
 
         num_examples = cli_args.debug_num_examples if cli_args else 1
