@@ -205,7 +205,7 @@ def execute_training(
                 )
             )
 
-        if cfg.sequence_parallel_degree > 1:
+        if cfg.context_parallel_size > 1:
             models = [trainer.model]
             if hasattr(trainer, "ref_model") and trainer.ref_model:
                 models.append(trainer.ref_model)
@@ -213,7 +213,7 @@ def execute_training(
             stack.enter_context(
                 SequenceParallelContextManager(
                     models=models,
-                    sequence_parallel_degree=cfg.sequence_parallel_degree,
+                    context_parallel_size=cfg.context_parallel_size,
                     gradient_accumulation_steps=cfg.gradient_accumulation_steps,
                     ring_attn_func=cfg.ring_attn_func,
                     heads_k_stride=cfg.heads_k_stride,
