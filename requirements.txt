@@ -13,7 +13,7 @@ packaging==23.2
 
 huggingface_hub>=0.33.0
 peft==0.16.0
-transformers @ git+https://github.com/winglian/transformers.git@ndp
+transformers @ git+https://github.com/huggingface/transformers.git@82603b6cc284dbdf2b7a7cf070feb6a2c3bb53cf
 tokenizers>=0.21.1
 accelerate @ git+https://github.com/SalmanMohammadi/accelerate.git@device_mesh_parallelism_config
 datasets==4.0.0
