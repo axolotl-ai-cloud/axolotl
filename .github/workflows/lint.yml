@@ -17,6 +17,7 @@ jobs:
   pre-commit:
     name: pre-commit
     runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

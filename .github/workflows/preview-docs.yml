@@ -25,6 +25,7 @@ permissions:
 jobs:
   preview:
     runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
