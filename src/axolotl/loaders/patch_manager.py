@@ -66,6 +66,9 @@ class PatchManager:
         self._apply_self_attention_lora_patch()
         self._apply_gemma3_conditional_generation_forward_patch()
         self._apply_sequence_parallel_patches()
+
+    def apply_post_plugin_pre_model_load_patches(self):
+        """Apply post plugin-pre_model_load load patches based on config."""
         self._apply_tiled_mlp(self.cfg.model_config_type)
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
@@ -274,21 +277,13 @@ class PatchManager:
         if self.cfg.tiled_mlp:
             from axolotl.monkeypatch.tiled_mlp import (
                 patch_tiled_mlp,
-                patch_tiled_mlp_deepspeed,
             )
 
-            if self.cfg.deepspeed:
-                patch_tiled_mlp_deepspeed(
-                    model_type,
-                    use_original_mlp=self.cfg.tiled_mlp_use_original_mlp,
-                    cfg_num_shards=self.cfg.tiled_mlp_num_shards,
-                )
-            else:
-                patch_tiled_mlp(
-                    model_type,
-                    use_original_mlp=self.cfg.tiled_mlp_use_original_mlp,
-                    cfg_num_shards=self.cfg.tiled_mlp_num_shards,
-                )
+            patch_tiled_mlp(
+                model_type,
+                use_original_mlp=self.cfg.tiled_mlp_use_original_mlp,
+                cfg_num_shards=self.cfg.tiled_mlp_num_shards,
+            )
 
     def _patch_attention(self):
         """Apply attention-specific patches based on model type."""

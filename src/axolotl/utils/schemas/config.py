@@ -597,7 +597,7 @@ class AxolotlInputConfig(
     )
 
     tiled_mlp_use_original_mlp: bool | None = Field(
-        default=None,
+        default=True,
         json_schema_extra={
             "description": "Whether to use original mlp for ALST tiled mlp. Otherwise uses a generic MLP based on llama."
         },

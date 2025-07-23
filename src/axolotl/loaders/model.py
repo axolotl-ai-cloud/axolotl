@@ -162,6 +162,7 @@ class ModelLoader:
 
         # Build the model
         PLUGIN_MANAGER.pre_model_load(self.cfg)
+        self.patch_manager.apply_post_plugin_pre_model_load_patches()
         skip_move_to_device = self._build_model()
         PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
 

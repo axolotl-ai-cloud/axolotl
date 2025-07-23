@@ -2,22 +2,22 @@
 
 import math
 import os
-from functools import partial
 
 import torch
 import torch.distributed as dist
-from deepspeed.runtime.sequence_parallel.ulysses_sp import TiledMLP as DeepSpeedTiledMLP
 
-from axolotl.monkeypatch.tiled_mlp.base import TiledMLP
 from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
 
-def patch_tiled_mlp_distributed(
-    tiled_mlp_cls, model_type, use_original_mlp=False, cfg_num_shards=None
-):
+def patch_tiled_mlp(model_type, use_original_mlp=True, cfg_num_shards=None):
+    from deepspeed.runtime.sequence_parallel.ulysses_sp import (
+        TiledMLP as DeepSpeedTiledMLP,
+    )
+
+    from axolotl.monkeypatch.tiled_mlp.base import TiledMLP
 
     try:
         # Dynamically import the module and MLP class
@@ -40,6 +40,7 @@ def patch_tiled_mlp_distributed(
         is_distributed = int(os.environ.get("WORLD_SIZE", 1)) > 1
 
         def tiled_mlp_forward(self, x):
+            # pylint: disable=protected-access
             input_shape = x.shape
             seqlen = input_shape[-2]
             hidden = input_shape[-1]
@@ -52,14 +53,20 @@ def patch_tiled_mlp_distributed(
             else:
                 num_shards = cfg_num_shards
 
-            if not self._compute_params:  # pylint: disable=protected-access
-                self._compute_params = [  # pylint: disable=protected-access
-                    p for p in self.parameters() if p.requires_grad
-                ]
+            if not self._compute_params:
+                self._compute_params = [p for p in self.parameters() if p.requires_grad]
 
-            compute_params = self._compute_params  # pylint: disable=protected-access
+            compute_params = self._compute_params
+            if not self._tiled_mlp_dist_impl:
+                if (
+                    self._compute_params
+                    and hasattr(self._compute_params[0], "param_idx_in_group")
+                ) or os.environ.get("ACCELERATE_USE_DEEPSPEED", "false") == "true":
+                    self._tiled_mlp_dist_impl = DeepSpeedTiledMLP
+                else:
+                    self._tiled_mlp_dist_impl = TiledMLP
 
-            down_res = tiled_mlp_cls.apply(
+            down_res = self._tiled_mlp_dist_impl.apply(
                 mlp_forward,
                 self,
                 x,
@@ -70,6 +77,7 @@ def patch_tiled_mlp_distributed(
 
         mlp_cls.forward = tiled_mlp_forward
         mlp_cls._compute_params = []  # pylint: disable=protected-access
+        mlp_cls._tiled_mlp_dist_impl = None  # pylint: disable=protected-access
         LOG.info(
             f"Successfully monkey-patched TiledMLP for model_type: {model_type}",
             main_process_only=True,
@@ -79,7 +87,3 @@ def patch_tiled_mlp_distributed(
             f"Could not import MLP class for model_type: {model_type}. "
             f"Error: {str(e)}"
         ) from e
-
-
-patch_tiled_mlp_deepspeed = partial(patch_tiled_mlp_distributed, DeepSpeedTiledMLP)
-patch_tiled_mlp = partial(patch_tiled_mlp_distributed, TiledMLP)
