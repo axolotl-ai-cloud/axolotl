@@ -162,14 +162,14 @@ def create_ring_flash_attention_forward(
 
 
 def register_ring_attn(
-    sequence_parallel_degree: int,
+    context_parallel_size: int,
     heads_k_stride: int | None,
     ring_attn_func: RingAttnFunc | None,
 ):
     """Create ring attention group and substitute flash attn with ring flash attn.
 
     Args:
-        sequence_parallel_degree: Sequence parallelism factor.
+        context_parallel_size: Sequence parallelism factor.
         heads_k_stride: Sequence parallelism K head stride size. Passed through to
             `varlen_llama3` `ring_flash_attn` implementation.
         ring_attn_func: `ring_flash_attn` ring attention implemention. If sample
@@ -182,25 +182,25 @@ def register_ring_attn(
     if rank == 0:
         LOG.info(
             "Enabling ring attention sequence parallelism: "
-            f"each sequence will be processed across {sequence_parallel_degree} GPUs"
+            f"each sequence will be processed across {context_parallel_size} GPUs"
         )
 
-    assert sequence_parallel_degree <= world_size, (
-        f"sequence_parallel_degree ({sequence_parallel_degree}) "
+    assert context_parallel_size <= world_size, (
+        f"context_parallel_size ({context_parallel_size}) "
         f"must be less than or equal to world_size ({world_size})"
     )
-    assert world_size % sequence_parallel_degree == 0, (
-        f"sequence_parallel_degree ({sequence_parallel_degree}) "
+    assert world_size % context_parallel_size == 0, (
+        f"context_parallel_size ({context_parallel_size}) "
         f"must evenly divide world_size ({world_size})"
     )
 
     # Assign ranks to sequence parallel groups
     group_assignments = {}
-    for i in range(world_size // sequence_parallel_degree):
+    for i in range(world_size // context_parallel_size):
         ring_attn_ranks = list(
             range(
-                i * sequence_parallel_degree,
-                (i + 1) * sequence_parallel_degree,
+                i * context_parallel_size,
+                (i + 1) * context_parallel_size,
             )
         )
         group = dist.new_group(ranks=ring_attn_ranks, backend="nccl")
@@ -299,12 +299,12 @@ def patch_prepare_data_loader():
     LOG.info("Patched accelerate.data_loader.prepare_data_loader for SP support")
 
 
-def patch_prepare_device_mesh(sequence_parallel_degree: int, fsdp: bool = False):
+def patch_prepare_device_mesh(context_parallel_size: int, fsdp: bool = False):
     """Patches the `Accelerator._prepare_device_mesh` method to create a device mesh
     that includes sequence parallelism with the specified degree.
 
     Args:
-        sequence_parallel_degree: The degree of sequence parallelism to use.
+        context_parallel_size: The degree of sequence parallelism to use.
         fsdp: Whether to use FSDP.
     """
 
@@ -323,8 +323,8 @@ def patch_prepare_device_mesh(sequence_parallel_degree: int, fsdp: bool = False)
         # Create device mesh with sequence parallelism
         world_size = dist.get_world_size()
         mesh_shape = (
-            world_size // sequence_parallel_degree,
-            sequence_parallel_degree,
+            world_size // context_parallel_size,
+            context_parallel_size,
         )
         device_ids = list(range(world_size))
 
@@ -344,5 +344,5 @@ def patch_prepare_device_mesh(sequence_parallel_degree: int, fsdp: bool = False)
 
     LOG.info(
         "Successfully patched Accelerator._prepare_device_mesh "
-        f"with sequence_parallel_degree={sequence_parallel_degree}"
+        f"with context_parallel_size={context_parallel_size}"
     )

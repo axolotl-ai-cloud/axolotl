@@ -167,7 +167,7 @@ class SequenceParallelContextManager:
     Args:
         models: List of models to apply sequence parallelism to pre- and post- forward
             hooks.
-        sequence_parallel_degree: Number of processes to split sequences over.
+        context_parallel_size: Number of processes to split sequences over.
         gradient_accumulation_steps: Number of steps to accumulate gradients over.
         ring_attn_func: Which ring attention function to use. Currently unused.
         heads_k_stride: Sequence parallelism K head stride size. Passed through to
@@ -179,14 +179,14 @@ class SequenceParallelContextManager:
     def __init__(
         self,
         models: list[nn.Module],
-        sequence_parallel_degree: int,
+        context_parallel_size: int,
         gradient_accumulation_steps: int,
         ring_attn_func: RingAttnFunc,
         heads_k_stride: int | None,
         gather_outputs: bool,
     ):
         self.models = models
-        self.sequence_parallel_degree = sequence_parallel_degree
+        self.context_parallel_size = context_parallel_size
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.ring_attn_func = ring_attn_func
         self.heads_k_stride = heads_k_stride
@@ -231,7 +231,7 @@ class SequenceParallelContextManager:
     def _register_ring_attn(self):
         # Initialize ring attn for sequence parallelism
         register_ring_attn(
-            sequence_parallel_degree=self.sequence_parallel_degree,
+            context_parallel_size=self.context_parallel_size,
             heads_k_stride=self.heads_k_stride,
             ring_attn_func=self.ring_attn_func,
         )
