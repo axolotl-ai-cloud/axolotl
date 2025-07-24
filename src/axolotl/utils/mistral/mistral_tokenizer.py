@@ -71,7 +71,7 @@ class HFMistralTokenizer(MistralCommonTokenizer):
 
     def apply_chat_template(
         self,
-        messages: list[dict],
+        conversation: list[dict] | list[list[dict]],
         chat_template: str | None = None,  # pylint: disable=unused-argument
         add_generation_prompt: bool = False,
         **kwargs,
@@ -82,13 +82,9 @@ class HFMistralTokenizer(MistralCommonTokenizer):
             self._set_mode(ValidationMode.serving)
             kwargs["continue_final_message"] = True
 
-        def _convert_assistant_multicontent(convo: dict):
-
-            if "messages" not in convo:
-                raise ValueError("Messages key missing from conversation data.")
-
+        def _convert_assistant_multicontent(convo: list[dict]):
             new_messages = []
-            for message in convo["messages"]:
+            for message in convo:
                 if message["role"] != "assistant":
                     new_messages.append(message)
                 else:
@@ -124,14 +120,27 @@ class HFMistralTokenizer(MistralCommonTokenizer):
 
                     new_messages.append(new_msg)
 
-            return {"messages": new_messages}
+            return new_messages
+
+        if isinstance(conversation, (list, tuple)) and (
+            isinstance(conversation[0], (list, tuple))
+            or hasattr(conversation[0], "messages")
+        ):
+            conversations = conversation
+            is_batched = True
+        else:
+            conversations = [conversation]  # type: ignore
+            is_batched = False
 
         # Convert any message with role: assistant, content from list of dict to string
         message_batch = []
-        for message in messages:
-            message_batch.append(_convert_assistant_multicontent(message))
+        for conv in conversations:
+            message_batch.append(_convert_assistant_multicontent(conv))  # type: ignore
 
         out = super().apply_chat_template(message_batch, **kwargs)
+
+        if not is_batched:
+            out = out[0]
 
         if add_generation_prompt:
             self._set_mode(ValidationMode.finetuning)
