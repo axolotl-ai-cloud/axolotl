@@ -661,6 +661,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dynamic</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">mode</span><span class="kw">:</span><span class="at"> max-autotune-no-cudagraphs</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </blockquote>
+<p>**Q: <code>ValueError("Backward pass should have cleared tracker of all tensors")</code></p>
+<blockquote class="blockquote">
+<p>A: This may happen due to edge cases in using the modern OffloadActivations context manager for CUDA streams. If you encounter this error, you may have success using the naive implementation with <code>offload_activations: legacy</code> in your YAML.</p>
+</blockquote>
 
 
 </section>
