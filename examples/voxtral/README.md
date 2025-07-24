@@ -19,11 +19,17 @@ pip3 install packaging==23.2 setuptools==75.8.0 wheel ninja
 pip3 install --no-build-isolation -e '.[flash-attn]'
 ```
 
-2. In addition to Axolotl's requirements, please install transformers as below (as of July 22).
+2. Please install the below.
 
 ```bash
 pip3 uninstall transformers
+
+# before transformers release v4.54.0
 pip3 install git+https://github.com/huggingface/transformers.git@967045082faaaaf3d653bfe665080fd746b2bb60
+# else
+pip3 install git+https://github.com/huggingface/transformers.git@v4.54.0
+
+# audio
 pip3 install librosa==0.11.0
 pip3 install 'mistral_common[audio]==1.8.2'
 ```
