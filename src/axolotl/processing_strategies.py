@@ -368,7 +368,7 @@ class Gemma3nProcessingStrategy(ProcessingStrategy):
 
 
 class VoxtralProcessingStrategy(ProcessingStrategy):
-    """Processing Strategy class for Gemma3"""
+    """Processing Strategy class for Voxtral"""
 
     def __init__(
         self,
