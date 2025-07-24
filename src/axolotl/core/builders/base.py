@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from accelerate import PartialState
 from transformers import (
     TrainerCallback,
 )
@@ -435,7 +436,7 @@ class TrainerBuilderBase(abc.ABC):
                 training_args_kwargs["torch_compile_mode"] = self.cfg.torch_compile_mode
 
     def _configure_accelerator_config(self, training_args_kwargs: dict):
-        use_configured_state = True
+        use_configured_state = bool(PartialState().parallelism_config)
         if self.cfg.accelerator_config:
             use_configured_state = self.cfg.accelerator_config.pop(
                 "use_configured_state", use_configured_state
@@ -445,7 +446,7 @@ class TrainerBuilderBase(abc.ABC):
             )
         else:
             training_args_kwargs["accelerator_config"] = AcceleratorConfig(
-                use_configured_state=True,
+                use_configured_state=use_configured_state,
             )
 
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
