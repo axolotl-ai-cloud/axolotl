@@ -71,7 +71,7 @@ class HFMistralTokenizer(MistralCommonTokenizer):
 
         self.tokenizer._chat_completion_request_validator._mode = mode
 
-    def apply_chat_template(
+    def apply_chat_template(  # type: ignore
         self,
         conversation: list[dict] | list[list[dict]],
         chat_template: str | None = None,  # pylint: disable=unused-argument
@@ -91,7 +91,7 @@ class HFMistralTokenizer(MistralCommonTokenizer):
 
         return out
 
-    def decode(
+    def decode(  # type: ignore
         self,
         token_ids: int | list[int] | np.ndarray | Tensor,
         **kwargs,
