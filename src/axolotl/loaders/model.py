@@ -405,11 +405,12 @@ class ModelLoader:
         if dp_replicate_size > 1:
             pc_kwargs["dp_replicate_size"] = dp_replicate_size
 
-        parallelism_config = ParallelismConfig(
-            **pc_kwargs,
-        )
-        device_mesh = parallelism_config.build_device_mesh("cuda")
-        PartialState(parallelism_config=parallelism_config, device_mesh=device_mesh)
+        if pc_kwargs:
+            parallelism_config = ParallelismConfig(
+                **pc_kwargs,
+            )
+            device_mesh = parallelism_config.build_device_mesh("cuda")
+            PartialState(parallelism_config=parallelism_config, device_mesh=device_mesh)
 
     def _set_auto_model_loader(self):
         """Set `self.auto_model_loader`. Defaults to `transformers.AutoModelForCausalLM`
