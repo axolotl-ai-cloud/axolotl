@@ -6,9 +6,10 @@ from typing import Optional
 from PIL import Image, ImageOps
 from PIL.Image import Resampling
 from torch import Tensor, zeros_like
-from transformers import ProcessorMixin
+from transformers import ProcessorMixin, VoxtralProcessor
 from transformers.image_utils import load_image
 
+from axolotl.utils.dict import remove_none_values
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -204,7 +205,7 @@ class ProcessingStrategy:
                         }
                     )
 
-            processed_examples.append(processed_example)
+            processed_examples.append(remove_none_values(processed_example))
 
         return processed_examples
 
@@ -366,6 +367,34 @@ class Gemma3nProcessingStrategy(ProcessingStrategy):
         return labels
 
 
+class VoxtralProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for Voxtral"""
+
+    def __init__(
+        self,
+        processor: VoxtralProcessor,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
+        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        special_ids = (
+            processor.tokenizer.tokenizer.instruct_tokenizer.audio_encoder.special_ids
+        )
+
+        self.audio_token = special_ids.audio
+        self.begin_audio_token = special_ids.begin_audio
+
+    def process_labels(self, input_ids):
+        labels = input_ids.clone()
+
+        labels[labels == self.processor.tokenizer.pad_token_id] = -100
+        labels[labels == self.audio_token] = -100
+        labels[labels == self.begin_audio_token] = -100
+
+        return labels
+
+
 def get_processing_strategy(
     processor: ProcessorMixin,
     chat_template,
@@ -395,4 +424,10 @@ def get_processing_strategy(
         return ProcessingStrategy(
             processor, chat_template, image_size, image_resize_algorithm
         )
+
+    if isinstance(processor, VoxtralProcessor):
+        return VoxtralProcessingStrategy(
+            processor, chat_template, image_size, image_resize_algorithm
+        )
+
     raise ValueError(f"Unsupported chat template type: {chat_template_type}")
