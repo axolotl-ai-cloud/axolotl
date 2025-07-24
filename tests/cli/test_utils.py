@@ -72,3 +72,77 @@ def test_fetch_from_github_network_error():
     with patch("requests.get", side_effect=requests.RequestException):
         with pytest.raises(requests.RequestException):
             fetch_from_github("examples/", None)
+
+
+def assert_launcher_args_in_command(
+    mock_subprocess_call,
+    launcher: str,
+    expected_launcher_args: list[str],
+    command_module: str,
+):
+    """
+    Helper function to verify launcher arguments are properly passed in subprocess calls.
+
+    Args:
+        mock_subprocess_call: The mock subprocess.run call
+        launcher: Expected launcher ("accelerate", "torchrun", etc.)
+        expected_launcher_args: List of expected launcher arguments
+        command_module: Expected module name (e.g., "axolotl.cli.train")
+    """
+    assert mock_subprocess_call.called, "subprocess.run should have been called"
+    called_cmd = mock_subprocess_call.call_args.args[0]
+
+    # Verify launcher
+    assert (
+        called_cmd[0] == launcher
+    ), f"Expected launcher {launcher}, got {called_cmd[0]}"
+
+    # Verify launcher args are present
+    for arg in expected_launcher_args:
+        assert (
+            arg in called_cmd
+        ), f"Expected launcher arg '{arg}' not found in command: {called_cmd}"
+
+    # Verify module is present
+    assert "-m" in called_cmd, "Expected -m flag for module execution"
+    assert (
+        command_module in called_cmd
+    ), f"Expected module {command_module} not found in command: {called_cmd}"
+
+
+def assert_no_launcher_args_contamination(mock_subprocess_call, launcher: str):
+    """
+    Helper function to verify no unwanted launcher arguments are present.
+
+    Args:
+        mock_subprocess_call: The mock subprocess.run call
+        launcher: Expected launcher ("accelerate", "torchrun", etc.)
+    """
+    assert mock_subprocess_call.called, "subprocess.run should have been called"
+    called_cmd = mock_subprocess_call.call_args.args[0]
+
+    if launcher == "accelerate":
+        # For accelerate, launcher args should be between 'launch' and '-m'
+        launch_idx = called_cmd.index("launch")
+        m_idx = called_cmd.index("-m")
+        launcher_section = called_cmd[launch_idx + 1 : m_idx]
+        assert (
+            len(launcher_section) == 0
+        ), f"Unexpected launcher args found: {launcher_section}"
+    elif launcher == "torchrun":
+        # For torchrun, launcher args should be between 'torchrun' and '-m'
+        torchrun_idx = called_cmd.index("torchrun")
+        m_idx = called_cmd.index("-m")
+        launcher_section = called_cmd[torchrun_idx + 1 : m_idx]
+        assert (
+            len(launcher_section) == 0
+        ), f"Unexpected launcher args found: {launcher_section}"
+
+
+@pytest.fixture
+def common_launcher_args():
+    """Fixture providing common launcher argument combinations for testing."""
+    return {
+        "torchrun": ["--nproc_per_node=2", "--nnodes=1"],
+        "accelerate": ["--config_file=accelerate_config.yml", "--num_processes=4"],
+    }

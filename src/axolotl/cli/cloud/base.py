@@ -20,6 +20,7 @@ class Cloud(ABC):
         self,
         config_yaml: str,
         launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
+        launcher_args: list[str] | None = None,
         local_dirs: dict[str, str] | None = None,
         **kwargs,
     ):

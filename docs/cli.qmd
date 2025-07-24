@@ -23,6 +23,20 @@ axolotl <command> [config.yml] [options]
 
 The config file can be local or a URL to a raw YAML file.
 
+### Launcher Arguments
+
+For commands that support multi-GPU (`train`, `evaluate`, ...), you can pass launcher-specific arguments using the `--` separator:
+
+```bash
+# Pass torchrun arguments
+axolotl train config.yml --launcher torchrun -- --nproc_per_node=2 --nnodes=1
+
+# Pass accelerate arguments
+axolotl train config.yml --launcher accelerate -- --config_file=accelerate_config.yml --num_processes=4
+```
+
+Arguments after `--` are passed directly to the launcher (torchrun, accelerate launch, etc.).
+
 ## Command Reference
 
 ### fetch
@@ -81,6 +95,10 @@ axolotl train config.yml \
 
 # Training without accelerate
 axolotl train config.yml --launcher python
+
+# Pass launcher-specific arguments using -- separator
+axolotl train config.yml --launcher torchrun -- --nproc_per_node=2 --nnodes=1
+axolotl train config.yml --launcher accelerate -- --config_file=accelerate_config.yml
 
 # Resume training from checkpoint
 axolotl train config.yml --resume-from-checkpoint path/to/checkpoint
@@ -175,6 +193,9 @@ Evaluates a model's performance (loss etc) on the train and eval datasets.
 ```bash
 # Basic evaluation
 axolotl evaluate config.yml
+
+# Evaluation with launcher arguments
+axolotl evaluate config.yml --launcher torchrun -- --nproc_per_node=2
 ```
 
 ### lm-eval
@@ -286,9 +307,6 @@ axolotl preprocess config.yml --cloud cloud_config.yml
 
 # Train on cloud
 axolotl train config.yml --cloud cloud_config.yml
-
-# Train without accelerate on cloud
-axolotl train config.yml --cloud cloud_config.yml --launcher python
 
 # Run lm-eval on cloud
 axolotl lm-eval config.yml --cloud cloud_config.yml

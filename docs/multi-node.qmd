@@ -69,11 +69,19 @@ export NCCL_BUFFSIZE=2097152
 
 Run the following on each node:
 
+### Option 1: New Axolotl CLI with launcher args (Recommended)
+
+```bash
+axolotl train config.yaml --launcher torchrun -- --nnodes $num_nodes --nproc_per_node $gpu_per_node --rdzv_id $rdzv_id --rdzv_backend c10d --rdzv_endpoint "$head_node_ip:$head_node_port"
+```
+
+### Option 2: Direct torchrun (Legacy)
+
 ```bash
 torchrun --nnodes $num_nodes --nproc_per_node $gpu_per_node --rdzv_id $rdzv_id --rdzv_backend c10d --rdzv_endpoint "$head_node_ip:$head_node_port" -m axolotl.cli.train config.yaml
 ```
 
-Please make sure to substitute the placeholder variables.
+Please make sure to substitute the placeholder variables:
 
 - `num_nodes`: Number of nodes (containing GPUs)
 - `gpu_per_node`: Number of gpus per node
@@ -81,8 +89,6 @@ Please make sure to substitute the placeholder variables.
 - `head_node_port`: Port of the head node (make sure other machines can connect to this. Default 29400)
 - `rdzv_id`: A unique job ID that is used by the job across nodes.
 
-::: {.callout-note}
-You need to call `axolotl.cli.train` instead of `axolotl train` as the latter calls accelerate under the hood
-:::
+The new CLI approach (Option 1) is recommended as it provides consistent argument handling and works seamlessly with other Axolotl CLI features.
 
 More info on the available configs can be found on the Pytorch docs [here](https://pytorch.org/docs/stable/elastic/run.html)

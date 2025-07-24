@@ -37,7 +37,7 @@ def test_invalid_command_options(cli_runner):
         ],
     )
     assert result.exit_code != 0
-    assert "No such option" in result.output
+    assert "does not exist" in result.output
 
 
 def test_required_config_argument(cli_runner):

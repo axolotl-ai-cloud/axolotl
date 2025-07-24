@@ -231,6 +231,7 @@ class ModalCloud(Cloud):
         self,
         config_yaml: str,
         launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
+        launcher_args: list[str] | None = None,
         local_dirs: dict[str, str] | None = None,
         **kwargs,
     ):
@@ -240,6 +241,7 @@ class ModalCloud(Cloud):
                 modal_fn.remote(
                     config_yaml,
                     launcher=launcher,
+                    launcher_args=launcher_args,
                     volumes={k: v[0] for k, v in self.volumes.items()},
                     **kwargs,
                 )
@@ -273,24 +275,32 @@ def _preprocess(config_yaml: str, volumes=None):
 def _train(
     config_yaml: str,
     launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
+    launcher_args: list[str] | None = None,
     volumes=None,
-    **kwargs,
+    **kwargs,  # pylint: disable=unused-argument
 ):
     Path("/workspace/mounts").mkdir(parents=True, exist_ok=True)
     with open("/workspace/mounts/config.yaml", "w", encoding="utf-8") as f_out:
         f_out.write(config_yaml)
     run_folder = "/workspace/mounts"
+
+    launcher_args = launcher_args or []
+
+    # Build the base command
     if launcher == "accelerate":
         launcher_arg = "--launcher accelerate"
     elif launcher == "torchrun":
         launcher_arg = "--launcher torchrun"
     else:
         launcher_arg = "--launcher python"
-    num_processes_args = ""
-    if num_processes := kwargs.pop("num_processes", None):
-        num_processes_args = f"--num-processes {num_processes}"
+
+    # Build launcher args string
+    launcher_args_str = ""
+    if launcher_args:
+        launcher_args_str = "-- " + " ".join(launcher_args)
+
     run_cmd(
-        f"axolotl train {launcher_arg} {num_processes_args} /workspace/mounts/config.yaml",
+        f"axolotl train {launcher_arg} /workspace/mounts/config.yaml {launcher_args_str}".strip(),
         run_folder,
         volumes,
     )
