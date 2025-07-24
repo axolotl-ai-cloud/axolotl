@@ -1220,6 +1220,12 @@ class ComplexValidationMixin:
                 )
 
             try:
+                import transformers.modeling_flash_attention_utils
+
+                # pylint: disable=protected-access
+                transformers.modeling_flash_attention_utils._flash_supports_window_size = (
+                    transformers.modeling_flash_attention_utils._flash_supports_window
+                )
                 import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
             except ImportError as exception:
                 raise ImportError(
