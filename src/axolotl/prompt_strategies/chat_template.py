@@ -14,6 +14,7 @@ from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnaly
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import get_chat_template_from_config
+from axolotl.utils.dict import remove_none_values
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import DatasetConfig
 
@@ -379,21 +380,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         Public method that can handle either a single prompt or a batch of prompts.
         """
 
-        def _remove_none_values(obj):
-            """
-            Remove null from a dictionary-like obj or list.
-            These can appear due to Dataset loading causing schema merge.
-            See https://github.com/axolotl-ai-cloud/axolotl/pull/2909
-            """
-            if hasattr(obj, "items"):
-                return {
-                    k: _remove_none_values(v) for k, v in obj.items() if v is not None
-                }
-            if isinstance(obj, list):
-                return [_remove_none_values(elem) for elem in obj]
-            return obj
-
-        prompt = _remove_none_values(prompt)
+        prompt = remove_none_values(prompt)
 
         if not self.is_prompt_batched(prompt) or not self.supports_batched:
             return self._tokenize_single_prompt(prompt)

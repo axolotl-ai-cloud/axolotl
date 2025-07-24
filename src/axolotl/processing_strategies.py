@@ -9,6 +9,7 @@ from torch import Tensor, zeros_like
 from transformers import ProcessorMixin, VoxtralProcessor
 from transformers.image_utils import load_image
 
+from axolotl.utils.dict import remove_none_values
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -108,20 +109,6 @@ class ProcessingStrategy:
 
             return new_messages
 
-        def _remove_none_values(obj):
-            """
-            Remove null from a dictionary-like obj or list.
-            These can appear due to Dataset loading causing schema merge.
-            See https://github.com/axolotl-ai-cloud/axolotl/pull/2909
-            """
-            if hasattr(obj, "items"):
-                return {
-                    k: _remove_none_values(v) for k, v in obj.items() if v is not None
-                }
-            if isinstance(obj, list):
-                return [_remove_none_values(elem) for elem in obj]
-            return obj
-
         processed_examples = []
         for example in examples:
             if not ("messages" in example or "conversations" in example):
@@ -218,7 +205,7 @@ class ProcessingStrategy:
                         }
                     )
 
-            processed_examples.append(_remove_none_values(processed_example))
+            processed_examples.append(remove_none_values(processed_example))
 
         return processed_examples
 
