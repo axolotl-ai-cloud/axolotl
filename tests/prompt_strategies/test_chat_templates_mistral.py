@@ -8,7 +8,7 @@ import pytest
 if TYPE_CHECKING:
     from transformers import PreTrainedTokenizer
 
-    from axolotl.utils.mistral.mistral_tokenizer import HFMistralTokenizer
+    from axolotl.utils.mistral import HFMistralTokenizer
 
 
 # fmt: off

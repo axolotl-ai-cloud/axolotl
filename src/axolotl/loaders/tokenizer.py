@@ -126,7 +126,7 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
         """Load mistral-common tokenizer"""
         from transformers import tokenization_mistral_common
 
-        from axolotl.utils.mistral.mistral_tokenizer import HFMistralTokenizer
+        from axolotl.utils.mistral import HFMistralTokenizer
 
         # patch
         tokenization_mistral_common.MistralCommonTokenizer = HFMistralTokenizer
