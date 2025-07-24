@@ -69,6 +69,7 @@ class PatchManager:
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
         self._apply_tiled_mlp(self.cfg.model_config_type)
+        self._apply_voxtral_patches()
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
@@ -274,6 +275,15 @@ class PatchManager:
                 use_original_mlp=self.cfg.tiled_mlp_use_original_mlp,
                 cfg_num_shards=self.cfg.tiled_mlp_num_shards,
             )
+
+    def _apply_voxtral_patches(self):
+        """Apply patches for Voxtral model."""
+        if self.cfg.model_config_type == "voxtral":
+            from axolotl.monkeypatch.models.voxtral.modeling import (
+                patch_voxtral_conditional_generation_forward,
+            )
+
+            patch_voxtral_conditional_generation_forward()
 
     def _patch_attention(self):
         """Apply attention-specific patches based on model type."""
