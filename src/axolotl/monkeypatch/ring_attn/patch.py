@@ -393,8 +393,6 @@ def patch_prepare_device_mesh(context_parallel_size: int, fsdp: bool = False):
         """Prepare the device mesh for distributed training. The dataloader will
         determine how to load data based on the device mesh.
         """
-        if self.state.torch_tp_plugin:
-            return self.state.torch_tp_plugin.torch_device_mesh
         if (
             self.distributed_type == accelerate.accelerator.DistributedType.DEEPSPEED
             and hasattr(self.state, "ds_device_mesh")

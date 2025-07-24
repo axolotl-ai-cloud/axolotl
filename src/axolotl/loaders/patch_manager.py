@@ -64,7 +64,7 @@ class PatchManager:
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
         self._apply_self_attention_lora_patch()
-        self._apply_sequence_parallel_patches()
+        # self._apply_sequence_parallel_patches()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
