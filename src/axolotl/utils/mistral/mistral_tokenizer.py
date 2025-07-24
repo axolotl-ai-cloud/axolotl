@@ -82,65 +82,7 @@ class HFMistralTokenizer(MistralCommonTokenizer):
             self._set_mode(ValidationMode.serving)
             kwargs["continue_final_message"] = True
 
-        def _convert_assistant_multicontent(convo: list[dict]):
-            new_messages = []
-            for message in convo:
-                if message["role"] != "assistant":
-                    new_messages.append(message)
-                else:
-                    # Create a new message dict to avoid modifying the original
-                    new_msg = {"role": "assistant"}
-
-                    # Handle the content conversion
-                    content = message.get("content", None)
-                    if content is not None:
-                        if isinstance(content, str):
-                            new_msg["content"] = content
-                        elif isinstance(content, list):
-                            # Check that there's only one text element
-                            text_contents = [
-                                item for item in content if item.get("type") == "text"
-                            ]
-                            if len(text_contents) != 1:
-                                raise ValueError(
-                                    f"Assistant message must have exactly one text content, found {len(text_contents)}"
-                                )
-
-                            # Extract the text from the single text content
-                            new_msg["content"] = text_contents[0]["text"]
-                        else:
-                            raise ValueError(
-                                f"Improper format. Content must be str or list, got {type(content)}"
-                            )
-
-                    # Copy any other keys from the original message (except content)
-                    for key, value in message.items():
-                        if key not in ["role", "content"]:
-                            new_msg[key] = value
-
-                    new_messages.append(new_msg)
-
-            return new_messages
-
-        if isinstance(conversation, (list, tuple)) and (
-            isinstance(conversation[0], (list, tuple))
-            or hasattr(conversation[0], "messages")
-        ):
-            conversations = conversation
-            is_batched = True
-        else:
-            conversations = [conversation]  # type: ignore
-            is_batched = False
-
-        # Convert any message with role: assistant, content from list of dict to string
-        message_batch = []
-        for conv in conversations:
-            message_batch.append(_convert_assistant_multicontent(conv))  # type: ignore
-
-        out = super().apply_chat_template(message_batch, **kwargs)
-
-        if not is_batched:
-            out = out[0]
+        out = super().apply_chat_template(conversation, **kwargs)
 
         if add_generation_prompt:
             self._set_mode(ValidationMode.finetuning)
