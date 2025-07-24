@@ -5,6 +5,7 @@ import inspect
 
 import torch
 import torch.distributed as dist
+from accelerate import PartialState
 from torch import nn
 from torch.utils.hooks import RemovableHandle
 from transformers.modeling_outputs import CausalLMOutputWithPast
@@ -12,7 +13,7 @@ from transformers.utils import ModelOutput
 
 from axolotl.monkeypatch.ring_attn import (
     get_ring_attn_group,
-    register_ring_attn,
+    register_ring_attn_from_device_mesh,
     update_ring_attn_params,
 )
 from axolotl.utils.schemas.enums import RingAttnFunc
@@ -230,8 +231,10 @@ class SequenceParallelContextManager:
 
     def _register_ring_attn(self):
         # Initialize ring attn for sequence parallelism
-        register_ring_attn(
-            context_parallel_size=self.context_parallel_size,
+        partial_state = PartialState()
+        register_ring_attn_from_device_mesh(
+            device_mesh=partial_state.device_mesh,
+            sequence_parallel_dim=partial_state.parallelism_config.dp_cp_dim_names,
             heads_k_stride=self.heads_k_stride,
             ring_attn_func=self.ring_attn_func,
         )
