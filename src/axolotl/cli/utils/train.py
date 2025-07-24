@@ -11,6 +11,37 @@ import yaml
 from axolotl.cli.utils.sweeps import generate_sweep_configs
 
 
+def _add_default_rdzv_args(launcher_args: list[str]) -> list[str]:
+    """
+    Add default RDZV arguments if rdzv_endpoint is set but rdzv_backend/rdzv_id are missing.
+
+    Args:
+        launcher_args: List of launcher arguments
+
+    Returns:
+        Updated launcher args with defaults added if needed
+    """
+    args = launcher_args.copy()
+
+    # Check if rdzv_endpoint is present
+    has_rdzv_endpoint = any("--rdzv_endpoint" in arg for arg in args)
+
+    if has_rdzv_endpoint:
+        # Check if rdzv_backend is already provided
+        has_rdzv_backend = any("--rdzv_backend" in arg for arg in args)
+        if not has_rdzv_backend:
+            args.extend(["--rdzv_backend", "c10d"])
+
+        # Check if rdzv_id is already provided
+        has_rdzv_id = any("--rdzv_id" in arg for arg in args)
+        if not has_rdzv_id:
+            import uuid
+
+            args.extend(["--rdzv_id", str(uuid.uuid4())[:8]])
+
+    return args
+
+
 def build_command(base_cmd: list[str], options: dict[str, Any]) -> list[str]:
     """
     Build command list from base command and options.
@@ -137,6 +168,9 @@ def _launch_torchrun_training(
 ) -> None:
     """Execute training via torchrun launcher."""
     launcher_args = launcher_args or []
+
+    # Add default RDZV arguments if rdzv_endpoint is set
+    launcher_args = _add_default_rdzv_args(launcher_args)
 
     base_cmd = ["torchrun"] + launcher_args + ["-m", "axolotl.cli.train"]
     if cfg_file:

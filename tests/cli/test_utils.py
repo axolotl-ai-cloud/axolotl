@@ -146,3 +146,91 @@ def common_launcher_args():
         "torchrun": ["--nproc_per_node=2", "--nnodes=1"],
         "accelerate": ["--config_file=accelerate_config.yml", "--num_processes=4"],
     }
+
+
+def test_add_default_rdzv_args_with_endpoint():
+    """Test that default RDZV args are added when rdzv_endpoint is present."""
+    from axolotl.cli.utils.train import _add_default_rdzv_args
+
+    launcher_args = ["--nnodes=2", "--rdzv_endpoint=127.0.0.1:29400"]
+    result = _add_default_rdzv_args(launcher_args)
+
+    # Should have added rdzv_backend and rdzv_id
+    assert "--rdzv_backend" in result
+    assert "c10d" in result
+    assert "--rdzv_id" in result
+
+    # Original args should still be present
+    assert "--nnodes=2" in result
+    assert "--rdzv_endpoint=127.0.0.1:29400" in result
+
+
+def test_add_default_rdzv_args_with_existing_backend():
+    """Test that existing rdzv_backend is not overridden."""
+    from axolotl.cli.utils.train import _add_default_rdzv_args
+
+    launcher_args = [
+        "--nnodes=2",
+        "--rdzv_endpoint=127.0.0.1:29400",
+        "--rdzv_backend=static",
+    ]
+    result = _add_default_rdzv_args(launcher_args)
+
+    # Should not add another rdzv_backend
+    backend_count = sum(1 for arg in result if "--rdzv_backend" in arg)
+    assert backend_count == 1
+    assert "--rdzv_backend=static" in result
+
+    # Should still add rdzv_id
+    assert "--rdzv_id" in result
+
+
+def test_add_default_rdzv_args_with_existing_id():
+    """Test that existing rdzv_id is not overridden."""
+    from axolotl.cli.utils.train import _add_default_rdzv_args
+
+    launcher_args = [
+        "--nnodes=2",
+        "--rdzv_endpoint=127.0.0.1:29400",
+        "--rdzv_id=my_job_123",
+    ]
+    result = _add_default_rdzv_args(launcher_args)
+
+    # Should not add another rdzv_id
+    id_count = sum(1 for arg in result if "--rdzv_id" in arg)
+    assert id_count == 1
+    assert "--rdzv_id=my_job_123" in result
+
+    # Should still add rdzv_backend
+    assert "--rdzv_backend" in result
+    assert "c10d" in result
+
+
+def test_add_default_rdzv_args_without_endpoint():
+    """Test that no RDZV args are added when rdzv_endpoint is not present."""
+    from axolotl.cli.utils.train import _add_default_rdzv_args
+
+    launcher_args = ["--nnodes=2", "--nproc_per_node=4"]
+    result = _add_default_rdzv_args(launcher_args)
+
+    # Should not add any rdzv args
+    assert "--rdzv_backend" not in result
+    assert "--rdzv_id" not in result
+    assert result == launcher_args
+
+
+def test_add_default_rdzv_args_with_all_existing():
+    """Test that no defaults are added when all RDZV args are present."""
+    from axolotl.cli.utils.train import _add_default_rdzv_args
+
+    launcher_args = [
+        "--nnodes=2",
+        "--rdzv_endpoint=127.0.0.1:29400",
+        "--rdzv_backend=static",
+        "--rdzv_id=existing_job",
+    ]
+    result = _add_default_rdzv_args(launcher_args)
+
+    # Should not add any additional args
+    assert len(result) == len(launcher_args)
+    assert result == launcher_args
