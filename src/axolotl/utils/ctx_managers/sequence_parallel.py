@@ -234,7 +234,7 @@ class SequenceParallelContextManager:
         partial_state = PartialState()
         register_ring_attn_from_device_mesh(
             device_mesh=partial_state.device_mesh,
-            sequence_parallel_dim=partial_state.parallelism_config.dp_cp_dim_names,
+            sequence_parallel_dim=("cp",),
             heads_k_stride=self.heads_k_stride,
             ring_attn_func=self.ring_attn_func,
         )
