@@ -20,8 +20,8 @@ class HFMistralTokenizer(MistralCommonTokenizer):
     def __init__(self, name_or_path: str, **kwargs):
         """
         Args:
-            mistral: The mistral-common tokenizer to wrap.
             name_or_path: The name or path to the tokenizer files or the repo id.
+            **kwargs: Additional keyword arguments passed to the parent class.
         """
         kwargs.pop("mode", None)
 
@@ -80,16 +80,18 @@ class HFMistralTokenizer(MistralCommonTokenizer):
     ) -> str | list[int]:
         """Patched fn to handle setting serving mode, continue_final_message, remove chat_template and add_generation_prompt kwarg"""
 
-        if add_generation_prompt:
-            self._set_mode(ValidationMode.serving)
-            kwargs["continue_final_message"] = True
+        try:
+            if add_generation_prompt:
+                self._set_mode(ValidationMode.serving)
+                kwargs["continue_final_message"] = True
 
-        out = super().apply_chat_template(conversation, **kwargs)
+            out = super().apply_chat_template(conversation, **kwargs)
 
-        if add_generation_prompt:
-            self._set_mode(ValidationMode.finetuning)
+            return out  # type: ignore
 
-        return out
+        finally:
+            if add_generation_prompt:
+                self._set_mode(ValidationMode.finetuning)
 
     def decode(  # type: ignore
         self,
@@ -196,15 +198,15 @@ class HFMistralTokenizer(MistralCommonTokenizer):
 
         if not os.path.isfile(pretrained_model_name_or_path):
             tokenizer_path = download_tokenizer_from_hf_hub(
-                repo_id=pretrained_model_name_or_path,
-                cache_dir=cache_dir,
+                repo_id=str(pretrained_model_name_or_path),
+                cache_dir=str(cache_dir),
                 token=token,
                 revision=revision,
                 force_download=force_download,
                 local_files_only=local_files_only,
             )
         else:
-            tokenizer_path = pretrained_model_name_or_path
+            tokenizer_path = str(pretrained_model_name_or_path)
 
         return cls(
             name_or_path=str(pretrained_model_name_or_path),
