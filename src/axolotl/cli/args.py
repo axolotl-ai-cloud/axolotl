@@ -30,8 +30,6 @@ class TrainerCliArgs:
     debug_num_examples: int = field(default=0)
     prompter: Optional[str] = field(default=None)
     shard: bool = field(default=False)
-    main_process_port: Optional[int] = field(default=None)
-    num_processes: Optional[int] = field(default=None)
 
 
 @dataclass

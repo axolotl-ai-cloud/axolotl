@@ -3,12 +3,9 @@
 # pylint: disable=redefined-outer-name
 
 import subprocess  # nosec B404
-import tempfile
-from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import click
-import yaml
 from dotenv import load_dotenv
 
 import axolotl
@@ -20,14 +17,14 @@ from axolotl.cli.args import (
     VllmServeCliArgs,
 )
 from axolotl.cli.art import print_axolotl_text_art
-from axolotl.cli.sweeps import generate_sweep_configs
 from axolotl.cli.utils import (
     add_options_from_config,
     add_options_from_dataclass,
     build_command,
-    execute_training,
     fetch_from_github,
     filter_none_kwargs,
+    generate_config_files,
+    launch_training,
 )
 from axolotl.integrations.lm_eval.cli import lm_eval
 from axolotl.utils import patch_optimized_env
@@ -35,6 +32,11 @@ from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.config import AxolotlInputConfig
 
 LOG = get_logger(__name__)
+
+LAUNCHER_COMMAND_MAPPING = {
+    "accelerate": ["accelerate", "launch"],
+    "torchrun": ["torchrun"],
+}
 
 
 @click.group()
@@ -52,7 +54,7 @@ def cli():
 @add_options_from_dataclass(PreprocessCliArgs)
 @add_options_from_config(AxolotlInputConfig)
 @filter_none_kwargs
-def preprocess(config: str, cloud: Optional[str] = None, **kwargs) -> None:
+def preprocess(config: str, cloud: Optional[str] = None, **kwargs):
     """
     Preprocess datasets before training.
 
@@ -73,7 +75,9 @@ def preprocess(config: str, cloud: Optional[str] = None, **kwargs) -> None:
         do_cli(config=config, **kwargs)
 
 
-@cli.command()
+@cli.command(
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True}
+)
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @click.option(
     "--launcher",
@@ -90,17 +94,20 @@ def preprocess(config: str, cloud: Optional[str] = None, **kwargs) -> None:
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
 @filter_none_kwargs
+@click.pass_context
 def train(
+    ctx: click.Context,
     config: str,
-    launcher: str,
+    launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
     cloud: str | None = None,
     sweep: str | None = None,
     **kwargs,
-) -> None:
+):
     """
     Train or fine-tune a model.
 
     Args:
+        ctx: Click context for extra args.
         config: Path to `axolotl` config YAML file.
         launcher: Launcher to use for multi-GPU training ("accelerate", "torchrun", or "python").
         cloud: Path to a cloud accelerator configuration file
@@ -108,48 +115,28 @@ def train(
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
+    # Extract launcher args from extra args (after --)
+    launcher_args = ctx.args if ctx.args else []
+
     # Handle Ray launcher override
-    effective_launcher = None if kwargs.get("use_ray") else launcher
+    _launcher = None if kwargs.get("use_ray") else launcher
 
     # Generate configuration files to process
-    config_files = _generate_config_files(config, sweep)
+    config_files = generate_config_files(config, sweep)
 
     # Process each configuration
     for cfg_file in config_files:
         try:
-            execute_training(cfg_file, effective_launcher, cloud, kwargs)
+            launch_training(cfg_file, _launcher, cloud, kwargs, launcher_args)
         except subprocess.CalledProcessError as exc:
             LOG.error(f"Failed to train/fine-tune config '{cfg_file}': {exc}")
             if not sweep:
                 raise exc
 
 
-def _generate_config_files(config: str, sweep: str | None) -> list[str]:
-    """Generate list of configuration files to process."""
-    if not sweep:
-        return [config]
-
-    # Load sweep and base configurations
-    with open(sweep, "r", encoding="utf-8") as fin:
-        sweep_config: dict[str, list] = yaml.safe_load(fin)
-    with open(config, "r", encoding="utf-8") as fin:
-        base_config: dict[str, list] = yaml.safe_load(fin)
-
-    # Generate all possible configurations
-    permutations = generate_sweep_configs(base_config, sweep_config)
-
-    config_files = []
-    for perm in permutations:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_config_path = Path(temp_dir) / "config.yaml"
-            with open(temp_config_path, "w", encoding="utf-8") as fout:
-                yaml.dump(perm, fout)
-            config_files.append(str(temp_config_path))
-
-    return config_files
-
-
-@cli.command()
+@cli.command(
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True}
+)
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @click.option(
     "--launcher",
@@ -160,24 +147,27 @@ def _generate_config_files(config: str, sweep: str | None) -> list[str]:
 @add_options_from_dataclass(EvaluateCliArgs)
 @add_options_from_config(AxolotlInputConfig)
 @filter_none_kwargs
-def evaluate(config: str, launcher: str, **kwargs) -> None:
+@click.pass_context
+def evaluate(ctx: click.Context, config: str, launcher: str, **kwargs):
     """
     Evaluate a model.
 
     Args:
+        ctx: Click context for extra args.
         config: Path to `axolotl` config YAML file.
         launcher: Launcher to use for multi-GPU evaluation ("accelerate", "torchrun", or "python").
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
-    if launcher == "accelerate":
-        base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.evaluate"]
-        if config:
-            base_cmd.append(config)
-        cmd = build_command(base_cmd, kwargs)
-        subprocess.run(cmd, check=True)  # nosec B603
-    elif launcher == "torchrun":
-        base_cmd = ["torchrun", "-m", "axolotl.cli.evaluate"]
+    # Extract launcher args from extra args (after --)
+    launcher_args = ctx.args if ctx.args else []
+
+    if launcher in LAUNCHER_COMMAND_MAPPING:
+        base_cmd = (
+            LAUNCHER_COMMAND_MAPPING[launcher]
+            + launcher_args
+            + ["-m", "axolotl.cli.evaluate"]
+        )
         if config:
             base_cmd.append(config)
         cmd = build_command(base_cmd, kwargs)
@@ -188,7 +178,9 @@ def evaluate(config: str, launcher: str, **kwargs) -> None:
         do_cli(config=config, **kwargs)
 
 
-@cli.command()
+@cli.command(
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True}
+)
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @click.option(
     "--launcher",
@@ -200,27 +192,28 @@ def evaluate(config: str, launcher: str, **kwargs) -> None:
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
 @filter_none_kwargs
-def inference(config: str, launcher: str, gradio: bool, **kwargs) -> None:
+@click.pass_context
+def inference(ctx: click.Context, config: str, launcher: str, gradio: bool, **kwargs):
     """
     Run inference with a trained model.
 
     Args:
+        ctx: Click context for extra args.
         config: Path to `axolotl` config YAML file.
         launcher: Launcher to use for multi-GPU inference ("accelerate", "torchrun", or "python").
         gradio: Whether to use Gradio browser interface or command line for inference.
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
-    if launcher == "accelerate":
-        base_cmd = ["accelerate", "launch", "-m", "axolotl.cli.inference"]
-        if config:
-            base_cmd.append(config)
-        if gradio:
-            base_cmd.append("--gradio")
-        cmd = build_command(base_cmd, kwargs)
-        subprocess.run(cmd, check=True)  # nosec B603
-    elif launcher == "torchrun":
-        base_cmd = ["torchrun", "-m", "axolotl.cli.inference"]
+    # Extract launcher args from extra args (after --)
+    launcher_args = ctx.args if ctx.args else []
+
+    if launcher in LAUNCHER_COMMAND_MAPPING:
+        base_cmd = (
+            LAUNCHER_COMMAND_MAPPING[launcher]
+            + launcher_args
+            + ["-m", "axolotl.cli.inference"]
+        )
         if config:
             base_cmd.append(config)
         if gradio:
@@ -233,7 +226,9 @@ def inference(config: str, launcher: str, gradio: bool, **kwargs) -> None:
         do_cli(config=config, gradio=gradio, **kwargs)
 
 
-@cli.command()
+@cli.command(
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True}
+)
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @click.option(
     "--launcher",
@@ -244,29 +239,29 @@ def inference(config: str, launcher: str, gradio: bool, **kwargs) -> None:
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
 @filter_none_kwargs
-def merge_sharded_fsdp_weights(config: str, launcher: str, **kwargs) -> None:
+@click.pass_context
+def merge_sharded_fsdp_weights(
+    ctx: click.Context, config: str, launcher: str, **kwargs
+):
     """
     Merge sharded FSDP model weights.
 
     Args:
+        ctx: Click context for extra args.
         config: Path to `axolotl` config YAML file.
         launcher: Launcher to use for weight merging ("accelerate", "torchrun", or "python").
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
-    if launcher == "accelerate":
-        base_cmd = [
-            "accelerate",
-            "launch",
-            "-m",
-            "axolotl.cli.merge_sharded_fsdp_weights",
-        ]
-        if config:
-            base_cmd.append(config)
-        cmd = build_command(base_cmd, kwargs)
-        subprocess.run(cmd, check=True)  # nosec B603
-    elif launcher == "torchrun":
-        base_cmd = ["torchrun", "-m", "axolotl.cli.merge_sharded_fsdp_weights"]
+    # Extract launcher args from extra args (after --)
+    launcher_args = ctx.args if ctx.args else []
+
+    if launcher in LAUNCHER_COMMAND_MAPPING:
+        base_cmd = (
+            LAUNCHER_COMMAND_MAPPING[launcher]
+            + launcher_args
+            + ["-m", "axolotl.cli.merge_sharded_fsdp_weights"]
+        )
         if config:
             base_cmd.append(config)
         cmd = build_command(base_cmd, kwargs)
@@ -282,7 +277,7 @@ def merge_sharded_fsdp_weights(config: str, launcher: str, **kwargs) -> None:
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
 @filter_none_kwargs
-def merge_lora(config: str, **kwargs) -> None:
+def merge_lora(config: str, **kwargs):
     """
     Merge trained LoRA adapters into a base model.
 
@@ -299,7 +294,7 @@ def merge_lora(config: str, **kwargs) -> None:
 @cli.command()
 @click.argument("directory", type=click.Choice(["examples", "deepspeed_configs"]))
 @click.option("--dest", help="Destination directory")
-def fetch(directory: str, dest: Optional[str]) -> None:
+def fetch(directory: str, dest: Optional[str]):
     """
     Fetch example configs or other resources.
 
@@ -337,7 +332,7 @@ def quantize(config: str, **cli_args: QuantizeCliArgs):
 @cli.command()
 @click.argument("model", type=click.Path(exists=True, path_type=str))
 @click.argument("output", type=click.Path(exists=False, path_type=str))
-def delinearize_llama4(model: str, output: str) -> None:
+def delinearize_llama4(model: str, output: str):
     from axolotl.cli.delinearize_llama4 import do_cli as do_delinearize_llama4
 
     do_delinearize_llama4(model, output)

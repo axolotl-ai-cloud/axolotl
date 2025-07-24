@@ -2,7 +2,13 @@
 
 import os
 import subprocess  # nosec
-from typing import Any
+import tempfile
+from pathlib import Path
+from typing import Any, Literal
+
+import yaml
+
+from axolotl.cli.utils.sweeps import generate_sweep_configs
 
 
 def build_command(base_cmd: list[str], options: dict[str, Any]) -> list[str]:
@@ -28,53 +34,97 @@ def build_command(base_cmd: list[str], options: dict[str, Any]) -> list[str]:
     return cmd
 
 
-def execute_training(
-    cfg_file: str, launcher: str | None, cloud: str | None, kwargs: dict
+def generate_config_files(config: str, sweep: str | None) -> list[str]:
+    """Generate list of configuration files to process."""
+    if not sweep:
+        return [config]
+
+    # Load sweep and base configurations
+    with open(sweep, "r", encoding="utf-8") as fin:
+        sweep_config: dict[str, list] = yaml.safe_load(fin)
+    with open(config, "r", encoding="utf-8") as fin:
+        base_config: dict[str, list] = yaml.safe_load(fin)
+
+    # Generate all possible configurations
+    permutations = generate_sweep_configs(base_config, sweep_config)
+
+    config_files = []
+    for perm in permutations:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_config_path = Path(temp_dir) / "config.yaml"
+            with open(temp_config_path, "w", encoding="utf-8") as fout:
+                yaml.dump(perm, fout)
+            config_files.append(str(temp_config_path))
+
+    return config_files
+
+
+def launch_training(
+    cfg_file: str,
+    launcher: Literal["accelerate", "torchrun", "python"] | None,
+    cloud: str | None,
+    kwargs: dict,
+    launcher_args: list[str] | None = None,
 ) -> None:
     """Execute training with the given configuration."""
+    launcher_args = launcher_args or []
+
     if cloud:
-        _execute_cloud_training(cloud, cfg_file, launcher, kwargs)
+        _launch_cloud_training(cloud, cfg_file, launcher, kwargs, launcher_args)
     elif launcher:
         if launcher == "accelerate":
-            _execute_accelerate_training(cfg_file, kwargs)
+            _launch_accelerate_training(cfg_file, kwargs, launcher_args)
         elif launcher == "torchrun":
-            _execute_torchrun_training(cfg_file, kwargs)
+            _launch_torchrun_training(cfg_file, kwargs, launcher_args)
         elif launcher == "python":
-            _execute_python_training(cfg_file, kwargs)
+            _launch_python_training(cfg_file, kwargs)
 
 
-def _execute_cloud_training(
-    cloud: str, cfg_file: str, launcher: str | None, kwargs: dict
+def _launch_cloud_training(
+    cloud: str,
+    cfg_file: str,
+    launcher: Literal["accelerate", "torchrun", "python"] | None,
+    kwargs: dict,
+    launcher_args: list[str] | None = None,
 ) -> None:
     """Execute training via cloud launcher."""
     from axolotl.cli.cloud import do_cli_train
 
-    accelerate = launcher == "accelerate" if launcher else False
+    launcher_args = launcher_args or []
     cwd = os.getcwd() if launcher else None
 
     do_cli_train(
         cloud_config=cloud,
         config=cfg_file,
-        accelerate=accelerate,
+        launcher=launcher or "accelerate",
+        launcher_args=launcher_args,
         cwd=cwd,
         **kwargs,
     )
 
 
-def _execute_accelerate_training(cfg_file: str, kwargs: dict) -> None:
+def _launch_accelerate_training(
+    cfg_file: str, kwargs: dict, launcher_args: list[str] | None = None
+) -> None:
     """Execute training via accelerate launcher."""
-    launcher_args = []
+    launcher_args = launcher_args or []
+    internal_launcher_args = []
 
-    # Extract launcher-specific arguments
+    # Extract launcher-specific arguments from kwargs (legacy support)
     if "main_process_port" in kwargs:
         main_process_port = kwargs.pop("main_process_port")
-        launcher_args.extend(["--main_process_port", str(main_process_port)])
+        internal_launcher_args.extend(["--main_process_port", str(main_process_port)])
 
     if "num_processes" in kwargs:
         num_processes = kwargs.pop("num_processes")
-        launcher_args.extend(["--num_processes", str(num_processes)])
+        internal_launcher_args.extend(["--num_processes", str(num_processes)])
 
-    base_cmd = ["accelerate", "launch"] + launcher_args + ["-m", "axolotl.cli.train"]
+    # Combine internal args with user-provided launcher args
+    all_launcher_args = internal_launcher_args + launcher_args
+
+    base_cmd = (
+        ["accelerate", "launch"] + all_launcher_args + ["-m", "axolotl.cli.train"]
+    )
     if cfg_file:
         base_cmd.append(cfg_file)
 
@@ -82,9 +132,13 @@ def _execute_accelerate_training(cfg_file: str, kwargs: dict) -> None:
     subprocess.run(cmd, check=True)  # nosec B603
 
 
-def _execute_torchrun_training(cfg_file: str, kwargs: dict) -> None:
+def _launch_torchrun_training(
+    cfg_file: str, kwargs: dict, launcher_args: list[str] | None = None
+) -> None:
     """Execute training via torchrun launcher."""
-    base_cmd = ["torchrun", "-m", "axolotl.cli.train"]
+    launcher_args = launcher_args or []
+
+    base_cmd = ["torchrun"] + launcher_args + ["-m", "axolotl.cli.train"]
     if cfg_file:
         base_cmd.append(cfg_file)
 
@@ -92,7 +146,7 @@ def _execute_torchrun_training(cfg_file: str, kwargs: dict) -> None:
     subprocess.run(cmd, check=True)  # nosec B603
 
 
-def _execute_python_training(cfg_file: str, kwargs: dict) -> None:
+def _launch_python_training(cfg_file: str, kwargs: dict) -> None:
     """Execute training via python launcher."""
     from axolotl.cli.train import do_cli
 

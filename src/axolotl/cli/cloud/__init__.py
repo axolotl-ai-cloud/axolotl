@@ -34,6 +34,7 @@ def do_cli_train(
     cloud_config: Path | str,
     config: Path | str,
     launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
+    launcher_args: list[str] | None = None,
     cwd=None,
     **kwargs,
 ) -> None:
@@ -44,7 +45,13 @@ def do_cli_train(
     local_dirs = {}
     if cwd and not Path(cwd).joinpath("src", "axolotl").exists():
         local_dirs = {"/workspace/mounts": cwd}
-    cloud.train(config_yaml, launcher=launcher, local_dirs=local_dirs, **kwargs)
+    cloud.train(
+        config_yaml,
+        launcher=launcher,
+        launcher_args=launcher_args,
+        local_dirs=local_dirs,
+        **kwargs,
+    )
 
 
 def do_cli_lm_eval(
