@@ -502,6 +502,12 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
             if should_train and turn_start_idx != -1 and turn_end_idx != -1:
                 if train_detail:
+                    # Block multi-content for now
+                    if not isinstance(content, str):
+                        raise ValueError(
+                            "`train_detail` is not supported when `content` is not a string."
+                        )
+
                     token_offsets = self.prompter.get_offsets_for_train_detail(  # type: ignore
                         content, train_detail
                     )

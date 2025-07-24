@@ -3,8 +3,10 @@
 import os
 from typing import Optional
 
+import numpy as np
 from mistral_common.protocol.instruct.validator import ValidationMode
 from mistral_common.tokens.tokenizers.utils import download_tokenizer_from_hf_hub
+from torch import Tensor
 from transformers.tokenization_mistral_common import MistralCommonTokenizer
 from transformers.tokenization_utils_base import VERY_LARGE_INTEGER
 
@@ -88,6 +90,22 @@ class HFMistralTokenizer(MistralCommonTokenizer):
             self._set_mode(ValidationMode.finetuning)
 
         return out
+
+    def decode(
+        self,
+        token_ids: int | list[int] | np.ndarray | Tensor,
+        **kwargs,
+    ) -> str:
+        """
+        Decode token_ids into str.
+
+        This overrides upstream.decode to convert int to list[int]
+        """
+
+        if isinstance(token_ids, int):
+            token_ids = [token_ids]
+
+        return super().decode(token_ids, **kwargs)
 
     @classmethod
     def from_pretrained(
