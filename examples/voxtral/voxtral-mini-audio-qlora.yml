@@ -30,7 +30,6 @@ eot_tokens:
   - <end_of_turn>
 
 # sample dataset below requires downloading audio/image in advance
-# wget https://huggingface.co/datasets/Nanobit/text-vision-audio-2k-test/resolve/main/African_elephant.jpg
 # wget https://huggingface.co/datasets/Nanobit/text-vision-audio-2k-test/resolve/main/En-us-African_elephant.oga
 datasets:
   - path: Nanobit/text-vision-audio-2k-test
