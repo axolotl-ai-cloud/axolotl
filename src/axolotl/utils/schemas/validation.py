@@ -686,7 +686,7 @@ class RLValidationMixin:
             data.get("rl") == "grpo"
             and data.get("trl", {})
             and data.get("trl").get("use_liger_loss")
-            and data.get("sequence_parallel_degree", 1) > 1
+            and data.get("context_parallel_size", 1) > 1
         ):
             raise ValueError("GRPO + SP + Liger not currently supported")
         return data
@@ -910,34 +910,48 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_dp_shard_size_fsdp(cls, data):
+        if data.get("fsdp_config", {}):
+            dp_shard_size = data.get("dp_shard_size", None)
+            if dp_shard_size and dp_shard_size <= 1:
+                raise ValueError("dp_shard_size must be greater than 1 when using FSDP")
+        if not data.get("fsdp_config", {}) and data.get("dp_shard_size", 1) > 1:
+            raise ValueError("FSDP should be enabled when using dp_shard_size > 1")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_tensor_parallel_size_update_ds_json(cls, data):
         tensor_parallel_size = data.get("tensor_parallel_size")
         if tensor_parallel_size is not None and tensor_parallel_size > 1:
-            if not data.get("deepspeed"):
-                raise ValueError(
-                    "Tensor parallelism (TP) is only supported with DeepSpeed"
-                )
-            with open(data.get("deepspeed"), "r", encoding="utf-8") as ds_fin:
-                ds_config = json.load(ds_fin)
-                should_save = False
-                if "tensor_parallel" not in ds_config:
-                    ds_config["tensor_parallel"] = {"autotp_size": tensor_parallel_size}
-                    should_save = True
-                if (
-                    "gather_16bit_weights_on_model_save"
-                    not in ds_config["zero_optimization"]
-                ):
-                    ds_config["zero_optimization"][
+            if data.get("deepspeed"):
+                with open(data.get("deepspeed"), "r", encoding="utf-8") as ds_fin:
+                    ds_config = json.load(ds_fin)
+                    should_save = False
+                    if "tensor_parallel" not in ds_config:
+                        ds_config["tensor_parallel"] = {
+                            "autotp_size": tensor_parallel_size
+                        }
+                        should_save = True
+                    if (
                         "gather_16bit_weights_on_model_save"
-                    ] = True
-                    should_save = True
-                if should_save:
-                    temp_dir = tempfile.mkdtemp()
-                    with open(
-                        Path(temp_dir) / "autotp_ds.json", "w", encoding="utf-8"
-                    ) as ds_fout:
-                        json.dump(ds_config, ds_fout, indent=4)
-                    data["deepspeed"] = str(Path(temp_dir) / "autotp_ds.json")
+                        not in ds_config["zero_optimization"]
+                    ):
+                        ds_config["zero_optimization"][
+                            "gather_16bit_weights_on_model_save"
+                        ] = True
+                        should_save = True
+                    if should_save:
+                        temp_dir = tempfile.mkdtemp()
+                        with open(
+                            Path(temp_dir) / "autotp_ds.json", "w", encoding="utf-8"
+                        ) as ds_fout:
+                            json.dump(ds_config, ds_fout, indent=4)
+                        data["deepspeed"] = str(Path(temp_dir) / "autotp_ds.json")
+            # else:
+            #     raise ValueError(
+            #         "Tensor parallelism (TP) is only supported with DeepSpeed"
+            #     )
 
         return data
 
@@ -1215,14 +1229,26 @@ class ComplexValidationMixin:
             self.tensor_parallel_size = 1
         return self
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_deprecated_sequence_parallel_degree(cls, data):
+        if data.get("sequence_parallel_degree") and not data.get(
+            "context_parallel_size"
+        ):
+            LOG.warning(
+                "sequence_parallel_degree is deprecated. Please use context_parallel_size instead."
+            )
+            data["context_parallel_size"] = data["sequence_parallel_degree"]
+        return data
+
     @model_validator(mode="after")
-    def check_sequence_parallel_degree(self):
-        if not self.sequence_parallel_degree:
-            self.sequence_parallel_degree = 1
-        elif self.sequence_parallel_degree > 1:
+    def check_context_parallel_size(self):
+        if not self.context_parallel_size:
+            self.context_parallel_size = 1
+        elif self.context_parallel_size > 1:
             if not self.flash_attention:
                 raise ValueError(
-                    "flash_attention: true must be set with sequence_parallel_degree > 1"
+                    "flash_attention: true must be set with context_parallel_size > 1"
                 )
 
             if self.sample_packing and self.micro_batch_size > 1:
@@ -1235,14 +1261,14 @@ class ComplexValidationMixin:
                 import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
             except ImportError as exception:
                 raise ImportError(
-                    "sequence_parallel_degree > 1 but ring_flash_attn is not installed. "
+                    "context_parallel_size > 1 but ring_flash_attn is not installed. "
                     "Please install it with `pip install axolotl[ring-flash-attn] "
                     "or `pip install ring-flash-attn>=0.1.4`."
                 ) from exception
 
             LOG.warning(
                 "Sequence parallelism (SP) is enabled with "
-                f"sequence_parallel_degree={self.sequence_parallel_degree}. "
+                f"context_parallel_size={self.context_parallel_size}. "
                 "Please note that logged losses may differ slightly to the non-SP "
                 "losses due to transformers Trainer implementation details. "
                 "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
@@ -1253,7 +1279,7 @@ class ComplexValidationMixin:
 
     @model_validator(mode="after")
     def validate_ring_attn_func(self):
-        if getattr(self, "sequence_parallel_degree", 1) == 1:
+        if getattr(self, "context_parallel_size", 1) == 1:
             return self
 
         if self.ring_attn_func is not None:

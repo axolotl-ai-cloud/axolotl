@@ -32,6 +32,7 @@ from axolotl.core.trainers.mixins import (
     RngLoaderMixin,
     SchedulerMixin,
 )
+from axolotl.core.trainers.mixins.dist_parallel import DistParallelMixin
 from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
     sanitize_kwargs_for_tagging,
@@ -50,6 +51,7 @@ class AxolotlTrainer(
     RngLoaderMixin,
     CheckpointSaveMixin,
     ActivationOffloadingMixin,
+    DistParallelMixin,
     Trainer,
 ):
     """Extend the base Trainer for axolotl helpers"""
