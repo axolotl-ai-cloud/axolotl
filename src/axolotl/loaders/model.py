@@ -395,24 +395,34 @@ class ModelLoader:
 
     def _set_parallel_config(self):
         """Set parallelism configuration (DP, FSDP, TP, CP) in PartialState/Accelerator"""
-        dp_total_size = get_world_size()
+        remaining_world_size = get_world_size()
         pc_kwargs = {}
+
         if self.cfg.tensor_parallel_size and self.cfg.tensor_parallel_size > 1:
             pc_kwargs["tp_size"] = self.cfg.tensor_parallel_size
-            dp_total_size = dp_total_size // self.cfg.tensor_parallel_size
+            remaining_world_size = remaining_world_size // self.cfg.tensor_parallel_size
+
         if self.cfg.context_parallel_size and self.cfg.context_parallel_size > 1:
             pc_kwargs["cp_size"] = self.cfg.context_parallel_size
-            dp_total_size = dp_total_size // self.cfg.context_parallel_size
+            remaining_world_size = (
+                remaining_world_size // self.cfg.context_parallel_size
+            )
 
-        if self.cfg.dp_shard_size is None:
-            pc_kwargs["dp_shard_size"] = dp_total_size
-            dp_total_size = 1
-        elif self.cfg.dp_shard_size and self.cfg.dp_shard_size > 1:
+        if self.cfg.dp_shard_size and self.cfg.dp_shard_size > 1:
             pc_kwargs["dp_shard_size"] = self.cfg.dp_shard_size
-            dp_total_size = dp_total_size // self.cfg.dp_shard_size
-        dp_replicate_size = dp_total_size
-        if dp_replicate_size > 1:
-            pc_kwargs["dp_replicate_size"] = dp_replicate_size
+            remaining_world_size = remaining_world_size // self.cfg.dp_shard_size
+            
+        if self.cfg.dp_replicate_size and self.cfg.dp_replicate_size > 1:
+            pc_kwargs["dp_replicate_size"] = self.cfg.dp_replicate_size
+            remaining_world_size = remaining_world_size // self.cfg.dp_replicate_size
+
+        if remaining_world_size > 1:
+            raise ValueError(
+                f"Parallelism configuration doesn't account for full world size. "
+                f"Remaining unaccounted processes: {remaining_world_size}. "
+                f"Total world size: {get_world_size()} "
+                f"Current config: {pc_kwargs}"
+            )
 
         if pc_kwargs:
             parallelism_config = ParallelismConfig(
@@ -422,6 +432,7 @@ class ModelLoader:
             partial_state = PartialState()
             partial_state.parallelism_config = parallelism_config
             partial_state.device_mesh = device_mesh
+
 
     def _set_auto_model_loader(self):
         """Set `self.auto_model_loader`. Defaults to `transformers.AutoModelForCausalLM`
