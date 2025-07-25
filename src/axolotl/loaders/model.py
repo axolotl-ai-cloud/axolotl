@@ -397,47 +397,75 @@ class ModelLoader:
             gc.collect()
             torch.cuda.empty_cache()
 
-    def _set_parallel_config(self):
-        """Set parallelism configuration (DP, FSDP, TP, CP) in PartialState/Accelerator"""
-        remaining_world_size = get_world_size()
+    @staticmethod
+    def _get_parallel_config_kwargs(
+        world_size: int,
+        tensor_parallel_size: int = 1,
+        context_parallel_size: int = 1,
+        dp_shard_size: int | None = None,
+        dp_replicate_size: int | None = None,
+        is_fsdp: bool = False,
+    ):
         pc_kwargs = {}
+        remaining_world_size = world_size
 
-        if self.cfg.tensor_parallel_size and self.cfg.tensor_parallel_size > 1:
-            pc_kwargs["tp_size"] = self.cfg.tensor_parallel_size
-            remaining_world_size = remaining_world_size // self.cfg.tensor_parallel_size
+        if tensor_parallel_size and tensor_parallel_size > 1:
+            pc_kwargs["tp_size"] = tensor_parallel_size
+            remaining_world_size = remaining_world_size // tensor_parallel_size
 
-        if self.cfg.context_parallel_size and self.cfg.context_parallel_size > 1:
-            pc_kwargs["cp_size"] = self.cfg.context_parallel_size
-            remaining_world_size = (
-                remaining_world_size // self.cfg.context_parallel_size
-            )
+        if context_parallel_size and context_parallel_size > 1:
+            pc_kwargs["cp_size"] = context_parallel_size
+            remaining_world_size = remaining_world_size // context_parallel_size
 
-        if self.cfg.dp_shard_size and self.cfg.dp_shard_size > 1:
-            pc_kwargs["dp_shard_size"] = self.cfg.dp_shard_size
-            remaining_world_size = remaining_world_size // self.cfg.dp_shard_size
+        if dp_shard_size and dp_shard_size > 1:
+            pc_kwargs["dp_shard_size"] = dp_shard_size
+            remaining_world_size = remaining_world_size // dp_shard_size
 
-        if self.cfg.dp_replicate_size and self.cfg.dp_replicate_size > 1:
-            pc_kwargs["dp_replicate_size"] = self.cfg.dp_replicate_size
-            remaining_world_size = remaining_world_size // self.cfg.dp_replicate_size
+        if dp_shard_size is None and dp_replicate_size in (None, 1):
+            if remaining_world_size > 1:
+                pc_kwargs["dp_shard_size"] = remaining_world_size
+                remaining_world_size = 1
 
-        if self.cfg.dp_shard_size and self.cfg.dp_shard_size > 1:
-            if not self.cfg.fsdp_config or not self.cfg.fsdp:
+        if dp_replicate_size and dp_replicate_size > 1:
+            pc_kwargs["dp_replicate_size"] = dp_replicate_size
+            remaining_world_size = remaining_world_size // dp_replicate_size
+
+        if remaining_world_size > 1 and dp_shard_size and dp_shard_size > 1:
+            if not is_fsdp:
                 raise ValueError(
                     "dp_shard_size was configured without a corresponding fsdp_config! "
                     "Please ensure you have configured FSDP using fsdp_config."
                 )
-            dp_shard_size = self.cfg.dp_shard_size
-            remaining_world_size = remaining_world_size // self.cfg.dp_shard_size
-        else:
-            dp_shard_size = remaining_world_size
+            pc_kwargs["dp_shard_size"] = dp_shard_size
+            remaining_world_size = remaining_world_size // dp_shard_size
+            if remaining_world_size > 1 and "dp_replicate_size" not in pc_kwargs:
+                pc_kwargs["dp_replicate_size"] = remaining_world_size
+                remaining_world_size = 1
 
-        pc_kwargs["dp_shard_size"] = dp_shard_size
+        if remaining_world_size > 1:
+            if "dp_shard_size" not in pc_kwargs and is_fsdp:
+                pc_kwargs["dp_shard_size"] = remaining_world_size
+                remaining_world_size = 1
 
         if remaining_world_size > 1:
             raise ValueError(
                 f"The configured parallelisms are incompatible with the current world size ({get_world_size()})!\n"
                 f"{pc_kwargs}"
             )
+
+        return pc_kwargs
+
+    def _set_parallel_config(self):
+        """Set parallelism configuration (DP, FSDP, TP, CP) in PartialState/Accelerator"""
+        pc_kwargs = ModelLoader._get_parallel_config_kwargs(
+            get_world_size(),
+            self.cfg.tensor_parallel_size,
+            self.cfg.context_parallel_size,
+            self.cfg.dp_shard_size,
+            self.cfg.dp_replicate_size,
+            self.cfg.fsdp or self.cfg.fsdp_config,
+        )
+
         if pc_kwargs:
             parallelism_config = ParallelismConfig(
                 **pc_kwargs,
