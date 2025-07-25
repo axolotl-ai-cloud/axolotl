@@ -156,13 +156,15 @@ def apply_sequence_parallelism(
             # ).sum() * gradient_accumulation_steps
 
             local_valid_tokens = (batch["labels"] != -100).sum()
-            
+
             # All-reduce across sequence parallel ranks to get global token count
             sp_group = get_ring_attn_group()
             global_valid_tokens = local_valid_tokens.clone()
             dist.all_reduce(global_valid_tokens, op=dist.ReduceOp.SUM, group=sp_group)
-            
-            batch["num_items_in_batch"] = global_valid_tokens * gradient_accumulation_steps
+
+            batch["num_items_in_batch"] = (
+                global_valid_tokens * gradient_accumulation_steps
+            )
 
     return batch, original_seq_len, pad_len
 

@@ -19,7 +19,7 @@ accelerate @ git+https://github.com/SalmanMohammadi/accelerate.git@device_mesh_p
 datasets==4.0.0
 deepspeed>=0.17.0
 trl==0.19.1
-hf_xet==1.1.2
+hf_xet==1.1.5
 
 optimum==1.16.2
 hf_transfer
