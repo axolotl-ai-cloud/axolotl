@@ -183,8 +183,8 @@ class ModelLoader:
         """Apply patches and setup configurations before model loading."""
         use_parallel_config = (
             self.cfg.fsdp_config
-            or self.cfg.tensor_parallel_size > 1
-            or self.cfg.context_parallel_size > 1
+            or (self.cfg.tensor_parallel_size and self.cfg.tensor_parallel_size > 1)
+            or (self.cfg.context_parallel_size and self.cfg.context_parallel_size > 1)
         )
         if self.cfg.fsdp_config and self.cfg.fsdp_version != 2:
             use_parallel_config = False
