@@ -408,22 +408,28 @@ class ModelLoader:
                 remaining_world_size // self.cfg.context_parallel_size
             )
 
-        if self.cfg.dp_shard_size and self.cfg.dp_shard_size > 1:
-            pc_kwargs["dp_shard_size"] = self.cfg.dp_shard_size
-            remaining_world_size = remaining_world_size // self.cfg.dp_shard_size
-            
         if self.cfg.dp_replicate_size and self.cfg.dp_replicate_size > 1:
             pc_kwargs["dp_replicate_size"] = self.cfg.dp_replicate_size
             remaining_world_size = remaining_world_size // self.cfg.dp_replicate_size
 
+        if self.cfg.dp_shard_size and self.cfg.dp_shard_size > 1:
+            if not self.cfg.fsdp_config or not self.cfg.fsdp:
+                raise ValueError(
+                    "dp_shard_size was configured without a corresponding fsdp_config! "
+                    "Please ensure you have configured FSDP using fsdp_config."
+                )
+            dp_shard_size = self.cfg.dp_shard_size
+            remaining_world_size = remaining_world_size // self.cfg.dp_shard_size
+        else:
+            dp_shard_size = remaining_world_size
+
+        pc_kwargs["dp_shard_size"] = dp_shard_size
+
         if remaining_world_size > 1:
             raise ValueError(
-                f"Parallelism configuration doesn't account for full world size. "
-                f"Remaining unaccounted processes: {remaining_world_size}. "
-                f"Total world size: {get_world_size()} "
-                f"Current config: {pc_kwargs}"
+                f"The configured parallelisms are incompatible with the current world size ({get_world_size()})!\n"
+                f"{pc_kwargs}"
             )
-
         if pc_kwargs:
             parallelism_config = ParallelismConfig(
                 **pc_kwargs,
@@ -432,7 +438,6 @@ class ModelLoader:
             partial_state = PartialState()
             partial_state.parallelism_config = parallelism_config
             partial_state.device_mesh = device_mesh
-
 
     def _set_auto_model_loader(self):
         """Set `self.auto_model_loader`. Defaults to `transformers.AutoModelForCausalLM`
