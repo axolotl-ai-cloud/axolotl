@@ -60,7 +60,10 @@ def patch_tiled_mlp(model_type, use_original_mlp=True, cfg_num_shards=None):
             if not self._tiled_mlp_dist_impl:
                 if (
                     self._compute_params
-                    and hasattr(self._compute_params[0], "param_idx_in_group")
+                    and any(
+                        hasattr(p, "ds_param") or hasattr(p, "param_idx_in_group")
+                        for p in self._compute_params
+                    )
                 ) or os.environ.get("ACCELERATE_USE_DEEPSPEED", "false") == "true":
                     self._tiled_mlp_dist_impl = DeepSpeedTiledMLP
                 else:
