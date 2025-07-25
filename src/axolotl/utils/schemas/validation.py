@@ -1164,7 +1164,9 @@ class ComplexValidationMixin:
 
     @model_validator(mode="after")
     def check_relora(self):
-        if self.relora_steps:
+        if self.relora:
+            if not self.jagged_restart_steps:
+                raise ValueError("jagged_restart_steps must be set to use ReLoRA")
             if self.adapter not in ("lora", "qlora"):
                 raise ValueError("cfg.adapter must be lora or qlora to use ReLoRA")
 

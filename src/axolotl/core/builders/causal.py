@@ -19,7 +19,6 @@ from axolotl.core.trainers import (
     AxolotlPRMTrainer,
     AxolotlRewardTrainer,
     AxolotlTrainer,
-    ReLoRATrainer,
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
@@ -58,7 +57,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
     def get_callbacks(self):
         callbacks = super().get_callbacks()
 
-        if self.cfg.relora_steps:
+        if self.cfg.relora:
             callbacks.append(ReLoRACallback(self.cfg))
 
         if (
@@ -131,8 +130,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
             if trainer_cls:
                 return trainer_cls
-        if self.cfg.relora_steps:
-            return ReLoRATrainer
         if self.cfg.model_config_type == "mamba":
             return AxolotlMambaTrainer
         if self.cfg.reward_model:
@@ -271,18 +268,23 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.sample_packing_eff_est
             )
 
-        if self.cfg.relora_steps:
-            training_arguments_kwargs["relora_steps"] = self.cfg.relora_steps
-            training_arguments_kwargs["relora_warmup_steps"] = (
-                self.cfg.relora_warmup_steps
-            )
-            if self.cfg.relora_anneal_steps:
-                training_arguments_kwargs["relora_anneal_steps"] = (
-                    self.cfg.relora_anneal_steps
-                )
+        if self.cfg.relora and self.cfg.jagged_restart_steps:
             if self.cfg.relora_prune_ratio:
                 training_arguments_kwargs["relora_prune_ratio"] = (
                     self.cfg.relora_prune_ratio
+                )
+
+        if self.cfg.jagged_restart_steps:
+            training_arguments_kwargs["jagged_restart_steps"] = (
+                self.cfg.jagged_restart_steps
+            )
+            if self.cfg.jagged_restart_warmup_steps:
+                training_arguments_kwargs["jagged_restart_warmup_steps"] = (
+                    self.cfg.jagged_restart_warmup_steps
+                )
+            if self.cfg.jagged_restart_anneal_steps:
+                training_arguments_kwargs["jagged_restart_anneal_steps"] = (
+                    self.cfg.jagged_restart_anneal_steps
                 )
 
         if self.cfg.lisa_step_interval and self.cfg.lisa_n_layers:
