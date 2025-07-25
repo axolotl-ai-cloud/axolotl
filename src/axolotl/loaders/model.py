@@ -181,7 +181,11 @@ class ModelLoader:
 
     def _apply_pre_model_load_setup(self):
         """Apply patches and setup configurations before model loading."""
-        use_parallel_config = True
+        use_parallel_config = (
+            self.cfg.fsdp_config
+            or self.cfg.tensor_parallel_size
+            or self.cfg.context_parallel_size
+        )
         if self.cfg.fsdp_config and self.cfg.fsdp_version != 2:
             use_parallel_config = False
         if use_parallel_config:
