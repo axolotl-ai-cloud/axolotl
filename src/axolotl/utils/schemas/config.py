@@ -657,6 +657,10 @@ class AxolotlInputConfig(
             "description": "Number of devices to shard across. If not set, will use all available devices."
         },
     )
+    dp_replicate_size: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "Number of devices to replicate across."},
+    )
     sequence_parallel_degree: int | None = Field(
         default=None,
         json_schema_extra={
