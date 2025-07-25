@@ -180,6 +180,7 @@ class TestModelsUtils:
             (16, 2, 2, 2, None, True, (2, 2, 2, 2)),
             (16, 2, 2, None, 2, True, (2, 2, 2, 2)),
             (16, 1, 1, None, 2, True, (0, 0, 8, 2)),
+            (2, 1, 1, None, None, True, (0, 0, 2, 1)),
         ],
     )
     def test_get_parallel_config_kwargs(
@@ -203,7 +204,6 @@ class TestModelsUtils:
             )
         )
 
-        print(res)
         if expected[0] > 1:
             assert res["tp_size"] == expected[0]
         if expected[1] > 1:
