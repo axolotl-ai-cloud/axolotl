@@ -49,6 +49,7 @@ class PatchManager:
 
     def apply_pre_model_load_patches(self):
         """Apply pre-model load patches based on config."""
+        self._apply_transformers_patches()
         # self._apply_flex_attention_patches()
         self._apply_flash_attention_patches()
         self._apply_chunked_cross_entropy_patch()
@@ -70,6 +71,13 @@ class PatchManager:
         """Apply post plugin-pre_model_load load patches based on config."""
         self._apply_tiled_mlp(self.cfg.model_config_type)
         self._apply_voxtral_patches()
+
+    def _apply_transformers_patches(self):
+        from axolotl.monkeypatch.transformers.modeling_flash_attention_utils import (
+            patch_prepare_from_posids,
+        )
+
+        patch_prepare_from_posids()
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""

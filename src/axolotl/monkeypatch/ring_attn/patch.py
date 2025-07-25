@@ -219,6 +219,12 @@ def register_ring_attn(
 
     if ring_attn_func is RingAttnFunc.VARLEN_LLAMA3:
         # fmt: off
+        # pylint: disable=protected-access
+        import transformers.modeling_flash_attention_utils
+        transformers.modeling_flash_attention_utils._flash_supports_window_size = (
+            transformers.modeling_flash_attention_utils._flash_supports_window
+        )
+
         import ring_flash_attn.adapters.hf_adapter
 
         from ring_flash_attn.adapters.hf_adapter import (  # isort: skip  # pylint: disable=unused-import
