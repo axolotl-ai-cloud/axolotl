@@ -15,6 +15,7 @@ from typing import Optional
 import accelerate
 import torch
 import torch.distributed as dist
+from torch.distributed import DeviceMesh
 
 try:
     from transformers.modeling_flash_attention_utils import _flash_supports_window
@@ -162,14 +163,14 @@ def create_ring_flash_attention_forward(
 
 
 def register_ring_attn(
-    sequence_parallel_degree: int,
+    context_parallel_size: int,
     heads_k_stride: int | None,
     ring_attn_func: RingAttnFunc | None,
 ):
     """Create ring attention group and substitute flash attn with ring flash attn.
 
     Args:
-        sequence_parallel_degree: Sequence parallelism factor.
+        context_parallel_size: Sequence parallelism factor.
         heads_k_stride: Sequence parallelism K head stride size. Passed through to
             `varlen_llama3` `ring_flash_attn` implementation.
         ring_attn_func: `ring_flash_attn` ring attention implemention. If sample
@@ -182,25 +183,25 @@ def register_ring_attn(
     if rank == 0:
         LOG.info(
             "Enabling ring attention sequence parallelism: "
-            f"each sequence will be processed across {sequence_parallel_degree} GPUs"
+            f"each sequence will be processed across {context_parallel_size} GPUs"
         )
 
-    assert sequence_parallel_degree <= world_size, (
-        f"sequence_parallel_degree ({sequence_parallel_degree}) "
+    assert context_parallel_size <= world_size, (
+        f"context_parallel_size ({context_parallel_size}) "
         f"must be less than or equal to world_size ({world_size})"
     )
-    assert world_size % sequence_parallel_degree == 0, (
-        f"sequence_parallel_degree ({sequence_parallel_degree}) "
+    assert world_size % context_parallel_size == 0, (
+        f"context_parallel_size ({context_parallel_size}) "
         f"must evenly divide world_size ({world_size})"
     )
 
     # Assign ranks to sequence parallel groups
     group_assignments = {}
-    for i in range(world_size // sequence_parallel_degree):
+    for i in range(world_size // context_parallel_size):
         ring_attn_ranks = list(
             range(
-                i * sequence_parallel_degree,
-                (i + 1) * sequence_parallel_degree,
+                i * context_parallel_size,
+                (i + 1) * context_parallel_size,
             )
         )
         group = dist.new_group(ranks=ring_attn_ranks, backend="nccl")
@@ -215,6 +216,92 @@ def register_ring_attn(
     # Log the GPU group assignments
     if rank == 0:
         LOG.info(f"Sequence parallel group assignments: {group_assignments}")
+
+    if ring_attn_func is RingAttnFunc.VARLEN_LLAMA3:
+        # fmt: off
+        # pylint: disable=protected-access
+        import transformers.modeling_flash_attention_utils
+        transformers.modeling_flash_attention_utils._flash_supports_window_size = (
+            transformers.modeling_flash_attention_utils._flash_supports_window
+        )
+
+        import ring_flash_attn.adapters.hf_adapter
+
+        from ring_flash_attn.adapters.hf_adapter import (  # isort: skip  # pylint: disable=unused-import
+            create_ring_flash_attention_forward as create_ring_flash_attention_forward_orig,
+        )
+
+        create_ring_flash_attention_forward_orig = (  # noqa: F811,F841
+            create_ring_flash_attention_forward
+        )
+        ring_flash_attn.adapters.hf_adapter.create_ring_flash_attention_forward = create_ring_flash_attention_forward
+        # fmt: on
+
+        ring_flash_attn.adapters.hf_adapter.substitute_hf_flash_attn(
+            process_group=get_ring_attn_group(), heads_k_stride=heads_k_stride or 1
+        )
+    elif ring_attn_func is RingAttnFunc.BATCH_RING:
+        from axolotl.monkeypatch.ring_attn.adapters.batch import (
+            substitute_hf_flash_attn,
+        )
+
+        substitute_hf_flash_attn(
+            process_group=get_ring_attn_group(),
+            ring_attn_func=ring_attn_func,
+        )
+
+
+def register_ring_attn_from_device_mesh(
+    device_mesh: "DeviceMesh",
+    sequence_parallel_dim: tuple[str, ...],
+    heads_k_stride: int | None,
+    ring_attn_func: RingAttnFunc | None,
+):
+    """Create ring attention group using DeviceMesh and substitute flash attn with ring flash attn.
+
+    Args:
+        device_mesh: DeviceMesh object containing the parallelism topology.
+        sequence_parallel_dim: Name of the sequence parallel dimension in the device mesh.
+        heads_k_stride: Sequence parallelism K head stride size. Passed through to
+            `varlen_llama3` `ring_flash_attn` implementation.
+        ring_attn_func: `ring_flash_attn` ring attention implemention. If sample
+            packing is enabled, it must be a `varlen` function; otherwise, it must be a
+            `batch` function.
+    """
+    rank = dist.get_rank()
+
+    if rank == 0:
+        LOG.info(
+            f"Enabling ring attention sequence parallelism using DeviceMesh "
+            f"dimension '{sequence_parallel_dim}'"
+        )
+
+    # Extract the sequence parallel submesh
+    try:
+        sequence_mesh = device_mesh[sequence_parallel_dim]
+    except (KeyError, IndexError) as e:
+        raise ValueError(
+            f"Dimension '{sequence_parallel_dim}' not found in device_mesh. "
+            f"Available dimensions: {device_mesh.mesh_dim_names}"
+        ) from e
+
+    # Get the process group for sequence parallelism
+    sequence_pg = sequence_mesh.get_group()
+    context_parallel_size = sequence_mesh.size()
+
+    if rank == 0:
+        LOG.info(
+            f"Sequence parallel degree: {context_parallel_size}, "
+            f"mesh shape: {sequence_mesh.mesh.shape}"
+        )
+
+    # Log which ranks are in the current process group
+    if sequence_pg != dist.GroupMember.WORLD:
+        ranks_in_group = dist.get_process_group_ranks(sequence_pg)
+        LOG.info(f"Current sequence parallel group ranks: {ranks_in_group}")
+
+    # Set the ring attention group
+    set_ring_attn_group(sequence_pg)
 
     if ring_attn_func is RingAttnFunc.VARLEN_LLAMA3:
         # fmt: off
@@ -299,12 +386,12 @@ def patch_prepare_data_loader():
     LOG.info("Patched accelerate.data_loader.prepare_data_loader for SP support")
 
 
-def patch_prepare_device_mesh(sequence_parallel_degree: int, fsdp: bool = False):
+def patch_prepare_device_mesh(context_parallel_size: int, fsdp: bool = False):
     """Patches the `Accelerator._prepare_device_mesh` method to create a device mesh
     that includes sequence parallelism with the specified degree.
 
     Args:
-        sequence_parallel_degree: The degree of sequence parallelism to use.
+        context_parallel_size: The degree of sequence parallelism to use.
         fsdp: Whether to use FSDP.
     """
 
@@ -312,8 +399,6 @@ def patch_prepare_device_mesh(sequence_parallel_degree: int, fsdp: bool = False)
         """Prepare the device mesh for distributed training. The dataloader will
         determine how to load data based on the device mesh.
         """
-        if self.state.torch_tp_plugin:
-            return self.state.torch_tp_plugin.torch_device_mesh
         if (
             self.distributed_type == accelerate.accelerator.DistributedType.DEEPSPEED
             and hasattr(self.state, "ds_device_mesh")
@@ -323,8 +408,8 @@ def patch_prepare_device_mesh(sequence_parallel_degree: int, fsdp: bool = False)
         # Create device mesh with sequence parallelism
         world_size = dist.get_world_size()
         mesh_shape = (
-            world_size // sequence_parallel_degree,
-            sequence_parallel_degree,
+            world_size // context_parallel_size,
+            context_parallel_size,
         )
         device_ids = list(range(world_size))
 
@@ -344,5 +429,5 @@ def patch_prepare_device_mesh(sequence_parallel_degree: int, fsdp: bool = False)
 
     LOG.info(
         "Successfully patched Accelerator._prepare_device_mesh "
-        f"with sequence_parallel_degree={sequence_parallel_degree}"
+        f"with context_parallel_size={context_parallel_size}"
     )

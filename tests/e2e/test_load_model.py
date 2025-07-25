@@ -52,6 +52,8 @@ class TestLoadModelUtils:
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
+                "tensor_parallel_size": 1,
+                "context_parallel_size": 1,
             }
         )
         self.model_loader = (  # pylint: disable=attribute-defined-outside-init

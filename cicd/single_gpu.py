@@ -65,6 +65,9 @@ GPU_CONFIG = f"L40S:{N_GPUS}"
 def run_cmd(cmd: str, run_folder: str):
     import subprocess  # nosec
 
+    sp_env = os.environ.copy()
+    sp_env["AXOLOTL_DATASET_PROCESSES"] = "8"
+
     # Propagate errors from subprocess.
-    if exit_code := subprocess.call(cmd.split(), cwd=run_folder):  # nosec
+    if exit_code := subprocess.call(cmd.split(), cwd=run_folder, env=sp_env):  # nosec
         exit(exit_code)  # pylint: disable=consider-using-sys-exit

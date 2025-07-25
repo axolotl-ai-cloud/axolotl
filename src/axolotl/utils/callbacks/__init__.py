@@ -35,7 +35,7 @@ from transformers.trainer_utils import (
 from trl.models import unwrap_model_for_generation
 
 from axolotl.utils import is_comet_available, is_mlflow_available
-from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.bench import get_gpu_memory_usage, log_gpu_memory_usage
 from axolotl.utils.callbacks.perplexity import Perplexity
 from axolotl.utils.distributed import (
     barrier,
@@ -100,7 +100,6 @@ class GPUStatsCallback(
 
     def __init__(self, cfg):
         self.cfg = cfg
-        self.logged = False
 
     def on_step_end(
         self,
@@ -109,9 +108,21 @@ class GPUStatsCallback(
         control: TrainerControl,
         **kwargs,
     ) -> TrainerControl:
-        if not self.logged and state.global_step > 1:
-            log_gpu_memory_usage(LOG, "while training", self.cfg.device)
-            self.logged = True
+        if state.global_step > 0:
+            if self.cfg.use_wandb and state.is_world_process_zero:
+                try:
+                    active, allocated, reserved = get_gpu_memory_usage()
+                    wandb.log(
+                        {
+                            "memory/max_memory_active": active,
+                            "memory/max_memory_allocated": allocated,
+                            "memory/device_memory_reserved": reserved,
+                        },
+                        step=state.global_step,
+                    )
+                except ValueError:
+                    pass
+            log_gpu_memory_usage(LOG, "", self.cfg.device)
         return control
 
 

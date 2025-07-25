@@ -24,9 +24,11 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from accelerate import PartialState
 from transformers import (
     TrainerCallback,
 )
+from transformers.trainer_pt_utils import AcceleratorConfig
 from transformers.training_args import OptimizerNames
 
 from axolotl.integrations.base import PluginManager
@@ -434,8 +436,18 @@ class TrainerBuilderBase(abc.ABC):
                 training_args_kwargs["torch_compile_mode"] = self.cfg.torch_compile_mode
 
     def _configure_accelerator_config(self, training_args_kwargs: dict):
+        use_configured_state = bool(PartialState().parallelism_config)
         if self.cfg.accelerator_config:
-            training_args_kwargs["accelerator_config"] = self.cfg.accelerator_config
+            use_configured_state = self.cfg.accelerator_config.pop(
+                "use_configured_state", use_configured_state
+            )
+            training_args_kwargs["accelerator_config"] = AcceleratorConfig(
+                use_configured_state=use_configured_state, **self.cfg.accelerator_config
+            )
+        else:
+            training_args_kwargs["accelerator_config"] = AcceleratorConfig(
+                use_configured_state=use_configured_state,
+            )
 
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
         if self.cfg.activation_offloading is True:
@@ -500,6 +512,7 @@ class TrainerBuilderBase(abc.ABC):
                 training_args_kwargs[arg] = getattr(self.cfg, arg)
 
         training_args_kwargs["per_device_train_batch_size"] = self.cfg.micro_batch_size
+        training_args_kwargs["average_tokens_across_devices"] = False
 
         if self.cfg.eval_batch_size:
             training_args_kwargs["per_device_eval_batch_size"] = (

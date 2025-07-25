@@ -67,7 +67,7 @@ class TestSequenceParallelism:
                 "logging_steps": 1,
                 "weight_decay": 0.0,
                 "use_tensorboard": True,
-                "sequence_parallel_degree": 2,
+                "context_parallel_size": 2,
                 "ring_attn_func": ring_attn_func,
                 "save_first_step": False,
             }
