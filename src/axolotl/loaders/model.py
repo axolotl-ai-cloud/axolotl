@@ -419,7 +419,9 @@ class ModelLoader:
                 **pc_kwargs,
             )
             device_mesh = parallelism_config.build_device_mesh("cuda")
-            PartialState(parallelism_config=parallelism_config, device_mesh=device_mesh)
+            partial_state = PartialState()
+            partial_state.parallelism_config = parallelism_config
+            partial_state.device_mesh = device_mesh
 
     def _set_auto_model_loader(self):
         """Set `self.auto_model_loader`. Defaults to `transformers.AutoModelForCausalLM`
