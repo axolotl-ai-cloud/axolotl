@@ -113,7 +113,11 @@ def log_gpu_memory_usage(
     msg: str = "",
     device: int | torch.device = 0,
 ):
-    active, allocated, reserved = get_gpu_memory_usage(device)
+    try:
+        active, allocated, reserved = get_gpu_memory_usage(device)
+    except ValueError:
+        # likely CPU, ignore
+        return
     cur_device_type = str(get_device_type())
     extras = []
     if allocated > 0:
