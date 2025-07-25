@@ -179,6 +179,12 @@ class AxolotlInputConfig(
             "description": "If false, the datasets will not be shuffled and will keep their original order in `datasets`. The same applies to the `test_datasets` option and the `pretraining_dataset` option. Default is true."
         },
     )
+    shuffle_before_merging_datasets: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "If true, each dataset in `datasets` will be shuffled before merging. This allows curriculum learning strategies to be applied at the dataset level. Default is false."
+        },
+    )
     dataset_prepared_path: str | None = Field(
         default=None,
         json_schema_extra={
