@@ -35,18 +35,24 @@ quartodoc:
         - cli.train
         - cli.evaluate
         - cli.args
+        - cli.art
         - cli.checks
         - cli.config
+        - cli.delinearize_llama4
         - cli.inference
         - cli.merge_lora
         - cli.merge_sharded_fsdp_weights
         - cli.preprocess
-        - cli.sweeps
-        - cli.utils
+        - cli.quantize
         - cli.vllm_serve
         - cli.cloud.base
         - cli.cloud.modal_
-        - cli.quantize
+        - cli.utils
+        - cli.utils.args
+        - cli.utils.fetch
+        - cli.utils.load
+        - cli.utils.sweeps
+        - cli.utils.train
     - title: Trainers
       desc: Training implementations
       contents:

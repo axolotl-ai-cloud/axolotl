@@ -18,11 +18,10 @@ def test_build_command():
     assert result == [
         "accelerate",
         "launch",
-        "--learning-rate",
-        "0.0001",
-        "--batch-size",
-        "8",
-        "--debug",
+        "--learning-rate=0.0001",
+        "--batch-size=8",
+        "--debug=True",
+        "--use-fp16=False",
     ]
 
 
@@ -38,7 +37,7 @@ def test_invalid_command_options(cli_runner):
         ],
     )
     assert result.exit_code != 0
-    assert "No such option" in result.output
+    assert "does not exist" in result.output
 
 
 def test_required_config_argument(cli_runner):
