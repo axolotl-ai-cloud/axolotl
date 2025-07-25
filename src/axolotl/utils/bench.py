@@ -60,8 +60,7 @@ def gpu_memory_usage_all(device=0):
     active = torch.cuda.memory_stats().get("active_bytes.all.peak", 0) / 1024.0**3
     allocated = torch.cuda.max_memory_allocated(device) / 1024.0**3
     reserved = torch.cuda.max_memory_reserved(device) / 1024.0**3
-    # smi = gpu_memory_usage_smi(device)
-    return active, allocated, reserved  # reserved - usage, max(0, smi - reserved)
+    return active, allocated, reserved 
 
 
 def mps_memory_usage_all():
@@ -118,7 +117,7 @@ def log_gpu_memory_usage(
     cur_device_type = str(get_device_type())
     extras = []
     if allocated > 0:
-        extras.append(f"+{reserved:.03f}GB allocated")
+        extras.append(f"+{allocated:.03f}GB allocated")
     if reserved > 0:
         extras.append(f"+{reserved:.03f}GB reserved")
     msg = f"{cur_device_type} memory active:" if not msg else msg
