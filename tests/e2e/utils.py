@@ -142,6 +142,10 @@ def is_hopper():
     return compute_capability == (9, 0)
 
 
+def require_hopper(test_case):
+    return unittest.skipUnless(is_hopper(), "test requires h100/hopper GPU")(test_case)
+
+
 def check_tensorboard(
     temp_run_dir: str, tag: str, lt_val: float, assertion_err: str
 ) -> None:
