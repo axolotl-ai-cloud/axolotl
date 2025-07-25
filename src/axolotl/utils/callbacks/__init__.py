@@ -113,9 +113,9 @@ class GPUStatsCallback(
                 active, allocated, reserved = get_gpu_memory_usage()
                 wandb.log(
                     {
-                        "max_memory_active": active,
-                        "max_memory_allocated": allocated,
-                        "device_memory_reserved": reserved,
+                        "memory/max_memory_active": active,
+                        "memory/max_memory_allocated": allocated,
+                        "memory/device_memory_reserved": reserved,
                     },
                     step=state.global_step,
                 )
