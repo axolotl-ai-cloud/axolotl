@@ -57,8 +57,12 @@ class LigerArgs(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def check_tiled_mlp_conflict(cls, data):
-        if data.get("liger_glu_activation") is True and data.get("tiled_mlp") is True:
+        if (
+            data.get("liger_glu_activation") is True
+            and data.get("tiled_mlp") is True
+            and not data.get("tiled_mlp_use_original_mlp")
+        ):
             raise ValueError(
-                "You cannot have both `liger_glu_activation` and `tiled_mlp` set."
+                "You cannot have both `liger_glu_activation` and `tiled_mlp` set without `tiled_mlp_use_original_mlp: true`."
             )
         return data
