@@ -10,7 +10,14 @@ except ImportError:
     from typing import Union
 
     import torch
-    from accelerate.utils import TorchTensorParallelConfig
+
+    @dataclass
+    class TorchTensorParallelConfig:
+        """
+        Use this object in your [`Accelerator`] to customize your torch tensor parallelism.
+        """
+
+        enable_async_tp: bool = False
 
     @dataclass
     class ParallelismConfig:
