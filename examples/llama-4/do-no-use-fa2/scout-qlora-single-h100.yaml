@@ -76,7 +76,7 @@ gradient_checkpointing: offload
 gradient_checkpointing_kwargs:
   use_reentrant: false
 
-warmup_steps: 20
+warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
 weight_decay: 0.0

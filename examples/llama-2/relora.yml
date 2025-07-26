@@ -26,7 +26,7 @@ lora_dropout: 0.05
 lora_target_linear: true
 
 relora_steps: 150
-relora_warmup_steps: 10
+relora_warmup_ratio: 0.1
 relora_cpu_offload: false
 
 wandb_project:
@@ -50,7 +50,7 @@ resume_from_checkpoint:
 logging_steps: 1
 flash_attention: true
 
-warmup_steps: 10
+warmup_ratio: 0.1
 evals_per_epoch: 4
 saves_per_epoch: 1
 weight_decay: 0.0
