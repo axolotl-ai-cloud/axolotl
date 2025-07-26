@@ -463,10 +463,11 @@ class ModelLoader:
             self.cfg.context_parallel_size,
             self.cfg.dp_shard_size,
             self.cfg.dp_replicate_size,
-            self.cfg.fsdp or self.cfg.fsdp_config,
+            bool(self.cfg.fsdp or self.cfg.fsdp_config),
         )
 
         if pc_kwargs:
+            print(pc_kwargs)
             parallelism_config = ParallelismConfig(
                 **pc_kwargs,
             )
