@@ -1204,13 +1204,6 @@ class ComplexValidationMixin:
         return self
 
     @model_validator(mode="after")
-    def check_tensor_parallel_size_liger_fused_linear_cross_entropy(self):
-        # TODO @SalmanMohammadi this is a larger fix - investigate
-        if self.tensor_parallel_size > 1 and self.liger_fused_linear_cross_entropy:
-            raise ValueError("Tensor parallelism is not compatible with liger losses.")
-        return self
-
-    @model_validator(mode="after")
     def check_context_parallel_size(self):
         if not self.context_parallel_size:
             self.context_parallel_size = 1

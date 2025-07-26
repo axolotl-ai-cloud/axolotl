@@ -76,8 +76,12 @@ class PatchManager:
         from axolotl.monkeypatch.transformers.modeling_flash_attention_utils import (
             patch_prepare_from_posids,
         )
+        from axolotl.monkeypatch.transformers.tensor_parallel import (
+            patch_tp_fix,
+        )
 
         patch_prepare_from_posids()
+        patch_tp_fix()
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""

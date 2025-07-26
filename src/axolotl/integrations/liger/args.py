@@ -74,3 +74,10 @@ class LigerArgs(BaseModel):
                 "see https://github.com/linkedin/Liger-Kernel/issues/826"
             )
         return data
+
+    @model_validator(mode="after")
+    def check_tensor_parallel_size_liger_fused_linear_cross_entropy(self):
+        # TODO @SalmanMohammadi this is a larger fix - investigate
+        if self.tensor_parallel_size > 1 and self.liger_fused_linear_cross_entropy:
+            raise ValueError("Tensor parallelism is not compatible with liger losses.")
+        return self
