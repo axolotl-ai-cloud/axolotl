@@ -27,6 +27,7 @@ def parse_requirements(extras_require_map):
     try:
         xformers_version = [req for req in _install_requires if "xformers" in req][0]
         autoawq_version = [req for req in _install_requires if "autoawq" in req][0]
+        vllm_version = [req for req in _install_requires if "vllm" in req][0]
         if "Darwin" in platform.system():
             # skip packages not compatible with OSX
             skip_packages = [
@@ -69,6 +70,7 @@ def parse_requirements(extras_require_map):
                 if patch == 0:
                     _install_requires.append("xformers==0.0.30")
                     # vllm 0.9.x is incompatible with latest transformers
+                    _install_requires.pop(_install_requires.index(vllm_version))
                 else:
                     _install_requires.append("xformers==0.0.31.post1")
                     extras_require_map["vllm"] = ["vllm>=0.10.0"]
