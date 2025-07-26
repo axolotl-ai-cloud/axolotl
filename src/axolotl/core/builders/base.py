@@ -436,7 +436,19 @@ class TrainerBuilderBase(abc.ABC):
                 training_args_kwargs["torch_compile_mode"] = self.cfg.torch_compile_mode
 
     def _configure_accelerator_config(self, training_args_kwargs: dict):
-        use_configured_state = bool(PartialState().parallelism_config)
+        partial_state = PartialState()
+        has_pc_attr = (
+            hasattr(partial_state, "parallelism_config")
+            and partial_state.parallelism_config
+        )
+        has_pc_key = (
+            "parallelism_config"
+            in partial_state._shared_state  # pylint: disable=protected-access
+            and partial_state._shared_state[  # pylint: disable=protected-access
+                "parallelism_config"
+            ]
+        )
+        use_configured_state = has_pc_attr or has_pc_key
         if self.cfg.accelerator_config:
             use_configured_state = self.cfg.accelerator_config.pop(
                 "use_configured_state", use_configured_state

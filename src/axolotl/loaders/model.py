@@ -472,12 +472,14 @@ class ModelLoader:
             )
             device_mesh = parallelism_config.build_device_mesh("cuda")
             partial_state = PartialState()
-            partial_state._shared_state.parallelism_config = (  # pylint: disable=protected-access
+            # fmt: off
+            partial_state._shared_state["parallelism_config"] = (  # pylint: disable=protected-access
                 parallelism_config
             )
-            partial_state._shared_state.device_mesh = (  # pylint: disable=protected-access
+            partial_state._shared_state["device_mesh"] = (  # pylint: disable=protected-access
                 device_mesh
             )
+            # fmt: on
 
     def _set_auto_model_loader(self):
         """Set `self.auto_model_loader`. Defaults to `transformers.AutoModelForCausalLM`
