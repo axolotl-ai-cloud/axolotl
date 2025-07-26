@@ -14,7 +14,6 @@ import torch
 import transformers
 import transformers.modeling_utils
 from accelerate import PartialState, init_empty_weights
-from accelerate.utils.dataclasses import ParallelismConfig
 from peft import (
     PeftConfig,
     PeftMixedModel,
@@ -47,6 +46,7 @@ from axolotl.loaders.utils import (
     load_model_config,
 )
 from axolotl.models.mamba import fix_mamba_attn_for_loss
+from axolotl.monkeypatch.accelerate.distributed import ParallelismConfig
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import get_device_count, get_device_type, get_world_size
@@ -472,8 +472,12 @@ class ModelLoader:
             )
             device_mesh = parallelism_config.build_device_mesh("cuda")
             partial_state = PartialState()
-            partial_state.parallelism_config = parallelism_config
-            partial_state.device_mesh = device_mesh
+            partial_state._shared_state.parallelism_config = (  # pylint: disable=protected-access
+                parallelism_config
+            )
+            partial_state._shared_state.device_mesh = (  # pylint: disable=protected-access
+                device_mesh
+            )
 
     def _set_auto_model_loader(self):
         """Set `self.auto_model_loader`. Defaults to `transformers.AutoModelForCausalLM`
