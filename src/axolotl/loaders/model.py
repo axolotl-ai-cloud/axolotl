@@ -85,6 +85,9 @@ class ModelLoader:
             `AutoModelForCausalLM`).
     """
 
+    use_parallel_config: bool | None = False
+    parallelism_config: ParallelismConfig | None = None
+
     def __init__(
         self,
         cfg: DictDefault,
@@ -181,14 +184,19 @@ class ModelLoader:
 
     def _apply_pre_model_load_setup(self):
         """Apply patches and setup configurations before model loading."""
-        use_parallel_config = (
-            self.cfg.fsdp_config
-            or (self.cfg.tensor_parallel_size and self.cfg.tensor_parallel_size > 1)
-            or (self.cfg.context_parallel_size and self.cfg.context_parallel_size > 1)
-        )
-        if self.cfg.fsdp_config and self.cfg.fsdp_version != 2:
-            use_parallel_config = False
-        if use_parallel_config:
+        if self.use_parallel_config is not None:
+            self.use_parallel_config = (
+                self.cfg.fsdp_config
+                or (self.cfg.tensor_parallel_size and self.cfg.tensor_parallel_size > 1)
+                or (
+                    self.cfg.context_parallel_size
+                    and self.cfg.context_parallel_size > 1
+                )
+            )
+            if self.cfg.fsdp_config and self.cfg.fsdp_version != 2:
+                self.use_parallel_config = False
+
+        if self.use_parallel_config:
             self._set_parallel_config()
         self._set_auto_model_loader()
         self._set_device_map_config()
@@ -468,14 +476,14 @@ class ModelLoader:
 
         if pc_kwargs:
             print(pc_kwargs)
-            parallelism_config = ParallelismConfig(
+            self.parallelism_config = ParallelismConfig(
                 **pc_kwargs,
             )
-            device_mesh = parallelism_config.build_device_mesh("cuda")
+            device_mesh = self.parallelism_config.build_device_mesh("cuda")
             partial_state = PartialState()
             # fmt: off
             partial_state._shared_state["parallelism_config"] = (  # pylint: disable=protected-access
-                parallelism_config
+                self.parallelism_config
             )
             partial_state._shared_state["device_mesh"] = (  # pylint: disable=protected-access
                 device_mesh
@@ -833,6 +841,11 @@ class ModelLoader:
             )
         if is_deepspeed_zero3_enabled():
             skip_move_to_device = True
+
+        # pylint: disable=protected-access
+        if self.cfg.tensor_parallel_size > 1:
+            if self.model._tp_size != self.cfg.tensor_parallel_size:
+                self.model._tp_size = self.cfg.tensor_parallel_size
 
         return skip_move_to_device
 
