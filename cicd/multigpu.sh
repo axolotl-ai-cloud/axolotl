@@ -19,5 +19,7 @@ pytest -v  --durations=10 -n1 /workspace/axolotl/tests/e2e/multigpu/patched/ \
   --cov-append \
   --cov-report=xml:multigpu-coverage.xml
 
-# Upload coverage to Codecov
-codecov upload-process -t "${CODECOV_TOKEN}" -f multigpu-coverage.xml -F multigpu,docker-tests,pytorch-${PYTORCH_VERSION} || true
+# Upload coverage to Codecov if CODECOV_TOKEN is available
+if [ -n "$CODECOV_TOKEN" ]; then
+  codecov upload-process -t "${CODECOV_TOKEN}" -f multigpu-coverage.xml -F multigpu,docker-tests,pytorch-${PYTORCH_VERSION} || true
+fi

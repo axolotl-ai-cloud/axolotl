@@ -68,9 +68,10 @@ def parse_requirements(extras_require_map):
                 _install_requires.pop(_install_requires.index(xformers_version))
                 if patch == 0:
                     _install_requires.append("xformers==0.0.30")
+                    # vllm 0.9.x is incompatible with latest transformers
+                    extras_require_map.pop("vllm")
                 else:
                     _install_requires.append("xformers==0.0.31.post1")
-                extras_require_map["vllm"] = ["vllm>=0.9.0"]
             elif (major, minor) >= (2, 6):
                 _install_requires.pop(_install_requires.index(xformers_version))
                 _install_requires.append("xformers==0.0.29.post3")
@@ -84,7 +85,9 @@ def parse_requirements(extras_require_map):
                 else:
                     _install_requires.append("xformers>=0.0.28.post3")
                 _install_requires.pop(_install_requires.index(autoawq_version))
+                extras_require_map.pop("vllm")
             elif (major, minor) >= (2, 4):
+                extras_require_map.pop("vllm")
                 if patch == 0:
                     _install_requires.pop(_install_requires.index(xformers_version))
                     _install_requires.append("xformers>=0.0.27")
@@ -151,7 +154,7 @@ extras_require = {
         "ray[train]",
     ],
     "vllm": [
-        "vllm==0.7.2",
+        "vllm==0.10.0",
     ],
     "llmcompressor": [
         "llmcompressor==0.5.1",
