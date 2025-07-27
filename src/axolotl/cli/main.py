@@ -131,7 +131,9 @@ def train(
             if not sweep:
                 raise exc
         finally:
-            os.unlink(cfg_file)
+            # Only delete temp files, not the original config
+            if cfg_file != config:
+                os.unlink(cfg_file)
 
 
 @cli.command(
