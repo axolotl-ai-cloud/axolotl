@@ -2,6 +2,7 @@
 
 # pylint: disable=redefined-outer-name
 
+import os
 import subprocess  # nosec B404
 from typing import Literal, Optional
 
@@ -121,17 +122,16 @@ def train(
     # Handle Ray launcher override
     _launcher = None if kwargs.get("use_ray") else launcher
 
-    # Generate configuration files to process
-    config_files = generate_config_files(config, sweep)
-
     # Process each configuration
-    for cfg_file in config_files:
+    for cfg_file in generate_config_files(config, sweep):
         try:
             launch_training(cfg_file, _launcher, cloud, kwargs, launcher_args)
         except subprocess.CalledProcessError as exc:
             LOG.error(f"Failed to train/fine-tune config '{cfg_file}': {exc}")
             if not sweep:
                 raise exc
+        finally:
+            os.unlink(cfg_file)
 
 
 @cli.command(

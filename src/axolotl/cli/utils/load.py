@@ -27,8 +27,8 @@ def load_model_and_tokenizer(
     ProcessorMixin | None,
 ]:
     """
-    Helper function for loading a model, tokenizer, and processor specified in the given `axolotl`
-    config.
+    Helper function for loading a model, tokenizer, and processor specified in the
+    given `axolotl` config.
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.

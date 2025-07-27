@@ -3,8 +3,7 @@
 import os
 import subprocess  # nosec
 import tempfile
-from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Iterator, Literal
 
 import yaml
 
@@ -65,10 +64,11 @@ def build_command(base_cmd: list[str], options: dict[str, Any]) -> list[str]:
     return cmd
 
 
-def generate_config_files(config: str, sweep: str | None) -> list[str]:
+def generate_config_files(config: str, sweep: str | None) -> Iterator[str]:
     """Generate list of configuration files to process."""
     if not sweep:
-        return [config]
+        yield config
+        return
 
     # Load sweep and base configurations
     with open(sweep, "r", encoding="utf-8") as fin:
@@ -78,16 +78,17 @@ def generate_config_files(config: str, sweep: str | None) -> list[str]:
 
     # Generate all possible configurations
     permutations = generate_sweep_configs(base_config, sweep_config)
-
-    config_files = []
-    for perm in permutations:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_config_path = Path(temp_dir) / "config.yaml"
-            with open(temp_config_path, "w", encoding="utf-8") as fout:
-                yaml.dump(perm, fout)
-            config_files.append(str(temp_config_path))
-
-    return config_files
+    for permutation in permutations:
+        # pylint: disable=consider-using-with
+        temp_file = tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".yaml",
+            delete=False,
+            encoding="utf-8",
+        )
+        yaml.dump(permutation, temp_file)
+        temp_file.close()
+        yield temp_file.name
 
 
 def launch_training(
