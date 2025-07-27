@@ -53,6 +53,7 @@ jobs:
 
       - name: Netlify Publish
         uses: nwtgck/actions-netlify@v3.0
+        if: ${{ secrets.NETLIFY_AUTH_TOKEN != '' }}
         id: netlify
         with:
           publish-dir: './_site'
@@ -67,7 +68,7 @@ jobs:
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
 
       - name: Update PR with preview link
-        if: ${{ steps.netlify.outcome == 'success' }}
+        if: ${{ steps.netlify.outcome == 'success' && secrets.NETLIFY_AUTH_TOKEN != '' }}
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
