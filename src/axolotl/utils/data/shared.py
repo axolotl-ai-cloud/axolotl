@@ -543,6 +543,12 @@ def merge_datasets(datasets: list[Dataset], cfg: DictDefault) -> Dataset:
 
         return ds.shuffle(seed=cfg.seed)
 
+    # If enabled, shuffle each dataset independently before merging.
+    # This allows curriculum learning strategies to be applied at the dataset level.
+    if cfg.shuffle_before_merging_datasets:
+        LOG.info("Shuffling each dataset individually before merging...")
+        datasets = [ds.shuffle(seed=cfg.seed) for ds in datasets]
+
     LOG.info("Merging datasets...")
     merged_dataset = concatenate_datasets(datasets)
 
