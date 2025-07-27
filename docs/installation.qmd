@@ -124,10 +124,13 @@ For providers supporting Docker:
 
 - Use `axolotlai/axolotl-cloud:main-latest`
 - Available on:
-  - [Latitude.sh](https://latitude.sh/blueprint/989e0e79-3bf6-41ea-a46b-1f246e309d5c)
-  - [JarvisLabs.ai](https://jarvislabs.ai/templates/axolotl)
-  - [RunPod](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
-  - [Novita](https://novita.ai/gpus-console?templateId=311)
+    - [RunPod](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
+    - [Vast.ai](https://cloud.vast.ai?ref_id=62897&template_id=bdd4a49fa8bce926defc99471864cace&utm_source=axolotl&utm_medium=partner&utm_campaign=template_launch_july2025&utm_content=docs_link)
+    - [PRIME Intellect](https://app.primeintellect.ai/dashboard/create-cluster?image=axolotl&location=Cheapest&security=Cheapest&show_spot=true)
+    - [Modal](https://www.modal.com?utm_source=github&utm_medium=github&utm_campaign=axolotl)
+    - [Novita](https://novita.ai/gpus-console?templateId=311)
+    - [JarvisLabs.ai](https://jarvislabs.ai/templates/axolotl)
+    - [Latitude.sh](https://latitude.sh/blueprint/989e0e79-3bf6-41ea-a46b-1f246e309d5c)
 
 ### Google Colab {#sec-colab}
 
