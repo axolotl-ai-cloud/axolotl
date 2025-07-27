@@ -425,10 +425,6 @@ class ModelLoader:
             pc_kwargs["cp_size"] = context_parallel_size
             remaining_world_size = remaining_world_size // context_parallel_size
 
-        if dp_shard_size and dp_shard_size > 1:
-            pc_kwargs["dp_shard_size"] = dp_shard_size
-            remaining_world_size = remaining_world_size // dp_shard_size
-
         if dp_shard_size is None and dp_replicate_size in (None, 1):
             if remaining_world_size > 1:
                 pc_kwargs["dp_shard_size"] = remaining_world_size
