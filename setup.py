@@ -71,7 +71,7 @@ def parse_requirements(extras_require_map):
                     # vllm 0.9.x is incompatible with latest transformers
                     extras_require_map.pop("vllm")
                 else:
-                    _install_requires.append("xformers==0.0.31.post1")
+                    _install_requires.append("xformers==0.0.31")
             elif (major, minor) >= (2, 6):
                 _install_requires.pop(_install_requires.index(xformers_version))
                 _install_requires.append("xformers==0.0.29.post3")
@@ -117,10 +117,10 @@ def get_package_version():
 
 
 extras_require = {
-    "flash-attn": ["flash-attn==2.8.0.post2"],
+    "flash-attn": ["flash-attn==2.8.2"],
     "ring-flash-attn": [
-        "flash-attn==2.8.0.post2",
-        "ring-flash-attn>=0.1.5",
+        "flash-attn==2.8.2",
+        "ring-flash-attn>=0.1.7",
         "yunchang==0.6.0",
     ],
     "deepspeed": [
@@ -160,7 +160,6 @@ extras_require = {
         "llmcompressor==0.5.1",
     ],
 }
-
 install_requires, dependency_links, extras_require_build = parse_requirements(
     extras_require
 )
