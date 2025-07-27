@@ -500,6 +500,7 @@ class TrainerBuilderBase(abc.ABC):
                 training_args_kwargs[arg] = getattr(self.cfg, arg)
 
         training_args_kwargs["per_device_train_batch_size"] = self.cfg.micro_batch_size
+        training_args_kwargs["average_tokens_across_devices"] = False
 
         if self.cfg.eval_batch_size:
             training_args_kwargs["per_device_eval_batch_size"] = (
