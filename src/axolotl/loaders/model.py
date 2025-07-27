@@ -844,8 +844,11 @@ class ModelLoader:
 
         # pylint: disable=protected-access
         if self.cfg.tensor_parallel_size > 1:
+            # workaround for upstream 4.54.0 not setting _tp_size or _device_mesh
+            # TODO(wing): remove once 4.54.1 is released
             if self.model._tp_size != self.cfg.tensor_parallel_size:
                 self.model._tp_size = self.cfg.tensor_parallel_size
+                self.model._device_mesh = self.model_kwargs["device_mesh"]
 
         return skip_move_to_device
 

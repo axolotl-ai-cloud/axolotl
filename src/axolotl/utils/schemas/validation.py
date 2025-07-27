@@ -1264,6 +1264,20 @@ class ComplexValidationMixin:
         return self
 
 
+class DistributedValidationMixin:
+    """validation for distributed training."""
+
+    @model_validator(mode="after")
+    def check_tensor_parallel_optimizer(self):
+        if self.tensor_parallel_size > 1:
+            if self.optimizer in ["paged_adamw_8bit", "adamw_8bit", "adamw_bnb_8bit"]:
+                raise ValueError(
+                    "tensor_parallel_size is not supported with paged_adamw_8bit, adamw_8bit, and adamw_bnb_8bit optimizers"
+                )
+
+        return self
+
+
 # pylint: disable=too-many-ancestors
 class ValidationMixin(
     DatasetValidationMixin,

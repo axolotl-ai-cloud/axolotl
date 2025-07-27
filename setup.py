@@ -27,7 +27,6 @@ def parse_requirements(extras_require_map):
     try:
         xformers_version = [req for req in _install_requires if "xformers" in req][0]
         autoawq_version = [req for req in _install_requires if "autoawq" in req][0]
-        vllm_version = [req for req in _install_requires if "vllm" in req][0]
         if "Darwin" in platform.system():
             # skip packages not compatible with OSX
             skip_packages = [
@@ -79,7 +78,7 @@ def parse_requirements(extras_require_map):
                 _install_requires.append("xformers==0.0.29.post3")
                 # since we only support 2.6.0+cu126
                 _dependency_links.append("https://download.pytorch.org/whl/cu126")
-                extras_require_map["vllm"] = ["vllm==0.8.5.post1"]
+                extras_require_map.pop("vllm")
             elif (major, minor) >= (2, 5):
                 _install_requires.pop(_install_requires.index(xformers_version))
                 if patch == 0:
