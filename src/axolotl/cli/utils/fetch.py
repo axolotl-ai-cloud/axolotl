@@ -45,7 +45,7 @@ def _download_file(
             return file_path, "unchanged"
 
         print(f"Updating {file_path}")
-        status = "new"
+        status = "updated"
     else:
         print(f"Downloading {file_path}")
         status = "new"
