@@ -11,7 +11,7 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
     Here is an example of how to install from main for pip:
 
 ```bash
-# Ensure you have Pytorch installed (Pytorch 2.6.0 min recommended)
+# Ensure you have Pytorch installed (Pytorch 2.6.0 min)
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 
@@ -22,16 +22,9 @@ pip3 install --no-build-isolation -e '.[flash-attn]'
 2. Please install the below.
 
 ```bash
-pip3 uninstall transformers
-
-# before transformers release v4.54.0
-pip3 install git+https://github.com/huggingface/transformers.git@967045082faaaaf3d653bfe665080fd746b2bb60
-# else
-pip3 install git+https://github.com/huggingface/transformers.git@v4.54.0
-
 # audio
 pip3 install librosa==0.11.0
-pip3 install 'mistral_common[audio]==1.8.2'
+pip3 install 'mistral_common[audio]==1.8.3'
 ```
 
 3. Run the finetuning example:

@@ -13,7 +13,7 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
     Here is an example of how to install from main for pip:
 
 ```bash
-# Ensure you have Pytorch installed (Pytorch 2.6.0 recommended)
+# Ensure you have Pytorch installed (Pytorch 2.6.0 min)
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 
