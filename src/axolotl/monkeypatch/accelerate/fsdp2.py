@@ -221,7 +221,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         transformer_auto_wrap_policy,
     )
 
-    # We need the `auto_wrap_policy` original type to create a custom poilicy function for sharding
+    # We need the `auto_wrap_policy` original type to create a custom policy function for sharding
     # This is because `fully_shard` doesn't support old auto wrap policies, rather we have to imitate the behaviour
     if fsdp2_plugin.auto_wrap_policy is transformer_auto_wrap_policy:
         pass  # auto_wrap_policy_type = "transformer"

@@ -102,8 +102,8 @@ def matmul_lora(
         del W
 
     if A is not None:
-        A, B = A.t(), B.t()
-        out += (X @ A.to(dtype)) @ (s * B.to(dtype))
+        A, B = A.t().to(dtype), B.t().to(dtype)
+        out += (X @ A) @ (s * B)
 
     return out.view(batch, seq_len, -1) if reshape else out
 

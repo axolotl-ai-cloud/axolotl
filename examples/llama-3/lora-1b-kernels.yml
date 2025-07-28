@@ -15,7 +15,6 @@ lora_model_dir:
 sequence_len: 2048
 sample_packing: true
 
-
 lora_r: 16
 lora_alpha: 32
 # Currently, we don't support dropout with our custom Triton kernels
