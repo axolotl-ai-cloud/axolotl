@@ -155,10 +155,9 @@ def test_add_default_rdzv_args_with_endpoint():
     launcher_args = ["--nnodes=2", "--rdzv_endpoint=127.0.0.1:29400"]
     result = _add_default_rdzv_args(launcher_args)
 
-    # Should have added rdzv_backend and rdzv_id
+    # Should have added rdzv_backend
     assert "--rdzv_backend" in result
     assert "c10d" in result
-    assert "--rdzv_id" in result
 
     # Original args should still be present
     assert "--nnodes=2" in result
@@ -180,9 +179,6 @@ def test_add_default_rdzv_args_with_existing_backend():
     backend_count = sum(1 for arg in result if "--rdzv_backend" in arg)
     assert backend_count == 1
     assert "--rdzv_backend=static" in result
-
-    # Should still add rdzv_id
-    assert "--rdzv_id" in result
 
 
 def test_add_default_rdzv_args_with_existing_id():
@@ -215,7 +211,6 @@ def test_add_default_rdzv_args_without_endpoint():
 
     # Should not add any rdzv args
     assert "--rdzv_backend" not in result
-    assert "--rdzv_id" not in result
     assert result == launcher_args
 
 

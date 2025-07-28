@@ -31,6 +31,13 @@ def _add_default_rdzv_args(launcher_args: list[str]) -> list[str]:
         if not has_rdzv_backend:
             args.extend(["--rdzv_backend", "c10d"])
 
+        # Check if rdzv_id is already provided
+        has_rdzv_id = any("--rdzv_id" in arg for arg in args)
+        if not has_rdzv_id:
+            import uuid
+
+            args.extend(["--rdzv_id", str(uuid.uuid4())[:8]])
+
     return args
 
 
