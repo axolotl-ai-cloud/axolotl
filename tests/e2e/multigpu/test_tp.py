@@ -15,6 +15,7 @@ class TestTensorParallel:
 
     @require_torch_2_7_0
     def test_fft_sft(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "Qwen/Qwen2.5-0.5B",

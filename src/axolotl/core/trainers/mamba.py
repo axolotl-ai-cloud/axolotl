@@ -5,6 +5,7 @@ import torch
 from axolotl.core.trainers.base import AxolotlTrainer
 
 
+# pylint: disable=too-many-ancestors
 class AxolotlMambaTrainer(AxolotlTrainer):
     """Mamba specific trainer to handle loss calculation"""
 

@@ -249,14 +249,18 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             auto_wrap_policy=fsdp2_plugin.auto_wrap_policy,
         )
 
+    mesh = getattr(accelerator.state, "device_mesh", None)
+
     fsdp2_kwargs = {
         "reshard_after_forward": fsdp2_plugin.reshard_after_forward,
         "offload_policy": fsdp2_plugin.cpu_offload,
         # `fully_shard` doesn't accept `None` in case of `MixedPrecisionPolicy`
         "mp_policy": fsdp2_plugin.mixed_precision_policy or MixedPrecisionPolicy(),
-        "mesh": accelerator.state.device_mesh[
-            accelerator.state.parallelism_config.model_shard_dim_names
-        ],
+        "mesh": (
+            mesh[tuple(accelerator.state.parallelism_config.model_shard_dim_names)]
+            if mesh is not None
+            else None
+        ),
     }
     model_has_params4bit = False
     for _, param in model.named_parameters():
