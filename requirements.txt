@@ -13,7 +13,7 @@ packaging==23.2
 
 huggingface_hub>=0.33.0
 peft==0.16.0
-transformers==4.54.0
+transformers @ git+https://github.com/winglian/transformers.git@v4.54.1-maybe
 tokenizers>=0.21.1
 accelerate==1.9.0
 datasets==4.0.0
