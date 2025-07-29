@@ -80,6 +80,14 @@ class TRLConfig(BaseModel):
             "description": "Number of completions to print when log_completions is True."
         },
     )
+    importance_sampling_level: Literal["sequence", "token"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Controls whether importance sampling ratios are computed at the `'token'` or `'sequence'` level. "
+            "For GSPO, use `sequence`, default is None which corresponds to the original GRPO paper."
+        },
+    )
+
     sync_ref_model: bool | None = Field(
         default=False,
         json_schema_extra={"description": "Whether to sync the reference model."},
