@@ -80,5 +80,5 @@ saves_per_epoch: 1
 
 weight_decay: 0.0
 special_tokens:
-  pad_token: <|finetune_right_pad_id|>
+  pad_token: <|finetune_right_pad|>
   eos_token: <|eot|>

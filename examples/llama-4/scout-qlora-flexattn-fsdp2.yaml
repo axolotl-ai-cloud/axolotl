@@ -82,5 +82,5 @@ fsdp_config:
   fsdp_reshard_after_forward: true
   fsdp_activation_checkpointing: true
 special_tokens:
-  pad_token: <|finetune_right_pad_id|>
+  pad_token: <|finetune_right_pad|>
   eos_token: <|eot|>
