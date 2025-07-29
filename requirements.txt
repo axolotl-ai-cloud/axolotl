@@ -15,7 +15,7 @@ huggingface_hub>=0.33.0
 peft==0.16.0
 transformers @ git+https://github.com/winglian/transformers.git@v4.54.1-maybe
 tokenizers>=0.21.1
-accelerate==1.9.0
+accelerate @ git+https://github.com/SalmanMohammadi/accelerate.git@device_mesh_parallelism_config
 datasets==4.0.0
 deepspeed>=0.17.0
 trl==0.20.0

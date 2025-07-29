@@ -4,7 +4,7 @@ handle importing ParallelismConfig from accelerate with fallback
 
 # pylint: disable=protected-access,consider-iterating-dictionary,ungrouped-imports,unused-import,inconsistent-return-statements
 try:
-    from accelerate.utils.dataclasses import ParallelismConfig
+    from accelerate.parallelism_config import ParallelismConfig
 except ImportError:
     from dataclasses import dataclass
     from typing import Union
