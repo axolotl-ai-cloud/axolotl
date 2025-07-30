@@ -84,7 +84,7 @@ fsdp_config:
   fsdp_sharding_strategy: FULL_SHARD
   fsdp_activation_checkpointing: true
 special_tokens:
-  pad_token: <|finetune_right_pad_id|>
+  pad_token: <|finetune_right_pad|>
   eos_token: <|eot|>
 
 # save_first_step: true  # uncomment this to validate checkpoint saving works with your config
