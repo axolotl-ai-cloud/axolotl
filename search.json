@@ -18,7 +18,7 @@
     "href": "index.html#latest-updates",
     "title": "Axolotl",
     "section": "🎉 Latest Updates",
-    "text": "🎉 Latest Updates\n\n2025/07: TiledMLP support for single-GPU to multi-GPU training with DDP, DeepSpeed and FSDP support has been added to support Arctic Long Sequence Training. (ALST). See examples for using ALST with Axolotl!\n2025/06: Magistral with mistral-common tokenizer support has been added to Axolotl. See examples to start training your own Magistral models with Axolotl!\n2025/05: Quantization Aware Training (QAT) support has been added to Axolotl. Explore the docs to learn more!\n2025/04: Llama 4 support has been added in Axolotl. See examples to start training your own Llama 4 models with Axolotl’s linearized version!\n2025/03: Axolotl has implemented Sequence Parallelism (SP) support. Read the blog and docs to learn how to scale your context length when fine-tuning.\n2025/03: (Beta) Fine-tuning Multimodal models is now supported in Axolotl. Check out the docs to fine-tune your own!\n2025/02: Axolotl has added LoRA optimizations to reduce memory usage and improve training speed for LoRA and QLoRA in single GPU and multi-GPU training (DDP and DeepSpeed). Jump into the docs to give it a try.\n2025/02: Axolotl has added GRPO support. Dive into our blog and GRPO example and have some fun!\n2025/01: Axolotl has added Reward Modelling / Process Reward Modelling fine-tuning support. See docs.",
+    "text": "🎉 Latest Updates\n\n2025/07: Voxtral with mistral-common tokenizer support has been integrated in Axolotl. Read the docs!\n2025/07: TiledMLP support for single-GPU to multi-GPU training with DDP, DeepSpeed and FSDP support has been added to support Arctic Long Sequence Training. (ALST). See examples for using ALST with Axolotl!\n2025/06: Magistral with mistral-common tokenizer support has been added to Axolotl. See examples to start training your own Magistral models with Axolotl!\n2025/05: Quantization Aware Training (QAT) support has been added to Axolotl. Explore the docs to learn more!\n2025/04: Llama 4 support has been added in Axolotl. See examples to start training your own Llama 4 models with Axolotl’s linearized version!\n2025/03: Axolotl has implemented Sequence Parallelism (SP) support. Read the blog and docs to learn how to scale your context length when fine-tuning.\n2025/03: (Beta) Fine-tuning Multimodal models is now supported in Axolotl. Check out the docs to fine-tune your own!\n2025/02: Axolotl has added LoRA optimizations to reduce memory usage and improve training speed for LoRA and QLoRA in single GPU and multi-GPU training (DDP and DeepSpeed). Jump into the docs to give it a try.\n2025/02: Axolotl has added GRPO support. Dive into our blog and GRPO example and have some fun!\n2025/01: Axolotl has added Reward Modelling / Process Reward Modelling fine-tuning support. See docs.",
     "crumbs": [
       "Home"
     ]
@@ -1153,7 +1153,7 @@
     "href": "docs/custom_integrations.html#cut-cross-entropy",
     "title": "Custom Integrations",
     "section": "Cut Cross Entropy",
-    "text": "Cut Cross Entropy\nCut Cross Entropy (CCE) reduces VRAM usage through optimization on the cross-entropy operation during loss calculation.\nSee https://github.com/apple/ml-cross-entropy\n\nRequirements\n\nPyTorch 2.4.0 or higher\n\n\n\nInstallation\nRun the following command to install cut_cross_entropy[transformers] if you don’t have it already.\n\nIf you are in dev environment\n\npython scripts/cutcrossentropy_install.py | sh\n\nIf you are installing from pip\n\npip3 uninstall -y cut-cross-entropy && pip3 install \"cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@631d646\"\n\n\nUsage\nplugins:\n  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin\n\n\nSupported Models\n\ncohere\ncohere2\ngemma\ngemma2\ngemma3\ngemma3_text\ngemma3n\ngemma3n_text\nglm\nglm4\nllama\nllama4\nllama4_text\nmistral\nmistral3\nmllama\nphi\nphi3\nphi4_multimodal\nqwen2\nqwen2_vl\nqwen2_moe\nqwen2_5_vl\nqwen3\nqwen3_moe\n\n\n\nCitation\n@article{wijmans2024cut,\n  author       = {Erik Wijmans and\n                  Brody Huval and\n                  Alexander Hertzberg and\n                  Vladlen Koltun and\n                  Philipp Kr\\\"ahenb\\\"uhl},\n  title        = {Cut Your Losses in Large-Vocabulary Language Models},\n  journal      = {arXiv},\n  year         = {2024},\n  url          = {https://arxiv.org/abs/2411.09009},\n}\nPlease see reference here",
+    "text": "Cut Cross Entropy\nCut Cross Entropy (CCE) reduces VRAM usage through optimization on the cross-entropy operation during loss calculation.\nSee https://github.com/apple/ml-cross-entropy\n\nRequirements\n\nPyTorch 2.4.0 or higher\n\n\n\nInstallation\nRun the following command to install cut_cross_entropy[transformers] if you don’t have it already.\n\nIf you are in dev environment\n\npython scripts/cutcrossentropy_install.py | sh\n\nIf you are installing from pip\n\npip3 uninstall -y cut-cross-entropy && pip3 install \"cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@010c3ac3f1e725098961832830303eeb4142dd88\"\n\n\nUsage\nplugins:\n  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin\n\n\nSupported Models\n\ncohere\ncohere2\ngemma\ngemma2\ngemma3\ngemma3_text\ngemma3n\ngemma3n_text\nglm\nglm4\nllama\nllama4\nllama4_text\nmistral\nmistral3\nmllama\nphi\nphi3\nphi4_multimodal\nqwen2\nqwen2_vl\nqwen2_moe\nqwen2_5_vl\nqwen3\nqwen3_moe\n\n\n\nCitation\n@article{wijmans2024cut,\n  author       = {Erik Wijmans and\n                  Brody Huval and\n                  Alexander Hertzberg and\n                  Vladlen Koltun and\n                  Philipp Kr\\\"ahenb\\\"uhl},\n  title        = {Cut Your Losses in Large-Vocabulary Language Models},\n  journal      = {arXiv},\n  year         = {2024},\n  url          = {https://arxiv.org/abs/2411.09009},\n}\nPlease see reference here",
     "crumbs": [
       "Advanced Features",
       "Custom Integrations"
@@ -3539,7 +3539,7 @@
     "href": "docs/api/utils.dict.html",
     "title": "utils.dict",
     "section": "",
-    "text": "utils.dict\nModule containing the DictDefault class\n\n\n\n\n\nName\nDescription\n\n\n\n\nDictDefault\nA Dict that returns None instead of returning empty Dict for missing keys.\n\n\n\n\n\nutils.dict.DictDefault()\nA Dict that returns None instead of returning empty Dict for missing keys."
+    "text": "utils.dict\nModule containing the DictDefault class\n\n\n\n\n\nName\nDescription\n\n\n\n\nDictDefault\nA Dict that returns None instead of returning empty Dict for missing keys.\n\n\n\n\n\nutils.dict.DictDefault()\nA Dict that returns None instead of returning empty Dict for missing keys.\n\n\n\n\n\n\n\nName\nDescription\n\n\n\n\nremove_none_values\nRemove null from a dictionary-like obj or list.\n\n\n\n\n\nutils.dict.remove_none_values(obj)\nRemove null from a dictionary-like obj or list.\nThese can appear due to Dataset loading causing schema merge.\nSee https://github.com/axolotl-ai-cloud/axolotl/pull/2909"
   },
   {
     "objectID": "docs/api/utils.dict.html#classes",
@@ -3547,6 +3547,13 @@
     "title": "utils.dict",
     "section": "",
     "text": "Name\nDescription\n\n\n\n\nDictDefault\nA Dict that returns None instead of returning empty Dict for missing keys.\n\n\n\n\n\nutils.dict.DictDefault()\nA Dict that returns None instead of returning empty Dict for missing keys."
+  },
+  {
+    "objectID": "docs/api/utils.dict.html#functions",
+    "href": "docs/api/utils.dict.html#functions",
+    "title": "utils.dict",
+    "section": "",
+    "text": "Name\nDescription\n\n\n\n\nremove_none_values\nRemove null from a dictionary-like obj or list.\n\n\n\n\n\nutils.dict.remove_none_values(obj)\nRemove null from a dictionary-like obj or list.\nThese can appear due to Dataset loading causing schema merge.\nSee https://github.com/axolotl-ai-cloud/axolotl/pull/2909"
   },
   {
     "objectID": "docs/api/core.builders.rl.html",
