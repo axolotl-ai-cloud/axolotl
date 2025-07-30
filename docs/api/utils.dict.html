@@ -488,10 +488,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.utils.dict.DictDefault" id="toc-axolotl.utils.dict.DictDefault" class="nav-link" data-scroll-target="#axolotl.utils.dict.DictDefault">DictDefault</a></li>
   </ul></li>
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.utils.dict.remove_none_values" id="toc-axolotl.utils.dict.remove_none_values" class="nav-link" data-scroll-target="#axolotl.utils.dict.remove_none_values">remove_none_values</a></li>
-  </ul></li>
   </ul></li>
   </ul>
 </nav>
@@ -526,30 +522,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h3 class="anchored" data-anchor-id="axolotl.utils.dict.DictDefault">DictDefault</h3>
 <div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.<span class="bu">dict</span>.DictDefault()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>A Dict that returns None instead of returning empty Dict for missing keys.</p>
-</section>
-</section>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.utils.dict.remove_none_values">remove_none_values</a></td>
-<td>Remove null from a dictionary-like obj or list.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.utils.dict.remove_none_values" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.dict.remove_none_values">remove_none_values</h3>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.<span class="bu">dict</span>.remove_none_values(obj)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Remove null from a dictionary-like obj or list.
-These can appear due to Dataset loading causing schema merge.
-See https://github.com/axolotl-ai-cloud/axolotl/pull/2909</p>
 
 
 </section>
