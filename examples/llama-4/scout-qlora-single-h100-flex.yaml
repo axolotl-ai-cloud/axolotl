@@ -74,7 +74,7 @@ gradient_checkpointing_kwargs:
   use_reentrant: false
 
 logging_steps: 1
-warmup_steps: 20
+warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
 
