@@ -34,8 +34,6 @@ eot_tokens:
 datasets:
   - path: Nanobit/text-vision-audio-2k-test
     type: chat_template
-    data_files:
-      - dataset.jsonl
 dataset_prepared_path:
 val_set_size: 0.01
 output_dir: ./outputs/out

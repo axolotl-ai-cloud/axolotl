@@ -1,6 +1,6 @@
 # Finetune Magistral Small with Axolotl
 
-Magistral Small is a 24B parameter opensource model from MistralAI found on [HuggingFace](https://huggingface.co/mistralai/Magistral-Small-2506). This guide shows how to fine-tune it with Axolotl with multi-turn conversations with proper masking.
+Magistral Small is a 24B parameter opensource model from MistralAI found on HuggingFace at [2506](https://huggingface.co/mistralai/Magistral-Small-2506) and [2507](https://huggingface.co/mistralai/Magistral-Small-2507) (see [Thinking](#thinking)). This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.
 
 MistralAI has also released a proprietary medium-sized version called Magistral Medium.
 
@@ -13,7 +13,7 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
     Here is an example of how to install from main for pip:
 
 ```bash
-# Ensure you have Pytorch installed (Pytorch 2.6.0 recommended)
+# Ensure you have Pytorch installed (Pytorch 2.6.0 min)
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 
@@ -31,12 +31,37 @@ This config uses about 24GB VRAM.
 
 Let us know how it goes. Happy finetuning! 🚀
 
+### Thinking
+
+MistralAI has released their [2507](https://huggingface.co/mistralai/Magistral-Small-2507) model with thinking capabilities. The model requires the multi-content dataset format with support for an extra `role: thinking` within system and assistant messages.
+
+Example format:
+
+```json
+{
+    "messages": [
+        {"role": "system", "content": [{ "type": "text", "text": "{SYSTEM_PROMPT}"}]},
+        {"role": "user", "content": [{ "type": "text", "text": "..."}]},
+        {"role": "assistant", "content": [{ "type": "thinking", "thinking": "..."}, { "type": "text", "text": "..." }]},
+    ],
+}
+```
+
+Example config: `./magistral-small-think-qlora.yaml`.
+
+The `thinking` section also supports an optional arg `closed: bool` (`True` default) which controls adding the closing `[/THINK]` tag.
+
+Limitations:
+- You cannot mix `content: str` with `content: list[dict]` as the `dataset.load_dataset` may complain about different types for `content` key.
+- This mode does not work with custom `train_detail` and `training` at the moment.
+
 ### TIPS
 
+- We recommend adding the same/similar SystemPrompt that the model is tuned for. You can find this within the repo's files titled `SYSTEM_PROMPT.txt`.
 - For inference, the official MistralAI team recommends `top_p: 0.95` and `temperature: 0.7` with `max_tokens: 40960`.
 - You can run a full finetuning by removing the `adapter: qlora` and `load_in_4bit: true` from the config.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
-- The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
+- The text dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
 
 ## Optimization Guides
 

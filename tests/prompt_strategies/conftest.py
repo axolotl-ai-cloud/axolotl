@@ -158,7 +158,7 @@ def fixture_gemma2_tokenizer():
 
 @pytest.fixture(name="magistral_tokenizer")
 def fixture_magistral_tokenizer():
-    from axolotl.utils.mistral_tokenizer import HFMistralTokenizer
+    from axolotl.utils.mistral import HFMistralTokenizer
 
     tokenizer = HFMistralTokenizer.from_pretrained("mistralai/Magistral-Small-2506")
     return tokenizer
@@ -166,7 +166,7 @@ def fixture_magistral_tokenizer():
 
 @pytest.fixture(name="devstral_tokenizer")
 def fixture_devstral_tokenizer():
-    from axolotl.utils.mistral_tokenizer import HFMistralTokenizer
+    from axolotl.utils.mistral import HFMistralTokenizer
 
     tokenizer = HFMistralTokenizer.from_pretrained("mistralai/Devstral-Small-2505")
     return tokenizer
@@ -174,7 +174,7 @@ def fixture_devstral_tokenizer():
 
 @pytest.fixture(name="devstral_1_1_tokenizer")
 def fixture_devstral_1_1_tokenizer():
-    from axolotl.utils.mistral_tokenizer import HFMistralTokenizer
+    from axolotl.utils.mistral import HFMistralTokenizer
 
     tokenizer = HFMistralTokenizer.from_pretrained("mistralai/Devstral-Small-2507")
     return tokenizer
