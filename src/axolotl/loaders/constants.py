@@ -21,3 +21,11 @@ MULTIMODAL_AUTO_MODEL_MAPPING = {
     "gemma3": Gemma3ForConditionalGeneration,
     "gemma3n": Gemma3nForConditionalGeneration,
 }
+
+try:
+    from transformers import VoxtralForConditionalGeneration
+
+    # transformers >4.53.2
+    MULTIMODAL_AUTO_MODEL_MAPPING["voxtral"] = VoxtralForConditionalGeneration
+except ImportError:
+    pass

@@ -1,4 +1,4 @@
-base_model: mistralai/Magistral-Small-2506
+base_model: mistralai/Magistral-Small-2507
 
 # Enable to use mistral-common tokenizer
 tokenizer_use_mistral_common: true
@@ -13,11 +13,11 @@ load_in_8bit: false
 load_in_4bit: true
 
 datasets:
-  - path: fozziethebeat/alpaca_messages_2k_test
+  - path: Nanobit/text-think-2k-test
     type: chat_template
 
 dataset_prepared_path: last_run_prepared
-val_set_size: 0.1
+val_set_size: 0
 output_dir: ./outputs/lora-out
 
 adapter: qlora
@@ -25,7 +25,6 @@ lora_model_dir:
 
 sequence_len: 2048
 sample_packing: true
-eval_sample_packing: false
 
 
 lora_r: 32
@@ -50,14 +49,14 @@ wandb_log_model:
 gradient_accumulation_steps: 4
 micro_batch_size: 2
 num_epochs: 1
-optimizer: adamw_torch_fused
+optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
 bf16: auto
 tf32: false
 
-gradient_checkpointing:
+gradient_checkpointing: true
 resume_from_checkpoint:
 logging_steps: 1
 flash_attention: true
@@ -65,13 +64,5 @@ flash_attention: true
 warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
-
-fsdp:
-  - full_shard
-  - auto_wrap
-fsdp_config:
-  fsdp_state_dict_type: FULL_STATE_DICT
-  fsdp_transformer_layer_cls_to_wrap: MistralDecoderLayer
-  fsdp_activation_checkpointing: true
 
 # save_first_step: true  # uncomment this to validate checkpoint saving works with your config

@@ -1,16 +1,18 @@
-base_model: google/gemma-3n-E2B-it
+base_model: mistralai/Voxtral-Mini-3B-2507
 processor_type: AutoProcessor
 
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
+# Enable to use mistral-common tokenizer
+tokenizer_use_mistral_common: true
+
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
-cut_cross_entropy: true
 
 # for use with fft to only train on language model layers
 # unfrozen_parameters:
-  # - model.language_model.*
+  # - language_model.model.*
   # - lm_head
   # - embed_tokens
 
@@ -24,15 +26,13 @@ sample_packing: false
 # gemma3 doesn't seem to play nice with ddp
 ddp_find_unused_parameters: true
 
-chat_template: gemma3n
 eot_tokens:
   - <end_of_turn>
 
 # sample dataset below requires downloading audio/image in advance
-# wget https://huggingface.co/datasets/Nanobit/text-vision-audio-2k-test/resolve/main/African_elephant.jpg
-# wget https://huggingface.co/datasets/Nanobit/text-vision-audio-2k-test/resolve/main/En-us-African_elephant.oga
+# wget https://huggingface.co/datasets/Nanobit/text-audio-2k-test/resolve/main/En-us-African_elephant.oga
 datasets:
-  - path: Nanobit/text-vision-audio-2k-test
+  - path: NanoBit/text-audio-2k-test
     type: chat_template
 dataset_prepared_path:
 val_set_size: 0.01
@@ -47,7 +47,7 @@ pad_to_sequence_len: false
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
-lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
+lora_target_modules: 'language_model.model.layers.[\d]+.(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
 
 wandb_project:
 wandb_entity:
@@ -70,7 +70,7 @@ gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
 logging_steps: 1
-# flash_attention: true  # Any attention impl does not work with gemma3n now
+flash_attention: true
 
 warmup_ratio: 0.1
 evals_per_epoch: 1
