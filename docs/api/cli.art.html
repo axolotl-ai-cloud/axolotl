@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>cli.sweeps – Axolotl</title>
+<title>cli.art – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -482,11 +482,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.cli.sweeps" id="toc-axolotl.cli.sweeps" class="nav-link active" data-scroll-target="#axolotl.cli.sweeps">cli.sweeps</a>
+  <li><a href="#axolotl.cli.art" id="toc-axolotl.cli.art" class="nav-link active" data-scroll-target="#axolotl.cli.art">cli.art</a>
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
-  <li><a href="#axolotl.cli.sweeps.generate_sweep_configs" id="toc-axolotl.cli.sweeps.generate_sweep_configs" class="nav-link" data-scroll-target="#axolotl.cli.sweeps.generate_sweep_configs">generate_sweep_configs</a></li>
+  <li><a href="#axolotl.cli.art.print_axolotl_text_art" id="toc-axolotl.cli.art.print_axolotl_text_art" class="nav-link" data-scroll-target="#axolotl.cli.art.print_axolotl_text_art">print_axolotl_text_art</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -498,10 +498,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.cli.sweeps" class="level1">
-<h1>cli.sweeps</h1>
-<p><code>cli.sweeps</code></p>
-<p>Utilities for handling sweeps over configs for axolotl train CLI command</p>
+<section id="axolotl.cli.art" class="level1">
+<h1>cli.art</h1>
+<p><code>cli.art</code></p>
+<p>Axolotl ASCII logo utils.</p>
 <section id="functions" class="level2">
 <h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
@@ -513,84 +513,17 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.cli.sweeps.generate_sweep_configs">generate_sweep_configs</a></td>
-<td>Recursively generates all possible configurations by applying sweeps to the base config.</td>
+<td><a href="#axolotl.cli.art.print_axolotl_text_art">print_axolotl_text_art</a></td>
+<td>Prints axolotl ASCII art.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.cli.sweeps.generate_sweep_configs" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.sweeps.generate_sweep_configs">generate_sweep_configs</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.sweeps.generate_sweep_configs(base_config, sweeps_config)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Recursively generates all possible configurations by applying sweeps to the base config.</p>
-<section id="parameters" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 7%">
-<col style="width: 4%">
-<col style="width: 82%">
-<col style="width: 6%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>base_config</td>
-<td>dict</td>
-<td>The original configuration dictionary</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>sweeps_config</td>
-<td>dict</td>
-<td>Dictionary where keys are parameters and values are either: - lists of values to sweep independently - or for paired values, a list of dicts under the ’_’ key</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 9%">
-<col style="width: 32%">
-<col style="width: 58%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>list</td>
-<td>list[dict[str, list]]</td>
-<td>List of all possible configuration dictionaries</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="example" class="level4 doc-section doc-section-example">
-<h4 class="doc-section doc-section-example anchored" data-anchor-id="example">Example</h4>
-<p>sweeps_config = {
-‘learning_rate’: [0.1, 0.01],
-’_’: [
-{‘load_in_8bit’: True, ‘adapter’: ‘lora’},
-{‘load_in_4bit’: True, ‘adapter’: ‘qlora’}
-]
-}</p>
+<section id="axolotl.cli.art.print_axolotl_text_art" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.cli.art.print_axolotl_text_art">print_axolotl_text_art</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.art.print_axolotl_text_art()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Prints axolotl ASCII art.</p>
 
 
-</section>
 </section>
 </section>
 </section>

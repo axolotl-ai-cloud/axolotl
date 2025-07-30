@@ -6,9 +6,8 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="How to use Axolotl on multiple machines">
 
-<title>Multi Node – Axolotl</title>
+<title>cli.utils.args – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -59,23 +58,23 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </style>
 
 
-<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
-<script src="../site_libs/clipboard/clipboard.min.js"></script>
-<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
-<script src="../site_libs/quarto-search/fuse.min.js"></script>
-<script src="../site_libs/quarto-search/quarto-search.js"></script>
-<meta name="quarto:offset" content="../">
-<link href="../favicon.jpg" rel="icon" type="image/jpeg">
-<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
-<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
-<script src="../site_libs/quarto-html/popper.min.js"></script>
-<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
-<script src="../site_libs/quarto-html/anchor.min.js"></script>
-<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-2fef5ea3f8957b3e4ecc936fc74692ca.css" rel="stylesheet" id="quarto-text-highlighting-styles">
-<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
-<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-4286dd70669dc30dbb11cd1e43bae81e.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../favicon.jpg" rel="icon" type="image/jpeg">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-2fef5ea3f8957b3e4ecc936fc74692ca.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-4286dd70669dc30dbb11cd1e43bae81e.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -114,7 +113,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </script>
 
 
-<link rel="stylesheet" href="../styles.css">
+<link rel="stylesheet" href="../../styles.css">
 </head>
 
 <body class="nav-sidebar docked nav-fixed quarto-light">
@@ -124,8 +123,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <nav class="navbar navbar-expand " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
-    <a href="../index.html" class="navbar-brand navbar-brand-logo">
-    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo">
+    <a href="../../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo">
     </a>
   </div>
         <div class="quarto-navbar-tools tools-wide tools-end">
@@ -141,7 +140,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/docker.html">Deployments</a></li><li class="breadcrumb-item"><a href="../docs/multi-node.html">Multi Node</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -155,7 +154,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../index.html" class="sidebar-item-text sidebar-link">
+  <a href="../../index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Home</span></a>
   </div>
 </li>
@@ -170,37 +169,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/getting-started.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/getting-started.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quickstart</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/installation.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/installation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Installation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/inference.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/inference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Inference and Merging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/cli.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/config-reference.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/config-reference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/api" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/api" class="sidebar-item-text sidebar-link">
  <span class="menu-text">API Reference</span></a>
   </div>
 </li>
@@ -208,7 +207,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a href="../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
+            <a href="../../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Formats</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
@@ -217,37 +216,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Pre-training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Instruction Tuning</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Conversation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Stepwise Supervised Format</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-Free</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Pre-Tokenized Dataset</span></a>
   </div>
 </li>
@@ -264,37 +263,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/docker.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/docker.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Docker</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi-GPU</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/multi-node.html" class="sidebar-item-text sidebar-link active">
+  <a href="../../docs/multi-node.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi Node</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ray Train</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/mac.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/mac.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mac M-series</span></a>
   </div>
 </li>
@@ -311,49 +310,49 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/multimodal.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/multimodal.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MultiModal / Vision Language Models (BETA)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">RLHF (Beta)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Reward Modelling</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Learning Rate Groups</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Loading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/qat.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/qat.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization Aware Training (QAT)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/quantize.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/quantize.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization with torchao</span></a>
   </div>
 </li>
@@ -370,25 +369,25 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Batch size vs Gradient accumulation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Preprocessing</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/multipack.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multipack (Sample Packing)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mixed Precision Training</span></a>
   </div>
 </li>
@@ -408,37 +407,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FDSP + QLoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/unsloth.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/unsloth.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Unsloth</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/torchao.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/torchao.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">PyTorch ao</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Integrations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Sequence Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gradient Checkpointing and Activation Offloading</span></a>
   </div>
 </li>
@@ -455,19 +454,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/faq.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/faq.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FAQ</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/debugging.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Debugging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/nccl.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NCCL</span></a>
   </div>
 </li>
@@ -483,121 +482,201 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#accelerate" id="toc-accelerate" class="nav-link active" data-scroll-target="#accelerate">Accelerate</a></li>
-  <li><a href="#raytrain" id="toc-raytrain" class="nav-link" data-scroll-target="#raytrain">Raytrain</a></li>
-  <li><a href="#torchrun" id="toc-torchrun" class="nav-link" data-scroll-target="#torchrun">Torchrun</a>
+  <li><a href="#axolotl.cli.utils.args" id="toc-axolotl.cli.utils.args" class="nav-link active" data-scroll-target="#axolotl.cli.utils.args">cli.utils.args</a>
   <ul class="collapse">
-  <li><a href="#option-1-new-axolotl-cli-with-launcher-args-recommended" id="toc-option-1-new-axolotl-cli-with-launcher-args-recommended" class="nav-link" data-scroll-target="#option-1-new-axolotl-cli-with-launcher-args-recommended">Option 1: New Axolotl CLI with launcher args (Recommended)</a></li>
-  <li><a href="#option-2-direct-torchrun-legacy" id="toc-option-2-direct-torchrun-legacy" class="nav-link" data-scroll-target="#option-2-direct-torchrun-legacy">Option 2: Direct torchrun (Legacy)</a></li>
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.cli.utils.args.add_options_from_config" id="toc-axolotl.cli.utils.args.add_options_from_config" class="nav-link" data-scroll-target="#axolotl.cli.utils.args.add_options_from_config">add_options_from_config</a></li>
+  <li><a href="#axolotl.cli.utils.args.add_options_from_dataclass" id="toc-axolotl.cli.utils.args.add_options_from_dataclass" class="nav-link" data-scroll-target="#axolotl.cli.utils.args.add_options_from_dataclass">add_options_from_dataclass</a></li>
+  <li><a href="#axolotl.cli.utils.args.filter_none_kwargs" id="toc-axolotl.cli.utils.args.filter_none_kwargs" class="nav-link" data-scroll-target="#axolotl.cli.utils.args.filter_none_kwargs">filter_none_kwargs</a></li>
+  </ul></li>
   </ul></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content">
-
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/docker.html">Deployments</a></li><li class="breadcrumb-item"><a href="../docs/multi-node.html">Multi Node</a></li></ol></nav>
-<div class="quarto-title">
-<h1 class="title">Multi Node</h1>
-</div>
-
-<div>
-  <div class="description">
-    How to use Axolotl on multiple machines
-  </div>
-</div>
+<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
 
 
-<div class="quarto-title-meta">
-
-    
-  
-    
-  </div>
-  
 
 
-</header>
-
-
-<p>The below are three ways to train multi-node in Axolotl.</p>
-<div class="callout callout-style-default callout-important callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-Important
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>Each machine needs a copy of Axolotl, we suggest using the same commit to ensure compatibility.</p>
-<p>You will also need to have the same configuration file for your model on each machine.</p>
-<p>Make sure the main machine is reachable by other machines.</p>
-</div>
-</div>
-<section id="accelerate" class="level2">
-<h2 class="anchored" data-anchor-id="accelerate">Accelerate</h2>
-<p>You will need to create a configuration for accelerate, either by using <code>accelerate config</code> and follow the instructions or you can use one of the preset below:</p>
-<p>~/.cache/huggingface/accelerate/default_config.yaml</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">compute_environment</span><span class="kw">:</span><span class="at"> LOCAL_MACHINE</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">debug</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">distributed_type</span><span class="kw">:</span><span class="at"> FSDP</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">downcast_bf16</span><span class="kw">:</span><span class="at"> </span><span class="st">'no'</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="fu">machine_rank</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span><span class="co"> # Set to 0 for the main machine, increment by one for other machines</span></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="fu">main_process_ip</span><span class="kw">:</span><span class="at"> </span><span class="fl">10.0.0.4</span><span class="co"> # Set to main machine's IP</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">main_process_port</span><span class="kw">:</span><span class="at"> </span><span class="dv">5000</span></span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="fu">main_training_function</span><span class="kw">:</span><span class="at"> main</span></span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="fu">mixed_precision</span><span class="kw">:</span><span class="at"> bf16</span></span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="fu">num_machines</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span><span class="co"> # Change to the number of machines</span></span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="fu">num_processes</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span><span class="co"> # That's the total number of GPUs, (for example: if you have 2 machines with 4 GPU, put 8)</span></span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="fu">rdzv_backend</span><span class="kw">:</span><span class="at"> static</span></span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="fu">same_network</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="fu">tpu_env</span><span class="kw">:</span><span class="at"> </span><span class="kw">[]</span></span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="fu">tpu_use_cluster</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="fu">tpu_use_sudo</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="fu">use_cpu</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Configure your model to use FSDP in the Axolotl yaml. For example:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> LlamaDecoderLayer</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reshard_after_forward</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>All you have to do now is launch using accelerate as you would usually do on each machine and voila, the processes will start once you have launched accelerate on every machine.</p>
+<section id="axolotl.cli.utils.args" class="level1">
+<h1>cli.utils.args</h1>
+<p><code>cli.utils.args</code></p>
+<p>Utilities for axolotl CLI args.</p>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.cli.utils.args.add_options_from_config">add_options_from_config</a></td>
+<td>Create Click options from the fields of a Pydantic model.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.cli.utils.args.add_options_from_dataclass">add_options_from_dataclass</a></td>
+<td>Create Click options from the fields of a dataclass.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.cli.utils.args.filter_none_kwargs">filter_none_kwargs</a></td>
+<td>Wraps function to remove <code>None</code>-valued <code>kwargs</code>.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.cli.utils.args.add_options_from_config" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.cli.utils.args.add_options_from_config">add_options_from_config</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.utils.args.add_options_from_config(config_class)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Create Click options from the fields of a Pydantic model.</p>
+<section id="parameters" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 14%">
+<col style="width: 20%">
+<col style="width: 52%">
+<col style="width: 12%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>config_class</td>
+<td>Type[BaseModel]</td>
+<td>PyDantic model with fields to parse from the CLI</td>
+<td><em>required</em></td>
+</tr>
+</tbody>
+</table>
 </section>
-<section id="raytrain" class="level2">
-<h2 class="anchored" data-anchor-id="raytrain">Raytrain</h2>
-<p>Please see ray train doc <a href="../docs/ray-integration.html">here</a>.</p>
+<section id="returns" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td></td>
+<td>Callable</td>
+<td>Function decorator for Axolotl CLI command.</td>
+</tr>
+</tbody>
+</table>
 </section>
-<section id="torchrun" class="level2">
-<h2 class="anchored" data-anchor-id="torchrun">Torchrun</h2>
-<p>If you are using Infiniband, we recommend torchrun to utilize the full bandwidth.</p>
-<p>Set the following env (change buffersize/socketname depending on your system):</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">NCCL_IB_DISABLE</span><span class="op">=</span>0</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">NCCL_SOCKET_IFNAME</span><span class="op">=</span><span class="st">"eth0,en,eth,em,bond"</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">NCCL_BUFFSIZE</span><span class="op">=</span>2097152</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Run the following on each node:</p>
-<section id="option-1-new-axolotl-cli-with-launcher-args-recommended" class="level3">
-<h3 class="anchored" data-anchor-id="option-1-new-axolotl-cli-with-launcher-args-recommended">Option 1: New Axolotl CLI with launcher args (Recommended)</h3>
-<div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train config.yaml <span class="at">--launcher</span> torchrun <span class="at">--</span> <span class="at">--nnodes</span> <span class="va">$num_nodes</span> <span class="at">--nproc_per_node</span> <span class="va">$gpu_per_node</span> <span class="at">--rdzv_id</span> <span class="va">$rdzv_id</span> <span class="at">--rdzv_backend</span> c10d <span class="at">--rdzv_endpoint</span> <span class="st">"</span><span class="va">$head_node_ip</span><span class="st">:</span><span class="va">$head_node_port</span><span class="st">"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
-<section id="option-2-direct-torchrun-legacy" class="level3">
-<h3 class="anchored" data-anchor-id="option-2-direct-torchrun-legacy">Option 2: Direct torchrun (Legacy)</h3>
-<div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">torchrun</span> <span class="at">--nnodes</span> <span class="va">$num_nodes</span> <span class="at">--nproc_per_node</span> <span class="va">$gpu_per_node</span> <span class="at">--rdzv_id</span> <span class="va">$rdzv_id</span> <span class="at">--rdzv_backend</span> c10d <span class="at">--rdzv_endpoint</span> <span class="st">"</span><span class="va">$head_node_ip</span><span class="st">:</span><span class="va">$head_node_port</span><span class="st">"</span> <span class="at">-m</span> axolotl.cli.train config.yaml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Please make sure to substitute the placeholder variables:</p>
-<ul>
-<li><code>num_nodes</code>: Number of nodes (containing GPUs)</li>
-<li><code>gpu_per_node</code>: Number of gpus per node</li>
-<li><code>head_node_ip</code>: IP of the head node (make sure other machines can connect to this)</li>
-<li><code>head_node_port</code>: Port of the head node (make sure other machines can connect to this. Default 29400)</li>
-<li><code>rdzv_id</code>: A unique job ID that is used by the job across nodes.</li>
-</ul>
-<p>The new CLI approach (Option 1) is recommended as it provides consistent argument handling and works seamlessly with other Axolotl CLI features.</p>
-<p>More info on the available configs can be found on the Pytorch docs <a href="https://pytorch.org/docs/stable/elastic/run.html">here</a></p>
+<section id="axolotl.cli.utils.args.add_options_from_dataclass" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.cli.utils.args.add_options_from_dataclass">add_options_from_dataclass</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>cli.utils.args.add_options_from_dataclass(config_class)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Create Click options from the fields of a dataclass.</p>
+<section id="parameters-1" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 16%">
+<col style="width: 15%">
+<col style="width: 54%">
+<col style="width: 14%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>config_class</td>
+<td>Type[Any]</td>
+<td>Dataclass with fields to parse from the CLI.</td>
+<td><em>required</em></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="returns-1" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-1">Returns</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td></td>
+<td>Callable</td>
+<td>Function decorator for Axolotl CLI command.</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="axolotl.cli.utils.args.filter_none_kwargs" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.cli.utils.args.filter_none_kwargs">filter_none_kwargs</h3>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>cli.utils.args.filter_none_kwargs(func)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Wraps function to remove <code>None</code>-valued <code>kwargs</code>.</p>
+<section id="parameters-2" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-2">Parameters</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>func</td>
+<td>Callable</td>
+<td>Function to wrap.</td>
+<td><em>required</em></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="returns-2" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-2">Returns</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td></td>
+<td>Callable</td>
+<td>Wrapped function.</td>
+</tr>
+</tbody>
+</table>
 
 
+</section>
+</section>
 </section>
 </section>
 
