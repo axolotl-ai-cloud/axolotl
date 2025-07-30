@@ -286,10 +286,12 @@ class ChatTemplateStrategyWithKDv2(ChatTemplateStrategyWithKD):
     def _tokenize_single_prompt(self, prompt):
         logprobs = prompt.pop(self.logprobs_field)
         target_token_ids = prompt.pop("target_token_ids")
-        tokenized_prompt = super()._tokenize_single_prompt(prompt)
-        tokenized_prompt[self.logprobs_field] = logprobs
-        tokenized_prompt["target_token_ids"] = target_token_ids
-        tokenized_prompt = self.transform_logprobs(tokenized_prompt)
+        base_tokenized = super(ChatTemplateStrategyWithKD, self)._tokenize_single_prompt(prompt)
+        if logprobs is not None:
+            base_tokenized[self.logprobs_field] = logprobs
+        if target_token_ids is not None:
+            base_tokenized["target_token_ids"] = target_token_ids
+        tokenized_prompt = self.transform_logprobs(base_tokenized)
 
         return tokenized_prompt
 
