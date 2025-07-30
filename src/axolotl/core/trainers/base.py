@@ -579,6 +579,10 @@ class AxolotlTrainer(
         return super()._save_checkpoint(model, trial, **kwargs)
 
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
-        if state_dict is None and self.accelerator.parallelism_config.dp_shard_enabled:
+        if (
+            state_dict is None
+            and self.accelerator.parallelism_config
+            and self.accelerator.parallelism_config.dp_shard_enabled
+        ):
             state_dict = self.accelerator.get_state_dict(self.model)
         super()._save(output_dir, state_dict=state_dict)
