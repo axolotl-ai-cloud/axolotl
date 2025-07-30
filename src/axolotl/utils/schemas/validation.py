@@ -1190,6 +1190,11 @@ class ComplexValidationMixin:
 
     @model_validator(mode="after")
     def check_context_parallel_size(self):
+        if self.sequence_parallel_degree and not self.context_parallel_size:
+            LOG.warning(
+                "`sequence_parallel_degree` is deprecated, use `context_parallel_size`"
+            )
+            self.context_parallel_size = self.sequence_parallel_degree
         if not self.context_parallel_size:
             self.context_parallel_size = 1
         elif self.context_parallel_size > 1:
