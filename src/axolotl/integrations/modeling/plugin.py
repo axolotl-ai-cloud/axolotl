@@ -16,5 +16,7 @@ class AxolotlModelingPlugin(BasePlugin):
     def register(self, cfg):  # pylint: disable=unused-argument
         if cfg.use_liger_fused_rms_add:
             from .gemma3 import patch_gemma3
+            from .llama import patch_llama
 
             patch_gemma3()
+            patch_llama()
