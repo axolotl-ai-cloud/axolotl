@@ -65,7 +65,6 @@ class PatchManager:
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
         self._apply_self_attention_lora_patch()
-        # self._apply_sequence_parallel_patches()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
@@ -76,12 +75,8 @@ class PatchManager:
         from axolotl.monkeypatch.transformers.modeling_flash_attention_utils import (
             patch_prepare_from_posids,
         )
-        from axolotl.monkeypatch.transformers.tensor_parallel import (
-            patch_tp_fix,
-        )
 
         patch_prepare_from_posids()
-        patch_tp_fix()
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
@@ -264,15 +259,6 @@ class PatchManager:
                 model_name=self.cfg.base_model,
                 has_remote_code=has_remote_code,
             )
-
-    def _apply_sequence_parallel_patches(self):
-        """Apply sequence parallelism patches."""
-        if self.cfg.context_parallel_size and self.cfg.context_parallel_size > 1:
-            from axolotl.monkeypatch.ring_attn.patch import (
-                patch_prepare_device_mesh,
-            )
-
-            patch_prepare_device_mesh(self.cfg.context_parallel_size, self.cfg.fsdp)
 
     def _apply_tiled_mlp(self, model_type: str):
         if self.cfg.tiled_mlp:

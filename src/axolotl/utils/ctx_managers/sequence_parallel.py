@@ -151,17 +151,13 @@ def apply_sequence_parallelism(
         if "num_items_in_batch" in batch:
             # Approximation; this needed since num_items_in_batch may be counted across
             # all samples in a gradient accumulated batch, not on a per-step basis.
-            # batch["num_items_in_batch"] = (
-            #     batch["labels"] != -100
-            # ).sum() * gradient_accumulation_steps
-
             local_valid_tokens = (batch["labels"] != -100).sum()
 
             # All-reduce across sequence parallel ranks to get global token count
-            sp_group = get_ring_attn_group()
+            cp_group = get_ring_attn_group()
             global_valid_tokens = local_valid_tokens.clone()
             # we use AVG instead of SUM as using sum seems to scale down the loss by over-accounting the number of tokens
-            dist.all_reduce(global_valid_tokens, op=dist.ReduceOp.AVG, group=sp_group)
+            dist.all_reduce(global_valid_tokens, op=dist.ReduceOp.AVG, group=cp_group)
             global_valid_tokens = int(global_valid_tokens.item())
 
             batch["num_items_in_batch"] = (
@@ -247,7 +243,7 @@ class SequenceParallelContextManager:
         partial_state = PartialState()
         register_ring_attn_from_device_mesh(
             device_mesh=partial_state.device_mesh,
-            sequence_parallel_dim=("cp",),
+            context_parallel_dim=("cp",),
             heads_k_stride=self.heads_k_stride,
             ring_attn_func=self.ring_attn_func,
         )

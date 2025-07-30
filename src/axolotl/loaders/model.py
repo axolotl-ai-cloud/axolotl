@@ -14,6 +14,7 @@ import torch
 import transformers
 import transformers.modeling_utils
 from accelerate import PartialState, init_empty_weights
+from accelerate.parallelism_config import ParallelismConfig
 from peft import (
     PeftConfig,
     PeftMixedModel,
@@ -46,7 +47,6 @@ from axolotl.loaders.utils import (
     load_model_config,
 )
 from axolotl.models.mamba import fix_mamba_attn_for_loss
-from axolotl.monkeypatch.accelerate.distributed import ParallelismConfig
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import get_device_count, get_device_type, get_world_size
@@ -471,7 +471,6 @@ class ModelLoader:
         )
 
         if pc_kwargs:
-            print(pc_kwargs)
             self.parallelism_config = ParallelismConfig(
                 **pc_kwargs,
             )

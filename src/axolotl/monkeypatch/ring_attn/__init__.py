@@ -5,9 +5,6 @@
 
 from .patch import (
     get_ring_attn_group,
-    patch_prepare_data_loader,
-    patch_prepare_device_mesh,
-    register_ring_attn,
     register_ring_attn_from_device_mesh,
     set_ring_attn_group,
     update_ring_attn_params,
@@ -15,9 +12,6 @@ from .patch import (
 
 __all__ = (
     "get_ring_attn_group",
-    "patch_prepare_data_loader",
-    "patch_prepare_device_mesh",
-    "register_ring_attn",
     "register_ring_attn_from_device_mesh",
     "set_ring_attn_group",
     "update_ring_attn_params",
