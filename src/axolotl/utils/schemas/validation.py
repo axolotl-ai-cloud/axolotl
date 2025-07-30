@@ -880,21 +880,6 @@ class OptimizationValidationMixin:
 
         return self
 
-    @model_validator(mode="after")
-    def check_fsdp_sharded_state_dict_w_safetensors(self):
-        if (
-            hasattr(self, "fsdp_config")
-            and self.fsdp_config
-            and hasattr(self, "save_safetensors")
-            and self.save_safetensors
-            and self.fsdp_config.get("state_dict_type", "") == "SHARDED_STATE_DICT"
-            and str(getattr(self, "fsdp_version", "1")) != "2"
-        ):
-            raise ValueError(
-                "FSDP SHARDED_STATE_DICT not compatible with save_safetensors"
-            )
-        return self
-
     @model_validator(mode="before")
     @classmethod
     def check_tensor_parallel_size_update_ds_json(cls, data):
