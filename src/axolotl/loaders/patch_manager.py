@@ -64,12 +64,12 @@ class PatchManager:
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
         self._apply_self_attention_lora_patch()
-        self._apply_gemma3_conditional_generation_forward_patch()
         self._apply_sequence_parallel_patches()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
         self._apply_tiled_mlp(self.cfg.model_config_type)
+        self._apply_voxtral_patches()
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
@@ -253,15 +253,6 @@ class PatchManager:
                 has_remote_code=has_remote_code,
             )
 
-    def _apply_gemma3_conditional_generation_forward_patch(self):
-        """Apply gemma3 conditional generation forward patch."""
-        if self.model_config.model_type in ["gemma3", "gemma3_text"]:
-            from axolotl.monkeypatch.models.gemma3.modeling import (
-                patch_gemma3_conditional_generation_forward,
-            )
-
-            patch_gemma3_conditional_generation_forward()
-
     def _apply_sequence_parallel_patches(self):
         """Apply sequence parallelism patches."""
         if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
@@ -284,6 +275,15 @@ class PatchManager:
                 use_original_mlp=self.cfg.tiled_mlp_use_original_mlp,
                 cfg_num_shards=self.cfg.tiled_mlp_num_shards,
             )
+
+    def _apply_voxtral_patches(self):
+        """Apply patches for Voxtral model."""
+        if self.cfg.model_config_type == "voxtral":
+            from axolotl.monkeypatch.models.voxtral.modeling import (
+                patch_voxtral_conditional_generation_forward,
+            )
+
+            patch_voxtral_conditional_generation_forward()
 
     def _patch_attention(self):
         """Apply attention-specific patches based on model type."""
