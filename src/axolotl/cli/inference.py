@@ -9,7 +9,6 @@ from typing import Union
 import fire
 import torch
 import transformers
-from dotenv import load_dotenv
 from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 
 from axolotl.cli.args import InferenceCliArgs
@@ -268,5 +267,4 @@ def do_cli(
 
 
 if __name__ == "__main__":
-    load_dotenv()
     fire.Fire(do_cli)

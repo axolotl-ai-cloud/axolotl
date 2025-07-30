@@ -3,7 +3,7 @@ launch axolotl in supported cloud platforms
 """
 
 from pathlib import Path
-from typing import Union
+from typing import Literal
 
 import yaml
 
@@ -11,7 +11,7 @@ from axolotl.cli.cloud.modal_ import ModalCloud
 from axolotl.utils.dict import DictDefault
 
 
-def load_cloud_cfg(cloud_config: Union[Path, str]) -> DictDefault:
+def load_cloud_cfg(cloud_config: Path | str) -> DictDefault:
     """Load and validate cloud configuration."""
     # Load cloud configuration.
     with open(cloud_config, encoding="utf-8") as file:
@@ -20,8 +20,8 @@ def load_cloud_cfg(cloud_config: Union[Path, str]) -> DictDefault:
 
 
 def do_cli_preprocess(
-    cloud_config: Union[Path, str],
-    config: Union[Path, str],
+    cloud_config: Path | str,
+    config: Path | str,
 ) -> None:
     cloud_cfg = load_cloud_cfg(cloud_config)
     cloud = ModalCloud(cloud_cfg)
@@ -31,9 +31,10 @@ def do_cli_preprocess(
 
 
 def do_cli_train(
-    cloud_config: Union[Path, str],
-    config: Union[Path, str],
-    accelerate: bool = True,
+    cloud_config: Path | str,
+    config: Path | str,
+    launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
+    launcher_args: list[str] | None = None,
     cwd=None,
     **kwargs,
 ) -> None:
@@ -44,12 +45,18 @@ def do_cli_train(
     local_dirs = {}
     if cwd and not Path(cwd).joinpath("src", "axolotl").exists():
         local_dirs = {"/workspace/mounts": cwd}
-    cloud.train(config_yaml, accelerate=accelerate, local_dirs=local_dirs, **kwargs)
+    cloud.train(
+        config_yaml,
+        launcher=launcher,
+        launcher_args=launcher_args,
+        local_dirs=local_dirs,
+        **kwargs,
+    )
 
 
 def do_cli_lm_eval(
-    cloud_config: Union[Path, str],
-    config: Union[Path, str],
+    cloud_config: Path | str,
+    config: Path | str,
 ) -> None:
     cloud_cfg = load_cloud_cfg(cloud_config)
     cloud = ModalCloud(cloud_cfg)
