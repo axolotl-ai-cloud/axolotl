@@ -8,13 +8,18 @@ from trl import (
     RewardTrainer,
 )
 
-from axolotl.core.trainers.mixins import RngLoaderMixin
+from axolotl.core.trainers.mixins import DistributedParallelMixin, RngLoaderMixin
 from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
 from axolotl.core.trainers.mixins.scheduler import SchedulerMixin
 
 
 class AxolotlORPOTrainer(
-    RngLoaderMixin, SchedulerMixin, OptimizerMixin, OptimizerInitMixin, ORPOTrainer
+    RngLoaderMixin,
+    SchedulerMixin,
+    OptimizerMixin,
+    OptimizerInitMixin,
+    DistributedParallelMixin,
+    ORPOTrainer,
 ):
     """
     Extend the base ORPOTrainer for axolotl helpers
@@ -24,7 +29,12 @@ class AxolotlORPOTrainer(
 
 
 class AxolotlKTOTrainer(
-    RngLoaderMixin, SchedulerMixin, OptimizerMixin, OptimizerInitMixin, KTOTrainer
+    RngLoaderMixin,
+    SchedulerMixin,
+    OptimizerMixin,
+    OptimizerInitMixin,
+    DistributedParallelMixin,
+    KTOTrainer,
 ):
     """
     Extend the base KTOTrainer for axolotl helpers
@@ -34,7 +44,12 @@ class AxolotlKTOTrainer(
 
 
 class AxolotlCPOTrainer(
-    RngLoaderMixin, SchedulerMixin, OptimizerMixin, OptimizerInitMixin, CPOTrainer
+    RngLoaderMixin,
+    SchedulerMixin,
+    OptimizerMixin,
+    OptimizerInitMixin,
+    DistributedParallelMixin,
+    CPOTrainer,
 ):
     """
     Extend the base CPOTrainer for axolotl helpers
@@ -44,7 +59,12 @@ class AxolotlCPOTrainer(
 
 
 class AxolotlRewardTrainer(
-    RngLoaderMixin, SchedulerMixin, OptimizerMixin, OptimizerInitMixin, RewardTrainer
+    RngLoaderMixin,
+    SchedulerMixin,
+    OptimizerMixin,
+    OptimizerInitMixin,
+    DistributedParallelMixin,
+    RewardTrainer,
 ):
     """
     Extend the base RewardTrainer for axolotl helpers
@@ -54,7 +74,12 @@ class AxolotlRewardTrainer(
 
 
 class AxolotlPRMTrainer(
-    RngLoaderMixin, SchedulerMixin, OptimizerMixin, OptimizerInitMixin, PRMTrainer
+    RngLoaderMixin,
+    SchedulerMixin,
+    OptimizerMixin,
+    OptimizerInitMixin,
+    DistributedParallelMixin,
+    PRMTrainer,
 ):
     """
     Extend the base trl.PRMTrainer for axolotl helpers

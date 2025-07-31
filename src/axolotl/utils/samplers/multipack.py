@@ -5,6 +5,7 @@ into fixed-capacity batches to optimize memory usage and training throughput.
 
 import gc
 import math
+import time
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import cpu_count, get_context
 from typing import Iterable, Iterator, Union
@@ -453,7 +454,10 @@ class MultipackBatchSampler(BatchSampler):
             _sampled_lens = []
             for _ in range(self.num_count_samples):
                 self._batches = None  # Reset cached batches
+                # log timer for generating batches
+                start_time = time.time()
                 _sampled_lens.append(len(self.generate_batches(set_stats=False)))
+                LOG.debug(f"generate_batches time: {time.time() - start_time}")
             len_batches = min(_sampled_lens)
 
             # Gather minimum across all ranks

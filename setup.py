@@ -72,12 +72,13 @@ def parse_requirements(extras_require_map):
                     extras_require_map.pop("vllm")
                 else:
                     _install_requires.append("xformers==0.0.31")
+                    extras_require_map["vllm"] = ["vllm>=0.10.0"]
             elif (major, minor) >= (2, 6):
                 _install_requires.pop(_install_requires.index(xformers_version))
                 _install_requires.append("xformers==0.0.29.post3")
                 # since we only support 2.6.0+cu126
                 _dependency_links.append("https://download.pytorch.org/whl/cu126")
-                extras_require_map["vllm"] = ["vllm==0.8.5.post1"]
+                extras_require_map.pop("vllm")
             elif (major, minor) >= (2, 5):
                 _install_requires.pop(_install_requires.index(xformers_version))
                 if patch == 0:

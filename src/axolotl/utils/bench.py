@@ -57,10 +57,10 @@ def gpu_memory_usage(device=0):
 
 @check_cuda_device((0.0, 0.0, 0.0))
 def gpu_memory_usage_all(device=0):
-    usage = torch.cuda.memory_allocated(device) / 1024.0**3
-    reserved = torch.cuda.memory_reserved(device) / 1024.0**3
-    smi = gpu_memory_usage_smi(device)
-    return usage, reserved - usage, max(0, smi - reserved)
+    active = torch.cuda.memory_stats().get("active_bytes.all.peak", 0) / 1024.0**3
+    allocated = torch.cuda.max_memory_allocated(device) / 1024.0**3
+    reserved = torch.cuda.max_memory_reserved(device) / 1024.0**3
+    return active, allocated, reserved
 
 
 def mps_memory_usage_all():
@@ -92,27 +92,38 @@ def gpu_memory_usage_smi(device=0):
         return 0.0
 
 
-def log_gpu_memory_usage(
-    log: logging.Logger | logging.LoggerAdapter,
-    msg: str = "",
-    device: int | torch.device = 0,
-):
+def get_gpu_memory_usage(device: int | torch.device = 0):
     cur_device_type = str(get_device_type())
     if torch.backends.mps.is_available():
         usage, cache, misc = mps_memory_usage_all()
     elif "npu" in cur_device_type and is_torch_npu_available():
         usage, cache, misc = npu_memory_usage_all(device)
-    elif "gpu" in cur_device_type and torch.cuda.is_available():
+    elif "cuda" in cur_device_type and torch.cuda.is_available():
         usage, cache, misc = gpu_memory_usage_all(device)
     else:
+        return 0.0, 0.0, 0.0
+
+    return usage, cache, misc
+
+
+def log_gpu_memory_usage(
+    log: logging.Logger | logging.LoggerAdapter,
+    msg: str = "",
+    device: int | torch.device = 0,
+):
+    try:
+        active, allocated, reserved = get_gpu_memory_usage(device)
+    except ValueError:
+        # likely CPU, ignore
         return
+    cur_device_type = str(get_device_type())
     extras = []
-    if cache > 0:
-        extras.append(f"+{cache:.03f}GB cache")
-    if misc > 0:
-        extras.append(f"+{misc:.03f}GB misc")
-    msg = f"{cur_device_type} memory usage:" if not msg else msg
-    log.info(
-        f"{msg} {usage:.03f}GB ({', '.join(extras)})",
+    if allocated > 0:
+        extras.append(f"+{allocated:.03f}GB allocated")
+    if reserved > 0:
+        extras.append(f"+{reserved:.03f}GB reserved")
+    msg = f"{cur_device_type} memory active:" if not msg else msg
+    log.debug(
+        f"{msg} {active:.03f}GB ({', '.join(extras)})",
         stacklevel=2,
     )

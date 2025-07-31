@@ -5,6 +5,7 @@ import inspect
 
 import torch
 import torch.distributed as dist
+from accelerate import PartialState
 from torch import nn
 from torch.utils.hooks import RemovableHandle
 from transformers.modeling_outputs import CausalLMOutputWithPast
@@ -12,7 +13,7 @@ from transformers.utils import ModelOutput
 
 from axolotl.monkeypatch.ring_attn import (
     get_ring_attn_group,
-    register_ring_attn,
+    register_ring_attn_from_device_mesh,
     update_ring_attn_params,
 )
 from axolotl.utils.schemas.enums import RingAttnFunc
@@ -150,9 +151,18 @@ def apply_sequence_parallelism(
         if "num_items_in_batch" in batch:
             # Approximation; this needed since num_items_in_batch may be counted across
             # all samples in a gradient accumulated batch, not on a per-step basis.
+            local_valid_tokens = (batch["labels"] != -100).sum()
+
+            # All-reduce across sequence parallel ranks to get global token count
+            cp_group = get_ring_attn_group()
+            global_valid_tokens = local_valid_tokens.clone()
+            # we use AVG instead of SUM as using sum seems to scale down the loss by over-accounting the number of tokens
+            dist.all_reduce(global_valid_tokens, op=dist.ReduceOp.AVG, group=cp_group)
+            global_valid_tokens = int(global_valid_tokens.item())
+
             batch["num_items_in_batch"] = (
-                batch["labels"] != -100
-            ).sum() * gradient_accumulation_steps
+                global_valid_tokens * gradient_accumulation_steps
+            )
 
     return batch, original_seq_len, pad_len
 
@@ -167,7 +177,7 @@ class SequenceParallelContextManager:
     Args:
         models: List of models to apply sequence parallelism to pre- and post- forward
             hooks.
-        sequence_parallel_degree: Number of processes to split sequences over.
+        context_parallel_size: Number of processes to split sequences over.
         gradient_accumulation_steps: Number of steps to accumulate gradients over.
         ring_attn_func: Which ring attention function to use. Currently unused.
         heads_k_stride: Sequence parallelism K head stride size. Passed through to
@@ -179,14 +189,14 @@ class SequenceParallelContextManager:
     def __init__(
         self,
         models: list[nn.Module],
-        sequence_parallel_degree: int,
+        context_parallel_size: int,
         gradient_accumulation_steps: int,
         ring_attn_func: RingAttnFunc,
         heads_k_stride: int | None,
         gather_outputs: bool,
     ):
         self.models = models
-        self.sequence_parallel_degree = sequence_parallel_degree
+        self.context_parallel_size = context_parallel_size
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.ring_attn_func = ring_attn_func
         self.heads_k_stride = heads_k_stride
@@ -230,8 +240,10 @@ class SequenceParallelContextManager:
 
     def _register_ring_attn(self):
         # Initialize ring attn for sequence parallelism
-        register_ring_attn(
-            sequence_parallel_degree=self.sequence_parallel_degree,
+        partial_state = PartialState()
+        register_ring_attn_from_device_mesh(
+            device_mesh=partial_state.device_mesh,
+            context_parallel_dim=("cp",),
             heads_k_stride=self.heads_k_stride,
             ring_attn_func=self.ring_attn_func,
         )
