@@ -34,7 +34,7 @@ class TestTensorParallel:
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch_fused",
+                "optimizer": "adamw_torch",
                 "tensor_parallel_size": 2,
                 "lr_scheduler": "cosine",
                 "flash_attention": True,

@@ -43,7 +43,11 @@ from trl.trainer.grpo_trainer import RewardFunc, nanstd
 from trl.trainer.utils import pad
 
 from axolotl.core.trainers.grpo.sampler import SequenceParallelRepeatRandomSampler
-from axolotl.core.trainers.mixins import RngLoaderMixin, SchedulerMixin
+from axolotl.core.trainers.mixins import (
+    DistributedParallelMixin,
+    RngLoaderMixin,
+    SchedulerMixin,
+)
 from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
 from axolotl.monkeypatch.ring_attn import get_ring_attn_group
 
@@ -53,7 +57,12 @@ if is_peft_available():
 
 
 class AxolotlGRPOTrainer(
-    RngLoaderMixin, SchedulerMixin, OptimizerMixin, OptimizerInitMixin, GRPOTrainer
+    RngLoaderMixin,
+    SchedulerMixin,
+    OptimizerMixin,
+    OptimizerInitMixin,
+    DistributedParallelMixin,
+    GRPOTrainer,
 ):
     """Extend the base GRPOTrainer for axolotl helpers"""
 

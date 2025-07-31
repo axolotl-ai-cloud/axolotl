@@ -27,6 +27,7 @@ from typing_extensions import override
 from axolotl.core.trainers.mixins import (
     ActivationOffloadingMixin,
     CheckpointSaveMixin,
+    DistributedParallelMixin,
     OptimizerMixin,
     PackingMixin,
     RngLoaderMixin,
@@ -50,6 +51,7 @@ class AxolotlTrainer(
     RngLoaderMixin,
     CheckpointSaveMixin,
     ActivationOffloadingMixin,
+    DistributedParallelMixin,
     Trainer,
 ):
     """Extend the base Trainer for axolotl helpers"""
@@ -575,12 +577,3 @@ class AxolotlTrainer(
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
         return super()._save_checkpoint(model, trial, **kwargs)
-
-    def _save(self, output_dir: Optional[str] = None, state_dict=None):
-        if (
-            state_dict is None
-            and self.accelerator.parallelism_config
-            and self.accelerator.parallelism_config.dp_shard_enabled
-        ):
-            state_dict = self.accelerator.get_state_dict(self.model)
-        super()._save(output_dir, state_dict=state_dict)

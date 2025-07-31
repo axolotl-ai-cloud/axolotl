@@ -8,7 +8,11 @@ import torch
 from torch import nn
 from trl import DPOTrainer
 
-from axolotl.core.trainers.mixins import RngLoaderMixin, SchedulerMixin
+from axolotl.core.trainers.mixins import (
+    DistributedParallelMixin,
+    RngLoaderMixin,
+    SchedulerMixin,
+)
 from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
 from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
@@ -17,7 +21,12 @@ from axolotl.core.trainers.utils import (
 
 
 class AxolotlDPOTrainer(
-    RngLoaderMixin, SchedulerMixin, OptimizerMixin, OptimizerInitMixin, DPOTrainer
+    RngLoaderMixin,
+    SchedulerMixin,
+    OptimizerMixin,
+    OptimizerInitMixin,
+    DPOTrainer,
+    DistributedParallelMixin,
 ):
     """Extend the base DPOTrainer for axolotl helpers."""
 
