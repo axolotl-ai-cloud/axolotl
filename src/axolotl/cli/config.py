@@ -159,6 +159,9 @@ def plugin_set_cfg(cfg: DictDefault):
     if cfg.get("plugins"):
         plugin_manager = PluginManager.get_instance()
         plugin_manager.cfg = cfg
+        # now that we have the finalized cfg, register the plugins individually
+        for plugin in plugin_manager.plugins.values():
+            plugin.register(cfg)
 
 
 def load_cfg(
