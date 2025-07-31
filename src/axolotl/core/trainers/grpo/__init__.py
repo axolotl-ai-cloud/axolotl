@@ -82,6 +82,11 @@ class GRPOStrategy:
         grpo_args_kwargs["log_completions"] = trl.log_completions
         grpo_args_kwargs["num_completions_to_print"] = trl.num_completions_to_print
 
+        if trl.importance_sampling_level is not None:
+            grpo_args_kwargs["importance_sampling_level"] = (
+                trl.importance_sampling_level
+            )
+
         if cfg.sequence_parallel_degree > 1:
             grpo_args_kwargs["sequence_parallel_degree"] = cfg.sequence_parallel_degree
 
