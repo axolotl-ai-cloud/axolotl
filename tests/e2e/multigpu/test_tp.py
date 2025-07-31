@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 import yaml
 from accelerate.test_utils import execute_subprocess_async, get_torch_dist_unique_port
 
@@ -13,6 +14,9 @@ from tests.e2e.utils import check_tensorboard, require_torch_2_7_0
 class TestTensorParallel:
     """Test class for Tensor Parallel functionality."""
 
+    @pytest.mark.skip(
+        reason="TP doesn't work with models with tied weights (embeddings)"
+    )
     @require_torch_2_7_0
     def test_fft_sft(self, temp_dir):
         # pylint: disable=duplicate-code
