@@ -4,8 +4,6 @@
 # toc-expand: 2
 ---
 
-
-test test
 ```{python}
 #|output: asis
 #|echo: false
