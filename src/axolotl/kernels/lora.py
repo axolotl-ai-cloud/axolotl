@@ -14,7 +14,7 @@ from typing import Callable
 import torch
 from bitsandbytes.functional import QuantState
 from torch import nn
-from torch.distributed._tensor import DTensor
+from torch.distributed.tensor import DTensor
 
 from .geglu import geglu_backward, geglu_forward
 from .quantize import dequantize
