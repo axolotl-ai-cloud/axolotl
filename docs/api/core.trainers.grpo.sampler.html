@@ -530,7 +530,7 @@ sequence parallel group.</p>
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    rank,</span>
 <span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    batch_size<span class="op">=</span><span class="dv">1</span>,</span>
 <span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    repeat_count<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    sequence_parallel_degree<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    context_parallel_size<span class="op">=</span><span class="dv">1</span>,</span>
 <span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    shuffle<span class="op">=</span><span class="va">True</span>,</span>
 <span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    seed<span class="op">=</span><span class="dv">0</span>,</span>
 <span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    drop_last<span class="op">=</span><span class="va">False</span>,</span>
@@ -542,7 +542,7 @@ sequence parallel group.</p>
 - Entire batches are repeated for reuse in multiple updates.
 - Data is properly distributed across SP groups.</p>
 <p>In the table below, the values represent dataset indices. Each SP group has
-<code>sequence_parallel_degree = 2</code> GPUs working together on the same data. There are 2
+<code>context_parallel_size = 2</code> GPUs working together on the same data. There are 2
 SP groups (SP0 and SP1), with <code>world_size = 4</code> total GPUs.</p>
 <pre><code>                                       Sequence Parallel Groups
                                 |       SP0        |       SP1        |
@@ -561,9 +561,9 @@ num_iterations=2 ▼ 1 3 [0 0 0 1 1 1] [2 2 2 3 3 3] &lt;- When using gradient a
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 26%">
+<col style="width: 23%">
 <col style="width: 8%">
-<col style="width: 53%">
+<col style="width: 55%">
 <col style="width: 12%">
 </colgroup>
 <thead>
@@ -612,7 +612,7 @@ num_iterations=2 ▼ 1 3 [0 0 0 1 1 1] [2 2 2 3 3 3] &lt;- When using gradient a
 <td><code>1</code></td>
 </tr>
 <tr class="odd">
-<td>sequence_parallel_degree</td>
+<td>context_parallel_size</td>
 <td>int</td>
 <td>Number of ranks in a sequence parallel group.</td>
 <td><code>1</code></td>

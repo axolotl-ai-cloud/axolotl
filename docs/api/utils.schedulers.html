@@ -487,6 +487,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
   <li><a href="#axolotl.utils.schedulers.InterpolatingLogScheduler" id="toc-axolotl.utils.schedulers.InterpolatingLogScheduler" class="nav-link" data-scroll-target="#axolotl.utils.schedulers.InterpolatingLogScheduler">InterpolatingLogScheduler</a></li>
+  <li><a href="#axolotl.utils.schedulers.JaggedLRRestartScheduler" id="toc-axolotl.utils.schedulers.JaggedLRRestartScheduler" class="nav-link" data-scroll-target="#axolotl.utils.schedulers.JaggedLRRestartScheduler">JaggedLRRestartScheduler</a></li>
   <li><a href="#axolotl.utils.schedulers.RexLR" id="toc-axolotl.utils.schedulers.RexLR" class="nav-link" data-scroll-target="#axolotl.utils.schedulers.RexLR">RexLR</a></li>
   </ul></li>
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
@@ -524,6 +525,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>A scheduler that interpolates learning rates in a logarithmic fashion</td>
 </tr>
 <tr class="even">
+<td><a href="#axolotl.utils.schedulers.JaggedLRRestartScheduler">JaggedLRRestartScheduler</a></td>
+<td>Wraps another scheduler to apply per-lora-restart learning rate warmups.</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.utils.schedulers.RexLR">RexLR</a></td>
 <td>Reflected Exponential (REX) learning rate scheduler.</td>
 </tr>
@@ -540,16 +545,28 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>A scheduler that interpolates learning rates in a logarithmic fashion</p>
 </section>
+<section id="axolotl.utils.schedulers.JaggedLRRestartScheduler" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.schedulers.JaggedLRRestartScheduler">JaggedLRRestartScheduler</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.schedulers.JaggedLRRestartScheduler(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    optimizer,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    inner_schedule,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    jagged_restart_steps,</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    jagged_restart_warmup_steps,</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    jagged_restart_anneal_steps<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    min_lr_scale<span class="op">=</span><span class="fl">0.001</span>,</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Wraps another scheduler to apply per-lora-restart learning rate warmups.</p>
+</section>
 <section id="axolotl.utils.schedulers.RexLR" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schedulers.RexLR">RexLR</h3>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.schedulers.RexLR(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    optimizer,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    max_lr,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    min_lr,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    total_steps<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    num_warmup_steps<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    last_step<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.schedulers.RexLR(</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    optimizer,</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    max_lr,</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    min_lr,</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    total_steps<span class="op">=</span><span class="dv">0</span>,</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    num_warmup_steps<span class="op">=</span><span class="dv">0</span>,</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    last_step<span class="op">=</span><span class="dv">0</span>,</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Reflected Exponential (REX) learning rate scheduler.</p>
 <ul>
 <li>Original implementation: https://github.com/IvanVassi/REX_LR</li>
@@ -641,12 +658,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </table>
 <section id="axolotl.utils.schedulers.get_cosine_schedule_with_min_lr" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schedulers.get_cosine_schedule_with_min_lr">get_cosine_schedule_with_min_lr</h3>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.schedulers.get_cosine_schedule_with_min_lr(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    optimizer,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    num_warmup_steps,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    num_training_steps,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    min_lr_ratio<span class="op">=</span><span class="fl">0.0</span>,</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.schedulers.get_cosine_schedule_with_min_lr(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    optimizer,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    num_warmup_steps,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    num_training_steps,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    min_lr_ratio<span class="op">=</span><span class="fl">0.0</span>,</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <section id="create-a-learning-rate-schedule-which-has" class="level4 doc-section doc-section-create-a-learning-rate-schedule-which-has">
 <h4 class="doc-section doc-section-create-a-learning-rate-schedule-which-has anchored" data-anchor-id="create-a-learning-rate-schedule-which-has">Create a learning rate schedule which has</h4>
 <ul>
@@ -657,13 +674,13 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 <section id="axolotl.utils.schedulers.get_cosine_schedule_with_quadratic_warmup" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schedulers.get_cosine_schedule_with_quadratic_warmup">get_cosine_schedule_with_quadratic_warmup</h3>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.schedulers.get_cosine_schedule_with_quadratic_warmup(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    optimizer,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    num_warmup_steps,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    num_training_steps,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    num_cycles<span class="op">=</span><span class="fl">0.5</span>,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    last_epoch<span class="op">=-</span><span class="dv">1</span>,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.schedulers.get_cosine_schedule_with_quadratic_warmup(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    optimizer,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    num_warmup_steps,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    num_training_steps,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    num_cycles<span class="op">=</span><span class="fl">0.5</span>,</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    last_epoch<span class="op">=-</span><span class="dv">1</span>,</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Create a schedule with a learning rate that decreases following the values of the cosine function between the
 initial lr set in the optimizer to 0, after a warmup period during which it increases linearly between 0 and the
 initial lr set in the optimizer.</p>
@@ -725,15 +742,15 @@ initial lr set in the optimizer.</p>
 </section>
 <section id="axolotl.utils.schedulers.get_cosine_schedule_with_warmup_decay_constant" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schedulers.get_cosine_schedule_with_warmup_decay_constant">get_cosine_schedule_with_warmup_decay_constant</h3>
-<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.schedulers.get_cosine_schedule_with_warmup_decay_constant(</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    optimizer,</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    num_warmup_steps,</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    num_training_steps,</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    constant_lr_ratio,</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    min_lr_ratio,</span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    num_cycles<span class="op">=</span><span class="fl">0.5</span>,</span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    last_epoch<span class="op">=-</span><span class="dv">1</span>,</span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.schedulers.get_cosine_schedule_with_warmup_decay_constant(</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    optimizer,</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    num_warmup_steps,</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    num_training_steps,</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    constant_lr_ratio,</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    min_lr_ratio,</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    num_cycles<span class="op">=</span><span class="fl">0.5</span>,</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    last_epoch<span class="op">=-</span><span class="dv">1</span>,</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Implementation of Continual Pre-Training of Large Language Models: How to (re)warm your model? (https://arxiv.org/pdf/2308.04014.pdf)
 Create a schedule with a learning rate that decreases following the values of the cosine function between the
 initial lr set in the optimizer to min_lr_ratio until num_training_steps * constant_lr_ratio, after constant_rate returns constant value of min_rate

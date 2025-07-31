@@ -538,13 +538,13 @@ through a ring communication pattern.</p>
 <h2 class="anchored" data-anchor-id="configuration">Configuration</h2>
 <p>To enable sequence parallelism, add the following to your configuration file:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to a divisor (&gt; 1) of the number of GPUs available</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_parallel_degree</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span><span class="co">  # Split sequences across 4 GPUs</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">context_parallel_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span><span class="co">  # Split sequences across 4 GPUs</span></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; strides across the key dimension. Larger values use more memory but should make training faster.</span></span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">heads_k_stride</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; one of "varlen_llama3" or "batch_ring". Defaults to</span></span>
 <span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co"># "varlen_llama3" when `sample_packing: true`, and "batch_ring" otherwise.</span></span>
 <span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">ring_attn_func</span><span class="kw">:</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>The <code>sequence_parallel_degree</code> should be a divisor of the total number of GPUs. For example:</p>
+<p>The <code>context_parallel_size</code> should be a divisor of the total number of GPUs. For example:</p>
 <ul>
 <li>With 8 GPUs, valid values would be 2, 4, or 8</li>
 <li>With 4 GPUs, valid values would be 2 or 4</li>
@@ -586,7 +586,7 @@ through a ring communication pattern.</p>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co">...</span></span>
 <span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co">sequence_parallel_degree: 4  # Split each sequence into 4 parts, one per GPU</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co">context_parallel_size: 4  # Split each sequence into 4 parts, one per GPU</span></span>
 <span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; strides across the key dimension. Larger values use more memory but should make training faster.</span></span>
 <span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="co">heads_k_stride: 1</span></span>
 <span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; one of "varlen_llama3" or "batch_ring". Defaults to</span></span>
@@ -608,14 +608,14 @@ into 2 subsequences of length 4096 across 2 GPUs.</p>
 </section>
 <section id="effect-on-batch-size" class="level2">
 <h2 class="anchored" data-anchor-id="effect-on-batch-size">Effect on Batch Size</h2>
-<p>When using sequence parallelism, your effective global batch size is <strong>divided</strong> by the <code>sequence_parallel_degree</code>. This happens because:</p>
+<p>When using sequence parallelism, your effective global batch size is <strong>divided</strong> by the <code>context_parallel_size</code>. This happens because:</p>
 <ul>
-<li>Each group of <code>sequence_parallel_degree</code> GPUs works on the same batch (just different parts of each sequence)</li>
+<li>Each group of <code>context_parallel_size</code> GPUs works on the same batch (just different parts of each sequence)</li>
 <li>The number of batches processed per step decreases</li>
 </ul>
 <p>For example:
 - With 8 GPUs and no sequence parallelism: 8 different batches processed per step
-- With 8 GPUs and <code>sequence_parallel_degree=4</code>: Only 2 different batches processed per step (each split across 4 GPUs)
+- With 8 GPUs and <code>context_parallel_size=4</code>: Only 2 different batches processed per step (each split across 4 GPUs)
 - If your per-GPU <code>micro_batch_size</code> is 2, the global batch size decreases from 16 to 4</p>
 
 

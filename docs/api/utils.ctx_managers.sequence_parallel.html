@@ -696,7 +696,7 @@ from the full gradient tensor.</p>
 <h3 class="anchored" data-anchor-id="axolotl.utils.ctx_managers.sequence_parallel.SequenceParallelContextManager">SequenceParallelContextManager</h3>
 <div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.ctx_managers.sequence_parallel.SequenceParallelContextManager(</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    models,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    sequence_parallel_degree,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    context_parallel_size,</span>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    gradient_accumulation_steps,</span>
 <span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    ring_attn_func,</span>
 <span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    heads_k_stride,</span>
@@ -731,7 +731,7 @@ across the sequence parallelism group using a post-forward hook.</p>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
-<td>sequence_parallel_degree</td>
+<td>context_parallel_size</td>
 <td>int</td>
 <td>Number of processes to split sequences over.</td>
 <td><em>required</em></td>
