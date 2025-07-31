@@ -101,9 +101,7 @@ def get_gpu_memory_usage(device: int | torch.device = 0):
     elif "cuda" in cur_device_type and torch.cuda.is_available():
         usage, cache, misc = gpu_memory_usage_all(device)
     else:
-        raise ValueError(
-            f"Unable to determine memory statistics for current device {device}"
-        )
+        return 0.0, 0.0, 0.0
 
     return usage, cache, misc
 
