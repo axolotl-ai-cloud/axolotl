@@ -880,6 +880,22 @@ class OptimizationValidationMixin:
 
         return self
 
+    def lr_groups_ao_optimizer(self):
+        if (
+            self.args.loraplus_lr_ratio is not None
+            or self.args.embedding_lr_scale is not None
+            or self.args.embedding_lr is not None
+            or self.args.lr_groups is not None
+        ) and self.optimizer in ["torch_adamw_8bit", "torch_adamw_4bit"]:
+            # TODO(wing): remove this once ao>0.12.0
+            # requires https://github.com/pytorch/ao/pull/2606 in an ao release
+            raise ValueError(
+                "lr groups (`loraplus_lr_ratio`, `embedding_lr_scale`, `embedding_lr`, `lr_groups`) are not "
+                "supported with ao low-bit optimizers until ao>0.12.0. "
+                "Please refer to https://github.com/pytorch/ao/pull/2606."
+            )
+        return self
+
     @model_validator(mode="before")
     @classmethod
     def check_tensor_parallel_size_update_ds_json(cls, data):
