@@ -132,7 +132,8 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
         )
 
     if (
-        cfg.tensor_parallel_size > 1
+        cfg.tensor_parallel_size
+        and cfg.tensor_parallel_size > 1
         and hasattr(model_config, "tie_word_embeddings")
         and model_config.tie_word_embeddings
     ):
