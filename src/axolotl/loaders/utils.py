@@ -131,10 +131,14 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
             f"Please include [{lora_modules_to_save_joined}] in `lora_modules_to_save`."
         )
 
-    if cfg.tensor_parallel_size > 1 and model_config.get("tie_word_embeddings", False):
+    if (
+        cfg.tensor_parallel_size > 1
+        and hasattr(model_config, "tie_word_embeddings")
+        and model_config.tie_word_embeddings
+    ):
         raise ValueError(
-            "Tensor parallelism is incompatible with `tie_word_embeddings`. "
-            "Please use a model without `tie_word_embeddings`. or disable tensor parallelism."
+            "Tensor parallelism is incompatible with models configured with `tie_word_embeddings` enabled. "
+            "Please use a model without `tie_word_embeddings`, or disable tensor parallelism."
         )
 
 
