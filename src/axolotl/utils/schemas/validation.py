@@ -880,12 +880,13 @@ class OptimizationValidationMixin:
 
         return self
 
+    @model_validator(mode="after")
     def lr_groups_ao_optimizer(self):
         if (
-            self.args.loraplus_lr_ratio is not None
-            or self.args.embedding_lr_scale is not None
-            or self.args.embedding_lr is not None
-            or self.args.lr_groups is not None
+            self.loraplus_lr_ratio is not None
+            or self.embedding_lr_scale is not None
+            or self.embedding_lr is not None
+            or self.lr_groups is not None
         ) and self.optimizer.value in ["adamw_torch_8bit", "adamw_torch_4bit"]:
             # TODO(wing): remove this once ao>0.12.0
             # requires https://github.com/pytorch/ao/pull/2606 in an ao release
