@@ -886,7 +886,7 @@ class OptimizationValidationMixin:
             or self.args.embedding_lr_scale is not None
             or self.args.embedding_lr is not None
             or self.args.lr_groups is not None
-        ) and self.optimizer in ["torch_adamw_8bit", "torch_adamw_4bit"]:
+        ) and self.optimizer.value in ["adamw_torch_8bit", "adamw_torch_4bit"]:
             # TODO(wing): remove this once ao>0.12.0
             # requires https://github.com/pytorch/ao/pull/2606 in an ao release
             raise ValueError(
