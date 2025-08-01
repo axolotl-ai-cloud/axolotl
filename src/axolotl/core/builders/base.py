@@ -36,7 +36,6 @@ from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
     GCCallback,
-    GPUStatsCallback,
     SaveAxolotlConfigtoWandBCallback,
     SaveModelOnFirstStepCallback,
 )
@@ -140,8 +139,6 @@ class TrainerBuilderBase(abc.ABC):
             )
         if self.cfg.save_first_step:
             callbacks.append(SaveModelOnFirstStepCallback())
-
-        callbacks.append(GPUStatsCallback(cfg=self.cfg))
 
         if self.cfg.profiler_steps:
             callbacks.append(

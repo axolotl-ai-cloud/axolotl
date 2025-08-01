@@ -38,6 +38,8 @@ from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_tagging,
 )
 from axolotl.utils import get_not_null
+from axolotl.utils.bench import get_gpu_memory_usage
+from axolotl.utils.distributed import is_main_process
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
@@ -560,6 +562,17 @@ class AxolotlTrainer(
         # Add averaged stored metrics to logs
         for key, metrics in self._stored_metrics[train_eval].items():
             logs[key] = torch.tensor(metrics).mean().item()
+
+        if is_main_process():
+            # Add memory usage
+            try:
+                active, allocated, reserved = get_gpu_memory_usage()
+                logs["memory/max_memory_active"] = active
+                logs["memory/max_memory_allocated"] = allocated
+                logs["memory/device_memory_reserved"] = reserved
+            except (ValueError, FileNotFoundError):
+                pass
+
         del self._stored_metrics[train_eval]
 
         return super().log(logs, start_time)
