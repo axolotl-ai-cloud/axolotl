@@ -131,6 +131,12 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
             f"Please include [{lora_modules_to_save_joined}] in `lora_modules_to_save`."
         )
 
+    if cfg.tensor_parallel_size > 1 and model_config.get("tie_word_embeddings", False):
+        raise ValueError(
+            "Tensor parallelism is incompatible with `tie_word_embeddings`. "
+            "Please use a model without `tie_word_embeddings`. or disable tensor parallelism."
+        )
+
 
 def load_model_config(cfg: DictDefault) -> PretrainedConfig | addict.Dict:
     """Loads and configures a model configuration from HuggingFace or local sources.
