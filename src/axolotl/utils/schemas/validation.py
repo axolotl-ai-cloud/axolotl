@@ -1268,6 +1268,19 @@ class DistributedValidationMixin:
         return self
 
 
+class GRPOVllmValidationMixin:
+    """Validation mixin for vllm when using GRPO."""
+
+    @model_validator(mode="after")
+    def check_vllm_mode_set(self):
+        if self.trl and self.trl.use_vllm and not self.trl.vllm_mode:
+            LOG.warning(
+                "vllm_mode must be set to either `server` or `colocate` when using vllm, using default value `server`"
+            )
+            self.trl.vllm_mode = "server"
+        return self
+
+
 # pylint: disable=too-many-ancestors
 class ValidationMixin(
     DatasetValidationMixin,
@@ -1281,5 +1294,6 @@ class ValidationMixin(
     PretrainingValidationMixin,
     ModelCompatibilityValidationMixin,
     ComplexValidationMixin,
+    GRPOVllmValidationMixin,
 ):
     """Full validation mixin for Axolotl configuration."""
