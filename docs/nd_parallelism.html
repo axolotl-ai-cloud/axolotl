@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>prompt_strategies.dpo.llama3 – Axolotl</title>
+<title>nd_parallelism – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -58,23 +58,23 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </style>
 
 
-<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
-<script src="../../site_libs/clipboard/clipboard.min.js"></script>
-<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
-<script src="../../site_libs/quarto-search/fuse.min.js"></script>
-<script src="../../site_libs/quarto-search/quarto-search.js"></script>
-<meta name="quarto:offset" content="../../">
-<link href="../../favicon.jpg" rel="icon" type="image/jpeg">
-<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
-<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
-<script src="../../site_libs/quarto-html/popper.min.js"></script>
-<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
-<script src="../../site_libs/quarto-html/anchor.min.js"></script>
-<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-2fef5ea3f8957b3e4ecc936fc74692ca.css" rel="stylesheet" id="quarto-text-highlighting-styles">
-<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
-<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-4286dd70669dc30dbb11cd1e43bae81e.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../favicon.jpg" rel="icon" type="image/jpeg">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-2fef5ea3f8957b3e4ecc936fc74692ca.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-4286dd70669dc30dbb11cd1e43bae81e.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -113,7 +113,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </script>
 
 
-<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../styles.css">
 </head>
 
 <body class="nav-sidebar docked nav-fixed quarto-light">
@@ -123,8 +123,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <nav class="navbar navbar-expand " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
-    <a href="../../index.html" class="navbar-brand navbar-brand-logo">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo">
     </a>
   </div>
         <div class="quarto-navbar-tools tools-wide tools-end">
@@ -140,7 +140,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/fsdp_qlora.html">Advanced Features</a></li><li class="breadcrumb-item"><a href="../docs/nd_parallelism.html">N-D Parallelism</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -154,7 +154,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../index.html" class="sidebar-item-text sidebar-link">
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Home</span></a>
   </div>
 </li>
@@ -169,37 +169,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/getting-started.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/getting-started.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quickstart</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/installation.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/installation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Installation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/inference.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/inference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Inference and Merging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/cli.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/config-reference.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/config-reference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/api" class="sidebar-item-text sidebar-link">
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
  <span class="menu-text">API Reference</span></a>
   </div>
 </li>
@@ -207,7 +207,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a href="../../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
+            <a href="../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Formats</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
@@ -216,37 +216,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Pre-training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Instruction Tuning</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Conversation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Stepwise Supervised Format</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-Free</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Pre-Tokenized Dataset</span></a>
   </div>
 </li>
@@ -263,37 +263,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/docker.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/docker.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Docker</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi-GPU</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-node.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi Node</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ray Train</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mac.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/mac.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mac M-series</span></a>
   </div>
 </li>
@@ -310,49 +310,49 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multimodal.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multimodal.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MultiModal / Vision Language Models (BETA)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">RLHF (Beta)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Reward Modelling</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Learning Rate Groups</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Loading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/qat.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/qat.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization Aware Training (QAT)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/quantize.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/quantize.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization with torchao</span></a>
   </div>
 </li>
@@ -369,25 +369,25 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Batch size vs Gradient accumulation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Preprocessing</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multipack.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multipack (Sample Packing)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mixed Precision Training</span></a>
   </div>
 </li>
@@ -404,43 +404,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FDSP + QLoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/unsloth.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/unsloth.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Unsloth</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/torchao.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/torchao.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">PyTorch ao</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Integrations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Sequence Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gradient Checkpointing and Activation Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">N-D Parallelism</span></a>
   </div>
 </li>
@@ -457,19 +457,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/faq.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/faq.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FAQ</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/debugging.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Debugging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nccl.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NCCL</span></a>
   </div>
 </li>
@@ -485,80 +485,217 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.prompt_strategies.dpo.llama3" id="toc-axolotl.prompt_strategies.dpo.llama3" class="nav-link active" data-scroll-target="#axolotl.prompt_strategies.dpo.llama3">prompt_strategies.dpo.llama3</a>
+  <li><a href="#n-d-parallelism" id="toc-n-d-parallelism" class="nav-link active" data-scroll-target="#n-d-parallelism">N-D Parallelism</a>
   <ul class="collapse">
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <li><a href="#core-concepts" id="toc-core-concepts" class="nav-link" data-scroll-target="#core-concepts">Core Concepts</a>
   <ul class="collapse">
-  <li><a href="#axolotl.prompt_strategies.dpo.llama3.argilla_chat" id="toc-axolotl.prompt_strategies.dpo.llama3.argilla_chat" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.dpo.llama3.argilla_chat">argilla_chat</a></li>
-  <li><a href="#axolotl.prompt_strategies.dpo.llama3.icr" id="toc-axolotl.prompt_strategies.dpo.llama3.icr" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.dpo.llama3.icr">icr</a></li>
-  <li><a href="#axolotl.prompt_strategies.dpo.llama3.intel" id="toc-axolotl.prompt_strategies.dpo.llama3.intel" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.dpo.llama3.intel">intel</a></li>
-  <li><a href="#axolotl.prompt_strategies.dpo.llama3.ultra" id="toc-axolotl.prompt_strategies.dpo.llama3.ultra" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.dpo.llama3.ultra">ultra</a></li>
+  <li><a href="#sec-dp" id="toc-sec-dp" class="nav-link" data-scroll-target="#sec-dp">Data Parallelism</a></li>
+  <li><a href="#sec-tp" id="toc-sec-tp" class="nav-link" data-scroll-target="#sec-tp">[Experimental] Tensor Parallelism (TP)</a></li>
+  <li><a href="#sec-cp" id="toc-sec-cp" class="nav-link" data-scroll-target="#sec-cp">Context Parallelism (CP)</a></li>
+  <li><a href="#sec-hsdp" id="toc-sec-hsdp" class="nav-link" data-scroll-target="#sec-hsdp">Hybrid Sharding Data Parallel (HSDP)</a></li>
   </ul></li>
+  <li><a href="#usage" id="toc-usage" class="nav-link" data-scroll-target="#usage">Usage</a></li>
+  <li><a href="#examples" id="toc-examples" class="nav-link" data-scroll-target="#examples">Examples</a></li>
+  <li><a href="#support-matrix" id="toc-support-matrix" class="nav-link" data-scroll-target="#support-matrix">Support Matrix</a></li>
   </ul></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/fsdp_qlora.html">Advanced Features</a></li><li class="breadcrumb-item"><a href="../docs/nd_parallelism.html">N-D Parallelism</a></li></ol></nav></header>
 
 
 
 
-<section id="axolotl.prompt_strategies.dpo.llama3" class="level1">
-<h1>prompt_strategies.dpo.llama3</h1>
-<p><code>prompt_strategies.dpo.llama3</code></p>
-<p>DPO strategies for llama-3 chat template</p>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<section id="n-d-parallelism" class="level1">
+<h1>N-D Parallelism</h1>
+<p>Axolotl enables training models at scale by composing different parallelism techniques. This is essential when:</p>
+<ul>
+<li>A model’s weights are too large to fit on a single GPU’s memory.</li>
+<li>A model’s activations, especially with very long contexts, are too large for a single GPU.</li>
+<li>You want to accelerate training by using multiple GPUs or nodes.</li>
+</ul>
+<p>or combinations of the above!</p>
+<section id="core-concepts" class="level2">
+<h2 class="anchored" data-anchor-id="core-concepts">Core Concepts</h2>
+<p>Parallelism strategies can be combined. The key is understanding how each one divides the workload. PyTorch’s <code>DeviceMesh</code> is the modern way to manage these combinations, creating a logical grid of your GPUs and assigning different parallel strategies to different dimensions of the grid.</p>
+<section id="sec-dp" class="level3">
+<h3 class="anchored" data-anchor-id="sec-dp">Data Parallelism</h3>
+<p>Data Parallelism focuses on splitting the global data batch across GPUs.</p>
+<ul>
+<li><p>Distributed Data Parallel (DDP): The classic approach. The full model is replicated on every GPU. Each GPU processes a different slice of the data batch. Gradients are then averaged across all GPUs after the backward pass to keep the models synchronized. This can substantially improve data throughput compared to single-device training, but requires that each GPU is able to hold the entire model, its gradients, and optimizer states.</p></li>
+<li><p><a href="../docs/multi-gpu.html#fully-sharded-data-parallel-(fsdp)">Fully Sharded Data Parallel (FSDP)</a>: A highly memory-efficient form of data parallelism (inspired by DeepSpeed’s ZeRO). Instead of replicating the model, FSDP shards the model’s <em>parameters, gradients, and optimizer states</em> across the GPUs in the data-parallel group. During computation, each GPU receives the specific parameters it needs via an <code>all_gather</code> operation just before they are used, and they can be discarded immediately after (<code>reshard-after-forward</code>).</p>
+<ul>
+<li>FSDP maps to ZeRO stages:
+<ul>
+<li>ZeRO-2 (<code>reshard_after_forward=False</code>): Shards gradients and optimizer states. Model weights are replicated on each GPU.</li>
+<li>ZeRO-3 (<code>reshard_after_forward=True</code>): Shards gradients, optimizer states, AND model parameters. This provides the most memory savings at the cost of more communication (re-gathering parameters for both forward and backward passes).</li>
+</ul></li>
+</ul></li>
+</ul>
+</section>
+<section id="sec-tp" class="level3">
+<h3 class="anchored" data-anchor-id="sec-tp">[Experimental] Tensor Parallelism (TP)</h3>
+<p>Also known as “horizontal model parallelism,” as described in the <a href="https://arxiv.org/pdf/1909.08053.pdf">Megatron-LM paper</a>. Instead of splitting the batch, TP splits the model’s layers themselves across GPUs.</p>
+<ul>
+<li>How it works: For a linear layer <code>Y = XA</code>, the weight matrix <code>A</code> is split column-wise (<code>A = [A_1, A_2]</code>). The computation becomes <code>Y_1 = XA_1</code> and <code>Y_2 = XA_2</code>, which can happen in parallel on different GPUs. The final output <code>Y</code> is simply the concatenation of <code>Y_1</code> and <code>Y_2</code>. Check <a href="https://github.com/huggingface/transformers/issues/10321#issuecomment-783543530">this comment</a> for more detailed info.</li>
+<li>Requirement: TP involves frequent, small communications within a forward/backward pass. It requires a very fast interconnect between GPUs (e.g., NVLink) and is typically not recommended across different nodes.</li>
+</ul>
+</section>
+<section id="sec-cp" class="level3">
+<h3 class="anchored" data-anchor-id="sec-cp">Context Parallelism (CP)</h3>
+<p>Context Parallelism, also called <a href="../docs/sequence_parallelism.html">Sequence Parallelism</a>, addresses the memory bottleneck from long sequences. The input sequence itself is split along the sequence length dimension and distributed across GPUs.</p>
+<ul>
+<li>How it works: If you have a sequence of 8192 tokens and a <code>context_parallel_size</code> of 4, each GPU will only handle a chunk of 2048 tokens.</li>
+<li>The Challenge: Attention is not local; every token needs to “attend to” every other token. Splitting the sequence breaks this.</li>
+<li>The Solution (<code>ring-flash-attention</code>): An efficient communication protocol is used. To compute attention for its local sequence chunk, each GPU passes its Key-Value (KV) cache to its neighbor in a “ring.” After <code>N-1</code> steps, every GPU has seen the KV-cache from all other GPUs, allowing it to compute the correct attention values for its chunk. This is implemented using the highly optimized <code>flash-attention</code> kernel at each step.</li>
+</ul>
+</section>
+<section id="sec-hsdp" class="level3">
+<h3 class="anchored" data-anchor-id="sec-hsdp">Hybrid Sharding Data Parallel (HSDP)</h3>
+<p>HSDP is a 2D strategy that intelligently combines FSDP and DDP, typically for multi-node training.</p>
+<ul>
+<li>Intra-Node (within a machine): Use FSDP. This is efficient because GPUs on the same node have fast interconnects (NVLink), making the <code>all_gather</code> operations for sharded parameters fast.</li>
+<li>Inter-Node (across machines): Use DDP. The gradient synchronization between nodes is less frequent than FSDP’s parameter gathering, making it a better fit for the slower node-to-node network (e.g., Ethernet/Infiniband).</li>
+<li>Example: With 2 nodes of 8 GPUs each (16 total), you could have <code>dp_shard_size=8</code> (FSDP within each node) and <code>dp_replicate_size=2</code> (DDP across the two nodes).</li>
+</ul>
+</section>
+</section>
+<section id="usage" class="level2">
+<h2 class="anchored" data-anchor-id="usage">Usage</h2>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># FSDP config. See https://docs.axolotl.ai/docs/multi-gpu.html#sec-fsdp</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="co">  # ...</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co"># The number of GPUs to shard the model parameters across (FSDP dimension).</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">dp_shard_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="co"># The number of times to replicate the sharded model (DDP dimension).</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="fu">dp_replicate_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of GPUs for Tensor Parallelism.</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="fu">tensor_parallel_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">  # (default is 1, no TP)</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of GPUs for Context/Sequence Parallelism.</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="fu">context_parallel_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co"> # (default is 1, no CP)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Note: We recommend FSDP. DeepSpeed is only compatible with <code>tensor_parallel_size</code>.</p>
+</section>
+<section id="examples" class="level2">
+<h2 class="anchored" data-anchor-id="examples">Examples</h2>
+<ol type="1">
+<li>HSDP on 2 nodes with 4 GPUs each (8 GPUs total):
+<ul>
+<li>You want FSDP within each node and DDP across nodes.</li>
+<li>Set <code>dp_shard_size: 4</code> and <code>dp_replicate_size: 2</code>.</li>
+</ul></li>
+<li>FSDP + TP on a single 8-GPU node:
+<ul>
+<li>You want to split the model across 4 GPUs using FSDP, and further split each layer across 2 GPUs with TP.</li>
+<li>Set <code>dp_shard_size: 4</code> and <code>tensor_parallel_size: 2</code>.</li>
+</ul></li>
+<li>FSDP + CP on a single 8-GPU node for long context:
+<ul>
+<li>You want to shard the model across all 8 GPUs and also split the sequence length across all 8 GPUs.</li>
+<li>Set <code>dp_shard_size: 8</code> and <code>context_parallel_size: 8</code>. Note: this means the data parallel group and context parallel group are the same. A more common setup might be to shard across a smaller group.</li>
+</ul></li>
+</ol>
+</section>
+<section id="support-matrix" class="level2">
+<h2 class="anchored" data-anchor-id="support-matrix">Support Matrix</h2>
+<p>This matrix describes how different parallelism methods can be combined in Axolotl.</p>
 <table class="caption-top table">
+<colgroup>
+<col style="width: 11%">
+<col style="width: 19%">
+<col style="width: 19%">
+<col style="width: 19%">
+<col style="width: 19%">
+<col style="width: 11%">
+</colgroup>
 <thead>
 <tr class="header">
-<th>Name</th>
-<th>Description</th>
+<th>Combination</th>
+<th style="text-align: center;"><code>dp_replicate_size</code></th>
+<th style="text-align: center;"><code>dp_shard_size</code></th>
+<th style="text-align: center;"><code>tp_size</code></th>
+<th style="text-align: center;"><code>cp_size</code></th>
+<th>Status &amp; Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.prompt_strategies.dpo.llama3.argilla_chat">argilla_chat</a></td>
-<td>for argilla/dpo-mix-7k conversations</td>
+<td><strong>FSDP</strong> (ZeRO-3)</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td>✅ Fully supported. Shards model across all GPUs.</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.prompt_strategies.dpo.llama3.icr">icr</a></td>
-<td>chatml transforms for datasets with system, input, chosen, rejected</td>
+<td><strong>HSDP</strong></td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td>✅ Fully supported. FSDP intra-node, DDP inter-node.</td>
 </tr>
 <tr class="odd">
-<td><a href="#axolotl.prompt_strategies.dpo.llama3.intel">intel</a></td>
-<td>For Intel Orca DPO Pairs</td>
+<td><strong>FSDP + TP</strong></td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">1</td>
+<td>✅ <strong>2D Parallelism</strong>. Shards the model across a <code>dp_shard</code> group, and TP-splits layers within the <code>tp</code> group.</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.prompt_strategies.dpo.llama3.ultra">ultra</a></td>
-<td>for ultrafeedback binarized conversations</td>
+<td><strong>HSDP + TP</strong></td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">1</td>
+<td>✅ <strong>3D Parallelism</strong>. A powerful but complex combination.</td>
+</tr>
+<tr class="odd">
+<td><strong>FSDP + CP</strong></td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">&gt;1</td>
+<td>✅ <strong>2D Parallelism</strong>. Combines FSDP with context parallelism.</td>
+</tr>
+<tr class="even">
+<td><strong>FSDP + TP + CP</strong></td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">&gt;1</td>
+<td>✅ <strong>3D Parallelism</strong>. Another advanced combination.</td>
+</tr>
+<tr class="odd">
+<td>DDP + TP/CP</td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">&gt;1</td>
+<td>❌ <strong>Not Supported</strong>. The <code>ParallelismConfig</code> explicitly prevents this, as composing pure DDP with TP/CP without FSDP is inefficient and complex. You should use FSDP instead (<code>dp_shard_size &gt; 1</code>).</td>
+</tr>
+<tr class="even">
+<td>Just TP / CP</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">&gt;1</td>
+<td>✅ Supported. Useful for inference or when the model fits on one GPU but context is too long.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.prompt_strategies.dpo.llama3.argilla_chat" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.dpo.llama3.argilla_chat">argilla_chat</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.dpo.llama3.argilla_chat(cfg, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>for argilla/dpo-mix-7k conversations</p>
-</section>
-<section id="axolotl.prompt_strategies.dpo.llama3.icr" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.dpo.llama3.icr">icr</h3>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.dpo.llama3.icr(cfg, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>chatml transforms for datasets with system, input, chosen, rejected
-ex. https://huggingface.co/datasets/argilla/distilabel-intel-orca-dpo-pairs</p>
-</section>
-<section id="axolotl.prompt_strategies.dpo.llama3.intel" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.dpo.llama3.intel">intel</h3>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.dpo.llama3.intel(cfg, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>For Intel Orca DPO Pairs</p>
-</section>
-<section id="axolotl.prompt_strategies.dpo.llama3.ultra" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.dpo.llama3.ultra">ultra</h3>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.dpo.llama3.ultra(cfg, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>for ultrafeedback binarized conversations</p>
+<ul>
+<li><code>tp_size</code> refers to <code>tensor_parallel_size</code></li>
+<li><code>cp_size</code> refers to <code>context_parallel_size</code></li>
+</ul>
 
 
-</section>
 </section>
 </section>
 
