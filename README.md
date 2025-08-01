@@ -25,7 +25,6 @@
 
 ## 🎉 Latest Updates
 
-<<<<<<< HEAD
 - 2025/07:
     - ND Parallelism support has been added into Axolotl. Compose Context Parallelism (CP), Tensor Parallelism (TP), and Data Parallelism (DP) within single node and across nodes. Check out the [PR](https://github.com/axolotl-ai-cloud/axolotl/pull/2977) for more info.
     - FP8 finetuning with fp8 gather op is now possible in Axolotl via `torchao`. Get started [here](https://docs.axolotl.ai/docs/mixed_precision.html#sec-fp8)!
