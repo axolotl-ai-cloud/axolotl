@@ -274,7 +274,6 @@ website:
             - docs/dataset_preprocessing.qmd
             - docs/multipack.qmd
             - docs/mixed_precision.qmd
-            - docs/gradient_accumulation.qmd
 
         - section: "Advanced Features"
           contents:
@@ -284,6 +283,7 @@ website:
             - docs/custom_integrations.qmd
             - docs/sequence_parallelism.qmd
             - docs/gradient_checkpointing.qmd
+            - docs/nd_parallelism.qmd
 
         - section: "Troubleshooting"
           contents:
