@@ -54,6 +54,7 @@ class LoraConfig(BaseModel):
     lora_alpha: int | None = None
     lora_fan_in_fan_out: bool | None = None
     lora_target_modules: str | list[str] | None = None
+    lora_target_parameters: str | list[str] | None = None
     lora_target_linear: bool | None = Field(
         default=None,
         json_schema_extra={"description": "If true, will target all linear modules"},
