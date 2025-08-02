@@ -1,9 +1,9 @@
 """
-Monkeypatch to add Params4bit support to FSDP2. This enables QLoRA + FSDP2, as well
-as our LoRA / QLoRA Triton kernels to work with FSDP2.
+Monkeypatch to add Params4bit support to FSDP2. This enables QLoRA + FSDP2, as well as
+our LoRA / QLoRA Triton kernels to work with FSDP2.
 
-This patch modifies the _init_sharded_param method in FSDPParam to properly handle
-bitsandbytes Params4bit parameters.
+This patch modifies the _init_sharded_param method in FSDPParam to handle bitsandbytes
+Params4bit parameters.
 """
 
 from typing import Callable, cast
