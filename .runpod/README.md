@@ -185,7 +185,6 @@ datasets:
 | `flash_attention`          | `false` | Use flash attention           |
 | `flash_attn_cross_entropy` | `false` | Flash attention cross entropy |
 | `flash_attn_rms_norm`      | `false` | Flash attention RMS norm      |
-| `flash_attn_fuse_qkv`      | `false` | Fuse QKV operations           |
 | `flash_attn_fuse_mlp`      | `false` | Fuse MLP operations           |
 | `sdp_attention`            | `false` | Use scaled dot product        |
 | `s2_attention`             | `false` | Use shifted sparse attention  |
