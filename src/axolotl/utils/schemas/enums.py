@@ -67,6 +67,8 @@ class ChatTemplate(str, Enum):
     command_a_tool_use = "command_a_tool_use"
     command_a_rag = "command_a_rag"
     aya = "aya"
+    granite = "granite"
+    granitemoe = "granitemoe"
 
 
 class CustomSupportedOptimizers(str, Enum):
