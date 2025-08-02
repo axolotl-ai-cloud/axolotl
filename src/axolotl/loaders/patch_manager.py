@@ -65,6 +65,9 @@ class PatchManager:
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
         self._apply_self_attention_lora_patch()
+        self._apply_gemma3_conditional_generation_forward_patch()
+        self._apply_sequence_parallel_patches()
+        self._apply_fsdp2_bnb_patches()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
@@ -259,6 +262,43 @@ class PatchManager:
                 model_name=self.cfg.base_model,
                 has_remote_code=has_remote_code,
             )
+
+    def _apply_gemma3_conditional_generation_forward_patch(self):
+        """Apply gemma3 conditional generation forward patch."""
+        if self.model_config.model_type in ["gemma3", "gemma3_text"]:
+            from axolotl.monkeypatch.models.gemma3.modeling import (
+                patch_gemma3_conditional_generation_forward,
+            )
+
+            patch_gemma3_conditional_generation_forward()
+
+    def _apply_sequence_parallel_patches(self):
+        """Apply sequence parallelism patches."""
+        if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
+            from axolotl.monkeypatch.ring_attn.patch import (
+                patch_prepare_data_loader,
+                patch_prepare_device_mesh,
+            )
+
+            patch_prepare_data_loader()
+            patch_prepare_device_mesh(self.cfg.sequence_parallel_degree, self.cfg.fsdp)
+
+    def _apply_fsdp2_bnb_patches(self):
+        """Apply FSDP2 BNB patches."""
+        if (
+            self.cfg.fsdp_config
+            and str(self.cfg.fsdp_version) == "2"
+            and self.cfg.adapter == "qlora"
+        ):
+            from axolotl.monkeypatch.fsdp2_bnb import (
+                apply_bnb_torch_function_patch,
+                apply_fsdp2_params4bit_patch,
+                apply_init_unsharded_param_patch,
+            )
+
+            apply_bnb_torch_function_patch()
+            apply_fsdp2_params4bit_patch()
+            apply_init_unsharded_param_patch()
 
     def _apply_tiled_mlp(self, model_type: str):
         if self.cfg.tiled_mlp:
