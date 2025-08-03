@@ -16,6 +16,64 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+def patched_torch_function(cls, func, types, args=(), kwargs=None):
+    """
+    Patched version of Params4bit.__torch_function__ for preserving Params4bit
+    class identity and attributes.
+    """
+    if kwargs is None:
+        kwargs = {}
+
+    if func in [torch.chunk, torch.split]:
+        tensor = args[0]
+        result = torch.nn.Parameter.__torch_function__(func, types, args, kwargs)
+
+        if isinstance(result, tuple):
+            return tuple(
+                cls(
+                    data=chunk,
+                    requires_grad=tensor.requires_grad,
+                    quant_state=tensor.quant_state,
+                    blocksize=tensor.blocksize,
+                    compress_statistics=tensor.compress_statistics,
+                    quant_type=tensor.quant_type,
+                    quant_storage=tensor.quant_storage,
+                    module=tensor.module,
+                    bnb_quantized=tensor.bnb_quantized,
+                )
+                for chunk in result
+            )
+
+        return cls(
+            data=result,
+            requires_grad=tensor.requires_grad,
+            quant_state=tensor.quant_state,
+            blocksize=tensor.blocksize,
+            compress_statistics=tensor.compress_statistics,
+            quant_type=tensor.quant_type,
+            quant_storage=tensor.quant_storage,
+            module=tensor.module,
+            bnb_quantized=tensor.bnb_quantized,
+        )
+
+    return torch.nn.Parameter.__torch_function__(func, types, args, kwargs)
+
+
+# pylint: disable=protected-access
+def apply_bnb_torch_function_patch():
+    """
+    Patch Params4bit.__torch_function__ using Axolotl-style approach.
+
+    Returns:
+        True if patching succeeded, False otherwise.
+    """
+    from bitsandbytes.nn.modules import Params4bit
+
+    Params4bit.__torch_function__ = classmethod(patched_torch_function)
+
+    LOG.info("Successfully patched Params4bit.__torch_function__")
+
+
 # pylint: disable=protected-access
 def patched_init_sharded_param(
     self,
@@ -168,10 +226,9 @@ def patched_init_sharded_param(
     assert sharded_param.is_contiguous(), f"{self.fsdp_placement=}"
 
     if isinstance(param, bnb.nn.modules.Params4bit):
-        # Create a new Params4bit with the sharded data, preserving quantization attributes
-        # Note: Pass the raw tensor data, not the DTensor wrapper
+        # Create Params4bit with the sharded data, preserving quantization attrs
         self.sharded_param = bnb.nn.modules.Params4bit(
-            data=sharded_param,  # Use raw tensor, not DTensor
+            data=sharded_param,
             requires_grad=param.requires_grad,
             quant_state=param.quant_state,
             blocksize=param.blocksize,
@@ -197,71 +254,8 @@ def apply_fsdp2_params4bit_patch():
     """Apply the monkeypatch to enable Params4bit support in FSDP."""
     from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
 
-    # Store original method for potential restoration
-    if not hasattr(FSDPParam, "_original_init_sharded_param"):
-        FSDPParam._original_init_sharded_param = FSDPParam._init_sharded_param
-
-    # Apply the patch
     FSDPParam._init_sharded_param = patched_init_sharded_param
     LOG.info("Successfully applied FSDP2 Params4bit patch")
-
-
-def patched_torch_function(cls, func, types, args=(), kwargs=None):
-    """
-    Patched version of Params4bit.__torch_function__ for preserving Params4bit
-    class identity and attributes.
-    """
-    if kwargs is None:
-        kwargs = {}
-
-    if func in [torch.chunk, torch.split]:
-        tensor = args[0]
-        result = torch.nn.Parameter.__torch_function__(func, types, args, kwargs)
-
-        if isinstance(result, tuple):
-            return tuple(
-                cls(
-                    data=chunk,
-                    requires_grad=tensor.requires_grad,
-                    quant_state=tensor.quant_state,
-                    blocksize=tensor.blocksize,
-                    compress_statistics=tensor.compress_statistics,
-                    quant_type=tensor.quant_type,
-                    quant_storage=tensor.quant_storage,
-                    module=tensor.module,
-                    bnb_quantized=tensor.bnb_quantized,
-                )
-                for chunk in result
-            )
-
-        return cls(
-            data=result,
-            requires_grad=tensor.requires_grad,
-            quant_state=tensor.quant_state,
-            blocksize=tensor.blocksize,
-            compress_statistics=tensor.compress_statistics,
-            quant_type=tensor.quant_type,
-            quant_storage=tensor.quant_storage,
-            module=tensor.module,
-            bnb_quantized=tensor.bnb_quantized,
-        )
-
-    return torch.nn.Parameter.__torch_function__(func, types, args, kwargs)
-
-
-# pylint: disable=protected-access
-def apply_bnb_torch_function_patch():
-    """
-    Patch Params4bit.__torch_function__ using Axolotl-style approach.
-
-    Returns:
-        True if patching succeeded, False otherwise.
-    """
-    from bitsandbytes.nn.modules import Params4bit
-
-    Params4bit.__torch_function__ = classmethod(patched_torch_function)
-
-    LOG.info("Successfully patched Params4bit.__torch_function__")
 
 
 # pylint: disable=protected-access
@@ -364,10 +358,5 @@ def apply_init_unsharded_param_patch():
     """Apply the monkeypatch to enable Params4bit support in FSDP init_unsharded_param."""
     from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
 
-    # Store original method for potential restoration
-    if not hasattr(FSDPParam, "_original_init_unsharded_param"):
-        FSDPParam._original_init_unsharded_param = FSDPParam.init_unsharded_param
-
-    # Apply the patch
     FSDPParam.init_unsharded_param = patched_init_unsharded_param
     LOG.info("Successfully applied FSDP init_unsharded_param Params4bit patch")
