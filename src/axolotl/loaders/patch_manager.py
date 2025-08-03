@@ -268,7 +268,7 @@ class PatchManager:
             and str(self.cfg.fsdp_version) == "2"
             and self.cfg.adapter == "qlora"
         ):
-            from axolotl.monkeypatch.fsdp2_bnb import (
+            from axolotl.monkeypatch.fsdp2_qlora import (
                 apply_bnb_torch_function_patch,
                 apply_init_sharded_param_patch,
                 apply_init_unsharded_param_patch,
