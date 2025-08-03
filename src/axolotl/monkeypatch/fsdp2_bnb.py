@@ -11,6 +11,10 @@ from typing import Callable, cast
 import torch
 from torch import nn
 
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
+
 
 # pylint: disable=protected-access
 def patched_init_sharded_param(
@@ -163,7 +167,6 @@ def patched_init_sharded_param(
 
     assert sharded_param.is_contiguous(), f"{self.fsdp_placement=}"
 
-    # PATCHED SECTION: Handle both regular nn.Parameter and bitsandbytes Params4bit
     if isinstance(param, bnb.nn.modules.Params4bit):
         # Create a new Params4bit with the sharded data, preserving quantization attributes
         # Note: Pass the raw tensor data, not the DTensor wrapper
@@ -192,18 +195,15 @@ def patched_init_sharded_param(
 # pylint: disable=protected-access
 def apply_fsdp2_params4bit_patch():
     """Apply the monkeypatch to enable Params4bit support in FSDP."""
-    try:
-        from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
+    from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
 
-        # Store original method for potential restoration
-        if not hasattr(FSDPParam, "_original_init_sharded_param"):
-            FSDPParam._original_init_sharded_param = FSDPParam._init_sharded_param
+    # Store original method for potential restoration
+    if not hasattr(FSDPParam, "_original_init_sharded_param"):
+        FSDPParam._original_init_sharded_param = FSDPParam._init_sharded_param
 
-        # Apply the patch
-        FSDPParam._init_sharded_param = patched_init_sharded_param
-        print("Successfully applied FSDP2 Params4bit patch")
-    except ImportError as e:
-        print(f"Failed to apply FSDP patch: {e}")
+    # Apply the patch
+    FSDPParam._init_sharded_param = patched_init_sharded_param
+    LOG.info("Successfully applied FSDP2 Params4bit patch")
 
 
 def patched_torch_function(cls, func, types, args=(), kwargs=None):
@@ -216,12 +216,9 @@ def patched_torch_function(cls, func, types, args=(), kwargs=None):
 
     if func in [torch.chunk, torch.split]:
         tensor = args[0]
-
-        # Call the original tensor operation
-        result = torch.Tensor.__torch_function__(func, types, args, kwargs)
+        result = torch.nn.Parameter.__torch_function__(func, types, args, kwargs)
 
         if isinstance(result, tuple):
-            # Return tuple of new Params4bit instances
             return tuple(
                 cls(
                     data=chunk,
@@ -249,24 +246,22 @@ def patched_torch_function(cls, func, types, args=(), kwargs=None):
             bnb_quantized=tensor.bnb_quantized,
         )
 
-    return torch.Tensor.__torch_function__(func, types, args, kwargs)
+    return torch.nn.Parameter.__torch_function__(func, types, args, kwargs)
 
 
 # pylint: disable=protected-access
 def apply_bnb_torch_function_patch():
-    """Apply monkeypatch to Params4bit.__torch_function__."""
-    try:
-        from bitsandbytes.nn.modules import Params4bit
+    """
+    Patch Params4bit.__torch_function__ using Axolotl-style approach.
 
-        # Store original method for potential restoration
-        if not hasattr(Params4bit, "_original_torch_function"):
-            Params4bit._original_torch_function = Params4bit.__torch_function__
+    Returns:
+        True if patching succeeded, False otherwise.
+    """
+    from bitsandbytes.nn.modules import Params4bit
 
-        # Apply the patch
-        Params4bit.__torch_function__ = classmethod(patched_torch_function)
-        print("Successfully applied Params4bit __torch_function__ patch")
-    except ImportError as e:
-        print(f"Failed to apply Params4bit patch: {e}")
+    Params4bit.__torch_function__ = classmethod(patched_torch_function)
+
+    LOG.info("Successfully patched Params4bit.__torch_function__")
 
 
 # pylint: disable=protected-access
@@ -274,21 +269,12 @@ def patched_init_unsharded_param(self):
     """
     Patched version of FSDPParam.init_unsharded_param that supports Params4bit.
     """
-    # Import bitsandbytes conditionally
-    try:
-        import bitsandbytes as bnb
-
-        has_bnb = True
-    except ImportError:
-        has_bnb = False
-        bnb = None
-
-    # Import required FSDP internals
-    from torch.distributed._composable.fsdp._fsdp_common import (
+    import bitsandbytes as bnb
+    from torch.distributed.fsdp._fully_shard._fsdp_common import (
+        _from_local_no_grad,
         compiled_autograd_enabled,
     )
-    from torch.distributed._tensor.api import _from_local_no_grad
-    from torch.distributed.utils import alloc_storage
+    from torch.distributed.fsdp._fully_shard._fsdp_param import alloc_storage
 
     if not compiled_autograd_enabled() and hasattr(
         self, "_unsharded_param"
@@ -353,19 +339,19 @@ def patched_init_unsharded_param(self):
             )
             torch.ops.fsdp.copy_(self._unsharded_param, unsharded_param)
     else:
-        # PATCHED SECTION: Handle both regular nn.Parameter and bitsandbytes Params4bit
-        if has_bnb and isinstance(self.sharded_param, bnb.nn.modules.Params4bit):
+        local_tensor = self.sharded_param._local_tensor
+        if isinstance(local_tensor, bnb.nn.modules.Params4bit):
             # Create a new Params4bit with the unsharded data, preserving quantization attributes
             self._unsharded_param = bnb.nn.modules.Params4bit(
                 data=unsharded_param,
                 requires_grad=self.sharded_param.requires_grad,
-                quant_state=self.sharded_param.quant_state,
-                blocksize=self.sharded_param.blocksize,
-                compress_statistics=self.sharded_param.compress_statistics,
-                quant_type=self.sharded_param.quant_type,
-                quant_storage=self.sharded_param.quant_storage,
-                module=self.sharded_param.module,
-                bnb_quantized=self.sharded_param.bnb_quantized,
+                quant_state=local_tensor.quant_state,
+                blocksize=local_tensor.blocksize,
+                compress_statistics=local_tensor.compress_statistics,
+                quant_type=local_tensor.quant_type,
+                quant_storage=local_tensor.quant_storage,
+                module=local_tensor.module,
+                bnb_quantized=local_tensor.bnb_quantized,
             )
         else:
             # Regular nn.Parameter case
@@ -376,17 +362,12 @@ def patched_init_unsharded_param(self):
 
 def apply_init_unsharded_param_patch():
     """Apply the monkeypatch to enable Params4bit support in FSDP init_unsharded_param."""
-    try:
-        from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
+    from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
 
-        # Store original method for potential restoration
-        if not hasattr(FSDPParam, "_original_init_unsharded_param"):
-            FSDPParam._original_init_unsharded_param = FSDPParam.init_unsharded_param
+    # Store original method for potential restoration
+    if not hasattr(FSDPParam, "_original_init_unsharded_param"):
+        FSDPParam._original_init_unsharded_param = FSDPParam.init_unsharded_param
 
-        # Apply the patch
-        FSDPParam.init_unsharded_param = patched_init_unsharded_param
-        print("Successfully applied FSDP init_unsharded_param Params4bit patch")
-
-    except ImportError as e:
-        print(f"Failed to apply FSDP init_unsharded_param patch: {e}")
-        print("Make sure PyTorch with FSDP support is installed")
+    # Apply the patch
+    FSDPParam.init_unsharded_param = patched_init_unsharded_param
+    LOG.info("Successfully applied FSDP init_unsharded_param Params4bit patch")
