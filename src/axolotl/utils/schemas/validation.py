@@ -644,6 +644,19 @@ class LoRAValidationMixin:
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_lora_dropout_parameters(cls, data):
+        if (
+            data.get("lora_dropout", 0.0)
+            and data.get("lora_dropout") > 0.0
+            and data.get("lora_target_parameters")
+        ):
+            # lora.ParamWrapper does not work with lora_dropout != 0
+            raise ValueError(
+                "`lora_dropout` does not work when using `lora_target_parameters`"
+            )
+
 
 class RLValidationMixin:
     """Validation methods related to RL training configuration."""
