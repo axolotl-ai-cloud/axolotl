@@ -76,6 +76,7 @@ def load_lora(
     config_only: bool = False,
 ) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]:
     lora_target_modules = cfg.lora_target_modules or []
+    lora_target_parameters = cfg.lora_target_parameters or []
 
     if cfg.lora_target_linear:
         linear_names = find_all_linear_names(model)
@@ -106,6 +107,7 @@ def load_lora(
         r=cfg.lora_r,
         lora_alpha=cfg.lora_alpha,
         target_modules=lora_target_modules,
+        target_parameters=lora_target_parameters,
         layers_to_transform=cfg.peft_layers_to_transform,
         layers_pattern=cfg.peft_layers_pattern,
         lora_dropout=cfg.lora_dropout,
