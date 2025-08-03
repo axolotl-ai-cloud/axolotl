@@ -78,7 +78,7 @@ def apply_bnb_torch_function_patch():
 
 # pylint: disable=protected-access
 def apply_init_sharded_param_patch():
-    """Apply surgical patch to FSDPParam._init_sharded_param to support Params4bit."""
+    """Apply patch to FSDPParam._init_sharded_param to support Params4bit."""
     from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
 
     # Get original source
@@ -107,7 +107,7 @@ def apply_init_sharded_param_patch():
         self.sharded_param = nn.Parameter(self.to_sharded_dtensor(sharded_param))
         self.sharded_param.requires_grad_(param.requires_grad)"""
 
-    # Apply the surgical replacement
+    # Apply the replacement
     if original_param_creation in original_source:
         patched_source = original_source.replace(
             original_param_creation, patched_param_creation
@@ -135,7 +135,7 @@ def apply_init_sharded_param_patch():
 
         # Replace the method
         FSDPParam._init_sharded_param = patched_init_sharded_param  # pylint: disable=undefined-variable  # noqa: F821
-        LOG.info("Successfully applied surgical FSDP _init_sharded_param patch")
+        LOG.info("Successfully applied FSDP _init_sharded_param patch")
     else:
         LOG.warning("Could not find target code for _init_sharded_param patching")
 
@@ -172,7 +172,7 @@ def apply_init_unsharded_param_patch():
                 unsharded_param, requires_grad=self.sharded_param.requires_grad
             )"""
 
-    # Apply the surgical replacement
+    # Apply the replacement
     if original_param_creation in original_source:
         patched_source = original_source.replace(
             original_param_creation, patched_param_creation
@@ -200,6 +200,6 @@ def apply_init_unsharded_param_patch():
 
         # Replace the method
         FSDPParam.init_unsharded_param = patched_init_unsharded_param  # pylint: disable=undefined-variable  # noqa: F821
-        LOG.info("Successfully applied surgical FSDP patch")
+        LOG.info("Successfully applied FSDP init_unsharded_param patch")
     else:
         LOG.warning("Could not find target code for patching")
