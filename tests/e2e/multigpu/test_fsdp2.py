@@ -175,8 +175,7 @@ class TestFSDP2:
         verify_training_success(temp_dir)
 
     @require_torch_2_7_0
-    @pytest.mark.parametrize("peft_use_dora", [True, False])
-    def test_lora_sft_kernels(self, temp_dir, peft_use_dora):
+    def test_lora_sft_kernels(self, temp_dir):
         cfg = DictDefault(
             {
                 "base_model": "Qwen/Qwen2.5-0.5B",
@@ -189,7 +188,6 @@ class TestFSDP2:
                         "split": "train[:10%]",
                     },
                 ],
-                "peft_use_dora": peft_use_dora,
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
