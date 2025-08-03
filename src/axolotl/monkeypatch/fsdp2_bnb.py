@@ -250,7 +250,7 @@ def patched_init_sharded_param(
 
 
 # pylint: disable=protected-access
-def apply_fsdp2_params4bit_patch():
+def apply_init_sharded_param_patch():
     """Apply the monkeypatch to enable Params4bit support in FSDP."""
     from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
 
