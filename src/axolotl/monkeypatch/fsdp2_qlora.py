@@ -10,6 +10,7 @@ import importlib
 import inspect
 
 import torch
+from torch.nn import Parameter
 
 from axolotl.monkeypatch.utils import detab_code
 from axolotl.utils.logging import get_logger
@@ -22,31 +23,42 @@ def patched_torch_function(cls, func, types, args=(), kwargs=None):
     Patched version of Params4bit.__torch_function__ for preserving Params4bit
     class identity and attributes.
     """
-    result = torch.nn.Parameter.__torch_function__(func, types, args, kwargs)
+    if kwargs is None:
+        kwargs = {}
 
-    def wrap_tensor_result(item):
-        if isinstance(item, torch.Tensor):
-            return cls(
-                data=item,
-                requires_grad=item.requires_grad,
-                quant_state=item.quant_state,
-                blocksize=item.blocksize,
-                compress_statistics=item.compress_statistics,
-                quant_type=item.quant_type,
-                quant_storage=item.quant_storage,
-                module=item.module,
-                bnb_quantized=item.bnb_quantized,
+    if func in [torch.chunk, torch.split]:
+        tensor = args[0]
+        result = Parameter.__torch_function__(func, types, args, kwargs)
+
+        if isinstance(result, tuple):
+            return tuple(
+                cls(
+                    data=chunk,
+                    requires_grad=tensor.requires_grad,
+                    quant_state=tensor.quant_state,
+                    blocksize=tensor.blocksize,
+                    compress_statistics=tensor.compress_statistics,
+                    quant_type=tensor.quant_type,
+                    quant_storage=tensor.quant_storage,
+                    module=tensor.module,
+                    bnb_quantized=tensor.bnb_quantized,
+                )
+                for chunk in result
             )
-        return item
 
-    if isinstance(result, (tuple, list)):
-        container_type = type(result)
-        return container_type(wrap_tensor_result(item) for item in result)
-    if hasattr(result, "_fields"):  # Named tuple
-        return type(result)(*(wrap_tensor_result(item) for item in result))
-    if isinstance(result, torch.Tensor):
-        return wrap_tensor_result(result)
-    return result  # Return non-tensor results as-is
+        return cls(
+            data=result,
+            requires_grad=tensor.requires_grad,
+            quant_state=tensor.quant_state,
+            blocksize=tensor.blocksize,
+            compress_statistics=tensor.compress_statistics,
+            quant_type=tensor.quant_type,
+            quant_storage=tensor.quant_storage,
+            module=tensor.module,
+            bnb_quantized=tensor.bnb_quantized,
+        )
+
+    return Parameter.__torch_function__(func, types, args, kwargs)
 
 
 # pylint: disable=protected-access
