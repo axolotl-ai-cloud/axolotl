@@ -171,7 +171,6 @@ class TestCustomOptimizers(unittest.TestCase):
                 "model_type": "AutoModelForCausalLM",
                 "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
-                "load_in_8bit": True,
                 "val_set_size": 0.0,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
