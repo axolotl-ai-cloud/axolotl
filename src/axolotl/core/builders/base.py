@@ -532,15 +532,15 @@ class TrainerBuilderBase(abc.ABC):
             "include_tokens_per_second",
             "weight_decay",
             "seed",
+            "dion_momentum",
+            "dion_rank_fraction",
+            "dion_rank_multiple_of",
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
                 training_args_kwargs[arg] = getattr(self.cfg, arg)
 
         arg_map = {
             "dion_learning_rate": "dion_lr",
-            "dion_momentum": "dion_mu",
-            "dion_rank_fraction": "dion_rank_fraction",
-            "dion_rank_multiple_of": "dion_rank_multiple_of",
         }
         for kwarg, cfg_arg in arg_map.items():
             if hasattr(self.cfg, cfg_arg) and getattr(self.cfg, cfg_arg) is not None:
