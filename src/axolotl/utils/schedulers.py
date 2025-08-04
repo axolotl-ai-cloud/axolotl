@@ -4,6 +4,7 @@ import math
 from functools import partial
 from typing import Sequence
 
+from torch import Tensor
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR, LRScheduler
 
