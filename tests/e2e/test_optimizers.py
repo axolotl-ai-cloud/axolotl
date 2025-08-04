@@ -159,8 +159,9 @@ class TestCustomOptimizers(unittest.TestCase):
 
         _, _, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
-        assert "Muon" in trainer.optimizer.optimizer.__class__.__name__ @ with_temp_dir
+        assert "Muon" in trainer.optimizer.optimizer.__class__.__name__
 
+    @with_temp_dir
     @require_torch_2_7_0
     def test_dion(self, temp_dir):
         # pylint: disable=duplicate-code
