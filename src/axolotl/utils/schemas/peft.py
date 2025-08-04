@@ -41,7 +41,7 @@ class LoraConfig(BaseModel):
     adapter: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "If you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model"
+            "description": "If you want to use 'lora' or 'qlora' or 'qalora' or leave blank to train all parameters in original model"
         },
     )
     lora_model_dir: str | None = Field(
@@ -128,6 +128,18 @@ class LoraConfig(BaseModel):
             "description": "loraplus learning rate for lora embedding layers. Default value is 1e-6."
         },
     )
+    use_qalora: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Enable Quantization-Aware Low-Rank Adaptation"
+        },
+    )
+    qalora_group_size: int | None = Field(
+        default=16,
+        json_schema_extra={
+            "description": "Group size for QALoRA quantization pooling"
+        },
+    )
 
     merge_lora: bool | None = None
 
@@ -168,6 +180,28 @@ class LoraConfig(BaseModel):
 
                 if not self.load_in_4bit:
                     raise ValueError("Require cfg.load_in_4bit to be True for qlora")
+        
+        if self.adapter == "qalora":
+            if self.merge_lora:
+                # can't merge qalora if loaded in 8bit or 4bit
+                if self.load_in_8bit:
+                    raise ValueError("Can't merge qalora if loaded in 8bit")
+
+                if self.gptq:
+                    raise ValueError("Can't merge qalora if gptq")
+
+                if self.load_in_4bit:
+                    raise ValueError("Can't merge qalora if loaded in 4bit")
+
+            else:
+                if self.load_in_8bit:
+                    raise ValueError("Can't load qalora in 8bit")
+
+                if self.gptq:
+                    raise ValueError("Can't load qalora if gptq")
+
+                if not self.load_in_4bit:
+                    raise ValueError("Require cfg.load_in_4bit to be True for qalora")
         return self
 
     @field_validator("loraplus_lr_embedding")

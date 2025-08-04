@@ -148,8 +148,8 @@ class ModelLoader:
 
     @property
     def is_qlora_and_fsdp_enabled(self):
-        """Property that determines if FSDP with QLoRA is enabled."""
-        return self.is_fsdp_enabled and self.cfg.adapter == "qlora"
+        """Property that determines if FSDP with QLoRA/QALoRA is enabled."""
+        return self.is_fsdp_enabled and self.cfg.adapter in ["qlora", "qalora"]
 
     def load(self) -> tuple[PreTrainedModel | PeftModelForCausalLM, PeftConfig | None]:
         """Load and prepare the model with all configurations and patches.
@@ -305,7 +305,7 @@ class ModelLoader:
 
         # Apply gradient checkpointing if needed
         needs_fa2_dtype = self.cfg.adapter or self.is_fsdp_enabled
-        if self.cfg.adapter in ["lora", "qlora"]:
+        if self.cfg.adapter in ["lora", "qlora", "qalora"]:
             needs_fa2_dtype = True
             if self.cfg.gradient_checkpointing:
                 self.model.gradient_checkpointing_enable(
@@ -582,7 +582,7 @@ class ModelLoader:
                     **self.model_config.quantization_config
                 )
         if (
-            self.cfg.adapter in ["qlora", "lora"]
+            self.cfg.adapter in ["qlora", "lora", "qalora"]
             and hasattr(self.model_config, "quantization_config")
             and self.model_config.quantization_config["quant_method"]
             in ["gptq", "awq", "bitsandbytes"]
@@ -601,7 +601,7 @@ class ModelLoader:
                 self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
                     **self.model_config.quantization_config
                 )
-        elif self.cfg.adapter == "qlora" and self.model_kwargs["load_in_4bit"]:
+        elif self.cfg.adapter in ["qlora", "qalora"] and self.model_kwargs["load_in_4bit"]:
             bnb_config = {
                 "load_in_4bit": True,
                 "llm_int8_threshold": 6.0,
@@ -886,7 +886,7 @@ class ModelLoader:
 
         if (
             not skip_prepare_model_for_kbit_training
-            and self.cfg.adapter in ["lora", "qlora"]
+            and self.cfg.adapter in ["lora", "qlora" , "qalora"]
             and (self.cfg.load_in_8bit or self.cfg.load_in_4bit)
         ):
             LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
