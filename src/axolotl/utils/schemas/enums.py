@@ -79,6 +79,8 @@ class CustomSupportedOptimizers(str, Enum):
     adopt_adamw = "adopt_adamw"
     came_pytorch = "came_pytorch"
     muon = "muon"
+    dion = "dion"
+    dion_8bit = "dion_8bit"
 
 
 class RingAttnFunc(str, Enum):

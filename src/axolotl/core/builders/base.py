@@ -267,6 +267,20 @@ class TrainerBuilderBase(abc.ABC):
 
                 optimizer_cls = MuonOptimizerFactory
                 optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer in ["dion", "dion_8bit"]:
+                from axolotl.contribs.mit.dion import (  # pylint: disable=no-name-in-module
+                    Dion8bitOptimizerFactory,
+                    DionOptimizerFactory,
+                )
+
+                optimizer_cls = (
+                    Dion8bitOptimizerFactory
+                    if self.cfg.optimizer == "dion_8bit"
+                    else DionOptimizerFactory
+                )
+                optimizer_kwargs.update(adam_kwargs)
+                partial_state = PartialState()
+                optimizer_kwargs["device_mesh"] = partial_state.device_mesh
             elif self.cfg.optimizer == "optimi_adamw":
                 from optimi import AdamW
 
