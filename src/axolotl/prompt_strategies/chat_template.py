@@ -3,6 +3,7 @@ HF Chat Templates prompt strategy
 """
 
 from collections import defaultdict
+import json
 from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
 
 from pydantic import BaseModel
@@ -793,6 +794,16 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 val = message.get(key)
                 if val is not None:
                     transformed_message[key] = val
+
+        if "tool_calls" in transformed_message and transformed_message["tool_calls"]:
+            for tool_call in transformed_message["tool_calls"]:
+                if "function" in tool_call and "arguments" in tool_call["function"]:
+                    args = tool_call["function"]["arguments"]
+                    if isinstance(args, str):
+                        try:
+                            tool_call["function"]["arguments"] = json.loads(args)
+                        except json.JSONDecodeError:
+                            tool_call["function"]["arguments"] = {}
 
         return transformed_message
 

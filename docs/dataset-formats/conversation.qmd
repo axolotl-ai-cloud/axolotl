@@ -191,9 +191,7 @@ Instead of passing `tools` via the system prompt, an alternative method would be
                     "type": "function",
                     "function": {
                         "name": "...",
-                        "arguments": {
-                            "...": "...",
-                        }
+                        "arguments": "{\"...\": \"...\"}" // should be json string
                     }
                 }
             ]
