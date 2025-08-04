@@ -138,6 +138,26 @@ class HyperparametersConfig(BaseModel):
     adam_beta3: float | None = Field(
         default=None, json_schema_extra={"description": "only used for CAME Optimizer"}
     )
+
+    dion_lr: float | None = Field(
+        default=None, json_schema_extra={"description": "Dion Optimizer learning rate"}
+    )
+    dion_momentum: float | None = Field(
+        default=None, json_schema_extra={"description": "Dion Optimizer momentum"}
+    )
+    dion_rank_fraction: float | None = Field(
+        default=1.0,
+        json_schema_extra={
+            "description": "Dion Optimizer: r/d fraction for low-rank approximation. Used to compute the low-rank dimension."
+        },
+    )
+    dion_rank_multiple_of: int | None = Field(
+        default=1,
+        json_schema_extra={
+            "description": "Dion Optimizer: Round up the low-rank dimension to a multiple of this number. This may be useful to ensure even sharding."
+        },
+    )
+
     max_grad_norm: float | None = Field(
         default=None, json_schema_extra={"description": "Gradient clipping max norm"}
     )

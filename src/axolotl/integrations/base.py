@@ -26,9 +26,11 @@ import traceback
 from typing import TYPE_CHECKING, Callable, OrderedDict, Union
 
 from peft import PeftModel
+from torch import nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from transformers import PreTrainedModel, Trainer
+from transformers.trainer_pt_utils import get_parameter_names
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
@@ -641,3 +643,24 @@ class BaseOptimizerFactory:
         self, opt_model, training_args, **optimizer_kwargs
     ) -> Optimizer | None:
         pass
+
+    # duplicated from transformers
+    def get_decay_parameter_names(self, model) -> list[str]:
+        """
+        Get all parameter names that weight decay will be applied to.
+
+        This function filters out parameters in two ways:
+        1. By layer type (instances of layers specified in ALL_LAYERNORM_LAYERS)
+        2. By parameter name patterns (containing 'bias', or variation of 'norm')
+        """
+        forbidden_name_patterns = [
+            r"bias",
+            r"layernorm",
+            r"rmsnorm",
+            r"(?:^|\.)norm(?:$|\.)",
+            r"_norm(?:$|\.)",
+        ]
+        decay_parameters = get_parameter_names(
+            model, [nn.LayerNorm], forbidden_name_patterns
+        )
+        return decay_parameters

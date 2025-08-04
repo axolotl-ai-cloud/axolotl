@@ -267,6 +267,17 @@ class TrainerBuilderBase(abc.ABC):
 
                 optimizer_cls = MuonOptimizerFactory
                 optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "dion":
+                from axolotl.contribs.mit.dion import (  # pylint: disable=no-name-in-module
+                    DionOptimizerFactory,
+                )
+
+                optimizer_cls = DionOptimizerFactory
+                optimizer_kwargs["dion_lr"] = training_args_kwargs["dion_learning_rate"]
+                optimizer_kwargs["dion_mu"] = training_args_kwargs["dion_momentum"]
+                optimizer_kwargs.update(adam_kwargs)
+                partial_state = PartialState()
+                optimizer_kwargs["device_mesh"] = partial_state.device_mesh
             elif self.cfg.optimizer == "optimi_adamw":
                 from optimi import AdamW
 
@@ -516,9 +527,19 @@ class TrainerBuilderBase(abc.ABC):
             "include_tokens_per_second",
             "weight_decay",
             "seed",
+            "dion_momentum",
+            "dion_rank_fraction",
+            "dion_rank_multiple_of",
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
                 training_args_kwargs[arg] = getattr(self.cfg, arg)
+
+        arg_map = {
+            "dion_learning_rate": "dion_lr",
+        }
+        for kwarg, cfg_arg in arg_map.items():
+            if hasattr(self.cfg, cfg_arg) and getattr(self.cfg, cfg_arg) is not None:
+                training_args_kwargs[kwarg] = getattr(self.cfg, cfg_arg)
 
         training_args_kwargs["per_device_train_batch_size"] = self.cfg.micro_batch_size
         training_args_kwargs["average_tokens_across_devices"] = False
