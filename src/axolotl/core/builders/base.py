@@ -278,6 +278,8 @@ class TrainerBuilderBase(abc.ABC):
                     if self.cfg.optimizer == "dion_8bit"
                     else DionOptimizerFactory
                 )
+                optimizer_kwargs["dion_lr"] = training_args_kwargs["dion_learning_rate"]
+                optimizer_kwargs["dion_mu"] = training_args_kwargs["dion_momentum"]
                 optimizer_kwargs.update(adam_kwargs)
                 partial_state = PartialState()
                 optimizer_kwargs["device_mesh"] = partial_state.device_mesh
@@ -533,6 +535,16 @@ class TrainerBuilderBase(abc.ABC):
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
                 training_args_kwargs[arg] = getattr(self.cfg, arg)
+
+        arg_map = {
+            "dion_learning_rate": "dion_lr",
+            "dion_momentum": "dion_mu",
+            "dion_rank_fraction": "dion_rank_fraction",
+            "dion_rank_multiple_of": "dion_rank_multiple_of",
+        }
+        for kwarg, cfg_arg in arg_map.items():
+            if hasattr(self.cfg, cfg_arg) and getattr(self.cfg, cfg_arg) is not None:
+                training_args_kwargs[kwarg] = getattr(self.cfg, cfg_arg)
 
         training_args_kwargs["per_device_train_batch_size"] = self.cfg.micro_batch_size
         training_args_kwargs["average_tokens_across_devices"] = False
