@@ -14,6 +14,7 @@ from typing import Callable
 import torch
 from bitsandbytes.functional import QuantState
 from torch import nn
+from torch.distributed.tensor import DTensor
 
 from .geglu import geglu_backward, geglu_forward
 from .quantize import dequantize
@@ -54,8 +55,21 @@ def get_lora_parameters(
         if hasattr(proj, "active_adapters")
         else proj.active_adapter
     )
-    A = proj.lora_A[active_adapter].weight
-    B = proj.lora_B[active_adapter].weight
+
+    linear_A = proj.lora_A[active_adapter]
+    linear_B = proj.lora_B[active_adapter]
+
+    # This manual unsharding is needed for FSDP2 + LoRA kernels compatibility.
+    # We fuse linear layers + LoRA adapters calculations into a single
+    # torch.autograd.Function, bypassing the registered unshard / reshard behavior.
+    # Note that we don't apply resharding later in this module (it gets messy quickly),
+    # but LoRA parameters are generally small enough that this is not an issue.
+    if isinstance(linear_A.weight, DTensor):
+        linear_A.unshard()
+        linear_B.unshard()
+
+    A = linear_A.weight
+    B = linear_B.weight
     s = proj.scaling[active_adapter]
 
     quant_state = getattr(W, "quant_state", None)
@@ -102,8 +116,8 @@ def matmul_lora(
         del W
 
     if A is not None:
-        A, B = A.t(), B.t()
-        out += (X @ A.to(dtype)) @ (s * B.to(dtype))
+        A, B = A.t().to(dtype), B.t().to(dtype)
+        out += s * X @ A @ B
 
     return out.view(batch, seq_len, -1) if reshape else out
 

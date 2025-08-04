@@ -65,6 +65,7 @@ class PatchManager:
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
         self._apply_self_attention_lora_patch()
+        self._apply_fsdp2_bnb_patches()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
@@ -259,6 +260,23 @@ class PatchManager:
                 model_name=self.cfg.base_model,
                 has_remote_code=has_remote_code,
             )
+
+    def _apply_fsdp2_bnb_patches(self):
+        """Apply FSDP2 BNB patches."""
+        if (
+            self.cfg.fsdp_config
+            and str(self.cfg.fsdp_version) == "2"
+            and self.cfg.adapter == "qlora"
+        ):
+            from axolotl.monkeypatch.fsdp2_qlora import (
+                apply_bnb_torch_function_patch,
+                apply_init_sharded_param_patch,
+                apply_init_unsharded_param_patch,
+            )
+
+            apply_bnb_torch_function_patch()
+            apply_init_sharded_param_patch()
+            apply_init_unsharded_param_patch()
 
     def _apply_tiled_mlp(self, model_type: str):
         if self.cfg.tiled_mlp:
