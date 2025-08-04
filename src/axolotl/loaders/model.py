@@ -601,7 +601,10 @@ class ModelLoader:
                 self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
                     **self.model_config.quantization_config
                 )
-        elif self.cfg.adapter in ["qlora", "qalora"] and self.model_kwargs["load_in_4bit"]:
+        elif (
+            self.cfg.adapter in ["qlora", "qalora"]
+            and self.model_kwargs["load_in_4bit"]
+        ):
             bnb_config = {
                 "load_in_4bit": True,
                 "llm_int8_threshold": 6.0,
@@ -886,7 +889,7 @@ class ModelLoader:
 
         if (
             not skip_prepare_model_for_kbit_training
-            and self.cfg.adapter in ["lora", "qlora" , "qalora"]
+            and self.cfg.adapter in ["lora", "qlora", "qalora"]
             and (self.cfg.load_in_8bit or self.cfg.load_in_4bit)
         ):
             LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")

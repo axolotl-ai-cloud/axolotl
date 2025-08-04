@@ -596,13 +596,13 @@ class LoRAValidationMixin:
         ):
             raise ValueError("Fused modules are not supported with LoRA/QLoRA")
         return self
-    
+
     @model_validator(mode="after")
     def validate_qalora(self):
         if self.adapter == "qalora":
             if not self.load_in_4bit:
                 raise ValueError("QALoRA requires load_in_4bit to be True")
-            if not hasattr(self, 'qalora_group_size') or self.qalora_group_size is None:
+            if not hasattr(self, "qalora_group_size") or self.qalora_group_size is None:
                 raise ValueError("QALoRA requires qalora_group_size to be specified")
             if self.merge_lora:
                 raise ValueError("QALoRA does not support merge_lora yet")
@@ -1180,7 +1180,9 @@ class ComplexValidationMixin:
             if not self.jagged_restart_steps:
                 raise ValueError("jagged_restart_steps must be set to use ReLoRA")
             if self.adapter not in ("lora", "qlora", "qalora"):
-                raise ValueError("cfg.adapter must be lora, qlora, or qalora to use ReLoRA")
+                raise ValueError(
+                    "cfg.adapter must be lora, qlora, or qalora to use ReLoRA"
+                )
 
             if self.fsdp or self.fsdp_config:
                 raise ValueError("fsdp not supported with ReLoRA")

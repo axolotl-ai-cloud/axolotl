@@ -95,9 +95,9 @@ def load_lora(
         lora_config_kwargs["init_lora_weights"] = "loftq"
 
     if cfg.adapter == "qalora":
-        if hasattr(cfg, 'use_qalora') and cfg.use_qalora:
+        if hasattr(cfg, "use_qalora") and cfg.use_qalora:
             lora_config_kwargs["use_qalora"] = True
-        if hasattr(cfg, 'qalora_group_size') and cfg.qalora_group_size:
+        if hasattr(cfg, "qalora_group_size") and cfg.qalora_group_size:
             lora_config_kwargs["qalora_group_size"] = cfg.qalora_group_size
 
     if cfg.peft_init_lora_weights:
@@ -181,7 +181,7 @@ def load_adapter(
         return model, None
     if hasattr(model, "enable_input_require_grads"):
         model.enable_input_require_grads()
-    if adapter in ["lora", "qlora" , "qalora"]:
+    if adapter in ["lora", "qlora", "qalora"]:
         peft_model, lora_config = load_lora(model, cfg, inference=inference)
         return peft_model, lora_config
     if adapter == "llama-adapter":

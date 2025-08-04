@@ -136,9 +136,7 @@ class LoraConfig(BaseModel):
     )
     qalora_group_size: int | None = Field(
         default=16,
-        json_schema_extra={
-            "description": "Group size for QALoRA quantization pooling"
-        },
+        json_schema_extra={"description": "Group size for QALoRA quantization pooling"},
     )
 
     merge_lora: bool | None = None
@@ -180,7 +178,7 @@ class LoraConfig(BaseModel):
 
                 if not self.load_in_4bit:
                     raise ValueError("Require cfg.load_in_4bit to be True for qlora")
-        
+
         if self.adapter == "qalora":
             if self.merge_lora:
                 # can't merge qalora if loaded in 8bit or 4bit
