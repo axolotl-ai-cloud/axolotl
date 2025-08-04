@@ -1,0 +1,18 @@
+---
+title: Optimizers
+description: Configuring optimizers
+---
+
+### Dion Optimizer
+
+Microsoft's Dion (DIstributed OrthoNormalization) optimizer is a scalable and communication-efficient
+orthonormalizing optimizer that uses low-rank approximations to reduce gradient communication.
+
+Usage:
+
+```yaml
+optimizer: dion
+dion_lr: 0.01
+dion_momentum: 0.95
+lr: 0.00001  # learning rate for embeddings and parameters that fallback to AdamW
+```
