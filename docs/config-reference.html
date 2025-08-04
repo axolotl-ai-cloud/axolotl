@@ -442,7 +442,13 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">N-D Parallelism</span></a>
+ <span class="menu-text">N-D Parallelism (Beta)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/optimizers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Optimizers</span></a>
   </div>
 </li>
       </ul>
@@ -1697,99 +1703,111 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-1184"><a href="#cb1-1184" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_beta2</span><span class="kw">:</span><span class="at"> float | None</span></span>
 <span id="cb1-1185"><a href="#cb1-1185" aria-hidden="true" tabindex="-1"></a><span class="co"># only used for CAME Optimizer</span></span>
 <span id="cb1-1186"><a href="#cb1-1186" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_beta3</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1187"><a href="#cb1-1187" aria-hidden="true" tabindex="-1"></a><span class="co"># Gradient clipping max norm</span></span>
-<span id="cb1-1188"><a href="#cb1-1188" aria-hidden="true" tabindex="-1"></a><span class="fu">max_grad_norm</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1189"><a href="#cb1-1189" aria-hidden="true" tabindex="-1"></a><span class="fu">num_epochs</span><span class="kw">:</span><span class="at"> float = 1.0</span></span>
-<span id="cb1-1190"><a href="#cb1-1190" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1191"><a href="#cb1-1191" aria-hidden="true" tabindex="-1"></a><span class="fu">use_wandb</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1192"><a href="#cb1-1192" aria-hidden="true" tabindex="-1"></a><span class="co"># Set the name of your wandb run</span></span>
-<span id="cb1-1193"><a href="#cb1-1193" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1194"><a href="#cb1-1194" aria-hidden="true" tabindex="-1"></a><span class="co"># Set the ID of your wandb run</span></span>
-<span id="cb1-1195"><a href="#cb1-1195" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_run_id</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1196"><a href="#cb1-1196" aria-hidden="true" tabindex="-1"></a><span class="co"># "offline" to save run metadata locally and not sync to the server, "disabled" to turn</span></span>
-<span id="cb1-1197"><a href="#cb1-1197" aria-hidden="true" tabindex="-1"></a><span class="co"># off wandb</span></span>
-<span id="cb1-1198"><a href="#cb1-1198" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_mode</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1199"><a href="#cb1-1199" aria-hidden="true" tabindex="-1"></a><span class="co"># Your wandb project name</span></span>
-<span id="cb1-1200"><a href="#cb1-1200" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_project</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1201"><a href="#cb1-1201" aria-hidden="true" tabindex="-1"></a><span class="co"># A wandb Team name if using a Team</span></span>
-<span id="cb1-1202"><a href="#cb1-1202" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_entity</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1203"><a href="#cb1-1203" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_watch</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1204"><a href="#cb1-1204" aria-hidden="true" tabindex="-1"></a><span class="co"># "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only</span></span>
-<span id="cb1-1205"><a href="#cb1-1205" aria-hidden="true" tabindex="-1"></a><span class="co"># at the end of training</span></span>
-<span id="cb1-1206"><a href="#cb1-1206" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_log_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1207"><a href="#cb1-1207" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1208"><a href="#cb1-1208" aria-hidden="true" tabindex="-1"></a><span class="fu">use_mlflow</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1209"><a href="#cb1-1209" aria-hidden="true" tabindex="-1"></a><span class="co"># URI to mlflow</span></span>
-<span id="cb1-1210"><a href="#cb1-1210" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_tracking_uri</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1211"><a href="#cb1-1211" aria-hidden="true" tabindex="-1"></a><span class="co"># Your experiment name</span></span>
-<span id="cb1-1212"><a href="#cb1-1212" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_experiment_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1213"><a href="#cb1-1213" aria-hidden="true" tabindex="-1"></a><span class="co"># Your run name</span></span>
-<span id="cb1-1214"><a href="#cb1-1214" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_run_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1215"><a href="#cb1-1215" aria-hidden="true" tabindex="-1"></a><span class="co"># set to true to copy each saved checkpoint on each save to mlflow artifact registry</span></span>
-<span id="cb1-1216"><a href="#cb1-1216" aria-hidden="true" tabindex="-1"></a><span class="fu">hf_mlflow_log_artifacts</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1217"><a href="#cb1-1217" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1218"><a href="#cb1-1218" aria-hidden="true" tabindex="-1"></a><span class="co"># Enable or disable Comet integration.</span></span>
-<span id="cb1-1219"><a href="#cb1-1219" aria-hidden="true" tabindex="-1"></a><span class="fu">use_comet</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1220"><a href="#cb1-1220" aria-hidden="true" tabindex="-1"></a><span class="co"># API key for Comet. Recommended to set via `comet login`.</span></span>
-<span id="cb1-1221"><a href="#cb1-1221" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_api_key</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1222"><a href="#cb1-1222" aria-hidden="true" tabindex="-1"></a><span class="co"># Workspace name in Comet. Defaults to the user's default workspace.</span></span>
-<span id="cb1-1223"><a href="#cb1-1223" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_workspace</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1224"><a href="#cb1-1224" aria-hidden="true" tabindex="-1"></a><span class="co"># Project name in Comet. Defaults to Uncategorized.</span></span>
-<span id="cb1-1225"><a href="#cb1-1225" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_project_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1226"><a href="#cb1-1226" aria-hidden="true" tabindex="-1"></a><span class="co"># Identifier for the experiment. Used to append data to an existing experiment or</span></span>
-<span id="cb1-1227"><a href="#cb1-1227" aria-hidden="true" tabindex="-1"></a><span class="co"># control the key of new experiments. Default to a random key.</span></span>
-<span id="cb1-1228"><a href="#cb1-1228" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_experiment_key</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1229"><a href="#cb1-1229" aria-hidden="true" tabindex="-1"></a><span class="co"># Create a new experiment ("create") or log to an existing one ("get"). Default</span></span>
-<span id="cb1-1230"><a href="#cb1-1230" aria-hidden="true" tabindex="-1"></a><span class="co"># ("get_or_create") auto-selects based on configuration.</span></span>
-<span id="cb1-1231"><a href="#cb1-1231" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_mode</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1232"><a href="#cb1-1232" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to True to log data to Comet server, or False for offline storage. Default is</span></span>
-<span id="cb1-1233"><a href="#cb1-1233" aria-hidden="true" tabindex="-1"></a><span class="co"># True.</span></span>
-<span id="cb1-1234"><a href="#cb1-1234" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_online</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1235"><a href="#cb1-1235" aria-hidden="true" tabindex="-1"></a><span class="co"># Dictionary for additional configuration settings, see the doc for more details.</span></span>
-<span id="cb1-1236"><a href="#cb1-1236" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_experiment_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
-<span id="cb1-1237"><a href="#cb1-1237" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1238"><a href="#cb1-1238" aria-hidden="true" tabindex="-1"></a><span class="co"># the number of activate layers in LISA</span></span>
-<span id="cb1-1239"><a href="#cb1-1239" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_n_layers</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1240"><a href="#cb1-1240" aria-hidden="true" tabindex="-1"></a><span class="co"># how often to switch layers in LISA</span></span>
-<span id="cb1-1241"><a href="#cb1-1241" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_step_interval</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1242"><a href="#cb1-1242" aria-hidden="true" tabindex="-1"></a><span class="co"># path under the model to access the layers</span></span>
-<span id="cb1-1243"><a href="#cb1-1243" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_layers_attribute</span><span class="kw">:</span><span class="at"> str | None = model.layers</span></span>
-<span id="cb1-1244"><a href="#cb1-1244" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1245"><a href="#cb1-1245" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_title</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1246"><a href="#cb1-1246" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_share</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1247"><a href="#cb1-1247" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_server_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1248"><a href="#cb1-1248" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_server_port</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1249"><a href="#cb1-1249" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_max_new_tokens</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1250"><a href="#cb1-1250" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_temperature</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1251"><a href="#cb1-1251" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1252"><a href="#cb1-1252" aria-hidden="true" tabindex="-1"></a><span class="fu">use_ray</span><span class="kw">:</span><span class="at"> bool = False</span></span>
-<span id="cb1-1253"><a href="#cb1-1253" aria-hidden="true" tabindex="-1"></a><span class="fu">ray_run_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1254"><a href="#cb1-1254" aria-hidden="true" tabindex="-1"></a><span class="fu">ray_num_workers</span><span class="kw">:</span><span class="at"> int = 1</span></span>
-<span id="cb1-1255"><a href="#cb1-1255" aria-hidden="true" tabindex="-1"></a><span class="fu">resources_per_worker</span><span class="kw">:</span><span class="at"> dict</span></span>
+<span id="cb1-1187"><a href="#cb1-1187" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1188"><a href="#cb1-1188" aria-hidden="true" tabindex="-1"></a><span class="co"># Dion Optimizer learning rate</span></span>
+<span id="cb1-1189"><a href="#cb1-1189" aria-hidden="true" tabindex="-1"></a><span class="fu">dion_lr</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1190"><a href="#cb1-1190" aria-hidden="true" tabindex="-1"></a><span class="co"># Dion Optimizer momentum</span></span>
+<span id="cb1-1191"><a href="#cb1-1191" aria-hidden="true" tabindex="-1"></a><span class="fu">dion_momentum</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1192"><a href="#cb1-1192" aria-hidden="true" tabindex="-1"></a><span class="co"># Dion Optimizer: r/d fraction for low-rank approximation. Used to compute the low-rank</span></span>
+<span id="cb1-1193"><a href="#cb1-1193" aria-hidden="true" tabindex="-1"></a><span class="co"># dimension.</span></span>
+<span id="cb1-1194"><a href="#cb1-1194" aria-hidden="true" tabindex="-1"></a><span class="fu">dion_rank_fraction</span><span class="kw">:</span><span class="at"> float | None = 1.0</span></span>
+<span id="cb1-1195"><a href="#cb1-1195" aria-hidden="true" tabindex="-1"></a><span class="co"># Dion Optimizer: Round up the low-rank dimension to a multiple of this number. This may</span></span>
+<span id="cb1-1196"><a href="#cb1-1196" aria-hidden="true" tabindex="-1"></a><span class="co"># be useful to ensure even sharding.</span></span>
+<span id="cb1-1197"><a href="#cb1-1197" aria-hidden="true" tabindex="-1"></a><span class="fu">dion_rank_multiple_of</span><span class="kw">:</span><span class="at"> int | None = 1</span></span>
+<span id="cb1-1198"><a href="#cb1-1198" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1199"><a href="#cb1-1199" aria-hidden="true" tabindex="-1"></a><span class="co"># Gradient clipping max norm</span></span>
+<span id="cb1-1200"><a href="#cb1-1200" aria-hidden="true" tabindex="-1"></a><span class="fu">max_grad_norm</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1201"><a href="#cb1-1201" aria-hidden="true" tabindex="-1"></a><span class="fu">num_epochs</span><span class="kw">:</span><span class="at"> float = 1.0</span></span>
+<span id="cb1-1202"><a href="#cb1-1202" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1203"><a href="#cb1-1203" aria-hidden="true" tabindex="-1"></a><span class="fu">use_wandb</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1204"><a href="#cb1-1204" aria-hidden="true" tabindex="-1"></a><span class="co"># Set the name of your wandb run</span></span>
+<span id="cb1-1205"><a href="#cb1-1205" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1206"><a href="#cb1-1206" aria-hidden="true" tabindex="-1"></a><span class="co"># Set the ID of your wandb run</span></span>
+<span id="cb1-1207"><a href="#cb1-1207" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_run_id</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1208"><a href="#cb1-1208" aria-hidden="true" tabindex="-1"></a><span class="co"># "offline" to save run metadata locally and not sync to the server, "disabled" to turn</span></span>
+<span id="cb1-1209"><a href="#cb1-1209" aria-hidden="true" tabindex="-1"></a><span class="co"># off wandb</span></span>
+<span id="cb1-1210"><a href="#cb1-1210" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_mode</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1211"><a href="#cb1-1211" aria-hidden="true" tabindex="-1"></a><span class="co"># Your wandb project name</span></span>
+<span id="cb1-1212"><a href="#cb1-1212" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_project</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1213"><a href="#cb1-1213" aria-hidden="true" tabindex="-1"></a><span class="co"># A wandb Team name if using a Team</span></span>
+<span id="cb1-1214"><a href="#cb1-1214" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_entity</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1215"><a href="#cb1-1215" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_watch</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1216"><a href="#cb1-1216" aria-hidden="true" tabindex="-1"></a><span class="co"># "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only</span></span>
+<span id="cb1-1217"><a href="#cb1-1217" aria-hidden="true" tabindex="-1"></a><span class="co"># at the end of training</span></span>
+<span id="cb1-1218"><a href="#cb1-1218" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_log_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1219"><a href="#cb1-1219" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1220"><a href="#cb1-1220" aria-hidden="true" tabindex="-1"></a><span class="fu">use_mlflow</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1221"><a href="#cb1-1221" aria-hidden="true" tabindex="-1"></a><span class="co"># URI to mlflow</span></span>
+<span id="cb1-1222"><a href="#cb1-1222" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_tracking_uri</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1223"><a href="#cb1-1223" aria-hidden="true" tabindex="-1"></a><span class="co"># Your experiment name</span></span>
+<span id="cb1-1224"><a href="#cb1-1224" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_experiment_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1225"><a href="#cb1-1225" aria-hidden="true" tabindex="-1"></a><span class="co"># Your run name</span></span>
+<span id="cb1-1226"><a href="#cb1-1226" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_run_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1227"><a href="#cb1-1227" aria-hidden="true" tabindex="-1"></a><span class="co"># set to true to copy each saved checkpoint on each save to mlflow artifact registry</span></span>
+<span id="cb1-1228"><a href="#cb1-1228" aria-hidden="true" tabindex="-1"></a><span class="fu">hf_mlflow_log_artifacts</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1229"><a href="#cb1-1229" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1230"><a href="#cb1-1230" aria-hidden="true" tabindex="-1"></a><span class="co"># Enable or disable Comet integration.</span></span>
+<span id="cb1-1231"><a href="#cb1-1231" aria-hidden="true" tabindex="-1"></a><span class="fu">use_comet</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1232"><a href="#cb1-1232" aria-hidden="true" tabindex="-1"></a><span class="co"># API key for Comet. Recommended to set via `comet login`.</span></span>
+<span id="cb1-1233"><a href="#cb1-1233" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_api_key</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1234"><a href="#cb1-1234" aria-hidden="true" tabindex="-1"></a><span class="co"># Workspace name in Comet. Defaults to the user's default workspace.</span></span>
+<span id="cb1-1235"><a href="#cb1-1235" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_workspace</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1236"><a href="#cb1-1236" aria-hidden="true" tabindex="-1"></a><span class="co"># Project name in Comet. Defaults to Uncategorized.</span></span>
+<span id="cb1-1237"><a href="#cb1-1237" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_project_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1238"><a href="#cb1-1238" aria-hidden="true" tabindex="-1"></a><span class="co"># Identifier for the experiment. Used to append data to an existing experiment or</span></span>
+<span id="cb1-1239"><a href="#cb1-1239" aria-hidden="true" tabindex="-1"></a><span class="co"># control the key of new experiments. Default to a random key.</span></span>
+<span id="cb1-1240"><a href="#cb1-1240" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_experiment_key</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1241"><a href="#cb1-1241" aria-hidden="true" tabindex="-1"></a><span class="co"># Create a new experiment ("create") or log to an existing one ("get"). Default</span></span>
+<span id="cb1-1242"><a href="#cb1-1242" aria-hidden="true" tabindex="-1"></a><span class="co"># ("get_or_create") auto-selects based on configuration.</span></span>
+<span id="cb1-1243"><a href="#cb1-1243" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_mode</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1244"><a href="#cb1-1244" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to True to log data to Comet server, or False for offline storage. Default is</span></span>
+<span id="cb1-1245"><a href="#cb1-1245" aria-hidden="true" tabindex="-1"></a><span class="co"># True.</span></span>
+<span id="cb1-1246"><a href="#cb1-1246" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_online</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1247"><a href="#cb1-1247" aria-hidden="true" tabindex="-1"></a><span class="co"># Dictionary for additional configuration settings, see the doc for more details.</span></span>
+<span id="cb1-1248"><a href="#cb1-1248" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_experiment_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
+<span id="cb1-1249"><a href="#cb1-1249" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1250"><a href="#cb1-1250" aria-hidden="true" tabindex="-1"></a><span class="co"># the number of activate layers in LISA</span></span>
+<span id="cb1-1251"><a href="#cb1-1251" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_n_layers</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1252"><a href="#cb1-1252" aria-hidden="true" tabindex="-1"></a><span class="co"># how often to switch layers in LISA</span></span>
+<span id="cb1-1253"><a href="#cb1-1253" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_step_interval</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1254"><a href="#cb1-1254" aria-hidden="true" tabindex="-1"></a><span class="co"># path under the model to access the layers</span></span>
+<span id="cb1-1255"><a href="#cb1-1255" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_layers_attribute</span><span class="kw">:</span><span class="at"> str | None = model.layers</span></span>
 <span id="cb1-1256"><a href="#cb1-1256" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1257"><a href="#cb1-1257" aria-hidden="true" tabindex="-1"></a><span class="co"># The size of the image to resize to. It can be an integer (resized into padded-square</span></span>
-<span id="cb1-1258"><a href="#cb1-1258" aria-hidden="true" tabindex="-1"></a><span class="co"># image) or a tuple (width, height).If not provided, we will attempt to load from</span></span>
-<span id="cb1-1259"><a href="#cb1-1259" aria-hidden="true" tabindex="-1"></a><span class="co"># preprocessor.size, otherwise, images won't be resized.</span></span>
-<span id="cb1-1260"><a href="#cb1-1260" aria-hidden="true" tabindex="-1"></a><span class="fu">image_size</span><span class="kw">:</span><span class="at"> int | tuple[int, int] | None</span></span>
-<span id="cb1-1261"><a href="#cb1-1261" aria-hidden="true" tabindex="-1"></a><span class="co"># The resampling algorithm to use for image resizing. Default is bilinear. Please refer</span></span>
-<span id="cb1-1262"><a href="#cb1-1262" aria-hidden="true" tabindex="-1"></a><span class="co"># to PIL.Image.Resampling for more details.</span></span>
-<span id="cb1-1263"><a href="#cb1-1263" aria-hidden="true" tabindex="-1"></a><span class="fu">image_resize_algorithm</span><span class="kw">:</span><span class="at"> Literal['bilinear', 'bicubic', 'lanczos'] | Resampling | None</span></span>
-<span id="cb1-1264"><a href="#cb1-1264" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1265"><a href="#cb1-1265" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides to the base model configuration</span></span>
-<span id="cb1-1266"><a href="#cb1-1266" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
-<span id="cb1-1267"><a href="#cb1-1267" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides the base model loading from_pretrained</span></span>
-<span id="cb1-1268"><a href="#cb1-1268" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_kwargs</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
-<span id="cb1-1269"><a href="#cb1-1269" aria-hidden="true" tabindex="-1"></a><span class="co"># If you want to specify the type of model to load, AutoModelForCausalLM is a good</span></span>
-<span id="cb1-1270"><a href="#cb1-1270" aria-hidden="true" tabindex="-1"></a><span class="co"># choice too</span></span>
-<span id="cb1-1271"><a href="#cb1-1271" aria-hidden="true" tabindex="-1"></a><span class="fu">type_of_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1272"><a href="#cb1-1272" aria-hidden="true" tabindex="-1"></a><span class="co"># You can specify to choose a specific model revision from huggingface hub</span></span>
-<span id="cb1-1273"><a href="#cb1-1273" aria-hidden="true" tabindex="-1"></a><span class="fu">revision_of_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1274"><a href="#cb1-1274" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1275"><a href="#cb1-1275" aria-hidden="true" tabindex="-1"></a><span class="fu">max_packed_sequence_len</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1276"><a href="#cb1-1276" aria-hidden="true" tabindex="-1"></a><span class="fu">rope_scaling</span><span class="kw">:</span><span class="at"> Any | None</span></span>
-<span id="cb1-1277"><a href="#cb1-1277" aria-hidden="true" tabindex="-1"></a><span class="fu">noisy_embedding_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1278"><a href="#cb1-1278" aria-hidden="true" tabindex="-1"></a><span class="fu">dpo_beta</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1279"><a href="#cb1-1279" aria-hidden="true" tabindex="-1"></a><span class="fu">evaluation_strategy</span><span class="kw">:</span><span class="at"> str | None</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb1-1257"><a href="#cb1-1257" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_title</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1258"><a href="#cb1-1258" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_share</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1259"><a href="#cb1-1259" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_server_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1260"><a href="#cb1-1260" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_server_port</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1261"><a href="#cb1-1261" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_max_new_tokens</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1262"><a href="#cb1-1262" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_temperature</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1263"><a href="#cb1-1263" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1264"><a href="#cb1-1264" aria-hidden="true" tabindex="-1"></a><span class="fu">use_ray</span><span class="kw">:</span><span class="at"> bool = False</span></span>
+<span id="cb1-1265"><a href="#cb1-1265" aria-hidden="true" tabindex="-1"></a><span class="fu">ray_run_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1266"><a href="#cb1-1266" aria-hidden="true" tabindex="-1"></a><span class="fu">ray_num_workers</span><span class="kw">:</span><span class="at"> int = 1</span></span>
+<span id="cb1-1267"><a href="#cb1-1267" aria-hidden="true" tabindex="-1"></a><span class="fu">resources_per_worker</span><span class="kw">:</span><span class="at"> dict</span></span>
+<span id="cb1-1268"><a href="#cb1-1268" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1269"><a href="#cb1-1269" aria-hidden="true" tabindex="-1"></a><span class="co"># The size of the image to resize to. It can be an integer (resized into padded-square</span></span>
+<span id="cb1-1270"><a href="#cb1-1270" aria-hidden="true" tabindex="-1"></a><span class="co"># image) or a tuple (width, height).If not provided, we will attempt to load from</span></span>
+<span id="cb1-1271"><a href="#cb1-1271" aria-hidden="true" tabindex="-1"></a><span class="co"># preprocessor.size, otherwise, images won't be resized.</span></span>
+<span id="cb1-1272"><a href="#cb1-1272" aria-hidden="true" tabindex="-1"></a><span class="fu">image_size</span><span class="kw">:</span><span class="at"> int | tuple[int, int] | None</span></span>
+<span id="cb1-1273"><a href="#cb1-1273" aria-hidden="true" tabindex="-1"></a><span class="co"># The resampling algorithm to use for image resizing. Default is bilinear. Please refer</span></span>
+<span id="cb1-1274"><a href="#cb1-1274" aria-hidden="true" tabindex="-1"></a><span class="co"># to PIL.Image.Resampling for more details.</span></span>
+<span id="cb1-1275"><a href="#cb1-1275" aria-hidden="true" tabindex="-1"></a><span class="fu">image_resize_algorithm</span><span class="kw">:</span><span class="at"> Literal['bilinear', 'bicubic', 'lanczos'] | Resampling | None</span></span>
+<span id="cb1-1276"><a href="#cb1-1276" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1277"><a href="#cb1-1277" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides to the base model configuration</span></span>
+<span id="cb1-1278"><a href="#cb1-1278" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
+<span id="cb1-1279"><a href="#cb1-1279" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides the base model loading from_pretrained</span></span>
+<span id="cb1-1280"><a href="#cb1-1280" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_kwargs</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
+<span id="cb1-1281"><a href="#cb1-1281" aria-hidden="true" tabindex="-1"></a><span class="co"># If you want to specify the type of model to load, AutoModelForCausalLM is a good</span></span>
+<span id="cb1-1282"><a href="#cb1-1282" aria-hidden="true" tabindex="-1"></a><span class="co"># choice too</span></span>
+<span id="cb1-1283"><a href="#cb1-1283" aria-hidden="true" tabindex="-1"></a><span class="fu">type_of_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1284"><a href="#cb1-1284" aria-hidden="true" tabindex="-1"></a><span class="co"># You can specify to choose a specific model revision from huggingface hub</span></span>
+<span id="cb1-1285"><a href="#cb1-1285" aria-hidden="true" tabindex="-1"></a><span class="fu">revision_of_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1286"><a href="#cb1-1286" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1287"><a href="#cb1-1287" aria-hidden="true" tabindex="-1"></a><span class="fu">max_packed_sequence_len</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1288"><a href="#cb1-1288" aria-hidden="true" tabindex="-1"></a><span class="fu">rope_scaling</span><span class="kw">:</span><span class="at"> Any | None</span></span>
+<span id="cb1-1289"><a href="#cb1-1289" aria-hidden="true" tabindex="-1"></a><span class="fu">noisy_embedding_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1290"><a href="#cb1-1290" aria-hidden="true" tabindex="-1"></a><span class="fu">dpo_beta</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1291"><a href="#cb1-1291" aria-hidden="true" tabindex="-1"></a><span class="fu">evaluation_strategy</span><span class="kw">:</span><span class="at"> str | None</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
 
