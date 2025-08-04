@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>nd_parallelism – Axolotl</title>
+<title>N-D Parallelism – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -485,9 +485,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#n-d-parallelism" id="toc-n-d-parallelism" class="nav-link active" data-scroll-target="#n-d-parallelism">N-D Parallelism</a>
-  <ul class="collapse">
-  <li><a href="#core-concepts" id="toc-core-concepts" class="nav-link" data-scroll-target="#core-concepts">Core Concepts</a>
+  <li><a href="#core-concepts" id="toc-core-concepts" class="nav-link active" data-scroll-target="#core-concepts">Core Concepts</a>
   <ul class="collapse">
   <li><a href="#sec-dp" id="toc-sec-dp" class="nav-link" data-scroll-target="#sec-dp">Data Parallelism</a></li>
   <li><a href="#sec-tp" id="toc-sec-tp" class="nav-link" data-scroll-target="#sec-tp">[Experimental] Tensor Parallelism (TP)</a></li>
@@ -497,18 +495,31 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#usage" id="toc-usage" class="nav-link" data-scroll-target="#usage">Usage</a></li>
   <li><a href="#examples" id="toc-examples" class="nav-link" data-scroll-target="#examples">Examples</a></li>
   <li><a href="#support-matrix" id="toc-support-matrix" class="nav-link" data-scroll-target="#support-matrix">Support Matrix</a></li>
-  </ul></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/fsdp_qlora.html">Advanced Features</a></li><li class="breadcrumb-item"><a href="../docs/nd_parallelism.html">N-D Parallelism</a></li></ol></nav></header>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/fsdp_qlora.html">Advanced Features</a></li><li class="breadcrumb-item"><a href="../docs/nd_parallelism.html">N-D Parallelism</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">N-D Parallelism</h1>
+</div>
 
 
 
+<div class="quarto-title-meta">
 
-<section id="n-d-parallelism" class="level1">
-<h1>N-D Parallelism</h1>
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
 <p>Axolotl enables training models at scale by composing different parallelism techniques. This is essential when:</p>
 <ul>
 <li>A model’s weights are too large to fit on a single GPU’s memory.</li>
@@ -696,7 +707,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </ul>
 
 
-</section>
 </section>
 
 </main> <!-- /main -->
