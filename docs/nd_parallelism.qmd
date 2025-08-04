@@ -1,4 +1,6 @@
-# N-D Parallelism
+---
+title: "N-D Parallelism"
+---
 
 Axolotl enables training models at scale by composing different parallelism techniques. This is essential when:
 
