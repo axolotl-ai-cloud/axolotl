@@ -43,6 +43,8 @@ plugins:
 - glm4
 - granite
 - granitemoe
+- hunyuan_v1_dense
+- hunyuan_v1_moe
 - llama
 - llama4
 - llama4_text
