@@ -24,7 +24,7 @@ python scripts/cutcrossentropy_install.py | sh
 
 ```bash
 pip3 uninstall transformers
-pip3 install git+https://github.com/huggingface/transformers@06b8c1323b366ecb5b8f8d7768f3a8b73e82f4cb
+pip3 install git+https://github.com/huggingface/transformers@refs/pull/39606/head
 ```
 
 3. Run the finetuning example:
