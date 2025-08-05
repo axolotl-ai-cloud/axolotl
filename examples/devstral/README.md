@@ -23,7 +23,13 @@ pip3 install packaging==23.2 setuptools==75.8.0 wheel ninja
 pip3 install --no-build-isolation -e '.[flash-attn]'
 ```
 
-2. Run the finetuning example:
+2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage
+
+```bash
+python scripts/cutcrossentropy_install.py | sh
+```
+
+3. Run the finetuning example:
 
 ```bash
 axolotl train examples/devstral/devstral-small-qlora.yml

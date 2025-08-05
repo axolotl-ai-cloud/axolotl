@@ -13,9 +13,11 @@ Tencent released a family of opensource models called HunYuan with varying param
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 
-
 pip3 install packaging==23.2 setuptools==75.8.0 wheel ninja
 pip3 install --no-build-isolation -e '.[flash-attn]'
+
+# Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy
+python scripts/cutcrossentropy_install.py | sh
 ```
 
 2. Please install HunYuan's [transformers PR](https://github.com/huggingface/transformers/pull/39606)
@@ -25,7 +27,13 @@ pip3 uninstall transformers
 pip3 install git+https://github.com/huggingface/transformers@06b8c1323b366ecb5b8f8d7768f3a8b73e82f4cb
 ```
 
-3. Run the finetuning example:
+3. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage
+
+```bash
+python scripts/cutcrossentropy_install.py | sh
+```
+
+4. Run the finetuning example:
 
 ```bash
 axolotl train examples/hunyuan/hunyuan-v1-dense-qlora.yaml

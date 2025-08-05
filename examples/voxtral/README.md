@@ -25,6 +25,9 @@ pip3 install --no-build-isolation -e '.[flash-attn]'
 # audio
 pip3 install librosa==0.11.0
 pip3 install 'mistral_common[audio]==1.8.3'
+
+# Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy
+python scripts/cutcrossentropy_install.py | sh
 ```
 
 3. Run the finetuning example:
