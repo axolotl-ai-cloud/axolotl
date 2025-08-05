@@ -845,7 +845,9 @@ class ModelLoader:
                 self.model._tp_size = self.cfg.tensor_parallel_size
                 self.model._device_mesh = self.model_kwargs["device_mesh"]
 
-        skip_move_to_device = True
+        if self.cfg.experimental_skip_move_to_device is not None:
+            skip_move_to_device = self.cfg.experimental_skip_move_to_device
+
         return skip_move_to_device
 
     def _set_z3_leaf_modules(self):

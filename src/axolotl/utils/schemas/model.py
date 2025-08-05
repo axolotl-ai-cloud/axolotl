@@ -62,6 +62,14 @@ class ModelInputConfig(BaseModel):
         json_schema_extra={"description": "Trust remote code for untrusted source"},
     )
 
+    experimental_skip_move_to_device: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Don't move the model to the device before sharding. "
+            "This is an experimental feature that may be included in the future as the default."
+        },
+    )
+
     @field_validator("trust_remote_code")
     @classmethod
     def hint_trust_remote_code(cls, trust_remote_code):
