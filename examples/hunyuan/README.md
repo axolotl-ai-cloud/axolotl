@@ -39,7 +39,7 @@ python scripts/cutcrossentropy_install.py | sh
 axolotl train examples/hunyuan/hunyuan-v1-dense-qlora.yaml
 ```
 
-This config uses about (---) VRAM.
+This config uses about 4.7 GB VRAM.
 
 Let us know how it goes. Happy finetuning! 🚀
 
