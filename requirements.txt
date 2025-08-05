@@ -13,7 +13,7 @@ packaging==23.2
 
 huggingface_hub>=0.33.0
 peft==0.17.0
-transformers==4.54.1
+transformers==4.55.0
 tokenizers>=0.21.1
 accelerate @ git+https://github.com/huggingface/accelerate.git@9359a0194f210624f1e6e85c3d838fdd55c11152
 datasets==4.0.0
