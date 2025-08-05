@@ -296,7 +296,7 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
             )
 
         tokenizer.chat_template = chat_template_string
-    else:
+    elif getattr(tokenizer, "chat_template", None) is None:
         LOG.info(
             "No Chat template selected. Consider adding a chat template for easier inference."
         )
