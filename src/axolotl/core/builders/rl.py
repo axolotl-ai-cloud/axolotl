@@ -15,6 +15,7 @@ from axolotl.core.trainers.grpo import GRPOStrategy
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import ensure_dtype
 from axolotl.utils.callbacks.qat import QATCallback
+from axolotl.utils.import_helper import get_cls_from_module_str
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
 
@@ -71,6 +72,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             trainer_cls = AxolotlCPOTrainer
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
+
+        if self.cfg.trainer_cls:
+            # override the trainer cls
+            trainer_cls = get_cls_from_module_str(self.cfg.trainer_cls)
 
         return trainer_cls, trainer_cls_args
 

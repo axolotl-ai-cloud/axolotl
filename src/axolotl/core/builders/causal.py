@@ -43,6 +43,7 @@ from axolotl.utils.collators import (
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
+from axolotl.utils.import_helper import get_cls_from_module_str
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -136,6 +137,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             return AxolotlRewardTrainer
         if self.cfg.process_reward_model:
             return AxolotlPRMTrainer
+
+        if self.cfg.trainer_cls:
+            # override the trainer cls
+            return get_cls_from_module_str(self.cfg.trainer_cls)
+
         return AxolotlTrainer
 
     def build(self, total_num_steps):
