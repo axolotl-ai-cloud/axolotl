@@ -16,7 +16,7 @@ huggingface_hub>=0.33.0
 peft==0.17.0
 transformers==4.55.0
 tokenizers>=0.21.1
-accelerate @ git+https://github.com/huggingface/accelerate.git@898cad3
+accelerate @ git+https://github.com/huggingface/accelerate.git@42fdda1
 datasets==4.0.0
 deepspeed>=0.17.0
 trl==0.20.0
