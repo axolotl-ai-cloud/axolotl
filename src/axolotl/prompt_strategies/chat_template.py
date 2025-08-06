@@ -41,7 +41,9 @@ class ChatTemplatePrompter(Prompter):
         field_messages: str = "messages",
         field_system: str = "system",
         field_tools: str = "tools",
+        field_thinking: str = "reasoning_content",
         roles: dict[str, list[str]] | None = None,
+        template_thinking_key: str | None = "reasoning_content",
         chat_template_kwargs: dict[str, Any] | None = None,
         drop_system_message: bool = False,
     ):
@@ -50,8 +52,9 @@ class ChatTemplatePrompter(Prompter):
             message_property_mappings = {
                 "role": "role",
                 "content": "content",
-                "reasoning_content": "reasoning_content",
             }
+            if template_thinking_key and field_thinking:
+                message_property_mappings[template_thinking_key] = field_thinking
 
         if roles:
             self.roles = {s: t for t, sources in roles.items() for s in sources}
@@ -74,10 +77,12 @@ class ChatTemplatePrompter(Prompter):
         self.field_messages = field_messages
         self.field_system = field_system
         self.field_tools = field_tools
+        self.field_thinking = field_thinking
         self.tokenizer = tokenizer
         self.processor: ProcessorMixin | None = processor
         self.chat_template = chat_template
         self.chat_template_kwargs = chat_template_kwargs or {}
+        self.template_thinking_key: str = template_thinking_key or "reasoning_content"
         self.max_length = max_length
         self.drop_system_message = drop_system_message
 
@@ -742,7 +747,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
                     # get the thinking content
                     thinking_content = content[t_start_idx + len(tpair[0]) : t_end_idx]
-                    transformed_message["reasoning_content"] = thinking_content.strip()
+                    transformed_message[self.prompter.template_thinking_key] = (
+                        thinking_content.strip()
+                    )
 
                     # take remainder of the content
                     # strip whitespace from beginning of the remainder (thinking tokens)
@@ -953,6 +960,10 @@ class StrategyLoader:
                 None,
             ),
             "field_messages": dataset_config.get("field_messages", "messages"),
+            "field_thinking": dataset_config.get("field_thinking", "reasoning_content"),
+            "template_thinking_key": dataset_config.get(
+                "template_thinking_key", "reasoning_content"
+            ),
             "roles": dataset_config.get("roles"),
             "drop_system_message": dataset_config.get("drop_system_message", False),
             # we need to add one for detecting sequences with exceeding the `sequence_len` limit.
