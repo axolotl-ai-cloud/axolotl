@@ -1,5 +1,8 @@
-base_model: axolotl-ai-co/gpt-oss-20b-dequantized
+base_model: openai/gpt-oss-20b
 use_kernels: true
+model_quantization_config: Mxfp4Config
+model_quantization_config_kwargs:
+  dequantize: true
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
