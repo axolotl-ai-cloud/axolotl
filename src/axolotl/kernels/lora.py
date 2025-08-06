@@ -33,10 +33,10 @@ def get_lora_parameters(
     float | None,
 ]:
     """
-    Gets LoRA parameters from a linear module.
+    Gets LoRA parameters from a projection module.
 
     Args:
-        proj: The linear module to extract parameters from.
+        proj: The projection module to extract parameters from.
 
     Returns:
         A tuple containing the base weights, quantization state, LoRA A and B weights,
