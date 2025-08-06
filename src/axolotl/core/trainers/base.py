@@ -12,7 +12,7 @@ from typing import Any, Callable, Literal, Optional
 import datasets
 import safetensors
 import torch
-from accelerate.state import AcceleratorState, PartialState
+from accelerate.state import AcceleratorState
 from datasets import Dataset
 from peft import PeftModel
 from torch.utils.data import (
@@ -531,7 +531,7 @@ class AxolotlTrainer(
         res = super().create_accelerator_and_postprocess()
 
         # now we need to put parallelism_config back on the PartialState since we rely on that info in other places
-        PartialState().parallelism_config = self.accelerator.state.parallelism_config
+        # PartialState().parallelism_config = self.accelerator.state.parallelism_config
 
         if self.is_fsdp_enabled:
             if (
