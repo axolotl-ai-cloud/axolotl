@@ -1,5 +1,7 @@
 """Pydantic models for model input / output, etc. configuration"""
 
+from typing import Any, Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 from axolotl.utils.logging import get_logger
@@ -73,6 +75,15 @@ class ModelInputConfig(BaseModel):
     use_kernels: bool | None = Field(
         default=None,
         json_schema_extra={"description": "Use custom kernels, e.g. MegaBlocks."},
+    )
+
+    model_quantization_config: Literal["Mxfp4Config"] | None = Field(
+        default=None,
+        json_schema_extra={"description": "Model loading quantization config"},
+    )
+    model_quantization_config_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={"description": "kwargs for model quantization config"},
     )
 
     @field_validator("trust_remote_code")
