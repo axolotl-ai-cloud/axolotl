@@ -202,6 +202,8 @@ class ModelLoader:
         self._set_device_map_config()
         if self.cfg.revision_of_model:
             self.model_kwargs["revision"] = self.cfg.revision_of_model
+        if self.cfg.use_kernels:
+            self.model_kwargs["use_kernels"] = self.cfg.use_kernels
         self._set_quantization_config()
         self._set_attention_config()
 
@@ -565,8 +567,17 @@ class ModelLoader:
 
     def _set_quantization_config(self):
         """Set up quantization config (bitsandbytes, awq, gptq, etc.)"""
-        self.model_kwargs["load_in_8bit"] = self.cfg.load_in_8bit
-        self.model_kwargs["load_in_4bit"] = self.cfg.load_in_4bit
+
+        if self.cfg.model_quantization_config == "Mxfp4Config":
+            from transformers import Mxfp4Config
+
+            mxfp4_kwargs = {}
+            if self.cfg.model_quantization_config_kwargs:
+                mxfp4_kwargs = self.cfg.model_quantization_config_kwargs
+            self.model_kwargs["quantization_config"] = Mxfp4Config(**mxfp4_kwargs)
+        else:
+            self.model_kwargs["load_in_8bit"] = self.cfg.load_in_8bit
+            self.model_kwargs["load_in_4bit"] = self.cfg.load_in_4bit
 
         if self.cfg.gptq:
             if not hasattr(self.model_config, "quantization_config"):
@@ -648,7 +659,9 @@ class ModelLoader:
 
     def _set_attention_config(self):
         """Sample packing uses custom FA2 patch"""
-        if self.cfg.flex_attention:
+        if self.cfg.attn_implementation:
+            self.model_kwargs["attn_implementation"] = self.cfg.attn_implementation
+        elif self.cfg.flex_attention:
             self.model_kwargs["attn_implementation"] = "flex_attention"
             self.model_config._attn_implementation = (  # pylint: disable=protected-access
                 "flex_attention"

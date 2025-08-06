@@ -567,9 +567,9 @@ class AxolotlTrainer(
             # Add memory usage
             try:
                 active, allocated, reserved = get_gpu_memory_usage()
-                logs["memory/max_memory_active(gib)"] = round(active, 2)
-                logs["memory/max_memory_allocated(gib)"] = round(allocated, 2)
-                logs["memory/device_memory_reserved(gib)"] = round(reserved, 2)
+                logs["memory/max_mem_active(gib)"] = round(active, 2)
+                logs["memory/max_mem_allocated(gib)"] = round(allocated, 2)
+                logs["memory/device_mem_reserved(gib)"] = round(reserved, 2)
             except (ValueError, TypeError, FileNotFoundError):
                 pass
 

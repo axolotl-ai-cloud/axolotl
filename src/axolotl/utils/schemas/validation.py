@@ -974,6 +974,16 @@ class SystemValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_model_quantization_config_vs_bnb(cls, data):
+        if data.get("model_quantization_config"):
+            if data.get("load_in_8bit") or data.get("load_in_4bit"):
+                raise ValueError(
+                    "model_quantization_config and load_in_8bit or load_in_4bit cannot be used together."
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_npu_config(cls, data):
         if is_torch_npu_available():
             # check attention config
