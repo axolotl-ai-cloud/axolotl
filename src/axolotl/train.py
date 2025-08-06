@@ -274,7 +274,7 @@ def save_trained_model(
             # final model weights have already been saved by `ReLoRACallback.on_train_end`
             return
 
-    if trainer.is_fsdp_enabled:
+    if trainer.is_fsdp_enabled or cfg.fsdp_config:
         if cfg.fsdp_config or cfg.fsdp:
             if cfg.fsdp_config.final_state_dict_type:
                 state_dict_type = cfg.fsdp_config.final_state_dict_type

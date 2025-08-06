@@ -428,30 +428,12 @@ class TrainerBuilderBase(abc.ABC):
                 training_args_kwargs["torch_compile_mode"] = self.cfg.torch_compile_mode
 
     def _configure_accelerator_config(self, training_args_kwargs: dict):
-        partial_state = PartialState()
-        has_pc_attr = (
-            hasattr(partial_state, "parallelism_config")
-            and partial_state.parallelism_config
-        )
-        has_pc_key = (
-            "parallelism_config"
-            in partial_state._shared_state  # pylint: disable=protected-access
-            and partial_state._shared_state[  # pylint: disable=protected-access
-                "parallelism_config"
-            ]
-        )
-        use_configured_state = has_pc_attr or has_pc_key
         if self.cfg.accelerator_config:
-            use_configured_state = self.cfg.accelerator_config.pop(
-                "use_configured_state", use_configured_state
-            )
             training_args_kwargs["accelerator_config"] = AcceleratorConfig(
-                use_configured_state=use_configured_state, **self.cfg.accelerator_config
+                **self.cfg.accelerator_config
             )
         else:
-            training_args_kwargs["accelerator_config"] = AcceleratorConfig(
-                use_configured_state=use_configured_state,
-            )
+            training_args_kwargs["accelerator_config"] = AcceleratorConfig()
 
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
         if self.cfg.activation_offloading is True:

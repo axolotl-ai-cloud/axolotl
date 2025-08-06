@@ -597,6 +597,25 @@ def setup_fsdp_envs(cfg):
         os.environ["FSDP_RESHARD_AFTER_FORWARD"] = "true"
 
 
+def setup_parallelism_envs(cfg):
+    set_accelerate_parallelism_config = False
+    if cfg.tensor_parallel_size and cfg.tensor_parallel_size > 1:
+        set_accelerate_parallelism_config = True
+        os.environ["PARALLELISM_CONFIG_TP_SIZE"] = str(cfg.tensor_parallel_size)
+    if cfg.dp_shard_size and cfg.dp_shard_size > 1:
+        set_accelerate_parallelism_config = True
+        os.environ["PARALLELISM_CONFIG_DP_SHARD_SIZE"] = str(cfg.dp_shard_size)
+    if cfg.dp_replicate_size and cfg.dp_replicate_size > 1:
+        set_accelerate_parallelism_config = True
+        os.environ["PARALLELISM_CONFIG_DP_REPLICATE_SIZE"] = str(cfg.dp_replicate_size)
+    if cfg.context_parallel_size and cfg.context_parallel_size > 1:
+        set_accelerate_parallelism_config = True
+        os.environ["PARALLELISM_CONFIG_CP_SIZE"] = str(cfg.context_parallel_size)
+        os.environ["ACCELERATE_ALLOW_CP_STANDALONE"] = "true"
+    if set_accelerate_parallelism_config:
+        os.environ["ACCELERATE_USE_PARALLELISM_CONFIG"] = "true"
+
+
 def prepare_optim_env(cfg):
     if not check_cuda_p2p_ib_support():
         if os.getenv("NCCL_P2P_DISABLE") is None:
@@ -615,6 +634,7 @@ def prepare_optim_env(cfg):
             stage = deepspeed_config.get("zero_optimization", {}).get("stage", None)
         setup_deepspeed_env(cfg, stage=stage)
 
+    setup_parallelism_envs(cfg)
     setup_torch_compile_env(cfg)
 
     if cfg.fp8:
