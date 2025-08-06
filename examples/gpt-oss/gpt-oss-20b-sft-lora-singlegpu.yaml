@@ -32,6 +32,12 @@ lora_target_parameters:  # target the experts in the last two layers
   - "23._checkpoint_wrapped_module.mlp.experts.gate_up_proj"
   - "23._checkpoint_wrapped_module.mlp.experts.down_proj"
 
+# These options enable our custom Triton kernels / autograd
+# functions for MLP and attention calculations
+lora_mlp_kernel: true
+lora_qkv_kernel: true
+lora_o_kernel: true
+
 wandb_project:
 wandb_entity:
 wandb_watch:
