@@ -575,6 +575,8 @@ class ModelLoader:
             if self.cfg.model_quantization_config_kwargs:
                 mxfp4_kwargs = self.cfg.model_quantization_config_kwargs
             self.model_kwargs["quantization_config"] = Mxfp4Config(**mxfp4_kwargs)
+            self.model_kwargs["load_in_8bit"] = None
+            self.model_kwargs["load_in_4bit"] = None
         else:
             self.model_kwargs["load_in_8bit"] = self.cfg.load_in_8bit
             self.model_kwargs["load_in_4bit"] = self.cfg.load_in_4bit
