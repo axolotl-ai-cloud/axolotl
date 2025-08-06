@@ -550,6 +550,13 @@ class AxolotlInputConfig(
 
     eager_attention: bool | None = None
 
+    attn_implementation: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Specify a custom attention implementation, used mostly for kernels."
+        },
+    )
+
     unsloth_cross_entropy_loss: bool | None = None
     unsloth_lora_mlp: bool | None = None
     unsloth_lora_qkv: bool | None = None

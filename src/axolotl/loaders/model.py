@@ -202,6 +202,8 @@ class ModelLoader:
         self._set_device_map_config()
         if self.cfg.revision_of_model:
             self.model_kwargs["revision"] = self.cfg.revision_of_model
+        if self.cfg.use_kernels:
+            self.model_kwargs["use_kernels"] = self.cfg.use_kernels
         self._set_quantization_config()
         self._set_attention_config()
 
@@ -648,7 +650,9 @@ class ModelLoader:
 
     def _set_attention_config(self):
         """Sample packing uses custom FA2 patch"""
-        if self.cfg.flex_attention:
+        if self.cfg.attn_implementation:
+            self.model_kwargs["attn_implementation"] = self.cfg.attn_implementation
+        elif self.cfg.flex_attention:
             self.model_kwargs["attn_implementation"] = "flex_attention"
             self.model_config._attn_implementation = (  # pylint: disable=protected-access
                 "flex_attention"

@@ -1,0 +1,53 @@
+base_model: axolotl-ai-co/gpt-oss-20b-dequantized
+use_kernels: true
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+dataset_prepared_path: last_run_prepared
+
+experimental_skip_move_to_device: true  # prevent OOM by not putting model to GPU before sharding
+
+chat_template: tokenizer_default
+special_tokens:
+eot_tokens:
+  - "<|end|>"
+datasets:
+  - path: winglian/pirate-ultrachat-10k
+    type: chat_template
+    split: train
+
+output_dir: ./outputs/gpt-oss-out/
+
+adapter: lora
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_linear: true
+lora_target_parameters:  # target the experts in the last two layers
+  - "22.mlp.experts.gate_up_proj"
+  - "22.mlp.experts.down_proj"
+  - "23.mlp.experts.gate_up_proj"
+  - "23.mlp.experts.down_proj"
+
+sequence_len: 8192
+sample_packing: true
+flash_attention: true
+attn_implementation: kernels-community/vllm-flash-attn3
+
+gradient_checkpointing: true
+activation_offloading: true
+
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+optimizer: adamw_torch_8bit
+lr_scheduler: constant_with_warmup
+learning_rate: 2e-6
+
+bf16: true
+tf32: true
+
+logging_steps: 1
+saves_per_epoch: 1
+
+warmup_ratio: 0.1

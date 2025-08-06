@@ -1,0 +1,49 @@
+base_model: axolotl-ai-co/gpt-oss-20b-dequantized
+use_kernels: true
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+dataset_prepared_path: last_run_prepared
+
+experimental_skip_move_to_device: true  # prevent OOM by NOT putting model to GPU before sharding
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  state_dict_type: SHARDED_STATE_DICT
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: GptOssDecoderLayer
+  reshard_after_forward: true
+
+chat_template: tokenizer_default
+special_tokens:
+eot_tokens:
+  - "<|end|>"
+datasets:
+  - path: winglian/pirate-ultrachat-10k
+    type: chat_template
+    split: train
+
+output_dir: ./outputs/gpt-oss-out/
+
+sequence_len: 4096
+sample_packing: true
+flash_attention: true
+attn_implementation: kernels-community/vllm-flash-attn3
+
+gradient_checkpointing: true
+activation_offloading: true
+
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+optimizer: adamw_torch_8bit
+lr_scheduler: constant_with_warmup
+learning_rate: 2e-6
+
+bf16: true
+tf32: true
+
+logging_steps: 1
+saves_per_epoch: 1
+
+warmup_ratio: 0.1

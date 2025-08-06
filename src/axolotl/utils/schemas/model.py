@@ -70,6 +70,11 @@ class ModelInputConfig(BaseModel):
         },
     )
 
+    use_kernels: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Use custom kernels, e.g. MegaBlocks."},
+    )
+
     @field_validator("trust_remote_code")
     @classmethod
     def hint_trust_remote_code(cls, trust_remote_code):
