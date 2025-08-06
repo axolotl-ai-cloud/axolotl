@@ -577,9 +577,7 @@ class LoRAValidationMixin:
 
     @model_validator(mode="after")
     def check_fused_lora(self):
-        if self.adapter in ["lora", "qlora"] and (
-            self.flash_attn_fuse_qkv or self.flash_attn_fuse_mlp
-        ):
+        if self.adapter in ["lora", "qlora"] and self.flash_attn_fuse_mlp:
             raise ValueError("Fused modules are not supported with LoRA/QLoRA")
         return self
 
@@ -1184,7 +1182,7 @@ class ComplexValidationMixin:
                     "ReLoRA is not compatible with the one_cycle scheduler"
                 )
 
-            if self.flash_attn_fuse_qkv or self.flash_attn_fuse_mlp:
+            if self.flash_attn_fuse_mlp:
                 raise ValueError("Fused modules are not supported with ReLoRA")
         return self
 
