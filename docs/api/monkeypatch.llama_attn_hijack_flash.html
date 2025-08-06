@@ -493,16 +493,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul>
   <li><a href="#axolotl.monkeypatch.llama_attn_hijack_flash" id="toc-axolotl.monkeypatch.llama_attn_hijack_flash" class="nav-link active" data-scroll-target="#axolotl.monkeypatch.llama_attn_hijack_flash">monkeypatch.llama_attn_hijack_flash</a>
   <ul class="collapse">
-  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.monkeypatch.llama_attn_hijack_flash.FusedAttention" id="toc-axolotl.monkeypatch.llama_attn_hijack_flash.FusedAttention" class="nav-link" data-scroll-target="#axolotl.monkeypatch.llama_attn_hijack_flash.FusedAttention">FusedAttention</a></li>
-  <li><a href="#axolotl.monkeypatch.llama_attn_hijack_flash.LlamaDecoderLayer" id="toc-axolotl.monkeypatch.llama_attn_hijack_flash.LlamaDecoderLayer" class="nav-link" data-scroll-target="#axolotl.monkeypatch.llama_attn_hijack_flash.LlamaDecoderLayer">LlamaDecoderLayer</a></li>
-  </ul></li>
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
-  <li><a href="#axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward" id="toc-axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward" class="nav-link" data-scroll-target="#axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward">flashattn_forward</a></li>
   <li><a href="#axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward_with_s2attn" id="toc-axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward_with_s2attn" class="nav-link" data-scroll-target="#axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward_with_s2attn">flashattn_forward_with_s2attn</a></li>
-  <li><a href="#axolotl.monkeypatch.llama_attn_hijack_flash.generate_qkv" id="toc-axolotl.monkeypatch.llama_attn_hijack_flash.generate_qkv" class="nav-link" data-scroll-target="#axolotl.monkeypatch.llama_attn_hijack_flash.generate_qkv">generate_qkv</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -518,119 +511,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h1>monkeypatch.llama_attn_hijack_flash</h1>
 <p><code>monkeypatch.llama_attn_hijack_flash</code></p>
 <p>Flash attention monkey patch for llama model</p>
-<section id="classes" class="level2">
-<h2 class="anchored" data-anchor-id="classes">Classes</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.monkeypatch.llama_attn_hijack_flash.FusedAttention">FusedAttention</a></td>
-<td>Fused QKV Attention layer for incrementally improved training efficiency</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.monkeypatch.llama_attn_hijack_flash.LlamaDecoderLayer">LlamaDecoderLayer</a></td>
-<td>patched version of LlamaDecoderLayer to pass through the precalculated cu_seqlens</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.monkeypatch.llama_attn_hijack_flash.FusedAttention" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.llama_attn_hijack_flash.FusedAttention">FusedAttention</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.llama_attn_hijack_flash.FusedAttention(config, q, k, v, o)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Fused QKV Attention layer for incrementally improved training efficiency</p>
-</section>
-<section id="axolotl.monkeypatch.llama_attn_hijack_flash.LlamaDecoderLayer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.llama_attn_hijack_flash.LlamaDecoderLayer">LlamaDecoderLayer</h3>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.llama_attn_hijack_flash.LlamaDecoderLayer()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>patched version of LlamaDecoderLayer to pass through the precalculated cu_seqlens</p>
-<section id="methods" class="level4">
-<h4 class="anchored" data-anchor-id="methods">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.monkeypatch.llama_attn_hijack_flash.LlamaDecoderLayer.forward">forward</a></td>
-<td></td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.monkeypatch.llama_attn_hijack_flash.LlamaDecoderLayer.forward" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.monkeypatch.llama_attn_hijack_flash.LlamaDecoderLayer.forward">forward</h5>
-<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.llama_attn_hijack_flash.LlamaDecoderLayer.forward(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    hidden_states,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    attention_mask<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    position_ids<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    past_key_value<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    output_attentions<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    use_cache<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    padding_mask<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    cu_seqlens<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    max_seqlen<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<section id="parameters" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 9%">
-<col style="width: 19%">
-<col style="width: 64%">
-<col style="width: 5%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>hidden_states</td>
-<td><code>torch.FloatTensor</code></td>
-<td>input to the layer of shape <code>(batch, seq_len, embed_dim)</code></td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>attention_mask</td>
-<td><code>torch.FloatTensor</code>, <em>optional</em></td>
-<td>attention mask of size <code>(batch, 1, tgt_len, src_len)</code> where padding elements are indicated by very large negative values.</td>
-<td><code>None</code></td>
-</tr>
-<tr class="odd">
-<td>output_attentions</td>
-<td><code>bool</code>, <em>optional</em></td>
-<td>Whether or not to return the attentions tensors of all attention layers. See <code>attentions</code> under returned tensors for more detail.</td>
-<td><code>False</code></td>
-</tr>
-<tr class="even">
-<td>use_cache</td>
-<td><code>bool</code>, <em>optional</em></td>
-<td>If set to <code>True</code>, <code>past_key_values</code> key value states are returned and can be used to speed up decoding (see <code>past_key_values</code>).</td>
-<td><code>False</code></td>
-</tr>
-<tr class="odd">
-<td>past_key_value</td>
-<td><code>Tuple(torch.FloatTensor)</code>, <em>optional</em></td>
-<td>cached past key and value projection states</td>
-<td><code>None</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-</section>
-</section>
-</section>
 <section id="functions" class="level2">
 <h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
@@ -642,120 +522,32 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward">flashattn_forward</a></td>
-<td>Input shape: Batch x Time x Channel</td>
-</tr>
-<tr class="even">
 <td><a href="#axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward_with_s2attn">flashattn_forward_with_s2attn</a></td>
 <td>Input shape: Batch x Time x Channel</td>
 </tr>
-<tr class="odd">
-<td><a href="#axolotl.monkeypatch.llama_attn_hijack_flash.generate_qkv">generate_qkv</a></td>
-<td></td>
-</tr>
 </tbody>
 </table>
-<section id="axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward">flashattn_forward</h3>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.llama_attn_hijack_flash.flashattn_forward(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    hidden_states,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    attention_mask<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    position_ids<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    past_key_value<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    output_attentions<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    use_cache<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    padding_mask<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    cu_seqlens<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    max_seqlen<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Input shape: Batch x Time x Channel</p>
-<p>attention_mask: [bsz, q_len]</p>
-</section>
 <section id="axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward_with_s2attn" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward_with_s2attn">flashattn_forward_with_s2attn</h3>
-<div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.llama_attn_hijack_flash.flashattn_forward_with_s2attn(</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    hidden_states,</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    attention_mask<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    position_ids<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    past_key_value<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    output_attentions<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    use_cache<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    padding_mask<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    cu_seqlens<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>    max_seqlen<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.llama_attn_hijack_flash.flashattn_forward_with_s2attn(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    hidden_states,</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    attention_mask<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    position_ids<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    past_key_value<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    output_attentions<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    use_cache<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    padding_mask<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    cu_seqlens<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    max_seqlen<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Input shape: Batch x Time x Channel</p>
 <p>From: https://github.com/dvlab-research/LongLoRA/blob/main/llama_attn_replace.py</p>
 <p>attention_mask: [bsz, q_len]</p>
 <p><code>cu_seqlens</code> will be ignored if provided
 <code>max_seqlen</code> will be ignored if provided</p>
-</section>
-<section id="axolotl.monkeypatch.llama_attn_hijack_flash.generate_qkv" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.llama_attn_hijack_flash.generate_qkv">generate_qkv</h3>
-<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.llama_attn_hijack_flash.generate_qkv(</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    q,</span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    k,</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    v,</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    query_padding_mask<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    key_padding_mask<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    kvpacked<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    qkvpacked<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<section id="parameters-1" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 25%">
-<col style="width: 10%">
-<col style="width: 48%">
-<col style="width: 15%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>q</td>
-<td></td>
-<td>(batch_size, seqlen_q, nheads, d)</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>k</td>
-<td></td>
-<td>(batch_size, seqlen_k, nheads_k, d)</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>v</td>
-<td></td>
-<td>(batch_size, seqlen_k, nheads_k, d)</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>query_padding_mask</td>
-<td></td>
-<td>(batch_size, seqlen), bool</td>
-<td><code>None</code></td>
-</tr>
-<tr class="odd">
-<td>key_padding_mask</td>
-<td></td>
-<td>(batch_size, seqlen), bool</td>
-<td><code>None</code></td>
-</tr>
-</tbody>
-</table>
 
 
-</section>
 </section>
 </section>
 </section>
