@@ -23,7 +23,7 @@ from .utils import torch_amp_custom_bwd, torch_amp_custom_fwd
 
 
 def get_lora_parameters(
-    module: nn.Module,
+    proj: nn.Module,
 ) -> tuple[
     torch.Tensor,
     torch.Tensor | None,
@@ -44,28 +44,24 @@ def get_lora_parameters(
         `None` if not available.
     """
     # For DPO or disabled adapters
-    base_layer = module.base_layer if hasattr(module, "base_layer") else module
+    base_layer = proj.base_layer if hasattr(proj, "base_layer") else proj
     W = base_layer.weight
     b = base_layer.bias
 
-    if (
-        not hasattr(module, "disable_adapters")
-        or module.disable_adapters
-        or module.merged
-    ):
+    if not hasattr(proj, "disable_adapters") or proj.disable_adapters or proj.merged:
         quant_state = getattr(W, "quant_state", None)
         return W, b, quant_state, None, None, None
 
     quant_state = getattr(W, "quant_state", None)
 
     active_adapter = (
-        module.active_adapters[0]
-        if hasattr(module, "active_adapters")
-        else module.active_adapter
+        proj.active_adapters[0]
+        if hasattr(proj, "active_adapters")
+        else proj.active_adapter
     )
 
-    linear_A = module.lora_A[active_adapter]
-    linear_B = module.lora_B[active_adapter]
+    linear_A = proj.lora_A[active_adapter]
+    linear_B = proj.lora_B[active_adapter]
 
     # This manual unsharding is needed for FSDP2 + LoRA kernels compatibility.
     # We fuse linear layers + LoRA adapters calculations into a single
@@ -78,7 +74,7 @@ def get_lora_parameters(
 
     A = linear_A.weight
     B = linear_B.weight
-    s = module.scaling[active_adapter]
+    s = proj.scaling[active_adapter]
 
     return W, b, quant_state, A, B, s
 
