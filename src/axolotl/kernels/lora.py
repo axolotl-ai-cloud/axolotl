@@ -86,7 +86,7 @@ def matmul_lora(
     W_quant: QuantState | None,
     A: torch.Tensor | None,
     B: torch.Tensor | None,
-    s: float,
+    s: float | None,
     out: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """
