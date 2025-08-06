@@ -18,7 +18,7 @@ dataset_prepared_path: last_run_prepared
 val_set_size: 0
 output_dir: ./outputs/gpt-oss-out/
 
-sequence_len: 8192
+sequence_len: 4096
 sample_packing: true
 
 adapter: lora
@@ -38,13 +38,13 @@ wandb_watch:
 wandb_name:
 wandb_log_model:
 
-gradient_accumulation_steps: 1
+gradient_accumulation_steps: 8
 micro_batch_size: 1
 num_epochs: 1
 
 optimizer: adamw_torch_8bit
 lr_scheduler: constant_with_warmup
-learning_rate: 2e-6
+learning_rate: 2e-4
 
 bf16: true
 tf32: true
