@@ -163,6 +163,14 @@ class AxolotlTrainingMixins:
         default=False,
         metadata={"help": "whether this is a qlora training"},
     )
+    qalora: bool = field(
+        default=False,
+        metadata={"help": "whether this is a qalora training"},
+    )
+    qalora_group_size: Optional[int] = field(
+        default=16,
+        metadata={"help": "Group size for QALoRA quantization"},
+    )
     orpo_alpha: Optional[float] = field(
         default=None,
     )

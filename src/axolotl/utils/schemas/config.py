@@ -1064,7 +1064,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if data.get("rl"):
             # RL trainers not tested so don't enable kernels by default
             return data
-        if data.get("adapter") in ["lora", "qlora"]:
+        if data.get("adapter") in ["lora", "qlora", "qalora"]:
             # Skip if already set, using unsloth optimizations, or using 8-bit
             unsloth_fields = ["unsloth_lora_mlp", "unsloth_lora_qkv", "unsloth_lora_o"]
             kernel_fields = ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
