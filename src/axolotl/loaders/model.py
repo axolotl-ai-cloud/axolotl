@@ -747,6 +747,17 @@ class ModelLoader:
             elif self.is_qlora_and_fsdp_enabled:
                 skip_move_to_device = True
 
+            if (
+                self.cfg.tensor_parallel_size <= 1
+                and self.cfg.fsdp_config.cpu_ram_efficient_loading
+            ):
+                # setting device_map for TP is not supported
+                local_rank = int(os.getenv("LOCAL_RANK", "0"))
+                if local_rank == 0:
+                    self.model_kwargs["device_map"] = "cpu"
+                else:
+                    self.model_kwargs["device_map"] = "meta"
+
         if (
             self.is_qlora_and_fsdp_enabled
             and self.cfg.fsdp_config.cpu_ram_efficient_loading
