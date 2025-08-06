@@ -29,7 +29,6 @@ from transformers import (
     TrainerCallback,
 )
 from transformers.trainer_pt_utils import AcceleratorConfig
-from transformers.training_args import OptimizerNames
 
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
@@ -283,21 +282,6 @@ class TrainerBuilderBase(abc.ABC):
 
                 optimizer_kwargs["foreach"] = False
                 optimizer_cls = AdamW
-                optimizer_kwargs.update(adam_kwargs)
-            elif self.cfg.optimizer == "ao_adamw_4bit":
-                # TODO remove 20250401
-                from torchao.prototype.low_bit_optim import AdamW4bit
-
-                optimizer_cls = AdamW4bit
-                optimizer_kwargs.update(adam_kwargs)
-
-                LOG.warning(
-                    f"`ao_adamw_4bit` will be deprecated soon. Please use `{OptimizerNames.ADAMW_TORCH_4BIT}` instead."
-                )
-            elif self.cfg.optimizer == "ao_adamw_8bit":
-                from torchao.prototype.low_bit_optim import AdamW8bit
-
-                optimizer_cls = AdamW8bit
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "ao_adamw_fp8":
                 from torchao.prototype.low_bit_optim import AdamWFp8

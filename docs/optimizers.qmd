@@ -55,7 +55,7 @@ Here is a list of optimizers supported by transformers as of `v4.54.0`:
 
 ## Custom Optimizers
 
-You can also use custom optimizers by passing a string to the `optimizer` argument.
+Enable custom optimizers by passing a string to the `optimizer` argument. Each optimizer will receive beta and epsilon args, however, some may accept additional args which are detailed below.
 
 ### optimi_adamw
 
@@ -65,15 +65,11 @@ optimizer: optimi_adamw
 
 ### ao_adamw_4bit
 
-```yaml
-optimizer: ao_adamw_4bit
-```
+Deprecated: Please use `adamw_torch_4bit`.
 
 ### ao_adamw_8bit
 
-```yaml
-optimizer: ao_adamw_8bit
-```
+Deprecated: Please use `adamw_torch_8bit`.
 
 ### ao_adamw_fp8
 
