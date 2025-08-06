@@ -28,7 +28,7 @@ gradient_accumulation_steps: 1
 micro_batch_size: 1
 num_epochs: 1
 
-optimizer: adamw_torch_8bit
+optimizer: adamw_torch_fused  # 8bit optimizers do not work with FSDP2 offload
 lr_scheduler: constant_with_warmup
 learning_rate: 2e-6
 
@@ -52,7 +52,7 @@ eot_tokens:
 
 fsdp_version: 2
 fsdp_config:
-  offload_params: false
+  offload_params: true
   state_dict_type: SHARDED_STATE_DICT
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: GptOssDecoderLayer
