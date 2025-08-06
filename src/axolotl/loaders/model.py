@@ -13,7 +13,7 @@ import peft
 import torch
 import transformers
 import transformers.modeling_utils
-from accelerate import PartialState, init_empty_weights
+from accelerate import init_empty_weights
 from accelerate.parallelism_config import ParallelismConfig
 from peft import (
     PeftConfig,
@@ -22,6 +22,7 @@ from peft import (
     PeftModelForCausalLM,
     prepare_model_for_kbit_training,
 )
+from torch.distributed import DeviceMesh
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForVision2Seq,
@@ -87,6 +88,7 @@ class ModelLoader:
 
     use_parallel_config: bool | None = False
     parallelism_config: ParallelismConfig | None = None
+    device_mesh: DeviceMesh | None = None
 
     def __init__(
         self,
@@ -476,6 +478,7 @@ class ModelLoader:
             self.parallelism_config = ParallelismConfig(
                 **pc_kwargs,
             )
+            self.device_mesh = self.parallelism_config.build_device_mesh("cuda")
 
     def _set_auto_model_loader(self):
         """Set `self.auto_model_loader`. Defaults to `transformers.AutoModelForCausalLM`
@@ -728,7 +731,7 @@ class ModelLoader:
         if self.cfg.tensor_parallel_size > 1:
             self.model_kwargs["tp_size"] = self.cfg.tensor_parallel_size
             self.model_kwargs["tp_plan"] = "auto"
-            self.model_kwargs["device_mesh"] = PartialState().device_mesh
+            self.model_kwargs["device_mesh"] = self.device_mesh
             if "device_map" in self.model_kwargs:
                 del self.model_kwargs["device_map"]  # not compatible with `tp_plan`
 
