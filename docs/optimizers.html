@@ -141,7 +141,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/fsdp_qlora.html">Advanced Features</a></li><li class="breadcrumb-item"><a href="../docs/optimizers.html">Optimizers</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/batch_vs_grad.html">Core Concepts</a></li><li class="breadcrumb-item"><a href="../docs/optimizers.html">Optimizers</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -392,6 +392,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
  <span class="menu-text">Mixed Precision Training</span></a>
   </div>
 </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/optimizers.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Optimizers</span></a>
+  </div>
+</li>
       </ul>
   </li>
         <li class="sidebar-item sidebar-item-section">
@@ -445,12 +451,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
  <span class="menu-text">N-D Parallelism (Beta)</span></a>
   </div>
 </li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="../docs/optimizers.html" class="sidebar-item-text sidebar-link active">
- <span class="menu-text">Optimizers</span></a>
-  </div>
-</li>
       </ul>
   </li>
         <li class="sidebar-item sidebar-item-section">
@@ -492,14 +492,25 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#dion-optimizer" id="toc-dion-optimizer" class="nav-link active" data-scroll-target="#dion-optimizer">Dion Optimizer</a></li>
+  <li><a href="#overview" id="toc-overview" class="nav-link active" data-scroll-target="#overview">Overview</a></li>
+  <li><a href="#custom-optimizers" id="toc-custom-optimizers" class="nav-link" data-scroll-target="#custom-optimizers">Custom Optimizers</a>
+  <ul class="collapse">
+  <li><a href="#optimi_adamw" id="toc-optimi_adamw" class="nav-link" data-scroll-target="#optimi_adamw">optimi_adamw</a></li>
+  <li><a href="#ao_adamw_4bit" id="toc-ao_adamw_4bit" class="nav-link" data-scroll-target="#ao_adamw_4bit">ao_adamw_4bit</a></li>
+  <li><a href="#ao_adamw_8bit" id="toc-ao_adamw_8bit" class="nav-link" data-scroll-target="#ao_adamw_8bit">ao_adamw_8bit</a></li>
+  <li><a href="#ao_adamw_fp8" id="toc-ao_adamw_fp8" class="nav-link" data-scroll-target="#ao_adamw_fp8">ao_adamw_fp8</a></li>
+  <li><a href="#adopt_adamw" id="toc-adopt_adamw" class="nav-link" data-scroll-target="#adopt_adamw">adopt_adamw</a></li>
+  <li><a href="#came_pytorch" id="toc-came_pytorch" class="nav-link" data-scroll-target="#came_pytorch">came_pytorch</a></li>
+  <li><a href="#muon" id="toc-muon" class="nav-link" data-scroll-target="#muon">muon</a></li>
+  <li><a href="#dion" id="toc-dion" class="nav-link" data-scroll-target="#dion">dion</a></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/fsdp_qlora.html">Advanced Features</a></li><li class="breadcrumb-item"><a href="../docs/optimizers.html">Optimizers</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/batch_vs_grad.html">Core Concepts</a></li><li class="breadcrumb-item"><a href="../docs/optimizers.html">Optimizers</a></li></ol></nav>
 <div class="quarto-title">
 <h1 class="title">Optimizers</h1>
 </div>
@@ -523,17 +534,113 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </header>
 
 
-<section id="dion-optimizer" class="level3">
-<h3 class="anchored" data-anchor-id="dion-optimizer">Dion Optimizer</h3>
+<section id="overview" class="level2">
+<h2 class="anchored" data-anchor-id="overview">Overview</h2>
+<p>Axolotl supports all optimizers supported by <a href="https://github.com/huggingface/transformers/blob/51f94ea06d19a6308c61bbb4dc97c40aabd12bad/src/transformers/training_args.py#L142-L187">transformers OptimizerNames</a></p>
+<p>Here is a list of optimizers supported by transformers as of <code>v4.54.0</code>:</p>
+<ul>
+<li><code>adamw_torch</code></li>
+<li><code>adamw_torch_fused</code></li>
+<li><code>adamw_torch_xla</code></li>
+<li><code>adamw_torch_npu_fused</code></li>
+<li><code>adamw_apex_fused</code></li>
+<li><code>adafactor</code></li>
+<li><code>adamw_anyprecision</code></li>
+<li><code>adamw_torch_4bit</code></li>
+<li><code>adamw_torch_8bit</code></li>
+<li><code>ademamix</code></li>
+<li><code>sgd</code></li>
+<li><code>adagrad</code></li>
+<li><code>adamw_bnb_8bit</code></li>
+<li><code>adamw_8bit</code> # alias for adamw_bnb_8bit</li>
+<li><code>ademamix_8bit</code></li>
+<li><code>lion_8bit</code></li>
+<li><code>lion_32bit</code></li>
+<li><code>paged_adamw_32bit</code></li>
+<li><code>paged_adamw_8bit</code></li>
+<li><code>paged_ademamix_32bit</code></li>
+<li><code>paged_ademamix_8bit</code></li>
+<li><code>paged_lion_32bit</code></li>
+<li><code>paged_lion_8bit</code></li>
+<li><code>rmsprop</code></li>
+<li><code>rmsprop_bnb</code></li>
+<li><code>rmsprop_bnb_8bit</code></li>
+<li><code>rmsprop_bnb_32bit</code></li>
+<li><code>galore_adamw</code></li>
+<li><code>galore_adamw_8bit</code></li>
+<li><code>galore_adafactor</code></li>
+<li><code>galore_adamw_layerwise</code></li>
+<li><code>galore_adamw_8bit_layerwise</code></li>
+<li><code>galore_adafactor_layerwise</code></li>
+<li><code>lomo</code></li>
+<li><code>adalomo</code></li>
+<li><code>grokadamw</code></li>
+<li><code>schedule_free_radam</code></li>
+<li><code>schedule_free_adamw</code></li>
+<li><code>schedule_free_sgd</code></li>
+<li><code>apollo_adamw</code></li>
+<li><code>apollo_adamw_layerwise</code></li>
+<li><code>stable_adamw</code></li>
+</ul>
+</section>
+<section id="custom-optimizers" class="level2">
+<h2 class="anchored" data-anchor-id="custom-optimizers">Custom Optimizers</h2>
+<p>Enable custom optimizers by passing a string to the <code>optimizer</code> argument. Each optimizer will receive beta and epsilon args, however, some may accept additional args which are detailed below.</p>
+<section id="optimi_adamw" class="level3">
+<h3 class="anchored" data-anchor-id="optimi_adamw">optimi_adamw</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> optimi_adamw</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="ao_adamw_4bit" class="level3">
+<h3 class="anchored" data-anchor-id="ao_adamw_4bit">ao_adamw_4bit</h3>
+<p>Deprecated: Please use <code>adamw_torch_4bit</code>.</p>
+</section>
+<section id="ao_adamw_8bit" class="level3">
+<h3 class="anchored" data-anchor-id="ao_adamw_8bit">ao_adamw_8bit</h3>
+<p>Deprecated: Please use <code>adamw_torch_8bit</code>.</p>
+</section>
+<section id="ao_adamw_fp8" class="level3">
+<h3 class="anchored" data-anchor-id="ao_adamw_fp8">ao_adamw_fp8</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> ao_adamw_fp8</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="adopt_adamw" class="level3">
+<h3 class="anchored" data-anchor-id="adopt_adamw">adopt_adamw</h3>
+<p>GitHub: <a href="https://github.com/iShohei220/adopt">https://github.com/iShohei220/adopt</a>
+Paper: <a href="https://arxiv.org/abs/2411.02853">https://arxiv.org/abs/2411.02853</a></p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> adopt_adamw</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="came_pytorch" class="level3">
+<h3 class="anchored" data-anchor-id="came_pytorch">came_pytorch</h3>
+<p>GitHub: <a href="https://github.com/yangluo7/CAME/tree/master">https://github.com/yangluo7/CAME/tree/master</a>
+Paper: <a href="https://arxiv.org/abs/2307.02047">https://arxiv.org/abs/2307.02047</a></p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> came_pytorch</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="co"># optional args (defaults below)</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_beta1</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.9</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_beta2</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.999</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_beta3</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.9999</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_epsilon</span><span class="kw">:</span><span class="at"> </span><span class="fl">1e-30</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="fu">adam_epsilon2</span><span class="kw">:</span><span class="at"> </span><span class="fl">1e-16</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="muon" class="level3">
+<h3 class="anchored" data-anchor-id="muon">muon</h3>
+<p>Blog: <a href="https://kellerjordan.github.io/posts/muon/">https://kellerjordan.github.io/posts/muon/</a>
+Paper: <a href="https://arxiv.org/abs/2502.16982v1">https://arxiv.org/abs/2502.16982v1</a></p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> muon</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="dion" class="level3">
+<h3 class="anchored" data-anchor-id="dion">dion</h3>
 <p>Microsoft’s Dion (DIstributed OrthoNormalization) optimizer is a scalable and communication-efficient
 orthonormalizing optimizer that uses low-rank approximations to reduce gradient communication.</p>
-<p>Usage:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> dion</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">dion_lr</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.01</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">dion_momentum</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.95</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">lr</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.00001</span><span class="co">  # learning rate for embeddings and parameters that fallback to AdamW</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>GitHub: <a href="https://github.com/microsoft/dion">https://github.com/microsoft/dion</a>
+Paper: <a href="https://arxiv.org/pdf/2504.05295">https://arxiv.org/pdf/2504.05295</a>
+Note: Implementation written for PyTorch 2.7+ for DTensor</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> dion</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">dion_lr</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.01</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">dion_momentum</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.95</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="fu">lr</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.00001</span><span class="co">  # learning rate for embeddings and parameters that fallback to AdamW</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 
 
+</section>
 </section>
 
 </main> <!-- /main -->

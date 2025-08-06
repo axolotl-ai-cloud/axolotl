@@ -2159,9 +2159,31 @@
     "href": "docs/optimizers.html",
     "title": "Optimizers",
     "section": "",
-    "text": "Dion Optimizer\nMicrosoft’s Dion (DIstributed OrthoNormalization) optimizer is a scalable and communication-efficient\northonormalizing optimizer that uses low-rank approximations to reduce gradient communication.\nUsage:\noptimizer: dion\ndion_lr: 0.01\ndion_momentum: 0.95\nlr: 0.00001  # learning rate for embeddings and parameters that fallback to AdamW",
+    "text": "Axolotl supports all optimizers supported by transformers OptimizerNames\nHere is a list of optimizers supported by transformers as of v4.54.0:\n\nadamw_torch\nadamw_torch_fused\nadamw_torch_xla\nadamw_torch_npu_fused\nadamw_apex_fused\nadafactor\nadamw_anyprecision\nadamw_torch_4bit\nadamw_torch_8bit\nademamix\nsgd\nadagrad\nadamw_bnb_8bit\nadamw_8bit # alias for adamw_bnb_8bit\nademamix_8bit\nlion_8bit\nlion_32bit\npaged_adamw_32bit\npaged_adamw_8bit\npaged_ademamix_32bit\npaged_ademamix_8bit\npaged_lion_32bit\npaged_lion_8bit\nrmsprop\nrmsprop_bnb\nrmsprop_bnb_8bit\nrmsprop_bnb_32bit\ngalore_adamw\ngalore_adamw_8bit\ngalore_adafactor\ngalore_adamw_layerwise\ngalore_adamw_8bit_layerwise\ngalore_adafactor_layerwise\nlomo\nadalomo\ngrokadamw\nschedule_free_radam\nschedule_free_adamw\nschedule_free_sgd\napollo_adamw\napollo_adamw_layerwise\nstable_adamw",
     "crumbs": [
-      "Advanced Features",
+      "Core Concepts",
+      "Optimizers"
+    ]
+  },
+  {
+    "objectID": "docs/optimizers.html#overview",
+    "href": "docs/optimizers.html#overview",
+    "title": "Optimizers",
+    "section": "",
+    "text": "Axolotl supports all optimizers supported by transformers OptimizerNames\nHere is a list of optimizers supported by transformers as of v4.54.0:\n\nadamw_torch\nadamw_torch_fused\nadamw_torch_xla\nadamw_torch_npu_fused\nadamw_apex_fused\nadafactor\nadamw_anyprecision\nadamw_torch_4bit\nadamw_torch_8bit\nademamix\nsgd\nadagrad\nadamw_bnb_8bit\nadamw_8bit # alias for adamw_bnb_8bit\nademamix_8bit\nlion_8bit\nlion_32bit\npaged_adamw_32bit\npaged_adamw_8bit\npaged_ademamix_32bit\npaged_ademamix_8bit\npaged_lion_32bit\npaged_lion_8bit\nrmsprop\nrmsprop_bnb\nrmsprop_bnb_8bit\nrmsprop_bnb_32bit\ngalore_adamw\ngalore_adamw_8bit\ngalore_adafactor\ngalore_adamw_layerwise\ngalore_adamw_8bit_layerwise\ngalore_adafactor_layerwise\nlomo\nadalomo\ngrokadamw\nschedule_free_radam\nschedule_free_adamw\nschedule_free_sgd\napollo_adamw\napollo_adamw_layerwise\nstable_adamw",
+    "crumbs": [
+      "Core Concepts",
+      "Optimizers"
+    ]
+  },
+  {
+    "objectID": "docs/optimizers.html#custom-optimizers",
+    "href": "docs/optimizers.html#custom-optimizers",
+    "title": "Optimizers",
+    "section": "Custom Optimizers",
+    "text": "Custom Optimizers\nEnable custom optimizers by passing a string to the optimizer argument. Each optimizer will receive beta and epsilon args, however, some may accept additional args which are detailed below.\n\noptimi_adamw\noptimizer: optimi_adamw\n\n\nao_adamw_4bit\nDeprecated: Please use adamw_torch_4bit.\n\n\nao_adamw_8bit\nDeprecated: Please use adamw_torch_8bit.\n\n\nao_adamw_fp8\noptimizer: ao_adamw_fp8\n\n\nadopt_adamw\nGitHub: https://github.com/iShohei220/adopt\nPaper: https://arxiv.org/abs/2411.02853\noptimizer: adopt_adamw\n\n\ncame_pytorch\nGitHub: https://github.com/yangluo7/CAME/tree/master\nPaper: https://arxiv.org/abs/2307.02047\noptimizer: came_pytorch\n\n# optional args (defaults below)\nadam_beta1: 0.9\nadam_beta2: 0.999\nadam_beta3: 0.9999\nadam_epsilon: 1e-30\nadam_epsilon2: 1e-16\n\n\nmuon\nBlog: https://kellerjordan.github.io/posts/muon/\nPaper: https://arxiv.org/abs/2502.16982v1\noptimizer: muon\n\n\ndion\nMicrosoft’s Dion (DIstributed OrthoNormalization) optimizer is a scalable and communication-efficient\northonormalizing optimizer that uses low-rank approximations to reduce gradient communication.\nGitHub: https://github.com/microsoft/dion\nPaper: https://arxiv.org/pdf/2504.05295\nNote: Implementation written for PyTorch 2.7+ for DTensor\noptimizer: dion\ndion_lr: 0.01\ndion_momentum: 0.95\nlr: 0.00001  # learning rate for embeddings and parameters that fallback to AdamW",
+    "crumbs": [
+      "Core Concepts",
       "Optimizers"
     ]
   },
