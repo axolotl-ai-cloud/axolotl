@@ -690,6 +690,7 @@ class ModelLoader:
             if (
                 self.cfg.tensor_parallel_size <= 1
                 and self.cfg.fsdp_config.cpu_ram_efficient_loading
+                and self.cfg.fsdp_version == 2
             ):
                 # setting device_map for TP is not supported
                 local_rank = int(os.getenv("LOCAL_RANK", "0"))
