@@ -2,11 +2,9 @@
 
 import unittest
 
-from transformers import Trainer
-
 from axolotl.monkeypatch.transformers.trainer_loss_calc import (
-    patch_evaluation_loop,
-    patch_maybe_log_save_evaluate,
+    check_evaluation_loop_is_patchable,
+    check_maybe_log_save_evaluate_is_patchable,
 )
 
 
@@ -15,24 +13,14 @@ class TestTrainerLossCalc(unittest.TestCase):
     Unit test class for trainer loss calc monkeypatch
     """
 
-    def test_patch_evaluation_loop_applies(self):
+    def test_trainer_loss_calc_is_patchable(self):
         """
-        Test that patch_evaluation_loop applies successfully
+        Test that the upstream transformers code is still patchable. This will fail if
+        the patched code changes upstream.
         """
-        # Ensure we start with a clean state
-        if hasattr(Trainer, "_original_evaluation_loop"):
-            delattr(Trainer, "_original_evaluation_loop")
+        assert check_evaluation_loop_is_patchable()
+        assert check_maybe_log_save_evaluate_is_patchable()
 
-        patch_evaluation_loop()
-        assert hasattr(Trainer, "_original_evaluation_loop")
 
-    def test_patch_maybe_log_save_evaluate_applies(self):
-        """
-        Test that patch_maybe_log_save_evaluate applies successfully
-        """
-        # Ensure we start with a clean state
-        if hasattr(Trainer, "_original_maybe_log_save_evaluate"):
-            delattr(Trainer, "_original_maybe_log_save_evaluate")
-
-        patch_maybe_log_save_evaluate()
-        assert hasattr(Trainer, "_original_maybe_log_save_evaluate")
+if __name__ == "__main__":
+    unittest.main()

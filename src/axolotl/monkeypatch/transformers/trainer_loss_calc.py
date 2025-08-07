@@ -15,6 +15,23 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+ORIGINAL_EVAL_CODE = {
+    "list": 'metrics[f"{metric_key_prefix}_loss"] = np.concatenate(all_losses).mean().item()',
+    "array": 'metrics[f"{metric_key_prefix}_loss"] = all_losses.mean().item()',
+}
+PATCHED_EVAL_CODE = {
+    "list": 'metrics[f"{metric_key_prefix}_loss"] = np.nanmean(np.concatenate(all_losses)).item()',
+    "array": 'metrics[f"{metric_key_prefix}_loss"] = np.nanmean(all_losses).item()',
+}
+
+ORIGINAL_MAYBE_CODE = "tr_loss_scalar = self._nested_gather(tr_loss).mean().item()"
+PATCHED_MAYBE_CODE = "tr_loss_scalar = self._nested_gather(tr_loss).nanmean().item()"
+
+
+def check_evaluation_loop_is_patchable() -> bool:
+    evaluation_loop_source = inspect.getsource(Trainer.evaluation_loop)
+    return all(value in evaluation_loop_source for value in ORIGINAL_EVAL_CODE.values())
+
 
 # pylint: disable=protected-access
 def patch_evaluation_loop():
@@ -24,38 +41,20 @@ def patch_evaluation_loop():
         LOG.info("Trainer.evaluation_loop already patched")
         return
 
-    # Get the original method source
-    evaluation_loop_source = inspect.getsource(Trainer.evaluation_loop)
-    Trainer._original_evaluation_loop = evaluation_loop_source
-    evaluation_loop_source, _ = detab_code(evaluation_loop_source)
-
-    # Define the patterns to replace
-    original_list_pattern = 'metrics[f"{metric_key_prefix}_loss"] = np.concatenate(all_losses).mean().item()'
-    patched_list_pattern = 'metrics[f"{metric_key_prefix}_loss"] = np.nanmean(np.concatenate(all_losses)).item()'
-
-    original_array_pattern = (
-        'metrics[f"{metric_key_prefix}_loss"] = all_losses.mean().item()'
-    )
-    patched_array_pattern = (
-        'metrics[f"{metric_key_prefix}_loss"] = np.nanmean(all_losses).item()'
-    )
-
     # Check if the patterns exist
-    if (
-        original_list_pattern not in evaluation_loop_source
-        or original_array_pattern not in evaluation_loop_source
-    ):
-        LOG.warning(
-            "Original loss calculation patterns not found in Trainer.evaluation_loop"
-        )
+    try:
+        evaluation_loop_source = inspect.getsource(Trainer.evaluation_loop)
+    except OSError:
         return
+    Trainer.evaluation = evaluation_loop_source
+    evaluation_loop_source, _ = detab_code(evaluation_loop_source)
 
     # Apply the patches
     evaluation_loop_source = evaluation_loop_source.replace(
-        original_list_pattern, patched_list_pattern
+        ORIGINAL_EVAL_CODE["list"], PATCHED_EVAL_CODE["list"]
     )
     evaluation_loop_source = evaluation_loop_source.replace(
-        original_array_pattern, patched_array_pattern
+        ORIGINAL_EVAL_CODE["array"], PATCHED_EVAL_CODE["array"]
     )
 
     # Rename the function to avoid conflicts
@@ -88,6 +87,11 @@ def patch_evaluation_loop():
     )
 
 
+def check_maybe_log_save_evaluate_is_patchable() -> bool:
+    maybe_log_source = inspect.getsource(Trainer._maybe_log_save_evaluate)
+    return ORIGINAL_MAYBE_CODE in maybe_log_source
+
+
 # pylint: disable=protected-access
 def patch_maybe_log_save_evaluate():
     """Patch the _maybe_log_save_evaluate method."""
@@ -96,24 +100,16 @@ def patch_maybe_log_save_evaluate():
         LOG.info("Trainer._maybe_log_save_evaluate already patched")
         return
 
-    # Get the original method source
-    maybe_log_source = inspect.getsource(Trainer._maybe_log_save_evaluate)
+    # Check if the patterns exist
+    try:
+        maybe_log_source = inspect.getsource(Trainer._maybe_log_save_evaluate)
+    except OSError:
+        return
     Trainer._original_maybe_log_save_evaluate = maybe_log_source
     maybe_log_source, _ = detab_code(maybe_log_source)
 
-    # Define the pattern to replace
-    original_pattern = "tr_loss_scalar = self._nested_gather(tr_loss).mean().item()"
-    patched_pattern = "tr_loss_scalar = self._nested_gather(tr_loss).nanmean().item()"
-
-    # Check if the pattern exists
-    if original_pattern not in maybe_log_source:
-        LOG.warning(
-            "Original tr_loss_scalar pattern not found in Trainer._maybe_log_save_evaluate"
-        )
-        return
-
     # Apply the patch
-    maybe_log_source = maybe_log_source.replace(original_pattern, patched_pattern)
+    maybe_log_source = maybe_log_source.replace(ORIGINAL_MAYBE_CODE, PATCHED_MAYBE_CODE)
 
     # Rename the function to avoid conflicts
     maybe_log_source = maybe_log_source.replace(
