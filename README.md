@@ -26,7 +26,7 @@
 ## 🎉 Latest Updates
 
 - 2025/07:
-    - ND Parallelism support has been added into Axolotl. Compose Context Parallelism (CP), Tensor Parallelism (TP), and Data Parallelism (DP) within single node and across nodes. Check out the [PR](https://github.com/axolotl-ai-cloud/axolotl/pull/2977) for more info.
+    - ND Parallelism support has been added into Axolotl. Compose Context Parallelism (CP), Tensor Parallelism (TP), and Fully Sharded Data Parallelism (FSDP) within single node and across nodes. Check out the [blog post](https://huggingface.co/blog/accelerate-nd-parallel) for more info.
     - FP8 finetuning with fp8 gather op is now possible in Axolotl via `torchao`. Get started [here](https://docs.axolotl.ai/docs/mixed_precision.html#sec-fp8)!
     - Voxtral and Magistral 1.1 with mistral-common tokenizer support has been integrated in Axolotl. Read the [docs](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/voxtral)!
     - TiledMLP support for single-GPU to multi-GPU training with DDP, DeepSpeed and FSDP support has been added to support Arctic Long Sequence Training. (ALST). See [examples](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/alst) for using ALST with Axolotl!
