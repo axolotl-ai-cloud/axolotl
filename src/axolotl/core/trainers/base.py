@@ -528,7 +528,7 @@ class AxolotlTrainer(
                 reset_partial_state=True
             )
 
-        res = super().create_accelerator_and_postprocess()
+        super().create_accelerator_and_postprocess()
 
         # now we need to put parallelism_config back on the PartialState since we rely on that info in other places
         # PartialState().parallelism_config = self.accelerator.state.parallelism_config
@@ -539,8 +539,6 @@ class AxolotlTrainer(
                 and self.args.fsdp_config["limit_all_gathers"]
             ):
                 self.accelerator.state.fsdp_plugin.limit_all_gathers = True
-
-        return res
 
     # pylint: disable=unused-argument
     def additional_accelerator_args(
