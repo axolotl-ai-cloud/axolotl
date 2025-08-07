@@ -1147,6 +1147,19 @@ class ModelCompatibilityValidationMixin:
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_gpt_oss_fsdp_loading(cls, data):
+        if data.get("model_quantization_config", "") == "Mxfp4Config":
+            if (
+                data.get("fsdp_config", {}).get("cpu_ram_efficient_loading", False)
+                is True
+            ):
+                raise ValueError(
+                    "FSDP cpu_ram_efficient_loading is not supported for Mxfp4Config model quantization."
+                )
+        return data
+
 
 class ComplexValidationMixin:
     """Complex validation methods that involve multiple systems."""
