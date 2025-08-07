@@ -19,7 +19,7 @@ tokenizers>=0.21.1
 accelerate==1.10.0
 datasets==4.0.0
 deepspeed>=0.17.0
-trl==0.20.0
+trl==0.21.0
 hf_xet==1.1.5
 kernels==0.9.0
 trackio

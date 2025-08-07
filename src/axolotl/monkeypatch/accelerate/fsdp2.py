@@ -70,7 +70,7 @@ def fsdp2_load_full_state_dict(
                     device=torch.device("cuda"),
                     dtype=sharded_meta_param.dtype,
                 )
-                dist.broadcast(sharded_param, src=0)
+            dist.broadcast(sharded_param, src=0)
 
         if offload_to_cpu:
             sharded_param = sharded_param.cpu()

@@ -10,9 +10,10 @@ plugins:
 experimental_skip_move_to_device: true  # prevent OOM by not putting model to GPU before sharding
 
 datasets:
-  - path: winglian/pirate-ultrachat-10k
+  - path: HuggingFaceH4/Multilingual-Thinking
     type: chat_template
-    split: train
+    field_thinking: thinking
+    template_thinking_key: thinking
 
 dataset_prepared_path: last_run_prepared
 val_set_size: 0
@@ -64,3 +65,4 @@ warmup_ratio: 0.1
 special_tokens:
 eot_tokens:
   - "<|end|>"
+  - "<|return|>"

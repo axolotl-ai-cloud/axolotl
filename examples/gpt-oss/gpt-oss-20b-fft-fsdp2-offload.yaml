@@ -49,7 +49,7 @@ activation_offloading: true
 logging_steps: 1
 saves_per_epoch: 1
 
-warmup_ratio: 0.1
+warmup_ratio: 0.03
 
 special_tokens:
 eot_tokens:
@@ -59,8 +59,8 @@ eot_tokens:
 fsdp_version: 2
 fsdp_config:
   offload_params: true
-  state_dict_type: FULL_STATE_DICT
+  state_dict_type: SHARDED_STATE_DICT
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: GptOssDecoderLayer
   reshard_after_forward: true
-  cpu_ram_efficient_loading: true
+#  cpu_ram_efficient_loading: true
