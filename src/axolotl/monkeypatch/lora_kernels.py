@@ -400,7 +400,7 @@ def apply_lora_kernel_patches(
                 else:
                     LOG.warning_once(
                         "Cannot patch some attention QKV projections - requires LoRA "
-                        "adapters adapters and no lora_magnitude_vector (DoRA)"
+                        "adapters and no lora_magnitude_vector (DoRA)"
                     )
             if cfg.lora_o_kernel:
                 # Output patching
