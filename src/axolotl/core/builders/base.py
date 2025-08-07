@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from accelerate import PartialState
 from transformers import (
     TrainerCallback,
 )
@@ -39,6 +38,7 @@ from axolotl.utils.callbacks import (
     SaveModelOnFirstStepCallback,
 )
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
+from axolotl.utils.distributed import build_parallelism_config
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
 LOG = logging.getLogger(__name__)
@@ -275,8 +275,9 @@ class TrainerBuilderBase(abc.ABC):
                 optimizer_kwargs["dion_lr"] = training_args_kwargs["dion_learning_rate"]
                 optimizer_kwargs["dion_mu"] = training_args_kwargs["dion_momentum"]
                 optimizer_kwargs.update(adam_kwargs)
-                partial_state = PartialState()
-                optimizer_kwargs["device_mesh"] = partial_state.device_mesh
+                _, device_mesh = build_parallelism_config(self.cfg)
+                if device_mesh is not None:
+                    optimizer_kwargs["device_mesh"] = device_mesh
             elif self.cfg.optimizer == "optimi_adamw":
                 from optimi import AdamW
 

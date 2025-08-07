@@ -9,6 +9,7 @@ from transformers.utils.import_utils import is_torch_mps_available
 
 from axolotl.loaders import ModelLoader
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import _get_parallel_config_kwargs
 
 
 class TestModelsUtils:
@@ -193,15 +194,13 @@ class TestModelsUtils:
         is_fsdp,
         expected,
     ):
-        res = (
-            ModelLoader._get_parallel_config_kwargs(  # pylint: disable=protected-access
-                world_size,
-                tensor_parallel_size,
-                context_parallel_size,
-                dp_shard_size,
-                dp_replicate_size,
-                is_fsdp,
-            )
+        res = _get_parallel_config_kwargs(  # pylint: disable=protected-access
+            world_size,
+            tensor_parallel_size,
+            context_parallel_size,
+            dp_shard_size,
+            dp_replicate_size,
+            is_fsdp,
         )
 
         if expected[0] > 1:
