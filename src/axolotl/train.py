@@ -566,7 +566,7 @@ def train(
     resume_from_checkpoint = determine_resume_checkpoint(cfg)
     execute_training(cfg, trainer, resume_from_checkpoint)
 
-    #clear cache
+    # clear cache
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
