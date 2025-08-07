@@ -36,8 +36,8 @@ def _validate_accelerator(self, accelerator):
 
     if (
         self.total_size > 1
-        and not (accelerator.is_fsdp2 or accelerator.multi_device)
         and not allow_parallelism_config
+        and not (accelerator.is_fsdp2 or accelerator.multi_device)
     ):
         raise ValueError(
             f"ParallelismConfig is only compatible DistributedType.FSDP (version 2) or DistributedType.Multi{{Device}}, but got {accelerator.distributed_type}."
