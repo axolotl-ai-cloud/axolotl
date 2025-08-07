@@ -27,7 +27,7 @@ pip3 install --no-build-isolation -e '.[flash-attn]'
 axolotl train examples/arcee/afm-4.5b-qlora.yaml
 ```
 
-This config uses about (---) VRAM.
+This config uses about 7.8GiB VRAM.
 
 Let us know how it goes. Happy finetuning! 🚀
 
