@@ -3,6 +3,7 @@
 import inspect
 import math
 import os
+from functools import partial
 from pathlib import Path
 from typing import Type, Union
 
@@ -363,7 +364,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             data_collator_kwargs["pad_to_multiple_of"] = multiple * math.ceil(
                 self.cfg.sequence_len / multiple
             )
-        else:
+        elif self.cfg.pad_to_sequence_len is None:
             # A100 is best at 64, while others at 8. Let's use the larger so we don't have to check
             # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
             data_collator_kwargs["pad_to_multiple_of"] = multiple
@@ -476,6 +477,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 )
             ):
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
+                # TODO(wing): figure out why gpt-oss performs better without true sample position_ids
+                if self.cfg.model_config_type in ["gpt_oss"]:
+                    collator = partial(  # type: ignore
+                        V2BatchSamplerDataCollatorForSeq2Seq, squash_position_ids=True
+                    )
             else:
                 collator = BatchSamplerDataCollatorForSeq2Seq
         else:

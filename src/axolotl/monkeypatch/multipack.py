@@ -36,6 +36,7 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "glm",
     "glm4",
     "smollm3",
+    "gpt_oss",
 ]
 
 
