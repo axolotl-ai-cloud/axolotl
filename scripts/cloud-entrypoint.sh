@@ -44,8 +44,13 @@ add_keys_to_authorized() {
     chmod 700 -R ~/.ssh
 }
 
+# Set SSH port
+if [ ! -z "$SSH_PORT" ]; then
+    sed -i "s/#Port 22/Port $SSH_PORT/" /etc/ssh/sshd_config
+fi
+
 if [[ $PUBLIC_KEY ]]; then
-    # runpod
+    # runpod, prime intellect
     add_keys_to_authorized "$PUBLIC_KEY"
     # Start the SSH service in the background
     service ssh start

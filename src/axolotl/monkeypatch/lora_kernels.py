@@ -390,7 +390,6 @@ def apply_lora_kernel_patches(
                 ]
                 can_patch_qkv = all(
                     hasattr(module, "lora_A")
-                    and getattr(module, "base_layer", module).bias is None
                     and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
                     for module in layer_modules
                 )
@@ -400,7 +399,8 @@ def apply_lora_kernel_patches(
                     self_attn.apply_qkv = types.MethodType(apply_lora_qkv, self_attn)
                 else:
                     LOG.warning_once(
-                        "Cannot patch some attention QKV projections - requires LoRA adapters with no bias"
+                        "Cannot patch some attention QKV projections - requires LoRA "
+                        "adapters and no lora_magnitude_vector (DoRA)"
                     )
             if cfg.lora_o_kernel:
                 # Output patching
@@ -409,7 +409,6 @@ def apply_lora_kernel_patches(
                 ]
                 can_patch_o = all(
                     hasattr(module, "lora_A")
-                    and getattr(module, "base_layer", module).bias is None
                     and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
                     for module in layer_modules
                 )
@@ -418,14 +417,14 @@ def apply_lora_kernel_patches(
                     self_attn.apply_o = types.MethodType(apply_lora_o, self_attn)
                 else:
                     LOG.warning_once(
-                        "Cannot patch some attention output projection - requires LoRA adapters with no bias"
+                        "Cannot patch some attention output projection - requires LoRA "
+                        "adapters and no lora_magnitude_vector (DoRA)"
                     )
         for gate_proj, up_proj, down_proj, mlp in find_mlp_in_layer(layer):
             if cfg.lora_mlp_kernel:
                 # MLP patching
                 can_patch_mlp = all(
                     hasattr(proj, "lora_A")
-                    and getattr(proj, "base_layer", proj).bias is None
                     and len(getattr(proj, "lora_magnitude_vector", []) or []) == 0
                     for proj in (gate_proj, up_proj, down_proj)
                 )
@@ -435,7 +434,8 @@ def apply_lora_kernel_patches(
                     layer.mlp.forward = types.MethodType(apply_fn, mlp)
                 else:
                     LOG.warning_once(
-                        "Cannot patch some MLP layers - requires LoRA adapters with no bias"
+                        "Cannot patch some MLP layers - requires LoRA adapters and no "
+                        "lora_magnitude_vector (DoRA)"
                     )
 
     LOG.setLevel(original_level)

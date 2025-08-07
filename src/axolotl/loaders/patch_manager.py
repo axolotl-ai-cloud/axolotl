@@ -348,31 +348,21 @@ class PatchManager:
 
             patch_self_attn_lora()
 
-    def _patch_llama_flash_attention(self, packed=False):
+    def _patch_llama_flash_attention(self):
         """Apply Flash Attention patches for LLaMA models."""
         from axolotl.monkeypatch.llama_attn_hijack_flash import (
             replace_llama_attn_with_flash_attn,
         )
 
-        if packed:
-            if self.cfg.device not in ["mps", "cpu"] and not self.inference:
-                LOG.info("patching with flash attention for sample packing")
-                replace_llama_attn_with_flash_attn(
-                    packed=True,
-                    cross_entropy=self.cfg.flash_attn_cross_entropy,
-                    rms_norm=self.cfg.flash_attn_rms_norm,
-                )
-        elif self.cfg.s2_attention:
+        if self.cfg.s2_attention:
             LOG.info("patching w/ flash-enabled, shifted-sparse attention")
             replace_llama_attn_with_flash_attn(
-                packed=False,
                 cross_entropy=self.cfg.flash_attn_cross_entropy,
                 rms_norm=self.cfg.flash_attn_rms_norm,
                 use_shifted_sparse_attn=True,
             )
         elif self.cfg.flash_attn_cross_entropy or self.cfg.flash_attn_rms_norm:
             replace_llama_attn_with_flash_attn(
-                packed=False,
                 cross_entropy=self.cfg.flash_attn_cross_entropy,
                 rms_norm=self.cfg.flash_attn_rms_norm,
             )
@@ -403,7 +393,7 @@ class PatchManager:
             and self.cfg.sample_packing
         ):
             if self.cfg.flash_attention:
-                self._patch_llama_flash_attention(packed=self.cfg.sample_packing)
+                self._patch_llama_flash_attention()
             elif self.cfg.xformers_attention:
                 self._patch_llama_xformers_attention()
             elif self.cfg.sample_packing:
@@ -426,16 +416,11 @@ class PatchManager:
             from axolotl.monkeypatch.llama_attn_hijack_flash import (
                 is_xformers_swiglu_available,
                 replace_llama_mlp_with_swiglu,
-                replace_llama_qkv_with_fused,
             )
 
             if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
                 LOG.info("Patching with SwiGLU...")
                 replace_llama_mlp_with_swiglu(model)
-
-            if self.cfg.flash_attn_fuse_qkv:
-                LOG.info("Patching with fused QKV...")
-                replace_llama_qkv_with_fused(model)
 
     def _apply_unsloth_patches(self, model):
         """Apply unsloth optimization patches."""

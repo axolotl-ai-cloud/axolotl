@@ -110,6 +110,13 @@ class AxolotlInputConfig(
         },
     )
 
+    trainer_cls: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "module to custom trainer class to use for training"
+        },
+    )
+
     rl: RLType | None = Field(
         default=None,
         json_schema_extra={
@@ -531,12 +538,6 @@ class AxolotlInputConfig(
             "description": "Whether to use flash-attention rms norm implementation - advanced use only"
         },
     )
-    flash_attn_fuse_qkv: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Whether to fuse QKV into a single operation"
-        },
-    )
     flash_attn_fuse_mlp: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -549,6 +550,13 @@ class AxolotlInputConfig(
     )
 
     eager_attention: bool | None = None
+
+    attn_implementation: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Specify a custom attention implementation, used mostly for kernels."
+        },
+    )
 
     unsloth_cross_entropy_loss: bool | None = None
     unsloth_lora_mlp: bool | None = None
