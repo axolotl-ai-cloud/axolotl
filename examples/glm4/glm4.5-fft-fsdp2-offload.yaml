@@ -5,7 +5,7 @@ base_model: zai-org/GLM-4.5-Air
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
 
-load_in_4bit: true
+experimental_skip_move_to_device: true  # prevent OOM by NOT putting model to GPU before sharding
 
 datasets:
   - path: winglian/pirate-ultrachat-10k
@@ -14,13 +14,9 @@ dataset_prepared_path: last_run_prepared
 val_set_size: 0
 output_dir: ./outputs/qlora-out
 
-adapter: qlora
-lora_model_dir:
-
 sequence_len: 2048
 sample_packing: true
 eval_sample_packing: true
-
 
 lora_r: 16
 lora_alpha: 32
@@ -40,17 +36,17 @@ wandb_watch:
 wandb_name:
 wandb_log_model:
 
-gradient_accumulation_steps: 2
-micro_batch_size: 2
+gradient_accumulation_steps: 1
+micro_batch_size: 1
 num_epochs: 1
-optimizer: adamw_torch_8bit
+optimizer: adamw_torch_4bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
 bf16: auto
 tf32: false
 
-gradient_checkpointing: true
+# gradient_checkpointing: true
 resume_from_checkpoint:
 logging_steps: 1
 flash_attention: true
@@ -63,5 +59,15 @@ evals_per_epoch: 1
 saves_per_epoch: 1
 weight_decay: 0.0
 special_tokens:
+
+fsdp_version: 2
+fsdp_config:
+  offload_params: true
+  cpu_ram_efficient_loading: true
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Glm4MoeDecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  reshard_after_forward: true
+  activation_checkpointing: true
 
 # save_first_step: true  # uncomment this to validate checkpoint saving works with your config
