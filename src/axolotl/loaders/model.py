@@ -308,7 +308,10 @@ class ModelLoader:
             )
 
         # Handle DeepSpeed Zero3
-        if is_deepspeed_zero3_enabled():
+        if (
+            is_deepspeed_zero3_enabled()
+            or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3"
+        ):
             self._set_z3_leaf_modules()
 
         # Apply gradient checkpointing if needed

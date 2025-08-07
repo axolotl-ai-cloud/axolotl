@@ -3,7 +3,6 @@
 import inspect
 import math
 import os
-from functools import partial
 from pathlib import Path
 from typing import Type, Union
 
@@ -477,11 +476,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 )
             ):
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
-                # TODO(wing): figure out why gpt-oss performs better without true sample position_ids
-                if self.cfg.model_config_type in ["gpt_oss"]:
-                    collator = partial(  # type: ignore
-                        V2BatchSamplerDataCollatorForSeq2Seq, squash_position_ids=True
-                    )
             else:
                 collator = BatchSamplerDataCollatorForSeq2Seq
         else:
