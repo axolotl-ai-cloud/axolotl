@@ -639,11 +639,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="odd">
 <td></td>
 <td>None</td>
-<td>- <code>None</code> for weights/quantization states</td>
+<td>- <code>None</code> for weights/biases/quantization states</td>
 </tr>
 <tr class="even">
 <td></td>
-<td>torch.Tensor | None</td>
+<td>None</td>
 <td>- LoRA A/B matrix gradients (or <code>None</code>)</td>
 </tr>
 <tr class="odd">
@@ -653,7 +653,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="even">
 <td></td>
-<td>None</td>
+<td>torch.Tensor | None</td>
 <td>- <code>None</code> for activation functions and flags</td>
 </tr>
 </tbody>
@@ -666,24 +666,27 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    ctx,</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    X,</span>
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    gate_weight,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    gate_quant,</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    gate_A,</span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    gate_B,</span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    gate_scale,</span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    up_weight,</span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    up_quant,</span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    up_A,</span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    up_B,</span>
-<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    up_scale,</span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    down_weight,</span>
-<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    down_quant,</span>
-<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    down_A,</span>
-<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    down_B,</span>
-<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    down_scale,</span>
-<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>    activation_fn,</span>
-<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>    activation_fn_backward,</span>
-<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>    inplace<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    gate_bias,</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    gate_quant,</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    gate_A,</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    gate_B,</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    gate_scale,</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    up_weight,</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    up_bias,</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    up_quant,</span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    up_A,</span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    up_B,</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    up_scale,</span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    down_weight,</span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    down_bias,</span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    down_quant,</span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>    down_A,</span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>    down_B,</span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>    down_scale,</span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>    activation_fn,</span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>    activation_fn_backward,</span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>    inplace<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Forward pass for LoRA MLP.</p>
 <section id="parameters-1" class="level6 doc-section doc-section-parameters">
 <h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h6>
@@ -722,87 +725,99 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><em>required</em></td>
 </tr>
 <tr class="even">
-<td>gate_quant</td>
-<td>object | None</td>
-<td>Gate quantization state</td>
+<td>gate_bias</td>
+<td>torch.Tensor | None</td>
+<td>Gate projection bias</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
+<td>gate_quant</td>
+<td>QuantState | None</td>
+<td>Gate quantization state</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
 <td>gate_A</td>
 <td>torch.Tensor | None</td>
 <td>Gate LoRA A matrix</td>
 <td><em>required</em></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>gate_B</td>
 <td>torch.Tensor | None</td>
 <td>Gate LoRA B matrix</td>
 <td><em>required</em></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>gate_scale</td>
 <td>float</td>
 <td>Gate LoRA scale</td>
 <td><em>required</em></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>up_weight</td>
 <td>torch.Tensor</td>
-<td>Up-projection weight</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>up_quant</td>
-<td>object | None</td>
-<td>Up-projection quantization state</td>
+<td>Up projection weight</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
+<td>up_quant</td>
+<td>QuantState | None</td>
+<td>Up projection quantization state</td>
+<td><em>required</em></td>
+</tr>
+<tr class="odd">
 <td>up_A</td>
 <td>torch.Tensor | None</td>
-<td>Up-projection LoRA A matrix</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>up_B</td>
-<td>torch.Tensor | None</td>
-<td>Up-projection LoRA B matrix</td>
+<td>Up projection LoRA A matrix</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
-<td>up_scale</td>
-<td>float</td>
-<td>Up-projection LoRA scale</td>
+<td>up_B</td>
+<td>torch.Tensor | None</td>
+<td>Up projection LoRA B matrix</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
+<td>up_scale</td>
+<td>float</td>
+<td>Up projection LoRA scale</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
 <td>down_weight</td>
 <td>torch.Tensor</td>
-<td>Down-projection weight</td>
+<td>Down projection weight</td>
+<td><em>required</em></td>
+</tr>
+<tr class="odd">
+<td>down_bias</td>
+<td>torch.Tensor | None</td>
+<td>Down projection bias</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>down_quant</td>
-<td>object | None</td>
-<td>Down-projection quantization state</td>
+<td>QuantState | None</td>
+<td>Down projection quantization state</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
 <td>down_A</td>
 <td>torch.Tensor | None</td>
-<td>Down-projection LoRA A matrix</td>
+<td>Down projection LoRA A matrix</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>down_B</td>
 <td>torch.Tensor | None</td>
-<td>Down-projection LoRA B matrix</td>
+<td>Down projection LoRA B matrix</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
 <td>down_scale</td>
 <td>float</td>
-<td>Down-projection LoRA scale</td>
+<td>Down projection LoRA scale</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
@@ -919,8 +934,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <table class="caption-top table">
 <colgroup>
 <col style="width: 5%">
-<col style="width: 59%">
-<col style="width: 35%">
+<col style="width: 55%">
+<col style="width: 38%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -932,7 +947,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tbody>
 <tr class="odd">
 <td></td>
-<td>tuple[torch.Tensor, None, None, torch.Tensor | None, torch.Tensor | None, None]</td>
+<td>tuple[torch.Tensor, None, None, None, torch.Tensor, torch.Tensor, None]</td>
 <td>Tuple containing gradients for all forward inputs</td>
 </tr>
 </tbody>
@@ -941,7 +956,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 <section id="axolotl.kernels.lora.LoRA_O.forward" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.kernels.lora.LoRA_O.forward">forward</h5>
-<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_O.forward(ctx, X, W, W_quant, A, B, S)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_O.forward(ctx, X, W, b, W_quant, A, B, s)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Forward pass for output projection with LoRA.</p>
 <section id="parameters-3" class="level6 doc-section doc-section-parameters">
 <h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-3">Parameters</h6>
@@ -980,25 +995,31 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><em>required</em></td>
 </tr>
 <tr class="even">
+<td>b</td>
+<td>torch.Tensor</td>
+<td>Output projection bias</td>
+<td><em>required</em></td>
+</tr>
+<tr class="odd">
 <td>W_quant</td>
 <td>QuantState | None</td>
 <td>Weight quantization state</td>
 <td><em>required</em></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>A</td>
-<td>torch.Tensor | None</td>
+<td>torch.Tensor</td>
 <td>LoRA A matrix</td>
 <td><em>required</em></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>B</td>
-<td>torch.Tensor | None</td>
+<td>torch.Tensor</td>
 <td>LoRA B matrix</td>
 <td><em>required</em></td>
 </tr>
-<tr class="odd">
-<td>S</td>
+<tr class="even">
+<td>s</td>
 <td>float</td>
 <td>LoRA scaling factor</td>
 <td><em>required</em></td>
@@ -1020,7 +1041,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="odd">
 <td></td>
 <td>torch.Tensor</td>
-<td>Output projection tensor</td>
+<td>Output projection result</td>
 </tr>
 </tbody>
 </table>
@@ -1108,8 +1129,8 @@ supporting quantization and memory optimization.</p>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 2%">
-<col style="width: 78%">
-<col style="width: 18%">
+<col style="width: 79%">
+<col style="width: 17%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1121,7 +1142,7 @@ supporting quantization and memory optimization.</p>
 <tbody>
 <tr class="odd">
 <td></td>
-<td>tuple[torch.Tensor, None, None, torch.Tensor | None, torch.Tensor | None, None, None, None, torch.Tensor | None, torch.Tensor | None, None, None, None, torch.Tensor | None, torch.Tensor | None, None, None]</td>
+<td>tuple[torch.Tensor, None, None, None, torch.Tensor | None, torch.Tensor | None, None, None, None, None, torch.Tensor | None, torch.Tensor | None, None, None, None, None, torch.Tensor | None, torch.Tensor | None, None, None]</td>
 <td>Tuple containing gradients for all forward inputs</td>
 </tr>
 </tbody>
@@ -1134,22 +1155,25 @@ supporting quantization and memory optimization.</p>
 <span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    ctx,</span>
 <span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    X,</span>
 <span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>    q_weight,</span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>    q_quant,</span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>    q_A,</span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>    q_B,</span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>    q_scale,</span>
-<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>    k_weight,</span>
-<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>    k_quant,</span>
-<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>    k_A,</span>
-<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>    k_B,</span>
-<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>    k_scale,</span>
-<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>    v_weight,</span>
-<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>    v_quant,</span>
-<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>    v_A,</span>
-<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>    v_B,</span>
-<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>    v_scale,</span>
-<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>    inplace<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>    q_bias,</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>    q_quant,</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>    q_A,</span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>    q_B,</span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>    q_scale,</span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>    k_weight,</span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>    k_bias,</span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>    k_quant,</span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>    k_A,</span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>    k_B,</span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>    k_scale,</span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>    v_weight,</span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>    v_bias,</span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>    v_quant,</span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>    v_A,</span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>    v_B,</span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>    v_scale,</span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>    inplace<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Forward pass computing Q, K, V projections with LoRA.</p>
 <section id="parameters-5" class="level6 doc-section doc-section-parameters">
 <h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-5">Parameters</h6>
@@ -1188,33 +1212,45 @@ supporting quantization and memory optimization.</p>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
+<td>q_bias</td>
+<td>torch.Tensor | None</td>
+<td>Query projection bias</td>
+<td><em>required</em></td>
+</tr>
+<tr class="odd">
 <td>q_quant</td>
 <td>QuantState | None</td>
 <td>Query quantization state</td>
 <td><em>required</em></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>q_A</td>
 <td>torch.Tensor | None</td>
 <td>Query LoRA A matrix</td>
 <td><em>required</em></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>q_B</td>
 <td>torch.Tensor | None</td>
 <td>Query LoRA B matrix</td>
 <td><em>required</em></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>q_scale</td>
 <td>float</td>
 <td>Query LoRA scale</td>
 <td><em>required</em></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>k_weight</td>
 <td>torch.Tensor</td>
 <td>Key projection weight</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>k_bias</td>
+<td>torch.Tensor | None</td>
+<td>Key projection bias</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
@@ -1248,30 +1284,36 @@ supporting quantization and memory optimization.</p>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
+<td>v_bias</td>
+<td>torch.Tensor | None</td>
+<td>Value projection bias</td>
+<td><em>required</em></td>
+</tr>
+<tr class="odd">
 <td>v_quant</td>
 <td>QuantState | None</td>
 <td>Value quantization state</td>
 <td><em>required</em></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>v_A</td>
 <td>torch.Tensor | None</td>
 <td>Value LoRA A matrix</td>
 <td><em>required</em></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>v_B</td>
 <td>torch.Tensor | None</td>
 <td>Value LoRA B matrix</td>
 <td><em>required</em></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>v_scale</td>
 <td>float</td>
 <td>Value LoRA scale</td>
 <td><em>required</em></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>inplace</td>
 <td>bool</td>
 <td>Whether to perform operations in-place</td>
@@ -1625,17 +1667,17 @@ supporting quantization and memory optimization.</p>
 <tr class="odd">
 <td></td>
 <td>torch.Tensor</td>
-<td>A tuple containing the base weight matrix, quantization state, LoRA A matrix,</td>
+<td>A tuple containing the base weights, quantization state, LoRA A and B weights,</td>
 </tr>
 <tr class="even">
 <td></td>
-<td>QuantState | None</td>
-<td>LoRA B matrix, and scaling factor. States and matrices may be None if not</td>
+<td>torch.Tensor | None</td>
+<td>scaling factor, and base layer bias. Quant state, weights, and bias may be</td>
 </tr>
 <tr class="odd">
 <td></td>
-<td>torch.Tensor | None</td>
-<td>available.</td>
+<td>QuantState | None</td>
+<td><code>None</code> if not available.</td>
 </tr>
 </tbody>
 </table>
@@ -1643,7 +1685,7 @@ supporting quantization and memory optimization.</p>
 </section>
 <section id="axolotl.kernels.lora.matmul_lora" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.matmul_lora">matmul_lora</h3>
-<div class="sourceCode" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.matmul_lora(X, W, W_quant, A, B, s, out<span class="op">=</span><span class="va">None</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.matmul_lora(X, W, b, W_quant, A, B, s, out<span class="op">=</span><span class="va">None</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Efficient fused matmul + LoRA computation.</p>
 <section id="parameters-11" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-11">Parameters</h4>
@@ -1677,25 +1719,25 @@ supporting quantization and memory optimization.</p>
 </tr>
 <tr class="odd">
 <td>W_quant</td>
-<td>QuantState</td>
+<td>QuantState | None</td>
 <td>Quantization state for W</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>A</td>
-<td>torch.Tensor</td>
+<td>torch.Tensor | None</td>
 <td>LoRA A matrix [rank, in_features]</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
 <td>B</td>
-<td>torch.Tensor</td>
+<td>torch.Tensor | None</td>
 <td>LoRA B matrix [out_features, rank]</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>s</td>
-<td>float</td>
+<td>float | None</td>
 <td>LoRA scaling factor</td>
 <td><em>required</em></td>
 </tr>
