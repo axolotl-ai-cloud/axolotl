@@ -695,7 +695,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td style="text-align: center;">1</td>
 <td style="text-align: center;">&gt;1</td>
 <td style="text-align: center;">&gt;1</td>
-<td>❌ <strong>Not Supported</strong>. The <code>ParallelismConfig</code> explicitly prevents this, as composing pure DDP with TP/CP without FSDP is inefficient and complex. You should use FSDP instead (<code>dp_shard_size &gt; 1</code>).</td>
+<td>❌ <strong>Not Supported</strong>. The <code>ParallelismConfig</code> explicitly prevents this, as composing pure DDP with TP or CP is currently not supported. You should use FSDP + TP/CP instead (<code>dp_shard_size &gt; 1</code>).</td>
 </tr>
 <tr class="even">
 <td>Just TP / CP</td>
