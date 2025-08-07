@@ -1,4 +1,4 @@
-base_model: zai-org/GLM-4.5
+base_model: zai-org/GLM-4.5-Air
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
