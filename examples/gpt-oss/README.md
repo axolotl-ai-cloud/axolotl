@@ -1,6 +1,6 @@
 # Finetune OpenAI's GPT-OSS with Axolotl
 
-[GPT-OSS](https://huggingface.co/collections/openai/gpt-oss-68911959590a1634ba11c7a4) are a family of open-weight MoE models trained by OpenAI, released in August 2025. There are two variants: a 20B and 120B.
+[GPT-OSS](https://huggingface.co/collections/openai/gpt-oss-68911959590a1634ba11c7a4) are a family of open-weight MoE models trained by OpenAI, released in August 2025. There are two variants: 20B and 120B.
 
 This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.
 
@@ -34,6 +34,21 @@ axolotl train examples/gpt-oss/gpt-oss-20b-fft-fsdp2.yaml
 ```
 
 Note: 120B coming soon!
+
+### Tool use
+
+GPT-OSS has a comprehensive tool understanding. Axolotl supports tool calling datasets for Supervised Fine-tuning.
+
+Here is an example dataset config:
+```yaml
+datasets:
+  - path: Nanobit/text-tools-2k-test
+    type: chat_template
+```
+
+See [Nanobit/text-tools-2k-test](https://huggingface.co/datasets/Nanobit/text-tools-2k-test) for the sample dataset.
+
+Refer to [our docs](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#using-tool-use) for more info.
 
 ### TIPS
 
