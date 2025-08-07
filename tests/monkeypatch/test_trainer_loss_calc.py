@@ -24,7 +24,7 @@ class TestTrainerLossCalc(unittest.TestCase):
             delattr(Trainer, "_original_evaluation_loop")
 
         patch_evaluation_loop()
-        self.assertTrue(hasattr(Trainer, "_original_evaluation_loop"))
+        assert hasattr(Trainer, "_original_evaluation_loop")
 
     def test_patch_maybe_log_save_evaluate_applies(self):
         """
@@ -35,4 +35,4 @@ class TestTrainerLossCalc(unittest.TestCase):
             delattr(Trainer, "_original_maybe_log_save_evaluate")
 
         patch_maybe_log_save_evaluate()
-        self.assertTrue(hasattr(Trainer, "_original_maybe_log_save_evaluate"))
+        assert hasattr(Trainer, "_original_maybe_log_save_evaluate")
