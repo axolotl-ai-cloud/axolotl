@@ -75,7 +75,13 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.trainer_cls:
             # override the trainer cls
-            trainer_cls = get_cls_from_module_str(self.cfg.trainer_cls)
+            try:
+                trainer_cls = get_cls_from_module_str(self.cfg.trainer_cls)
+                LOG.debug(f"Using custom trainer class: {self.cfg.trainer_cls}")
+            except (ImportError, AttributeError, ValueError) as e:
+                raise ValueError(
+                    f"Failed to load custom trainer class '{self.cfg.trainer_cls}': {e}"
+                ) from e
 
         return trainer_cls, trainer_cls_args
 
