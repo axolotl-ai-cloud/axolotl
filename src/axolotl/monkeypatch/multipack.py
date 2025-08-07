@@ -35,6 +35,7 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "deepseek_v3",
     "glm",
     "glm4",
+    "glm4_moe",
     "smollm3",
     "gpt_oss",
     "arcee",
