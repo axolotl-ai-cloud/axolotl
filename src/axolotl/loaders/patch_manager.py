@@ -81,8 +81,14 @@ class PatchManager:
             patch_maybe_log_save_evaluate,
         )
 
+        patch_fsdp2 = (
+            self.cfg.torch_compile
+            and self.cfg.fsdp_config
+            and self.cfg.fsdp_version == 2
+        )
+
         patch_prepare_from_posids()
-        patch_evaluation_loop()
+        patch_evaluation_loop(patch_fsdp2)
         patch_maybe_log_save_evaluate()
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
