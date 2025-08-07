@@ -110,6 +110,13 @@ class AxolotlInputConfig(
         },
     )
 
+    trainer_cls: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "module to custom trainer class to use for training"
+        },
+    )
+
     rl: RLType | None = Field(
         default=None,
         json_schema_extra={
