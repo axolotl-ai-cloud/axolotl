@@ -22,14 +22,14 @@ pip3 install --no-build-isolation -e '.[flash-attn]'
 2. Choose one of the following configs below for training the 20B model.
 
 ```bash
-# LoRA SFT linear layers & 2 experts (1x48GB)
+# LoRA SFT linear layers & 2 experts (1x48GB, ~47GiB)
 # (only linear layers -> ~44GiB)
 axolotl train examples/gpt-oss/gpt-oss-20b-sft-lora-singlegpu.yaml
 
 # FFT SFT with offloading (2x24GB, ~21GiB/GPU)
 axolotl train examples/gpt-oss/gpt-oss-20b-fft-fsdp2-offload.yaml
 
-# FFT SFT (8x48gb, ~36GiB/GPU)
+# FFT SFT (8x48GB, ~36GiB/GPU)
 axolotl train examples/gpt-oss/gpt-oss-20b-fft-fsdp2.yaml
 ```
 
