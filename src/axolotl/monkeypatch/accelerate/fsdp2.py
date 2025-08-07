@@ -38,7 +38,7 @@ def fsdp2_load_full_state_dict(
     meta_sharded_sd = model.state_dict()
     sharded_sd = {}
     for param_name, sharded_meta_param in meta_sharded_sd.items():
-        sharded_meta_param = meta_sharded_sd.get(param_name)
+        full_tensor = None
         if _accelerator.is_main_process:
             full_tensor = full_sd[param_name]
             full_tensor = full_tensor.to(sharded_meta_param.dtype)
