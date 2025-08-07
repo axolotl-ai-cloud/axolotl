@@ -218,6 +218,7 @@ def execute_training(
                     ring_attn_func=cfg.ring_attn_func,
                     heads_k_stride=cfg.heads_k_stride,
                     gather_outputs=cfg.rl is RLType.GRPO,
+                    device_mesh=trainer.accelerator.torch_device_mesh,
                 )
             )
 

@@ -6,6 +6,8 @@ workaround to allow parallelism config for pure CP
 import os
 import warnings
 
+from accelerate import DistributedType
+
 
 def _validate_accelerator(self, accelerator):
     _warnings = set()
@@ -56,7 +58,20 @@ def _validate_accelerator(self, accelerator):
         )
 
 
+def patched_is_fsdp2(self) -> bool:
+    """
+    Patched version of is_fsdp2 that guards against a None fsdp_plugin.
+    """
+    # The new logic checks if fsdp_plugin exists before accessing its attributes
+    return (
+        self.distributed_type == DistributedType.FSDP
+        and self.fsdp_plugin
+        and self.fsdp_plugin.fsdp_version == 2
+    )
+
+
 def patch_parallelism_config():
-    from accelerate.parallelism_config import ParallelismConfig
+    from accelerate.accelerator import AcceleratorState, ParallelismConfig
 
     ParallelismConfig._validate_accelerator = _validate_accelerator
+    AcceleratorState.is_fsdp2 = property(patched_is_fsdp2)

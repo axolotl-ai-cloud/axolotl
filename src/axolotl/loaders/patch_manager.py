@@ -104,14 +104,18 @@ class PatchManager:
 
     def _apply_fsdp_patches(self):
         """Apply patches for FSDP configurations."""
-        if self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2":
-            from axolotl.monkeypatch.accelerate.fsdp2 import patch_accelerate_fsdp2
+        if self.cfg.context_parallel_size > 1 or (
+            self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2"
+        ):
             from axolotl.monkeypatch.accelerate.parallelism_config import (
                 patch_parallelism_config,
             )
 
-            patch_accelerate_fsdp2()
             patch_parallelism_config()
+        if self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2":
+            from axolotl.monkeypatch.accelerate.fsdp2 import patch_accelerate_fsdp2
+
+            patch_accelerate_fsdp2()
             if self.cfg.rl:
                 from axolotl.monkeypatch.trainer.trl import patch_trl_prepare_fsdp2
 
