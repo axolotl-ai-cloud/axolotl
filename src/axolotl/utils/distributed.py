@@ -51,7 +51,10 @@ def init_distributed_state():
     global distributed_state  # pylint: disable=global-statement
     if distributed_state is None:
         timeout = int(os.environ.get("AXOLOTL_NCCL_TIMEOUT", 1800))
-        distributed_state = PartialState(timeout=timedelta(seconds=timeout))
+        try:
+            distributed_state = PartialState(timeout=timedelta(seconds=timeout))
+        except ValueError:
+            pass
 
 
 def get_distributed_state() -> PartialState | None:
