@@ -53,7 +53,6 @@ warmup_ratio: 0.03
 special_tokens:
 eot_tokens:
   - "<|end|>"
-  - "<|return|>"
 
 # choose the zero3 configuration that best fits your system capabilities
 deepspeed: deepspeed_configs/zero3_bf16.json

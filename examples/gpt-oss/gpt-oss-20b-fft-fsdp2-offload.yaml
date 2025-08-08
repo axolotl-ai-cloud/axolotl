@@ -54,7 +54,6 @@ warmup_ratio: 0.03
 special_tokens:
 eot_tokens:
   - "<|end|>"
-  - "<|return|>"
 
 fsdp_version: 2
 fsdp_config:
