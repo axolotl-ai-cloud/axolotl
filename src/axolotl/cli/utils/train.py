@@ -64,10 +64,10 @@ def build_command(base_cmd: list[str], options: dict[str, Any]) -> list[str]:
     return cmd
 
 
-def generate_config_files(config: str, sweep: str | None) -> Iterator[str]:
+def generate_config_files(config: str, sweep: str | None) -> Iterator[tuple[str, int]]:
     """Generate list of configuration files to process."""
     if not sweep:
-        yield config
+        yield config, 1
         return
 
     # Load sweep and base configurations
@@ -78,6 +78,7 @@ def generate_config_files(config: str, sweep: str | None) -> Iterator[str]:
 
     # Generate all possible configurations
     permutations = generate_sweep_configs(base_config, sweep_config)
+    num_permutations = len(permutations)
     for permutation in permutations:
         # pylint: disable=consider-using-with
         temp_file = tempfile.NamedTemporaryFile(
@@ -88,7 +89,7 @@ def generate_config_files(config: str, sweep: str | None) -> Iterator[str]:
         )
         yaml.dump(permutation, temp_file)
         temp_file.close()
-        yield temp_file.name
+        yield temp_file.name, num_permutations
 
 
 def launch_training(
@@ -97,6 +98,7 @@ def launch_training(
     cloud: str | None,
     kwargs: dict,
     launcher_args: list[str] | None = None,
+    exec_: bool = False,
 ) -> None:
     """Execute training with the given configuration."""
     launcher_args = launcher_args or []
@@ -105,9 +107,9 @@ def launch_training(
         _launch_cloud_training(cloud, cfg_file, launcher, kwargs, launcher_args)
     elif launcher:
         if launcher == "accelerate":
-            _launch_accelerate_training(cfg_file, kwargs, launcher_args)
+            _launch_accelerate_training(cfg_file, kwargs, launcher_args, exec_)
         elif launcher == "torchrun":
-            _launch_torchrun_training(cfg_file, kwargs, launcher_args)
+            _launch_torchrun_training(cfg_file, kwargs, launcher_args, exec_)
         elif launcher == "python":
             _launch_python_training(cfg_file, kwargs)
 
@@ -136,7 +138,10 @@ def _launch_cloud_training(
 
 
 def _launch_accelerate_training(
-    cfg_file: str, kwargs: dict, launcher_args: list[str] | None = None
+    cfg_file: str,
+    kwargs: dict,
+    launcher_args: list[str] | None = None,
+    exec_: bool = False,
 ) -> None:
     """Execute training via accelerate launcher."""
     launcher_args = launcher_args or []
@@ -161,11 +166,17 @@ def _launch_accelerate_training(
         base_cmd.append(cfg_file)
 
     cmd = build_command(base_cmd, kwargs)
-    subprocess.run(cmd, check=True)  # nosec B603
+    if exec_:
+        os.execvpe(cmd[0], cmd, os.environ)  # nosec B606
+    else:
+        subprocess.run(cmd, check=True)  # nosec B603
 
 
 def _launch_torchrun_training(
-    cfg_file: str, kwargs: dict, launcher_args: list[str] | None = None
+    cfg_file: str,
+    kwargs: dict,
+    launcher_args: list[str] | None = None,
+    exec_: bool = False,
 ) -> None:
     """Execute training via torchrun launcher."""
     launcher_args = launcher_args or []
@@ -178,7 +189,10 @@ def _launch_torchrun_training(
         base_cmd.append(cfg_file)
 
     cmd = build_command(base_cmd, kwargs)
-    subprocess.run(cmd, check=True)  # nosec B603
+    if exec_:
+        os.execvpe(cmd[0], cmd, os.environ)  # nosec B606
+    else:
+        subprocess.run(cmd, check=True)  # nosec B603
 
 
 def _launch_python_training(cfg_file: str, kwargs: dict) -> None:
