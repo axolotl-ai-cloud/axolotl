@@ -2,9 +2,7 @@ cff-version: 1.2.0
 type: software
 title: "Axolotl: Post-Training for AI Models"
 authors:
-  - given-names: "Axolotl maintainers and contributors"
+  - name: "Axolotl maintainers and contributors"
 repository-code: "https://github.com/axolotl-ai-cloud/axolotl"
 url: "https://axolotl.ai/"
 license: Apache-2.0
-version: "0.12.0"
-date-released: "2023-05-30"

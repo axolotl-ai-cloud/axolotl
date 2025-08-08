@@ -156,7 +156,7 @@ If you use Axolotl in your research or projects, please cite it as follows:
 ```bibtex
 @software{axolotl,
   title = {Axolotl: Post-Training for AI Models},
-  author = {Axolotl maintainers and contributors},
+  author = {{Axolotl maintainers and contributors}},
   url = {https://github.com/axolotl-ai-cloud/axolotl},
   license = {Apache-2.0},
   year = {2023}
