@@ -1,5 +1,5 @@
-"""Model loader class implementation for loading, configuring, and patching various
-models.
+"""
+Model loader class implementation for loading, configuring, and patching various models.
 """
 
 import gc
