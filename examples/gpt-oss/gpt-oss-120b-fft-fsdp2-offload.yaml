@@ -1,4 +1,5 @@
 # the original mxfp4 quantized model is not supported with FSDP cpu_ram_efficient_loading
+# FSDP cpu_ram_efficient_loading is used to reduce the initial CPU memory usage when loading the model
 base_model: axolotl-ai-co/gpt-oss-120b-dequantized
 
 use_kernels: false
