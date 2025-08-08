@@ -46,7 +46,7 @@ dp_replicate_size: 2    # DDP across 2 groups
 
 ## Learn More
 
-- [N-D Parallelism Documentation](https://docs.axolotl.ai/docs/nd_parallelism.html)
+- [ND Parallelism Documentation](https://docs.axolotl.ai/docs/nd_parallelism.html)
 - [Blog: Accelerate ND-Parallel Guide](https://huggingface.co/blog/accelerate-nd-parallel)
 - [Multi-GPU Training Guide](https://docs.axolotl.ai/docs/multi-gpu.html)
 - [Axolotl Discord](https://discord.gg/7m9sfhzaf3)
