@@ -123,9 +123,9 @@ def train(
     _launcher = None if kwargs.get("use_ray") else launcher
 
     # Process each configuration
-    for cfg_file, num_permutations in generate_config_files(config, sweep):
+    for cfg_file, is_group in generate_config_files(config, sweep):
         try:
-            use_exec = num_permutations == 1
+            use_exec = is_group is not True
             launch_training(cfg_file, _launcher, cloud, kwargs, launcher_args, use_exec)
         except subprocess.CalledProcessError as exc:
             LOG.error(f"Failed to train/fine-tune config '{cfg_file}': {exc}")

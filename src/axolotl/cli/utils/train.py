@@ -64,10 +64,20 @@ def build_command(base_cmd: list[str], options: dict[str, Any]) -> list[str]:
     return cmd
 
 
-def generate_config_files(config: str, sweep: str | None) -> Iterator[tuple[str, int]]:
-    """Generate list of configuration files to process."""
+def generate_config_files(config: str, sweep: str | None) -> Iterator[tuple[str, bool]]:
+    """
+    Generate list of configuration files to process.
+
+    Args:
+        config: Base configuration file
+        sweep: Sweep configuration file
+
+    Yields:
+        Tuple of configuration file name and whether this is a group of configurations
+    """
+
     if not sweep:
-        yield config, 1
+        yield config, False
         return
 
     # Load sweep and base configurations
@@ -78,7 +88,7 @@ def generate_config_files(config: str, sweep: str | None) -> Iterator[tuple[str,
 
     # Generate all possible configurations
     permutations = generate_sweep_configs(base_config, sweep_config)
-    num_permutations = len(permutations)
+    is_group = len(permutations) > 1
     for permutation in permutations:
         # pylint: disable=consider-using-with
         temp_file = tempfile.NamedTemporaryFile(
@@ -89,7 +99,7 @@ def generate_config_files(config: str, sweep: str | None) -> Iterator[tuple[str,
         )
         yaml.dump(permutation, temp_file)
         temp_file.close()
-        yield temp_file.name, num_permutations
+        yield temp_file.name, is_group
 
 
 def launch_training(
