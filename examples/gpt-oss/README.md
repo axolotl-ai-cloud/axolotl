@@ -36,6 +36,7 @@ axolotl train examples/gpt-oss/gpt-oss-20b-fft-fsdp2.yaml
 Notes:
 - 120B coming soon!
 - Memory usage taken from `device_mem_reserved(gib)` from logs.
+- Configs optimized for Hopper GPUs.
 
 ### Tool use
 
