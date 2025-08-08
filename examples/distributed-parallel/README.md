@@ -33,7 +33,7 @@ context_parallel_size: 2 # CP across 2 GPUs
 
 ### Multi-Node
 
-**Llama 3.1 8B with HSDP + TP** ([llama-3_1-8b-hsdp-tp.yaml](./llama-3_1-8b-hdsp-tp.yaml))
+**Llama 3.1 8B with HSDP + TP** ([llama-3_1-8b-hsdp-tp.yaml](./llama-3_1-8b-hsdp-tp.yaml))
 - FSDP & TP within nodes, DDP across nodes to minimize inter-node communication
 - Ideal for: Scaling to multiple nodes while maintaining training efficiency
 
