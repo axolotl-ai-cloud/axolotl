@@ -2,6 +2,7 @@
 
 import os
 import subprocess  # nosec
+import sys
 import tempfile
 from typing import Any, Iterator, Literal
 
@@ -177,6 +178,9 @@ def _launch_accelerate_training(
 
     cmd = build_command(base_cmd, kwargs)
     if use_exec:
+        # make sure to flush stdout and stderr before replacing the process
+        sys.stdout.flush()
+        sys.stderr.flush()
         os.execvpe(cmd[0], cmd, os.environ)  # nosec B606
     else:
         subprocess.run(cmd, check=True)  # nosec B603
@@ -200,6 +204,9 @@ def _launch_torchrun_training(
 
     cmd = build_command(base_cmd, kwargs)
     if use_exec:
+        # make sure to flush stdout and stderr before replacing the process
+        sys.stdout.flush()
+        sys.stderr.flush()
         os.execvpe(cmd[0], cmd, os.environ)  # nosec B606
     else:
         subprocess.run(cmd, check=True)  # nosec B603
