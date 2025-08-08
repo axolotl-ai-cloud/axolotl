@@ -1,6 +1,7 @@
 cff-version: 1.2.0
 type: software
 title: "Axolotl: Post-Training for AI Models"
+message: "If you use this software, please cite it as below."
 authors:
   - name: "Axolotl maintainers and contributors"
 repository-code: "https://github.com/axolotl-ai-cloud/axolotl"
