@@ -3,7 +3,6 @@
 # export HF_TOKEN="..."
 # export WANDB_API_KEY="..."
 #
-# we set ntasks=2 because we have 2 tasks, preprocessing the data and training
 
 # ---------- SBATCH commands ---------- #
 #SBATCH --job-name=axolotl-slurm-multinode
