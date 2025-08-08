@@ -1,6 +1,6 @@
 # Finetune ArceeAI's AFM with Axolotl
 
-[Arcee Foundation Models (AFM)]((https://huggingface.co/collections/arcee-ai/afm-45b-68823397c351603014963473)) are a family of 4.5B parameter open weight models trained by Arcee.ai.
+[Arcee Foundation Models (AFM)](https://huggingface.co/collections/arcee-ai/afm-45b-68823397c351603014963473) are a family of 4.5B parameter open weight models trained by Arcee.ai.
 
 This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.
 
