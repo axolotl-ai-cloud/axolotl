@@ -3,7 +3,7 @@ base_model: meta-llama/Llama-3.1-8B
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
 
-dp_shard_size: 2
+dp_shard_size: 4
 dp_replicate_size: 2
 tensor_parallel_size: 2
 # context_parallel_size: 2
