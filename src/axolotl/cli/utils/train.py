@@ -98,7 +98,7 @@ def launch_training(
     cloud: str | None,
     kwargs: dict,
     launcher_args: list[str] | None = None,
-    exec_: bool = False,
+    use_exec: bool = False,
 ) -> None:
     """Execute training with the given configuration."""
     launcher_args = launcher_args or []
@@ -107,9 +107,9 @@ def launch_training(
         _launch_cloud_training(cloud, cfg_file, launcher, kwargs, launcher_args)
     elif launcher:
         if launcher == "accelerate":
-            _launch_accelerate_training(cfg_file, kwargs, launcher_args, exec_)
+            _launch_accelerate_training(cfg_file, kwargs, launcher_args, use_exec)
         elif launcher == "torchrun":
-            _launch_torchrun_training(cfg_file, kwargs, launcher_args, exec_)
+            _launch_torchrun_training(cfg_file, kwargs, launcher_args, use_exec)
         elif launcher == "python":
             _launch_python_training(cfg_file, kwargs)
 
@@ -141,7 +141,7 @@ def _launch_accelerate_training(
     cfg_file: str,
     kwargs: dict,
     launcher_args: list[str] | None = None,
-    exec_: bool = False,
+    use_exec: bool = False,
 ) -> None:
     """Execute training via accelerate launcher."""
     launcher_args = launcher_args or []
@@ -166,7 +166,7 @@ def _launch_accelerate_training(
         base_cmd.append(cfg_file)
 
     cmd = build_command(base_cmd, kwargs)
-    if exec_:
+    if use_exec:
         os.execvpe(cmd[0], cmd, os.environ)  # nosec B606
     else:
         subprocess.run(cmd, check=True)  # nosec B603
@@ -176,7 +176,7 @@ def _launch_torchrun_training(
     cfg_file: str,
     kwargs: dict,
     launcher_args: list[str] | None = None,
-    exec_: bool = False,
+    use_exec: bool = False,
 ) -> None:
     """Execute training via torchrun launcher."""
     launcher_args = launcher_args or []
@@ -189,7 +189,7 @@ def _launch_torchrun_training(
         base_cmd.append(cfg_file)
 
     cmd = build_command(base_cmd, kwargs)
-    if exec_:
+    if use_exec:
         os.execvpe(cmd[0], cmd, os.environ)  # nosec B606
     else:
         subprocess.run(cmd, check=True)  # nosec B603
