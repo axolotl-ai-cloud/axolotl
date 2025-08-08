@@ -1,6 +1,7 @@
 """Data handling specific to SFT."""
 
 import functools
+import os
 import tempfile
 from typing import Literal
 
@@ -103,6 +104,9 @@ def _prepare_standard_dataset(
         train_dataset, eval_dataset, prompters = loader.load(_load_datasets)
     finally:
         loader.cleanup()
+
+    if os.environ.get("AXOLOTL_IS_PREPROCESS") == "1":
+        return train_dataset, eval_dataset, -1, prompters
 
     # Validate sample packing configuration for evaluation
     if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
