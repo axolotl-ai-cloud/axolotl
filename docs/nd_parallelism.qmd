@@ -73,6 +73,10 @@ Note: We recommend FSDP. DeepSpeed is only compatible with `tensor_parallel_size
 
 ## Examples
 
+::: {.callout-tip}
+See our example configs [here](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/distributed-parallel).
+:::
+
 1.  HSDP on 2 nodes with 4 GPUs each (8 GPUs total):
     - You want FSDP within each node and DDP across nodes.
     - Set `dp_shard_size: 4` and `dp_replicate_size: 2`.
