@@ -1,4 +1,4 @@
-# N-D Parallelism Examples
+# ND Parallelism Examples
 
 This directory contains example configurations for training models using N-D Parallelism in Axolotl. These examples demonstrate how to compose different parallelism strategies (FSDP, TP, CP, HSDP) for efficient multi-GPU training.
 
