@@ -1,8 +1,9 @@
-base_model: openai/gpt-oss-20b
-use_kernels: true
-model_quantization_config: Mxfp4Config
-model_quantization_config_kwargs:
-  dequantize: true
+# the original mxfp4 quantized model is not supported with FSDP cpu_ram_efficient_loading
+base_model: axolotl-ai-co/gpt-oss-120b-dequantized
+
+use_kernels: false
+
+dp_shard_size: 16  # requires 2x8xH100 nodes
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
@@ -63,7 +64,4 @@ fsdp_config:
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: GptOssDecoderLayer
   reshard_after_forward: true
-  #  cpu_ram_efficient_loading: true
-
-# cpu_ram_efficient_loading cannot be used with MXFP4 model quantization.
-# It can only be used with a dequantized model like `axolotl-ai-co/gpt-oss-120b-dequantized`
+  cpu_ram_efficient_loading: true
