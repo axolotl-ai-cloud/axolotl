@@ -1632,7 +1632,7 @@
     "href": "docs/nd_parallelism.html#examples",
     "title": "N-D Parallelism (Beta)",
     "section": "Examples",
-    "text": "Examples\n\nHSDP on 2 nodes with 4 GPUs each (8 GPUs total):\n\nYou want FSDP within each node and DDP across nodes.\nSet dp_shard_size: 4 and dp_replicate_size: 2.\n\nFSDP + TP on a single 8-GPU node:\n\nYou want to split the model across 4 GPUs using FSDP, and further split each layer across 2 GPUs with TP.\nSet dp_shard_size: 4 and tensor_parallel_size: 2.\n\nFSDP + CP on a single 8-GPU node for long context:\n\nYou want to shard the model across all 8 GPUs and also split the sequence length across all 8 GPUs.\nSet dp_shard_size: 8 and context_parallel_size: 8. Note: this means the data parallel group and context parallel group are the same. A more common setup might be to shard across a smaller group.",
+    "text": "Examples\n\n\n\n\n\n\nTip\n\n\n\nSee our example configs here.\n\n\n\nHSDP on 2 nodes with 4 GPUs each (8 GPUs total):\n\nYou want FSDP within each node and DDP across nodes.\nSet dp_shard_size: 4 and dp_replicate_size: 2.\n\nFSDP + TP on a single 8-GPU node:\n\nYou want to split the model across 4 GPUs using FSDP, and further split each layer across 2 GPUs with TP.\nSet dp_shard_size: 4 and tensor_parallel_size: 2.\n\nFSDP + CP on a single 8-GPU node for long context:\n\nYou want to shard the model across all 8 GPUs and also split the sequence length across all 8 GPUs.\nSet dp_shard_size: 8 and context_parallel_size: 8. Note: this means the data parallel group and context parallel group are the same. A more common setup might be to shard across a smaller group.",
     "crumbs": [
       "Advanced Features",
       "N-D Parallelism (Beta)"
