@@ -48,6 +48,7 @@ def check_evaluation_loop_is_patchable() -> bool:
 
 def check_evaluation_loop_is_fsdp2_patchable() -> bool:
     evaluation_loop_source = inspect.getsource(Trainer.evaluation_loop)
+    evaluation_loop_source, _ = detab_code(evaluation_loop_source)
     return ORIGINAL_FSDP2_CODE in evaluation_loop_source
 
 
