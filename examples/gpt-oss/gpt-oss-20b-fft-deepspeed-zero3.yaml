@@ -1,5 +1,5 @@
 base_model: openai/gpt-oss-20b
-use_kernels: true
+use_kernels: false
 model_quantization_config: Mxfp4Config
 model_quantization_config_kwargs:
   dequantize: true
@@ -21,7 +21,6 @@ output_dir: ./outputs/gpt-oss-out/
 
 sequence_len: 4096
 sample_packing: true
-pad_to_sequence_len: true
 
 wandb_project:
 wandb_entity:
@@ -33,7 +32,7 @@ gradient_accumulation_steps: 2
 micro_batch_size: 1
 num_epochs: 1
 
-optimizer: adamw_torch_fused  # 8bit optimizers do not work with FSDP2 offload
+optimizer: adamw_torch_8bit
 lr_scheduler: constant_with_warmup
 learning_rate: 2e-5
 
@@ -55,14 +54,5 @@ special_tokens:
 eot_tokens:
   - "<|end|>"
 
-fsdp_version: 2
-fsdp_config:
-  offload_params: true
-  state_dict_type: SHARDED_STATE_DICT
-  auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  transformer_layer_cls_to_wrap: GptOssDecoderLayer
-  reshard_after_forward: true
-  #  cpu_ram_efficient_loading: true
-
-# cpu_ram_efficient_loading cannot be used with MXFP4 model quantization.
-# It can only be used with a dequantized model like `axolotl-ai-co/gpt-oss-120b-dequantized`
+# choose the zero3 configuration that best fits your system capabilities
+deepspeed: deepspeed_configs/zero3_bf16.json
