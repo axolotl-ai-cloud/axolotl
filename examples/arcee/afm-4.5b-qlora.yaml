@@ -1,7 +1,4 @@
-base_model: mistralai/Magistral-Small-2506
-
-# Enable to use mistral-common tokenizer
-tokenizer_use_mistral_common: true
+base_model: arcee-ai/AFM-4.5B
 
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
