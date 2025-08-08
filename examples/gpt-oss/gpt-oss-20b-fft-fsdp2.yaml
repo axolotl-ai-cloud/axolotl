@@ -1,5 +1,5 @@
 base_model: openai/gpt-oss-20b
-use_kernels: true
+use_kernels: false
 model_quantization_config: Mxfp4Config
 model_quantization_config_kwargs:
   dequantize: true
@@ -10,9 +10,10 @@ plugins:
 experimental_skip_move_to_device: true  # prevent OOM by NOT putting model to GPU before sharding
 
 datasets:
-  - path: winglian/pirate-ultrachat-10k
+  - path: HuggingFaceH4/Multilingual-Thinking
     type: chat_template
-    split: train
+    field_thinking: thinking
+    template_thinking_key: thinking
 
 dataset_prepared_path: last_run_prepared
 val_set_size: 0
@@ -47,11 +48,12 @@ activation_offloading: true
 logging_steps: 1
 saves_per_epoch: 1
 
-warmup_ratio: 0.1
+warmup_ratio: 0.03
 
 special_tokens:
 eot_tokens:
   - "<|end|>"
+  - "<|return|>"
 
 fsdp_version: 2
 fsdp_config:
@@ -60,3 +62,4 @@ fsdp_config:
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: GptOssDecoderLayer
   reshard_after_forward: true
+#  cpu_ram_efficient_loading: true

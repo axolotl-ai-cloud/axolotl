@@ -7,6 +7,7 @@ import functools
 import sys
 
 import torch
+import torch.distributed as dist
 from torch import nn
 
 from axolotl.utils.bench import log_gpu_memory_usage
@@ -36,25 +37,49 @@ def fsdp2_load_full_state_dict(
 
     meta_sharded_sd = model.state_dict()
     sharded_sd = {}
-    for param_name, full_tensor in full_sd.items():
-        sharded_meta_param = meta_sharded_sd.get(param_name)
-        full_tensor = full_tensor.to(sharded_meta_param.dtype).to(torch.device("cuda"))
+    for param_name, sharded_meta_param in meta_sharded_sd.items():
+        full_tensor = None
+        if _accelerator.is_main_process:
+            full_tensor = full_sd[param_name]
+            full_tensor = full_tensor.to(sharded_meta_param.dtype)
+
         if hasattr(sharded_meta_param, "device_mesh"):
+            device_mesh = sharded_meta_param.device_mesh
+            if _accelerator.is_main_process:
+                full_tensor = full_tensor.to(device_mesh.device_type)
+            else:
+                full_tensor = torch.empty(
+                    sharded_meta_param.size(),
+                    device=device_mesh.device_type,
+                    dtype=sharded_meta_param.dtype,
+                )
             sharded_param = distribute_tensor(
                 full_tensor,
-                sharded_meta_param.device_mesh,
+                device_mesh,
                 sharded_meta_param.placements,
                 src_data_rank=0,
             )
         else:
-            sharded_param = full_tensor
+            # Non-sharded parameters
+            if _accelerator.is_main_process:
+                sharded_param = full_tensor.to(torch.device("cuda"))
+            else:
+                # broadcast manually
+                sharded_param = torch.empty_like(
+                    sharded_meta_param,
+                    device=torch.device("cuda"),
+                    dtype=sharded_meta_param.dtype,
+                )
+            dist.broadcast(sharded_param, src=0)
 
         if offload_to_cpu:
             sharded_param = sharded_param.cpu()
 
         sharded_sd[param_name] = nn.Parameter(sharded_param)
+
         del full_tensor
         full_sd[param_name] = None
+
     model.load_state_dict(sharded_sd, assign=True, strict=True)
     end_time = time.time()
     LOG.debug(

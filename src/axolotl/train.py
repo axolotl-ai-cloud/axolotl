@@ -218,6 +218,7 @@ def execute_training(
                     ring_attn_func=cfg.ring_attn_func,
                     heads_k_stride=cfg.heads_k_stride,
                     gather_outputs=cfg.rl is RLType.GRPO,
+                    device_mesh=trainer.accelerator.torch_device_mesh,
                 )
             )
 
@@ -274,7 +275,7 @@ def save_trained_model(
             # final model weights have already been saved by `ReLoRACallback.on_train_end`
             return
 
-    if trainer.is_fsdp_enabled:
+    if trainer.is_fsdp_enabled or cfg.fsdp_config:
         if cfg.fsdp_config or cfg.fsdp:
             if cfg.fsdp_config.final_state_dict_type:
                 state_dict_type = cfg.fsdp_config.final_state_dict_type
