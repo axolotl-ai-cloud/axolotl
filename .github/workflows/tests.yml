@@ -105,7 +105,8 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/ --cov=axolotl --cov-report=xml
+          pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
+          pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
 
@@ -179,8 +180,8 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/
-          pytest -v --durations=10 tests/patched/
+          pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
+          pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/
 
       - name: cleanup pip cache
