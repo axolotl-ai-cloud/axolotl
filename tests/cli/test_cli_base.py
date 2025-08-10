@@ -47,7 +47,7 @@ class BaseCliTest:
         config_path = tmp_path / "config.yml"
         config_path.write_text(valid_test_config)
 
-        with patch("subprocess.run") as mock:
+        with patch("os.execvpe") as mock:
             result = cli_runner.invoke(cli, [command, str(config_path)])
 
             assert mock.called
