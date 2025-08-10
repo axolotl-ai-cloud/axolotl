@@ -3,7 +3,7 @@ default_language_version:
 
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
     -   id: check-yaml
     -   id: end-of-file-fixer
@@ -23,7 +23,7 @@ repos:
     hooks:
     - id: flake8
 -   repo: https://github.com/pylint-dev/pylint
-    rev: v3.3.7
+    rev: v3.3.8
     hooks:
     - id: pylint
 -   repo: https://github.com/pre-commit/mirrors-mypy
