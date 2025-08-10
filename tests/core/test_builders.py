@@ -281,7 +281,7 @@ class TestHFRLTrainerBuilder:
         # Other settings
         assert training_arguments.dataloader_num_workers == 1
         assert training_arguments.dataloader_pin_memory is True
-        assert training_arguments.gradient_checkpointing is False
+        assert training_arguments.gradient_checkpointing is True
 
     def test_dpo_training_arguments(self, dpo_cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(dpo_cfg, model, tokenizer)
