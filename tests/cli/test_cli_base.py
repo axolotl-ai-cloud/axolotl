@@ -47,7 +47,9 @@ class BaseCliTest:
         config_path = tmp_path / "config.yml"
         config_path.write_text(valid_test_config)
 
-        with patch("os.execvpe") as mock:
+        mock_fn = "os.execvpe" if command == "train" else "subprocess.run"
+
+        with patch(mock_fn) as mock:
             result = cli_runner.invoke(cli, [command, str(config_path)])
 
             assert mock.called
@@ -65,9 +67,12 @@ class BaseCliTest:
             if train:
                 expected.append("--shard=False")
 
-            assert mock.call_args.args[0] == "accelerate"
-            assert mock.call_args.args[1] == expected
-            assert mock.call_args.kwargs == {"check": True}
+            if command == "train":
+                assert mock.call_args.args[0] == "accelerate"
+                assert mock.call_args.args[1] == expected
+            else:
+                assert mock.call_args.args[0] == expected
+                assert mock.call_args.kwargs == {"check": True}
             assert result.exit_code == 0
 
     def _test_cli_overrides(self, tmp_path: Path, valid_test_config: str):
