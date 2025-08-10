@@ -65,7 +65,8 @@ class BaseCliTest:
             if train:
                 expected.append("--shard=False")
 
-            assert mock.call_args.args[0] == expected
+            assert mock.call_args.args[0] == "accelerate"
+            assert mock.call_args.args[1] == expected
             assert mock.call_args.kwargs == {"check": True}
             assert result.exit_code == 0
 
