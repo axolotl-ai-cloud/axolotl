@@ -18,9 +18,7 @@ from torch.distributed import DeviceMesh
 try:
     from transformers.modeling_flash_attention_utils import _flash_supports_window
 except ImportError:
-    from transformers.modeling_flash_attention_utils import (
-        _flash_supports_window_size as _flash_supports_window,
-    )
+    _flash_supports_window = True
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
 from axolotl.utils.logging import get_logger
