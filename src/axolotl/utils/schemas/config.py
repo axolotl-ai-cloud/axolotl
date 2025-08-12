@@ -408,25 +408,23 @@ class AxolotlInputConfig(
 
     unfrozen_parameters: list[str] | None = None
 
-<<<<<<< HEAD
-    sequence_len: int = Field(default=512)
-    sequence_len_overflow_handling: Literal["drop", "truncate"] = Field(
-        default="drop",
-        json_schema_extra={
-            "description": "How to handle sequences that overflow the sequence_len: 'drop' (remove the sample) or 'truncate' (cut off excess tokens)."
-=======
     sequence_len: int = Field(
         default=512,
         json_schema_extra={
             "description": "The maximum length of an input to train with, this should typically be less than 2048 as most models have a token/context limit of 2048"
         },
     )
+    sequence_len_overflow_handling: Literal["drop", "truncate"] = Field(
+        default="drop",
+        json_schema_extra={
+            "description": "How to handle sequences that overflow the sequence_len: 'drop' (remove the sample) or 'truncate' (cut off excess tokens)."
+        },
+    )
     eval_sequence_len: int | None = Field(
         default=None,
         json_schema_extra={
             "description": "The maximum length of an input for evaluation. If not specified, defaults to sequence_len"
->>>>>>> origin/main
-        },
+        }
     )
     min_sample_len: int | None = None
     max_prompt_len: int = Field(
