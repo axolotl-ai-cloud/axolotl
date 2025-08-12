@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   test-axolotl-multigpu:
-    if: ${{ ! contains(github.event.commits[0].message, '[sk'ip-e2e]') && github.repository_owner == 'axolotl-ai-cloud' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: ${{ ! contains(github.event.commits[0].message, '[skip-e2e]') && github.repository_owner == 'axolotl-ai-cloud' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     strategy:
       fail-fast: false
       matrix:
