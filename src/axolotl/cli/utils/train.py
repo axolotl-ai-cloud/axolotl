@@ -124,6 +124,9 @@ def launch_training(
             _launch_torchrun_training(cfg_file, kwargs, launcher_args, use_exec)
         elif launcher == "python":
             _launch_python_training(cfg_file, kwargs)
+    elif launcher is None:
+        # handle ray train launch
+        _launch_python_training(cfg_file, kwargs)
 
 
 def _launch_cloud_training(
