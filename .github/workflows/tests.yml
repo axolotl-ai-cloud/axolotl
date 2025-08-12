@@ -190,7 +190,7 @@ jobs:
 
   docker-e2e-tests-1st:
     # Run this job first as a gate for running the remainder of the test matrix
-    if: ${{ ! contains(github.event.head_commit.message, '[skip-e2e]') && github.repository_owner == 'axolotl-ai-cloud' && !github.event.pull_request.draft }}
+    if: ${{ ! contains(github.event.head_commit.message || github.event.commits[0].message || '', '[skip-e2e]') && github.repository_owner == 'axolotl-ai-cloud' && !github.event.pull_request.draft }}
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
@@ -240,7 +240,7 @@ jobs:
           modal run cicd.e2e_tests
 
   docker-e2e-tests:
-    if: ${{ ! contains(github.event.head_commit.message, '[skip-e2e]') && github.repository_owner == 'axolotl-ai-cloud' && !github.event.pull_request.draft }}
+    if: ${{ ! contains(github.event.head_commit.message || github.event.commits[0].message || '', '[skip-e2e]') && github.repository_owner == 'axolotl-ai-cloud' && !github.event.pull_request.draft }}
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
