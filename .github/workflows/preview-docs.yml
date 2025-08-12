@@ -10,7 +10,7 @@ on:
       - '**/*.qmd'     # any Quarto file
       - '_quarto.yml'
       - docs/scripts/generate_config_docs.py
-      - src/axolotl/**.py
+      - src/axolotl/**/*.py
 
 permissions:
   checks: write
