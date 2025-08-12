@@ -424,7 +424,7 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "The maximum length of an input for evaluation. If not specified, defaults to sequence_len"
-        }
+        },
     )
     min_sample_len: int | None = None
     max_prompt_len: int = Field(
