@@ -2,21 +2,15 @@
 E2E tests for relora llama
 """
 
-import logging
-import os
 import unittest
 from pathlib import Path
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
 from ..utils import check_model_output_exists, check_tensorboard, with_temp_dir
-
-LOG = logging.getLogger("axolotl.tests.e2e")
-os.environ["WANDB_DISABLED"] = "true"
 
 
 class TestReLoraLlama(unittest.TestCase):
@@ -40,9 +34,10 @@ class TestReLoraLlama(unittest.TestCase):
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_modules": ["q_proj", "v_proj"],
-                "relora_steps": 50,
-                "relora_warmup_steps": 10,
-                "relora_anneal_steps": 10,
+                "relora": True,
+                "jagged_restart_steps": 50,
+                "jagged_restart_warmup_steps": 10,
+                "jagged_restart_anneal_steps": 10,
                 "relora_prune_ratio": 0.9,
                 "relora_cpu_offload": True,
                 "val_set_size": 0.0,
@@ -71,13 +66,13 @@ class TestReLoraLlama(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(Path(temp_dir) / "checkpoint-100/adapter", cfg)

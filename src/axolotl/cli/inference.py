@@ -1,7 +1,6 @@
 """CLI to run inference on a trained model."""
 
 import importlib
-import logging
 import sys
 from pathlib import Path
 from threading import Thread
@@ -10,11 +9,9 @@ from typing import Union
 import fire
 import torch
 import transformers
-from dotenv import load_dotenv
 from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 
 from axolotl.cli.args import InferenceCliArgs
-from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
 from axolotl.utils.chat_templates import (
@@ -22,8 +19,9 @@ from axolotl.utils.chat_templates import (
     get_chat_template_from_config,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def get_multi_line_input() -> str:
@@ -255,7 +253,6 @@ def do_cli(
         kwargs: Additional keyword arguments to override config file values.
     """
     # pylint: disable=duplicate-code
-    print_axolotl_text_art()
     parsed_cfg = load_cfg(config, inference=True, rl=None, **kwargs)
     parsed_cfg.sample_packing = False
     parser = transformers.HfArgumentParser(InferenceCliArgs)
@@ -270,5 +267,4 @@ def do_cli(
 
 
 if __name__ == "__main__":
-    load_dotenv()
     fire.Fire(do_cli)

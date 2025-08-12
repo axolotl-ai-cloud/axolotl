@@ -2,7 +2,6 @@
 Simple end-to-end test for Liger integration
 """
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
@@ -51,14 +50,14 @@ class LigerIntegrationTestCase:
                 "save_safetensors": True,
                 "bf16": "auto",
                 "max_steps": 5,
+                "save_first_step": False,
             }
         )
         # pylint: disable=duplicate-code
         cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
@@ -98,14 +97,14 @@ class LigerIntegrationTestCase:
                 "save_safetensors": True,
                 "bf16": "auto",
                 "max_steps": 5,
+                "save_first_step": False,
             }
         )
         # pylint: disable=duplicate-code
         cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)

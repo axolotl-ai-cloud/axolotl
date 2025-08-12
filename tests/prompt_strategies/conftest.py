@@ -143,10 +143,40 @@ def fixture_phi35_tokenizer():
     return tokenizer
 
 
+@pytest.fixture(name="phi4_tokenizer", scope="session", autouse=True)
+def fixture_phi4_tokenizer():
+    tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-4-reasoning")
+    return tokenizer
+
+
 @pytest.fixture(name="gemma2_tokenizer", scope="session", autouse=True)
 def fixture_gemma2_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("mlx-community/gemma-2-9b-it-4bit")
 
+    return tokenizer
+
+
+@pytest.fixture(name="magistral_tokenizer")
+def fixture_magistral_tokenizer():
+    from axolotl.utils.mistral import HFMistralTokenizer
+
+    tokenizer = HFMistralTokenizer.from_pretrained("mistralai/Magistral-Small-2506")
+    return tokenizer
+
+
+@pytest.fixture(name="devstral_tokenizer")
+def fixture_devstral_tokenizer():
+    from axolotl.utils.mistral import HFMistralTokenizer
+
+    tokenizer = HFMistralTokenizer.from_pretrained("mistralai/Devstral-Small-2505")
+    return tokenizer
+
+
+@pytest.fixture(name="devstral_1_1_tokenizer")
+def fixture_devstral_1_1_tokenizer():
+    from axolotl.utils.mistral import HFMistralTokenizer
+
+    tokenizer = HFMistralTokenizer.from_pretrained("mistralai/Devstral-Small-2507")
     return tokenizer
 
 

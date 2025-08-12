@@ -3,7 +3,7 @@ default_language_version:
 
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
     -   id: check-yaml
     -   id: end-of-file-fixer
@@ -19,15 +19,15 @@ repos:
     hooks:
       - id: isort
 -   repo: https://github.com/PyCQA/flake8
-    rev: 7.1.2
+    rev: 7.3.0
     hooks:
     - id: flake8
 -   repo: https://github.com/pylint-dev/pylint
-    rev: v3.3.6
+    rev: v3.3.8
     hooks:
     - id: pylint
 -   repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.15.0
+    rev: v1.17.1
     hooks:
     - id: mypy
       additional_dependencies:
@@ -36,7 +36,7 @@ repos:
             'pydantic>=2.5.3',
         ]
 -   repo: https://github.com/PyCQA/bandit
-    rev: 1.8.3
+    rev: 1.8.6
     hooks:
     -   id: bandit
         args: [

@@ -2,9 +2,11 @@
 
 import importlib
 import inspect
-import logging
+import os
 from typing import Any
 
+from huggingface_hub import snapshot_download
+from requests import HTTPError
 from trl.trainer.grpo_trainer import RewardFunc
 
 from axolotl.core.trainers.grpo.args import AxolotlGRPOConfig
@@ -13,9 +15,11 @@ from axolotl.core.trainers.grpo.trainer import (
     AxolotlGRPOTrainer,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.trl import TRLConfig
+from axolotl.utils.schemas.vllm import VllmConfig
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class GRPOStrategy:
@@ -41,9 +45,19 @@ class GRPOStrategy:
             return grpo_args_kwargs
 
         trl: TRLConfig = cfg.trl  # type: ignore
+        vllm_cfg: VllmConfig = cfg.vllm  # type: ignore
 
         if trl.use_vllm:
             grpo_args_kwargs["use_vllm"] = trl.use_vllm
+            if trl.vllm_mode:
+                grpo_args_kwargs["vllm_mode"] = trl.vllm_mode
+            if trl.vllm_mode == "colocate":
+                grpo_args_kwargs["vllm_gpu_memory_utilization"] = (
+                    vllm_cfg.gpu_memory_utilization
+                )
+                grpo_args_kwargs["vllm_tensor_parallel_size"] = (
+                    vllm_cfg.tensor_parallel_size
+                )
             grpo_args_kwargs["vllm_server_host"] = trl.vllm_server_host or trl.vllm.host  # type: ignore[attr-defined]
             grpo_args_kwargs["vllm_server_port"] = trl.vllm_server_port or trl.vllm.port  # type: ignore[attr-defined]
             if trl.vllm_server_timeout:
@@ -68,6 +82,14 @@ class GRPOStrategy:
         grpo_args_kwargs["max_completion_length"] = trl.max_completion_length
         grpo_args_kwargs["log_completions"] = trl.log_completions
         grpo_args_kwargs["num_completions_to_print"] = trl.num_completions_to_print
+
+        if cfg.context_parallel_size > 1:
+            grpo_args_kwargs["context_parallel_size"] = cfg.context_parallel_size
+
+        if trl.importance_sampling_level is not None:
+            grpo_args_kwargs["importance_sampling_level"] = (
+                trl.importance_sampling_level
+            )
 
         if trl.reward_weights:
             grpo_args_kwargs["reward_weights"] = trl.reward_weights
@@ -106,7 +128,9 @@ class GRPOStrategy:
         return grpo_args_kwargs
 
     @classmethod
-    def set_trainer_args(cls, cfg: DictDefault) -> list[Any]:
+    def set_trainer_args(
+        cls, cfg: DictDefault
+    ) -> list[Any]:  # pylint: disable=unused-argument
         trainer_args = []
         if cfg.trl and cfg.trl.reward_funcs:
             reward_funcs = []
@@ -123,6 +147,7 @@ class GRPOStrategy:
             trainer_kwargs["reward_processing_classes"] = (
                 cfg.trl.reward_processing_classes
             )
+
         return trainer_kwargs
 
     @classmethod
@@ -132,7 +157,7 @@ class GRPOStrategy:
 
     @classmethod
     def get_blocklist_args_kwargs(cls) -> list[str]:
-        return ["dataset_num_proc"]
+        return ["dataset_num_proc", "max_length", "include_tokens_per_second"]
 
     @classmethod
     def get_reward_func(cls, reward_func_fqn: str) -> RewardFunc:
@@ -162,9 +187,18 @@ class GRPOStrategy:
                     "Reward function must accept at least two arguments: prompts: list and completions: list"
                 )
             return reward_func
-        except ModuleNotFoundError:
+        except ModuleNotFoundError as exc:
             # the user has passed a string (ideally indicating the path of a reward model)
-            LOG.info(
-                f"Reward function {reward_func_fqn} is a pre-trained model path - if this is unexpected, please check the reward function path."
-            )
-            return reward_func
+            # check if it's a local dir path and not empty dir to a reward model
+            pretrained_log_msg = f"Reward function {reward_func_fqn} is a pre-trained model path - if this is unexpected, please check the reward function path."
+            if os.path.isdir(reward_func_fqn) and os.listdir(reward_func_fqn):
+                LOG.info(pretrained_log_msg)
+                return reward_func_fqn
+            try:
+                snapshot_download(reward_func_fqn, repo_type="model")
+                LOG.info(pretrained_log_msg)
+                return reward_func_fqn
+            except HTTPError:
+                raise ValueError(
+                    f"Reward function {reward_func_fqn} not found."
+                ) from exc

@@ -5,7 +5,6 @@ e2e tests to make sure all the hooks are fired on the plugin
 import os
 from pathlib import Path
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.integrations.base import BasePlugin
 from axolotl.train import train
@@ -154,14 +153,14 @@ class TestPluginHooks:
                 "max_steps": 5,
                 "flash_attention": True,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
 
         cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)

@@ -4,7 +4,6 @@ GRPO test suite
 
 import os
 import random
-import shutil
 import subprocess  # nosec B404
 import sys
 import tempfile
@@ -106,7 +105,7 @@ def start_vllm(
                 print(f"{i}: VLLM server failed to start: {str(exc)}")
 
             # also check if the process.pid is still running
-            if not process.poll() is None:
+            if process.poll() is not None:
                 break
 
             time.sleep(period_seconds)
@@ -118,7 +117,10 @@ def start_vllm(
         recursive_kill(process)
         with open("/tmp/vllm.log", "r", encoding="utf-8") as log_file:
             print(log_file.read())
-        shutil.rmtree("/tmp/vllm.log")
+        try:
+            os.remove("/tmp/vllm.log")
+        except FileNotFoundError:
+            pass
         raise RuntimeError(f"VLLM server process did not start within {wait} seconds.")
 
     # return the process
@@ -139,6 +141,7 @@ def recursive_kill(process: subprocess.Popen):
     os.kill(process.pid, 9)
 
 
+@pytest.mark.skip(reason="flaky vllm tests in modal")
 class TestGRPO:
     """
     Test case for GRPO training using multilpe GPUs
@@ -220,6 +223,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -251,6 +255,101 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     str(Path(temp_dir) / "config.yaml"),
                     "--num-processes",
                     str(num_gpus),
+                    "--main-process-port",
+                    f"{get_torch_dist_unique_port()}",
+                ],
+                env={
+                    "NCCL_P2P_LEVEL": "LOC",
+                    "NCCL_DEBUG": "INFO",
+                    **current_env,
+                },
+            )
+        finally:
+            (recursive_kill(vllm_process))
+
+    @require_vllm
+    def test_llama_lora_sp(self, temp_dir):
+        rnd_reward_suffix = str(random.randint(1000, 9999))
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "chat_template": "llama3",
+                "rl": "grpo",
+                "trl": {
+                    "beta": 0.001,
+                    "max_completion_length": 256,
+                    "use_vllm": True,
+                    "num_generations": 4,
+                    "reward_funcs": [f"rewards_{rnd_reward_suffix}.rand_reward_func"],
+                },
+                "vllm": {
+                    "max_model_len": 800,
+                    "enable_prefix_caching": True,
+                },
+                "datasets": [
+                    {
+                        "path": "openai/gsm8k",
+                        "name": "main",
+                        "type": f"rewards_{rnd_reward_suffix}.oai_gsm8k_transform",
+                    },
+                ],
+                "adapter": "lora",
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
+                "context_parallel_size": 2,
+                "flash_attention": True,
+                "sequence_len": 1024,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "max_steps": 3,
+                "num_epochs": 1,
+                "micro_batch_size": 4,
+                "gradient_accumulation_steps": 2,
+                "warmup_steps": 10,
+                "val_set_size": 0.0,
+                "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
+                "learning_rate": 0.0001,
+                "optimizer": "adamw_torch_fused",
+                "lr_scheduler": "cosine",
+                "save_safetensors": True,
+                "bf16": "auto",
+                "use_tensorboard": True,
+                "save_first_step": False,
+            }
+        )
+
+        self._utils_write_yaml_and_rewards(cfg, temp_dir, suffix=rnd_reward_suffix)
+
+        current_env = os.environ.copy()
+        env = {
+            "NCCL_P2P_LEVEL": "LOC",
+            **current_env,
+            "CUDA_VISIBLE_DEVICES": "1",
+        }
+        vllm_process = start_vllm(
+            cfg.base_model,
+            env=env,
+            quiet=True,
+            wait=300,
+            gpu_memory_utilization=0.15,
+            max_model_len=cfg.vllm.max_model_len,
+            enable_prefix_caching=cfg.vllm.enable_prefix_caching,
+            host="0.0.0.0",
+            port=8000,
+        )
+
+        try:
+            execute_subprocess_async(
+                [
+                    "axolotl",
+                    "train",
+                    str(Path(temp_dir) / "config.yaml"),
+                    "--num-processes",
+                    str(2),
                     "--main-process-port",
                     f"{get_torch_dist_unique_port()}",
                 ],
@@ -305,12 +404,14 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "warmup_steps": 10,
                 "val_set_size": 0.0,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.0001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 

@@ -70,7 +70,7 @@ class TestBatchedSamplerPacking:
         )
         train_dataset = concatenate_datasets([dataset_wrapper])
 
-        train_dataset = drop_long_seq_in_dataset(train_dataset, cfg)
+        train_dataset = drop_long_seq_in_dataset(train_dataset, cfg.sequence_len, cfg)
 
         lengths = get_dataset_lengths(train_dataset)
         batch_sampler = MultipackBatchSampler(
@@ -81,6 +81,7 @@ class TestBatchedSamplerPacking:
             group_size=100000,
             bin_size=200,
             sequential=sequential,
+            drop_last=False,
         )
 
         loader = DataLoader(

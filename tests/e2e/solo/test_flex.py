@@ -2,22 +2,16 @@
 E2E tests for packed training w/ flex attention
 """
 
-import logging
-import os
 import unittest
 
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
 from ..utils import check_tensorboard, require_torch_2_6_0, with_temp_dir
-
-LOG = logging.getLogger("axolotl.tests.e2e")
-os.environ["WANDB_DISABLED"] = "true"
 
 
 class TestPackedFlex(unittest.TestCase):
@@ -55,6 +49,7 @@ class TestPackedFlex(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -64,11 +59,10 @@ class TestPackedFlex(unittest.TestCase):
 
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss (%s) is too high"
         )

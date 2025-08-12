@@ -1,11 +1,13 @@
 """Prepare and train a model on a dataset. Can also infer from a model or merge lora"""
 
+from __future__ import annotations
+
 import importlib
 import inspect
-import logging
 import os
 import signal
 import sys
+import typing
 import weakref
 from contextlib import ExitStack
 from pathlib import Path
@@ -13,7 +15,6 @@ from typing import Any, Dict
 
 import torch
 import transformers.modelcard
-from accelerate.utils import save_fsdp_model
 from datasets import Dataset
 from huggingface_hub.errors import OfflineModeIsEnabled
 from peft import PeftConfig, PeftModel
@@ -21,12 +22,10 @@ from transformers import PreTrainedModel, PreTrainedTokenizer, ProcessorMixin
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.trainer import Trainer
 
-from axolotl.cli.art import print_axolotl_text_art
 from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
-from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders import (
     ModelLoader,
@@ -37,6 +36,7 @@ from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContext
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.trainer import setup_trainer
 
@@ -45,7 +45,10 @@ try:
 except ImportError:
     BetterTransformer = None
 
-LOG = logging.getLogger(__name__)
+if typing.TYPE_CHECKING:
+    from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+
+LOG = get_logger(__name__)
 
 
 def setup_model_and_tokenizer(
@@ -53,8 +56,8 @@ def setup_model_and_tokenizer(
 ) -> tuple[
     PreTrainedModel, PreTrainedTokenizer, PeftConfig | None, ProcessorMixin | None
 ]:
-    """
-    Load the tokenizer, processor (for multimodal models), and model based on configuration.
+    """Load the tokenizer, processor (for multimodal models), and model based on
+    configuration.
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
@@ -64,9 +67,7 @@ def setup_model_and_tokenizer(
             `None`), and processor (if multimodal, else `None`).
     """
     # Load tokenizer
-    LOG.debug(
-        f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
-    )
+    LOG.debug(f"Loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
     tokenizer = load_tokenizer(cfg)
 
     # Load processor for multimodal models if needed
@@ -74,11 +75,8 @@ def setup_model_and_tokenizer(
     if cfg.is_multimodal:
         processor = load_processor(cfg, tokenizer)
 
-    # Load the model and peft_config
-    msg = "loading model"
-    if cfg.adapter:
-        msg += " and peft_config..."
-    LOG.debug(msg)
+    # Load the model
+    LOG.debug("Loading model")
 
     model_loader = ModelLoader(cfg, tokenizer, processor=processor)
     model, peft_config = model_loader.load()
@@ -117,8 +115,11 @@ def setup_reference_model(
             LOG.debug("Passing model_ref: None to RL trainer")
             model_ref = None  # explicit setting to None
         else:
+            reference_model: bool = True
+            if cfg.rl == RLType.GRPO and cfg.trl.beta == 0:
+                reference_model = False
             # load the model again for model_ref/baseline
-            model_loader = ModelLoader(cfg, tokenizer, reference_model=True)
+            model_loader = ModelLoader(cfg, tokenizer, reference_model=reference_model)
             model_ref, _ = model_loader.load()
     return model_ref
 
@@ -204,23 +205,31 @@ def execute_training(
                 )
             )
 
-        if cfg.sequence_parallel_degree > 1:
+        if cfg.context_parallel_size > 1:
             models = [trainer.model]
-            if hasattr(trainer, "ref_model"):
+            if hasattr(trainer, "ref_model") and trainer.ref_model:
                 models.append(trainer.ref_model)
 
             stack.enter_context(
                 SequenceParallelContextManager(
                     models=models,
-                    sequence_parallel_degree=cfg.sequence_parallel_degree,
+                    context_parallel_size=cfg.context_parallel_size,
                     gradient_accumulation_steps=cfg.gradient_accumulation_steps,
                     ring_attn_func=cfg.ring_attn_func,
                     heads_k_stride=cfg.heads_k_stride,
+                    gather_outputs=cfg.rl is RLType.GRPO,
+                    device_mesh=trainer.accelerator.torch_device_mesh,
                 )
             )
 
         LOG.info("Starting trainer...")
+        # TODO: disabling for now as not compatible with FSDP2 + torchao low bit optimizers
+        # if cfg.bf16:
+        #     torch.set_default_dtype(torch.bfloat16)
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+
+        plugin_manager = PluginManager.get_instance()
+        plugin_manager.post_train(cfg, trainer.model)
 
 
 def save_trained_model(
@@ -238,45 +247,47 @@ def save_trained_model(
         model: The trained model to save.
         safe_serialization: Whether to use safe serialization.
     """
-    LOG.info(f"Training completed! Saving pre-trained model to {cfg.output_dir}.")
+    LOG.info(f"Training completed! Saving trained model to {cfg.output_dir}.")
 
     # Post training module hooks
     for name, module in model.named_modules():
         if hasattr(module, "_post_training"):
             module._post_training(model, name)  # pylint: disable=protected-access
 
-    # Handle FSDP state dict type
-    state_dict_type = "FULL_STATE_DICT"
-    if trainer.is_fsdp_enabled and str(cfg.fsdp_config.fsdp_version) != "2":
-        if cfg.fsdp_final_state_dict_type:
-            state_dict_type = cfg.fsdp_final_state_dict_type
-        trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
-        LOG.info(f"Set FSDP state dict type to {state_dict_type} for saving.")
+    # handle QAT
+    if cfg.qat:
+        from axolotl.utils.quantization import convert_qat_model_for_ptq
 
+        LOG.info("Processing QAT model for saving...")
+        convert_qat_model_for_ptq(
+            model,
+            quantize_embedding=cfg.qat.quantize_embedding,
+        )
+        LOG.info(
+            "QAT modules have been converted for PTQ. Please ensure you quantize "
+            "your model weights with `axolotl quantize`."
+        )
     # Handle ReLoRA early return case
-    if cfg.relora_steps:
+    if cfg.relora:
         if cfg.adapter == "lora" and not (cfg.load_in_4bit or cfg.load_in_8bit):
             model = model.merge_and_unload()
         else:
             # final model weights have already been saved by `ReLoRACallback.on_train_end`
             return
 
-    if cfg.fsdp:
-        # TODO: do we need this fix? https://huggingface.co/docs/accelerate/usage_guides/fsdp#saving-and-loading
-        # only save on rank 0, otherwise it corrupts output on multi-GPU when multiple
-        # processes attempt to write the same file
-        if (
-            state_dict_type == "SHARDED_STATE_DICT"
-            and cfg.fsdp_config.fsdp_state_dict_type == "SHARDED_STATE_DICT"
-        ):
-            save_fsdp_model(
-                trainer.accelerator.state.fsdp_plugin,
-                trainer.accelerator,
-                trainer.model,
-                cfg.output_dir,
+    if trainer.is_fsdp_enabled or cfg.fsdp_config:
+        if cfg.fsdp_config or cfg.fsdp:
+            if cfg.fsdp_config.final_state_dict_type:
+                state_dict_type = cfg.fsdp_config.final_state_dict_type
+            else:
+                state_dict_type = cfg.fsdp_config.state_dict_type
+            trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
+        trainer.save_model(cfg.output_dir)
+        if state_dict_type == "SHARDED_STATE_DICT":
+            LOG.info(
+                "The final model was saved with a sharded state dict. Please ensure you merge "
+                "the sharded weights with `merge-sharded-fsdp-weights`."
             )
-        elif state_dict_type == "FULL_STATE_DICT":
-            trainer.save_model(cfg.output_dir)
     elif cfg.deepspeed and is_deepspeed_zero3_enabled():
         # Copied over from: https://github.com/huggingface/accelerate/blob/5ae611118057232f441055f7ef9ba0b0f2b8d533/docs/source/usage_guides/deepspeed.md#saving-and-loading
         trainer.accelerator.wait_for_everyone()
@@ -320,6 +331,8 @@ def save_trained_model(
             safe_serialization=safe_serialization,
             save_compressed=cfg.llmcompressor.save_compressed,
         )
+
+    LOG.info(f"Model successfully saved to {cfg.output_dir}")
 
 
 def create_model_card(cfg: DictDefault, trainer: Trainer):
@@ -458,7 +471,7 @@ def handle_untrained_tokens_fix(
 
 
 def setup_model_and_trainer(cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> tuple[
-    HFRLTrainerBuilder | HFCausalTrainerBuilder,
+    "HFRLTrainerBuilder" | "HFCausalTrainerBuilder",
     PeftModel | PreTrainedModel,
     PreTrainedTokenizer,
     PeftConfig | None,
@@ -504,6 +517,9 @@ def setup_model_and_trainer(cfg: DictDefault, dataset_meta: TrainDatasetMeta) ->
         peft_config=peft_config,
     )
 
+    plugin_manager = PluginManager.get_instance()
+    plugin_manager.post_trainer_create(cfg, trainer)
+
     return (
         trainer,
         model,
@@ -526,8 +542,6 @@ def train(
     Returns:
         Tuple of (model, tokenizer) after training
     """
-    print_axolotl_text_art()
-
     # Setup model, tokenizer, (causal or RLHF) trainer, etc.
     (
         trainer,
@@ -536,9 +550,6 @@ def train(
         peft_config,
         processor,
     ) = setup_model_and_trainer(cfg, dataset_meta)
-
-    plugin_manager = PluginManager.get_instance()
-    plugin_manager.post_trainer_create(cfg, trainer)
 
     # Handle untrained tokens if configured
     safe_serialization = cfg.save_safetensors is True
@@ -556,12 +567,14 @@ def train(
     resume_from_checkpoint = determine_resume_checkpoint(cfg)
     execute_training(cfg, trainer, resume_from_checkpoint)
 
+    # clear cache
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
     # Save the trained model and cleanup
     save_trained_model(cfg, trainer, model, safe_serialization)
     create_model_card(cfg, trainer)
     if not cfg.use_ray:
         cleanup_distributed()
-
-    plugin_manager.post_train(cfg, model)
 
     return model, tokenizer, trainer

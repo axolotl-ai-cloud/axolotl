@@ -3,14 +3,14 @@ Patch prepare_model_for_kbit_training to not upcast everything
 """
 
 import inspect
-import logging
 
 import peft
 
 import axolotl
 from axolotl.monkeypatch.utils import detab_code
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 ORIGINAL_PREPARE_CODE = """
         for param in model.parameters():

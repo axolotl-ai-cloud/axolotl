@@ -18,6 +18,10 @@ class VllmConfig(BaseModel):
         default=None,
         json_schema_extra={"description": "Tensor parallel size for VLLM"},
     )
+    data_parallel_size: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "Data parallel size for VLLM"},
+    )
     gpu_memory_utilization: float | None = Field(
         default=0.9,
         json_schema_extra={"description": "GPU memory utilization for VLLM"},
@@ -43,4 +47,13 @@ class VllmConfig(BaseModel):
     port: int | None = Field(
         default=8000,
         json_schema_extra={"description": "Port of the vLLM server to start on"},
+    )
+
+    enable_reasoning: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Enable reasoning for VLLM"},
+    )
+    reasoning_parser: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Reasoning parser for VLLM"},
     )

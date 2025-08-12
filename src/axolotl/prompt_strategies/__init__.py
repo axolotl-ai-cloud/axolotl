@@ -2,11 +2,11 @@
 
 import importlib
 import inspect
-import logging
 
 from axolotl.prompt_strategies.user_defined import UserDefinedDatasetConfig
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl.prompt_strategies")
+LOG = get_logger(__name__)
 
 
 def load(strategy, tokenizer, cfg, ds_cfg, processor=None):
@@ -17,7 +17,10 @@ def load(strategy, tokenizer, cfg, ds_cfg, processor=None):
             return messages_load(tokenizer, cfg, ds_cfg, processor=processor)
         load_fn = "load"
         package = "axolotl.prompt_strategies"
-        if strategy.split(".")[-1].startswith("load_"):
+        if (
+            strategy.split(".")[-1].startswith("load_")
+            or strategy.split(".")[-1] == "load"
+        ):
             load_fn = strategy.split(".")[-1]
             strategy = ".".join(strategy.split(".")[:-1])
         elif len(strategy.split(".")) > 1:

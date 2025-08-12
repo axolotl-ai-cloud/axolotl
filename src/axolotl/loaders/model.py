@@ -1,9 +1,8 @@
-"""Model loader class implementation for loading, configuring, and patching various
-models.
+"""
+Model loader class implementation for loading, configuring, and patching various models.
 """
 
 import gc
-import logging
 import math
 import os
 from functools import cached_property
@@ -15,7 +14,15 @@ import torch
 import transformers
 import transformers.modeling_utils
 from accelerate import init_empty_weights
-from peft import PeftConfig, PeftMixedModel, PeftModel, prepare_model_for_kbit_training
+from accelerate.parallelism_config import ParallelismConfig
+from peft import (
+    PeftConfig,
+    PeftMixedModel,
+    PeftModel,
+    PeftModelForCausalLM,
+    prepare_model_for_kbit_training,
+)
+from torch.distributed import DeviceMesh
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForVision2Seq,
@@ -44,13 +51,15 @@ from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
+    build_parallelism_config,
     get_device_count,
     get_device_type,
 )
+from axolotl.utils.logging import get_logger
 from axolotl.utils.model_shard_quant import load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 
@@ -80,6 +89,10 @@ class ModelLoader:
         auto_model_loader: class used for loading the model (default:
             `AutoModelForCausalLM`).
     """
+
+    use_parallel_config: bool | None = False
+    parallelism_config: ParallelismConfig | None = None
+    device_mesh: DeviceMesh | None = None
 
     def __init__(
         self,
@@ -134,12 +147,17 @@ class ModelLoader:
         """Check if flash attention is installed."""
         return find_spec("flash_attn") is not None
 
-    @cached_property
-    def qlora_fsdp(self):
-        """Property that determines if FSDP with QLoRA is enabled."""
-        return self.cfg.fsdp and self.cfg.adapter == "qlora"
+    @property
+    def is_fsdp_enabled(self):
+        """Property that determines if FSDP is enabled."""
+        return self.cfg.fsdp_config is not None or self.cfg.fsdp is not None
 
-    def load(self) -> tuple[PreTrainedModel, PeftConfig | None]:
+    @property
+    def is_qlora_and_fsdp_enabled(self):
+        """Property that determines if FSDP with QLoRA is enabled."""
+        return self.is_fsdp_enabled and self.cfg.adapter == "qlora"
+
+    def load(self) -> tuple[PreTrainedModel | PeftModelForCausalLM, PeftConfig | None]:
         """Load and prepare the model with all configurations and patches.
 
         Returns:
@@ -151,6 +169,7 @@ class ModelLoader:
 
         # Build the model
         PLUGIN_MANAGER.pre_model_load(self.cfg)
+        self.patch_manager.apply_post_plugin_pre_model_load_patches()
         skip_move_to_device = self._build_model()
         PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
 
@@ -171,10 +190,26 @@ class ModelLoader:
 
     def _apply_pre_model_load_setup(self):
         """Apply patches and setup configurations before model loading."""
+        if self.use_parallel_config is not None:
+            self.use_parallel_config = (
+                self.cfg.fsdp_config
+                or (self.cfg.tensor_parallel_size and self.cfg.tensor_parallel_size > 1)
+                or (
+                    self.cfg.context_parallel_size
+                    and self.cfg.context_parallel_size > 1
+                )
+            )
+            if self.cfg.fsdp_config and self.cfg.fsdp_version != 2:
+                self.use_parallel_config = False
+
+        if self.use_parallel_config:
+            self._set_parallel_config()
         self._set_auto_model_loader()
         self._set_device_map_config()
         if self.cfg.revision_of_model:
             self.model_kwargs["revision"] = self.cfg.revision_of_model
+        if self.cfg.use_kernels:
+            self.model_kwargs["use_kernels"] = self.cfg.use_kernels
         self._set_quantization_config()
         self._set_attention_config()
 
@@ -183,14 +218,25 @@ class ModelLoader:
         # Handle PeftModel if needed
         if (
             isinstance(self.model, (peft.PeftModel, peft.PeftModelForCausalLM))
-            and not self.qlora_fsdp
+            and not self.is_qlora_and_fsdp_enabled
         ):
             self.model = self.model.merge_and_unload()
 
+        self._apply_activation_checkpointing()
         self._resize_token_embeddings()
         self._adjust_model_config()
-        self._log_memory_usage()
         self._configure_embedding_dtypes()
+        self._configure_qat()
+        log_gpu_memory_usage(LOG, "Memory usage after model load", 0)
+
+    def _apply_activation_checkpointing(self):
+        if self.cfg.activation_offloading is True:
+            from axolotl.core.trainers.mixins.activation_checkpointing import (
+                ac_wrap_hf_model,
+            )
+
+            # ^^ importing this at the module level breaks plugins
+            ac_wrap_hf_model(self.model)
 
     def _resize_token_embeddings(self):
         """Resize token embeddings if needed."""
@@ -244,22 +290,13 @@ class ModelLoader:
         ):
             self.model.config.eos_token_id = self.tokenizer.eos_token_id
 
-    def _log_memory_usage(self):
-        """Log device memory usage after model load."""
-        if hasattr(self.model, "device") and self.model.device.type in (
-            "cuda",
-            "mps",
-            "npu",
-        ):
-            log_gpu_memory_usage(LOG, "after model load", self.model.device)
-
     def _configure_embedding_dtypes(self):
         """Configure embedding module dtypes."""
         # Get embedding modules
         embedding_modules = get_linear_embedding_layers(self.cfg.model_config_type)
 
         # Initial dtype conversion
-        if not self.cfg.fsdp:
+        if not self.is_fsdp_enabled:
             # We don't run this during FSDP because this will leave mixed and bfloat16
             # dtypes in the model which FSDP doesn't like
             if self.cfg.load_in_4bit and self.cfg.embeddings_skip_upcast:
@@ -271,11 +308,14 @@ class ModelLoader:
             )
 
         # Handle DeepSpeed Zero3
-        if is_deepspeed_zero3_enabled():
+        if (
+            is_deepspeed_zero3_enabled()
+            or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3"
+        ):
             self._set_z3_leaf_modules()
 
         # Apply gradient checkpointing if needed
-        needs_fa2_dtype = self.cfg.adapter or self.cfg.fsdp
+        needs_fa2_dtype = self.cfg.adapter or self.is_fsdp_enabled
         if self.cfg.adapter in ["lora", "qlora"]:
             needs_fa2_dtype = True
             if self.cfg.gradient_checkpointing:
@@ -291,10 +331,12 @@ class ModelLoader:
             # we need to convert them back to fp16/bf16 for flash-attn compatibility.
             (
                 (needs_fa2_dtype or self.cfg.flash_attention or self.cfg.flex_attention)
-                and not self.qlora_fsdp
+                and not self.is_qlora_and_fsdp_enabled
             )
-            # CCE requires embedding layers to be in fp16/bf16 for backward pass
-            or self.cfg.cut_cross_entropy
+            or (
+                # CCE requires embedding layers to be in fp16/bf16 for backward pass
+                self.cfg.cut_cross_entropy
+            )
         )
 
         if should_convert:
@@ -303,6 +345,19 @@ class ModelLoader:
                 embedding_modules=embedding_modules,
                 dist_dtype=self.cfg.torch_dtype,
                 before_kbit_train_or_finetune=False,
+            )
+
+    def _configure_qat(self):
+        """Configure QAT."""
+        if self.cfg.qat:
+            from axolotl.utils.quantization import prepare_model_for_qat
+
+            prepare_model_for_qat(
+                self.model,
+                self.cfg.qat.weight_dtype,
+                self.cfg.qat.group_size,
+                self.cfg.qat.activation_dtype,
+                self.cfg.qat.quantize_embedding,
             )
 
     def _load_adapters(self) -> PeftConfig | None:
@@ -337,7 +392,6 @@ class ModelLoader:
             and not (self.cfg.rl and self.cfg.load_in_4bit)
             and not skip_move_to_device
         ):
-            # TODO: validate this conditional
             self.model.to(f"{str(get_device_type())}:{self.cfg.local_rank}")
 
         if get_device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) == 1:
@@ -361,6 +415,13 @@ class ModelLoader:
         for _ in range(3):
             gc.collect()
             torch.cuda.empty_cache()
+
+    def _set_parallel_config(self):
+        """Set parallelism configuration (DP, FSDP, TP, CP) in PartialState/Accelerator"""
+        parallelism_config, device_mesh = build_parallelism_config(self.cfg)
+        if parallelism_config:
+            self.parallelism_config = parallelism_config
+            self.device_mesh = device_mesh
 
     def _set_auto_model_loader(self):
         """Set `self.auto_model_loader`. Defaults to `transformers.AutoModelForCausalLM`
@@ -410,7 +471,17 @@ class ModelLoader:
 
         self.model_kwargs["torch_dtype"] = self.cfg.torch_dtype
 
-        if not is_deepspeed_zero3_enabled():
+        is_ds_zero3 = is_deepspeed_zero3_enabled()
+
+        # FSDP requires control over device placement, so don't set device_map when FSDP is enabled
+        if self.is_fsdp_enabled:
+            # For QLoRA + FSDP, we still need to set device_map to "auto" for proper initialization
+            if self.is_qlora_and_fsdp_enabled:
+                self.model_kwargs["device_map"] = {
+                    "": int(os.environ.get("LOCAL_RANK", 0))
+                }
+            # For other FSDP cases, don't set device_map at all
+        elif not is_ds_zero3:
             self.model_kwargs["device_map"] = device_map
 
             cur_device = get_device_type()
@@ -432,8 +503,17 @@ class ModelLoader:
 
     def _set_quantization_config(self):
         """Set up quantization config (bitsandbytes, awq, gptq, etc.)"""
-        self.model_kwargs["load_in_8bit"] = self.cfg.load_in_8bit
-        self.model_kwargs["load_in_4bit"] = self.cfg.load_in_4bit
+
+        if self.cfg.model_quantization_config == "Mxfp4Config":
+            from transformers import Mxfp4Config
+
+            mxfp4_kwargs = {}
+            if self.cfg.model_quantization_config_kwargs:
+                mxfp4_kwargs = self.cfg.model_quantization_config_kwargs
+            self.model_kwargs["quantization_config"] = Mxfp4Config(**mxfp4_kwargs)
+        else:
+            self.model_kwargs["load_in_8bit"] = self.cfg.load_in_8bit
+            self.model_kwargs["load_in_4bit"] = self.cfg.load_in_4bit
 
         if self.cfg.gptq:
             if not hasattr(self.model_config, "quantization_config"):
@@ -468,7 +548,9 @@ class ModelLoader:
                 self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
                     **self.model_config.quantization_config
                 )
-        elif self.cfg.adapter == "qlora" and self.model_kwargs["load_in_4bit"]:
+        elif self.cfg.adapter == "qlora" and self.model_kwargs.get(
+            "load_in_4bit", False
+        ):
             bnb_config = {
                 "load_in_4bit": True,
                 "llm_int8_threshold": 6.0,
@@ -479,11 +561,14 @@ class ModelLoader:
                 "bnb_4bit_quant_storage": torch.bfloat16,
             }
             if self.cfg.model_config_type in ["jamba", "qwen2_moe"] and not (
-                self.cfg.deepspeed or self.cfg.fsdp
+                self.cfg.deepspeed or self.is_fsdp_enabled
             ):
                 # for some reason, this causes the loss to be off by an order of magnitude
                 # but deepspeed needs this still in bfloat16
                 bnb_config["bnb_4bit_quant_storage"] = torch.float32
+            if self.cfg.model_config_type == "falcon_h1":
+                # output projection cannot be quantized for Falcon-H1 models
+                bnb_config["llm_int8_skip_modules"] = ["out_proj"]
 
             if self.cfg.bnb_config_kwargs:
                 bnb_config.update(self.cfg.bnb_config_kwargs)
@@ -491,13 +576,18 @@ class ModelLoader:
             self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
                 **bnb_config,
             )
-        elif self.cfg.adapter == "lora" and self.model_kwargs["load_in_8bit"]:
+        elif self.cfg.adapter == "lora" and self.model_kwargs.get(
+            "load_in_8bit", False
+        ):
             bnb_config = {
                 "load_in_8bit": True,
             }
             # Exclude mamba blocks from int8 quantization for jamba
             if self.cfg.model_config_type == "jamba":
                 bnb_config["llm_int8_skip_modules"] = ["mamba"]
+            if self.cfg.model_config_type == "falcon_h1":
+                # output projection cannot be quantized for Falcon-H1 models
+                bnb_config["llm_int8_skip_modules"] = ["out_proj"]
             self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
                 **bnb_config,
             )
@@ -509,7 +599,9 @@ class ModelLoader:
 
     def _set_attention_config(self):
         """Sample packing uses custom FA2 patch"""
-        if self.cfg.flex_attention:
+        if self.cfg.attn_implementation:
+            self.model_kwargs["attn_implementation"] = self.cfg.attn_implementation
+        elif self.cfg.flex_attention:
             self.model_kwargs["attn_implementation"] = "flex_attention"
             self.model_config._attn_implementation = (  # pylint: disable=protected-access
                 "flex_attention"
@@ -536,11 +628,18 @@ class ModelLoader:
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True
 
-    def _configure_zero3_memory_efficient_loading(self):
-        """Set the deepspeed config to load the model into RAM first before moving
-        to VRAM.
+    def _configure_zero3_memory_efficient_loading(
+        self,
+    ) -> HfTrainerDeepSpeedConfig | None:
+        """
+        Set the deepspeed config to load the model into RAM first before moving to VRAM.
 
-        We need to return `hf_ds_cfg` as it needs to exist before model loading.
+        IMPORTANT
+        ==========
+
+        We need to return `hf_ds_cfg` as it needs to exist before model loading for zero3.
+        HfTrainerDeepSpeedConfig is a class that is used to configure the DeepSpeed training.
+        It is not passed anywhere in the model loading function, just need to exist.
         """
         hf_ds_cfg = None
 
@@ -571,9 +670,41 @@ class ModelLoader:
     def _build_model(self) -> bool:
         """Load model, with load strategy depending on config."""
         skip_move_to_device = False
+
+        if self.cfg.tensor_parallel_size > 1:
+            self.model_kwargs["tp_size"] = self.cfg.tensor_parallel_size
+            self.model_kwargs["tp_plan"] = "auto"
+            self.model_kwargs["device_mesh"] = self.device_mesh
+            if "device_map" in self.model_kwargs:
+                del self.model_kwargs["device_map"]  # not compatible with `tp_plan`
+
+        if self.is_fsdp_enabled:
+            if self.cfg.fsdp_config.cpu_ram_efficient_loading:
+                skip_move_to_device = True
+                # Don't delete device_map for QLoRA + FSDP - it was set correctly in _set_device_map
+                if (
+                    "device_map" in self.model_kwargs
+                    and not self.is_qlora_and_fsdp_enabled
+                ):
+                    del self.model_kwargs["device_map"]
+            elif self.is_qlora_and_fsdp_enabled:
+                skip_move_to_device = True
+
+            if (
+                self.cfg.tensor_parallel_size <= 1
+                and self.cfg.fsdp_config.cpu_ram_efficient_loading
+                and self.cfg.fsdp_version == 2
+            ):
+                # setting device_map for TP is not supported
+                local_rank = int(os.getenv("LOCAL_RANK", "0"))
+                if local_rank == 0:
+                    self.model_kwargs["device_map"] = "cpu"
+                else:
+                    self.model_kwargs["device_map"] = "meta"
+
         if (
-            self.qlora_fsdp
-            and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+            self.is_qlora_and_fsdp_enabled
+            and self.cfg.fsdp_config.cpu_ram_efficient_loading
             and (
                 self.cfg.model_config_type == "dbrx"
                 or self.cfg.qlora_sharded_model_loading
@@ -599,13 +730,8 @@ class ModelLoader:
             and not self.cfg.trust_remote_code
             and not self.cfg.gptq
         ):
-            # TODO: Do we need to open this up for all models?
-            if self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
-                skip_move_to_device = True
-                if "device_map" in self.model_kwargs:
-                    del self.model_kwargs["device_map"]
-
-            self._configure_zero3_memory_efficient_loading()
+            # Please don't remove underscore binding without reading the fn docstring.
+            _ = self._configure_zero3_memory_efficient_loading()
 
             # Load model with random initialization if specified
             if self.cfg.random_init_weights:
@@ -657,34 +783,35 @@ class ModelLoader:
                     trust_remote_code=self.cfg.trust_remote_code or False,
                     **self.model_kwargs,
                 )
+        elif self.cfg.gptq:
+            self.model = self.auto_model_loader.from_pretrained(
+                self.base_model,
+                config=self.model_config,
+                trust_remote_code=self.cfg.trust_remote_code or False,
+                **self.model_kwargs,
+            )
         else:
-            if self.cfg.gptq:
-                self.model = self.auto_model_loader.from_pretrained(
-                    self.base_model,
-                    config=self.model_config,
-                    trust_remote_code=self.cfg.trust_remote_code or False,
-                    **self.model_kwargs,
-                )
-            else:
-                if (
-                    self.cfg.fsdp
-                    and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-                ):
-                    # disabling either of these two still leads to VRAM spike before setting back down
-                    skip_move_to_device = True
-                    if "device_map" in self.model_kwargs:
-                        del self.model_kwargs["device_map"]
-
-                self._configure_zero3_memory_efficient_loading()
-
-                self.model = self.auto_model_loader.from_pretrained(
-                    self.base_model,
-                    config=self.model_config,
-                    trust_remote_code=self.cfg.trust_remote_code or False,
-                    **self.model_kwargs,
-                )
+            # Please don't remove underscore binding without reading the fn docstring.
+            _ = self._configure_zero3_memory_efficient_loading()
+            self.model = self.auto_model_loader.from_pretrained(
+                self.base_model,
+                config=self.model_config,
+                trust_remote_code=self.cfg.trust_remote_code or False,
+                **self.model_kwargs,
+            )
         if is_deepspeed_zero3_enabled():
             skip_move_to_device = True
+
+        # pylint: disable=protected-access
+        if self.cfg.tensor_parallel_size > 1:
+            # workaround for upstream 4.54.0 not setting _tp_size or _device_mesh
+            # TODO(wing): remove once 4.54.1 is released
+            if self.model._tp_size != self.cfg.tensor_parallel_size:
+                self.model._tp_size = self.cfg.tensor_parallel_size
+                self.model._device_mesh = self.model_kwargs["device_mesh"]
+
+        if self.cfg.experimental_skip_move_to_device is not None:
+            skip_move_to_device = self.cfg.experimental_skip_move_to_device
 
         return skip_move_to_device
 
@@ -718,8 +845,8 @@ class ModelLoader:
             skip_prepare_model_for_kbit_training = True
 
         if (
-            self.qlora_fsdp
-            or (self.cfg.fsdp and self.cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
+            self.is_qlora_and_fsdp_enabled
+            or (self.is_fsdp_enabled and self.cfg.fsdp_config.cpu_ram_efficient_loading)
             or is_deepspeed_zero3_enabled()
         ):
             # Make sure everything is in the same dtype
@@ -741,6 +868,9 @@ class ModelLoader:
         dist_dtype: torch.dtype,
         before_kbit_train_or_finetune: bool,
     ):
+        dest = {"dtype": dist_dtype}
+        if self.cfg.lora_on_cpu:
+            dest["device"] = "cpu"
         for name, module in self.model.named_modules():
             if "norm" in name:
                 module.to(dist_dtype)
@@ -751,4 +881,4 @@ class ModelLoader:
                     # don't upcast lm_head for btlm
                     continue
             if any(m in name for m in embedding_modules) and hasattr(module, "weight"):
-                module.to(dist_dtype)
+                module.to(**dest)

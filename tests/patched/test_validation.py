@@ -1,7 +1,6 @@
 # pylint: disable=too-many-lines
 """Module for testing the validation module"""
 
-import logging
 import os
 import warnings
 from typing import Optional
@@ -80,7 +79,7 @@ class TestValidation(BaseValidation):
             | minimal_cfg
         )
 
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level("WARNING"):
             validate_config(test_cfg)
             assert (
                 "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values"
@@ -218,7 +217,7 @@ class TestValidation(BaseValidation):
             }
         )
 
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level("WARNING"):
             validate_config(cfg)
             assert "batch_size is not recommended" in self._caplog.records[0].message
 
@@ -513,7 +512,7 @@ class TestValidation(BaseValidation):
             | minimal_cfg
         )
 
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level("WARNING"):
             validate_config(cfg)
             assert any(
                 "BetterTransformers probably doesn't work with PEFT adapters"
@@ -531,7 +530,7 @@ class TestValidation(BaseValidation):
             | minimal_cfg
         )
 
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level("WARNING"):
             validate_config(cfg)
             assert any(
                 "probably set bfloat16 or float16" in record.message
@@ -577,7 +576,7 @@ class TestValidation(BaseValidation):
             | minimal_cfg
         )
 
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level("WARNING"):
             validate_config(cfg)
             assert any(
                 "adamw hyperparameters found, but no adamw optimizer set"
@@ -595,7 +594,7 @@ class TestValidation(BaseValidation):
             | minimal_cfg
         )
 
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level("WARNING"):
             validate_config(cfg)
             assert any(
                 "adamw hyperparameters found, but no adamw optimizer set"
@@ -654,7 +653,7 @@ class TestValidation(BaseValidation):
             )
             | minimal_cfg
         )
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level("WARNING"):
             validate_config(cfg)
             assert any(
                 "`pad_to_sequence_len: true` is recommended when using sample_packing"
@@ -673,7 +672,7 @@ class TestValidation(BaseValidation):
             )
             | minimal_cfg
         )
-        with self._caplog.at_level(logging.INFO):
+        with self._caplog.at_level("INFO"):
             cfg = validate_config(cfg)
             assert any(
                 "Setting `pad_to_sequence_len: true` to prevent memory leaks when sample_packing"
@@ -693,7 +692,7 @@ class TestValidation(BaseValidation):
                     "bf16": True,
                     "capabilities": {"bf16": False},
                     "env_capabilities": {
-                        "torch_version": "2.5.1",
+                        "torch_version": "2.6.0",
                     },
                 }
             )
@@ -1109,7 +1108,7 @@ class TestValidation(BaseValidation):
     def test_hub_model_id_save_value_warns_save_stragey_no(self, minimal_cfg):
         cfg = DictDefault({"hub_model_id": "test", "save_strategy": "no"}) | minimal_cfg
 
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level("WARNING"):
             validate_config(cfg)
             assert len(self._caplog.records) == 1
 
@@ -1118,7 +1117,7 @@ class TestValidation(BaseValidation):
             DictDefault({"hub_model_id": "test", "save_strategy": "test"}) | minimal_cfg
         )
 
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level("WARNING"):
             validate_config(cfg)
             assert len(self._caplog.records) == 1
 
@@ -1128,7 +1127,7 @@ class TestValidation(BaseValidation):
             | minimal_cfg
         )
 
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level("WARNING"):
             validate_config(cfg)
             assert len(self._caplog.records) == 0
 
@@ -1138,28 +1137,28 @@ class TestValidation(BaseValidation):
             | minimal_cfg
         )
 
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level("WARNING"):
             validate_config(cfg)
             assert len(self._caplog.records) == 0
 
     def test_hub_model_id_save_value_none(self, minimal_cfg):
         cfg = DictDefault({"hub_model_id": "test", "save_strategy": None}) | minimal_cfg
 
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level("WARNING"):
             validate_config(cfg)
             assert len(self._caplog.records) == 0
 
     def test_hub_model_id_save_value_no_set_save_strategy(self, minimal_cfg):
         cfg = DictDefault({"hub_model_id": "test"}) | minimal_cfg
 
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level("WARNING"):
             validate_config(cfg)
             assert len(self._caplog.records) == 0
 
     def test_dpo_beta_deprecation(self, minimal_cfg):
         cfg = DictDefault({"dpo_beta": 0.2}) | minimal_cfg
 
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level("WARNING"):
             new_cfg = validate_config(cfg)
             assert new_cfg["rl_beta"] == 0.2
             assert new_cfg["dpo_beta"] is None
@@ -1175,7 +1174,7 @@ class TestValidation(BaseValidation):
             | minimal_cfg
         )
 
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level("WARNING"):
             new_cfg = validate_config(cfg)
             assert new_cfg.eval_strategy == "steps"
             assert (
@@ -1203,7 +1202,7 @@ class TestValidation(BaseValidation):
                 cfg, capabilities=capabilities, env_capabilities=env_capabilities
             )
 
-        env_capabilities = {"torch_version": "2.5.1"}
+        env_capabilities = {"torch_version": "2.6.0"}
         capabilities = {"bf16": False}
         _ = validate_config(
             cfg, capabilities=capabilities, env_capabilities=env_capabilities
@@ -1245,7 +1244,7 @@ class TestTorchCompileValidation(BaseValidation):
             | minimal_cfg
         )
 
-        env_capabilities = {"torch_version": "2.5.1"}
+        env_capabilities = {"torch_version": "2.6.0"}
         capabilities = {"bf16": True}
         updated_cfg = validate_config(
             cfg, capabilities=capabilities, env_capabilities=env_capabilities
@@ -1455,7 +1454,7 @@ class TestValidationWandb(BaseValidation):
             | minimal_cfg
         )
 
-        with self._caplog.at_level(logging.WARNING):
+        with self._caplog.at_level("WARNING"):
             new_cfg = validate_config(cfg)
             assert any(
                 "wandb_run_id sets the ID of the run. If you would like to set the name, please use wandb_name instead."
@@ -1505,7 +1504,6 @@ class TestValidationWandb(BaseValidation):
         assert os.environ.get("WANDB_MODE", "") == "online"
         assert os.environ.get("WANDB_WATCH", "") == "false"
         assert os.environ.get("WANDB_LOG_MODEL", "") == "checkpoint"
-        assert os.environ.get("WANDB_DISABLED", "") != "true"
 
         os.environ.pop("WANDB_PROJECT", None)
         os.environ.pop("WANDB_NAME", None)
@@ -1514,16 +1512,12 @@ class TestValidationWandb(BaseValidation):
         os.environ.pop("WANDB_MODE", None)
         os.environ.pop("WANDB_WATCH", None)
         os.environ.pop("WANDB_LOG_MODEL", None)
-        os.environ.pop("WANDB_DISABLED", None)
 
     def test_wandb_set_disabled(self, minimal_cfg):
         cfg = DictDefault({}) | minimal_cfg
-
         new_cfg = validate_config(cfg)
-
         setup_wandb_env_vars(new_cfg)
-
-        assert os.environ.get("WANDB_DISABLED", "") == "true"
+        assert new_cfg.use_wandb is None
 
         cfg = (
             DictDefault(
@@ -1535,13 +1529,10 @@ class TestValidationWandb(BaseValidation):
         )
 
         new_cfg = validate_config(cfg)
-
         setup_wandb_env_vars(new_cfg)
-
-        assert os.environ.get("WANDB_DISABLED", "") != "true"
+        assert new_cfg.use_wandb is True
 
         os.environ.pop("WANDB_PROJECT", None)
-        os.environ.pop("WANDB_DISABLED", None)
 
 
 @pytest.mark.skipif(is_comet_available() is False, reason="comet_ml is not installed")
@@ -1699,3 +1690,18 @@ class TestValidationMLflow(BaseValidation):
         assert new_cfg.use_mlflow is True
 
         os.environ.pop("MLFLOW_EXPERIMENT_NAME", None)
+
+
+class TestDataloaderValidation(BaseValidation):
+    """
+    tests for dataloader_* sane defaults
+    """
+
+    def test_dataloader_auto_defaults(self, minimal_cfg):
+        cfg = minimal_cfg
+
+        new_cfg = validate_config(cfg, {"n_gpu": 8}, {"torch_version": "2.6.0"})
+
+        assert new_cfg.dataloader_num_workers == 8
+        assert new_cfg.dataloader_pin_memory is True
+        assert new_cfg.dataloader_prefetch_factor == 256

@@ -25,7 +25,7 @@ output_dir: ./outputs/out
 
 sequence_len: 8000
 sample_packing: true
-pad_to_sequence_len: true
+
 
 gradient_accumulation_steps: 1
 micro_batch_size: 1
@@ -51,3 +51,5 @@ special_tokens:
   eos_token: "<|im_end|>"
 tokens:
   - "<|im_start|>"
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

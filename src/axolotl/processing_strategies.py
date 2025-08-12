@@ -5,9 +5,14 @@ from typing import Optional
 
 from PIL import Image, ImageOps
 from PIL.Image import Resampling
-from torch import Tensor
-from transformers import ProcessorMixin
+from torch import Tensor, zeros_like
+from transformers import ProcessorMixin, VoxtralProcessor
 from transformers.image_utils import load_image
+
+from axolotl.utils.dict import remove_none_values
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 class ProcessingStrategy:
@@ -112,7 +117,9 @@ class ProcessingStrategy:
                 )
 
             processed_example = None
-            if "messages" in example:  # OpenAI format
+            if (
+                "messages" in example and example["messages"] is not None
+            ):  # OpenAI format
                 processed_example = example
             else:  # Legacy format
                 processed_example = convert_legacy_format(example)
@@ -132,10 +139,17 @@ class ProcessingStrategy:
                     break
 
             # if the image key exists, add the image to the first message
-            if image_key is not None:
+            if image_key is not None and processed_example[image_key] is not None:
                 # TODO: check if it's normal to be single image only for common datasets
                 # From observation, it's usually a list of single image but some datasets may have several columns for images
                 # Temporary solution: take the first image and suggest people convert their datasets to use multi-content Messages
+                if len(processed_example[image_key]) > 1:
+                    LOG.warning(
+                        f"Found {len(processed_example[image_key])} images in a sample. Using the first one."
+                        "If you are using a dataset with multiple images per sample, please convert it to use multi-content Messages."
+                        "See https://docs.axolotl.ai/docs/multimodal.html#dataset-format"
+                    )
+
                 image_value = processed_example[image_key][0]
 
                 # Handle image loading (Image, url, path, base64)
@@ -191,12 +205,21 @@ class ProcessingStrategy:
                         }
                     )
 
-            processed_examples.append(processed_example)
+            processed_examples.append(remove_none_values(processed_example))
 
         return processed_examples
 
+    def _mask_non_assistant(self, labels: Tensor) -> Tensor:
+        """
+        Mask non assistant regions to -100.
+        To be implemented per subclass.
+        """
+        return labels
+
     def process_labels(self, input_ids: Tensor) -> Tensor:
         labels = input_ids.clone()
+
+        labels = self._mask_non_assistant(labels)
 
         # The labels are the input_ids, and we mask the padding tokens in the loss computation
         labels[labels == self.processor.tokenizer.pad_token_id] = -100
@@ -251,6 +274,127 @@ class Gemma3ProcessingStrategy(ProcessingStrategy):
         return labels
 
 
+class Gemma3nProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for Gemma3n"""
+
+    def _mask_non_assistant(self, labels: Tensor) -> Tensor:
+        def _find_token_sequence(label, start_pos, token_sequence):
+            """Check if token_sequence appears at start_pos in label"""
+            if start_pos + len(token_sequence) > len(label):
+                return False
+            if label[start_pos] != token_sequence[0]:
+                return False
+            return (
+                label[start_pos : start_pos + len(token_sequence)].tolist()
+                == token_sequence
+            )
+
+        def _find_assistant_end(label, start_pos, assistant_end_tok, mask, i):
+            """
+            Find the end of assistant response and update mask accordingly
+
+            Returns new position to continue from and whether the end seq is found
+            """
+            k = start_pos
+            while k < len(label):
+                if not _find_token_sequence(label, k, assistant_end_tok):
+                    mask[i][k] = 1
+                    k += 1
+                    continue
+
+                return k + len(assistant_end_tok), True
+
+            return k, False
+
+        mask = zeros_like(labels)
+
+        assistant_start_str = "<start_of_turn>model"
+        assistant_end_str = "<end_of_turn>"
+        include_assistant_start_tok = False
+        include_assistant_end_tok = True
+
+        # str to tokens
+        assistant_start_tok = self.processor.tokenizer.encode(
+            assistant_start_str, add_special_tokens=False
+        )
+        assistant_end_tok = self.processor.tokenizer.encode(
+            assistant_end_str, add_special_tokens=False
+        )
+
+        for i, label in enumerate(labels):
+            j = 0
+            # while loop through each tok index in labels[i]
+            while j < len(label):
+                # Check until match start seq
+                if not _find_token_sequence(label, j, assistant_start_tok):
+                    j += 1
+                    continue
+
+                if include_assistant_start_tok:
+                    mask[i][j : j + len(assistant_start_tok)] = 1
+
+                # Find where the assistant response ends
+                start_of_content = j + len(assistant_start_tok)
+                end_pos, found_end_seq = _find_assistant_end(
+                    label, start_of_content, assistant_end_tok, mask, i
+                )
+
+                # Include end token if requested
+                if include_assistant_end_tok and found_end_seq:
+                    mask[i][end_pos - len(assistant_end_tok) : end_pos] = 1
+
+                j = end_pos
+
+            labels[i][mask[i] == 0] = -100
+
+        return labels
+
+    def process_labels(self, input_ids):
+        labels = input_ids.clone()
+        labels = self._mask_non_assistant(labels)
+
+        # Follows https://colab.research.google.com/github/huggingface/huggingface-gemma-recipes/blob/main/notebooks/fine_tune_gemma3n_on_t4.ipynb
+        labels[labels == self.processor.tokenizer.pad_token_id] = -100
+        if hasattr(self.processor.tokenizer, "image_token_id"):
+            labels[labels == self.processor.tokenizer.image_token_id] = -100
+        if hasattr(self.processor.tokenizer, "audio_token_id"):
+            labels[labels == self.processor.tokenizer.audio_token_id] = -100
+        if hasattr(self.processor.tokenizer, "boi_token_id"):
+            labels[labels == self.processor.tokenizer.boi_token_id] = -100
+        if hasattr(self.processor.tokenizer, "eoi_token_id"):
+            labels[labels == self.processor.tokenizer.eoi_token_id] = -100
+
+        return labels
+
+
+class VoxtralProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for Voxtral"""
+
+    def __init__(
+        self,
+        processor: VoxtralProcessor,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
+        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        special_ids = (
+            processor.tokenizer.tokenizer.instruct_tokenizer.audio_encoder.special_ids
+        )
+
+        self.audio_token = special_ids.audio
+        self.begin_audio_token = special_ids.begin_audio
+
+    def process_labels(self, input_ids):
+        labels = input_ids.clone()
+
+        labels[labels == self.processor.tokenizer.pad_token_id] = -100
+        labels[labels == self.audio_token] = -100
+        labels[labels == self.begin_audio_token] = -100
+
+        return labels
+
+
 def get_processing_strategy(
     processor: ProcessorMixin,
     chat_template,
@@ -266,6 +410,10 @@ def get_processing_strategy(
         return Gemma3ProcessingStrategy(
             processor, chat_template, image_size, image_resize_algorithm
         )
+    if chat_template_type == "gemma3n":
+        return Gemma3nProcessingStrategy(
+            processor, chat_template, image_size, image_resize_algorithm
+        )
     if chat_template_type in [
         "llama3_2_vision",
         "llama4",
@@ -276,4 +424,10 @@ def get_processing_strategy(
         return ProcessingStrategy(
             processor, chat_template, image_size, image_resize_algorithm
         )
+
+    if isinstance(processor, VoxtralProcessor):
+        return VoxtralProcessingStrategy(
+            processor, chat_template, image_size, image_resize_algorithm
+        )
+
     raise ValueError(f"Unsupported chat template type: {chat_template_type}")

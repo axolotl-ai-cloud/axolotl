@@ -2,8 +2,6 @@
 E2E tests for qwen
 """
 
-import logging
-import os
 from pathlib import Path
 
 import pytest
@@ -12,9 +10,6 @@ from accelerate.test_utils import execute_subprocess_async
 from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
-
-LOG = logging.getLogger("axolotl.tests.qwen")
-os.environ["WANDB_DISABLED"] = "true"
 
 
 class TestE2eQwen:
@@ -64,6 +59,7 @@ class TestE2eQwen:
                 "bf16": "auto",
                 "tf32": True,
                 "gradient_checkpointing": True,
+                "save_first_step": False,
             }
         )
 

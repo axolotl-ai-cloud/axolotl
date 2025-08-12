@@ -19,21 +19,22 @@ Cut Cross Entropy is an optimized implementation of cross entropy loss
 from Apple's ML team.
 """
 import importlib
-import logging
+from functools import partial
 
 import torch
 
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils import get_pytorch_version
-from axolotl.utils.distributed import is_main_process
+from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
+from axolotl.utils.logging import get_logger
 
 from .args import CutCrossEntropyArgs  # pylint: disable=unused-import. # noqa: F401
 
-LOG = logging.getLogger("axolotl.integrations.cut_cross_entropy")
+LOG = get_logger(__name__)
 
 _CCE_INSTALL_MESSAGE = (
-    "Please install cut_cross_entropy with transformers support using "
-    '`pip install "cut-cross-entropy[transformers] @ git+https://github.com/apple/ml-cross-entropy.git@bad6f7b49c75fdec69471abb71b4cddd0f0c6438"`'
+    "Please install Axolotl's fork of cut_cross_entropy with transformers support using "
+    '`pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@0ee9ee8"`'
 )
 
 
@@ -65,21 +66,78 @@ class CutCrossEntropyPlugin(BasePlugin):
             "cut_cross_entropy.transformers"
         )
         if cce_spec_transformers is None:
-            raise ImportError(_CCE_INSTALL_MESSAGE)
+            raise ImportError(
+                "Transformers support is not installed. " + _CCE_INSTALL_MESSAGE
+            )
+
+        # Check if Axolotl's cce fork is installed
+        try:
+            from cut_cross_entropy.transformers.patch import AXOLOTL_CCE_FORK
+
+            if not AXOLOTL_CCE_FORK:
+                raise ImportError
+        except ImportError as e:
+            raise ImportError(
+                "Axolotl's fork of cut_cross_entropy is not installed. "
+                + _CCE_INSTALL_MESSAGE
+            ) from e
 
     def pre_model_load(self, cfg):
         """Apply cut cross entropy before model loading if enabled."""
         if cfg.cut_cross_entropy:
             self._check_requirements()
+            self.patch_llama_like(cfg.model_config_type)
 
-            from axolotl.integrations.cut_cross_entropy.monkeypatch.patch import (
-                cce_patch,
+            from cut_cross_entropy.transformers.patch import cce_patch
+
+            LOG.info(
+                f"Applying Cut Cross Entropy to model type: {cfg.model_config_type}"
             )
-
-            if is_main_process(use_environ=True):
-                LOG.info(
-                    f"Applying Cut Cross Entropy to model type: {cfg.model_config_type}"
-                )
 
             # The patch checks model_type internally
             cce_patch(cfg.model_config_type)
+
+    def patch_llama_like(
+        self,
+        model_type: str,
+    ) -> None:
+        """
+        Generic patch for model architectures with causal lm similar to llama
+        """
+        from cut_cross_entropy.transformers.patch import PATCH_FNS
+
+        def patch_generic(
+            maybe_model, patch_options, model_type: str
+        ):  # pylint: disable=unused-argument
+            import cut_cross_entropy.transformers.llama
+            from cut_cross_entropy.transformers.llama import cce_forward
+
+            try:
+                # Dynamically import the module and CausalLM class
+                module_path = f"transformers.models.{model_type}.modeling_{model_type}"
+                model_cls_prefix, _ = get_causal_lm_model_cls_prefix(model_type)
+                module = __import__(
+                    module_path, fromlist=[f"{model_cls_prefix}ForCausalLM"]
+                )
+                model_cls = getattr(module, f"{model_cls_prefix}ForCausalLM")
+
+                cut_cross_entropy.transformers.llama._PATCH_OPTS = (  # pylint: disable=protected-access
+                    patch_options
+                )
+
+                model_cls.forward = cce_forward
+            # pylint: disable=duplicate-code
+            except (ImportError, AttributeError) as e:
+                raise RuntimeError(
+                    f"Could not import ForCausalLM class for model_type: {model_type}. "
+                    f"Error: {str(e)}"
+                ) from e
+
+        if model_type not in PATCH_FNS:
+            LOG.warning_once(
+                "Setting up generic cce patch for model type: %s", model_type
+            )
+            LOG.warning_once(
+                f"Generic Cut Cross Entropy + {model_type} support is experimental and may not work as expected."
+            )
+            PATCH_FNS[model_type] = partial(patch_generic, model_type=model_type)

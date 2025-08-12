@@ -1,0 +1,51 @@
+base_model: cerebras/Cerebras-GPT-1.3B
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+load_in_8bit: false
+load_in_4bit: true
+push_dataset_to_hub:
+datasets:
+  - path: teknium/GPT4-LLM-Cleaned
+    type: alpaca
+dataset_prepared_path:
+val_set_size: 0.05
+adapter: qlora
+lora_model_dir:
+sequence_len: 2048
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_modules:
+  - c_fc
+  - c_attn
+  - c_proj
+lora_target_linear:
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+output_dir: ./outputs/qlora-out
+batch_size: 4
+micro_batch_size: 4
+num_epochs: 2
+optimizer: paged_adamw_8bit
+torchdistx_path:
+lr_scheduler: cosine
+learning_rate: 0.0002
+bf16: auto
+tf32: true
+gradient_checkpointing: true
+resume_from_checkpoint:
+logging_steps: 1
+xformers_attention: true
+flash_attention:
+gptq_groupsize:
+gptq_model_v1:
+warmup_ratio: 0.1
+evals_per_epoch: 4
+saves_per_epoch: 1
+weight_decay: 0.1
+special_tokens:
+  pad_token: "<|endoftext|>"

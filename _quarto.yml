@@ -1,5 +1,6 @@
 project:
   type: website
+  pre-render: docs/scripts/generate_config_docs.py
 
 quartodoc:
   dir: docs/api
@@ -17,7 +18,9 @@ quartodoc:
         - convert
         - prompt_tokenizers
         - logging_config
-        - core.trainer_builder
+        - core.builders.base
+        - core.builders.causal
+        - core.builders.rl
         - core.training_args
         - core.chat.messages
         - core.chat.format.chatml
@@ -32,24 +35,30 @@ quartodoc:
         - cli.train
         - cli.evaluate
         - cli.args
+        - cli.art
         - cli.checks
         - cli.config
+        - cli.delinearize_llama4
         - cli.inference
         - cli.merge_lora
         - cli.merge_sharded_fsdp_weights
         - cli.preprocess
-        - cli.sweeps
-        - cli.utils
+        - cli.quantize
         - cli.vllm_serve
         - cli.cloud.base
         - cli.cloud.modal_
+        - cli.utils
+        - cli.utils.args
+        - cli.utils.fetch
+        - cli.utils.load
+        - cli.utils.sweeps
+        - cli.utils.train
     - title: Trainers
       desc: Training implementations
       contents:
         - core.trainers.base
         - core.trainers.trl
         - core.trainers.mamba
-        - core.trainers.relora
         - core.trainers.dpo.trainer
         - core.trainers.grpo.trainer
         - core.trainers.grpo.sampler
@@ -126,7 +135,6 @@ quartodoc:
         - monkeypatch.trainer_fsdp_optim
         - monkeypatch.transformers_fa_utils
         - monkeypatch.unsloth_
-        - monkeypatch.attention.mllama
         - monkeypatch.data.batch_dataset_fetcher
         - monkeypatch.mixtral
         - monkeypatch.gradient_checkpointing.offload_cpu
@@ -147,6 +155,7 @@ quartodoc:
         - utils.optimizers.adopt
         - utils.data.pretraining
         - utils.data.sft
+        - utils.quantization
     - title: Schemas
       desc: Pydantic data models for Axolotl config
       contents:
@@ -196,11 +205,13 @@ quartodoc:
         - utils.callbacks.lisa
         - utils.callbacks.mlflow_
         - utils.callbacks.comet_
-
+        - utils.callbacks.qat
 website:
   title: "Axolotl"
   description: "We make fine-tuning accessible, scalable, and fun"
   favicon: favicon.jpg
+
+  google-analytics: "G-9KYCVJBNMQ"
 
   navbar:
     logo: image/axolotl_logo_digital_white.svg
@@ -230,7 +241,7 @@ website:
             - docs/installation.qmd
             - docs/inference.qmd
             - docs/cli.qmd
-            - docs/config.qmd
+            - docs/config-reference.qmd
             - text: "API Reference"
               href: docs/api
 
@@ -254,12 +265,16 @@ website:
             - docs/lr_groups.qmd
             - docs/lora_optims.qmd
             - docs/dataset_loading.qmd
+            - docs/qat.qmd
+            - docs/quantize.qmd
 
         - section: "Core Concepts"
           contents:
             - docs/batch_vs_grad.qmd
             - docs/dataset_preprocessing.qmd
             - docs/multipack.qmd
+            - docs/mixed_precision.qmd
+            - docs/optimizers.qmd
 
         - section: "Advanced Features"
           contents:
@@ -268,6 +283,8 @@ website:
             - docs/torchao.qmd
             - docs/custom_integrations.qmd
             - docs/sequence_parallelism.qmd
+            - docs/gradient_checkpointing.qmd
+            - docs/nd_parallelism.qmd
 
         - section: "Troubleshooting"
           contents:

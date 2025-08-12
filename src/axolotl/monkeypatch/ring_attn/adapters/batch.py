@@ -18,10 +18,15 @@ import transformers
 import transformers.modeling_flash_attention_utils
 from ring_flash_attn import ring_flash_attn_func
 from ring_flash_attn.adapters.hf_adapter import check_params
-from transformers.modeling_flash_attention_utils import (
-    _flash_supports_window_size,
-    is_flash_attn_greater_or_equal,
-)
+from transformers.modeling_flash_attention_utils import is_flash_attn_greater_or_equal
+
+try:
+    from transformers.modeling_flash_attention_utils import _flash_supports_window
+except ImportError:
+    from transformers.modeling_flash_attention_utils import (
+        _flash_supports_window_size as _flash_supports_window,
+    )
+
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
 from axolotl.utils.schemas.enums import RingAttnFunc
@@ -33,7 +38,7 @@ RING_ATTN_FUNC_MAPPING = {
 }
 
 
-def create_flash_attn_forward(
+def create_flash_attn_forward_varlen_llama3(
     process_group: dist.ProcessGroup, ring_attn_func: RingAttnFunc
 ) -> Callable:
     """
@@ -71,6 +76,7 @@ def create_flash_attn_forward(
         max_length_q: int | None = None,
         max_length_k: int | None = None,
         target_dtype: torch.dtype | None = None,
+        attn_implementation: str | None = None,
         **kwargs,
     ):
         """
@@ -97,6 +103,7 @@ def create_flash_attn_forward(
             max_length_q: Not used in this implementation.
             max_length_k: Not used in this implementation.
             target_dtype: Not used in this implementation.
+            attn_implementation: Not used in this implementation.
             **kwargs: Additional keyword arguments. Not used in this implementation.
 
         Returns:
@@ -110,7 +117,7 @@ def create_flash_attn_forward(
 
         # Handle sliding window
         use_sliding_windows = (
-            _flash_supports_window_size
+            _flash_supports_window
             and sliding_window is not None
             and key_states.shape[1] > sliding_window
         )
@@ -161,7 +168,7 @@ def substitute_hf_flash_attn(
         old_flash_attention_forward = (
             transformers.modeling_flash_attention_utils._flash_attention_forward
         )
-        new_flash_attention_forward = create_flash_attn_forward(
+        new_flash_attention_forward = create_flash_attn_forward_varlen_llama3(
             process_group=process_group, ring_attn_func=ring_attn_func
         )
 

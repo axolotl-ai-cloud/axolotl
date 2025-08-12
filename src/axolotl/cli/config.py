@@ -1,7 +1,6 @@
 """Configuration loading and processing."""
 
 import json
-import logging
 import os
 import tempfile
 from pathlib import Path
@@ -22,11 +21,14 @@ from axolotl.utils.config import (
     validate_config,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
+
+API_KEY_FIELDS = {"comet_api_key"}
 
 
 def check_remote_config(config: Union[str, Path]) -> Union[str, Path]:
@@ -119,12 +121,12 @@ def choose_config(path: Path) -> str:
         )
 
     if len(yaml_files) == 1:
-        print(f"Using default YAML file '{yaml_files[0]}'")
+        LOG.info(f"Using default YAML file '{yaml_files[0]}'")
         return str(yaml_files[0])
 
-    print("Choose a YAML file:")
+    LOG.info("Choose a YAML file:")
     for idx, file in enumerate(yaml_files):
-        print(f"{idx + 1}. {file}")
+        LOG.info(f"{idx + 1}. {file}")
 
     chosen_file = None
     while chosen_file is None:
@@ -133,9 +135,9 @@ def choose_config(path: Path) -> str:
             if 1 <= choice <= len(yaml_files):
                 chosen_file = str(yaml_files[choice - 1])
             else:
-                print("Invalid choice. Please choose a number from the list.")
+                LOG.info("Invalid choice. Please choose a number from the list.")
         except ValueError:
-            print("Invalid input. Please enter a number.")
+            LOG.info("Invalid input. Please enter a number.")
 
     return chosen_file
 
@@ -151,6 +153,8 @@ def prepare_plugins(cfg: DictDefault):
         plugin_manager = PluginManager.get_instance()
         for plugin_name in cfg["plugins"]:
             plugin_manager.register(plugin_name)
+        for plugin in plugin_manager.plugins.values():
+            plugin.register(cfg)
 
 
 def plugin_set_cfg(cfg: DictDefault):
@@ -195,14 +199,13 @@ def load_cfg(
     # If there are any options passed in the cli, if it is something that seems valid
     # from the yaml, then overwrite the value
     cfg_keys = cfg.keys()
-    for k, _ in kwargs.items():
-        # if not strict, allow writing to cfg even if it's not in the yml already
-        if k in cfg_keys or not cfg.strict:
-            # handle booleans
-            if isinstance(cfg[k], bool):
-                cfg[k] = bool(kwargs[k])
+    for key, value in kwargs.items():
+        # If not strict, allow writing to cfg even if it's not in the yml already
+        if key in cfg_keys or not cfg.strict:
+            if isinstance(cfg[key], bool):
+                cfg[key] = bool(value)
             else:
-                cfg[k] = kwargs[k]
+                cfg[key] = value
 
     try:
         device_props = torch.cuda.get_device_properties("cuda")
@@ -232,5 +235,16 @@ def load_cfg(
     setup_mlflow_env_vars(cfg)
     setup_comet_env_vars(cfg)
     plugin_set_cfg(cfg)
+
+    cfg_to_log = {
+        k: "[REDACTED]" if k in API_KEY_FIELDS else v
+        for k, v in cfg.items()
+        if v is not None
+    }
+
+    LOG.info(
+        "config:\n%s",
+        json.dumps(cfg_to_log, indent=2, default=str, sort_keys=True),
+    )
 
     return cfg

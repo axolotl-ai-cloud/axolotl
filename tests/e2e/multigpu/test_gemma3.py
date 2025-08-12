@@ -2,8 +2,6 @@
 E2E tests for multigpu lora tinyllama
 """
 
-import logging
-import os
 from pathlib import Path
 
 import pytest
@@ -15,9 +13,6 @@ from transformers.testing_utils import get_torch_dist_unique_port
 from axolotl.utils.dict import DictDefault
 
 from tests.e2e.utils import check_tensorboard
-
-LOG = logging.getLogger("axolotl.tests.e2e.multigpu")
-os.environ["WANDB_DISABLED"] = "true"
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
@@ -69,12 +64,14 @@ class TestMultiGPUGemma3:
                 },
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.0001,
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
 
@@ -96,5 +93,5 @@ class TestMultiGPUGemma3:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 1.8, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 1.8, "Train Loss (%s) is too high"
         )

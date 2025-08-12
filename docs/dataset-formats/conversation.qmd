@@ -9,10 +9,10 @@ order: 3
 Chat Template strategy uses a jinja2 template that converts a list of messages into a prompt. Support using tokenizer's template, a supported template, or custom jinja2.
 
 ```{.json filename="data.jsonl"}
-{"conversations": [{"role": "...", "content": "..."}]}
+{"messages": [{"role": "...", "content": "..."}, {"role": "...", "content": "..."}, ...]}
 ```
 
-See [configs](../config.qmd) for full configs and supported templates.
+See [configs](../config-reference.qmd) for full configs and supported templates.
 
 ### Migrating from sharegpt
 
@@ -52,7 +52,9 @@ We recommend checking the below examples for other usecases.
 
 ### Examples
 
-1. (Legacy) Using the default chat template in the tokenizer_config.json on OpenAI messages format, training on only last message.
+#### Training on last message
+
+(Legacy) Using the default chat template in the tokenizer_config.json on OpenAI messages format, training on only last message.
 
 ```yaml
 datasets:
@@ -66,7 +68,9 @@ datasets:
 If you receive an error like "`chat_template` choice is `tokenizer_default` but tokenizer's `chat_template` is null.", it means the tokenizer does not have a default `chat_template`. Follow the examples below instead to set a custom `chat_template`.
 :::
 
-2. Using the `gemma` chat template to override the tokenizer_config.json's chat template on OpenAI messages format, training on all assistant messages.
+#### Overriding default chat template
+
+Using the `gemma` chat template to override the tokenizer_config.json's chat template on OpenAI messages format, training on all assistant messages.
 
 ```yaml
 chat_template: gemma # this overwrites the tokenizer's chat_template
@@ -76,7 +80,13 @@ datasets:
     roles_to_train: ["assistant"]  # default value
 ```
 
-3. Using the tokenizer_config.json's chat template or `chatml` as fallback if the former's chat template does not exist, on OpenAI messages format, training on all assistant messages.
+::: {.callout-note}
+If you want to use built-in chat_template, use `chat_template: tokenizer_default` (this is set by default).
+:::
+
+#### Using default chat template with fallback
+
+Using the tokenizer_config.json's chat template or `chatml` as fallback if the former's chat template does not exist, on OpenAI messages format, training on all assistant messages.
 
 ```yaml
 chat_template: tokenizer_default_fallback_chatml # this overwrites the tokenizer's chat_template
@@ -85,7 +95,9 @@ datasets:
     type: chat_template
 ```
 
-4. Using a custom jinja template on OpenAI messages format, training on all assistant messages.
+#### Custom Jinja template
+
+Using a custom jinja template on OpenAI messages format, training on all assistant messages.
 
 ```yaml
 # chat_template: jinja # `jinja` will be implied if the `chat_template_jinja` is set and this field is empty
@@ -100,7 +112,9 @@ datasets:
 Please make sure that your `tokenizer.eos_token` is same as EOS (End-of-Sequence) token in template. Otherwise, set `eos_token` under `special_tokens: `.
 :::
 
-5. If you are using a template that has a different EOT (End-of-Turn) token from EOS token or multiple EOT tokens (like Mistral V7 Tekken), set the `eot_tokens: ` config. The handling of EOT tokens follows `train_on_eos: ` which defaults to turn.
+#### Using template with different token for EOT and EOS
+
+- If you are using a template that has a different EOT (End-of-Turn) token from EOS token or multiple EOT tokens (like Mistral V7 Tekken), set the `eot_tokens: ` config. The handling of EOT tokens follows `train_on_eos: ` which defaults to turn.
 
 ```yaml
 eot_tokens:
@@ -116,16 +130,16 @@ datasets:
 ```
 
 ::: {.callout-tip}
-See [config documentation](../config.qmd) for detailed explanations of "turn", "last", and "all" options for training on tokens.
+See [config documentation](../config-reference.qmd) for detailed explanations of "turn", "last", and "all" options for training on tokens.
 :::
 
 ::: {.callout-note}
 Using `eot_tokens` requires each token that exists in `chat_template` to be a single token in the tokenizer. Otherwise, the tokenizer will split the token and cause unexpected behavior.
 
-You can add those tokens as new tokens under `tokens: ` or (recommended) override unused added_tokens via `added_tokens_overrides: `. See [config](../config.qmd) for more details.
+You can add those tokens as new tokens under `tokens: ` or (recommended) override unused added_tokens via `added_tokens_overrides: `. See [config](../config-reference.qmd) for more details.
 :::
 
-6. Continuing from the previous example, if you want to train on all EOT token trainable turns but only last EOS token, set `train_on_eos: last`.
+- Continuing from the previous example, if you want to train on all EOT token trainable turns but only last EOS token, set `train_on_eos: last`.
 
 ```yaml
 eot_tokens:
@@ -145,7 +159,76 @@ If EOS token only appears at the end of a prompt, `train_on_eos: last` is equiva
 :::
 
 
-7. (Advanced) Using fine-grained control over tokens and turns to train in a conversation
+#### Using tool use
+
+Instead of passing `tools` via the system prompt, an alternative method would be to have the `tools` in a separate column and loaded via `chat_template` to let the template dynamically build it.
+
+```json
+{
+    "tools": [
+        {
+            "type": "...",
+            "function": {
+                "name": "...",
+                "description": "...",
+                "parameters": {
+                    "type": "...",
+                    "properties": {
+                        // ...
+                    },
+                    "required": ["..."],
+                },
+            },
+        },
+    ],
+    "messages": [
+        // ...
+        {
+            "role": "assistant", // call the function via assistant
+            "tool_calls": [
+                {
+                    "id": "...",  // required only for mistral
+                    "type": "function",
+                    "function": {
+                        "name": "...",
+                        "arguments": {
+                            "...": "...",
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "...",  // required only for mistral
+            "name": "...",
+            "content": "..."
+        },
+    ],
+}
+```
+
+::: {.callout-note}
+Tools need to follow [JSON schema](https://json-schema.org/learn/getting-started-step-by-step).
+:::
+
+Example config for Llama4:
+```yaml
+chat_template: llama4
+datasets:
+  - path: Nanobit/text-tools-2k-test
+    type: chat_template
+    # field_tools: tools # default is `tools`
+```
+
+::: {.callout-tip}
+Look into the `chat_template` you are using to see if it supports `tools` and what the expected role is for the tool answer. In the example above, the tool answer is expected to be in the `tool` or `ipython` role for `llama4` template.
+:::
+
+
+#### Using fine-grained control over token masking
+
+(Advanced) Using fine-grained control over tokens and turns to train in a conversation
 
 For a data sample that looks like:
 
@@ -196,7 +279,9 @@ datasets:
 It is not necessary to set both `message_field_training` and `message_field_training_detail` at once.
 :::
 
-8. (For Qwen3 template only) Enable reasoning split, where the reasoning is split from the content and passed as a separate field into the template.
+#### Reasoning split
+
+(For Qwen3 template only) Enable reasoning split, where the reasoning is split from the content and passed as a separate field into the template.
 
 ```yaml
 datasets:

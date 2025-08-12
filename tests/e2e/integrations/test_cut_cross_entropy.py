@@ -4,7 +4,6 @@ Simple end-to-end test for Cut Cross Entropy integration
 
 import pytest
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils import get_pytorch_version
@@ -45,6 +44,7 @@ def min_cfg(temp_dir):
         "save_safetensors": True,
         "max_steps": 10,
         "bf16": "auto",
+        "save_first_step": False,
     }
 
 
@@ -59,8 +59,7 @@ class TestCutCrossEntropyIntegration:
         cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         major, minor, _ = get_pytorch_version()
         if (major, minor) < (2, 4):
@@ -100,13 +99,13 @@ class TestCutCrossEntropyIntegration:
                 "save_safetensors": True,
                 "max_steps": 10,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         major, minor, _ = get_pytorch_version()
         if (major, minor) < (2, 4):
@@ -134,8 +133,7 @@ class TestCutCrossEntropyIntegration:
         cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         major, minor, _ = get_pytorch_version()
         if (major, minor) < (2, 4):

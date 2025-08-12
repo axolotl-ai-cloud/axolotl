@@ -2,8 +2,6 @@
 
 # pylint: disable=too-many-lines
 
-import logging
-import os
 from typing import Annotated, Any, Literal
 
 from annotated_types import MinLen
@@ -13,11 +11,11 @@ from pydantic import (
     Field,
     StringConstraints,
     field_serializer,
-    field_validator,
     model_validator,
 )
-from transformers.utils.import_utils import is_torch_npu_available
 
+from axolotl.utils.datasets import get_default_process_count
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
     DPODataset,
@@ -44,21 +42,22 @@ from axolotl.utils.schemas.model import (
 )
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
-from axolotl.utils.schemas.training import HyperparametersConfig
+from axolotl.utils.schemas.quantization import PTQConfig, QATConfig
+from axolotl.utils.schemas.training import HyperparametersConfig, JaggedLRConfig
 from axolotl.utils.schemas.trl import TRLConfig
+from axolotl.utils.schemas.validation import ValidationMixin
 from axolotl.utils.schemas.vllm import VllmConfig
 
-LOG = logging.getLogger(__name__)
-
-SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
+LOG = get_logger(__name__)
 
 
-# pylint: disable=too-many-public-methods,too-many-ancestors
+# pylint: disable=too-many-ancestors
 class AxolotlInputConfig(
     ModelInputConfig,
     ModelOutputConfig,
     LoraConfig,
     ReLoRAConfig,
+    JaggedLRConfig,
     HyperparametersConfig,
     WandbConfig,
     MLFlowConfig,
@@ -69,35 +68,93 @@ class AxolotlInputConfig(
     MultiModalConfig,
     RemappedParameters,
     DeprecatedParameters,
+    ValidationMixin,
     BaseModel,
 ):
-    """Wrapper of all config options"""
+    """Wrapper of all config options."""
 
     model_config = {"populate_by_name": True}
 
-    strict: bool | None = Field(default=False)
-    resume_from_checkpoint: str | None = None
-    auto_resume_from_checkpoints: bool | None = None
-    resize_token_embeddings_to_32x: bool | None = None
+    strict: bool | None = Field(
+        default=False,
+        json_schema_extra={"description": "Allow overwrite yml config using from cli"},
+    )
+    resume_from_checkpoint: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Resume from a specific checkpoint dir"},
+    )
+    auto_resume_from_checkpoints: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "If resume_from_checkpoint isn't set and you simply want it to start where it left off. Be careful with this being turned on between different models."
+        },
+    )
+    resize_token_embeddings_to_32x: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Resize the model embeddings when new tokens are added to multiples of 32. This is reported to improve training speed on some models"
+        },
+    )
     mean_resizing_embeddings: bool | None = False
     # optionally shrink the embeddings when the tokenizer vocab size is smaller
-    shrink_embeddings: bool | None = None
-    embeddings_skip_upcast: bool | None = None
+    shrink_embeddings: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to shrink the embeddings to len(tokenizer). By default, we won't shrink."
+        },
+    )
+    embeddings_skip_upcast: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Don't upcast the embeddings to float32 when using PEFT. Useful for low-VRAM GPUs"
+        },
+    )
 
-    rl: RLType | None = None
+    trainer_cls: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "module to custom trainer class to use for training"
+        },
+    )
+
+    rl: RLType | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Use RL training: 'dpo', 'ipo', 'kto', 'simpo', 'orpo', 'grpo'"
+        },
+    )
     trl: TRLConfig | None = Field(
         default_factory=lambda: TRLConfig(),  # pylint: disable=unnecessary-lambda
     )
     vllm: VllmConfig | None = Field(
         default_factory=lambda: VllmConfig(),  # pylint: disable=unnecessary-lambda
     )
-    reward_model: bool | None = None
-    process_reward_model: bool | None = None
+    qat: QATConfig | None = None
+    quantization: PTQConfig | None = None
+    reward_model: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Reward modelling: `True` or `False`"},
+    )
+    process_reward_model: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Process reward modelling: `True` or `False`"
+        },
+    )
     num_labels: int | None = None
     # Whether to use weighting in DPO trainer.
     # If `None`, default is `False` in the trainer.
-    dpo_use_weighting: bool | None = None
+    dpo_use_weighting: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to perform weighting in DPO trainer"
+        },
+    )
     dpo_use_logits_to_keep: bool | None = None
+    dpo_label_smoothing: float | None = None
+    dpo_norm_loss: bool | None = None
+    dpo_padding_free: bool | None = None
+    dpo_generate_during_eval: bool | None = None
 
     datasets: (
         Annotated[
@@ -105,7 +162,12 @@ class AxolotlInputConfig(
             MinLen(1),
         ]
         | None
-    ) = None
+    ) = Field(
+        default=None,
+        json_schema_extra={
+            "description": "A list of one or more datasets to finetune the model with"
+        },
+    )
 
     test_datasets: (
         Annotated[
@@ -113,22 +175,74 @@ class AxolotlInputConfig(
             MinLen(1),
         ]
         | None
-    ) = None
-    shuffle_merged_datasets: bool | None = True
-    dataset_prepared_path: str | None = None
-    dataset_shard_num: int | None = None
-    dataset_shard_idx: int | None = None
+    ) = Field(
+        default=None,
+        json_schema_extra={
+            "description": "A list of one or more datasets to eval the model with. You can use either test_datasets, or val_set_size, but not both."
+        },
+    )
+    shuffle_merged_datasets: bool | None = Field(
+        default=True,
+        json_schema_extra={
+            "description": "If false, the datasets will not be shuffled and will keep their original order in `datasets`. The same applies to the `test_datasets` option and the `pretraining_dataset` option. Default is true."
+        },
+    )
+    shuffle_before_merging_datasets: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "If true, each dataset in `datasets` will be shuffled before merging. This allows curriculum learning strategies to be applied at the dataset level. Default is false."
+        },
+    )
+    dataset_prepared_path: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Axolotl attempts to save the dataset as an arrow after packing the data together so subsequent training attempts load faster, relative path"
+        },
+    )
+    dataset_shard_num: int | None = Field(
+        default=None, json_schema_extra={"description": "Num shards for whole dataset"}
+    )
+    dataset_shard_idx: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "Index of shard to use for whole dataset"},
+    )
     skip_prepare_dataset: bool | None = False
+    num_dataset_shards_to_save: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of shards to save the prepared dataset"
+        },
+    )
 
     pretraining_dataset: (
         Annotated[list[PretrainingDataset | SFTDataset], MinLen(1)] | None
     ) = Field(
         default=None,
-        json_schema_extra={"description": "streaming dataset to use for pretraining"},
+        json_schema_extra={
+            "description": "Set to HF dataset for type: 'completion' for streaming instead of pre-tokenize"
+        },
     )
-    dataset_processes: int | None = Field(default=min(32, os.cpu_count()))  # type: ignore[type-var]
-    dataset_exact_deduplication: bool | None = None
-    dataset_keep_in_memory: bool | None = None
+    dataset_processes: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set.\n"
+                "For Runpod VMs, it will default to number of vCPUs via RUNPOD_CPU_COUNT."
+            )
+        },
+    )
+    dataset_exact_deduplication: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Deduplicates datasets and test_datasets with identical entries"
+        },
+    )
+    dataset_keep_in_memory: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Keep dataset in memory while preprocessing. Only needed if cached dataset is taking too much storage"
+        },
+    )
     dataloader_pin_memory: bool | None = None
     dataloader_num_workers: int | None = None
     dataloader_prefetch_factor: int | None = None
@@ -138,58 +252,180 @@ class AxolotlInputConfig(
 
     remove_unused_columns: bool | None = None
 
-    push_dataset_to_hub: str | None = None
-    hf_use_auth_token: bool | None = None
+    push_dataset_to_hub: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Push prepared dataset to hub - repo_org/repo_name"
+        },
+    )
+    hf_use_auth_token: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use hf `use_auth_token` for loading datasets. Useful for fetching private datasets. Required to be true when used in combination with `push_dataset_to_hub`"
+        },
+    )
 
     device: Any | None = None
-    device_map: Any | None = None
+    device_map: Any | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Passed through to transformers when loading the model when launched without accelerate. Use `sequential` when training w/ model parallelism to limit memory"
+        },
+    )
     world_size: int | None = None
-    local_rank: int | None = None
+    local_rank: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Don't mess with this, it's here for accelerate and torchrun"
+        },
+    )
     ddp: bool | None = None
 
-    seed: int | None = None
-    ddp_timeout: int | None = None
-    ddp_bucket_cap_mb: int | None = None
-    ddp_broadcast_buffers: bool | None = None
+    seed: int | None = Field(
+        default=None, json_schema_extra={"description": "Seed for reproducibility"}
+    )
+    ddp_timeout: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "Advanced DDP Arguments - timeout"},
+    )
+    ddp_bucket_cap_mb: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "Advanced DDP Arguments - bucket cap in MB"},
+    )
+    ddp_broadcast_buffers: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Advanced DDP Arguments - broadcast buffers"},
+    )
     ddp_find_unused_parameters: bool | None = None
 
-    eval_table_size: int | None = None
-    eval_max_new_tokens: int | None = None
-    do_causal_lm_eval: bool | None = None
-    eval_causal_lm_metrics: list[str] | None = None
+    eval_table_size: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0"
+        },
+    )
+    eval_max_new_tokens: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Total number of tokens generated for predictions sent to wandb. Default is 128"
+        },
+    )
+    do_causal_lm_eval: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to run causal language model evaluation for metrics in `eval_causal_lm_metrics`"
+        },
+    )
+    eval_causal_lm_metrics: list[str] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "HF evaluate metrics used during evaluation. Default is ['sacrebleu', 'comet', 'ter', 'chrf', 'perplexity']"
+        },
+    )
     do_bench_eval: bool | None = None
     bench_dataset: str | None = None
     bench_split: str | None = None
     metric_for_best_model: str | None = None
     greater_is_better: bool | None = None
 
-    loss_watchdog_threshold: float | None = None
-    loss_watchdog_patience: int | None = None
+    loss_watchdog_threshold: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "High loss value, indicating the learning has broken down (a good estimate is ~2 times the loss at the start of training)"
+        },
+    )
+    loss_watchdog_patience: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of high-loss steps in a row before the trainer aborts (default: 3)"
+        },
+    )
 
-    gc_steps: int | None = None
+    gc_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Run garbage collection every `gc_steps` steps. -1 will run on epoch end and before evaluations. Default is 0 (disabled)."
+        },
+    )
 
-    bf16: Literal["auto"] | bool | None = "auto"
-    fp16: bool | None = None
-    fp8: bool | None = None
-    bfloat16: bool | None = None  # for non-AMP cases
-    float16: bool | None = None  # for non-AMP cases
-    tf32: bool | None = None
+    bf16: Literal["auto"] | bool | None = Field(
+        default="auto",
+        json_schema_extra={
+            "description": "Use CUDA bf16. bool or 'full' for `bf16_full_eval`, or 'auto' for automatic detection. require >=ampere"
+        },
+    )
+    fp16: bool | None = Field(
+        default=None, json_schema_extra={"description": "Use CUDA fp16"}
+    )
+    fp8: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable FP8 mixed precision training using TorchAO. Best "
+            "used in combination with torch.compile."
+        },
+    )
+    fp8_enable_fsdp_float8_all_gather: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable FSDP float8 all-gather optimization for FP8 training. Can "
+            "improve training speed by 10-15% when FSDP is enabled."
+        },
+    )
+    bfloat16: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "No AMP (automatic mixed precision) - require >=ampere"
+        },
+    )  # for non-AMP cases
+    float16: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "No AMP (automatic mixed precision)"},
+    )  # for non-AMP cases
+    tf32: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Use CUDA tf32 - require >=ampere"},
+    )
     float32: bool | None = None
 
-    # torch_dtype: torch.dtype | None
-
     gradient_checkpointing: Literal["offload", "offload_disk"] | bool | None = Field(
-        default=False
+        default=False,
+        json_schema_extra={
+            "description": "Whether to use gradient checkpointing. Available options are: true, false, 'offload', 'offload_disk'. https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing"
+        },
     )
-    gradient_checkpointing_kwargs: dict[str, Any] | None = None
+    gradient_checkpointing_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Additional kwargs to pass to the trainer for gradient checkpointing"
+        },
+    )
+    activation_offloading: Literal["legacy", "disk"] | bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Whether to offload activations. Available options are: true, false, 'legacy', 'disk'."
+        },
+    )
 
     unfrozen_parameters: list[str] | None = None
 
+<<<<<<< HEAD
     sequence_len: int = Field(default=512)
     sequence_len_overflow_handling: Literal["drop", "truncate"] = Field(
         default="drop",
         json_schema_extra={
             "description": "How to handle sequences that overflow the sequence_len: 'drop' (remove the sample) or 'truncate' (cut off excess tokens)."
+=======
+    sequence_len: int = Field(
+        default=512,
+        json_schema_extra={
+            "description": "The maximum length of an input to train with, this should typically be less than 2048 as most models have a token/context limit of 2048"
+        },
+    )
+    eval_sequence_len: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "The maximum length of an input for evaluation. If not specified, defaults to sequence_len"
+>>>>>>> origin/main
         },
     )
     min_sample_len: int | None = None
@@ -197,22 +433,66 @@ class AxolotlInputConfig(
         default=512,
         json_schema_extra={"description": "maximum prompt length for RL training"},
     )
-    sample_packing: bool | None = None
-    sample_packing_group_size: int | None = 100_000
-    sample_packing_bin_size: int | None = 200
-    sample_packing_sequentially: bool | None = None
-    eval_sample_packing: bool | None = None
-    pad_to_sequence_len: bool | None = None
-    curriculum_sampling: bool | None = None
+    sample_packing: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'"
+        },
+    )
+    sample_packing_group_size: int | None = Field(
+        default=100_000,
+        json_schema_extra={
+            "description": "The number of samples packed at a time. Increasing the following values helps with packing, but usually only slightly (<%1.)"
+        },
+    )
+    sample_packing_bin_size: int | None = Field(
+        default=200,
+        json_schema_extra={
+            "description": "The number of samples which can be packed into one sequence. Increase if using a large sequence_len with many short samples."
+        },
+    )
+    sample_packing_sequentially: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Whether to pack samples sequentially"},
+    )
+    sample_packing_mp_start_method: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "The multiprocessing start method to use for packing. Should be 'fork', 'spawn' or 'forkserver'"
+        },
+    )
+    eval_sample_packing: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Set to 'false' if getting errors during eval with sample_packing on"
+        },
+    )
+    pad_to_sequence_len: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Pad inputs so each step uses constant sized buffers. This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently. Defaults to True if `sample_packing` enabled"
+        },
+    )
+    curriculum_sampling: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use sequential sampling for curriculum learning"
+        },
+    )
     multipack_real_batches: bool | None = None
     pretraining_sample_concatenation: bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "whether to soft pack/concatenate samples during pretraining",
+            "description": "whether to concatenate samples during pretraining",
         },
     )
 
-    batch_flattening: Literal["auto"] | bool | None = None
+    batch_flattening: Literal["auto"] | bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Use batch flattening for speedups when not using sample_packing"
+        },
+    )
 
     # for PoSE context length extension
     use_pose: bool | None = None
@@ -228,19 +508,63 @@ class AxolotlInputConfig(
         },
     )
 
-    xformers_attention: bool | None = None
-    sdp_attention: bool | None = None
-    s2_attention: bool | None = None
+    xformers_attention: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use xformers attention patch https://github.com/facebookresearch/xformers"
+        },
+    )
+    sdp_attention: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use scaled-dot-product attention https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html"
+        },
+    )
+    s2_attention: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf"
+        },
+    )
     flex_attention: bool | None = None
     flex_attn_compile_kwargs: dict[str, Any] | None = None
-    flash_attention: bool | None = None
-    flash_attn_cross_entropy: bool | None = None
-    flash_attn_rms_norm: bool | None = None
-    flash_attn_fuse_qkv: bool | None = None
-    flash_attn_fuse_mlp: bool | None = None
-    flash_optimum: bool | None = None
+    flash_attention: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention"
+        },
+    )
+    flash_attn_cross_entropy: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use flash-attention cross entropy implementation - advanced use only"
+        },
+    )
+    flash_attn_rms_norm: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use flash-attention rms norm implementation - advanced use only"
+        },
+    )
+    flash_attn_fuse_mlp: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to fuse part of the MLP into a single operation"
+        },
+    )
+    flash_optimum: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Whether to use bettertransformers"},
+    )
 
     eager_attention: bool | None = None
+
+    attn_implementation: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Specify a custom attention implementation, used mostly for kernels."
+        },
+    )
 
     unsloth_cross_entropy_loss: bool | None = None
     unsloth_lora_mlp: bool | None = None
@@ -249,75 +573,364 @@ class AxolotlInputConfig(
     unsloth_rms_norm: bool | None = None
     unsloth_rope: bool | None = None
 
-    lora_mlp_kernel: bool | None = None
-    lora_qkv_kernel: bool | None = None
-    lora_o_kernel: bool | None = None
+    lora_mlp_kernel: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Apply custom LoRA autograd functions and activation function Triton kernels for speed and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html"
+        },
+    )
+    lora_qkv_kernel: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Apply custom LoRA autograd functions and activation function Triton kernels for speed and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html"
+        },
+    )
+    lora_o_kernel: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Apply custom LoRA autograd functions and activation function Triton kernels for speed and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html"
+        },
+    )
+
+    chunked_cross_entropy: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use chunked cross entropy loss for memory efficiency"
+        },
+    )
+    chunked_cross_entropy_num_chunks: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of chunks to use for chunked cross entropy loss"
+        },
+    )
+
+    tiled_mlp: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use ALST tiled mlp for memory efficient long context"
+        },
+    )
+
+    tiled_mlp_num_shards: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of shards to use for ALST tiled mlp. If unset, it will be set based on seqlen/hidden_size"
+        },
+    )
+
+    tiled_mlp_use_original_mlp: bool | None = Field(
+        default=True,
+        json_schema_extra={
+            "description": "Whether to use original mlp for ALST tiled mlp. Otherwise uses a generic MLP based on llama."
+        },
+    )
 
     llama4_linearized_experts: bool | None = None
 
-    deepspeed: str | dict[str, Any] | None = None
-    fsdp: list[str] | None = None
-    fsdp_config: dict[str, Any] | None = None
+    deepspeed: str | dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Deepspeed config path. e.g., deepspeed_configs/zero3.json"
+        },
+    )
+    deepcompile: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use deepcompile for faster training with deepspeed"
+        },
+    )
+    fsdp: list[str] | None = Field(
+        default=None,
+        json_schema_extra={"description": "FSDP configuration"},
+        deprecated="Configuring FSDP using `fsdp` is deprecated. Please use `fsdp_config` instead. ",
+    )
+    # TODO @SalmanMohammadi strongly type this as its own schema
+    fsdp_config: dict[str, Any] | None = Field(
+        default=None, json_schema_extra={"description": "FSDP configuration options"}
+    )
+    fsdp_version: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "FSDP version"},
+    )
     fsdp_final_state_dict_type: (
         Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None
-    ) = None
+    ) = Field(
+        default=None,
+        deprecated="Configuring FSDP final state dict type using `fsdp_final_state_dict_type` is deprecated. Please use `fsdp_config.final_state_dict_type` instead.",
+    )
 
-    val_set_size: float | None = Field(default=0.0)
+    val_set_size: float | None = Field(
+        default=0.0,
+        json_schema_extra={
+            "description": "How much of the dataset to set aside as evaluation. 1 = 100%, 0.50 = 50%, etc. 0 for no eval."
+        },
+    )
 
-    sequence_parallel_degree: int | None = None
-    heads_k_stride: int | None = None
-    ring_attn_func: RingAttnFunc | None = None
+    dp_shard_size: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of devices to shard across. If not set, will use all available devices."
+        },
+    )
+    dp_replicate_size: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "Number of devices to replicate across."},
+    )
+    sequence_parallel_degree: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Deprecated: use `context_parallel_size` instead"
+        },
+    )
+    context_parallel_size: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Set to a divisor of the number of GPUs available to split sequences into chunks of equal size. Use in long context training to prevent OOM when sequences cannot fit into a single GPU's VRAM. E.g., if 4 GPUs are available, set this value to 2 to split each sequence into two equal-sized subsequences, or set to 4 to split into four equal-sized subsequences. See https://docs.axolotl.ai/docs/sequence_parallelism.html for more details."
+        },
+    )
+    heads_k_stride: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Optional; strides across the key dimension. Larger values use more memory but should make training faster. Must evenly divide the number of KV heads in your model."
+        },
+    )
+    ring_attn_func: RingAttnFunc | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "One of 'varlen_llama3', 'batch_ring', 'batch_zigzag', 'batch_stripe'. Defaults to 'varlen_llama3' in the sample packing case, and 'batch_ring' in the non-sample packing case."
+        },
+    )
+    tensor_parallel_size: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of tensor parallel processes in TP group. Only supported with DeepSpeed AutoTP."
+        },
+    )
+    special_tokens: SpecialTokensConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Add or change special tokens. If you add tokens here, you don't need to add them to the `tokens` list."
+        },
+    )
+    tokens: list[str] | None = Field(
+        default=None,
+        json_schema_extra={"description": "Add extra tokens to the tokenizer"},
+    )
+    added_tokens_overrides: dict[int, str] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Mapping token_id to new_token_string to override reserved added_tokens in the tokenizer. Only works for tokens that are not part of the base vocab (aka are added_tokens). Can be checked if they exist in tokenizer.json added_tokens."
+        },
+    )
 
-    special_tokens: SpecialTokensConfig | None = None
-    tokens: list[str] | None = None
-    added_tokens_overrides: dict[int, str] | None = None
-
-    torch_compile: Literal["auto"] | bool | None = None
-    torch_compile_backend: str | None = None
+    torch_compile: Literal["auto"] | bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use torch.compile and which backend to use. setting to `auto` will enable torch compile when torch>=2.6.0"
+        },
+    )
+    torch_compile_backend: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Backend to use for torch.compile"},
+    )
     torch_compile_mode: Literal["default", "reduce-overhead", "max-autotune"] | None = (
         None
     )
 
-    max_steps: int | None = None
-    warmup_steps: int | None = None
-    warmup_ratio: float | None = None
-    eval_steps: int | float | None = None
-    evals_per_epoch: int | None = None
-    eval_strategy: str | None = None
-    save_steps: int | float | None = None
-    saves_per_epoch: int | None = None
-    save_strategy: str | None = None
-    save_total_limit: int | None = None
-    logging_steps: int | None = None
-    early_stopping_patience: int | None = None
+    max_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Maximum number of iterations to train for. It precedes num_epochs which means that if both are set, num_epochs will not be guaranteed. e.g., when 1 epoch is 1000 steps => `num_epochs: 2` and `max_steps: 100` will train for 100 steps"
+        },
+    )
+    warmup_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of warmup steps. Cannot use with warmup_ratio"
+        },
+    )
+    warmup_ratio: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "Warmup ratio. Cannot use with warmup_steps"},
+    )
+    eval_steps: int | float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Leave empty to eval at each epoch, integer for every N steps. float for fraction of total steps"
+        },
+    )
+    evals_per_epoch: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of times per epoch to run evals, mutually exclusive with eval_steps"
+        },
+    )
+    eval_strategy: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Set to `no` to skip evaluation, `epoch` at end of each epoch, leave empty to infer from `eval_steps`"
+        },
+    )
+
+    save_steps: int | float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Leave empty to save at each epoch, integer for every N steps. float for fraction of total steps"
+        },
+    )
+    saves_per_epoch: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of times per epoch to save a checkpoint, mutually exclusive with save_steps"
+        },
+    )
+    save_strategy: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Set to `no` to skip checkpoint saves, `epoch` at end of each epoch, `best` when better result is achieved, leave empty to infer from `save_steps`"
+        },
+    )
+    save_total_limit: int | None = Field(
+        default=None, json_schema_extra={"description": "Checkpoints saved at a time"}
+    )
+    save_first_step: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to checkpoint a model after the first step of training. Defaults to False."
+        },
+    )
+
+    logging_steps: int | None = Field(
+        default=None, json_schema_extra={"description": "Logging frequency"}
+    )
+    early_stopping_patience: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Stop training after this many evaluation losses have increased in a row. https://huggingface.co/transformers/v4.2.2/_modules/transformers/trainer_callback.html#EarlyStoppingCallback"
+        },
+    )
     load_best_model_at_end: bool | None = False
-    save_only_model: bool | None = False
-    use_tensorboard: bool | None = None
-    profiler_steps: int | None = None
-    include_tokens_per_second: bool | None = None
+    save_only_model: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Save only the model weights, skipping the optimizer. Using this means you can't resume from checkpoints."
+        },
+    )
+    use_tensorboard: bool | None = Field(
+        default=None, json_schema_extra={"description": "Use tensorboard for logging"}
+    )
+    profiler_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable the pytorch profiler to capture the first N steps of training to the output_dir. see https://pytorch.org/blog/understanding-gpu-memory-1/ for more information. Snapshots can be visualized @ https://pytorch.org/memory_viz"
+        },
+    )
+    profiler_steps_start: int | None = Field(
+        default=0,
+        json_schema_extra={
+            "description": "Which step to start the profiler at. Useful for only capturing a few steps mid-run."
+        },
+    )
+    include_tokens_per_second: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "bool of whether to include tokens trainer per second in the training metrics. This iterates over the entire dataset once, so it takes some time."
+        },
+    )
 
-    neftune_noise_alpha: float | None = None
+    neftune_noise_alpha: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "NEFT https://arxiv.org/abs/2310.05914, set this to a number (paper default is 5) to add noise to embeddings. Currently only supported on Llama and Mistral"
+        },
+    )
 
-    orpo_alpha: float | None = None
-    rpo_alpha: float | None = None
-    simpo_gamma: float | None = None
-    cpo_alpha: float | None = None
+    orpo_alpha: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Parameter controlling the relative ratio loss weight in the ORPO loss. Passed to `beta` in `ORPOConfig` due to trl mapping."
+        },
+    )
+    rpo_alpha: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Weighting of NLL term in loss from RPO paper"
+        },
+    )
+    simpo_gamma: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "Target reward margin for the SimPO loss"},
+    )
+    cpo_alpha: float | None = Field(
+        default=None, json_schema_extra={"description": "Weight of the BC regularizer"}
+    )
 
-    kto_desirable_weight: float | None = None
-    kto_undesirable_weight: float | None = None
-    rl_beta: float | None = None
+    kto_desirable_weight: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "Factor for desirable loss term in KTO loss"},
+    )
+    kto_undesirable_weight: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Factor for undesirable loss term in KTO loss"
+        },
+    )
+    rl_beta: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "The beta parameter for the RL training"},
+    )
 
-    max_memory: dict[int | Literal["cpu", "disk"], int | str] | None = None
-    gpu_memory_limit: int | str | None = None
-    low_cpu_mem_usage: bool | None = None
+    max_memory: dict[int | Literal["cpu", "disk"], int | str] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Defines the max memory usage per gpu on the system. Passed through to transformers when loading the model."
+        },
+    )
+    gpu_memory_limit: int | str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Limit the memory for all available GPUs to this amount (if an integer, expressed in gigabytes); default: unset"
+        },
+    )
+    low_cpu_mem_usage: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Whether to use low_cpu_mem_usage"},
+    )
 
     chat_template: (
         ChatTemplate
         | Annotated[str, StringConstraints(pattern="^tokenizer_default_fallback_")]
-    ) | None = None
-    chat_template_jinja: str | None = None
-    eot_tokens: list[str] | None = None
-    default_system_message: str | None = None
+    ) | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "The name of the chat template to use for training, following values are supported: tokenizer_default: Uses the chat template that is available in the tokenizer_config.json. If the chat template is not available in the tokenizer, it will raise an error. This is the default value. alpaca/inst/chatml/gemma/cohere/llama3/phi_3/deepseek_v2/jamba: These chat templates are available in the axolotl codebase at src/axolotl/utils/chat_templates.py. tokenizer_default_fallback_*: where * is the name of the chat template to fallback to. E.g. tokenizer_default_fallback_chatml. This is useful when the chat template is not available in the tokenizer. jinja: Uses a custom jinja template for the chat template. The custom jinja template should be provided in the chat_template_jinja field. The selected chat template will be saved to the tokenizer_config.json for easier inferencing"
+        },
+    )
+    chat_template_jinja: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Custom jinja template or path to jinja file for chat template. This will be only used if chat_template is set to `jinja` or `null` (in which case chat_template is automatically set to `jinja`). Default is null."
+        },
+    )
+    chat_template_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Additional kwargs to pass to the chat template. This is useful for customizing the chat template. For example, you can pass `thinking=False` to add a generation prompt to the chat template."
+        },
+    )
+    eot_tokens: list[str] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Custom EOT (End-of-Turn) tokens to mask/unmask during training. These tokens mark the boundaries between conversation turns. For example: ['/INST', '</s>', '[/SYSTEM_PROMPT]']. If not specified, defaults to just the model's eos_token. This is useful for templates that use multiple delimiter tokens."
+        },
+    )
+    default_system_message: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Changes the default system message. Currently only supports chatml."
+        },
+    )
 
     fix_untrained_tokens: int | list[int] | None = None
 
@@ -325,41 +938,50 @@ class AxolotlInputConfig(
     is_preprocess: bool | None = None
     preprocess_iterable: bool | None = None
 
-    total_num_tokens: int | None = None
+    total_num_tokens: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "Total number of tokens - internal use"},
+    )
     total_supervised_tokens: int | None = None
-    sample_packing_eff_est: float | None = None
+    sample_packing_eff_est: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "You can set these packing optimizations AFTER starting a training at least once. The trainer will provide recommended values for these values."
+        },
+    )
     axolotl_config_path: str | None = None
 
-    is_falcon_derived_model: bool | None = Field(default=None)
-    is_llama_derived_model: bool | None = Field(default=None)
-    is_mistral_derived_model: bool | None = Field(default=None)
-    is_qwen_derived_model: bool | None = Field(default=None)
+    is_falcon_derived_model: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Internal use only - Used to identify which the model is based on"
+        },
+    )
+    is_llama_derived_model: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Internal use only - Used to identify which the model is based on"
+        },
+    )
+    is_mistral_derived_model: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Internal use only - Used to identify which the model is based on. Please note that if you set this to true, `padding_side` will be set to 'left' by default"
+        },
+    )
+    is_qwen_derived_model: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Internal use only - Used to identify which the model is based on"
+        },
+    )
 
-    plugins: list[str] | None = Field(default=None)
-
-    @field_validator("datasets", mode="before")
-    @classmethod
-    def deprecate_sharegpt_datasets(cls, datasets):
-        for _, ds_cfg in enumerate(datasets):
-            # Handle both dict and pydantic model cases
-            ds_type = (
-                ds_cfg.get("type")
-                if isinstance(ds_cfg, dict)
-                else getattr(ds_cfg, "type", None)
-            )
-            if not ds_type:
-                continue
-
-            # skip if it's a dict (for custom user instruction prompt)
-            if isinstance(ds_type, dict):
-                continue
-
-            if isinstance(ds_type, str) and ds_type.startswith("sharegpt"):
-                raise ValueError(
-                    "`type: sharegpt.*` is deprecated. Please use `type: chat_template` instead."
-                )
-
-        return datasets
+    plugins: list[str] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Add plugins to extend the pipeline. See `src/axolotl/integrations` for the available plugins or doc below for more details. https://docs.axolotl.ai/docs/custom_integrations.html"
+        },
+    )
 
     @field_serializer("datasets")
     def datasets_serializer(
@@ -369,897 +991,9 @@ class AxolotlInputConfig(
             return [ds_config.model_dump(exclude_none=True) for ds_config in ds_configs]
         return None
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_attention_fields(cls, data):
-        fields = (
-            "xformers_attention",
-            "sdp_attention",
-            "s2_attention",
-            "flash_attention",
-            "flex_attention",
-        )
-        non_empty_count = sum(1 for field in fields if data.get(field))
-
-        if non_empty_count > 1:
-            raise ValueError(f"Only one of {', '.join(fields)} must be set")
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_batch_size_fields(cls, data):
-        fields = ("micro_batch_size", "gradient_accumulation_steps", "batch_size")
-        non_empty_count = sum(1 for field in fields if data.get(field))
-
-        if non_empty_count < 2:
-            raise ValueError(f"At least two of {', '.join(fields)} must be set")
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_pretraining_w_max_steps(cls, data):
-        if data.get("pretraining_dataset") and not data.get("max_steps"):
-            raise ValueError(
-                "max_steps must be set when using iterable pretraining_dataset, Trainer can't infer length and schedule optimizer/learning rate without it!"
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_pretraining_w_group_by_length(cls, data):
-        if data.get("pretraining_dataset") and data.get("group_by_length"):
-            LOG.warning(
-                "You probably want to disable group_by_length as it will force a streamed dataset to download completely."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_pretraining_split_batches_accelerate(cls, data):
-        # alternatively set ACCELERATE_SPLIT_BATCHES=False
-        if data.get("pretraining_dataset"):
-            accelerator_config = data.get("accelerator_config", {})
-            if not accelerator_config:
-                data["accelerator_config"] = {
-                    "split_batches": False,
-                    "dispatch_batches": False,
-                }
-            else:
-                if accelerator_config.get("split_batches") is None:
-                    data["accelerator_config"]["split_batches"] = False
-                if accelerator_config.get("dispatch_batches") is None:
-                    data["accelerator_config"]["dispatch_batches"] = False
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_gptq_w_revision(cls, data):
-        if data.get("gptq") and data.get("revision_of_model"):
-            raise ValueError(
-                "revision_of_model is not supported for GPTQ models. "
-                + "Please download the model from HuggingFace Hub manually for correct branch, "
-                + "point to its path, and remove revision_of_model from the config."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    # pylint: disable=duplicate-code
-    def check_chat_template_config(cls, data):
-        # if chat_template is set to jinja, chat_template_jinja is required
-        if data.get("chat_template") == ChatTemplate.jinja and not data.get(
-            "chat_template_jinja"
-        ):
-            raise ValueError(
-                "chat_template_jinja is required when chat_template is set to jinja"
-            )
-
-        # If chat_template_jinja is set, set chat_template to jinja
-        if data.get("chat_template_jinja") and not data.get("chat_template"):
-            data["chat_template"] = ChatTemplate.jinja
-
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_sample_packing_wo_flash(cls, data):
-        if (
-            data.get("sample_packing")
-            and not data.get("flash_attention")
-            and not data.get("sdp_attention")
-            and not data.get("flex_attention")
-            and not data.get("xformers_attention")
-        ):
-            LOG.warning(
-                "sample_packing without flash, sdp, xformers or flex attention does not handle cross sample decontamination."
-            )
-
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_sample_packing_with_s2attn(cls, data):
-        if data.get("sample_packing") and data.get("s2_attention"):
-            raise ValueError(
-                "Received `sample_packing=true` and `s2_attention=true`; however, \
-                shifted-sparse attention does not currently support sample packing."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_batch_flattening_fa(cls, data):
-        if data.get("batch_flattening"):
-            batch_flattening_auto = data.get("batch_flattening") == "auto"
-            if not data.get("flash_attention") and not batch_flattening_auto:
-                raise ValueError("batch_flattening requires flash attention")
-            if data.get("sample_packing") and not batch_flattening_auto:
-                raise ValueError("batch_flattening not compatible with sample_packing")
-            if data.get("micro_batch_size") == 1 and not batch_flattening_auto:
-                LOG.warning("batch_flattening has no effect with micro_batch_size == 1")
-
-            if (
-                batch_flattening_auto
-                and data.get("flash_attention")
-                and not data.get("sample_packing")
-                and data.get("micro_batch_size") > 1
-            ):
-                data["batch_flattening"] = True
-            elif batch_flattening_auto:
-                data["batch_flattening"] = False
-
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_sample_packing_w_rl(cls, data):
-        if data.get("sample_packing") and data.get("rl"):
-            raise ValueError("`sample_packing: true` does not work with RLHF training")
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def hint_sample_packing_padding(cls, data):
-        if data.get("sample_packing"):
-            pad_to_sequence_len = data.get("pad_to_sequence_len")
-            if pad_to_sequence_len is False:
-                LOG.warning(
-                    "`pad_to_sequence_len: true` is recommended when using sample_packing"
-                )
-            elif pad_to_sequence_len is None:
-                LOG.info(
-                    "Setting `pad_to_sequence_len: true` to prevent memory leaks when sample_packing"
-                )
-                data["pad_to_sequence_len"] = True
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def hint_reward_model_pad(cls, data):
-        if data.get("reward_model") and not data.get("pad_to_sequence_len"):
-            LOG.warning(
-                "`pad_to_sequence_len: true` is recommended when using reward_model"
-            )
-            if data.get("pad_to_sequence_len") is None:
-                data["pad_to_sequence_len"] = True
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_gas_bsz(cls, data):
-        if data.get("gradient_accumulation_steps") and data.get("batch_size"):
-            raise ValueError(
-                "please set only one of gradient_accumulation_steps or batch_size"
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def hint_eval_train_mbsz(cls, data):
-        if (
-            data.get("eval_batch_size")
-            and data.get("micro_batch_size")
-            and data.get("eval_batch_size") != data.get("micro_batch_size")
-        ):
-            LOG.warning(
-                "eval_batch_size != micro_batch_size. This can lead to VRAM instability."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_push_ds_auth(cls, data):
-        if (
-            data.get("push_dataset_to_hub")
-            and data.get("hf_use_auth_token") is not True
-        ):
-            raise ValueError(
-                "Require cfg.hf_use_auth_token to be True for push_dataset_to_hub"
-            )
-        return data
-
-    @model_validator(mode="after")
-    def check_falcon_fsdp(self):
-        if (self.base_model and "falcon" in self.base_model.lower()) and self.fsdp:
-            raise ValueError("FSDP is not supported for falcon models")
-        return self
-
-    @model_validator(mode="after")
-    def check_mpt_checkpointing(self):
-        if (
-            self.base_model and "mpt" in self.base_model.lower()
-        ) and self.gradient_checkpointing:
-            raise ValueError("gradient_checkpointing is not supported for MPT models")
-        return self
-
-    @model_validator(mode="after")
-    def check_offload_grad_checkpointing(self):
-        if self.gradient_checkpointing and self.gradient_checkpointing == "unsloth":
-            LOG.warning(
-                "`unsloth` is deprecated for gradient_checkpointing, use `offload`"
-            )
-            self.gradient_checkpointing = "offload"
-        return self
-
-    @model_validator(mode="after")
-    def check_better_transformers(self):
-        if self.flash_optimum is True:
-            if self.adapter:
-                LOG.warning(
-                    "BetterTransformers probably doesn't work with PEFT adapters"
-                )
-            if self.fp16 or self.bf16:
-                raise ValueError("AMP is not supported with BetterTransformer")
-            if self.float16 is not True and self.bfloat16 is not True:
-                LOG.warning(
-                    "You should probably set bfloat16 or float16 to true to "
-                    "load the model in float16 for BetterTransformers"
-                )
-        return self
-
-    @model_validator(mode="after")
-    def check_adamw_optimizer_params(self):
-        if any([self.adam_beta1, self.adam_beta2, self.adam_epsilon]) and (
-            not self.optimizer or "adamw" not in str(self.optimizer).lower()
-        ):
-            LOG.warning("adamw hyperparameters found, but no adamw optimizer set")
-        return self
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_lr_groups(cls, data):
-        if data.get("lr_groups") and data.get("loraplus_lr_ratio"):
-            raise ValueError("lr_groups and loraplus_lr_ratio cannot be used together.")
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_saves(cls, data):
-        if (
-            data.get("save_strategy")
-            and data.get("save_steps")
-            and data.get("save_strategy") != "steps"
-        ):
-            raise ValueError(
-                "save_strategy and save_steps mismatch. Please set save_strategy to 'steps' or remove save_steps."
-            )
-        if data.get("saves_per_epoch") and data.get("save_steps"):
-            raise ValueError(
-                "save_steps and saves_per_epoch are mutually exclusive and cannot be used together."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_push_save(cls, data):
-        if data.get("hub_model_id") and (
-            data.get("save_strategy") not in ["steps", "epoch", None]
-        ):
-            LOG.warning(
-                "hub_model_id is set without any models being saved. To save a model, set save_strategy."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_evals(cls, data):
-        if (
-            data.get("eval_strategy")
-            and data.get("eval_steps")
-            and data.get("eval_strategy") != "steps"
-        ):
-            raise ValueError(
-                "eval_strategy and eval_steps mismatch. Please set eval_strategy to 'steps' or remove eval_steps."
-            )
-
-        if (
-            data.get("val_set_size") == 0
-            and (data.get("eval_steps") or data.get("eval_strategy"))
-            and not data.get("test_datasets")
-            and data.get("eval_strategy") != "no"
-        ):
-            raise ValueError(
-                "eval_steps and eval_strategy are not supported with val_set_size == 0"
-            )
-        if data.get("evals_per_epoch") and data.get("eval_steps"):
-            raise ValueError(
-                "eval_steps and evals_per_epoch are mutually exclusive and cannot be used together."
-            )
-        if (
-            data.get("evals_per_epoch")
-            and data.get("eval_strategy")
-            and data.get("eval_strategy") != "steps"
-        ):
-            raise ValueError(
-                "eval_strategy must be empty or set to `steps` when used with evals_per_epoch."
-            )
-
-        if data.get("do_bench_eval") and not (
-            data.get("evals_per_epoch") or data.get("eval_steps")
-        ):
-            raise ValueError(
-                "do_bench_eval requires evals_per_epoch or eval_steps to be set."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_test_datasets_bench(cls, data):
-        if (
-            data.get("do_bench_eval")
-            and not data.get("test_datasets")
-            and not data.get("val_set_size")
-        ):
-            LOG.warning(
-                "`do_bench_eval` needs a test dataset to run evals, adding an empty test_dataset."
-            )
-            data["test_datasets"] = [{"path": "axolotl-ai-co/empty-test-ds"}]
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_eval_packing(cls, data):
-        # TODO also should check test_datasets and val_set_size as we can skip
-        # if there are no eval datasets/splits
-        if (
-            data.get("sample_packing")
-            and data.get("eval_table_size")
-            and data.get("eval_sample_packing") is not False
-        ):
-            raise ValueError(
-                "eval_table_size and eval_sample_packing are not supported together with sample_packing. Please set 'eval_sample_packing' to false."
-            )
-        if (
-            data.get("sample_packing")
-            and data.get("eval_sample_packing") is None
-            and not data.get("eval_table_size")
-        ):
-            LOG.info(
-                "explicitly setting `eval_sample_packing` to match `sample_packing`"
-            )
-            data["eval_sample_packing"] = True
-
-        if (
-            data.get("sample_packing")
-            and data.get("eval_sample_packing") is False
-            and data.get("remove_unused_columns") is None
-        ):
-            LOG.info(
-                "setting `remove_unused_columns: false` for when sample_packing and eval_sample_packing don't match"
-            )
-            data["remove_unused_columns"] = False
-
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_mm_prepare(cls, data):
-        if data.get("skip_prepare_dataset"):
-            if data.get("remove_unused_columns") is None:
-                LOG.info(
-                    "setting `remove_unused_columns: false` for skip_prepare_dataset"
-                )
-                data["remove_unused_columns"] = False
-
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_warmup(cls, data):
-        if data.get("warmup_steps") and data.get("warmup_ratio"):
-            raise ValueError("warmup_steps and warmup_ratio are mutually exclusive")
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_neftune(cls, data):
-        if data.get("noisy_embedding_alpha") and not data.get("neftune_noise_alpha"):
-            data["neftune_noise_alpha"] = data["noisy_embedding_alpha"]
-            del data["noisy_embedding_alpha"]
-        elif data.get("noisy_embedding_alpha") and not data.get("neftune_noise_alpha"):
-            raise ValueError(
-                "noisy_embedding_alpha is deprecated, use neftune_noise_alpha; both are set, please remove the deprecated noisy_embedding_alpha setting"
-            )
-        return data
-
-    @field_validator("neftune_noise_alpha")
-    @classmethod
-    def validate_neftune_noise_alpha(cls, neftune_noise_alpha):
-        if neftune_noise_alpha is not None and neftune_noise_alpha <= 0.0:
-            raise ValueError("neftune_noise_alpha must be > 0.0")
-        return neftune_noise_alpha
-
-    @model_validator(mode="after")
-    def check_rl_beta(self):
-        if self.dpo_beta and not self.rl_beta:
-            self.rl_beta = self.dpo_beta
-            del self.dpo_beta
-        return self
-
-    @model_validator(mode="after")
-    def check_simpo_warmup(self):
-        if self.rl is RLType.SIMPO and self.warmup_ratio:
-            raise ValueError(
-                "warmup_ratio is not supported with the simpo trainer. Please use `warmup_steps` instead"
-            )
-        return self
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_frozen(cls, data):
-        if (
-            data.get("adapter")
-            and data.get("peft_layers_to_transform")
-            and data.get("unfrozen_parameters")
-        ):
-            raise ValueError(
-                "`unfrozen_parameters` used with `peft_layers_to_transform` can have unexpected behavior."
-            )
-
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_peft_layers_pattern(cls, data):
-        if data.get("peft_layers_pattern") and not data.get("peft_layers_to_transform"):
-            raise ValueError(
-                "peft_layers_pattern requires peft_layers_to_transform to be set"
-            )
-        return data
-
-    @model_validator(mode="after")
-    def check_fft_possible_bad_config(self):
-        if (
-            # pylint: disable=too-many-boolean-expressions
-            not (self.bf16 or self.bfloat16)
-            and (self.fp16 or self.float16)
-            and not self.adapter
-            and not self.flash_attention
-            and self.sample_packing
-        ):
-            LOG.warning(
-                "Full fine tune w/o FA2 w/ sample packing and fp16/float16 is likely to raise errors. Try LoRA."
-            )
-            # ValueError: Attempting to unscale FP16 gradients.
-            # OR
-            # RuntimeError: expected mat1 and mat2 to have the same dtype, but got: float != c10::Half
-        return self
-
-    @model_validator(mode="after")
-    def check_fused_lora(self):
-        if self.adapter in ["lora", "qlora"] and (
-            self.flash_attn_fuse_qkv or self.flash_attn_fuse_mlp
-        ):
-            raise ValueError("Fused modules are not supported with LoRA/QLoRA")
-        return self
-
-    @model_validator(mode="after")
-    def hint_lora_8bit(self):
-        loftq = (
-            self.peft and self.peft.loftq_config and self.peft.loftq_config.loftq_bits
-        )
-        if not self.load_in_8bit and self.adapter == "lora" and not loftq:
-            LOG.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
-        return self
-
-    @model_validator(mode="after")
-    def check_early_stopping(self):
-        if self.early_stopping_patience:
-            if not self.save_steps or not self.eval_steps:
-                raise ValueError(
-                    "`early_stopping_patience` requires save_steps and eval_steps to be set. eval_steps should evenly divide save_steps."
-                )
-            if self.save_steps % self.eval_steps != 0:
-                raise ValueError(
-                    "`early_stopping_patience` requires that eval_steps should evenly divide save_steps."
-                )
-        return self
-
-    @model_validator(mode="after")
-    def check_relora(self):
-        if self.relora_steps:
-            if self.adapter not in ("lora", "qlora"):
-                raise ValueError("cfg.adapter must be lora or qlora to use ReLoRA")
-
-            if self.fsdp:
-                raise ValueError("fsdp not supported with ReLoRA")
-
-            if self.deepspeed:
-                raise ValueError("deepspeed not supported with ReLoRA")
-
-            if self.lr_scheduler == "one_cycle":
-                raise ValueError(
-                    "ReLoRA is not compatible with the one_cycle scheduler"
-                )
-
-            if self.flash_attn_fuse_qkv or self.flash_attn_fuse_mlp:
-                raise ValueError("Fused modules are not supported with ReLoRA")
-        return self
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_mem_mismatch(cls, data):
-        if (
-            data.get("max_memory") is not None
-            and data.get("gpu_memory_limit") is not None
-        ):
-            raise ValueError(
-                "max_memory and gpu_memory_limit are mutually exclusive and cannot be used together."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_use_reentrant_mismatch(cls, data):
-        if (
-            data.get("unfrozen_parameters")
-            and data.get("gradient_checkpointing_kwargs")
-            and data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
-            is True
-        ):
-            # https://github.com/huggingface/transformers/issues/21381
-            raise ValueError(
-                "`use_reentrant` must be false when used with partially frozen model."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def warn_qlora_zero3_w_use_reentrant(cls, data):
-        if (
-            data.get("adapter") == "qlora"
-            and data.get("gradient_checkpointing_kwargs", {})
-            and data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
-            is False
-            and data.get("deepspeed", "") is not None
-            and "zero3" in data.get("deepspeed", "")
-        ):
-            # may result in:
-            # torch.utils.checkpoint.CheckpointError: torch.utils.checkpoint:
-            # Recomputed values for the following tensors have different metadata
-            # than during the forward pass.
-            LOG.warning(
-                "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values"
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_val_w_test_datasets(cls, data):
-        if data.get("test_datasets") and data.get("val_set_size"):
-            raise ValueError(
-                "non-zero val_set_size should not be used with test_datasets configuration"
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_eval_strategy(cls, data):
-        if (
-            data.get("evaluation_strategy") is not None
-            and data.get("eval_strategy") is None
-        ):
-            LOG.info(
-                "explicitly setting `eval_strategy` from the `evaluation_strategy`"
-            )
-            data["eval_strategy"] = data.get("evaluation_strategy")
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_fsdp_offload_w_8bit_optimizer(cls, data):
-        if (
-            data.get("fsdp")
-            and "8bit" in data.get("optimizer", "")
-            and data.get("fsdp_config")
-            and data["fsdp_config"].get("fsdp_offload_params")
-            and str(data["fsdp_config"].get("fsdp_version")) != "2"
-        ):
-            raise ValueError(
-                f"FSDP Offload not compatible with {data.get('optimizer')}"
-            )
-        if (
-            data.get("fsdp")
-            and "8bit" in data.get("optimizer", "")
-            and data.get("fsdp_config")
-            and str(data["fsdp_config"].get("fsdp_version")) == "2"
-        ):
-            if data.get("optimizer", "") in ["adamw_8bit", "adamw_bnb_8bit"]:
-                # CUDA ops errors with bnb 8bit optimizer + FSDP2
-                raise ValueError(
-                    f"FSDP2 not compatible with {data.get('optimizer')}, use `adamw_torch_8bit` instead"
-                )
-
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_fsdp_sharded_state_dict_w_safetensors(cls, data):
-        if (
-            data.get("fsdp")
-            and data.get("save_safetensors")
-            and data.get("fsdp_config")
-            and data["fsdp_config"].get("fsdp_state_dict_type") == "SHARDED_STATE_DICT"
-        ):
-            raise ValueError(
-                "FSDP SHARDED_STATE_DICT not compatible with save_safetensors"
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_causal_lm_evals(cls, data):
-        if data.get("do_causal_lm_eval") and data.get("eval_sample_packing"):
-            raise ValueError(
-                "do_causal_lm_eval is enabled, eval_sample_packing must be set to False"
-            )
-
-        if data.get("eval_causal_lm_metrics"):
-            if not isinstance(data.get("eval_causal_lm_metrics"), list):
-                raise ValueError("eval_causal_lm_metrics must be a list")
-            # only ["sacrebleu", "comet", "ter", "chrf"] supported
-            if set(data.get("eval_causal_lm_metrics")) - SUPPORTED_METRICS:
-                raise ValueError(
-                    f"eval_causal_lm_metrics must be one of {SUPPORTED_METRICS}"
-                )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_dataset_or_pretraining_dataset(cls, data):
-        if data.get("datasets") is None and data.get("pretraining_dataset") is None:
-            raise ValueError("either datasets or pretraining_dataset is required")
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_xentropy_patch_conflicts(cls, data):
-        if data.get("flash_attn_cross_entropy") and data.get(
-            "unsloth_cross_entropy_loss"
-        ):
-            raise ValueError(
-                "flash_attn_cross_entropy and unsloth_cross_entropy_loss cannot be both enabled"
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_qlora_unsloth(cls, data):
-        if (
-            data.get("unsloth_lora_mlp")
-            or data.get("unsloth_lora_qkv")
-            or data.get("unsloth_lora_o")
-        ):
-            if data.get("adapter") == "lora" and data.get("load_in_8bit"):
-                raise ValueError(
-                    "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with 8-bit LoRA"
-                )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_lora_8bit(cls, data):
-        if (
-            data.get("lora_mlp_kernel")
-            or data.get("lora_qkv_kernel")
-            or data.get("lora_o_kernel")
-        ):
-            if data.get("adapter") == "lora" and data.get("load_in_8bit"):
-                raise ValueError(
-                    "lora_mlp_kernel, lora_mlp_kernel, and lora_mlp_kernel are not compatible with 8-bit LoRA"
-                )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_lora_axolotl_unsloth(cls, data):
-        is_lora_kernel = any(
-            data.get(k) for k in ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
-        )
-        is_unsloth_lora = any(
-            data.get(k)
-            for k in ["unsloth_lora_mlp", "unsloth_lora_qkv", "unsloth_lora_o"]
-        )
-        if is_lora_kernel and is_unsloth_lora:
-            raise ValueError(
-                "both lora_mlp_kernel and unsloth_lora_mlp cannot be true (similarly for lora_qkv_kernel, lora_o_kernel)"
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_torch_compile_deepspeed(cls, data):
-        if data.get("deepspeed") and data.get("torch_compile"):
-            raise ValueError(
-                "torch_compile should be set within your deepspeed config file"
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_npu_config(cls, data):
-        if is_torch_npu_available():
-            # check attention config
-            attn_list = ["flash_attention", "sdp_attention", "s2_attention"]
-            for attn in attn_list:
-                if data.get(attn):
-                    raise NotImplementedError(
-                        f"{attn} is currently not supported in Ascend npu, please disable this configuration."
-                    )
-
-            # check quant config
-            if data.get("optimizer") is not None and "bit" in data.get("optimizer"):
-                optimizer = data.get("optimizer")
-                raise NotImplementedError(
-                    f"{optimizer} is currently not supported in Ascend npu, choose another one please."
-                )
-
-            quant_list = ["load_in_8bit", "load_in_4bit"]
-            for quant in quant_list:
-                if data.get(quant):
-                    raise NotImplementedError(
-                        f"Quantification is currently not supported in Ascend npu, please disable {quant}."
-                    )
-
-            # check dtype config
-            if data.get("tf32"):
-                raise NotImplementedError(
-                    "tf32 dtype is currently not supported in Ascend npu, please disable this configuration"
-                )
-
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_rl_config_gradient_checkpointing(cls, data):
-        # TODO: SalmanMohammadi
-        # Distributed RL with QLoRA + gradient checkpointing
-        # and use_reentrant = True is broken upstream in TRL
-        # pylint: disable=too-many-boolean-expressions
-        if (
-            data.get("rl")
-            and data.get("gradient_checkpointing")
-            and data.get("gradient_checkpointing_kwargs")
-            and data.get("gradient_checkpointing_kwargs").get("use_reentrant")
-            and data.get("load_in_4bit")
-            and data.get("adapter") == "qlora"
-            and data.get("capabilities")
-            and data.get("capabilities").get("n_gpu", 1) > 1
-        ):
-            raise ValueError(
-                "The `use_reentrant: True` implementation of gradient checkpointing "
-                "is not supported for distributed RL training with QLoRA. Please set "
-                "`use_reentrant: False` in `gradient_checkpointing_kwargs`."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_kto_config(cls, data):
-        if data.get("rl") == "kto":
-            if data.get("sample_packing") or data.get("eval_sample_packing"):
-                raise ValueError("sample_packing is not supported with kto")
-
-            if data.get("remove_unused_columns") is not False:
-                raise ValueError("Set `remove_unused_columns: False` when using kto")
-
-        return data
-
-    # @model_validator(mode="before")
-    # @classmethod
-    # def check_grpo_peft_liger(cls, data):
-    #     if (
-    #         data.get("rl") == "grpo"
-    #         and data.get("trl", {})
-    #         and data.get("trl").get("use_liger_loss")
-    #         and data.get("adapter")
-    #     ):
-    #         raise ValueError("PEFT + GRPO + Liger is not yet supported")
-    #     return data
-    #
-    @model_validator(mode="before")
-    @classmethod
-    def check_grpo_liger_sequence_parallel(cls, data):
-        if (
-            data.get("rl") == "grpo"
-            and data.get("trl", {})
-            and data.get("trl").get("use_liger_loss")
-            and data.get("sequence_parallel_degree", 1) > 1
-        ):
-            raise ValueError("GRPO + SP + Liger not currently supported")
-        return data
-
-    @model_validator(mode="after")
-    def check_sequence_parallel_degree(self):
-        if not self.sequence_parallel_degree:
-            self.sequence_parallel_degree = 1
-        elif self.sequence_parallel_degree > 1:
-            if not self.flash_attention:
-                raise ValueError(
-                    "flash_attention: true must be set with sequence_parallel_degree > 1"
-                )
-
-            if self.sample_packing and self.micro_batch_size > 1:
-                raise ValueError(
-                    "micro_batch_size must be set to 1 when sample_packing is enabled "
-                    "due to a `ring-flash-attn` requirement"
-                )
-
-            try:
-                import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
-            except ImportError as exception:
-                raise ImportError(
-                    "sequence_parallel_degree > 1 but ring_flash_attn is not installed. "
-                    "Please install it with `pip install axolotl[ring-flash-attn] "
-                    "or `pip install ring-flash-attn>=0.1.4`."
-                ) from exception
-
-            # TODO: monkeypatch / callback to average losses correctly across SP ranks
-            # / fix gradient scaling across SP ranks. Losses, grads should be scaled
-            # according to the proportion of non-padding tokens per rank.
-            LOG.warning(
-                "Sequence parallelism (SP) is enabled with "
-                f"sequence_parallel_degree={self.sequence_parallel_degree}. "
-                "Please note that logged losses may differ slightly to the non-SP "
-                "losses due to transformers Trainer implementation details. "
-                "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
-                "for more details."
-            )
-
-        return self
-
-    @model_validator(mode="after")
-    def validate_ring_attn_func(self):
-        if getattr(self, "sequence_parallel_degree", 1) == 1:
-            return self
-
-        if self.ring_attn_func is not None:
-            self.ring_attn_func = RingAttnFunc(self.ring_attn_func)
-        else:
-            # Default ring attention function selection
-            sample_packing = getattr(self, "sample_packing", False)
-            self.ring_attn_func = (
-                RingAttnFunc.VARLEN_LLAMA3
-                if sample_packing
-                else RingAttnFunc.BATCH_RING
-            )
-
-        return self
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_muon_deepspeed_fsdp(cls, data):
-        if data.get("optimizer") == "muon" and (
-            data.get("deepspeed") or data.get("fsdp") or data.get("fsdp_config")
-        ):
-            raise ValueError(
-                "Muon optimizer is currently incompatible with DeepSpeed and FSDP"
-            )
-        return data
-
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
-    """wrapper to valdiate gpu capabilities with the configured options"""
+    """wrapper to valdiate GPU capabilities with the configured options"""
 
     capabilities: GPUCapabilities
     env_capabilities: EnvCapabilities
@@ -1303,13 +1037,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
         return data
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_fsdp_deepspeed(cls, data):
-        if data.get("deepspeed") and data.get("fsdp"):
-            raise ValueError("deepspeed and fsdp cannot be used together.")
-        return data
-
+    # pylint: disable=duplicate-code
     @model_validator(mode="before")
     @classmethod
     def check_multigpu_unsloth(cls, data):
@@ -1325,6 +1053,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
         return data
 
+    # pylint: disable=duplicate-code
     @model_validator(mode="before")
     @classmethod
     def check_multigpu_lora_kernels(cls, data):
@@ -1334,11 +1063,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             or data.get("lora_o_kernel")
         ):
             capabilities = data.get("capabilities")
-            is_fsdp = data.get("fsdp") is not None
-            is_fsdp2 = (
-                data.get("fsdp_config") is not None
-                and str(data.get("fsdp_config").get("fsdp_version")) == "2"
-            )
+            is_fsdp = data.get("fsdp_config") is not None
+            is_fsdp2 = is_fsdp and str(data.get("fsdp_version")) == "2"
+
             if capabilities and capabilities.get("n_gpu", 0) > 1 and not is_fsdp2:
                 if is_fsdp:
                     raise ValueError(
@@ -1372,11 +1099,8 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             # Check multi-GPU compatibility
             capabilities = data.get("capabilities")
             is_multi_gpu = capabilities and capabilities.get("n_gpu", 0) > 1
-            is_fsdp = data.get("fsdp") is not None
-            is_fsdp2 = (
-                data.get("fsdp_config") is not None
-                and str(data.get("fsdp_config").get("fsdp_version")) == "2"
-            )
+            is_fsdp = data.get("fsdp_config") is not None
+            is_fsdp2 = is_fsdp and str(data.get("fsdp_version")) == "2"
 
             if (
                 not is_multi_gpu
@@ -1468,9 +1192,77 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     def check_min_torch_version(self):
         if self.env_capabilities and self.env_capabilities.torch_version:
             torch_version = self.env_capabilities.torch_version
-            if version.parse(torch_version) < version.parse("2.5.1"):
+            if version.parse(torch_version) < version.parse("2.6.0"):
                 LOG.warning(
-                    f"torch=={torch_version} may not be supported in future versions. Please consider upgrading to torch>=2.5.1."
+                    f"torch=={torch_version} not be supported. Please upgrade to torch>=2.6.0."
                 )
 
         return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_qat_config(cls, data):
+        qat_cfg = data.get("qat", {})
+        if not qat_cfg:
+            return data
+
+        if data.get("peft"):
+            raise ValueError("QAT and PEFT cannot be used together.")
+
+        if data.get("load_in_8bit"):
+            raise ValueError("QAT and load_in_8bit cannot be used together.")
+
+        if data.get("load_in_4bit"):
+            raise ValueError("QAT and load_in_4bit cannot be used together.")
+
+        env_capabilities = data.get("env_capabilities", {})
+        torch_version = env_capabilities.get("torch_version")
+
+        if torch_version is None:
+            import torch
+
+            torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+
+        if version.parse(torch_version) < version.parse("2.6.0"):
+            raise ValueError("QAT is not supported on torch version < 2.6.0")
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_torch_version(cls, data):
+        env_capabilities = data.get("env_capabilities", {})
+        torch_version = env_capabilities.get("torch_version")
+
+        if torch_version is None:
+            import torch
+
+            torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+
+        if data.get("fsdp_config") and str(data.get("fsdp_version")) == "2":
+            if version.parse(torch_version) < version.parse("2.7.0"):
+                raise ValueError("FSDP2 is not supported on torch version < 2.7.0")
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_dataloader_opts(cls, data):
+        if (
+            data.get("dataloader_num_workers") is None
+            and data.get("dataloader_pin_memory") is None
+            and data.get("dataloader_prefetch_factor") is None
+        ):
+            data["dataloader_num_workers"] = data.get("capabilities").get("n_gpu", 1)
+            data["dataloader_pin_memory"] = True
+            data["dataloader_prefetch_factor"] = 256
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_dataset_processes(cls, data):
+        if data.get("dataset_processes") is None:
+            data["dataset_processes"] = get_default_process_count()
+
+        return data

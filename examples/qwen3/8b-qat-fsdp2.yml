@@ -1,0 +1,80 @@
+base_model: Qwen/Qwen3-8B
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+plugins:
+  - axolotl.integrations.liger.LigerPlugin
+
+liger_rope: true
+liger_rms_norm: true
+liger_glu_activation: true
+liger_layer_norm: true
+liger_fused_linear_cross_entropy: true
+
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+
+output_dir: ./outputs/qat_out/
+
+sequence_len: 2048
+sample_packing: true
+flex_attention: true
+
+
+flex_attn_compile_kwargs:
+  dynamic: false
+  mode: max-autotune-no-cudagraphs
+
+qat:
+  activation_dtype: int8
+  weight_dtype: int4
+  group_size: 256
+  fake_quant_after_n_steps: 1000
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 1
+micro_batch_size: 2
+max_steps: 2000
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 2e-5
+
+bf16: true
+tf32: true
+
+resume_from_checkpoint:
+logging_steps: 1
+
+evals_per_epoch: 1
+saves_per_epoch: 1
+
+warmup_ratio: 0.1
+weight_decay: 0.0
+fsdp:
+  - full_shard
+  - auto_wrap
+
+fsdp_config:
+  fsdp_version: 2
+  fsdp_offload_params: false
+  fsdp_cpu_ram_efficient_loading: true
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_transformer_layer_cls_to_wrap: Qwen3DecoderLayer
+  fsdp_state_dict_type: FULL_STATE_DICT
+  fsdp_sharding_strategy: FULL_SHARD
+  fsdp_reshard_after_forward: true
+  fsdp_activation_checkpointing: true
+
+special_tokens:
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

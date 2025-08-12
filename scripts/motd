@@ -11,7 +11,9 @@
                                  =@#       @#  #@=     #@   =#@@@@#=    +#@@=  +#@@@@#=    .##@@+   @@
     @@@@  @@@@@@@@@@@@@@@@
 
-Welcome to the axolotl cloud image! If the you've mounted a disk to /workspace and the axolotl directory ie empty, run the following commands:
+Welcome to the axolotl cloud image! If the you've mounted a disk to /workspace and the axolotl directory is empty, run the following commands:
+
+Need help with your post-training workloads? Reach out us at contact@axolotl.ai for assistance.
 
 ```
 cd /workspace

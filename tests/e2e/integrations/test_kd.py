@@ -5,11 +5,9 @@ e2e tests for kd trainer support in Axolotl
 from pathlib import Path
 
 import pytest
+import yaml
+from accelerate.test_utils import execute_subprocess_async, get_torch_dist_unique_port
 
-from axolotl.cli.args import TrainerCliArgs
-from axolotl.common.datasets import load_datasets
-from axolotl.train import train
-from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
 from tests.e2e.utils import check_tensorboard, require_torch_2_5_1
@@ -18,8 +16,8 @@ from tests.e2e.utils import check_tensorboard, require_torch_2_5_1
 @pytest.fixture(name="kd_min_cfg")
 def min_cfg(temp_dir):
     return {
-        "base_model": "osllmai-community/Llama-3.2-1B",
-        "tokenizer_config": "axolotl-ai-co/Llama-3.3-70B-Instruct-tokenizer",
+        "base_model": "Qwen/Qwen3-0.6B",
+        "tokenizer_config": "winglian/qwen3-14b-math",
         "plugins": [
             "axolotl.integrations.kd.KDPlugin",
             "axolotl.integrations.liger.LigerPlugin",
@@ -32,20 +30,22 @@ def min_cfg(temp_dir):
         "kd_ce_alpha": 0.1,
         "kd_alpha": 0.9,
         "kd_temperature": 1.0,
+        "kd_beta": 0.0,
+        "kd_normalize_topk": True,
         "dataloader_prefetch_factor": 8,
         "dataloader_num_workers": 4,
         "dataloader_pin_memory": True,
         "datasets": [
             {
-                "path": "axolotl-ai-co/evolkit-logprobs-pipeline-75k-v2-sample",
-                "type": "axolotl.integrations.kd.chat_template",
-                "field_messages": "messages_combined",
+                "path": "winglian/OpenThoughts-114k-math-correct-qwen3-14b-math-prepared-topk128-normalized",
+                "type": "chat_template",
                 "split": "train",
-                "logprobs_field": "llm_text_generation_vllm_logprobs",
-                "temperature": 1.0,
-                "preprocess_shards": 2,
+                "split_thinking": True,
+                "eot_tokens": ["<|im_end|>"],
+                "data_files": ["train/batch-000000.parquet"],
             },
         ],
+        "skip_prepare_dataset": True,
         "val_set_size": 0.0,
         "sequence_len": 2048,
         "sample_packing": True,
@@ -67,6 +67,7 @@ def min_cfg(temp_dir):
         "output_dir": temp_dir,
         "save_safetensors": True,
         "use_tensorboard": True,
+        "save_first_step": False,
     }
 
 
@@ -81,18 +82,29 @@ class TestKnowledgeDistillation:
     def test_llama_kd(self, temp_dir, kd_min_cfg):
         cfg = DictDefault(kd_min_cfg)
         # pylint: disable=duplicate-code
-        cfg = validate_config(cfg)
-        prepare_plugins(cfg)
-        normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        # write cfg to yaml file
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
+            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
 
-        train(cfg=cfg, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model.safetensors").exists()
-        check_tensorboard(
-            temp_dir + "/runs", "train/loss", 1.2, "Train Loss (%s) is too high"
+        execute_subprocess_async(
+            [
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
+                "--num-processes",
+                "1",
+                "--main-process-port",
+                f"{get_torch_dist_unique_port()}",
+            ]
         )
 
+        assert (Path(temp_dir) / "model.safetensors").exists()
+        check_tensorboard(
+            temp_dir + "/runs", "train/loss", 1.4, "Train Loss (%s) is too high"
+        )
+
+    @pytest.mark.skip(reason="Chunked KD loss doesn't support PEFT/LoRA")
     @pytest.mark.parametrize(
         "load_in_8bit",
         [True, False],
@@ -112,13 +124,22 @@ class TestKnowledgeDistillation:
             | kd_min_cfg
         )
         # pylint: disable=duplicate-code
-        cfg = validate_config(cfg)
-        prepare_plugins(cfg)
-        normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        # write cfg to yaml file
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
+            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
 
-        train(cfg=cfg, dataset_meta=dataset_meta)
+        execute_subprocess_async(
+            [
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
+                "--num-processes",
+                "1",
+                "--main-process-port",
+                f"{get_torch_dist_unique_port()}",
+            ]
+        )
         assert (Path(temp_dir) / "adapter_model.safetensors").exists()
         check_tensorboard(
             temp_dir + "/runs", "train/loss", 1.2, "Train Loss (%s) is too high"

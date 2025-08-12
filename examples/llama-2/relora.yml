@@ -18,16 +18,19 @@ lora_model_dir:
 
 sequence_len: 4096
 sample_packing: true
-pad_to_sequence_len: true
+
 
 lora_r: 8
 lora_alpha: 16
 lora_dropout: 0.05
 lora_target_linear: true
 
-relora_steps: 150
-relora_warmup_steps: 10
+relora: true
+relora_prune_ratio: 0.9
 relora_cpu_offload: false
+jagged_restart_steps: 150
+jagged_restart_warmup_steps: 10
+jagged_restart_anneal_steps: false
 
 wandb_project:
 wandb_entity:
@@ -50,7 +53,7 @@ resume_from_checkpoint:
 logging_steps: 1
 flash_attention: true
 
-warmup_steps: 10
+warmup_ratio: 0.1
 evals_per_epoch: 4
 saves_per_epoch: 1
 weight_decay: 0.0
@@ -58,3 +61,5 @@ special_tokens:
   bos_token: "<s>"
   eos_token: "</s>"
   unk_token: "<unk>"
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

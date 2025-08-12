@@ -20,7 +20,7 @@ To enable `QLoRA` with `FSDP`, you need to perform the following steps:
 > See the [example config](#example-config) file in addition to reading these instructions.
 
 1. Set `adapter: qlora` in your axolotl config file.
-2. Enable FSDP in your axolotl config, as [described here](https://github.com/axolotl-ai-cloud/axolotl?tab=readme-ov-file#fsdp).
+2. Enable FSDP in your axolotl config, as [described here](multi-gpu.qmd#sec-fsdp).
 3. Use one of the supported model types: `llama`, `mistral` or `mixtral`.
 
 ## Example Config

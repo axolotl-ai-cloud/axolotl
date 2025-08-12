@@ -18,7 +18,7 @@ adapter: qlora
 
 sequence_len: 2048
 sample_packing: true
-pad_to_sequence_len: true
+
 
 lora_r: 16
 lora_alpha: 16
@@ -41,7 +41,7 @@ gradient_checkpointing_kwargs:
 logging_steps: 1
 flash_attention: true
 
-warmup_steps: 10
+warmup_ratio: 0.1
 evals_per_epoch: 4
 saves_per_epoch: 1
 weight_decay: 0.0
@@ -60,3 +60,5 @@ fsdp_config:
   fsdp_sharding_strategy: FULL_SHARD
 special_tokens:
   pad_token: <|finetune_right_pad_id|>
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

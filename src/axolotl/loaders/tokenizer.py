@@ -1,26 +1,28 @@
 """Tokenizer loading functionality and associated utils"""
 
 import json
-import logging
 import os
 
 import transformers
 from transformers import (
     AddedToken,
     AutoTokenizer,
+    PreTrainedTokenizer,
 )
 
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import get_linear_embedding_layers, load_model_config
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.chat_templates import get_chat_template_from_config
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
     barrier,
     is_local_main_process,
     is_main_process,
 )
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 
@@ -117,8 +119,26 @@ def modify_tokenizer_files(
     return tokenizer_dir
 
 
-def load_tokenizer(cfg):
+def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     """Load and configure the tokenizer based on the provided config."""
+
+    def _load_mistral_common_tokenizer(cfg: DictDefault):
+        """Load mistral-common tokenizer"""
+        from transformers import tokenization_mistral_common
+
+        from axolotl.utils.mistral import HFMistralTokenizer
+
+        # patch
+        tokenization_mistral_common.MistralCommonTokenizer = HFMistralTokenizer
+
+        # Load the HF-compatible wrapper around MistralTokenizer
+        tokenizer = HFMistralTokenizer.from_pretrained(cfg.tokenizer_config)
+
+        return tokenizer
+
+    if cfg.tokenizer_use_mistral_common:
+        return _load_mistral_common_tokenizer(cfg)
+
     model_config = load_model_config(cfg)
     tokenizer_kwargs = {}
     use_fast = True  # this is the default
@@ -173,7 +193,8 @@ def load_tokenizer(cfg):
         tokenizer.padding_side = "left"
 
     # Qwen base only has single token, so we need to set the special tokens
-    if cfg.is_qwen_derived_model:
+    # the following check is for Qwen1 base models
+    if cfg.is_qwen_derived_model and hasattr(tokenizer, "eod_id"):
         token_ids = ["bos_token_id", "eos_token_id", "pad_token_id", "unk_token_id"]
         for attr_name in token_ids:
             if getattr(tokenizer, attr_name) is None:
@@ -207,11 +228,12 @@ def load_tokenizer(cfg):
                 )
                 and k != "pad_token"
             ):
-                lora_modules_to_save = ", ".join(
+                lora_modules_to_save_str = ", ".join(
                     [f"`{x}`" for x in lora_modules_to_save]
                 )
                 raise ValueError(
-                    f"Please set lora_modules_to_save to [{lora_modules_to_save}] when using an adapter and changing the special tokens."
+                    f"Please set lora_modules_to_save to [{lora_modules_to_save_str}] "
+                    "when using an adapter and changing the special tokens."
                 )
 
             tokenizer.add_special_tokens(
@@ -257,7 +279,7 @@ def load_tokenizer(cfg):
             {"additional_special_tokens": additional_special_tokens}
         )
 
-    if is_main_process(use_environ=True):
+    if is_main_process():
         LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
         LOG.debug(f"BOS: {tokenizer.bos_token_id} / {tokenizer.bos_token}")
         LOG.debug(f"PAD: {tokenizer.pad_token_id} / {tokenizer.pad_token}")
@@ -278,4 +300,9 @@ def load_tokenizer(cfg):
         LOG.info(
             "No Chat template selected. Consider adding a chat template for easier inference."
         )
+
+    # make the tokenizer.pad call quieter 🤐
+    if hasattr(tokenizer, "deprecation_warnings"):
+        tokenizer.deprecation_warnings["Asking-to-pad-a-fast-tokenizer"] = True
+
     return tokenizer

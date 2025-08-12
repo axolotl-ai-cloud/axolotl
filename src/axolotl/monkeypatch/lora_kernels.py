@@ -7,7 +7,6 @@ import types
 from typing import Generator, Tuple, Type
 
 import torch
-from accelerate.logging import get_logger
 from peft import PeftModelForCausalLM
 from torch import nn
 from transformers import AutoConfig
@@ -19,7 +18,9 @@ from axolotl.kernels.lora import (
     apply_lora_qkv,
 )
 from axolotl.monkeypatch.utils import detab_code
+from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
@@ -145,12 +146,25 @@ def get_attention_cls_from_config(cfg: DictDefault) -> Type[nn.Module]:
 
         return Qwen2Attention
 
+    if model_type == "mllama":
+        from transformers.models.mllama.modeling_mllama import MllamaTextSelfAttention
+
+        return MllamaTextSelfAttention
+
+    if model_type == "llama4":
+        from transformers.models.llama4.modeling_llama4 import Llama4TextAttention
+
+        return Llama4TextAttention
+
+    if model_type == "mistral3":
+        from transformers.models.mistral.modeling_mistral import MistralAttention
+
+        return MistralAttention
+
     try:
         # Dynamically import the module and attention class
         module_path = f"transformers.models.{model_type}.modeling_{model_type}"
-        model_cls_prefix = "".join(
-            [part.capitalize() for part in model_type.split("_")]
-        )
+        model_cls_prefix, _ = get_causal_lm_model_cls_prefix(model_type)
         module = __import__(module_path, fromlist=[f"{model_cls_prefix}Attention"])
         attention_cls = getattr(module, f"{model_cls_prefix}Attention")
 
@@ -269,6 +283,29 @@ def find_mlp_in_layer(
                 )
 
 
+def get_layers(model: PeftModelForCausalLM) -> list[nn.Module]:
+    """
+    Get the layers of the model. Handles text-only and multimodal models.
+
+    Args:
+        model: A PEFT model.
+
+    Returns:
+        A list of layers.
+    """
+    pretrained_model = model.model
+
+    # check for multimodal models first
+    if hasattr(pretrained_model, "language_model"):
+        return pretrained_model.language_model.layers
+    if hasattr(pretrained_model, "model"):
+        return pretrained_model.model.layers
+
+    raise NotImplementedError(
+        f"Model type {model.config.model_type} is not supported yet. Please create an Issue."
+    )
+
+
 def apply_lora_kernel_patches(
     model: PeftModelForCausalLM, cfg: DictDefault
 ) -> PeftModelForCausalLM:
@@ -340,16 +377,7 @@ def apply_lora_kernel_patches(
     if activation not in SUPPORTED_ACTIVATIONS:
         raise NotImplementedError(f"Activation {activation} is not supported")
 
-    layers = []
-    # check for multimodal models first
-    if hasattr(model, "language_model"):
-        layers = model.language_model.model.layers
-    elif hasattr(model, "model"):
-        layers = model.model.model.layers
-    else:
-        raise NotImplementedError(
-            f"Model type {model.config.model_type} is not supported yet. Please create an Issue."
-        )
+    layers = get_layers(model)
 
     # Patch each layer
     for layer in layers:
@@ -367,7 +395,6 @@ def apply_lora_kernel_patches(
                 ]
                 can_patch_qkv = all(
                     hasattr(module, "lora_A")
-                    and getattr(module, "base_layer", module).bias is None
                     and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
                     for module in layer_modules
                 )
@@ -377,7 +404,8 @@ def apply_lora_kernel_patches(
                     self_attn.apply_qkv = types.MethodType(apply_lora_qkv, self_attn)
                 else:
                     LOG.warning_once(
-                        "Cannot patch some attention QKV projections - requires LoRA adapters with no bias"
+                        "Cannot patch some attention QKV projections - requires LoRA "
+                        "adapters and no lora_magnitude_vector (DoRA)"
                     )
             if cfg.lora_o_kernel:
                 # Output patching
@@ -386,7 +414,6 @@ def apply_lora_kernel_patches(
                 ]
                 can_patch_o = all(
                     hasattr(module, "lora_A")
-                    and getattr(module, "base_layer", module).bias is None
                     and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
                     for module in layer_modules
                 )
@@ -395,14 +422,14 @@ def apply_lora_kernel_patches(
                     self_attn.apply_o = types.MethodType(apply_lora_o, self_attn)
                 else:
                     LOG.warning_once(
-                        "Cannot patch some attention output projection - requires LoRA adapters with no bias"
+                        "Cannot patch some attention output projection - requires LoRA "
+                        "adapters and no lora_magnitude_vector (DoRA)"
                     )
         for gate_proj, up_proj, down_proj, mlp in find_mlp_in_layer(layer):
             if cfg.lora_mlp_kernel:
                 # MLP patching
                 can_patch_mlp = all(
                     hasattr(proj, "lora_A")
-                    and getattr(proj, "base_layer", proj).bias is None
                     and len(getattr(proj, "lora_magnitude_vector", []) or []) == 0
                     for proj in (gate_proj, up_proj, down_proj)
                 )
@@ -412,7 +439,8 @@ def apply_lora_kernel_patches(
                     layer.mlp.forward = types.MethodType(apply_fn, mlp)
                 else:
                     LOG.warning_once(
-                        "Cannot patch some MLP layers - requires LoRA adapters with no bias"
+                        "Cannot patch some MLP layers - requires LoRA adapters and no "
+                        "lora_magnitude_vector (DoRA)"
                     )
 
     LOG.setLevel(original_level)

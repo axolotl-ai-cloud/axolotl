@@ -2,12 +2,11 @@
 
 import glob
 import json
-import logging
 import os.path
 import shutil
 from functools import partial
 from pathlib import Path
-from typing import Dict, List, Sequence, Union
+from typing import Dict, List, Union
 
 import bitsandbytes as bnb
 import peft
@@ -15,8 +14,6 @@ import safetensors.torch as st
 import torch
 from huggingface_hub import snapshot_download
 from torch.distributed.optim import ZeroRedundancyOptimizer
-from torch.optim.lr_scheduler import LRScheduler
-from torch.optim.optimizer import Optimizer
 from transformers import (
     TrainerCallback,
     TrainerControl,
@@ -27,8 +24,9 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import barrier, is_main_process
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl.relora")
+LOG = get_logger(__name__)
 
 
 @torch.no_grad()
@@ -84,7 +82,7 @@ class ReLoRACallback(TrainerCallback):
     """Callback to merge LoRA weights into the base model and save full-weight checkpoints"""
 
     def __init__(self, cfg: DictDefault):
-        self.relora_steps = cfg.relora_steps
+        self.relora_steps = cfg.jagged_restart_steps
         self.cpu_offload = cfg.relora_cpu_offload
         self.quantized = cfg.load_in_4bit or cfg.load_in_8bit
         self.last_full_model = cfg.base_model
@@ -253,51 +251,6 @@ class ReLoRACallback(TrainerCallback):
                 )
         # no need to save if unquantized, as finetune.py will call merge_and_unload()
         return control
-
-
-class ReLoRAScheduler(LRScheduler):
-    """Wraps another scheduler to apply per-lora-restart learning rate warmups."""
-
-    def __init__(
-        self,
-        optimizer: Optimizer,
-        inner_schedule: LRScheduler,
-        relora_steps: int,
-        warmup_steps: int,
-        anneal_steps: int = 1,
-        min_lr_scale: float = 0.001,
-    ) -> None:
-        self.inner_schedule = inner_schedule
-        self.relora_steps = relora_steps
-        self.warmup_steps = warmup_steps
-        self.anneal_steps = anneal_steps
-        self.min_lr_scale = min_lr_scale
-        super().__init__(optimizer, inner_schedule.last_epoch)
-
-    def get_lr(self) -> float:
-        self.inner_schedule.last_epoch = self.last_epoch
-
-        original = self.inner_schedule.get_lr()
-        step = self.last_epoch
-
-        if step < self.relora_steps - self.warmup_steps:
-            scale = 1
-        else:
-            per_relora_progress = step % self.relora_steps
-            if per_relora_progress < self.warmup_steps:
-                cycle_t = min(1.0, (per_relora_progress) / self.warmup_steps)
-            elif per_relora_progress > (self.relora_steps - self.anneal_steps):
-                cycle_t = min(
-                    1.0,
-                    (self.relora_steps - per_relora_progress) / self.anneal_steps,
-                )
-            else:
-                cycle_t = 1
-            scale = cycle_t * (1 - self.min_lr_scale) + self.min_lr_scale
-
-        if isinstance(original, Sequence):
-            return [lr * scale for lr in original]
-        return original * scale
 
 
 def sharded_paths(path: str, module_names: List[str]) -> Dict[str, str]:

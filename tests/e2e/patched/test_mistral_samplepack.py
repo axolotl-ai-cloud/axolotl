@@ -2,20 +2,14 @@
 E2E tests for lora llama
 """
 
-import logging
-import os
 import unittest
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import check_model_output_exists, with_temp_dir
-
-LOG = logging.getLogger("axolotl.tests.e2e")
-os.environ["WANDB_DISABLED"] = "true"
+from ..utils import check_model_output_exists, require_torch_2_6_0, with_temp_dir
 
 
 class TestMistral(unittest.TestCase):
@@ -23,6 +17,7 @@ class TestMistral(unittest.TestCase):
     Test case for Llama models using LoRA
     """
 
+    @require_torch_2_6_0
     @with_temp_dir
     def test_lora_packing(self, temp_dir):
         # pylint: disable=duplicate-code
@@ -61,12 +56,12 @@ class TestMistral(unittest.TestCase):
                 "save_steps": 3,
                 "eval_steps": 4,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
@@ -103,12 +98,12 @@ class TestMistral(unittest.TestCase):
                 "save_steps": 3,
                 "eval_steps": 4,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)

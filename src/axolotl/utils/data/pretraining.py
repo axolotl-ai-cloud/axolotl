@@ -1,7 +1,6 @@
 """data handling specific to pretraining"""
 
 import functools
-import logging
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional
 
@@ -12,10 +11,11 @@ from transformers import PreTrainedTokenizerBase
 
 from axolotl.utils.collators import PretrainingBatchSamplerDataCollatorForSeq2Seq
 from axolotl.utils.data.utils import DEFAULT_SEQUENCE_LEN_OVERFLOW_HANDLING
+from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.trainer import process_pretraining_datasets_for_packing
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
 
 
 def encode_pretraining(
@@ -225,10 +225,10 @@ def wrap_pretraining_dataset(
     remove_columns = []
     if dataset.features is None:
         for first_row in dataset:
-            remove_columns = first_row.keys()
+            remove_columns = list(first_row.keys())
             break
     else:
-        remove_columns = dataset.features.keys()
+        remove_columns = list(dataset.features.keys())
 
     dataset = dataset.map(
         encode,
@@ -251,7 +251,7 @@ def encode_packed_pretraining(
     # pylint: disable=duplicate-code
     # tokenize all the examples
     # rows get split with stride (overlap)
-    train_dataset = ds_wrapper(Dataset.from_dict(examples))[0]
+    train_dataset = ds_wrapper(dataset=Dataset.from_dict(examples))[0]
 
     train_dataset = process_pretraining_datasets_for_packing(
         train_dataset,
@@ -277,6 +277,7 @@ def encode_packed_pretraining(
         batch_size=1,
         batch_max_len=batch_size * max_seq_length,
         drop_last=True,
+        num_processes=1,
     )
 
     chunked_data = defaultdict(list)

@@ -56,7 +56,7 @@ flash_attention: true
 loss_watchdog_threshold: 5.0
 loss_watchdog_patience: 3
 
-warmup_steps: 10
+warmup_ratio: 0.1
 evals_per_epoch: 4
 saves_per_epoch: 1
 
@@ -77,3 +77,5 @@ fsdp_config:
   fsdp_forward_prefetch: false
   fsdp_backward_prefetch: BACKWARD_PRE
 special_tokens:
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

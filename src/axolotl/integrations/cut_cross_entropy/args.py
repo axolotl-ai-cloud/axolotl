@@ -15,12 +15,13 @@
 """
 Module for handling Cut Cross Entropy input arguments.
 """
-import logging
 from typing import Optional
 
 from pydantic import BaseModel, model_validator
 
-LOG = logging.getLogger("axolotl.integrations.cut_cross_entropy.args")
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 class CutCrossEntropyArgs(BaseModel):
@@ -39,4 +40,14 @@ class CutCrossEntropyArgs(BaseModel):
                 "Please set `bf16` or `fp16` to `True`."
             )
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_chunked_cross_entropy_not_set(cls, data):
+        if data.get("chunked_cross_entropy"):
+            raise ValueError(
+                "Cut Cross Entropy does not support chunked cross entropy. "
+                "Please set `chunked_cross_entropy` to `False` or disable Cut Cross Entropy."
+            )
         return data

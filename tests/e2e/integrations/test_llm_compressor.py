@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
@@ -82,14 +81,14 @@ class TestLLMCompressorIntegration:
                     },
                     "save_compressed": save_compressed,
                 },
+                "save_first_step": False,
             }
         )
 
         prepare_plugins(cfg)
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         try:
             train(cfg=cfg, dataset_meta=dataset_meta)

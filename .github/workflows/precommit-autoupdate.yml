@@ -25,7 +25,6 @@ jobs:
           pre-commit autoupdate
           if [[ -n $(git status --porcelain) ]]; then
             echo "changes=true" >> $GITHUB_OUTPUT
-            git diff .pre-commit-config.yaml > pre-commit-update.diff
           fi
 
       - name: Create Pull Request
@@ -39,11 +38,3 @@ jobs:
           commit-message: "chore: update pre-commit hooks"
           body: |
             Automated PR to update pre-commit hooks to their latest versions.
-
-            <details>
-            <summary>Changes:</summary>
-
-            ```diff
-            ${{ steps.update.outputs.diff }}
-            ```
-            </details>

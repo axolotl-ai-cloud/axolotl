@@ -2,23 +2,17 @@
 E2E tests for lora llama
 """
 
-import logging
-import os
 import unittest
 
 import pytest
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
 from ..utils import check_model_output_exists, with_temp_dir
-
-LOG = logging.getLogger("axolotl.tests.e2e")
-os.environ["WANDB_DISABLED"] = "true"
 
 
 @pytest.mark.skip("FIXME, mostly underused functionality")
@@ -35,7 +29,6 @@ class TestFusedLlama(unittest.TestCase):
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "flash_attention": True,
                 "pad_to_sequence_len": True,
-                "flash_attn_fuse_qkv": True,
                 "flash_attn_fuse_mlp": True,
                 "sample_packing": True,
                 "sequence_len": 1024,
@@ -59,6 +52,7 @@ class TestFusedLlama(unittest.TestCase):
                 "max_steps": 10,
                 "save_steps": 5,
                 "eval_steps": 5,
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -67,8 +61,7 @@ class TestFusedLlama(unittest.TestCase):
             cfg.fp16 = True
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)

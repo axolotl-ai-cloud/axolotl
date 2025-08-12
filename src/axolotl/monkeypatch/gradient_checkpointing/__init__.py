@@ -5,7 +5,7 @@ from functools import partial
 
 from packaging import version
 
-from axolotl.monkeypatch.gradient_checkpointing.offload_cpu import (
+from axolotl.monkeypatch.gradient_checkpointing.offload_cpu import (  # noqa: F401
     CPU_Offloaded_Gradient_Checkpointer,
 )
 from axolotl.monkeypatch.gradient_checkpointing.offload_disk import (

@@ -1,10 +1,14 @@
 # noqa
 # pylint: skip-file
+import sys
+
 try:
     import torch
 except ImportError:
     raise ImportError("Install torch via `pip install torch`")
 from packaging.version import Version as V
+
+use_uv = "--uv" in sys.argv[1:]
 
 v = V(torch.__version__)
 cuda = str(torch.version.cuda)
@@ -31,6 +35,7 @@ elif v < V("2.6.0"):
 else:
     raise RuntimeError(f"Torch = {v} too new!")
 x = x.format(cuda.replace(".", ""), "-ampere" if is_ampere else "")
+uv_prefix = "uv " if use_uv else ""
 print(
-    f'pip install unsloth-zoo==2024.12.1 && pip install --no-deps "unsloth[{x}]==2024.12.4"'
+    f'{uv_prefix}pip install unsloth-zoo==2024.12.1 && {uv_prefix}pip install --no-deps "unsloth[{x}]==2024.12.4"'
 )

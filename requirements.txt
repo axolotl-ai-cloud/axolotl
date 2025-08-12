@@ -1,33 +1,35 @@
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
 
 # START section of dependencies that don't install on Darwin/MacOS
-bitsandbytes==0.45.4
-triton>=3.0.0
+bitsandbytes==0.46.1
+# triton 3.4.0 is not compatible with CCE
+triton>=3.0.0,<3.4.0
 mamba-ssm==1.2.0.post1
 xformers>=0.0.23.post1
 autoawq==0.2.7.post3
-liger-kernel==0.5.9
+liger-kernel==0.6.1
 # END section
 
 packaging==23.2
 
-huggingface_hub==0.31.0
-peft==0.15.2
-transformers==4.51.3
+huggingface_hub>=0.33.0
+peft==0.17.0
+transformers==4.55.0
 tokenizers>=0.21.1
-accelerate==1.6.0
-datasets==3.5.1
-deepspeed>=0.15.4
-trl==0.17.0
-hf_xet==1.1.0
-hqq==0.2.5
+accelerate==1.10.0
+datasets==4.0.0
+deepspeed>=0.17.0
+trl==0.21.0
+hf_xet==1.1.5
+kernels==0.9.0
+trackio
 
 optimum==1.16.2
 hf_transfer
 sentencepiece
-gradio==5.23.3
+gradio==5.41.1
 
-modal==0.70.5
+modal==1.0.2
 pydantic==2.10.6
 addict
 fire
@@ -63,8 +65,10 @@ langdetect==1.0.9
 immutabledict==4.2.0
 antlr4-python3-runtime==4.13.2
 
-torchao==0.9.0
+torchao==0.12.0
 schedulefree==1.4.1
 
 axolotl-contribs-lgpl==0.0.6
-axolotl-contribs-mit==0.0.3
+axolotl-contribs-mit==0.0.5
+
+mistral-common==1.8.3

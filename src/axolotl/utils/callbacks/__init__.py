@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import gc
 import json
-import logging
 import os
 import traceback
 from shutil import copyfile
@@ -28,11 +27,14 @@ from transformers import (
     TrainerState,
     TrainingArguments,
 )
-from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
+from transformers.trainer_utils import (
+    PREFIX_CHECKPOINT_DIR,
+    IntervalStrategy,
+    SaveStrategy,
+)
 from trl.models import unwrap_model_for_generation
 
 from axolotl.utils import is_comet_available, is_mlflow_available
-from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.callbacks.perplexity import Perplexity
 from axolotl.utils.distributed import (
     barrier,
@@ -43,33 +45,15 @@ from axolotl.utils.distributed import (
     is_main_process,
     zero_first,
 )
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.config import AxolotlInputConfig
 
 if TYPE_CHECKING:
-    from axolotl.core.trainer_builder import AxolotlTrainingArguments
+    from axolotl.core.training_args import AxolotlTrainingArguments
 
 
 IGNORE_INDEX = -100
-LOG = logging.getLogger("axolotl.callbacks")
-
-
-class EvalFirstStepCallback(
-    TrainerCallback
-):  # pylint: disable=too-few-public-methods disable=unused-argument
-    """
-    Callback to trigger evals on the first step
-    """
-
-    def on_step_end(
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        **kwargs,
-    ):
-        if args.eval_strategy == IntervalStrategy.STEPS and state.global_step == 1:
-            control.should_evaluate = True
-        return control
+LOG = get_logger(__name__)
 
 
 class SaveBetterTransformerModelCallback(
@@ -83,7 +67,7 @@ class SaveBetterTransformerModelCallback(
         state: TrainerState,
         control: TrainerControl,
         **kwargs,
-    ):
+    ) -> TrainerControl:
         # Save
         if (
             args.save_strategy == IntervalStrategy.STEPS
@@ -108,45 +92,22 @@ class SaveBetterTransformerModelCallback(
         return control
 
 
-class GPUStatsCallback(
-    TrainerCallback
-):  # pylint: disable=too-few-public-methods disable=unused-argument
-    """Callback to track GPU utilization"""
-
-    def __init__(self, cfg):
-        self.cfg = cfg
-        self.logged = False
-
-    def on_step_end(
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        **kwargs,
-    ):
-        if not self.logged and state.global_step > 1:
-            log_gpu_memory_usage(LOG, "while training", self.cfg.device)
-            self.logged = True
-        return control
-
-
 class LossWatchDogCallback(TrainerCallback):
     """Callback to track loss and stop training if loss is too high"""
 
     def __init__(self, cfg):
         self.cfg = cfg
-        self.logged = False
         self.violations = 0
         self.threshold = cfg.loss_watchdog_threshold
         self.patience = cfg.loss_watchdog_patience or 3
 
     def on_step_end(
         self,
-        _args: TrainingArguments,
+        args: TrainingArguments,  # pylint: disable=unused-argument
         state: TrainerState,
         control: TrainerControl,
         **_kwargs,
-    ):
+    ) -> TrainerControl:
         if len(state.log_history) > 0 and "loss" in state.log_history[-1]:
             if state.log_history[-1]["loss"] > self.threshold:
                 self.violations += 1
@@ -157,6 +118,21 @@ class LossWatchDogCallback(TrainerCallback):
                     control.should_training_stop = True
             else:
                 self.violations = 0
+        return control
+
+
+class SaveModelOnFirstStepCallback(TrainerCallback):
+    """Callback to save the model on the first step of training if enabled"""
+
+    def on_step_end(
+        self,
+        args: TrainingArguments,  # pylint: disable=unused-argument
+        state: TrainerState,
+        control: TrainerControl,
+        **_kwargs,
+    ) -> TrainerControl:
+        if state.global_step == 1:
+            control.should_save = True
         return control
 
 
@@ -753,7 +729,14 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         ].append(pred_step_text)
                         row_index += 1
                 if logger == "wandb":
-                    wandb.run.log({f"{name} - Predictions vs Ground Truth": pd.DataFrame(table_data)})  # type: ignore[attr-defined]
+                    # type: ignore[attr-defined]
+                    wandb.run.log(
+                        {
+                            f"{name} - Predictions vs Ground Truth": pd.DataFrame(
+                                table_data
+                            )
+                        }
+                    )
                 elif logger == "mlflow" and is_mlflow_available():
                     import mlflow
 
@@ -796,7 +779,7 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,  # pylint: disable=unused-argument
     ):
-        if is_main_process():
+        if state.is_world_process_zero:
             try:
                 # sync config to top level in run, cannot delete file right away because wandb schedules it to be synced even w/policy = 'now', so let OS delete it later.
                 with NamedTemporaryFile(
@@ -853,21 +836,52 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
 class GCCallback(TrainerCallback):
     """Callback to garbage collect torch cache"""
 
-    def __init__(self, gc_steps=None):
-        self.gc_steps = gc_steps
+    def __init__(self, gc_steps: int | None = -1):
+        self.gc_steps: int = gc_steps or -1
+        self.next_gc_on_begin_step: int = -1
+
+    def _gc(self):
+        torch.cuda.empty_cache()
+        gc.collect()
+
+    def on_train_begin(
+        self, args, state, control, **kwargs  # pylint: disable=unused-argument
+    ):
+        self._gc()
+
+    def on_step_begin(
+        self, args, state, control, **kwargs  # pylint: disable=unused-argument
+    ):
+        # pylint: disable=consider-using-in
+        if self.next_gc_on_begin_step == state.global_step or state.global_step == 0:
+            self._gc()
 
     def on_step_end(
         self, args, state, control, **kwargs  # pylint: disable=unused-argument
     ):
-        if self.gc_steps > 0 and state.global_step % self.gc_steps == 0:
-            torch.cuda.empty_cache()
-            gc.collect()
+        if control.should_evaluate:
+            # automatically GC before evals so the eval memory spike from the CEL doesn't OOM the trainer
+            self._gc()
+            # also GC on the start of the next step after the eval
+            self.next_gc_on_begin_step = state.global_step + 1
+        elif self.gc_steps > 0 and state.global_step % self.gc_steps == 0:
+            self._gc()
+        elif (
+            args.save_strategy == SaveStrategy.STEPS
+            and state.save_steps > 0
+            and state.global_step % state.save_steps == 0
+        ):
+            # gc on save steps in case anything is loaded to CPU RAM like offloaded tensors
+            self._gc()
+        elif state.global_step >= state.max_steps:
+            if args.save_strategy == SaveStrategy.STEPS:
+                # gc on save steps in case anything is loaded to CPU RAM like offloaded tensors
+                self._gc()
 
     def on_epoch_end(
         self, args, state, control, **kwargs  # pylint: disable=unused-argument
     ):
-        torch.cuda.empty_cache()
-        gc.collect()
+        self._gc()
 
 
 def colab_inference_post_train_callback(trainer: Trainer):

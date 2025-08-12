@@ -1,24 +1,21 @@
 """CLI to run evaluation on a model."""
 
-import logging
 import os
 from pathlib import Path
 from typing import Union
 
 import fire
-from dotenv import load_dotenv
 from transformers.hf_argparser import HfArgumentParser
 
 from axolotl.cli.args import TrainerCliArgs
-from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
 from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.evaluate import evaluate
-from axolotl.utils import patch_optimized_env
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def do_evaluate(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
@@ -31,11 +28,7 @@ def do_evaluate(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
         cfg: Dictionary mapping `axolotl` config keys to values.
         cli_args: CLI arguments.
     """
-    # Enable expandable segments for cuda allocation to improve VRAM usage
-    patch_optimized_env()
-
     # pylint: disable=duplicate-code
-    print_axolotl_text_art()
     check_accelerate_default_config()
     if int(os.getenv("LOCAL_RANK", "0")) == 0:
         check_user_token()
@@ -66,5 +59,4 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
 
 
 if __name__ == "__main__":
-    load_dotenv()
     fire.Fire(do_cli)

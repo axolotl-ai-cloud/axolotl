@@ -2,6 +2,7 @@
 
 from transformers import (
     Gemma3ForConditionalGeneration,
+    Gemma3nForConditionalGeneration,
     Llama4ForConditionalGeneration,
     LlavaForConditionalGeneration,
     Mistral3ForConditionalGeneration,
@@ -18,4 +19,13 @@ MULTIMODAL_AUTO_MODEL_MAPPING = {
     "qwen2_5_vl": Qwen2_5_VLForConditionalGeneration,
     "mistral3": Mistral3ForConditionalGeneration,
     "gemma3": Gemma3ForConditionalGeneration,
+    "gemma3n": Gemma3nForConditionalGeneration,
 }
+
+try:
+    from transformers import VoxtralForConditionalGeneration
+
+    # transformers >4.53.2
+    MULTIMODAL_AUTO_MODEL_MAPPING["voxtral"] = VoxtralForConditionalGeneration
+except ImportError:
+    pass

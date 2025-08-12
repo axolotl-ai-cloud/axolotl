@@ -2,8 +2,6 @@
 Tests for splitting reasoning/thinking from content into separate field
 """
 
-import logging
-
 import pytest
 from datasets import Dataset
 from transformers import AutoTokenizer
@@ -12,11 +10,6 @@ from axolotl.prompt_strategies.chat_template import (
     load,
 )
 from axolotl.utils.dict import DictDefault
-
-from tests.hf_offline_utils import enable_hf_offline
-
-logging.basicConfig(level=logging.DEBUG)
-LOG = logging.getLogger("axolotl")
 
 
 @pytest.fixture(name="messages_w_reasoning")
@@ -64,7 +57,6 @@ def messages_w_reasoning_fixture():
 
 
 @pytest.fixture(name="qwen3_tokenizer")
-@enable_hf_offline
 def qwen3_tokenizer_fixture(
     download_qwen3_half_billion_model,
 ):  # pylint: disable=unused-argument

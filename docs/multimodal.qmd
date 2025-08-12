@@ -14,6 +14,7 @@ format:
 - [Llava-1.5](#sec-llava-15)
 - [Mistral-Small-3.1](#sec-mistral-small-31)
 - [Gemma-3](#sec-gemma-3)
+- [Gemma-3n](#sec-gemma-3n)
 - [Qwen2-VL](#sec-qwen2-vl)
 - [Qwen2.5-VL](#sec-qwen25-vl)
 
@@ -43,7 +44,7 @@ datasets:
 # leave the vision model and vision tower frozen
 # load_in_8bit: true
 adapter: lora
-lora_target_modules: 'language_model.model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
+lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
 
 # (optional) if you want to resize images to a set size
 image_size: 512
@@ -110,6 +111,22 @@ base_model: google/gemma-3-4b-it
 chat_template: gemma3
 ```
 
+### Gemma-3n {#sec-gemma-3n}
+
+::: {.callout-warning}
+The model's initial loss and grad norm will be very high. We suspect this to be due to the Conv in the vision layers.
+:::
+
+::: {.callout-tip}
+Please make sure to install `timm` via `pip3 install timm==1.0.17`
+:::
+
+```yaml
+base_model: google/gemma-3n-E2B-it
+
+chat_template: gemma3n
+```
+
 ### Qwen2-VL {#sec-qwen2-vl}
 
 ```yaml
@@ -132,7 +149,9 @@ For multi-modal datasets, we adopt an extended `chat_template` format similar to
 
 - A message is a list of `role` and `content`.
 - `role` can be `system`, `user`, `assistant`, etc.
-- `content` is a list of `type` and (`text` or `image` or `path` or `url` or `base64`).
+- `content` is a list of `type` and (`text`, `image`, `path`, `url`, `base64`, or `audio`).
+
+### Image
 
 ::: {.callout-note}
 For backwards compatibility:
@@ -141,14 +160,28 @@ For backwards compatibility:
 - If `content` is a string, it will be converted to a list with `type` as `text`.
 :::
 
-::: {.callout-tip}
 For image loading, you can use the following keys within `content` alongside `"type": "image"`:
 
 - `"path": "/path/to/image.jpg"`
 - `"url": "https://example.com/image.jpg"`
 - `"base64": "..."`
 - `"image": PIL.Image`
+
+### Audio
+
+For audio loading, you can use the following keys within `content` alongside `"type": "audio"`:
+
+- `"path": "/path/to/audio.mp3"`
+- `"url": "https://example.com/audio.mp3"`
+- `"audio": np.ndarray`
+
+::: {.callout-tip}
+
+You may need to install `librosa` via `pip3 install librosa==0.11.0`.
+
 :::
+
+### Example
 
 Here is an example of a multi-modal dataset:
 ```json
@@ -178,3 +211,9 @@ Here is an example of a multi-modal dataset:
   }
 ]
 ```
+
+## FAQ
+
+1. `PIL.UnidentifiedImageError: cannot identify image file ...`
+
+`PIL` could not retrieve the file at `url` using `requests`. Please check for typo. One alternative reason is that the request is blocked by the server.

@@ -1,14 +1,15 @@
 """Module containing PromptTokenizingStrategy and Prompter classes"""
 
 import abc
-import logging
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
+from datasets import Dataset
 from transformers import BatchEncoding, PreTrainedTokenizer
 
 from axolotl.prompters import Prompter
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
 
 IGNORE_INDEX = -100
 LLAMA_DEFAULT_PAD_TOKEN = "<pad>"  # nosec
@@ -27,6 +28,16 @@ class DatasetWrappingStrategy(abc.ABC):
     """
     Abstract class for wrapping datasets for Chat Messages
     """
+
+    @abc.abstractmethod
+    def wrap_dataset(
+        self,
+        dataset,
+        process_count: int | None = None,
+        keep_in_memory: bool | None = False,
+        **kwargs,
+    ) -> Dataset:
+        pass
 
 
 class PromptTokenizingStrategy(abc.ABC):

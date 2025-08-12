@@ -1,6 +1,4 @@
-"""
-utility helpers for distributed checks
-"""
+"""Utilities for distributed functionality."""
 
 import os
 import pickle  # nosec
@@ -10,6 +8,7 @@ from datetime import timedelta
 import torch
 import torch.distributed as dist
 from accelerate import PartialState
+from accelerate.utils import ParallelismConfig
 from transformers.utils.import_utils import (
     is_torch_cuda_available,
     is_torch_mps_available,
@@ -19,7 +18,7 @@ from transformers.utils.import_utils import (
 distributed_state = None  # pylint: disable=invalid-name
 
 
-def get_device_type():
+def get_device_type() -> torch.device:
     device = torch.device("cpu")
     if is_torch_cuda_available():
         device = torch.device("cuda")
@@ -30,7 +29,7 @@ def get_device_type():
     return device
 
 
-def get_device_count():
+def get_device_count() -> int:
     cur_device = get_device_type()
     if "cuda" in str(cur_device):
         return torch.cuda.device_count()
@@ -39,7 +38,7 @@ def get_device_count():
     return 1
 
 
-def get_current_device():
+def get_current_device() -> int:
     cur_device = get_device_type()
     if "cuda" in str(cur_device):
         return torch.cuda.current_device()
@@ -48,14 +47,26 @@ def get_current_device():
     return 0
 
 
-def is_distributed():
-    """
-    Check if distributed training is initialized.
-    """
+def init_distributed_state():
     global distributed_state  # pylint: disable=global-statement
-    if not distributed_state:
+    if distributed_state is None:
         timeout = int(os.environ.get("AXOLOTL_NCCL_TIMEOUT", 1800))
-        distributed_state = PartialState(timeout=timedelta(seconds=timeout))
+        try:
+            distributed_state = PartialState(timeout=timedelta(seconds=timeout))
+        except ValueError:
+            pass
+
+
+def get_distributed_state() -> PartialState | None:
+    return distributed_state
+
+
+def is_distributed() -> bool:
+    """Check if distributed training is initialized."""
+    init_distributed_state()
+
+    if distributed_state is None:
+        return False
 
     return distributed_state.use_distributed and distributed_state.initialized
 
@@ -69,31 +80,31 @@ def barrier():
         dist.barrier()
 
 
-def is_main_process(use_environ=False):
+def is_main_process() -> bool:
     """
     Check if the current process is the main process. If not in distributed mode,
     always return `True`.
 
-    Args:
-    - use_environ (bool, optional): Use environment variable to determine main process.
+    We use a simpler logic when the distributed state is not initialized: we just log
+    on the 0-th local rank.
 
     Returns:
-    - bool: `True` if the current process is the main process, `False` otherwise.
+        `True` if the current process is the main process, `False` otherwise.
     """
-    if use_environ:
+    if get_distributed_state() is None:
         return os.environ.get("LOCAL_RANK", "0") == "0"
     if not is_distributed():
         return True
     return dist.get_rank() == 0
 
 
-def is_local_main_process(use_environ=False):
-    if use_environ:
+def is_local_main_process() -> bool:
+    if get_distributed_state() is None:
         return os.environ.get("LOCAL_RANK", "0") == "0"
     return PartialState().is_local_main_process
 
 
-def get_world_size():
+def get_world_size() -> int:
     return int(os.getenv("WORLD_SIZE", "1"))
 
 
@@ -103,14 +114,19 @@ def cleanup_distributed():
     termination or when training successfully completes.
     """
     # Ensure that all operations are completed before destroying the process group
-    torch.cuda.synchronize()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+    if torch.xpu.is_available():
+        torch.xpu.synchronize()
+
     # Destroy the process group
     if torch.distributed.is_initialized():
         torch.distributed.destroy_process_group()
 
 
 @contextmanager
-def zero_first(is_main):
+def zero_first(is_main: bool):
     """
     runs the wrapped context so that rank 0 runs first before other ranks
     """
@@ -278,3 +294,77 @@ def reduce_and_broadcast(fn1, fn2):
     # Use compute_and_broadcast to compute the reduced value on the main process
     # and then broadcast it to all ranks
     return compute_and_broadcast(lambda: fn2(gathered_values))
+
+
+def build_parallelism_config(cfg):
+    pc_kwargs = _get_parallel_config_kwargs(
+        get_world_size(),
+        cfg.tensor_parallel_size,
+        cfg.context_parallel_size,
+        cfg.dp_shard_size,
+        cfg.dp_replicate_size,
+        bool(cfg.fsdp or cfg.fsdp_config),
+    )
+
+    if pc_kwargs:
+        parallelism_config = ParallelismConfig(
+            **pc_kwargs,
+        )
+        device_mesh = parallelism_config.build_device_mesh("cuda")
+
+        return parallelism_config, device_mesh
+    return None, None
+
+
+def _get_parallel_config_kwargs(
+    world_size: int,
+    tensor_parallel_size: int = 1,
+    context_parallel_size: int = 1,
+    dp_shard_size: int | None = None,
+    dp_replicate_size: int | None = None,
+    is_fsdp: bool = False,
+):
+    pc_kwargs = {}
+    remaining_world_size = world_size
+
+    if tensor_parallel_size and tensor_parallel_size > 1:
+        pc_kwargs["tp_size"] = tensor_parallel_size
+        remaining_world_size = remaining_world_size // tensor_parallel_size
+
+    if context_parallel_size and context_parallel_size > 1:
+        pc_kwargs["cp_size"] = context_parallel_size
+        remaining_world_size = remaining_world_size // context_parallel_size
+
+    if dp_shard_size is None and dp_replicate_size in (None, 1):
+        if remaining_world_size > 1:
+            pc_kwargs["dp_shard_size"] = remaining_world_size
+            remaining_world_size = 1
+
+    if dp_replicate_size and dp_replicate_size > 1:
+        pc_kwargs["dp_replicate_size"] = dp_replicate_size
+        remaining_world_size = remaining_world_size // dp_replicate_size
+
+    if remaining_world_size > 1 and dp_shard_size and dp_shard_size > 1:
+        if not is_fsdp:
+            raise ValueError(
+                "dp_shard_size was configured without a corresponding fsdp_config! "
+                "Please ensure you have configured FSDP using fsdp_config."
+            )
+        pc_kwargs["dp_shard_size"] = dp_shard_size
+        remaining_world_size = remaining_world_size // dp_shard_size
+        if remaining_world_size > 1 and "dp_replicate_size" not in pc_kwargs:
+            pc_kwargs["dp_replicate_size"] = remaining_world_size
+            remaining_world_size = 1
+
+    if remaining_world_size > 1:
+        if "dp_shard_size" not in pc_kwargs and is_fsdp:
+            pc_kwargs["dp_shard_size"] = remaining_world_size
+            remaining_world_size = 1
+
+    if remaining_world_size > 1:
+        raise ValueError(
+            f"The configured parallelisms are incompatible with the current world size ({get_world_size()})!\n"
+            f"{pc_kwargs}"
+        )
+
+    return pc_kwargs

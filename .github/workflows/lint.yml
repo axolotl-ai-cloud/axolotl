@@ -3,18 +3,21 @@ on:
   # check on PRs, and manual triggers
   merge_group:
   pull_request:
+      types: [opened, synchronize, reopened, ready_for_review]
       paths:
        - '**.py'
        - 'requirements.txt'
        - '.github/workflows/*.yml'
        - "*.[q]md"
        - "examples/**/*.y[a]?ml"
+       - ".pre-commit-config.yaml"
   workflow_dispatch:
 
 jobs:
   pre-commit:
     name: pre-commit
     runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

@@ -1,11 +1,12 @@
 """Pydantic models for deprecated and remapped configuration parameters"""
 
-import logging
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-LOG = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 class DeprecatedParameters(BaseModel):
@@ -59,10 +60,30 @@ class RemappedParameters(BaseModel):
     """Parameters that have been remapped to other names"""
 
     overrides_of_model_config: dict[str, Any] | None = Field(
-        default=None, alias="model_config"
+        default=None,
+        alias="model_config",
+        json_schema_extra={
+            "description": "optional overrides to the base model configuration"
+        },
     )
     overrides_of_model_kwargs: dict[str, Any] | None = Field(
-        default=None, alias="model_kwargs"
+        default=None,
+        alias="model_kwargs",
+        json_schema_extra={
+            "description": "optional overrides the base model loading from_pretrained"
+        },
     )
-    type_of_model: str | None = Field(default=None, alias="model_type")
-    revision_of_model: str | None = Field(default=None, alias="model_revision")
+    type_of_model: str | None = Field(
+        default=None,
+        alias="model_type",
+        json_schema_extra={
+            "description": "If you want to specify the type of model to load, AutoModelForCausalLM is a good choice too"
+        },
+    )
+    revision_of_model: str | None = Field(
+        default=None,
+        alias="model_revision",
+        json_schema_extra={
+            "description": "You can specify to choose a specific model revision from huggingface hub"
+        },
+    )

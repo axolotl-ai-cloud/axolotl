@@ -28,11 +28,8 @@ class TrainerCliArgs:
     debug: bool = field(default=False)
     debug_text_only: bool = field(default=False)
     debug_num_examples: int = field(default=0)
-    merge_lora: bool = field(default=False)
     prompter: Optional[str] = field(default=None)
     shard: bool = field(default=False)
-    main_process_port: Optional[int] = field(default=None)
-    num_processes: Optional[int] = field(default=None)
 
 
 @dataclass
@@ -88,6 +85,26 @@ class VllmServeCliArgs:
             "help": "Module to serve. If not set, the default module will be used."
         },
     )
+
+    enable_reasoning: Optional[bool] = field(
+        default=None,
+    )
+
+    reasoning_parser: Optional[str] = field(
+        default=None,
+    )
+
+
+@dataclass
+class QuantizeCliArgs:
+    """Dataclass with CLI arguments for `axolotl quantize` command."""
+
+    base_model: Optional[str] = field(default=None)
+    weight_dtype: Optional[str] = field(default=None)
+    activation_dtype: Optional[str] = field(default=None)
+    quantize_embedding: Optional[bool] = field(default=None)
+    group_size: Optional[int] = field(default=None)
+    output_dir: Optional[str] = field(default=None)
 
 
 @dataclass

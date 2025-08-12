@@ -18,7 +18,7 @@ output_dir: ./outputs/out
 
 sequence_len: 8192
 sample_packing: true
-pad_to_sequence_len: true
+
 
 wandb_project:
 wandb_entity:
@@ -43,10 +43,12 @@ resume_from_checkpoint:
 logging_steps: 1
 flash_attention: true
 
-warmup_steps: 20
+warmup_ratio: 0.1
 evals_per_epoch: 5
 saves_per_epoch: 5
 weight_decay: 0.05
 
 special_tokens:
   pad_token: <custom_token_7>
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

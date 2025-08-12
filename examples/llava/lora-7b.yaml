@@ -11,8 +11,7 @@ datasets:
   - path: HuggingFaceH4/llava-instruct-mix-vsft
     type: chat_template
     split: train[:1%]
-    field_messages: messages
-dataset_prepared_path: last_run_prepared
+dataset_prepared_path:
 val_set_size: 0.0
 output_dir: ./outputs/out
 
@@ -25,7 +24,7 @@ pad_to_sequence_len: false
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
-lora_target_modules: 'language_model.model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
+lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
 
 wandb_project:
 wandb_entity:
@@ -53,3 +52,5 @@ warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
 weight_decay: 0.0
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

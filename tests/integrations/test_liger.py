@@ -2,8 +2,6 @@
 config validation tests for swiglu args
 """
 
-# pylint: disable=duplicate-code
-import logging
 from typing import Optional
 
 import pytest
@@ -12,6 +10,7 @@ from axolotl.utils.config import prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
 
+# pylint: disable=duplicate-code
 @pytest.fixture(name="minimal_liger_cfg")
 def fixture_cfg():
     return DictDefault(
@@ -41,7 +40,7 @@ class TestValidation:
 
     @pytest.fixture(autouse=True)
     def inject_fixtures(self, caplog):
-        caplog.set_level(logging.WARNING)
+        caplog.set_level("WARNING")
         self._caplog = caplog
 
     def test_deprecated_swiglu(self, minimal_liger_cfg):
@@ -52,9 +51,7 @@ class TestValidation:
             | minimal_liger_cfg
         )
 
-        with self._caplog.at_level(
-            logging.WARNING, logger="axolotl.integrations.liger.args"
-        ):
+        with self._caplog.at_level("WARNING", logger="axolotl.integrations.liger.args"):
             prepare_plugins(test_cfg)
             updated_cfg = validate_config(test_cfg)
             # TODO this test is brittle in CI

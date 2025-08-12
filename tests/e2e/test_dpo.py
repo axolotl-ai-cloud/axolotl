@@ -1,9 +1,5 @@
-"""
-E2E tests for lora llama
-"""
+"""E2E tests for lora llama"""
 
-import logging
-import os
 import unittest
 from pathlib import Path
 
@@ -16,9 +12,6 @@ from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
 from .utils import check_model_output_exists, with_temp_dir
-
-LOG = logging.getLogger("axolotl.tests.e2e")
-os.environ["WANDB_DISABLED"] = "true"
 
 
 class TestDPOLlamaLora(unittest.TestCase):
@@ -63,6 +56,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "save_first_step": False,
             }
         )
 
@@ -112,6 +106,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "save_first_step": False,
             }
         )
 
@@ -161,6 +156,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "save_first_step": False,
             }
         )
 
@@ -210,6 +206,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "save_first_step": False,
             }
         )
 
@@ -258,6 +255,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "save_first_step": False,
             }
         )
 
@@ -309,6 +307,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "save_first_step": False,
             }
         )
 
@@ -377,6 +376,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "save_first_step": False,
             }
         )
 

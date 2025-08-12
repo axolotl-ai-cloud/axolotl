@@ -1,18 +1,17 @@
 """Module for Axolotl trainer optimizer mixin"""
 
-import logging
-
 from peft.optimizers import create_loraplus_optimizer
 from torch import nn
 from transformers.trainer import Trainer
 from transformers.utils import is_sagemaker_mp_enabled
 
 from axolotl.integrations.base import BaseOptimizerFactory
+from axolotl.utils.logging import get_logger
 
 if is_sagemaker_mp_enabled():
     import smdistributed.modelparallel.torch as smp
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class OptimizerMixin(Trainer):
@@ -199,3 +198,20 @@ class OptimizerMixin(Trainer):
             )
 
         return self.optimizer
+
+
+class OptimizerInitMixin:
+    """
+    Mixin to handle common optimizer initialization logic for Trainers (mostly TRL) that do not
+    accept optimizer_cls_and_kwargs as kwarg in constructor.
+    """
+
+    def __init__(self, *args, **kwargs):
+        optimizer_cls_and_kwargs = kwargs.pop("optimizer_cls_and_kwargs", None)
+        super().__init__(*args, **kwargs)
+        if (
+            optimizer_cls_and_kwargs
+            and self.optimizer_cls_and_kwargs is None
+            and self.optimizer is None
+        ):
+            self.optimizer_cls_and_kwargs = optimizer_cls_and_kwargs

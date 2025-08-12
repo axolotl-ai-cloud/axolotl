@@ -1,14 +1,16 @@
 """Various checks for Axolotl CLI."""
 
-import logging
 import os
 from pathlib import Path
 
 from accelerate.commands.config import config_args
 from huggingface_hub import HfApi
 from huggingface_hub.utils import LocalTokenNotFoundError
+from requests import HTTPError
 
-LOG = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 def check_accelerate_default_config() -> None:
@@ -43,5 +45,10 @@ def check_user_token() -> bool:
     except LocalTokenNotFoundError:
         LOG.warning(
             "Error verifying HuggingFace token. Remember to log in using `huggingface-cli login` and get your access token from https://huggingface.co/settings/tokens if you want to use gated models or datasets."
+        )
+        return False
+    except HTTPError:
+        LOG.warning(
+            "Error accessing HuggingFace. This may be due to a network issue or rate limiting."
         )
         return False

@@ -1,6 +1,5 @@
 """E2E smoke test for evaluate CLI command"""
 
-import os
 from pathlib import Path
 
 import yaml
@@ -8,8 +7,6 @@ from accelerate.test_utils import execute_subprocess_async
 from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
-
-os.environ["WANDB_DISABLED"] = "true"
 
 
 class TestE2eEvaluate:
@@ -39,6 +36,7 @@ class TestE2eEvaluate:
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "max_steps": 20,
+                "save_first_step": False,
             }
         )
 

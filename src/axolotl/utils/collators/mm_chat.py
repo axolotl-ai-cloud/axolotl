@@ -50,7 +50,7 @@ class MultiModalChatDataCollator(DataCollatorMixin):
             # This method requires transformers>=4.49.0
             result = self.processing_strategy.processor.apply_chat_template(
                 example["messages"],
-                add_generation_prompt=True,
+                add_generation_prompt=False,
                 tokenize=True,
                 return_tensors="pt",
                 padding=True,
@@ -83,6 +83,17 @@ class MultiModalChatDataCollator(DataCollatorMixin):
             "input_ids": input_ids,
             "attention_mask": attention_mask,
         }
+
+        for key, val in batch.items():
+            if key in ["input_ids", "attention_mask"]:
+                continue
+
+            if key in ["token_type_ids", "cross_attention_mask"]:
+                final_batch[key] = torch.nn.utils.rnn.pad_sequence(
+                    val, batch_first=True, padding_value=0
+                )
+            else:
+                final_batch[key] = torch.stack(val)
 
         # Process the labels
         final_batch["labels"] = self.processing_strategy.process_labels(

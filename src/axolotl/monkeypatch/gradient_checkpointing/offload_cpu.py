@@ -13,8 +13,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+import inspect
+
 import torch
 from packaging import version
+from torch.utils.checkpoint import (
+    set_device_states,
+)
+
+# support different pytorch versions
+has_device_type = "device_type" in inspect.signature(set_device_states).parameters
 
 torch_version = version.parse(torch.__version__)
 

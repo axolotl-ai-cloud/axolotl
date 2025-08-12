@@ -4,25 +4,32 @@ shared pytest fixtures
 
 import functools
 import importlib
+import logging
 import os
 import shutil
 import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Generator
 
 import datasets
 import pytest
 import requests
+import torch
 from huggingface_hub import snapshot_download
 from huggingface_hub.errors import LocalEntryNotFoundError
 from tokenizers import AddedToken
 from transformers import AutoTokenizer
 
+from axolotl.utils.dict import DictDefault
+
 from tests.hf_offline_utils import (
     enable_hf_offline,
     hf_offline_context,
 )
+
+logging.getLogger("filelock").setLevel(logging.CRITICAL)
 
 
 def retry_on_request_exceptions(max_retries=3, delay=1):
@@ -411,12 +418,17 @@ def tokenizer_mistral_7b_instruct_chatml(tokenizer_mistral_7b_instruct):
 
 
 @pytest.fixture
-def temp_dir():
+def temp_dir() -> Generator[str, None, None]:
     # Create a temporary directory
     _temp_dir = tempfile.mkdtemp()
     yield _temp_dir
     # Clean up the directory after the test
     shutil.rmtree(_temp_dir)
+
+
+@pytest.fixture(scope="function", autouse=True)
+def torch_manual_seed():
+    torch.manual_seed(42)
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -527,6 +539,22 @@ def dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff(
         / "fozziethebeat__alpaca_messages_2k_dpo_test__rev_ea82cff"
     )
     return datasets.load_from_disk(ds_path)["train"]
+
+
+@pytest.fixture(name="min_base_cfg")
+def fixture_min_base_cfg():
+    return DictDefault(
+        base_model="HuggingFaceTB/SmolLM2-135M",
+        learning_rate=1e-3,
+        datasets=[
+            {
+                "path": "mhenrichsen/alpaca_2k_test",
+                "type": "alpaca",
+            },
+        ],
+        micro_batch_size=1,
+        gradient_accumulation_steps=1,
+    )
 
 
 # # pylint: disable=redefined-outer-name,unused-argument
