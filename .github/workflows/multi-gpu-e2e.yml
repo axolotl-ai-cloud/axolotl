@@ -1,75 +1,75 @@
-# name: docker-multigpu-tests-biweekly
+name: docker-multigpu-tests-biweekly
 
-# on:
-#   pull_request:
-#     paths:
-#       - 'tests/e2e/multigpu/**.py'
-#       - 'requirements.txt'
-#       - 'setup.py'
-#       - 'pyproject.toml'
-#       - '.github/workflows/multi-gpu-e2e.yml'
-#       - 'src/axolotl/core/trainers/mixins/sequence_parallel.py'
-#       - 'src/axolotl/utils/distributed.py'
-#   workflow_dispatch:
-#   schedule:
-#     - cron: '0 0 * * 1,4'  # Runs at 00:00 UTC every monday & thursday
+on:
+  pull_request:
+    paths:
+      - 'tests/e2e/multigpu/**.py'
+      - 'requirements.txt'
+      - 'setup.py'
+      - 'pyproject.toml'
+      - '.github/workflows/multi-gpu-e2e.yml'
+      - 'src/axolotl/core/trainers/mixins/sequence_parallel.py'
+      - 'src/axolotl/utils/distributed.py'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 1,4'  # Runs at 00:00 UTC every monday & thursday
 
-# # Cancel jobs on the same ref if a new one is triggered
-# concurrency:
-#   group: ${{ github.workflow }}-${{ github.ref }}
-#   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+# Cancel jobs on the same ref if a new one is triggered
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-# jobs:
-#   test-axolotl-multigpu:
-#     if: ${{ ! contains(github.event.commits[0].message, '[skip e2e]') && github.repository_owner == 'axolotl-ai-cloud' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
-#     strategy:
-#       fail-fast: false
-#       matrix:
-#         include:
-#           - cuda: 126
-#             cuda_version: 12.6.3
-#             python_version: "3.11"
-#             pytorch: 2.6.0
-#             axolotl_extras:
-#             num_gpus: 2
-#             nightly_build: "true"
-#           - cuda: 126
-#             cuda_version: 12.6.3
-#             python_version: "3.11"
-#             pytorch: 2.7.0
-#             axolotl_extras:
-#             num_gpus: 2
-#             nightly_build: "true"
-#           - cuda: 126
-#             cuda_version: 12.6.3
-#             python_version: "3.11"
-#             pytorch: 2.7.1
-#             axolotl_extras: vllm
-#             num_gpus: 2
-#             nightly_build: "true"
-#     runs-on: [self-hosted, modal]
-#     timeout-minutes: 120
-#     steps:
-#       - name: Checkout
-#         uses: actions/checkout@v4
-#       - name: Install Python
-#         uses: actions/setup-python@v5
-#         with:
-#           python-version: "3.11"
-#       - name: Install Modal
-#         run: |
-#           python -m pip install --upgrade pip
-#           pip install modal==1.0.2 jinja2
-#       - name: Update env vars
-#         run: |
-#           echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
-#           echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
-#           echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
-#           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
-#           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
-#           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
-#           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
-#           echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
-#       - name: Run tests job on Modal
-#         run: |
-#           modal run cicd.multigpu
+jobs:
+  test-axolotl-multigpu:
+    if: ${{ ! contains(github.event.commits[0].message, '[skip e2e]') && github.repository_owner == 'axolotl-ai-cloud' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 126
+            cuda_version: 12.6.3
+            python_version: "3.11"
+            pytorch: 2.6.0
+            axolotl_extras:
+            num_gpus: 2
+            nightly_build: "true"
+          - cuda: 126
+            cuda_version: 12.6.3
+            python_version: "3.11"
+            pytorch: 2.7.0
+            axolotl_extras:
+            num_gpus: 2
+            nightly_build: "true"
+          - cuda: 126
+            cuda_version: 12.6.3
+            python_version: "3.11"
+            pytorch: 2.7.1
+            axolotl_extras: vllm
+            num_gpus: 2
+            nightly_build: "true"
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Modal
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==1.0.2 jinja2
+      - name: Update env vars
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
+          echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
+      - name: Run tests job on Modal
+        run: |
+          modal run cicd.multigpu
