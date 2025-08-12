@@ -185,12 +185,12 @@ class OptimizerMixin(Trainer):
                                 p.data_ptr(): p.numel() for p in module.parameters()
                             }.values()
                         )
-                        LOG.info(f"skipped {module}: {skipped/2**20}M params")
+                        LOG.info(f"skipped {module}: {skipped / 2 ** 20}M params")
                         manager.register_module_override(
                             module, "weight", {"optim_bits": 32}
                         )
                         LOG.debug(f"bitsandbytes: will optimize {module} in fp32")
-                LOG.info(f"skipped: {skipped/2**20}M params")
+                LOG.info(f"skipped: {skipped / 2 ** 20}M params")
 
         if is_sagemaker_mp_enabled():
             self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
