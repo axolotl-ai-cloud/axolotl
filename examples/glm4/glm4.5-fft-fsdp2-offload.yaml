@@ -18,18 +18,6 @@ sequence_len: 2048
 sample_packing: true
 eval_sample_packing: true
 
-lora_r: 16
-lora_alpha: 32
-lora_dropout: 0.05
-lora_target_modules:
-  - gate_proj
-  - down_proj
-  - up_proj
-  - q_proj
-  - v_proj
-  - k_proj
-  - o_proj
-
 wandb_project:
 wandb_entity:
 wandb_watch:
