@@ -29,7 +29,6 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         cfg: Dictionary mapping `axolotl` config keys to values.
         cli_args: Training-specific CLI arguments.
     """
-    x = 10 # remove this! testing CI
     check_accelerate_default_config()
     if int(os.getenv("LOCAL_RANK", "0")) == 0:
         check_user_token()
