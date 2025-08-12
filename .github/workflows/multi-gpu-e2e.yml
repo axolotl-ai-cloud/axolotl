@@ -7,7 +7,7 @@ on:
       - 'requirements.txt'
       - 'setup.py'
       - 'pyproject.toml'
-      - '.github/workflows/multi-gpu-e2e.yml'
+      # - '.github/workflows/multi-gpu-e2e.yml'
       - 'src/axolotl/core/trainers/mixins/sequence_parallel.py'
       - 'src/axolotl/utils/distributed.py'
   workflow_dispatch:
