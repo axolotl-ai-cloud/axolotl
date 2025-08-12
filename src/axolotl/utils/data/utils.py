@@ -168,7 +168,11 @@ def drop_long_seq_in_dataset(dataset: Dataset, cfg: DictDefault):
         return dataset
 
     # Get the handling method from config, default to "drop" for backward compatibility
-    handling = cfg.get("sequence_len_overflow_handling", "drop")
+    # Support legacy alias "excess_token_handling" as well
+    handling = cfg.get(
+        "sequence_len_overflow_handling",
+        cfg.get("excess_token_handling", "drop"),
+    )
 
     # Use the new function with the specified handling mode
     seq_handler = functools.partial(
