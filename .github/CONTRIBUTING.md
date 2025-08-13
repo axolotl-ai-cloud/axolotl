@@ -64,8 +64,6 @@ For development convenience, you can skip certain CI checks by including specifi
 - `[skip ci]` or `skip ci` - Skips all CI checks for that commit
 - `[skip-e2e]` or `skip-e2e` - Skips only end-to-end tests while running other CI checks
 
-Use these sparingly and only for commits like documentation updates, minor fixes, or work-in-progress commits that don't need full CI validation.
-
 ## Style Guidelines
 
 ### Code Style
