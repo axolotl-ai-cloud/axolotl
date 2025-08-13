@@ -3,6 +3,7 @@
 # pylint: disable=too-many-boolean-expressions
 
 import json
+import sys
 import tempfile
 from pathlib import Path
 
@@ -1251,10 +1252,26 @@ class ComplexValidationMixin:
 
             try:
                 import transformers.modeling_flash_attention_utils
+                from transformers.utils import is_flash_attn_greater_or_equal
 
                 # pylint: disable=protected-access
-                transformers.modeling_flash_attention_utils._flash_supports_window_size = (
-                    transformers.modeling_flash_attention_utils._flash_supports_window
+                transformers.modeling_flash_attention_utils._flash_supports_window = (
+                    True
+                )
+                setattr(
+                    sys.modules["transformers.modeling_flash_attention_utils"],
+                    "_flash_supports_window",
+                    True,
+                )
+                setattr(
+                    sys.modules["transformers.modeling_flash_attention_utils"],
+                    "_flash_supports_window_size",
+                    True,
+                )
+                setattr(
+                    sys.modules["transformers.modeling_flash_attention_utils"],
+                    "is_flash_attn_greater_or_equal",
+                    is_flash_attn_greater_or_equal,
                 )
                 import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
             except ImportError as exception:

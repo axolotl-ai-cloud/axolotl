@@ -1,7 +1,7 @@
 --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
 
 # START section of dependencies that don't install on Darwin/MacOS
-bitsandbytes==0.46.1
+bitsandbytes==0.47.0
 # triton 3.4.0 is not compatible with CCE
 triton>=3.0.0,<3.4.0
 mamba-ssm==1.2.0.post1
@@ -14,7 +14,7 @@ packaging==23.2
 
 huggingface_hub>=0.33.0
 peft==0.17.0
-transformers==4.55.0
+transformers==4.55.1
 tokenizers>=0.21.1
 accelerate==1.10.0
 datasets==4.0.0
