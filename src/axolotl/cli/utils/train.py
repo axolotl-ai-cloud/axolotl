@@ -67,14 +67,12 @@ def build_command(base_cmd: list[str], options: dict[str, Any]) -> list[str]:
 
 def generate_config_files(config: str, sweep: str | None) -> Iterator[tuple[str, bool]]:
     """
-    Generate list of configuration files to process.
+    Generate list of configuration files to process. Yields a tuple of the configuration file name and a boolean indicating
+    whether this is a group of configurations (i.e., a sweep).
 
     Args:
         config: Base configuration file
         sweep: Sweep configuration file
-
-    Yields:
-        Tuple of configuration file name and whether this is a group of configurations
     """
 
     if not sweep:
