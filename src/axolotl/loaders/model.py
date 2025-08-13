@@ -25,6 +25,7 @@ from peft import (
 from torch.distributed import DeviceMesh
 from transformers import (
     AutoModelForCausalLM,
+    AutoModelForImageTextToText,
     AutoModelForVision2Seq,
     AwqConfig,
     BitsAndBytesConfig,
@@ -432,6 +433,8 @@ class ModelLoader:
             self.auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
                 self.model_config.model_type, AutoModelForVision2Seq
             )
+            if isinstance(self.auto_model_loader, str):
+                self.auto_model_loader = AutoModelForImageTextToText
 
     def _set_device_map_config(self):
         """Setup `device_map` according to config"""
