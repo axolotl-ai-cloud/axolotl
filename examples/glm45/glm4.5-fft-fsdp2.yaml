@@ -50,12 +50,10 @@ special_tokens:
 
 fsdp_version: 2
 fsdp_config:
-  offload_params: true
+  offload_params: false
   cpu_ram_efficient_loading: true
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: Glm4MoeDecoderLayer
-  state_dict_type: FULL_STATE_DICT
+  state_dict_type: SHARDED_STATE_DICT
   reshard_after_forward: true
   activation_checkpointing: true
-
-# save_first_step: true  # uncomment this to validate checkpoint saving works with your config
