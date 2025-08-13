@@ -57,6 +57,13 @@ We welcome ideas for improvements and new features. To suggest an enhancement, o
 5. Push your branch to your fork on GitHub.
 6. Open a new pull request against the `main` branch of the axolotl repository. Include a clear and concise description of your changes, referencing any related issues.
 
+#### Skipping CI Checks
+
+You can skip certain CI checks by including specific keywords in your commit messages:
+
+- `[skip ci]` or `skip ci` - Skips all CI checks for that commit
+- `[skip-e2e]` or `skip-e2e` - Skips only end-to-end tests while running other CI checks
+
 ## Style Guidelines
 
 ### Code Style
