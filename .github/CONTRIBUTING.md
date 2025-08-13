@@ -59,7 +59,7 @@ We welcome ideas for improvements and new features. To suggest an enhancement, o
 
 #### Skipping CI Checks
 
-For development convenience, you can skip certain CI checks by including specific keywords in your commit messages:
+You can skip certain CI checks by including specific keywords in your commit messages:
 
 - `[skip ci]` or `skip ci` - Skips all CI checks for that commit
 - `[skip-e2e]` or `skip-e2e` - Skips only end-to-end tests while running other CI checks
