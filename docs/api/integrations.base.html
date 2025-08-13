@@ -689,7 +689,7 @@ training.</p>
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.integrations.base.BasePlugin.register">register</a></td>
-<td>Registers the plugin with the given configuration.</td>
+<td>Registers the plugin with the given configuration as an unparsed dict.</td>
 </tr>
 </tbody>
 </table>
@@ -1469,16 +1469,10 @@ callbacks that require access to the model or trainer.</p>
 <section id="axolotl.integrations.base.BasePlugin.register" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.BasePlugin.register">register</h5>
 <div class="sourceCode" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>integrations.base.BasePlugin.register(cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Registers the plugin with the given configuration.</p>
+<p>Registers the plugin with the given configuration as an unparsed dict.</p>
 <section id="parameters-16" class="level6 doc-section doc-section-parameters">
 <h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-16">Parameters</h6>
 <table class="caption-top table">
-<colgroup>
-<col style="width: 11%">
-<col style="width: 19%">
-<col style="width: 51%">
-<col style="width: 17%">
-</colgroup>
 <thead>
 <tr class="header">
 <th>Name</th>
@@ -1490,7 +1484,7 @@ callbacks that require access to the model or trainer.</p>
 <tbody>
 <tr class="odd">
 <td>cfg</td>
-<td>DictDefault</td>
+<td>dict</td>
 <td>The configuration for the plugin.</td>
 <td><em>required</em></td>
 </tr>

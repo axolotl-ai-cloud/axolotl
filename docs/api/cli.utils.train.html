@@ -529,7 +529,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="even">
 <td><a href="#axolotl.cli.utils.train.generate_config_files">generate_config_files</a></td>
-<td>Generate list of configuration files to process.</td>
+<td>Generate list of configuration files to process. Yields a tuple of the configuration file name and a boolean indicating</td>
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.cli.utils.train.launch_training">launch_training</a></td>
@@ -597,7 +597,35 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.cli.utils.train.generate_config_files" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.utils.train.generate_config_files">generate_config_files</h3>
 <div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>cli.utils.train.generate_config_files(config, sweep)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Generate list of configuration files to process.</p>
+<p>Generate list of configuration files to process. Yields a tuple of the configuration file name and a boolean indicating
+whether this is a group of configurations (i.e., a sweep).</p>
+<section id="parameters-1" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>config</td>
+<td>str</td>
+<td>Base configuration file</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>sweep</td>
+<td>str | None</td>
+<td>Sweep configuration file</td>
+<td><em>required</em></td>
+</tr>
+</tbody>
+</table>
+</section>
 </section>
 <section id="axolotl.cli.utils.train.launch_training" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.utils.train.launch_training">launch_training</h3>
@@ -607,7 +635,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    cloud,</span>
 <span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    kwargs,</span>
 <span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    launcher_args<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    use_exec<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Execute training with the given configuration.</p>
 
 
