@@ -10,7 +10,7 @@ on:
       - '**/*.qmd'     # any Quarto file
       - '_quarto.yml'
       - docs/scripts/generate_config_docs.py
-      - src/axolotl/**/*.py
+      - src/axolotl/utils/schemas/**.py
 
 permissions:
   checks: write
@@ -45,23 +45,8 @@ jobs:
           python3 -m pip install jupyter quartodoc
           python3 -m pip install -e .
 
-      - name: Debug versions
-        run: |
-          echo "Python version:"
-          python3 --version
-          echo "Pip list:"
-          pip list | grep -E "(quartodoc|jupyter|axolotl)"
-          echo "Quartodoc version:"
-          python3 -c "import quartodoc; print(quartodoc.__version__)"
-          echo "Current working directory:"
-          pwd
-          echo "Directory contents:"
-          ls -la
-
       - name: Build autodoc
-        run: |
-          echo "Running quartodoc build with verbose output..."
-          quartodoc build --verbose
+        run: quartodoc build
 
       - name: Quarto render
         run: quarto render

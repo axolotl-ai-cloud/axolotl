@@ -74,7 +74,7 @@ def generate_config_files(config: str, sweep: str | None) -> Iterator[tuple[str,
         sweep: Sweep configuration file
         
     Yields:
-        tuple[str, bool]: Configuration file name and whether this is a group of configurations
+        Configuration file name and whether this is a group of configurations
     """
 
     if not sweep:
