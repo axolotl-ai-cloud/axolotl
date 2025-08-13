@@ -72,7 +72,7 @@ def generate_config_files(config: str, sweep: str | None) -> Iterator[tuple[str,
     Args:
         config: Base configuration file
         sweep: Sweep configuration file
-        
+
     Yields:
         Configuration file name and whether this is a group of configurations
     """
