@@ -138,7 +138,7 @@ class ProcessingStrategy:
                     image_key = key
                     break
 
-            # if the image key exists, add the image to the first message
+            # if the image key exists, add the image to the first user message
             if image_key is not None and processed_example[image_key] is not None:
                 # TODO: check if it's normal to be single image only for common datasets
                 # From observation, it's usually a list of single image but some datasets may have several columns for images
@@ -179,26 +179,34 @@ class ProcessingStrategy:
 
                 # Look for any image type in the first message
                 # some dataset have an {type: "image"} in the first message
+                msg_ind_to_add = None
                 ind_to_add = None
+                first_user_idx = None
 
-                for i, content in enumerate(
-                    processed_example["messages"][0]["content"]
-                ):
-                    # Usually datasets created with image columns, don't have it in the messages itself
-                    if content["type"] == "image" and all(
-                        k not in content for k in ["image", "url", "path", "base64"]
+                for msg_idx, msg_content in enumerate(processed_example["messages"]):
+                    if first_user_idx is None and msg_content["role"] == "user":
+                        first_user_idx = msg_idx
+                    for i, content in enumerate(
+                        processed_example["messages"][msg_idx]["content"]
                     ):
-                        ind_to_add = i
-                        break
+                        # Usually datasets created with image columns, don't have it in the messages itself
+                        if content["type"] == "image" and all(
+                            k not in content for k in ["image", "url", "path", "base64"]
+                        ):
+                            msg_ind_to_add = msg_idx
+                            ind_to_add = i
+                            break
 
                 # If an image type is found, add the image to that index
-                if ind_to_add is not None:
-                    processed_example["messages"][0]["content"][ind_to_add][
-                        "image"
-                    ] = image_value
+                if ind_to_add is not None and msg_ind_to_add is not None:
+                    processed_example["messages"][msg_ind_to_add]["content"][
+                        ind_to_add
+                    ]["image"] = image_value
                 else:
-                    # if no image type is found, add it to end of the first message
-                    processed_example["messages"][0]["content"].append(
+                    # if no image type is found, add it to end of the first user message
+                    if first_user_idx is None:
+                        first_user_idx = 0
+                    processed_example["messages"][first_user_idx]["content"].append(
                         {
                             "type": "image",
                             "image": image_value,
