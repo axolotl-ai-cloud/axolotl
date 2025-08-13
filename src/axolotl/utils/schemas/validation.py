@@ -817,13 +817,13 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_fsdp_version_in_fsdp_config(cls, data):
-        if data.get("fsdp_config"):
-            if data.get("fsdp_config", {}).get("fsdp_version"):
-                LOG.warning(
-                    "Configuring `fsdp_version` in `fsdp_config` is deprecated. "
-                    "Please configure `fsdp_version` as a top-level field."
-                )
-                data["fsdp_version"] = data.get("fsdp_config").pop("fsdp_version")
+        fsdp_config = data.get("fsdp_config") or {}
+        if fsdp_config and fsdp_config.get("fsdp_version"):
+            LOG.warning(
+                "Configuring `fsdp_version` in `fsdp_config` is deprecated. "
+                "Please configure `fsdp_version` as a top-level field."
+            )
+            data["fsdp_version"] = fsdp_config.pop("fsdp_version")
         return data
 
     @model_validator(mode="before")
@@ -1151,10 +1151,8 @@ class ModelCompatibilityValidationMixin:
     @classmethod
     def check_gpt_oss_fsdp_loading(cls, data):
         if data.get("model_quantization_config", "") == "Mxfp4Config":
-            if (
-                data.get("fsdp_config", {}).get("cpu_ram_efficient_loading", False)
-                is True
-            ):
+            fsdp_config = data.get("fsdp_config") or {}
+            if fsdp_config.get("cpu_ram_efficient_loading", False) is True:
                 raise ValueError(
                     "FSDP cpu_ram_efficient_loading is not supported for Mxfp4Config model quantization."
                 )
