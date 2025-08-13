@@ -424,6 +424,13 @@ def get_processing_strategy(
         return ProcessingStrategy(
             processor, chat_template, image_size, image_resize_algorithm
         )
+    if chat_template_type in [None, "tokenizer_default"]:
+        return ProcessingStrategy(
+            processor,
+            processor.tokenizer.chat_template,
+            image_size,
+            image_resize_algorithm,
+        )
 
     if isinstance(processor, VoxtralProcessor):
         return VoxtralProcessingStrategy(
