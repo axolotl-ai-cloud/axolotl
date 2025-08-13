@@ -20,12 +20,15 @@ from ring_flash_attn import ring_flash_attn_func
 from ring_flash_attn.adapters.hf_adapter import check_params
 from transformers.modeling_flash_attention_utils import is_flash_attn_greater_or_equal
 
-try:
+try:  # pylint: disable=duplicate-code
     from transformers.modeling_flash_attention_utils import _flash_supports_window
 except ImportError:
-    from transformers.modeling_flash_attention_utils import (
-        _flash_supports_window_size as _flash_supports_window,
-    )
+    try:
+        from transformers.modeling_flash_attention_utils import (
+            _flash_supports_window_size as _flash_supports_window,
+        )
+    except ImportError:
+        _flash_supports_window = True
 
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
