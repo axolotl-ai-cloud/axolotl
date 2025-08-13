@@ -62,7 +62,7 @@ We welcome ideas for improvements and new features. To suggest an enhancement, o
 You can skip certain CI checks by including specific keywords in your commit messages:
 
 - `[skip ci]` or `skip ci` - Skips all CI checks for that commit
-- `[skip-e2e]` or `skip-e2e` - Skips only end-to-end tests while running other CI checks
+- `[skip-e2e]` or `skip-e2e` - Skips only end-to-end tests while running other CI checks. You may also include this in the title of your PR to disable end-to-end tests for the entire PR.
 
 ## Style Guidelines
 
