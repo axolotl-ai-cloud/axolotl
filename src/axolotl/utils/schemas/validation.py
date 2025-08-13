@@ -369,10 +369,10 @@ class TrainingValidationMixin:
                 "see speed improvements. Please consider setting `torch_compile: "
                 "true` in your config."
             )
+        fsdp_config = data.get("fsdp_config") or {}
         if data.get("fp8") and (
-            data.get("fsdp_config", {}).get("activation_checkpointing", False) is True
-            or data.get("fsdp_config", {}).get("fsdp_activation_checkpointing", False)
-            is True
+            fsdp_config.get("activation_checkpointing", False) is True
+            or fsdp_config.get("fsdp_activation_checkpointing", False) is True
         ):
             LOG.warning(
                 "FP8 + FSDP2 + activation checkpointing may be slower than BF16 "
