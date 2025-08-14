@@ -41,7 +41,7 @@ This guide shows how to fine-tune both the LFM2 and LFM2-VL models with Axolotl.
 - **Dataset Loading**: Read more on how to load your own dataset in our [documentation](https://docs.axolotl.ai/docs/dataset_loading.html).
 - **Dataset Formats**:
   - For LFM2 models, the dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
-  - For LFM2-VL models, Axolotl follows the OpenAI multi-content Messages format. See our [multimodal docs](https://docs.axolotl.ai/docs/multimodal.html) for details.
+  - For LFM2-VL models, Axolotl follows the OpenAI multi-content Messages format. See our [Multimodal docs](https://docs.axolotl.ai/docs/multimodal.html#dataset-format) for details.
 
 ## Optimization Guides
 
