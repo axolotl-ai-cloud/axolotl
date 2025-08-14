@@ -161,12 +161,11 @@ def check_tensorboard(
     reader = SummaryReader(event_file)
     df = reader.scalars  # pylint: disable=invalid-name
     df = df[(df.tag == tag)]  # pylint: disable=invalid-name
+    lt_val = (1 + rtol) * lt_val
     if "%s" in assertion_err:
-        assert df.value.values[-1] < (1 + rtol) * lt_val, (
-            assertion_err % df.value.values[-1]
-        )
+        assert df.value.values[-1] < lt_val, assertion_err % df.value.values[-1]
     else:
-        assert df.value.values[-1] < (1 + rtol) * lt_val, assertion_err
+        assert df.value.values[-1] < lt_val, assertion_err
 
 
 def check_model_output_exists(temp_dir: str, cfg: DictDefault) -> None:
