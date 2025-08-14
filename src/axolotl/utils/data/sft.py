@@ -28,7 +28,7 @@ from axolotl.utils.data.shared import (
 )
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
-    drop_long_seq_in_dataset,
+    handle_long_seq_in_dataset_long_seq_in_dataset,
     retry_on_request_exceptions,
 )
 from axolotl.utils.data.wrappers import get_dataset_wrapper
