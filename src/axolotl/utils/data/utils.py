@@ -192,15 +192,59 @@ def drop_long_seq_in_dataset(
     if filter_map_kwargs:
         drop_long_kwargs["desc"] = f"Dropping Long Sequences (>{sequence_len})"
 
+    behave = (cfg.excess_len or "drop").lower()
+    if behave not in {"drop", "truncate"}:
+        behave = "drop"
+
+    if behave == "drop":
+        dataset = dataset.filter(
+            drop_long,
+            batched=True,
+            **filter_map_kwargs,
+            **drop_long_kwargs,
+        )
+        if prior_len:
+            dropped = prior_len - len(dataset)
+            if dropped:
+                LOG.warning(f"Dropped {dropped} long samples from dataset")
+        return dataset
+
+    # Truncation: keep rows but slice to sequence_len
+    def _truncate_batch(batch: dict) -> dict:
+        if "input_ids" in batch:
+            batch["input_ids"] = [seq[:sequence_len] for seq in batch["input_ids"]]
+        if "attention_mask" in batch:
+            batch["attention_mask"] = [
+                seq[:sequence_len] for seq in batch["attention_mask"]
+            ]
+        if "labels" in batch:
+            batch["labels"] = [seq[:sequence_len] for seq in batch["labels"]]
+        if "position_ids" in batch:
+            batch["position_ids"] = [
+                seq[:sequence_len] for seq in batch["position_ids"]
+            ]
+        return batch
+
+    map_kwargs = dict(
+        num_proc=cfg.dataset_processes, load_from_cache_file=not cfg.is_preprocess
+    )
+    dataset = dataset.map(
+        _truncate_batch,
+        batched=True,
+        desc=f"Truncating Sequences to {sequence_len}",
+        **({} if isinstance(dataset, IterableDataset) else map_kwargs),
+    )
+
+    # drop samples shorter than cfg.min_sample_len
     dataset = dataset.filter(
-        drop_long,
+        functools.partial(
+            drop_long_seq,
+            sequence_len=sequence_len,
+            min_sequence_len=cfg.min_sample_len,
+        ),
         batched=True,
         **filter_map_kwargs,
-        **drop_long_kwargs,
+        desc=f"Dropping Too-Short Sequences (<{cfg.min_sample_len or 2})",
     )
-    if prior_len:
-        dropped = prior_len - len(dataset)
-        if dropped:
-            LOG.warning(f"Dropped {dropped} long samples from dataset")
 
     return dataset
