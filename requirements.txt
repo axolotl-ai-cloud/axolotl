@@ -29,7 +29,6 @@ hf_transfer
 sentencepiece
 gradio==5.41.1
 
-num2words==0.5.14
 modal==1.0.2
 pydantic==2.10.6
 addict
