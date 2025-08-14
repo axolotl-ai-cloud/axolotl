@@ -26,6 +26,7 @@ This guide shows how to fine-tune SmolVLM2 models with Axolotl.
 3.  Run the finetuning example:
 
     ```bash
+    # LoRA SFT (1x48GB @ 6.8GiB)
     axolotl train examples/smolvlm2/smolvlm2-2B-lora.yaml
     ```
 
