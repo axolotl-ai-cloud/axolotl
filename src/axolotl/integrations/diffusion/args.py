@@ -41,3 +41,7 @@ class DiffusionArgs(BaseModel):
         default=True,
         description="Apply importance weighting to loss based on masking probability",
     )
+    mask_token_id: int = Field(
+        default=128002,
+        description="Token ID to use for masking. Default is 128002 (<|reserved_special_token_0|> for Llama 3.2)",
+    )
