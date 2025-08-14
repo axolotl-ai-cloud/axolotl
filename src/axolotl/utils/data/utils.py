@@ -192,11 +192,11 @@ def drop_long_seq_in_dataset(
     if filter_map_kwargs:
         drop_long_kwargs["desc"] = f"Dropping Long Sequences (>{sequence_len})"
 
-    behave = (cfg.excess_len or "drop").lower()
-    if behave not in {"drop", "truncate"}:
-        behave = "drop"
+    excess_length_strategy = (cfg.excess_length_strategy or "drop").lower()
+    if excess_length_strategy not in {"drop", "truncate"}:
+        excess_length_strategy = "drop"
 
-    if behave == "drop":
+    if excess_length_strategy == "drop":
         dataset = dataset.filter(
             drop_long,
             batched=True,
