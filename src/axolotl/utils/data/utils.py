@@ -225,9 +225,10 @@ def drop_long_seq_in_dataset(
             ]
         return batch
 
-    map_kwargs = dict(
-        num_proc=cfg.dataset_processes, load_from_cache_file=not cfg.is_preprocess
-    )
+    map_kwargs = {
+        "num_proc": cfg.dataset_processes,
+        "load_from_cache_file": not cfg.is_preprocess,
+    }
     dataset = dataset.map(
         _truncate_batch,
         batched=True,
