@@ -1,24 +1,58 @@
-# Liquid Foundation Models 2
+# Finetune Liquid Foundation Models 2 (LFM2) with Axolotl
 
-Liquid Foundation Models are a family of small models focused on quality, speed and memory efficiency.
+[Liquid Foundation Models 2 (LFM2)](https://huggingface.co/collections/LiquidAI/lfm2-686d721927015b2ad73eaa38) are a family of small, open-weight models from [Liquid AI](https://www.liquid.ai/) focused on quality, speed, and memory efficiency. Liquid AI released text-only [LFM2](https://huggingface.co/collections/LiquidAI/lfm2-686d721927015b2ad73eaa38) and text+vision [LFM2-VL](https://huggingface.co/collections/LiquidAI/lfm2-vl-68963bbc84a610f7638d5ffa) models.
 
-For more information, see [Liquid Foundation Models 2](https://www.liquid.ai/blog/liquid-foundation-models-v2-our-second-series-of-generative-ai-models).
+LFM2 features a new hybrid Liquid architecture with multiplicative gates, short-range convolutions, and grouped query attention, enabling fast training and inference.
 
-We include two examples in Axolotl:
+This guide shows how to fine-tune both the LFM2 and LFM2-VL models with Axolotl.
 
-- LFM2 Text Generation
-  - [YAML](./lfm2-350m-fft.yaml)
-- LFM2-VL Image-Text-to-Text
-  - [YAML](./lfm2-vl.yaml)
+## Getting Started
 
-### TIP
+1.  Install Axolotl following the [installation guide](https://docs.axolotl.ai/docs/installation.html).
 
-If you get the following error(s):
-- `ImportError: causal_conv1d_cuda.cpython-311-x86_64-linux-gnu.so: undefined symbol: _ZN3c104cuda9SetDeviceEab`
-- `ModuleNotFoundError: No module named 'causal_conv1d_cuda'`
+    Here is an example of how to install from pip:
+    ```bash
+    # Ensure you have a compatible version of Pytorch installed
+    pip3 install packaging setuptools wheel ninja
+    pip3 install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
+    ```
 
-Try uninstalling causal-conv1d:
+2.  Run one of the finetuning examples below.
 
-```bash
-pip uninstall -y causal-conv1d
-```
+    **LFM2**
+    ```bash
+    # FFT SFT
+    axolotl train examples/LiquidAI/lfm2-350m-fft.yaml
+    ```
+
+    **LFM2-VL**
+    ```bash
+    # LoRA SFT
+    axolotl train examples/LiquidAI/lmf2-vl-lora.yaml
+    ```
+
+### TIPS
+
+- **Installation Error**: If you encounter `ImportError: ... undefined symbol ...` or `ModuleNotFoundError: No module named 'causal_conv1d_cuda'`, the `causal-conv1d` package may have been installed incorrectly. Try uninstalling it:
+  ```bash
+  pip uninstall -y causal-conv1d
+  ```
+
+- **Dataset Loading**: Read more on how to load your own dataset in our [documentation](https://docs.axolotl.ai/docs/dataset_loading.html).
+- **Dataset Formats**:
+  - For LFM2 models, the dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
+  - For LFM2-VL models, Axolotl follows the OpenAI multi-content Messages format. See our [multimodal docs](https://docs.axolotl.ai/docs/multimodal.html) for details.
+
+## Optimization Guides
+
+- [Multi-GPU Training](https://docs.axolotl.ai/docs/multi-gpu.html)
+- [LoRA Optimizations](https://docs.axolotl.ai/docs/lora_optims.html)
+- [Multi-Node Training](https://docs.axolotl.ai/docs/multi-node.html)
+
+## Related Resources
+
+- [LFM2 Blog](https://www.liquid.ai/blog/liquid-foundation-models-v2-our-second-series-of-generative-ai-models)
+- [LFM2-VL Blog](https://www.liquid.ai/blog/lfm2-vl-efficient-vision-language-models)
+- [Axolotl Docs](https://docs.axolotl.ai)
+- [Axolotl GitHub](https://github.com/axolotl-ai-cloud/axolotl)
+- [Axolotl Discord](https://discord.gg/7m9sfhzaf3)
