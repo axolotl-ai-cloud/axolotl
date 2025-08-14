@@ -152,8 +152,6 @@ def truncate_long_seq(sample, sequence_len=2048, min_sequence_len=2):
     """
     Truncate samples whose sequence length is too long (> sequence_len)
     or drop those too short (< min_sequence_len).
-
-    Works for both single-example (list[int]) or batched (list[list[int]]).
     """
     min_sequence_len = min_sequence_len or 2
 
