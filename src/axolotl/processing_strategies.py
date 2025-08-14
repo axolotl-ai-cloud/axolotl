@@ -6,7 +6,7 @@ from typing import Optional
 from PIL import Image, ImageOps
 from PIL.Image import Resampling
 from torch import Tensor, zeros_like
-from transformers import ProcessorMixin, VoxtralProcessor
+from transformers import ProcessorMixin, SmolVLMProcessor, VoxtralProcessor
 from transformers.image_utils import load_image
 
 from axolotl.utils.dict import remove_none_values
@@ -403,6 +403,24 @@ class VoxtralProcessingStrategy(ProcessingStrategy):
         return labels
 
 
+class SmolVLM2ProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for SmolVLM2"""
+
+    def __init__(
+        self,
+        processor: ProcessorMixin,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
+        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        self.image_token = "<image>"  # nosec
+
+        self.image_token_id = processor.tokenizer.additional_special_tokens_ids[
+            processor.tokenizer.additional_special_tokens.index(self.image_token)
+        ]
+
+
 def get_processing_strategy(
     processor: ProcessorMixin,
     chat_template,
@@ -410,39 +428,43 @@ def get_processing_strategy(
     image_size: int | tuple[int, int] | None = None,
     image_resize_algorithm: Resampling | None = None,
 ):
+    processing_kwargs = {
+        "processor": processor,
+        "chat_template": chat_template,
+        "image_size": image_size,
+        "image_resize_algorithm": image_resize_algorithm,
+    }
+
+    if chat_template_type in [None, "tokenizer_default"] and hasattr(
+        processor.tokenizer, "chat_template"
+    ):
+        processing_kwargs["chat_template"] = processor.tokenizer.chat_template
+
     if chat_template_type == "qwen2_vl":
         return Qwen2VLProcessingStrategy(
-            processor, chat_template, image_size, image_resize_algorithm
+            **processing_kwargs,
         )
     if chat_template_type == "gemma3":
         return Gemma3ProcessingStrategy(
-            processor, chat_template, image_size, image_resize_algorithm
+            **processing_kwargs,
         )
     if chat_template_type == "gemma3n":
         return Gemma3nProcessingStrategy(
-            processor, chat_template, image_size, image_resize_algorithm
-        )
-    if chat_template_type in [
-        "llama3_2_vision",
-        "llama4",
-        "llava",
-        "mistral_v7_tekken",
-        "pixtral",
-    ]:
-        return ProcessingStrategy(
-            processor, chat_template, image_size, image_resize_algorithm
-        )
-    if chat_template_type in [None, "tokenizer_default"]:
-        return ProcessingStrategy(
-            processor,
-            processor.tokenizer.chat_template,
-            image_size,
-            image_resize_algorithm,
+            **processing_kwargs,
         )
 
     if isinstance(processor, VoxtralProcessor):
         return VoxtralProcessingStrategy(
-            processor, chat_template, image_size, image_resize_algorithm
+            **processing_kwargs,
         )
 
-    raise ValueError(f"Unsupported chat template type: {chat_template_type}")
+    if isinstance(processor, SmolVLMProcessor):
+        return SmolVLM2ProcessingStrategy(
+            **processing_kwargs,
+        )
+
+    # llama3_2_vision, llama4, llava
+    # mistral_v7_tekken, pixtral, lfm2vl
+    return ProcessingStrategy(
+        **processing_kwargs,
+    )
