@@ -1,8 +1,4 @@
-"""
-Diffusion LM training plugin for Axolotl.
-
-This plugin enables diffusion language model training using the LLaDA approach.
-"""
+"""Diffusion LM training plugin init."""
 
 from .args import DiffusionArgs
 from .plugin import DiffusionPlugin
