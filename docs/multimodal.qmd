@@ -214,6 +214,20 @@ You may need to install `librosa` via `pip3 install librosa==0.11.0`.
 
 :::
 
+### Video
+
+::: {.callout-warning}
+
+This is not well tested at the moment. We welcome contributors!
+
+:::
+
+For video loading, you can use the following keys within `content` alongside `"type": "video"`:
+
+- `"path": "/path/to/video.mp4"`
+- `"url": "https://example.com/video.mp4"`
+- `"video": np.ndarray | list[PIL.Image.Image] | torch.Tensor` (or list of the aforementioned)
+
 ### Example
 
 Here is an example of a multi-modal dataset:
