@@ -28,7 +28,7 @@ This guide shows how to fine-tune both the LFM2 and LFM2-VL models with Axolotl.
     **LFM2-VL**
     ```bash
     # LoRA SFT
-    axolotl train examples/LiquidAI/lmf2-vl-lora.yaml
+    axolotl train examples/LiquidAI/lfm2-vl-lora.yaml
     ```
 
 ### TIPS
