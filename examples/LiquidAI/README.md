@@ -8,7 +8,7 @@ We include two examples in Axolotl:
 
 - LFM2 Text Generation
   - [YAML](./lfm2-350m-fft.yaml)
--LFM2-VL Image-Text-to-Text
+- LFM2-VL Image-Text-to-Text
   - [YAML](./lfm2-vl.yaml)
 
 > [!TIP]

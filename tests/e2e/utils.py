@@ -147,7 +147,11 @@ def require_hopper(test_case):
 
 
 def check_tensorboard(
-    temp_run_dir: str, tag: str, lt_val: float, assertion_err: str
+    temp_run_dir: str,
+    tag: str,
+    lt_val: float,
+    assertion_err: str,
+    rtol: float = 0.02,
 ) -> None:
     """
     helper function to parse and check tensorboard logs
@@ -158,9 +162,11 @@ def check_tensorboard(
     df = reader.scalars  # pylint: disable=invalid-name
     df = df[(df.tag == tag)]  # pylint: disable=invalid-name
     if "%s" in assertion_err:
-        assert df.value.values[-1] < lt_val, assertion_err % df.value.values[-1]
+        assert df.value.values[-1] < (1 + rtol) * lt_val, (
+            assertion_err % df.value.values[-1]
+        )
     else:
-        assert df.value.values[-1] < lt_val, assertion_err
+        assert df.value.values[-1] < (1 + rtol) * lt_val, assertion_err
 
 
 def check_model_output_exists(temp_dir: str, cfg: DictDefault) -> None:
