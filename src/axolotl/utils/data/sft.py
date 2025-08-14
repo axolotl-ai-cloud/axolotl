@@ -28,7 +28,7 @@ from axolotl.utils.data.shared import (
 )
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
-    handle_long_seq_in_dataset_long_seq_in_dataset,
+    handle_long_seq_in_dataset,
     retry_on_request_exceptions,
 )
 from axolotl.utils.data.wrappers import get_dataset_wrapper
@@ -339,9 +339,9 @@ def _load_raw_datasets(
 
     if not cfg.skip_prepare_dataset:
         if split == "test" and cfg.eval_sequence_len:
-            dataset = drop_long_seq_in_dataset(dataset, cfg.eval_sequence_len, cfg)
+            dataset = handle_long_seq_in_dataset(dataset, cfg.eval_sequence_len, cfg)
         else:
-            dataset = drop_long_seq_in_dataset(dataset, cfg.sequence_len, cfg)
+            dataset = handle_long_seq_in_dataset(dataset, cfg.sequence_len, cfg)
         if cfg.sample_packing:
             dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
