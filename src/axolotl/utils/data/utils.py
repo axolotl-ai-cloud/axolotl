@@ -148,7 +148,38 @@ def deduplicate_and_log_datasets(
     return dataset, other_dataset
 
 
-def drop_long_seq_in_dataset(
+def truncate_long_seq(sample, sequence_len=2048, min_sequence_len=2):
+    """
+    Truncate samples whose sequence length is too long (> sequence_len)
+    or drop those too short (< min_sequence_len).
+
+    Works for both single-example (list[int]) or batched (list[list[int]]).
+    """
+    min_sequence_len = min_sequence_len or 2
+
+    input_ids = sample["input_ids"]
+    results = []
+
+    # Batched (input_ids is a list of lists)
+    for i, seq in enumerate(input_ids):
+        length = len(seq)
+        if length < min_sequence_len:
+            results.append(False)
+        elif length > sequence_len:
+            sample["input_ids"][i] = seq[:sequence_len]
+            if "attention_mask" in sample:
+                sample["attention_mask"][i] = sample["attention_mask"][i][:sequence_len]
+            if "labels" in sample:
+                sample["labels"][i] = sample["labels"][i][:sequence_len]
+            if "position_ids" in sample:
+                sample["position_ids"][i] = sample["position_ids"][i][:sequence_len]
+            results.append(True)
+        else:
+            results.append(True)
+    return results
+
+
+def handle_long_seq_in_dataset(
     dataset: Dataset, sequence_len: int, cfg: DictDefault
 ) -> Dataset:
     """Remove sequences longer than configured maximum from dataset.
@@ -193,59 +224,32 @@ def drop_long_seq_in_dataset(
         drop_long_kwargs["desc"] = f"Dropping Long Sequences (>{sequence_len})"
 
     excess_length_strategy = (cfg.excess_length_strategy or "drop").lower()
-    if excess_length_strategy not in {"drop", "truncate"}:
-        excess_length_strategy = "drop"
-
-    if excess_length_strategy == "drop":
-        dataset = dataset.filter(
-            drop_long,
-            batched=True,
-            **filter_map_kwargs,
-            **drop_long_kwargs,
-        )
-        if prior_len:
-            dropped = prior_len - len(dataset)
-            if dropped:
-                LOG.warning(f"Dropped {dropped} long samples from dataset")
-        return dataset
-
-    # Truncation: keep rows but slice to sequence_len
-    def _truncate_batch(batch: dict) -> dict:
-        if "input_ids" in batch:
-            batch["input_ids"] = [seq[:sequence_len] for seq in batch["input_ids"]]
-        if "attention_mask" in batch:
-            batch["attention_mask"] = [
-                seq[:sequence_len] for seq in batch["attention_mask"]
-            ]
-        if "labels" in batch:
-            batch["labels"] = [seq[:sequence_len] for seq in batch["labels"]]
-        if "position_ids" in batch:
-            batch["position_ids"] = [
-                seq[:sequence_len] for seq in batch["position_ids"]
-            ]
-        return batch
-
-    map_kwargs = {
-        "num_proc": cfg.dataset_processes,
-        "load_from_cache_file": not cfg.is_preprocess,
-    }
-    dataset = dataset.map(
-        _truncate_batch,
-        batched=True,
-        desc=f"Truncating Sequences to {sequence_len}",
-        **({} if isinstance(dataset, IterableDataset) else map_kwargs),
-    )
-
-    # drop samples shorter than cfg.min_sample_len
-    dataset = dataset.filter(
-        functools.partial(
-            drop_long_seq,
+    if excess_length_strategy == "truncate":
+        process_fn = functools.partial(
+            truncate_long_seq,
             sequence_len=sequence_len,
             min_sequence_len=cfg.min_sample_len,
-        ),
+        )
+        drop_long_kwargs["desc"] = (
+            f"Truncating/Filtering Sequences (target_len={sequence_len})"
+        )
+    else:
+        process_fn = drop_long
+
+    dataset = dataset.filter(
+        process_fn,
         batched=True,
         **filter_map_kwargs,
-        desc=f"Dropping Too-Short Sequences (<{cfg.min_sample_len or 2})",
+        **drop_long_kwargs,
     )
+    if prior_len:
+        dropped = prior_len - len(dataset)
+        if dropped:
+            action = (
+                "truncated/filtered"
+                if excess_length_strategy == "truncate"
+                else "dropped"
+            )
+            LOG.warning(f"{action.title()} {dropped} samples from dataset")
 
     return dataset
