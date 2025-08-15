@@ -2,7 +2,6 @@ base_model: LiquidAI/LFM2-350M
 
 chunked_cross_entropy: true
 
-chat_template: tokenizer_default
 eot_tokens:
   - "<|im_end|>"
 datasets:
