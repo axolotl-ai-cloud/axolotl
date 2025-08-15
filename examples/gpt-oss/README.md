@@ -40,20 +40,23 @@ On 8xH100s
 axolotl train examples/gpt-oss/gpt-oss-120b-fft-fsdp2-offload.yaml
 ```
 
-When using SHARDED_STATE_DICT with FSDP, there is an additional post-training step to merge the sharded weights.
-This step will automatically determine the last checkpoint directory and merge the sharded weights to
-`{output_dir}/merged`.
-```bash
-axolotl merge-sharded-fsdp-weights examples/gpt-oss/gpt-oss-120b-fft-fsdp2-offload.yaml
-mv ./outputs/gpt-oss-out/merged/* ./outputs/gpt-oss-out/
-```
-
-ERRATA: Transformers saves the model Architecture prefixed with `FSDP` which needs to be manually renamed in `config`.
+ERRATA: Transformers saves the model Architecture prefixed with `FSDP` which needs to be manually renamed in `config.json`.
 See https://github.com/huggingface/transformers/pull/40207 for the status of this issue.
 
 ```bash
 sed -i 's/FSDPGptOssForCausalLM/GptOssForCausalLM/g' ./outputs/gpt-oss-out/config.json
 ```
+
+When using SHARDED_STATE_DICT with FSDP, the final checkpoint should automatically merge the sharded weights to your
+configured `output_dir`. However, if that step fails due to a disk space error, you can take an additional step to
+merge the sharded weights.  This step will automatically determine the last checkpoint directory and merge the sharded
+weights to `{output_dir}/merged`.
+
+```bash
+axolotl merge-sharded-fsdp-weights examples/gpt-oss/gpt-oss-120b-fft-fsdp2-offload.yaml
+mv ./outputs/gpt-oss-out/merged/* ./outputs/gpt-oss-out/
+```
+
 
 ### Inferencing your fine-tuned model
 
