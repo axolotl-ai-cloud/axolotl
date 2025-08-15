@@ -89,7 +89,9 @@ class AxolotlTrainer(
 
         super().__init__(*_args, **kwargs)
         self.train_data_collator = self.data_collator
-        self._stored_metrics = defaultdict(lambda: defaultdict(list))
+        self._stored_metrics = defaultdict(
+            lambda: defaultdict(lambda: {"values": [], "reduction": "mean"})
+        )
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
 
@@ -585,9 +587,26 @@ class AxolotlTrainer(
         """
         # logs either has 'loss' or 'eval_loss'
         train_eval = "train" if "loss" in logs else "eval"
-        # Add averaged stored metrics to logs
-        for key, metrics in self._stored_metrics[train_eval].items():
-            logs[key] = torch.tensor(metrics).mean().item()
+
+        # Add reduced stored metrics to logs
+        for key, metric_data in self._stored_metrics[train_eval].items():
+            values = torch.tensor(metric_data["values"])
+            reduction_type = metric_data["reduction"]
+
+            if reduction_type == "mean":
+                logs[key] = values.mean().item()
+            elif reduction_type == "min":
+                logs[key] = values.min().item()
+            elif reduction_type == "max":
+                logs[key] = values.max().item()
+            elif reduction_type == "sum":
+                logs[key] = values.sum().item()
+            else:
+                raise NotImplementedError(
+                    "Metric reduction must be one of [mean, min, max]"
+                )
+
+            logs[key] = round(logs[key], 4)
 
         if is_main_process():
             # Add memory usage
@@ -611,10 +630,27 @@ class AxolotlTrainer(
         return super().log(logs, start_time)
 
     def store_metrics(
-        self, metrics: dict[str, float], train_eval: Literal["train", "eval"] = "train"
+        self,
+        metrics: dict[str, float] | dict[str, tuple[int | float, str]],
+        train_eval: Literal["train", "eval"] = "train",
+        reduction: Literal["mean", "min", "max", "sum"] = "mean",
     ) -> None:
+        """
+        Store metrics with specified reduction type.
+
+        Args:
+            metrics: Dictionary of metric names to values, or metric names to (value,
+                reduction_type) tuples.
+            train_eval: Whether this is for training or evaluation.
+        """
         for key, value in metrics.items():
-            self._stored_metrics[train_eval][key].append(value)
+            if isinstance(value, tuple):
+                metric_value, metric_reduction = value
+            else:
+                metric_value, metric_reduction = value, reduction
+
+            self._stored_metrics[train_eval][key]["values"].append(metric_value)
+            self._stored_metrics[train_eval][key]["reduction"] = metric_reduction
 
     def _save_checkpoint(self, model, trial, **kwargs):
         # make sure the checkpoint dir exists, since trainer is flakey
