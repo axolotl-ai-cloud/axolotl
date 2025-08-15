@@ -109,6 +109,12 @@ class AxolotlInputConfig(
             "description": "Don't upcast the embeddings to float32 when using PEFT. Useful for low-VRAM GPUs"
         },
     )
+    reinit_weights: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Reinitialize model weights randomly instead of loading pretrained weights"
+        },
+    )
 
     trainer_cls: str | None = Field(
         default=None,

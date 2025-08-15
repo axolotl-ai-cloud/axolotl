@@ -1,5 +1,7 @@
 """Custom trainer for diffusion LM training."""
 
+from typing import Any, Literal
+
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -16,13 +18,34 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.config = None
+        self._config = None
         self._special_token_ids = None
 
     def set_config(self, config: DictDefault):
         """Set config for diffusion training."""
-        self.config = config
+        self._config = config
         self._cache_special_token_ids()
+
+    def compute_loss(
+        self,
+        model: nn.Module,
+        inputs: dict[str, torch.Tensor],
+        return_outputs: bool = False,
+        num_items_in_batch: torch.Tensor | None = None,
+    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        """Override compute_loss to use diffusion loss."""
+        input_ids = inputs.get("input_ids")
+        attention_mask = inputs.get("attention_mask")
+
+        if input_ids is None:
+            raise ValueError("input_ids is required for diffusion training")
+
+        loss, outputs = self._compute_diffusion_loss(model, input_ids, attention_mask)
+
+        if return_outputs:
+            return loss, outputs
+
+        return loss
 
     def _cache_special_token_ids(self):
         """Cache special token IDs to avoid repeated tokenizer access."""
@@ -42,7 +65,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
 
         self._special_token_ids = special_tokens
 
-    def forward_process(
+    def _forward_process(
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor | None = None,
@@ -90,14 +113,14 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             masked_indices = masked_indices & attention_mask.bool()
 
         # Get mask token ID from config
-        mask_token_id = self.config.mask_token_id
+        mask_token_id = self._config.mask_token_id
 
         # Create masked input using configured mask token
         noisy_batch = torch.where(masked_indices, mask_token_id, input_ids)
 
         return noisy_batch, masked_indices, p_mask
 
-    def create_bidirectional_attention_mask(
+    def _create_bidirectional_attention_mask(
         self, input_ids: torch.Tensor, attention_mask: torch.Tensor | None = None
     ) -> torch.Tensor:
         """
@@ -115,7 +138,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         batch_size, seq_len = input_ids.shape
         device = input_ids.device
 
-        if attention_mask is None or not self.config.sample_packing:
+        if attention_mask is None or not self._config.sample_packing:
             # Simple case: no attention mask, allow all-to-all attention
             return torch.ones(
                 batch_size, 1, seq_len, seq_len, dtype=torch.bool, device=device
@@ -133,12 +156,12 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
 
         return bidirectional_mask
 
-    def compute_diffusion_loss(
+    def _compute_diffusion_loss(
         self,
         model: nn.Module,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, dict[str, float]]:
+    ) -> tuple[torch.Tensor, torch.Tensor | Any]:
         """
         Compute diffusion loss.
 
@@ -152,12 +175,12 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             metrics: Dictionary of metrics.
         """
         # Apply forward process
-        noisy_batch, masked_indices, p_mask = self.forward_process(
-            input_ids, attention_mask, self.config.eps
+        noisy_batch, masked_indices, p_mask = self._forward_process(
+            input_ids, attention_mask, self._config.eps
         )
 
         # Create bidirectional attention mask
-        bidirectional_mask = self.create_bidirectional_attention_mask(
+        bidirectional_mask = self._create_bidirectional_attention_mask(
             input_ids, attention_mask
         )
 
@@ -187,7 +210,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             )
 
             # Apply importance weighting if enabled
-            if self.config.importance_weighting:
+            if self._config.importance_weighting:
                 masked_p_mask = masked_p_mask.float()
                 weighted_loss = token_loss / masked_p_mask
             else:
@@ -211,40 +234,15 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             "loss": loss.item(),
             "accuracy": accuracy.item(),
             "mask_ratio": masked_indices.float().mean().item(),
-            "num_masked_tokens": masked_indices.sum().item(),
+            "num_masked_tokens": (masked_indices.sum().item(), "sum"),
             "avg_p_mask": p_mask[masked_indices].mean().item(),
             "ce_loss": ce_loss.item(),
         }
 
-        if self.config.importance_weighting:
+        if self._config.importance_weighting:
             metrics["importance_weight_avg"] = (1.0 / masked_p_mask).mean().item()
 
-        return loss, metrics
+        train_eval: Literal["train", "eval"] = "train" if model.training else "eval"
+        self.store_metrics(metrics, train_eval=train_eval)
 
-    def compute_loss(
-        self,
-        model: nn.Module,
-        inputs: dict[str, torch.Tensor],
-        return_outputs: bool = False,
-        num_items_in_batch: torch.Tensor | None = None,
-    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """Override compute_loss to use diffusion loss."""
-        input_ids = inputs.get("input_ids")
-        attention_mask = inputs.get("attention_mask")
-
-        if input_ids is None:
-            raise ValueError("input_ids is required for diffusion training")
-
-        loss, metrics = self.compute_diffusion_loss(model, input_ids, attention_mask)
-
-        # # Log metrics
-        # if self.state.is_local_process_zero:
-        #     for key, value in metrics.items():
-        #         self.log({f"train/diffusion_{key}": value})
-
-        if return_outputs:
-            # TODO: compute outputs (?)
-            outputs = [loss]
-            return (loss, outputs)
-
-        return loss
+        return loss, outputs
