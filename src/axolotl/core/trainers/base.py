@@ -80,8 +80,11 @@ class AxolotlTrainer(
         self._signature_columns = None  # workaround for pylint
 
         super().__init__(*_args, **kwargs)
-
-        self.state.parallelism_config = self.accelerator.state.parallel_config
+        if torch.distributed.get_rank() == 0:
+            import ipdb
+            ipdb.set_trace()
+        torch.distributed.barrier()
+        self.state.parallelism_config = self.accelerator.state.parallelism_config
         self.train_data_collator = self.data_collator
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
         if self.args.orpo_alpha:
