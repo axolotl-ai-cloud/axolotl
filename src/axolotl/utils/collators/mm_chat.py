@@ -53,14 +53,7 @@ class MultiModalChatDataCollator(DataCollatorMixin):
             chat_template=self.processing_strategy.chat_template,
         )
 
-        # Create the final batch
-        final_batch = {}
-        for key, val in batch.items():
-            final_batch[key] = val
-
         # Process the labels
-        final_batch["labels"] = self.processing_strategy.process_labels(
-            final_batch["input_ids"]
-        )
+        batch["labels"] = self.processing_strategy.process_labels(batch["input_ids"])
 
-        return final_batch
+        return batch
