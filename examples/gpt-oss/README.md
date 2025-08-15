@@ -41,9 +41,30 @@ axolotl train examples/gpt-oss/gpt-oss-120b-fft-fsdp2-offload.yaml
 ```
 
 When using SHARDED_STATE_DICT with FSDP, there is an additional post-training step to merge the sharded weights.
-This step will automatically determine the
+This step will automatically determine the last checkpoint directory and merge the sharded weights to
+`{output_dir}/merged`.
 ```bash
 axolotl merge-sharded-fsdp-weights examples/gpt-oss/gpt-oss-120b-fft-fsdp2-offload.yaml
+mv ./outputs/gpt-oss-out/merged/* ./outputs/gpt-oss-out/
+```
+
+ERRATA: Transformers saves the model Architecture prefixed with `FSDP` which needs to be manually renamed in `config`.
+See https://github.com/huggingface/transformers/pull/40207 for the status of this issue.
+
+```bash
+sed -i 's/FSDPGptOssForCausalLM/GptOssForCausalLM/g' ./outputs/gpt-oss-out/config.json
+```
+
+### Inferencing your fine-tuned model
+
+GPT-OSS support in vLLM does not exist in a stable release yet. See https://x.com/MaziyarPanahi/status/1955741905515323425
+for more information about using a special vllm-openai docker image for inferencing with vLLM.
+
+SGLang has 0-day support in main, see https://github.com/sgl-project/sglang/issues/8833 for infomation on installing
+SGLang from source. Once you've installed SGLang, run the following command to launch a SGLang server:
+
+```bash
+python3 -m sglang.launch_server --model ./outputs/gpt-oss-out/ --served-model-name axolotl/gpt-oss-120b --host 0.0.0.0 --port 8888 --tp 8
 ```
 
 ### Tool use
