@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import json
 import os
 import signal
 import sys
 import typing
 import weakref
+from collections import OrderedDict
 from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Dict
@@ -46,7 +48,7 @@ except ImportError:
     BetterTransformer = None
 
 if typing.TYPE_CHECKING:
-    from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+    from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 
 LOG = get_logger(__name__)
 
@@ -293,6 +295,21 @@ def save_trained_model(
                 "The final model was saved with a sharded state dict. Please ensure you merge "
                 "the sharded weights with `merge-sharded-fsdp-weights`."
             )
+        # TODO(wing):see https://github.com/huggingface/transformers/pull/40207
+        # cleanup the FSDP prefix in the model config.json
+        with open(
+            os.path.join(cfg.output_dir, "config.json"), "r", encoding="utf-8"
+        ) as f:
+            # read the model config as an OrderedDict
+            config = json.load(f, object_pairs_hook=OrderedDict)
+            config["architectures"] = [
+                name.lstrip("FSDP") for name in config["architectures"]
+            ]
+        # write the updated model config back
+        with open(
+            os.path.join(cfg.output_dir, "config.json"), "w", encoding="utf-8"
+        ) as f:
+            json.dump(config, f, indent=2)
     elif cfg.deepspeed and is_deepspeed_zero3_enabled():
         # Copied over from: https://github.com/huggingface/accelerate/blob/5ae611118057232f441055f7ef9ba0b0f2b8d533/docs/source/usage_guides/deepspeed.md#saving-and-loading
         trainer.accelerator.wait_for_everyone()
