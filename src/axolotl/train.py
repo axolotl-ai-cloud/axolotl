@@ -24,7 +24,6 @@ from transformers import PreTrainedModel, PreTrainedTokenizer, ProcessorMixin
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.trainer import Trainer
 
-from axolotl.cli.merge_sharded_fsdp_weights import merge_fsdp_weights
 from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
@@ -302,6 +301,9 @@ def save_trained_model(
                 and cfg.save_model_only
                 and checkpoint_dir
             ):
+                # import here to prevent circular import
+                from axolotl.cli.merge_sharded_fsdp_weights import merge_fsdp_weights
+
                 fsdp_dir = Path(checkpoint_dir) / "pytorch_model_fsdp_0"
                 output_path = str(Path(cfg.output_dir) / "merged")
                 merge_fsdp_weights(
