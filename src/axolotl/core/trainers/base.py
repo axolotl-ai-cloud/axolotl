@@ -81,6 +81,7 @@ class AxolotlTrainer(
 
         super().__init__(*_args, **kwargs)
 
+        self.state.parallelism_config = self.accelerator.state.parallel_config
         self.train_data_collator = self.data_collator
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
         if self.args.orpo_alpha:
@@ -546,9 +547,6 @@ class AxolotlTrainer(
             )
 
         super().create_accelerator_and_postprocess()
-
-        # now we need to put parallelism_config back on the PartialState since we rely on that info in other places
-        # PartialState().parallelism_config = self.accelerator.state.parallelism_config
 
         if self.is_fsdp_enabled:
             if (

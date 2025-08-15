@@ -42,14 +42,13 @@ class TokensPerSecondCallback(TrainerCallback):
         """
         Event called at the end of a training step.
         """
-        total_num_tokens = state.num_tokens
+        step_time = time.perf_counter() - self.start_time
+        num_tokens_per_device = state.num_tokens
         if is_distributed():
-            total_num_tokens = total_num_tokens.clone()
-            torch.distributed.all_reduce(total_num_tokens)
-            world_size = torch.distributed.get_world_size()
-            total_num_tokens = total_num_tokens.item() / world_size
+            # non data parallel groups have duplicated tokens, so we avoid double-counting
+            num_tokens_per_device /= self.state.parallelism_config.non_data_parallel_size
 
-        self.last_tokens_per_second = total_num_tokens / (time.perf_counter() - self.start_time)
+        self.last_tokens_per_second = num_tokens_per_device / step_time
 
     def on_log(
         self,
