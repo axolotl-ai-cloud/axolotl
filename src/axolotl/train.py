@@ -6,6 +6,7 @@ import importlib
 import inspect
 import json
 import os
+import shutil
 import signal
 import sys
 import typing
@@ -305,28 +306,32 @@ def save_trained_model(
                 from axolotl.cli.merge_sharded_fsdp_weights import merge_fsdp_weights
 
                 fsdp_dir = Path(checkpoint_dir) / "pytorch_model_fsdp_0"
-                output_path = str(Path(cfg.output_dir) / "merged")
+                merged_path = str(Path(cfg.output_dir) / "merged")
                 merge_fsdp_weights(
                     checkpoint_dir=str(fsdp_dir),
-                    output_path=output_path,
+                    output_path=merged_path,
                     safe_serialization=True,
                 )
+                # move all files in merged_path to cfg.output_dir
+                for merged_file in Path(merged_path).iterdir():
+                    shutil.move(str(merged_file), cfg.output_dir)
+                shutil.rmtree(merged_path)  # remove what should be an empty dir
         # TODO(wing):see https://github.com/huggingface/transformers/pull/40207
         # cleanup the FSDP prefix in the model config.json
         if trainer.accelerator.is_main_process:
             with open(
-                os.path.join(cfg.output_dir, "config.json"), "r", encoding="utf-8"
-            ) as f:
+                Path(cfg.output_dir) / "config.json", "r", encoding="utf-8"
+            ) as config_file_io:
                 # read the model config as an OrderedDict
-                config = json.load(f, object_pairs_hook=OrderedDict)
+                config = json.load(config_file_io, object_pairs_hook=OrderedDict)
                 config["architectures"] = [
                     name.lstrip("FSDP") for name in config["architectures"]
                 ]
             # write the updated model config back
             with open(
                 os.path.join(cfg.output_dir, "config.json"), "w", encoding="utf-8"
-            ) as f:
-                json.dump(config, f, indent=2)
+            ) as config_file_io:
+                json.dump(config, config_file_io, indent=2)
     elif cfg.deepspeed and is_deepspeed_zero3_enabled():
         # Copied over from: https://github.com/huggingface/accelerate/blob/5ae611118057232f441055f7ef9ba0b0f2b8d533/docs/source/usage_guides/deepspeed.md#saving-and-loading
         trainer.accelerator.wait_for_everyone()
