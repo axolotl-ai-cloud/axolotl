@@ -185,7 +185,7 @@ def drop_long_seq_in_dataset(
 
     filter_map_kwargs = {}
     if not isinstance(dataset, IterableDataset):
-        filter_map_kwargs["num_proc"] = cfg.dataset_processes
+        filter_map_kwargs["num_proc"] = cfg.dataset_num_proc
         filter_map_kwargs["load_from_cache_file"] = not cfg.is_preprocess
 
     drop_long_kwargs = {}
