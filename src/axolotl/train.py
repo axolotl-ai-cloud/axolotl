@@ -297,19 +297,20 @@ def save_trained_model(
             )
         # TODO(wing):see https://github.com/huggingface/transformers/pull/40207
         # cleanup the FSDP prefix in the model config.json
-        with open(
-            os.path.join(cfg.output_dir, "config.json"), "r", encoding="utf-8"
-        ) as f:
-            # read the model config as an OrderedDict
-            config = json.load(f, object_pairs_hook=OrderedDict)
-            config["architectures"] = [
-                name.lstrip("FSDP") for name in config["architectures"]
-            ]
-        # write the updated model config back
-        with open(
-            os.path.join(cfg.output_dir, "config.json"), "w", encoding="utf-8"
-        ) as f:
-            json.dump(config, f, indent=2)
+        if trainer.accelerator.is_main_process:
+            with open(
+                os.path.join(cfg.output_dir, "config.json"), "r", encoding="utf-8"
+            ) as f:
+                # read the model config as an OrderedDict
+                config = json.load(f, object_pairs_hook=OrderedDict)
+                config["architectures"] = [
+                    name.lstrip("FSDP") for name in config["architectures"]
+                ]
+            # write the updated model config back
+            with open(
+                os.path.join(cfg.output_dir, "config.json"), "w", encoding="utf-8"
+            ) as f:
+                json.dump(config, f, indent=2)
     elif cfg.deepspeed and is_deepspeed_zero3_enabled():
         # Copied over from: https://github.com/huggingface/accelerate/blob/5ae611118057232f441055f7ef9ba0b0f2b8d533/docs/source/usage_guides/deepspeed.md#saving-and-loading
         trainer.accelerator.wait_for_everyone()
