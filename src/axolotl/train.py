@@ -289,7 +289,7 @@ def save_trained_model(
             else:
                 state_dict_type = cfg.fsdp_config.state_dict_type
             trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
-        trainer.save_model(cfg.output_dir)
+        trainer.save_model(cfg.output_dir)  # only handles FULL_STATE_DICT
         if state_dict_type == "SHARDED_STATE_DICT":
             LOG.info(
                 "The final model was saved with a sharded state dict. Please ensure you merge "
@@ -298,7 +298,7 @@ def save_trained_model(
             checkpoint_dir = determine_last_checkpoint(cfg, update=False)
             if (
                 trainer.accelerator.is_main_process
-                and cfg.save_model_only
+                and not (Path(cfg.output_dir) / "model.safetensors.index.json").exists()
                 and checkpoint_dir
             ):
                 # import here to prevent circular import
