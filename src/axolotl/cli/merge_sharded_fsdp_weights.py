@@ -22,6 +22,7 @@ from safetensors.torch import save_file as safe_save_file
 from torch.distributed.checkpoint.format_utils import _EmptyStateDictLoadPlanner
 
 from axolotl.cli.config import load_cfg
+from axolotl.train import determine_last_checkpoint
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -195,6 +196,15 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     parsed_cfg = load_cfg(config, **kwargs)
 
     fsdp_dir = Path(parsed_cfg.output_dir) / "pytorch_model_fsdp_0"
+    if not fsdp_dir.exists():
+        checkpoint_dir = determine_last_checkpoint(parsed_cfg, update=False)
+        if checkpoint_dir:
+            fsdp_dir = Path(checkpoint_dir) / "pytorch_model_fsdp_0"
+        if not fsdp_dir.exists():
+            raise ValueError(
+                f"Could not find FSDP checkpoint `pytorch_model_fsdp_0` in {checkpoint_dir}"
+            )
+
     merge_fsdp_weights(
         checkpoint_dir=str(fsdp_dir),
         output_path=str(Path(parsed_cfg.output_dir) / "merged"),

@@ -124,25 +124,30 @@ def setup_reference_model(
     return model_ref
 
 
-def determine_resume_checkpoint(cfg: DictDefault) -> str | None:
+def determine_last_checkpoint(cfg: DictDefault, update: bool = True) -> str | None:
     """
     Determine the checkpoint to resume from based on configuration.
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
+        update: Whether to update the config with the determined checkpoint
 
     Returns:
         Path to the checkpoint to resume from, or `None` if not resuming.
     """
+    last_checkpoint = None
+    possible_checkpoints = [str(cp) for cp in Path(cfg.output_dir).glob("checkpoint-*")]
+    if len(possible_checkpoints) > 0:
+        sorted_paths = sorted(
+            possible_checkpoints,
+            key=lambda path: int(path.split("-")[-1]),
+        )
+        if not update:
+            return sorted_paths[-1]
+        last_checkpoint = sorted_paths[-1]
+
     if cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints:
-        possible_checkpoints = [
-            str(cp) for cp in Path(cfg.output_dir).glob("checkpoint-*")
-        ]
-        if len(possible_checkpoints) > 0:
-            sorted_paths = sorted(
-                possible_checkpoints,
-                key=lambda path: int(path.split("-")[-1]),
-            )
+        if last_checkpoint is not None:
             cfg.resume_from_checkpoint = sorted_paths[-1]
             LOG.info(
                 f"Using Auto-resume functionality to start with checkpoint at {cfg.resume_from_checkpoint}"
@@ -564,7 +569,7 @@ def train(
     setup_model_card(cfg)
 
     # Execute the training
-    resume_from_checkpoint = determine_resume_checkpoint(cfg)
+    resume_from_checkpoint = determine_last_checkpoint(cfg)
     execute_training(cfg, trainer, resume_from_checkpoint)
 
     # clear cache
