@@ -73,9 +73,6 @@ class PatchManager:
         self._apply_voxtral_patches()
 
     def _apply_transformers_patches(self):
-        from axolotl.monkeypatch.transformers.modeling_flash_attention_utils import (
-            patch_prepare_from_posids,
-        )
         from axolotl.monkeypatch.transformers.trainer_loss_calc import (
             patch_evaluation_loop,
             patch_maybe_log_save_evaluate,
@@ -87,7 +84,6 @@ class PatchManager:
             and self.cfg.fsdp_version == 2
         )
 
-        patch_prepare_from_posids()
         patch_evaluation_loop(patch_fsdp2)
         patch_maybe_log_save_evaluate()
 
@@ -289,12 +285,10 @@ class PatchManager:
             and self.cfg.adapter == "qlora"
         ):
             from axolotl.monkeypatch.fsdp2_qlora import (
-                apply_bnb_torch_function_patch,
                 apply_init_sharded_param_patch,
                 apply_init_unsharded_param_patch,
             )
 
-            apply_bnb_torch_function_patch()
             apply_init_sharded_param_patch()
             apply_init_unsharded_param_patch()
 

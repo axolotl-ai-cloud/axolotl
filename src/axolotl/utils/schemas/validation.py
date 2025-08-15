@@ -3,6 +3,7 @@
 # pylint: disable=too-many-boolean-expressions
 
 import json
+import sys
 import tempfile
 from pathlib import Path
 
@@ -369,10 +370,10 @@ class TrainingValidationMixin:
                 "see speed improvements. Please consider setting `torch_compile: "
                 "true` in your config."
             )
+        fsdp_config = data.get("fsdp_config") or {}
         if data.get("fp8") and (
-            data.get("fsdp_config", {}).get("activation_checkpointing", False) is True
-            or data.get("fsdp_config", {}).get("fsdp_activation_checkpointing", False)
-            is True
+            fsdp_config.get("activation_checkpointing", False) is True
+            or fsdp_config.get("fsdp_activation_checkpointing", False) is True
         ):
             LOG.warning(
                 "FP8 + FSDP2 + activation checkpointing may be slower than BF16 "
@@ -817,13 +818,13 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_fsdp_version_in_fsdp_config(cls, data):
-        if data.get("fsdp_config"):
-            if data.get("fsdp_config", {}).get("fsdp_version"):
-                LOG.warning(
-                    "Configuring `fsdp_version` in `fsdp_config` is deprecated. "
-                    "Please configure `fsdp_version` as a top-level field."
-                )
-                data["fsdp_version"] = data.get("fsdp_config").pop("fsdp_version")
+        fsdp_config = data.get("fsdp_config") or {}
+        if fsdp_config and fsdp_config.get("fsdp_version"):
+            LOG.warning(
+                "Configuring `fsdp_version` in `fsdp_config` is deprecated. "
+                "Please configure `fsdp_version` as a top-level field."
+            )
+            data["fsdp_version"] = fsdp_config.pop("fsdp_version")
         return data
 
     @model_validator(mode="before")
@@ -1151,10 +1152,8 @@ class ModelCompatibilityValidationMixin:
     @classmethod
     def check_gpt_oss_fsdp_loading(cls, data):
         if data.get("model_quantization_config", "") == "Mxfp4Config":
-            if (
-                data.get("fsdp_config", {}).get("cpu_ram_efficient_loading", False)
-                is True
-            ):
+            fsdp_config = data.get("fsdp_config") or {}
+            if fsdp_config.get("cpu_ram_efficient_loading", False) is True:
                 raise ValueError(
                     "FSDP cpu_ram_efficient_loading is not supported for Mxfp4Config model quantization."
                 )
@@ -1251,10 +1250,26 @@ class ComplexValidationMixin:
 
             try:
                 import transformers.modeling_flash_attention_utils
+                from transformers.utils import is_flash_attn_greater_or_equal
 
                 # pylint: disable=protected-access
-                transformers.modeling_flash_attention_utils._flash_supports_window_size = (
-                    transformers.modeling_flash_attention_utils._flash_supports_window
+                transformers.modeling_flash_attention_utils._flash_supports_window = (
+                    True
+                )
+                setattr(
+                    sys.modules["transformers.modeling_flash_attention_utils"],
+                    "_flash_supports_window",
+                    True,
+                )
+                setattr(
+                    sys.modules["transformers.modeling_flash_attention_utils"],
+                    "_flash_supports_window_size",
+                    True,
+                )
+                setattr(
+                    sys.modules["transformers.modeling_flash_attention_utils"],
+                    "is_flash_attn_greater_or_equal",
+                    is_flash_attn_greater_or_equal,
                 )
                 import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
             except ImportError as exception:

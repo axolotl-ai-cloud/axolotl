@@ -9,71 +9,10 @@ Params4bit parameters.
 import importlib
 import inspect
 
-import torch
-from torch.nn import Parameter
-
 from axolotl.monkeypatch.utils import detab_code
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
-
-
-def patched_torch_function(cls, func, types, args=(), kwargs=None):
-    """
-    Patched version of Params4bit.__torch_function__ for preserving Params4bit
-    class identity and attributes.
-    """
-    if kwargs is None:
-        kwargs = {}
-
-    if func in [torch.chunk, torch.split]:
-        tensor = args[0]
-        result = Parameter.__torch_function__(func, types, args, kwargs)
-
-        if isinstance(result, tuple):
-            return tuple(
-                cls(
-                    data=chunk,
-                    requires_grad=tensor.requires_grad,
-                    quant_state=tensor.quant_state,
-                    blocksize=tensor.blocksize,
-                    compress_statistics=tensor.compress_statistics,
-                    quant_type=tensor.quant_type,
-                    quant_storage=tensor.quant_storage,
-                    module=tensor.module,
-                    bnb_quantized=tensor.bnb_quantized,
-                )
-                for chunk in result
-            )
-
-        return cls(
-            data=result,
-            requires_grad=tensor.requires_grad,
-            quant_state=tensor.quant_state,
-            blocksize=tensor.blocksize,
-            compress_statistics=tensor.compress_statistics,
-            quant_type=tensor.quant_type,
-            quant_storage=tensor.quant_storage,
-            module=tensor.module,
-            bnb_quantized=tensor.bnb_quantized,
-        )
-
-    return Parameter.__torch_function__(func, types, args, kwargs)
-
-
-# pylint: disable=protected-access
-def apply_bnb_torch_function_patch():
-    """
-    Patch Params4bit.__torch_function__ using Axolotl-style approach.
-
-    Returns:
-        True if patching succeeded, False otherwise.
-    """
-    from bitsandbytes.nn.modules import Params4bit
-
-    Params4bit.__torch_function__ = classmethod(patched_torch_function)
-
-    LOG.info("Successfully patched Params4bit.__torch_function__")
 
 
 # pylint: disable=protected-access

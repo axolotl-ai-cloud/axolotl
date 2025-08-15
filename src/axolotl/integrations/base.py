@@ -76,8 +76,8 @@ class BasePlugin:
     def __init__(self):
         """Initializes the BasePlugin."""
 
-    def register(self, cfg: DictDefault):  # pylint: disable=unused-argument
-        """Registers the plugin with the given configuration.
+    def register(self, cfg: dict):  # pylint: disable=unused-argument
+        """Registers the plugin with the given configuration as an unparsed dict.
 
         Args:
             cfg: The configuration for the plugin.

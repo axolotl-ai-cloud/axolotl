@@ -149,6 +149,20 @@ Contributions are welcome! Please see our [Contributing Guide](https://github.co
 
 Interested in sponsoring? Contact us at [wing@axolotl.ai](mailto:wing@axolotl.ai)
 
+## 📝 Citing Axolotl
+
+If you use Axolotl in your research or projects, please cite it as follows:
+
+```bibtex
+@software{axolotl,
+  title = {Axolotl: Post-Training for AI Models},
+  author = {{Axolotl maintainers and contributors}},
+  url = {https://github.com/axolotl-ai-cloud/axolotl},
+  license = {Apache-2.0},
+  year = {2023}
+}
+```
+
 ## 📜 License
 
 This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) file for details.
