@@ -34,7 +34,7 @@ lr_scheduler: cosine
 learning_rate: 3e-4
 
 bf16: auto
-tf32: false
+tf32: true
 
 gradient_checkpointing: true
 resume_from_checkpoint:
@@ -51,8 +51,8 @@ eval_steps: 1000
 special_tokens:
   pad_token: "<|end_of_text|>"
 
-wandb_project: diffusion-plugin
-wandb_entity: axolotl-ai
+wandb_project:
+wandb_entity:
 wandb_watch:
 wandb_name:
 wandb_log_model:
