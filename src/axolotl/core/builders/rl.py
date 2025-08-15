@@ -11,7 +11,6 @@ from axolotl.core.trainers import (
 )
 from axolotl.core.trainers.dpo import DPOStrategy
 from axolotl.core.trainers.dpo.args import AxolotlDPOConfig
-from axolotl.core.trainers.grpo import GRPOStrategy
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import ensure_dtype
 from axolotl.utils.callbacks.qat import QATCallback
@@ -53,6 +52,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         trainer_cls_args = [self.model]
 
         if self.cfg.rl is RLType.GRPO:
+            from axolotl.core.trainers.grpo import GRPOStrategy
+
             trainer_cls = GRPOStrategy.get_trainer_class(
                 sequence_parallel=self.cfg.context_parallel_size > 1
             )
@@ -148,6 +149,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
         elif self.cfg.rl is RLType.GRPO:
+            from axolotl.core.trainers.grpo import GRPOStrategy
+
             training_args_cls = GRPOStrategy.get_training_args_class()
             training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()
