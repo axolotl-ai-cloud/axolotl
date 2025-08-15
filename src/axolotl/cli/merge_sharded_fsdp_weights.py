@@ -205,10 +205,20 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
                 f"Could not find FSDP checkpoint `pytorch_model_fsdp_0` in {checkpoint_dir}"
             )
 
+    output_path = str(Path(parsed_cfg.output_dir) / "merged")
     merge_fsdp_weights(
         checkpoint_dir=str(fsdp_dir),
-        output_path=str(Path(parsed_cfg.output_dir) / "merged"),
+        output_path=output_path,
         safe_serialization=True,
+    )
+    LOG.info(
+        f"FSDP SHARDED_STATE_DICT weights successfully merged to: {output_path}",
+        main_process_only=True,
+    )
+    LOG.info(
+        "Merged weights are only the safetensors and doesn't include the model configuration "
+        f"or tokenizer which may be found in {parsed_cfg.output_dir}.",
+        main_process_only=True,
     )
 
 

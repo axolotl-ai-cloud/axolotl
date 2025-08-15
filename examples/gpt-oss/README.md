@@ -40,6 +40,12 @@ On 8xH100s
 axolotl train examples/gpt-oss/gpt-oss-120b-fft-fsdp2-offload.yaml
 ```
 
+When using SHARDED_STATE_DICT with FSDP, there is an additional post-training step to merge the sharded weights.
+This step will automatically determine the
+```bash
+axolotl merge-sharded-fsdp-weights examples/gpt-oss/gpt-oss-120b-fft-fsdp2-offload.yaml
+```
+
 ### Tool use
 
 GPT-OSS has a comprehensive tool understanding. Axolotl supports tool calling datasets for Supervised Fine-tuning.
