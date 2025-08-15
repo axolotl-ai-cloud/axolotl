@@ -41,6 +41,7 @@ from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
+from axolotl.utils.train import determine_last_checkpoint
 from axolotl.utils.trainer import setup_trainer
 
 try:
@@ -125,37 +126,6 @@ def setup_reference_model(
             model_loader = ModelLoader(cfg, tokenizer, reference_model=reference_model)
             model_ref, _ = model_loader.load()
     return model_ref
-
-
-def determine_last_checkpoint(cfg: DictDefault, update: bool = True) -> str | None:
-    """
-    Determine the checkpoint to resume from based on configuration.
-
-    Args:
-        cfg: Dictionary mapping `axolotl` config keys to values.
-        update: Whether to update the config with the determined checkpoint
-
-    Returns:
-        Path to the checkpoint to resume from, or `None` if not resuming.
-    """
-    last_checkpoint = None
-    possible_checkpoints = [str(cp) for cp in Path(cfg.output_dir).glob("checkpoint-*")]
-    if len(possible_checkpoints) > 0:
-        sorted_paths = sorted(
-            possible_checkpoints,
-            key=lambda path: int(path.split("-")[-1]),
-        )
-        if not update:
-            return sorted_paths[-1]
-        last_checkpoint = sorted_paths[-1]
-
-    if cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints:
-        if last_checkpoint is not None:
-            cfg.resume_from_checkpoint = sorted_paths[-1]
-            LOG.info(
-                f"Using Auto-resume functionality to start with checkpoint at {cfg.resume_from_checkpoint}"
-            )
-    return cfg.resume_from_checkpoint
 
 
 def setup_signal_handler(
@@ -298,8 +268,7 @@ def save_trained_model(
             )
             checkpoint_dir = determine_last_checkpoint(cfg, update=False)
             if (
-                trainer.accelerator.is_main_process
-                and not (Path(cfg.output_dir) / "model.safetensors.index.json").exists()
+                not (Path(cfg.output_dir) / "model.safetensors.index.json").exists()
                 and checkpoint_dir
             ):
                 # import here to prevent circular import
@@ -312,10 +281,12 @@ def save_trained_model(
                     output_path=merged_path,
                     safe_serialization=True,
                 )
-                # move all files in merged_path to cfg.output_dir
-                for merged_file in Path(merged_path).iterdir():
-                    shutil.move(str(merged_file), cfg.output_dir)
-                shutil.rmtree(merged_path)  # remove what should be an empty dir
+                trainer.accelerator.wait_for_everyone()
+                if trainer.accelerator.is_main_process:
+                    # move all files in merged_path to cfg.output_dir
+                    for merged_file in Path(merged_path).iterdir():
+                        shutil.move(str(merged_file), cfg.output_dir)
+                    shutil.rmtree(merged_path)  # remove what should be an empty dir
         # TODO(wing):see https://github.com/huggingface/transformers/pull/40207
         # cleanup the FSDP prefix in the model config.json
         if trainer.accelerator.is_main_process:

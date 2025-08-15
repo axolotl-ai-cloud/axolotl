@@ -33,7 +33,8 @@ Note: Memory usage taken from `device_mem_reserved(gib)` from logs.
 
 ### Training 120B
 
-On 8xH100s
+On 8xH100s, make sure you have ~3TB of free disk space. With each checkpoint clocking in at ~720GB, along with the base
+model, and final model output, you may need at least 3TB of free disk space to keep at least 2 checkpoints.
 
 ```bash
 # FFT SFT with offloading (8x80GB @ ~49GiB/GPU)
