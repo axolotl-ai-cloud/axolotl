@@ -93,6 +93,12 @@ class VllmServeCliArgs:
     reasoning_parser: Optional[str] = field(
         default=None,
     )
+    data_parallel_size: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Number of data parallel workers to use for vLLM serving. This controls how many model replicas are used for parallel inference."
+        },
+    )
 
 
 @dataclass
