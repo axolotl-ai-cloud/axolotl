@@ -331,11 +331,21 @@ class AxolotlTrainer(
         #     return (loss, outputs) if return_outputs else loss
 
         if hasattr(self.state, "num_tokens"):
-            self.state.num_tokens += inputs["input_ids"].numel()
+            self.state.num_tokens += (inputs["labels"] != -100).sum()
         else:
-            self.state.num_tokens = inputs["input_ids"].numel() 
-        # import ipdb
-        # ipdb.set_trace()
+            self.state.num_tokens = (inputs["labels"] != -100).sum()
+        # import torch
+        # num_tokens = (inputs["input_ids"] > 0).sum()
+        # rank = torch.distributed.get_rank()
+        # print(f"Rank {rank} num_tokens: {num_tokens}")
+        # torch.distributed.all_reduce(num_tokens)
+        # print(f"Rank {rank} num_tokens after all_reduce: {num_tokens}")
+        # LOG.info((inputs["input_ids"] > 0).sum())
+        # LOG.info(torch.distributed.all_reduce(self.state.num_tokens))
+        # if torch.distributed.get_rank() == 0:
+        #     import ipdb
+        #     ipdb.set_trace()
+        # torch.distributed.barrier()
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
                 model,
