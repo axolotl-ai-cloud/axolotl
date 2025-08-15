@@ -577,15 +577,15 @@ class AxolotlTrainer(
         for key, metrics in self._stored_metrics[train_eval].items():
             logs[key] = torch.tensor(metrics).mean().item()
 
-        if is_main_process():
-            # Add memory usage
-            try:
-                active, allocated, reserved = get_gpu_memory_usage()
-                logs["memory/max_mem_active(gib)"] = round(active, 2)
-                logs["memory/max_mem_allocated(gib)"] = round(allocated, 2)
-                logs["memory/device_mem_reserved(gib)"] = round(reserved, 2)
-            except (ValueError, TypeError, FileNotFoundError):
-                pass
+        # if is_main_process():
+        #     # Add memory usage
+        #     try:
+        #         active, allocated, reserved = get_gpu_memory_usage()
+        #         logs["memory/max_active (GiB)"] = round(active, 2)
+        #         logs["memory/max_allocated (GiB)"] = round(allocated, 2)
+        #         logs["memory/device_reserved (GiB)"] = round(reserved, 2)
+        #     except (ValueError, TypeError, FileNotFoundError):
+        #         pass
 
         del self._stored_metrics[train_eval]
 

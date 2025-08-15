@@ -24,9 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from transformers import (
-    TrainerCallback,
-)
+from transformers import TrainerCallback
 from transformers.trainer_pt_utils import AcceleratorConfig
 
 from axolotl.integrations.base import PluginManager
@@ -146,7 +144,9 @@ class TrainerBuilderBase(abc.ABC):
                     profiler_steps_start=self.cfg.profiler_steps_start,
                 )
             )
+        from axolotl.utils.callbacks.tokens_per_second import TokensPerSecondCallback
 
+        callbacks.append(TokensPerSecondCallback())
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):

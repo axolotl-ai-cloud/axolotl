@@ -8,9 +8,9 @@ from transformers import (
 )
 
 
-class StepTimingCallback(TrainerCallback):
+class TokensPerSecondCallback(TrainerCallback):
     """
-    A callback to measure and log the duration of each training step.
+    A callback to measure and log tokens per second during training.
     """
 
     def __init__(self):
