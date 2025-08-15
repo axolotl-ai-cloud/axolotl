@@ -329,6 +329,13 @@ class AxolotlTrainer(
         #     outputs = model(**inputs)
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
+
+        if hasattr(self.state, "num_tokens"):
+            self.state.num_tokens += inputs["input_ids"].numel()
+        else:
+            self.state.num_tokens = inputs["input_ids"].numel() 
+        # import ipdb
+        # ipdb.set_trace()
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
                 model,
@@ -577,15 +584,15 @@ class AxolotlTrainer(
         for key, metrics in self._stored_metrics[train_eval].items():
             logs[key] = torch.tensor(metrics).mean().item()
 
-        # if is_main_process():
-        #     # Add memory usage
-        #     try:
-        #         active, allocated, reserved = get_gpu_memory_usage()
-        #         logs["memory/max_active (GiB)"] = round(active, 2)
-        #         logs["memory/max_allocated (GiB)"] = round(allocated, 2)
-        #         logs["memory/device_reserved (GiB)"] = round(reserved, 2)
-        #     except (ValueError, TypeError, FileNotFoundError):
-        #         pass
+        if is_main_process():
+            # Add memory usage
+            try:
+                active, allocated, reserved = get_gpu_memory_usage()
+                logs["memory/max_active (GiB)"] = round(active, 2)
+                logs["memory/max_allocated (GiB)"] = round(allocated, 2)
+                logs["memory/device_reserved (GiB)"] = round(reserved, 2)
+            except (ValueError, TypeError, FileNotFoundError):
+                pass
 
         del self._stored_metrics[train_eval]
 
