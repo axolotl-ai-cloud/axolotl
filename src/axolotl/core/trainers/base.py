@@ -80,7 +80,11 @@ class AxolotlTrainer(
         self._signature_columns = None  # workaround for pylint
 
         super().__init__(*_args, **kwargs)
-
+        if torch.distributed.get_rank() == 0:
+            import ipdb
+            ipdb.set_trace()
+        torch.distributed.barrier()
+        self.state.parallelism_config = self.accelerator.state.parallelism_config
         self.train_data_collator = self.data_collator
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
         if self.args.orpo_alpha:
@@ -329,6 +333,23 @@ class AxolotlTrainer(
         #     outputs = model(**inputs)
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
+
+        if hasattr(self.state, "num_tokens"):
+            self.state.num_tokens += (inputs["labels"] != -100).sum()
+        else:
+            self.state.num_tokens = (inputs["labels"] != -100).sum()
+        # import torch
+        # num_tokens = (inputs["input_ids"] > 0).sum()
+        # rank = torch.distributed.get_rank()
+        # print(f"Rank {rank} num_tokens: {num_tokens}")
+        # torch.distributed.all_reduce(num_tokens)
+        # print(f"Rank {rank} num_tokens after all_reduce: {num_tokens}")
+        # LOG.info((inputs["input_ids"] > 0).sum())
+        # LOG.info(torch.distributed.all_reduce(self.state.num_tokens))
+        # if torch.distributed.get_rank() == 0:
+        #     import ipdb
+        #     ipdb.set_trace()
+        # torch.distributed.barrier()
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
                 model,
@@ -530,9 +551,6 @@ class AxolotlTrainer(
 
         super().create_accelerator_and_postprocess()
 
-        # now we need to put parallelism_config back on the PartialState since we rely on that info in other places
-        # PartialState().parallelism_config = self.accelerator.state.parallelism_config
-
         if self.is_fsdp_enabled:
             if (
                 "limit_all_gathers" in self.args.fsdp_config
@@ -581,9 +599,9 @@ class AxolotlTrainer(
             # Add memory usage
             try:
                 active, allocated, reserved = get_gpu_memory_usage()
-                logs["memory/max_mem_active(gib)"] = round(active, 2)
-                logs["memory/max_mem_allocated(gib)"] = round(allocated, 2)
-                logs["memory/device_mem_reserved(gib)"] = round(reserved, 2)
+                logs["memory/max_active (GiB)"] = round(active, 2)
+                logs["memory/max_allocated (GiB)"] = round(allocated, 2)
+                logs["memory/device_reserved (GiB)"] = round(reserved, 2)
             except (ValueError, TypeError, FileNotFoundError):
                 pass
 

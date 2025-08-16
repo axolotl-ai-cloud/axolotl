@@ -64,9 +64,9 @@ def gpu_memory_usage_all(device=0):
 
 
 def mps_memory_usage_all():
-    usage = torch.mps.current_allocated_memory() / 1024.0**3
-    reserved = torch.mps.driver_allocated_memory() / 1024.0**3
-    return usage, reserved - usage, 0
+    active = torch.mps.current_allocated_memory() / 1024.0**3
+    allocated = torch.mps.driver_allocated_memory() / 1024.0**3
+    return active, allocated, 0
 
 
 def npu_memory_usage_all(device=0):
