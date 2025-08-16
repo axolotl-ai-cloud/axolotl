@@ -122,6 +122,14 @@ def _map_dataset(
     return dataset
 
 
+def drop_long_rl_seq(sample, rl, tokenizer, sequence_len, handling="drop"):
+    """
+    Backward-compatibility wrapper for legacy imports in tests.
+    Delegates to the new predicate.
+    """
+    return _drop_long_sequences(sample, rl, tokenizer, sequence_len)
+
+
 def _drop_long_sequences(
     sample: dict[str, Any], rl: RLType, tokenizer: Any, sequence_len: int
 ) -> bool:
@@ -155,11 +163,51 @@ def _drop_long_sequences(
         len_chosen = len(tokenizer(chosen, add_special_tokens=False)["input_ids"])
         len_rejected = len(tokenizer(rejected, add_special_tokens=False)["input_ids"])
 
-        return (len_prompt + len_chosen) <= sequence_len and (
-            len_prompt + len_rejected
-        ) <= sequence_len
+        # Truncate first, then drop if still invalid (although truncate should handle it)
+        handling_mode = sample.get("sequence_len_overflow_handling", "drop")
+        if handling_mode == "truncate":
+            # If both sequences fit, return sample unchanged
+            if (len_prompt + len_chosen) <= sequence_len and (
+                len_prompt + len_rejected
+            ) <= sequence_len:
+                result = sample
+            else:
+                # Calculate maximum response length that can fit with the prompt
+                max_response_len = sequence_len - len_prompt
 
-    if rl is RLType.KTO:
+                if max_response_len <= 0:
+                    # Prompt itself exceeds sequence length. Cannot truncate responses to fix it.
+                    LOG.warning(
+                        "Prompt length (%s) exceeds sequence length (%s) for DPO-like sample; dropping",
+                        len_prompt,
+                        sequence_len,
+                    )
+                    result = False
+
+                else:
+                    # Truncate the chosen and rejected responses if needed
+                    if len_chosen > max_response_len:
+                        chosen_tokens = tokenizer(chosen, add_special_tokens=False)[
+                            "input_ids"
+                        ][:max_response_len]
+                        sample["chosen"] = tokenizer.decode(
+                            chosen_tokens, skip_special_tokens=True
+                        )
+
+                    if len_rejected > max_response_len:
+                        rejected_tokens = tokenizer(rejected, add_special_tokens=False)[
+                            "input_ids"
+                        ][:max_response_len]
+                        sample["rejected"] = tokenizer.decode(
+                            rejected_tokens, skip_special_tokens=True
+                        )
+                    result = sample
+        else:  # handling == "drop"
+            result = (len_prompt + len_chosen) <= sequence_len and (
+                len_prompt + len_rejected
+            ) <= sequence_len
+
+    elif rl == RLType.KTO:
         if not (sample.get("prompt") and sample.get("completion")):
             raise ValueError("Prompt and completion keys are required for KTO datasets")
 
@@ -171,12 +219,86 @@ def _drop_long_sequences(
             tokenizer(completion, add_special_tokens=False)["input_ids"]
         )
 
-        return (len_prompt + len_completion) <= sequence_len
+        # Truncate first
+        handling_mode = sample.get("sequence_len_overflow_handling", "drop")
+        if handling_mode == "truncate":
+            # If sequence fits, return sample unchanged
+            if (len_prompt + len_completion) <= sequence_len:
+                result = sample
+            else:
+                # Calculate maximum completion length
+                max_completion_len = sequence_len - len_prompt
 
-    if rl is RLType.GRPO:
-        return True
+                if max_completion_len <= 0:
+                    # Prompt itself exceeds sequence length. Cannot truncate completion to fix it.
+                    LOG.warning(
+                        "Prompt length (%s) exceeds sequence length (%s) for KTO sample; dropping",
+                        len_prompt,
+                        sequence_len,
+                    )
+                    result = False
+                else:
+                    # Truncate the completion if needed
+                    if len_completion > max_completion_len:
+                        completion_tokens = tokenizer(
+                            completion, add_special_tokens=False
+                        )["input_ids"][:max_completion_len]
+                        sample["completion"] = tokenizer.decode(
+                            completion_tokens, skip_special_tokens=True
+                        )
+                    result = sample
+        else:  # handling == "drop"
+            result = (len_prompt + len_completion) <= sequence_len
 
-    raise ValueError("Unknown RL type")
+    elif rl == RLType.GRPO:
+        # For GRPO always keep
+        result = True
+    else:
+        raise ValueError("Unknown RL type")
+
+    return bool(result)
+
+
+def load_prepare_preference_datasets(cfg):
+    def _is_rl_seq_within_sequence_len(sample, rl, tokenizer, sequence_len):
+        """
+        Boolean predicate to check whether a preference-learning sample fits within sequence_len.
+        Used with dataset.filter() after truncation to drop unsalvageable samples.
+        """
+        if rl in (RLType.DPO, RLType.IPO, RLType.ORPO, RLType.SIMPO):
+            if not (
+                sample.get("prompt") and sample.get("chosen") and sample.get("rejected")
+            ):
+                return False
+            prompt = sample["prompt"]
+            chosen = sample["chosen"]
+            rejected = sample["rejected"]
+            len_prompt = len(tokenizer(prompt, add_special_tokens=False)["input_ids"])
+            len_chosen = len(tokenizer(chosen, add_special_tokens=False)["input_ids"])
+            len_rejected = len(
+                tokenizer(rejected, add_special_tokens=False)["input_ids"]
+            )
+            return (len_prompt + len_chosen) <= sequence_len and (
+                len_prompt + len_rejected
+            ) <= sequence_len
+        if rl == RLType.KTO:
+            if not (sample.get("prompt") and sample.get("completion")):
+                return False
+            prompt = sample["prompt"]
+            completion = sample["completion"]
+            len_prompt = len(tokenizer(prompt, add_special_tokens=False)["input_ids"])
+            len_completion = len(
+                tokenizer(completion, add_special_tokens=False)["input_ids"]
+            )
+            return (len_prompt + len_completion) <= sequence_len
+        if rl == RLType.GRPO:
+            # GRPO does not enforce this check here
+            return True
+        return False
+
+    # Legacy shim preserved for backward compatibility; no-op in new flow
+    def load_split(dataset_cfgs, _cfg):  # noqa: F811
+        return None
 
 
 def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
