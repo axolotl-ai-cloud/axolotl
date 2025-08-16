@@ -43,5 +43,8 @@ class DiffusionArgs(BaseModel):
     )
     mask_token_id: int = Field(
         default=128002,
-        description="Token ID to use for masking. Default is 128002 (<|reserved_special_token_0|> for Llama 3.2)",
+        description=(
+            "Token ID to use for masking. Default is 128002 "
+            "(<|reserved_special_token_0|> for Llama 3.2)"
+        )
     )
