@@ -591,7 +591,7 @@ class AxolotlTrainer(
                 logs[key] = values.sum().item()
             else:
                 raise NotImplementedError(
-                    "Metric reduction must be one of [mean, min, max]"
+                    "Metric reduction must be one of [mean, min, max, sum]"
                 )
 
             logs[key] = round(logs[key], 4)

@@ -33,7 +33,7 @@ plugins:
 noise_schedule: "linear"  # or "cosine"
 min_mask_ratio: 0.1
 max_mask_ratio: 0.9
-num_diffusion_steps: 1000
+num_diffusion_steps: 128
 eps: 1e-3
 importance_weighting: true
 
