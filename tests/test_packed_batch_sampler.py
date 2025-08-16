@@ -8,7 +8,7 @@ from transformers import AutoTokenizer
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_strategies.completion import load
 from axolotl.utils.collators import V2BatchSamplerDataCollatorForSeq2Seq
-from axolotl.utils.data.utils import drop_long_seq_in_dataset
+from axolotl.utils.data.utils import handle_long_seq_in_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
@@ -70,7 +70,7 @@ class TestBatchedSamplerPacking:
         )
         train_dataset = concatenate_datasets([dataset_wrapper])
 
-        train_dataset = drop_long_seq_in_dataset(train_dataset, cfg.sequence_len, cfg)
+        train_dataset = handle_long_seq_in_dataset(train_dataset, cfg.sequence_len, cfg)
 
         lengths = get_dataset_lengths(train_dataset)
         batch_sampler = MultipackBatchSampler(
