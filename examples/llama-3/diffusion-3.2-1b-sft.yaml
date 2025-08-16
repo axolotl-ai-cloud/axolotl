@@ -15,6 +15,7 @@ max_mask_ratio: 0.9
 num_diffusion_steps: 128
 eps: 1e-3
 importance_weighting: true
+mask_token_id: 128002
 
 output_dir: ./outputs/model-out
 

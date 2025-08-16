@@ -36,15 +36,17 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         """Override compute_loss to use diffusion loss."""
         input_ids = inputs.get("input_ids")
         attention_mask = inputs.get("attention_mask")
+        labels = inputs.get("labels")
 
         if input_ids is None:
             raise ValueError("input_ids is required for diffusion training")
 
-        loss, outputs = self._compute_diffusion_loss(model, input_ids, attention_mask)
+        loss, outputs = self._compute_diffusion_loss(
+            model, input_ids, attention_mask, labels
+        )
 
         if return_outputs:
             return loss, outputs
-
         return loss
 
     def _cache_special_token_ids(self):
@@ -70,6 +72,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor | None = None,
+        labels: torch.Tensor | None = None,
         eps: float = 1e-3,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -79,6 +82,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         Args:
             input_ids: Input token ids [batch_size, seq_len].
             attention_mask: Attention mask [batch_size, seq_len].
+            labels: Labels for SFT training [batch_size, seq_len].
             eps: Small epsilon value for minimum masking probability.
 
         Returns:
@@ -101,22 +105,25 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             valid_mask = attention_mask.bool()
             p_mask = p_mask * valid_mask.float()
 
-        # Create mask to exclude special tokens (BOS, EOS, PAD) using cached IDs
+        # Create mask to exclude special tokens
         special_token_mask = torch.zeros_like(input_ids, dtype=torch.bool)
         if self._special_token_ids:
             for token_id in self._special_token_ids:
                 special_token_mask |= input_ids == token_id
 
-        # Create random mask based on probability, excluding special tokens
+        # Create random mask based on p_mask    
         masked_indices = torch.rand((batch_size, seq_len), device=device) < p_mask
         masked_indices = masked_indices & ~special_token_mask
         if attention_mask is not None:
             masked_indices = masked_indices & attention_mask.bool()
+        
+        # For SFT data, only mask answer tokens
+        if labels is not None:
+            answer_mask = labels != -100
+            masked_indices = masked_indices & answer_mask
 
-        # Get mask token ID from config
+        # Create masked input
         mask_token_id = self._config.mask_token_id
-
-        # Create masked input using configured mask token
         noisy_batch = torch.where(masked_indices, mask_token_id, input_ids)
 
         return noisy_batch, masked_indices, p_mask
@@ -126,9 +133,9 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         self, input_ids: torch.Tensor, attention_mask: torch.Tensor | None = None
     ) -> torch.Tensor:
         """
-        Create bidirectional attention mask to override default causal masking.
-        Handles sample-packed sequences where different samples are identified
-        by different attention mask values.
+        Create bidirectional attention mask to override default causal masking. Handles
+        sample-packed sequences where different samples are identified by different
+        attention mask values.
 
         Args:
             input_ids: Input token ids [batch_size, seq_len].
@@ -141,7 +148,6 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         device = input_ids.device
 
         if attention_mask is None or not self._config.sample_packing:
-            # Simple case: no attention mask, allow all-to-all attention
             return torch.ones(
                 batch_size, 1, seq_len, seq_len, dtype=torch.bool, device=device
             )
@@ -163,6 +169,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         model: nn.Module,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor | None = None,
+        labels: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | Any]:
         """
         Compute diffusion loss.
@@ -171,6 +178,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             model: The model to compute loss for.
             input_ids: Ground truth token ids [batch_size, seq_len].
             attention_mask: Attention mask [batch_size, seq_len].
+            labels: Labels for SFT training [batch_size, seq_len].
 
         Returns:
             loss: Cross-entropy loss.
@@ -178,7 +186,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         """
         # Apply forward process
         noisy_batch, masked_indices, p_mask = self._forward_process(
-            input_ids, attention_mask, self._config.eps
+            input_ids, attention_mask, labels, self._config.eps
         )
 
         # Create bidirectional attention mask
@@ -197,29 +205,43 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             valid_indices = torch.where(masked_indices)
             batch_indices, seq_indices = valid_indices
 
-            # Extract the relevant data
-            masked_logits = logits[
-                batch_indices, seq_indices
-            ]  # [num_masked_tokens, vocab_size]
-            masked_targets = input_ids[
-                batch_indices, seq_indices
-            ]  # [num_masked_tokens]
-            masked_p_mask = p_mask[batch_indices, seq_indices]  # [num_masked_tokens]
+            masked_logits = logits[batch_indices, seq_indices]
+            masked_targets = input_ids[batch_indices, seq_indices]
+            masked_p_mask = p_mask[batch_indices, seq_indices]
 
-            # Compute cross-entropy loss without reduction (cast to fp32 for stability)
+            # Compute cross-entropy loss without reduction
             token_loss = F.cross_entropy(
                 masked_logits.float(), masked_targets, reduction="none"
             )
 
-            # Apply importance weighting if enabled
             if self._config.importance_weighting:
                 masked_p_mask = masked_p_mask.float()
                 weighted_loss = token_loss / masked_p_mask
             else:
                 weighted_loss = token_loss
 
-            # Final loss: sum weighted losses, normalize by total tokens
-            loss = weighted_loss.sum() / (input_ids.shape[0] * input_ids.shape[1])
+            # Final loss: sum weighted losses, normalize
+            if labels is not None:
+                # For SFT data: normalize by answer length per sample as per LLaDA guidelines
+                answer_mask = labels != -100
+                answer_lengths = answer_mask.sum(dim=1).float()  # [batch_size]
+                
+                # Get batch indices for masked tokens
+                masked_batch_indices = batch_indices
+                
+                # Sum losses per sample and divide by answer length
+                loss_per_sample = torch.zeros(input_ids.shape[0], device=input_ids.device)
+                for i in range(input_ids.shape[0]):
+                    sample_mask = masked_batch_indices == i
+                    if sample_mask.sum() > 0:
+                        sample_loss = weighted_loss[sample_mask].sum()
+                        loss_per_sample[i] = sample_loss / answer_lengths[i]
+                
+                loss = loss_per_sample.mean()
+            else:
+                # Original normalization for non-SFT data
+                loss = weighted_loss.sum() / (input_ids.shape[0] * input_ids.shape[1])
+            
             ce_loss = token_loss.mean()
 
             # Compute accuracy on masked tokens
@@ -240,6 +262,12 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             "avg_p_mask": p_mask[masked_indices].mean().item(),
             "ce_loss": ce_loss.item(),
         }
+        
+        # Add SFT-specific metrics
+        if labels is not None:
+            answer_mask = labels != -100
+            metrics["answer_ratio"] = answer_mask.float().mean().item()
+            metrics["avg_answer_length"] = answer_mask.sum(dim=1).float().mean().item()
 
         if self._config.importance_weighting:
             metrics["importance_weight_avg"] = (1.0 / masked_p_mask).mean().item()
