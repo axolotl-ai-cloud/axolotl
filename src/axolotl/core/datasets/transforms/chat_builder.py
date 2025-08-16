@@ -7,7 +7,7 @@ from typing import Any, Mapping, Union
 
 def chat_message_transform_builder(  # pylint: disable=dangerous-default-value
     train_on_inputs=False,
-    conversations_field: str = "conversations",
+    conversations_field: str = "messages",
     message_field_role: Union[str, list[str]] = ["role", "from"],  # commonly "role"
     message_field_content: Union[str, list[str]] = [
         "value",
