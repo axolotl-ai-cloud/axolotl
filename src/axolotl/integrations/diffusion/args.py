@@ -25,7 +25,7 @@ class DiffusionArgs(BaseModel):
         description="Maximum masking ratio for diffusion noise schedule",
     )
     num_diffusion_steps: int = Field(
-        default=1000, ge=1, description="Number of diffusion timesteps"
+        default=128, ge=1, description="Number of diffusion timesteps"
     )
 
     # Forward process config

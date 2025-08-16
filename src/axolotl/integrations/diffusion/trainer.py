@@ -65,6 +65,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
 
         self._special_token_ids = special_tokens
 
+    @torch.compile
     def _forward_process(
         self,
         input_ids: torch.Tensor,
@@ -120,6 +121,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
 
         return noisy_batch, masked_indices, p_mask
 
+    @torch.compile
     def _create_bidirectional_attention_mask(
         self, input_ids: torch.Tensor, attention_mask: torch.Tensor | None = None
     ) -> torch.Tensor:
