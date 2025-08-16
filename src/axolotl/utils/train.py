@@ -20,20 +20,26 @@ def determine_last_checkpoint(cfg: DictDefault, update: bool = True) -> str | No
         Path to the checkpoint to resume from, or `None` if not resuming.
     """
     last_checkpoint = None
-    possible_checkpoints = [str(cp) for cp in Path(cfg.output_dir).glob("checkpoint-*")]
-    if len(possible_checkpoints) > 0:
-        sorted_paths = sorted(
-            possible_checkpoints,
-            key=lambda path: int(path.split("-")[-1]),
-        )
+    checkpoints = sorted(
+        (
+            p
+            for p in Path(cfg.output_dir).glob("checkpoint-*")
+            if p.name.split("-")[-1].isdigit()
+        ),
+        key=lambda p: int(p.name.split("-")[-1]),
+    )
+    if checkpoints:
+        last_checkpoint = str(checkpoints[-1])
         if not update:
-            return sorted_paths[-1]
-        last_checkpoint = sorted_paths[-1]
+            return last_checkpoint
 
-    if cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints:
-        if last_checkpoint is not None:
-            cfg.resume_from_checkpoint = sorted_paths[-1]
-            LOG.info(
-                f"Using Auto-resume functionality to start with checkpoint at {cfg.resume_from_checkpoint}"
-            )
+    if (
+        cfg.resume_from_checkpoint is None
+        and cfg.auto_resume_from_checkpoints
+        and last_checkpoint is not None
+    ):
+        cfg.resume_from_checkpoint = last_checkpoint
+        LOG.info(
+            f"Using Auto-resume functionality to start with checkpoint at {cfg.resume_from_checkpoint}"
+        )
     return cfg.resume_from_checkpoint
