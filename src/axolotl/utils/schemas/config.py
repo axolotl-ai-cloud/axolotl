@@ -584,6 +584,13 @@ class AxolotlInputConfig(
         },
     )
 
+    use_dynamic_finetuning: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use dynamic fine-tuning for scaled SFT gradients."
+        },
+    )
+
     chunked_cross_entropy: bool | None = Field(
         default=None,
         json_schema_extra={
