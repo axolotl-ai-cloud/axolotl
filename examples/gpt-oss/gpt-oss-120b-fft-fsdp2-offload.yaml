@@ -20,6 +20,7 @@ datasets:
 dataset_prepared_path: last_run_prepared
 val_set_size: 0
 output_dir: ./outputs/gpt-oss-out/
+save_total_limit: 2  # the 120B model can use up to 720GB of disk space per checkpoint, so let's only keep the last 2
 
 sequence_len: 4096
 sample_packing: true
