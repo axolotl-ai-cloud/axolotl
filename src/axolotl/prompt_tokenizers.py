@@ -75,7 +75,7 @@ class PromptTokenizingStrategy(abc.ABC):
     ) -> BatchEncoding:
         empty = BatchEncoding(data={"input_ids": [], "attention_mask": []})
         if not prompt:
-            LOG.warning("Empty text requested for tokenization.")
+            LOG.warning_once("Empty text requested for tokenization.")
             return empty
 
         result = self.tokenizer(
