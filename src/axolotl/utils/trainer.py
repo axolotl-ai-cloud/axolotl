@@ -601,7 +601,7 @@ def setup_parallelism_envs(cfg):
     if cfg.tensor_parallel_size and cfg.tensor_parallel_size > 1:
         set_accelerate_parallelism_config = True
         os.environ["PARALLELISM_CONFIG_TP_SIZE"] = str(cfg.tensor_parallel_size)
-    if (cfg.dp_shard_size and cfg.dp_shard_size > 1) or cfg.fsdp_config:
+    if cfg.dp_shard_size and cfg.dp_shard_size > 1:
         set_accelerate_parallelism_config = True
         os.environ["PARALLELISM_CONFIG_DP_SHARD_SIZE"] = str(cfg.dp_shard_size)
     if cfg.dp_replicate_size and cfg.dp_replicate_size > 1:

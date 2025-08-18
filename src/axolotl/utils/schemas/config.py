@@ -827,7 +827,7 @@ class AxolotlInputConfig(
     include_tokens_per_second: bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "bool of whether to include tokens trainer per second in the training metrics. This iterates over the entire dataset once, so it takes some time."
+            "description": "bool of whether to include tokens trainer per second in the training metrics."
         },
     )
 

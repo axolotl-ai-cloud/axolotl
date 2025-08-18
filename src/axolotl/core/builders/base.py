@@ -146,7 +146,7 @@ class TrainerBuilderBase(abc.ABC):
             )
         from axolotl.utils.callbacks.tokens_per_second import TokensPerSecondCallback
 
-        callbacks.append(TokensPerSecondCallback())
+        callbacks.append(TokensPerSecondCallback(self.cfg.tensor_parallel_size, self.cfg.context_parallel_size))
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
@@ -491,7 +491,6 @@ class TrainerBuilderBase(abc.ABC):
             "output_dir",
             "save_safetensors",
             "save_only_model",
-            # "include_tokens_per_second",
             "weight_decay",
             "seed",
             "dion_momentum",
@@ -516,6 +515,7 @@ class TrainerBuilderBase(abc.ABC):
                 self.cfg.eval_batch_size
             )
 
+        training_args_kwargs["include_tkps"] = self.cfg.include_tokens_per_second
         training_args_kwargs["max_steps"] = self.cfg.max_steps or total_num_steps or -1
         training_args_kwargs["num_train_epochs"] = self.cfg.num_epochs
 
