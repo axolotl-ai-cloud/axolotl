@@ -38,9 +38,7 @@ class DiffusionPlugin(BasePlugin):
         """Returns the pydantic model for LLaDA plugin arguments."""
         return "axolotl.integrations.diffusion.DiffusionArgs"
 
-    def post_model_load(
-        self, cfg: DictDefault, model: PreTrainedModel | PeftModel
-    ):
+    def post_model_load(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
         """Configure model for diffusion training after loading."""
         self.cfg = cfg
 
@@ -88,7 +86,10 @@ class DiffusionPlugin(BasePlugin):
 
     def add_callbacks_post_trainer(self, cfg: DictDefault, trainer):
         """Add diffusion generation callback if enabled."""
-        if hasattr(trainer, 'diffusion_config') and trainer.diffusion_config.generate_samples:
+        if (
+            hasattr(trainer, "diffusion_config")
+            and trainer.diffusion_config.generate_samples
+        ):
             generation_callback = DiffusionGenerationCallback(trainer)
             LOG.info("Added diffusion generation callback")
             return [generation_callback]
