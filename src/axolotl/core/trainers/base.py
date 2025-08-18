@@ -331,7 +331,7 @@ class AxolotlTrainer(
 
         # track number of tokens for tokens per second calculation
         if self.args.include_tkps:
-            inputs_key = "labels" if "labels" in  inputs else "input_ids"
+            inputs_key = "labels" if "labels" in inputs else "input_ids"
             if hasattr(self.state, "num_tokens"):
                 self.state.num_tokens = (
                     self.state.num_tokens + (inputs[inputs_key] != -100).sum()
