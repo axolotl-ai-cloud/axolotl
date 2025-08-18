@@ -35,6 +35,7 @@ from axolotl.utils.callbacks import (
     SaveAxolotlConfigtoWandBCallback,
     SaveModelOnFirstStepCallback,
 )
+from axolotl.utils.callbacks.tokens_per_second import TokensPerSecondCallback
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
 from axolotl.utils.distributed import build_parallelism_config
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
@@ -144,13 +145,13 @@ class TrainerBuilderBase(abc.ABC):
                     profiler_steps_start=self.cfg.profiler_steps_start,
                 )
             )
-        from axolotl.utils.callbacks.tokens_per_second import TokensPerSecondCallback
-
-        callbacks.append(
-            TokensPerSecondCallback(
-                self.cfg.tensor_parallel_size, self.cfg.context_parallel_size
+        if self.cfg.include_tokens_per_second:
+            callbacks.append(
+                TokensPerSecondCallback(
+                    self.cfg.tensor_parallel_size, self.cfg.context_parallel_size
+                )
             )
-        )
+            
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
