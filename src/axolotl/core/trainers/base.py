@@ -331,12 +331,13 @@ class AxolotlTrainer(
 
         # track number of tokens for tokens per second calculation
         if self.args.include_tkps:
+            inputs_key = "labels" if "labels" in  inputs else "input_ids"
             if hasattr(self.state, "num_tokens"):
                 self.state.num_tokens = (
-                    self.state.num_tokens + (inputs["labels"] != -100).sum()
+                    self.state.num_tokens + (inputs[inputs_key] != -100).sum()
                 )
             else:
-                self.state.num_tokens = (inputs["labels"] != -100).sum()
+                self.state.num_tokens = (inputs[inputs_key] != -100).sum()
 
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
@@ -593,7 +594,7 @@ class AxolotlTrainer(
             except (ValueError, TypeError, FileNotFoundError):
                 pass
 
-        if self.args.include_tkps:
+        if self.args.include_tkps and train_eval == "train":
             # each rank will log its own tokens per second
             # for logging_steps > 1 we obtain a moving average of this metric
             logs["tokens_per_second_per_gpu"] = round(
