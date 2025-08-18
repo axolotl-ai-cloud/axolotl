@@ -27,8 +27,6 @@ class DiffusionArgs(BaseModel):
     num_diffusion_steps: int = Field(
         default=128, ge=1, description="Number of diffusion timesteps"
     )
-
-    # Forward process config
     eps: float = Field(
         default=1e-3,
         ge=0.0,

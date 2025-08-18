@@ -26,26 +26,24 @@ class DiffusionGenerationCallback(TrainerCallback):
         **kwargs,
     ):
         """Generate samples at specified intervals."""
-        # Only generate samples at the specified interval and after step 0
         if (
             state.global_step > 0
             and state.global_step % self.trainer.config.generation_interval == 0
-            and hasattr(self.trainer, "eval_dataset")
-            and self.trainer.eval_dataset is not None
         ):
-
-            LOG.info(
-                f"Generating {self.trainer.config.num_generation_samples} samples at step {state.global_step}..."
-            )
-
-            # Create a simple dataloader from eval dataset for sampling
-            eval_dataloader = self.trainer.get_eval_dataloader()
+            # Use eval dataloader if available, otherwise use train dataloader
+            if (
+                hasattr(self.trainer, "eval_dataset")
+                and self.trainer.eval_dataset is not None
+            ):
+                dataloader = self.trainer.callback_handler.eval_dataloader
+            else:
+                dataloader = self.trainer.callback_handler.train_dataloader
 
             # Generate samples
             samples = generate_samples(
                 model=self.trainer.model,
                 tokenizer=self.trainer.tokenizer,
-                val_dataloader=eval_dataloader,
+                dataloader=dataloader,
                 num_generation_samples=self.trainer.config.num_generation_samples,
                 max_length=self.trainer.config.generation_max_length,
                 num_diffusion_steps=self.trainer.config.generation_steps,

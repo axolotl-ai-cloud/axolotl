@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def generate_samples(
     model: torch.nn.Module,
     tokenizer: Any,
-    val_dataloader: Optional[Any] = None,
+    dataloader: Optional[Any] = None,
     num_generation_samples: int = 3,
     max_length: int = 100,
     num_diffusion_steps: int = 128,
@@ -19,13 +19,13 @@ def generate_samples(
     mask_token_id: int = 32000,
 ) -> List[dict]:
     """
-    Generate text samples using the diffusion model by randomly masking sequences
-    from the validation dataset and running the reverse diffusion process.
+    Generate text samples using the diffusion model by randomly masking sequences from
+    the given dataset and running the reverse diffusion process.
 
     Args:
         model: The wrapped or unwrapped model
         tokenizer: Tokenizer for encoding/decoding
-        val_dataloader: Validation dataloader (for sampling sequences)
+        dataloader: Validation dataloader (for sampling sequences)
         num_generation_samples: Number of samples to generate
         max_length: Maximum length of sequences to use
         num_diffusion_steps: Number of diffusion steps for generation
@@ -35,7 +35,7 @@ def generate_samples(
     Returns:
         List of dictionaries with original text, masked text, and generated text
     """
-    if val_dataloader is None:
+    if dataloader is None:
         logger.warning("No validation dataloader provided, cannot generate samples")
         return []
 
@@ -46,7 +46,7 @@ def generate_samples(
 
     # Sample sequences from validation dataset
     sampled_sequences = _sample_sequences_from_dataloader(
-        val_dataloader, num_generation_samples, max_length, unwrapped_model.device
+        dataloader, num_generation_samples, max_length, unwrapped_model.device
     )
     logger.info(f"Sampled {len(sampled_sequences)} sequences from validation dataset")
 
@@ -68,7 +68,7 @@ def generate_samples(
 
 
 def _sample_sequences_from_dataloader(
-    val_dataloader: Any, num_samples: int, max_length: int, device: torch.device
+    dataloader: Any, num_samples: int, max_length: int, device: torch.device
 ) -> List[torch.Tensor]:
     """Sample sequences from validation dataloader."""
     sampled_sequences = []
@@ -78,7 +78,7 @@ def _sample_sequences_from_dataloader(
     skip_batches = torch.randint(0, 6, (1,)).item()
     batch_count = 0
 
-    for batch in val_dataloader:
+    for batch in dataloader:
         # Skip some batches for variety
         if batch_count < skip_batches:
             batch_count += 1
@@ -183,13 +183,15 @@ def _generate(
 
 def _clean_masked_text(masked_text: str, tokenizer: Any, mask_token_id: int) -> str:
     """Clean up masked text for display."""
-    # Get the mask token representation from the tokenizer
     mask_token_repr = tokenizer.decode([mask_token_id], skip_special_tokens=False)
     cleaned = masked_text.replace(mask_token_repr, "[MASK]")
 
-    # Clean up special tokens and whitespace
-    cleaned = cleaned.replace("<s>", "").replace("</s>", "").strip()
-    cleaned = " ".join(cleaned.split())
+    if hasattr(tokenizer, "special_tokens_map"):
+        for token_value in tokenizer.special_tokens_map.values():
+            if token_value and isinstance(token_value, str):
+                cleaned = cleaned.replace(token_value, "")
+
+    cleaned = " ".join(cleaned.split()).strip()
 
     return cleaned
 
