@@ -129,13 +129,21 @@ class ChatTemplatePrompter(Prompter):
                 images=images,
                 return_tensors="pt",
             )
+            if hasattr(batch, "to_dict"):
+                batch = batch.to_dict()
+            else:
+                batch = dict(batch)
+
             # workaround since processor works in batches instead of single examples
+            out = {}
             for k, val in batch.items():
-                if k in ["pixel_values"]:
-                    batch[k] = val.tolist()
+                if hasattr(val, "tolist"):
+                    out[k] = (
+                        val.tolist() if k == "pixel_values" else val.squeeze(0).tolist()
+                    )
                 else:
-                    batch[k] = val.squeeze().tolist()
-            return batch
+                    out[k] = val
+            return out
 
         return self.tokenizer.apply_chat_template(
             conversation,
@@ -433,10 +441,13 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 tokenized_prompt["attention_mask"] = [1] * len(input_ids)
             else:
                 input_ids = tokenized_res["input_ids"]
-                tokenized_prompt = tokenized_res
+                tokenized_prompt = dict(tokenized_res)
 
             if not self.train_on_inputs:
-                user_prompt_len = len(prompt_ids)
+                if isinstance(prompt_ids, dict):
+                    user_prompt_len = len(prompt_ids["input_ids"])
+                else:
+                    user_prompt_len = len(prompt_ids)
                 labels = [-100] * user_prompt_len + input_ids[user_prompt_len:]
             else:
                 labels = input_ids
