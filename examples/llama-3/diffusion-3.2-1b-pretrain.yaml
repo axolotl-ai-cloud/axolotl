@@ -2,29 +2,27 @@ base_model: meta-llama/Llama-3.2-1B
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
-# Dataset configuration for pretraining
-datasets:
+pretraining_dataset:
   - path: wikitext
     name: wikitext-103-raw-v1
     type: completion
     field: text
-val_set_size: 0.001
 
 plugins:
   - diffusion.DiffusionPlugin
-noise_schedule: "cosine"
+noise_schedule: cosine
 min_mask_ratio: 0.15
 max_mask_ratio: 0.85
-num_diffusion_steps: 128
 eps: 5e-4
 importance_weighting: true
 mask_token_id: 128002
+generate_samples: true
+generation_interval: 10
 
 output_dir: ./outputs/model-out
 
 sequence_len: 512
-sample_packing: false
-eval_sample_packing: false
+sample_packing: true
 
 gradient_accumulation_steps: 8
 micro_batch_size: 4
@@ -42,12 +40,10 @@ resume_from_checkpoint:
 logging_steps: 1
 sdp_attention: true
 
-warmup_steps: 500
+warmup_steps: 1000
 
 save_strategy: steps
-eval_strategy: steps
 save_steps: 1000
-eval_steps: 1000
 
 special_tokens:
   pad_token: "<|end_of_text|>"

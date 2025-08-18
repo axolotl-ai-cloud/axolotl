@@ -270,13 +270,6 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             "avg_p_mask": p_mask[masked_indices].mean().item(),
             "ce_loss": ce_loss.item(),
         }
-
-        # Add SFT-specific metrics
-        if labels is not None:
-            answer_mask = labels != -100
-            metrics["answer_ratio"] = answer_mask.float().mean().item()
-            metrics["avg_answer_length"] = answer_mask.sum(dim=1).float().mean().item()
-
         if self.config.importance_weighting:
             metrics["importance_weight_avg"] = (1.0 / masked_p_mask).mean().item()
 
