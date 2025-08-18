@@ -101,7 +101,7 @@ For example, to mimic the command `cd devtools && CUDA_VISIBLE_DEVICES=0 acceler
                 "-m", "axolotl.cli.train", "dev_chat_template.yml",
                 // The flags below simplify debugging by overriding the axolotl config
                 // with the debugging tips above.  Modify as needed.
-                "--dataset_num_proc=1",      // limits data preprocessing to one process
+                "--dataset_num_proc=1",       // limits data preprocessing to one process
                 "--max_steps=1",              // limits training to just one step
                 "--batch_size=1",             // minimizes batch size
                 "--micro_batch_size=1",       // minimizes batch size
