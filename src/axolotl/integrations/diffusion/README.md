@@ -27,15 +27,24 @@ Add the following to your Axolotl configuration YAML:
 ```yaml
 # Enable diffusion LM training plugin
 plugins:
-  - diffusion.DiffusionPlugin
+  - axolotl.integrations.diffusion.DiffusionPlugin
 
 # Diffusion-specific configuration
-noise_schedule: "linear"  # or "cosine"
+noise_schedule: linear  # or "cosine"
 min_mask_ratio: 0.1
 max_mask_ratio: 0.9
 num_diffusion_steps: 128
 eps: 1e-3
 importance_weighting: true
+mask_token_id: 128002
+
+# Sample generation (optional)
+generate_samples: true
+generation_interval: 100
+num_generation_samples: 3
+generation_steps: 128
+generation_temperature: 0.0
+generation_max_length: 100
 
 # Model configuration
 base_model: meta-llama/Llama-3.2-1B
@@ -88,24 +97,37 @@ loss = sum(cross_entropy(pred, target) / p_mask) / total_tokens
 - Consider using gradient checkpointing, torch.compile,
 
 ### Training Stability
-- Start with `noise_schedule: "linear"` for more predictable behavior
-- Enable `importance_weighting` for better gradient scaling
+- Start with `noise_schedule: linear` for more predictable behavior
+- Enable `importance_weighting: true` for better gradient scaling
 
 ### Convergence
 - Monitor the `diffusion_loss` and `diffusion_accuracy` metrics
 - Expect different loss curves compared to standard language modeling
 
+## Sample Generation
+
+When `generate_samples: true`, the plugin generates samples during training:
+
+```
+📝 Sample 1:
+   Original (45 tokens): The quick brown fox jumps over the lazy dog...
+   Masked (18/45 tokens, 40.0%): The [MASK] [MASK] fox [MASK] over [MASK] lazy [MASK]...
+   Generated: The quick brown fox jumps over the lazy dog...
+```
+
+Samples are logged to console and wandb (if enabled).
+
 ## Metrics and Monitoring
 
 The plugin adds several metrics to track diffusion training:
 
-- `train/diffusion_loss`: Weighted diffusion loss
-- `train/diffusion_accuracy`: Accuracy on masked tokens
-- `train/diffusion_mask_ratio`: Average fraction of tokens masked
-- `train/diffusion_num_masked_tokens`: Number of tokens masked
-- `train/diffusion_avg_p_mask`: Average masking probability
-- `train/diffusion_ce_loss`: Unweighted cross-entropy loss
-- `train/diffusion_importance_weight_avg`: Average importance weight
+- `train/loss`: Weighted diffusion loss
+- `train/accuracy`: Accuracy on masked tokens
+- `train/mask_ratio`: Average fraction of tokens masked
+- `train/num_masked_tokens`: Number of tokens masked
+- `train/avg_p_mask`: Average masking probability
+- `train/ce_loss`: Unweighted cross-entropy loss
+- `train/importance_weight_avg`: Average importance weight
 
 ## Limitations
 
