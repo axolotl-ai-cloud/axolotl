@@ -146,7 +146,11 @@ class TrainerBuilderBase(abc.ABC):
             )
         from axolotl.utils.callbacks.tokens_per_second import TokensPerSecondCallback
 
-        callbacks.append(TokensPerSecondCallback(self.cfg.tensor_parallel_size, self.cfg.context_parallel_size))
+        callbacks.append(
+            TokensPerSecondCallback(
+                self.cfg.tensor_parallel_size, self.cfg.context_parallel_size
+            )
+        )
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):

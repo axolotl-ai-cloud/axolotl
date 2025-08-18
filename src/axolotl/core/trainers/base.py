@@ -24,8 +24,8 @@ from torch.utils.data import (
 )
 from transformers import PreTrainedModel, Trainer
 from transformers.trainer import TRAINING_ARGS_NAME
-from transformers.trainer_utils import has_length, PREFIX_CHECKPOINT_DIR, seed_worker
-from transformers.utils import is_peft_available, SAFE_WEIGHTS_NAME, WEIGHTS_NAME
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length, seed_worker
+from transformers.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME, is_peft_available
 from trl.trainer.utils import pad_to_length
 from typing_extensions import override
 
@@ -46,7 +46,7 @@ from axolotl.utils import get_not_null
 from axolotl.utils.bench import get_gpu_memory_usage
 from axolotl.utils.distributed import is_main_process
 from axolotl.utils.logging import get_logger
-from axolotl.utils.samplers import get_dataset_lengths, MultipackBatchSampler
+from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger(__name__)
 
