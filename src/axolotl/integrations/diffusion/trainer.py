@@ -10,6 +10,8 @@ from axolotl.core.trainers.base import AxolotlTrainer
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
+from .callbacks import DiffusionGenerationCallback
+
 LOG = get_logger(__name__)
 
 
@@ -18,13 +20,17 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._config = None
+        self.config = None
         self._special_token_ids = None
 
     def set_config(self, config: DictDefault):
         """Set config for diffusion training."""
-        self._config = config
+        self.config = config
         self._cache_special_token_ids()
+
+        if config.generate_samples:
+            generation_callback = DiffusionGenerationCallback(self)
+            self.add_callback(generation_callback)
 
     def compute_loss(
         self,
@@ -111,19 +117,19 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             for token_id in self._special_token_ids:
                 special_token_mask |= input_ids == token_id
 
-        # Create random mask based on p_mask    
+        # Create random mask based on p_mask
         masked_indices = torch.rand((batch_size, seq_len), device=device) < p_mask
         masked_indices = masked_indices & ~special_token_mask
         if attention_mask is not None:
             masked_indices = masked_indices & attention_mask.bool()
-        
+
         # For SFT data, only mask answer tokens
         if labels is not None:
             answer_mask = labels != -100
             masked_indices = masked_indices & answer_mask
 
         # Create masked input
-        mask_token_id = self._config.mask_token_id
+        mask_token_id = self.config.mask_token_id
         noisy_batch = torch.where(masked_indices, mask_token_id, input_ids)
 
         return noisy_batch, masked_indices, p_mask
@@ -147,7 +153,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         batch_size, seq_len = input_ids.shape
         device = input_ids.device
 
-        if attention_mask is None or not self._config.sample_packing:
+        if attention_mask is None or not self.config.sample_packing:
             return torch.ones(
                 batch_size, 1, seq_len, seq_len, dtype=torch.bool, device=device
             )
@@ -186,7 +192,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         """
         # Apply forward process
         noisy_batch, masked_indices, p_mask = self._forward_process(
-            input_ids, attention_mask, labels, self._config.eps
+            input_ids, attention_mask, labels, self.config.eps
         )
 
         # Create bidirectional attention mask
@@ -214,7 +220,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
                 masked_logits.float(), masked_targets, reduction="none"
             )
 
-            if self._config.importance_weighting:
+            if self.config.importance_weighting:
                 masked_p_mask = masked_p_mask.float()
                 weighted_loss = token_loss / masked_p_mask
             else:
@@ -222,26 +228,28 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
 
             # Final loss: sum weighted losses, normalize
             if labels is not None:
-                # For SFT data: normalize by answer length per sample as per LLaDA guidelines
+                # For SFT data: normalize by answer length per sample
                 answer_mask = labels != -100
                 answer_lengths = answer_mask.sum(dim=1).float()  # [batch_size]
-                
+
                 # Get batch indices for masked tokens
                 masked_batch_indices = batch_indices
-                
+
                 # Sum losses per sample and divide by answer length
-                loss_per_sample = torch.zeros(input_ids.shape[0], device=input_ids.device)
+                loss_per_sample = torch.zeros(
+                    input_ids.shape[0], device=input_ids.device
+                )
                 for i in range(input_ids.shape[0]):
                     sample_mask = masked_batch_indices == i
                     if sample_mask.sum() > 0:
                         sample_loss = weighted_loss[sample_mask].sum()
                         loss_per_sample[i] = sample_loss / answer_lengths[i]
-                
+
                 loss = loss_per_sample.mean()
             else:
                 # Original normalization for non-SFT data
                 loss = weighted_loss.sum() / (input_ids.shape[0] * input_ids.shape[1])
-            
+
             ce_loss = token_loss.mean()
 
             # Compute accuracy on masked tokens
@@ -262,14 +270,14 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             "avg_p_mask": p_mask[masked_indices].mean().item(),
             "ce_loss": ce_loss.item(),
         }
-        
+
         # Add SFT-specific metrics
         if labels is not None:
             answer_mask = labels != -100
             metrics["answer_ratio"] = answer_mask.float().mean().item()
             metrics["avg_answer_length"] = answer_mask.sum(dim=1).float().mean().item()
 
-        if self._config.importance_weighting:
+        if self.config.importance_weighting:
             metrics["importance_weight_avg"] = (1.0 / masked_p_mask).mean().item()
 
         train_eval: Literal["train", "eval"] = "train" if model.training else "eval"

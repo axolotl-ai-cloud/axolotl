@@ -46,5 +46,27 @@ class DiffusionArgs(BaseModel):
         description=(
             "Token ID to use for masking. Default is 128002 "
             "(<|reserved_special_token_0|> for Llama 3.2)"
-        )
+        ),
+    )
+
+    # Sample generation config
+    generate_samples: bool = Field(
+        default=True, description="Enable sample generation during training"
+    )
+    generation_interval: int = Field(
+        default=100, ge=1, description="Generate samples every N steps"
+    )
+    num_generation_samples: int = Field(
+        default=3, ge=1, description="Number of samples to generate each time"
+    )
+    generation_steps: int = Field(
+        default=128, ge=1, description="Number of diffusion steps for generation"
+    )
+    generation_temperature: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Temperature for generation sampling (0.0 = deterministic)",
+    )
+    generation_max_length: int = Field(
+        default=100, ge=1, description="Maximum sequence length for generation"
     )
