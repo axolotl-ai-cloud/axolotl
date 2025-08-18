@@ -1,6 +1,7 @@
 """Diffusion LM training plugin for Axolotl."""
 
-from transformers import PreTrainedModel, Trainer
+from peft import PeftModel
+from transformers import PreTrainedModel
 
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils.dict import DictDefault
@@ -27,14 +28,14 @@ class DiffusionPlugin(BasePlugin):
         """Returns the pydantic model for LLaDA plugin arguments."""
         return "axolotl.integrations.diffusion.DiffusionArgs"
 
-    def post_model_load(self, cfg: DictDefault, model: PreTrainedModel):
+    def post_model_load(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
         """Perform actions after model is loaded."""
         self.cfg = cfg
 
-    def get_trainer_cls(self, cfg: DictDefault) -> Trainer | None:
+    def get_trainer_cls(self, cfg: DictDefault) -> type[DiffusionTrainer] | None:
         """Return custom trainer class for diffusion training."""
         return DiffusionTrainer
 
-    def post_trainer_create(self, cfg: DictDefault, trainer: Trainer):
+    def post_trainer_create(self, cfg: DictDefault, trainer: DiffusionTrainer):
         """Configure trainer after creation."""
         trainer.set_config(cfg)
