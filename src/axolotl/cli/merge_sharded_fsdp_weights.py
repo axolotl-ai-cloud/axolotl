@@ -10,6 +10,7 @@ import fire
 import torch
 import torch.distributed.checkpoint as dist_cp
 import torch.distributed.checkpoint.format_utils as dist_cp_format_utils
+from accelerate import PartialState
 from accelerate.utils import (
     SAFE_WEIGHTS_INDEX_NAME,
     SAFE_WEIGHTS_NAME,
@@ -23,6 +24,7 @@ from torch.distributed.checkpoint.format_utils import _EmptyStateDictLoadPlanner
 
 from axolotl.cli.config import load_cfg
 from axolotl.utils.logging import get_logger
+from axolotl.utils.train import determine_last_checkpoint
 
 LOG = get_logger(__name__)
 
@@ -143,7 +145,6 @@ def merge_fsdp_weights(
         ValueError: If torch version < 2.3.0, or if `checkpoint_dir` does not exist.
     """
     checkpoint_dir_ = Path(checkpoint_dir)
-    from accelerate.state import PartialState
 
     if not is_torch_version(">=", "2.3.0"):
         raise ValueError("`merge_fsdp_weights` requires PyTorch >= 2.3.0`")
@@ -180,7 +181,6 @@ def merge_fsdp_weights(
         if remove_checkpoint_dir:
             LOG.info(f"Removing old checkpoint directory {checkpoint_dir_}")
             shutil.rmtree(checkpoint_dir_)
-    state.wait_for_everyone()
 
 
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
@@ -195,10 +195,31 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     parsed_cfg = load_cfg(config, **kwargs)
 
     fsdp_dir = Path(parsed_cfg.output_dir) / "pytorch_model_fsdp_0"
+    if not fsdp_dir.exists():
+        checkpoint_dir = determine_last_checkpoint(parsed_cfg, update=False)
+        if checkpoint_dir:
+            fsdp_dir = Path(checkpoint_dir) / "pytorch_model_fsdp_0"
+        if not fsdp_dir.exists():
+            raise ValueError(
+                f"Could not find FSDP checkpoint `pytorch_model_fsdp_0` in {checkpoint_dir}"
+            )
+
+    output_path = str(Path(parsed_cfg.output_dir) / "merged")
     merge_fsdp_weights(
         checkpoint_dir=str(fsdp_dir),
-        output_path=str(Path(parsed_cfg.output_dir) / "merged"),
+        output_path=output_path,
         safe_serialization=True,
+    )
+    state = PartialState()
+    state.wait_for_everyone()
+    LOG.info(
+        f"FSDP SHARDED_STATE_DICT weights successfully merged to: {output_path}",
+        main_process_only=True,
+    )
+    LOG.info(
+        "Merged weights are only the safetensors and doesn't include the model configuration "
+        f"or tokenizer which may be found in {parsed_cfg.output_dir}.",
+        main_process_only=True,
     )
 
 

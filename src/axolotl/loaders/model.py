@@ -25,6 +25,7 @@ from peft import (
 from torch.distributed import DeviceMesh
 from transformers import (
     AutoModelForCausalLM,
+    AutoModelForImageTextToText,
     AutoModelForVision2Seq,
     AwqConfig,
     BitsAndBytesConfig,
@@ -212,6 +213,7 @@ class ModelLoader:
             self.model_kwargs["use_kernels"] = self.cfg.use_kernels
         self._set_quantization_config()
         self._set_attention_config()
+        self._check_model_requirements()
 
     def _apply_post_model_load_setup(self):
         """Configure the model after it has been loaded."""
@@ -432,6 +434,8 @@ class ModelLoader:
             self.auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
                 self.model_config.model_type, AutoModelForVision2Seq
             )
+            if isinstance(self.auto_model_loader, str):
+                self.auto_model_loader = AutoModelForImageTextToText
 
     def _set_device_map_config(self):
         """Setup `device_map` according to config"""
@@ -627,6 +631,16 @@ class ModelLoader:
 
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True
+
+    def _check_model_requirements(self):
+        if self.cfg.model_config_type in ["lfm2-vl", "lfm2"]:
+            from transformers.utils.import_utils import is_causal_conv1d_available
+
+            if is_causal_conv1d_available():
+                raise ImportError(
+                    "The 'causal-conv1d' package is installed but causes compatibility issues with LFM2 models. "
+                    "Please uninstall it by running: `pip uninstall -y causal-conv1d`"
+                )
 
     def _configure_zero3_memory_efficient_loading(
         self,
