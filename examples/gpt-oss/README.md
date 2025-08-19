@@ -41,6 +41,12 @@ model, and final model output, you may need at least 3TB of free disk space to k
 axolotl train examples/gpt-oss/gpt-oss-120b-fft-fsdp2-offload.yaml
 ```
 
+To simplify fine-tuning with 2x8xH100s, we've partnered with [Baseten](https://baseten.co) to showcase multi-node
+training 120B with Basten's Truss. You can read more aboutthis recipe on
+[Baseten's blog](https://www.baseten.co/blog/how-to-fine-tune-gpt-oss-120b-with-baseten-and-axolotl/). The recipe can
+be found on their
+[GitHub](https://github.com/basetenlabs/ml-cookbook/tree/main/examples/oss-gpt-120b-axolotl/training).
+
 ERRATA: Transformers saves the model Architecture prefixed with `FSDP` which needs to be manually renamed in `config.json`.
 See https://github.com/huggingface/transformers/pull/40207 for the status of this issue.
 
