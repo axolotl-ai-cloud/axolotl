@@ -43,7 +43,13 @@ class TokenizedPromptDataset(Dataset):
         )
 
     def process(self, dataset):
-        features = dataset.features.keys()
+        # Handle both regular Dataset and IterableDataset
+        if hasattr(dataset, "features") and dataset.features:
+            features = dataset.features.keys()
+        else:
+            # For IterableDataset, we can't access features upfront
+            # We'll need to infer from the first batch
+            features = None
 
         map_kwargs = {}
         if self.prompt_tokenizer.supports_batched:
@@ -54,19 +60,30 @@ class TokenizedPromptDataset(Dataset):
             hasattr(self.prompt_tokenizer, "filter_rows")
             and self.prompt_tokenizer.filter_rows
         ):
+            filter_kwargs = {"desc": "Strategy Filtering Rows"}
+            # Only add num_proc for regular datasets
+            if features is not None:
+                filter_kwargs["num_proc"] = self.process_count
+
             dataset = dataset.filter(
                 self.prompt_tokenizer.filter_rows,
-                num_proc=self.process_count,
-                desc="Strategy Filtering Rows",
+                **filter_kwargs,
             )
+
+        map_kwargs_final = {
+            **map_kwargs,
+            "desc": "Tokenizing Prompts",
+        }
+
+        # Only add remove_columns for regular datasets
+        if features is not None:
+            map_kwargs_final["remove_columns"] = features
+            map_kwargs_final["num_proc"] = self.process_count
+            map_kwargs_final["keep_in_memory"] = self.keep_in_memory
 
         return dataset.map(
             self.prompt_tokenizer.tokenize_prompt,
-            num_proc=self.process_count,
-            remove_columns=features,
-            keep_in_memory=self.keep_in_memory,
-            desc="Tokenizing Prompts",
-            **map_kwargs,
+            **map_kwargs_final,
         )
 
 
