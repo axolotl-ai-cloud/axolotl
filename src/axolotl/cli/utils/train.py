@@ -89,9 +89,9 @@ def generate_config_files(config: str, sweep: str | None) -> Iterator[tuple[str,
     # Generate all possible configurations
     permutations = generate_sweep_configs(base_config, sweep_config)
     is_group = len(permutations) > 1
-    
+    base_output_dir = base_config.get("output_dir",'./model-out') 
     for idx, permutation in enumerate(permutations, start=1):
-        permutation_dir = Path(permutation.get("output_dir"))
+        permutation_dir = Path(permutation.get("output_dir"),base_output_dir)
         permutation_id = f"sweep{idx:04d}"
         permutation["output_dir"] = str(permutation_dir / permutation_id)
         
