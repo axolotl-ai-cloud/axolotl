@@ -274,6 +274,18 @@ class AxolotlTrainer(
                     num_workers=self.args.dataloader_num_workers,
                     rank=self.args.process_index,
                 )
+        if (self.args.accelerator_config is not None
+            and self.args.accelerator_config.split_batches
+            and self.args.accelerator_config.dispatch_batches
+        ):
+            if self.args.sample_packing and self.args.pretraining:
+                if not self.args.eval_sample_packing and not is_training:
+                    dataloader_params["batch_size"] *= self.accelerator.num_processes
+                else:
+                    dataloader_params["batch_size"] = self.accelerator.num_processes
+            elif not self.args.sample_packing and self.args.pretraining:
+                dataloader_params["batch_size"] *= self.accelerator.num_processes
+
         if self.args.sample_packing and (
             (is_training and not self.args.pretraining)
             or (not is_training and self.args.eval_sample_packing is not False)

@@ -57,7 +57,7 @@ class SpectrumPlugin(BasePlugin):
     Spectrum Plugin to automatically generate unfrozen parameters based on SNR data.
     """
 
-    base_url = "https://raw.githubusercontent.com/cognitivecomputations/spectrum/main/model_snr_results/"
+    base_url = "https://raw.githubusercontent.com/QuixiAI/spectrum/main/model_snr_results/"
     base_path = "./model_snr_results/"
     snr_file_template = "snr_results_{model_name_slug}.json"
 
