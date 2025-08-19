@@ -408,8 +408,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         if update:
             cfg.total_num_tokens = total_num_tokens
 
-    skip_estimates = cfg.model_config_type == "mamba"
-    skip_estimates = True
+    skip_estimates = cfg.sequence_len is None or cfg.model_config_type == "mamba"
 
     if (
         not skip_estimates
