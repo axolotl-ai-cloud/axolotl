@@ -84,10 +84,6 @@ datasets:
     type: completion
 ```
 
-::: {.callout-important}
-For `completion` only, Axolotl would split texts if it exceeds the context length into multiple smaller prompts. If you are interested in having this for `pretraining_dataset` too, please let us know or help make a PR!
-:::
-
 ### Pre-training dataset configuration tips
 
 #### Setting max_steps
