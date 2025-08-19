@@ -408,7 +408,7 @@ class AxolotlInputConfig(
 
     unfrozen_parameters: list[str] | None = None
 
-    sequence_len: int = Field(
+    sequence_len: int | None = Field(
         default=512,
         json_schema_extra={
             "description": "The maximum length of an input to train with, this should typically be less than 2048 as most models have a token/context limit of 2048"

@@ -12,7 +12,7 @@ output_dir: ./outputs/lora-out
 adapter: lora
 lora_model_dir:
 
-sequence_len: 2048
+sequence_len:
 sample_packing: true
 eval_sample_packing: true
 

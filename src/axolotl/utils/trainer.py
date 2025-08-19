@@ -229,7 +229,10 @@ def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2):
     results = []
     for seq in input_ids:
         length = len(seq)
-        results.append(min_sequence_len <= length <= sequence_len)
+        if sequence_len is not None:
+            results.append(min_sequence_len <= length <= sequence_len)
+        else:
+            results.append(min_sequence_len <= length)
     return results
 
 
@@ -406,6 +409,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             cfg.total_num_tokens = total_num_tokens
 
     skip_estimates = cfg.model_config_type == "mamba"
+    skip_estimates = True
 
     if (
         not skip_estimates

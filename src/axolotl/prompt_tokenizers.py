@@ -91,7 +91,7 @@ class PromptTokenizingStrategy(abc.ABC):
 
         if (
             result["input_ids"][-1] != self.tokenizer.eos_token_id
-            and len(result["input_ids"]) < self.max_length
+            and (self.max_length is None or len(result["input_ids"]) < self.max_length)
             and add_eos_token
         ):
             result["input_ids"].append(self.tokenizer.eos_token_id)

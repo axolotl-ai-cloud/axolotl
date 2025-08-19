@@ -268,7 +268,10 @@ class ModelLoader:
             hasattr(self.model, "config")
             and hasattr(self.model.config, "max_position_embeddings")
             and self.model.config.max_position_embeddings
-            and self.cfg.sequence_len > self.model.config.max_position_embeddings
+            and (
+                self.cfg.sequence_len is not None
+                and self.cfg.sequence_len > self.model.config.max_position_embeddings
+            )
         ):
             LOG.warning(
                 "increasing model.config.max_position_embeddings from "
