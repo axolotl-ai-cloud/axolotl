@@ -41,8 +41,8 @@ model, and final model output, you may need at least 3TB of free disk space to k
 axolotl train examples/gpt-oss/gpt-oss-120b-fft-fsdp2-offload.yaml
 ```
 
-To simplify fine-tuning with 2x8xH100s, we've partnered with [Baseten](https://baseten.co) to showcase multi-node
-training 120B with Basten's Truss. You can read more aboutthis recipe on
+To simplify fine-tuning across 2 nodes × 8x H100 (80GB) GPUs, we've partnered with [Baseten](https://baseten.co) to showcase multi-node
+training of the 120B model using Baseten Truss. You can read more about this recipe on
 [Baseten's blog](https://www.baseten.co/blog/how-to-fine-tune-gpt-oss-120b-with-baseten-and-axolotl/). The recipe can
 be found on their
 [GitHub](https://github.com/basetenlabs/ml-cookbook/tree/main/examples/oss-gpt-120b-axolotl/training).
