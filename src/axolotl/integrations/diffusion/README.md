@@ -64,10 +64,24 @@ learning_rate: 3e-4
 
 ## Supported Models
 
-Any models that support 4D attention masks should work out of the box. If not, please
-create an [issue](https://github.com/axolotl-ai-cloud/axolotl/issues)!
+Currently supported base model types:
+- **Llama** (meta-llama/Llama-*, etc.) - Uses `LlamaForDiffusionLM`
+- **Mistral** (mistralai/Mistral-*, etc.) - Uses `MistralForDiffusionLM`
+
+The plugin automatically creates custom model classes that inherit from the base model
+while adding diffusion training capabilities. This provides full compatibility with
+HuggingFace's ecosystem for saving, loading, and inference.
 
 ## How It Works
+
+### Custom Model Architecture
+
+The plugin creates custom model classes (`LlamaForDiffusionLM`, `MistralForDiffusionLM`) that inherit from
+standard HuggingFace models. During training, these models:
+
+1. **Apply forward diffusion process**: Randomly mask tokens based on sampled timesteps
+2. **Use bidirectional attention**: Override causal attention with full bidirectional attention
+3. **Compute diffusion loss**: Calculate loss only on masked tokens with optional importance weighting
 
 ### Random Masking
 During training, tokens are randomly masked based on a sampled timestep:
@@ -76,11 +90,10 @@ During training, tokens are randomly masked based on a sampled timestep:
 - Randomly mask tokens with probability `p`
 
 ### Bidirectional Attention
-The plugin uses native 4D attention masks to:
-- Enable bidirectional attention without patches
-- Allow all tokens to attend to all other tokens
-- Maintain proper padding masks
-- Work with modern `transformers` models out of the box
+The models override causal attention with bidirectional attention:
+- Creates 4D attention masks allowing all-to-all attention
+- Maintains proper padding and sample packing masks
+- Compatible with standard HuggingFace attention implementations
 
 ### Diffusion Loss
 
@@ -89,6 +102,22 @@ Loss is computed only on masked tokens with (optional) importance weighting:
 ```python
 loss = sum(cross_entropy(pred, target) / p_mask) / total_tokens
 ```
+
+### Model Loading and Saving
+
+The custom models work seamlessly with HuggingFace's AutoModel system:
+
+```python
+from transformers import AutoModel, AutoConfig
+
+# Load a diffusion model
+model = AutoModel.from_pretrained("path/to/diffusion/model", trust_remote_code=True)
+
+# Save a diffusion model
+model.save_pretrained("path/to/save/diffusion/model")
+```
+
+During inference, the models behave like standard causal language models.
 
 ## Sample Generation
 
@@ -115,9 +144,19 @@ The plugin adds several metrics to track diffusion training:
 - `train/ce_loss`: Unweighted cross-entropy loss
 - `train/importance_weight_avg`: Average importance weight
 
+## Benefits of Custom Model Approach
+
+✅ **Type Safety**: Full IDE support and type checking  
+✅ **HuggingFace Integration**: Works with AutoModel, Hub, pipelines  
+✅ **Maintainability**: Clean architecture, no monkey patching  
+✅ **Ecosystem Compatibility**: Standard save/load, PEFT support  
+✅ **Testing**: Easier to test and debug  
+
 ## Limitations
 
-- No flash attention support
+- **Model Support**: Currently limited to Llama and Mistral architectures
+- **Flash Attention**: Not yet optimized for flash attention
+- **Inference Speed**: Bidirectional attention is slower than causal for generation
 
 ## References
 

@@ -26,29 +26,31 @@ class DiffusionGenerationCallback(TrainerCallback):
         **kwargs,
     ):
         """Generate samples at specified intervals."""
+        config = getattr(self.trainer, 'diffusion_config', self.trainer.args)
+        
         if (
             state.global_step > 0
-            and state.global_step % self.trainer.config.generation_interval == 0
+            and state.global_step % config.get('generation_interval', 100) == 0
         ):
             # Use eval dataloader if available, otherwise use train dataloader
             if (
                 hasattr(self.trainer, "eval_dataset")
                 and self.trainer.eval_dataset is not None
             ):
-                dataloader = self.trainer.callback_handler.eval_dataloader
+                dataloader = self.trainer.get_eval_dataloader()
             else:
-                dataloader = self.trainer.callback_handler.train_dataloader
+                dataloader = self.trainer.get_train_dataloader()
 
             # Generate samples
             samples = generate_samples(
                 model=self.trainer.model,
                 tokenizer=self.trainer.tokenizer,
                 dataloader=dataloader,
-                num_generation_samples=self.trainer.config.num_generation_samples,
-                max_length=self.trainer.config.generation_max_length,
-                num_diffusion_steps=self.trainer.config.generation_steps,
-                temperature=self.trainer.config.generation_temperature,
-                mask_token_id=self.trainer.config.mask_token_id,
+                num_generation_samples=config.get('num_generation_samples', 3),
+                max_length=config.get('generation_max_length', 256),
+                num_diffusion_steps=config.get('generation_steps', 10),
+                temperature=config.get('generation_temperature', 1.0),
+                mask_token_id=config.get('mask_token_id', 32000),
             )
 
             # Log samples
@@ -81,7 +83,8 @@ class DiffusionGenerationCallback(TrainerCallback):
 
         LOG.info("=" * 60)
 
-        if self.trainer.config.use_wandb and self.trainer.state.is_world_process_zero:
+        config = getattr(self.trainer, 'diffusion_config', self.trainer.args)
+        if config.get('use_wandb', False) and self.trainer.state.is_world_process_zero:
             if wandb.run is not None:
                 wandb.log(
                     {
