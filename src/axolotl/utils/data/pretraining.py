@@ -38,6 +38,18 @@ def encode_pretraining(
         for sample in full_inputs["attention_mask"]
     ]
 
+    # Resolve a safe pad token id for chunk padding
+    pad_id = (
+        tokenizer.pad_token_id
+        if tokenizer.pad_token_id is not None
+        else (tokenizer.eos_token_id or 0)
+    )
+
+    if tokenizer.pad_token_id is None:
+        LOG.warning(
+            "tokenizer.pad_token_id is None; falling back to %s for padding", pad_id
+        )
+
     inputs_ids, target_ids, attention_mask = [], [], []
 
     # Concatenate if specified all input_ids and attention masks into one tensor when concatenate is True
@@ -53,9 +65,7 @@ def encode_pretraining(
             0, len(full_inputs["input_ids"][sample_index]), max_tokens
         ):
             # Create partial tensors for inputs, targets, and attention masks with fill values
-            partial_inputs_ids = torch.full(
-                (max_tokens,), tokenizer.pad_token_id, dtype=torch.long
-            )
+            partial_inputs_ids = torch.full((max_tokens,), pad_id, dtype=torch.long)
             partial_target_ids = torch.full((max_tokens,), -100, dtype=torch.long)
             partial_attention_mask = torch.zeros((max_tokens,), dtype=torch.long)
 
