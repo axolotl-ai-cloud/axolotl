@@ -281,7 +281,6 @@ def save_trained_model(
                 state_dict_type = cfg.fsdp_config.final_state_dict_type
             else:
                 state_dict_type = cfg.fsdp_config.state_dict_type
-            trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
         trainer.save_model(cfg.output_dir)
         if state_dict_type == "SHARDED_STATE_DICT":
             LOG.info(
