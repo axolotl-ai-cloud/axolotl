@@ -33,11 +33,48 @@ Note: Memory usage taken from `device_mem_reserved(gib)` from logs.
 
 ### Training 120B
 
-On 8xH100s
+On 8xH100s, make sure you have ~3TB of free disk space. With each checkpoint clocking in at ~720GB, along with the base
+model, and final model output, you may need at least 3TB of free disk space to keep at least 2 checkpoints.
 
 ```bash
 # FFT SFT with offloading (8x80GB @ ~49GiB/GPU)
 axolotl train examples/gpt-oss/gpt-oss-120b-fft-fsdp2-offload.yaml
+```
+
+To simplify fine-tuning across 2 nodes × 8x H100 (80GB) GPUs, we've partnered with [Baseten](https://baseten.co) to showcase multi-node
+training of the 120B model using Baseten Truss. You can read more about this recipe on
+[Baseten's blog](https://www.baseten.co/blog/how-to-fine-tune-gpt-oss-120b-with-baseten-and-axolotl/). The recipe can
+be found on their
+[GitHub](https://github.com/basetenlabs/ml-cookbook/tree/main/examples/oss-gpt-120b-axolotl/training).
+
+ERRATA: Transformers saves the model Architecture prefixed with `FSDP` which needs to be manually renamed in `config.json`.
+See https://github.com/huggingface/transformers/pull/40207 for the status of this issue.
+
+```bash
+sed -i 's/FSDPGptOssForCausalLM/GptOssForCausalLM/g' ./outputs/gpt-oss-out/config.json
+```
+
+When using SHARDED_STATE_DICT with FSDP, the final checkpoint should automatically merge the sharded weights to your
+configured `output_dir`. However, if that step fails due to a disk space error, you can take an additional step to
+merge the sharded weights.  This step will automatically determine the last checkpoint directory and merge the sharded
+weights to `{output_dir}/merged`.
+
+```bash
+axolotl merge-sharded-fsdp-weights examples/gpt-oss/gpt-oss-120b-fft-fsdp2-offload.yaml
+mv ./outputs/gpt-oss-out/merged/* ./outputs/gpt-oss-out/
+```
+
+
+### Inferencing your fine-tuned model
+
+GPT-OSS support in vLLM does not exist in a stable release yet. See https://x.com/MaziyarPanahi/status/1955741905515323425
+for more information about using a special vllm-openai docker image for inferencing with vLLM.
+
+SGLang has 0-day support in main, see https://github.com/sgl-project/sglang/issues/8833 for infomation on installing
+SGLang from source. Once you've installed SGLang, run the following command to launch a SGLang server:
+
+```bash
+python3 -m sglang.launch_server --model ./outputs/gpt-oss-out/ --served-model-name axolotl/gpt-oss-120b --host 0.0.0.0 --port 8888 --tp 8
 ```
 
 ### Tool use
