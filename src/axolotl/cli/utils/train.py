@@ -91,7 +91,7 @@ def generate_config_files(config: str, sweep: str | None) -> Iterator[tuple[str,
     is_group = len(permutations) > 1
     
     for idx, permutation in enumerate(permutations, start=1):
-        permutation_dir = Path(permutation.get("output_dir")
+        permutation_dir = Path(permutation.get("output_dir"))
         permutation_id = f"sweep{idx:04d}"
         permutation["output_dir"] = str(permutation_dir / permutation_id)
         
