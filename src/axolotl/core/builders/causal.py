@@ -40,6 +40,7 @@ from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
     MambaDataCollator,
+    StreamingDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
@@ -422,6 +423,17 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         is_eval=False,
         **kwargs,
     ):
+        from datasets import IterableDataset
+
+        if isinstance(self.train_dataset, IterableDataset) and not is_eval:
+            LOG.info("Using StreamingDataCollator")
+            return StreamingDataCollator(
+                tokenizer=self.tokenizer,
+                cfg=self.cfg,
+                prompter=None,
+                **kwargs,
+            )
+
         if training_args.pretraining:
             if (
                 self.cfg.pretraining_sample_concatenation is False
