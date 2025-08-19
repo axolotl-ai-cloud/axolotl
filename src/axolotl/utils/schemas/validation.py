@@ -1337,6 +1337,30 @@ class GRPOVllmValidationMixin:
 
 
 # pylint: disable=too-many-ancestors
+class StreamingValidationMixin:
+    """Validation methods related to streaming datasets."""
+
+    @model_validator(mode="after")
+    def check_streaming_requires_max_steps(self):
+        """Ensure max_steps is set when using streaming datasets."""
+        # Check if streaming is explicitly enabled
+        streaming_enabled = getattr(self, "streaming", None) is True
+
+        # Check if pretraining dataset exists (defaults to streaming)
+        has_pretraining = getattr(self, "pretraining_dataset", None) is not None
+        streaming_default_for_pretraining = (
+            has_pretraining and getattr(self, "streaming", None) is None
+        )
+
+        # If streaming is enabled (explicitly or by default for pretraining)
+        if streaming_enabled or streaming_default_for_pretraining:
+            max_steps = getattr(self, "max_steps", None)
+            if not max_steps:
+                raise ValueError("max_steps must be set when using streaming datasets")
+
+        return self
+
+
 class ValidationMixin(
     DatasetValidationMixin,
     AttentionValidationMixin,
@@ -1347,6 +1371,7 @@ class ValidationMixin(
     SystemValidationMixin,
     ChatTemplateValidationMixin,
     PretrainingValidationMixin,
+    StreamingValidationMixin,
     ModelCompatibilityValidationMixin,
     ComplexValidationMixin,
     GRPOVllmValidationMixin,

@@ -9,6 +9,7 @@ from datasets import (
     Dataset,
     DatasetDict,
     IterableDataset,
+    IterableDatasetDict,
     load_dataset,
 )
 from transformers import PreTrainedTokenizer, ProcessorMixin
@@ -43,6 +44,18 @@ from axolotl.utils.trainer import (
 LOG = get_logger(__name__)
 
 
+def _determine_streaming_mode(cfg: DictDefault) -> bool:
+    """Determine if we should use streaming mode based on config."""
+    if cfg.streaming is not None:
+        return cfg.streaming
+
+    # Default to streaming for pretraining datasets
+    if cfg.pretraining_dataset:
+        return True
+
+    return False
+
+
 @retry_on_request_exceptions(max_retries=3, delay=5)
 def prepare_datasets(
     cfg: DictDefault,
@@ -61,6 +74,13 @@ def prepare_datasets(
     Returns:
         Tuple of (train_dataset, eval_dataset, total_steps, prompters).
     """
+    # Determine streaming mode from config
+    streaming_mode = _determine_streaming_mode(cfg)
+
+    # Override preprocess_iterable parameter with streaming config
+    if streaming_mode:
+        preprocess_iterable = True
+
     if cfg.pretraining_dataset:
         return _prepare_pretraining_dataset(
             cfg, tokenizer, processor, preprocess_iterable
@@ -118,12 +138,19 @@ def _prepare_standard_dataset(
             )
 
     # Calculate total number of training steps
-    if cfg.max_steps:
-        total_num_steps = min(
-            calculate_total_num_steps(cfg, train_dataset), cfg.max_steps
-        )
+    if isinstance(train_dataset, IterableDataset):
+        # For streaming datasets, we must use max_steps
+        if not cfg.max_steps:
+            raise ValueError("max_steps must be set when using streaming datasets")
+        total_num_steps = cfg.max_steps
     else:
-        total_num_steps = calculate_total_num_steps(cfg, train_dataset)
+        # For regular datasets, calculate from dataset size or use max_steps
+        if cfg.max_steps:
+            total_num_steps = min(
+                calculate_total_num_steps(cfg, train_dataset), cfg.max_steps
+            )
+        else:
+            total_num_steps = calculate_total_num_steps(cfg, train_dataset)
     LOG.info(f"Maximum number of steps set at {total_num_steps}")
     return train_dataset, eval_dataset, total_num_steps, prompters
 
@@ -373,7 +400,7 @@ def _load_and_process_single_dataset(
     d_base_type, d_prompt_style = _parse_dataset_type(dataset_config.type)
 
     # Select the appropriate split
-    if isinstance(dataset, DatasetDict):
+    if isinstance(dataset, (DatasetDict, IterableDatasetDict)):
         if dataset_config.split and dataset_config.split in dataset:
             dataset = dataset[dataset_config.split]
         elif split in dataset:
@@ -418,14 +445,17 @@ def _parse_dataset_type(d_type: str) -> tuple[str | None, str | None]:
 
 
 def _handle_train_dataset_split(
-    dataset: Dataset, cfg: DictDefault
-) -> tuple[Dataset, Dataset | None]:
+    dataset: Dataset | IterableDataset, cfg: DictDefault
+) -> tuple[Dataset | IterableDataset, Dataset | IterableDataset | None]:
     """Handle processing for train split, including validation set creation."""
     val_set_size = (
         int(cfg.val_set_size) if cfg.val_set_size > 1 else float(cfg.val_set_size)
     )
 
     if val_set_size:
+        if isinstance(dataset, IterableDataset):
+            LOG.info("Validation splits not supported for streaming datasets, skipping")
+            return dataset, None
         # Create train/validation split
         train_dataset, eval_dataset = create_train_validation_split(
             dataset, cfg, val_set_size
@@ -433,27 +463,33 @@ def _handle_train_dataset_split(
         return train_dataset, eval_dataset
 
     # No validation split - apply deduplication if needed and return as train dataset
-    if cfg.dataset_exact_deduplication:
+    if cfg.dataset_exact_deduplication and not isinstance(dataset, IterableDataset):
         train_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
     else:
+        if cfg.dataset_exact_deduplication and isinstance(dataset, IterableDataset):
+            LOG.info("Deduplication skipped for streaming datasets (not compatible)")
         train_dataset = dataset
 
     return train_dataset, None
 
 
 def _handle_test_dataset_split(
-    dataset: Dataset, cfg: DictDefault
-) -> tuple[None, Dataset | None]:
+    dataset: Dataset | IterableDataset, cfg: DictDefault
+) -> tuple[None, Dataset | IterableDataset | None]:
     """Handle processing for test split."""
-    if cfg.dataset_exact_deduplication:
+    if cfg.dataset_exact_deduplication and not isinstance(dataset, IterableDataset):
         eval_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
     else:
+        if cfg.dataset_exact_deduplication and isinstance(dataset, IterableDataset):
+            LOG.info("Deduplication skipped for streaming datasets (not compatible)")
         eval_dataset = dataset
 
     return None, eval_dataset
 
 
-def _apply_dataset_sharding(dataset: Dataset, cfg: DictDefault) -> Dataset:
+def _apply_dataset_sharding(
+    dataset: Dataset | IterableDataset, cfg: DictDefault
+) -> Dataset | IterableDataset:
     """Apply dataset sharding if configured.
 
     Args:
