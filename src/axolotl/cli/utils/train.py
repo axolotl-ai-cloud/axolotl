@@ -5,6 +5,7 @@ import subprocess  # nosec
 import sys
 import tempfile
 from typing import Any, Iterator, Literal
+from pathlib import Path
 
 import yaml
 
@@ -88,7 +89,12 @@ def generate_config_files(config: str, sweep: str | None) -> Iterator[tuple[str,
     # Generate all possible configurations
     permutations = generate_sweep_configs(base_config, sweep_config)
     is_group = len(permutations) > 1
-    for permutation in permutations:
+    
+    for idx, permutation in enumerate(permutations, start=1):
+        permutation_dir = Path(permutation.get("output_dir")
+        permutation_id = f"sweep{idx:04d}"
+        permutation["output_dir"] = str(permutation_dir / permutation_id)
+        
         # pylint: disable=consider-using-with
         temp_file = tempfile.NamedTemporaryFile(
             mode="w",
