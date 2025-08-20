@@ -67,8 +67,22 @@ mv ./outputs/gpt-oss-out/merged/* ./outputs/gpt-oss-out/
 
 ### Inferencing your fine-tuned model
 
+#### vLLM
+
 GPT-OSS support in vLLM does not exist in a stable release yet. See https://x.com/MaziyarPanahi/status/1955741905515323425
 for more information about using a special vllm-openai docker image for inferencing with vLLM.
+
+Optionally, vLLM can be installed from nightly:
+
+```bash
+pip install --no-build-isolation --pre -U vllm --extra-index-url https://wheels.vllm.ai/nightly
+```
+and the vLLM server can be started with the following command (modify `--tensor-parallel-size 8` to match your environment):
+```bash
+vllm serve ./outputs/gpt-oss-out/ --served-model-name axolotl/gpt-oss-20b --host 0.0.0.0 --port 8888  --tensor-parallel-size 8
+```
+
+#### SGLang
 
 SGLang has 0-day support in main, see https://github.com/sgl-project/sglang/issues/8833 for infomation on installing
 SGLang from source. Once you've installed SGLang, run the following command to launch a SGLang server:
