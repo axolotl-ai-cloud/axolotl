@@ -962,7 +962,6 @@ class AxolotlInputConfig(
 
     # INTERNALS - document for now, generally not set externally
     is_preprocess: bool | None = None
-    preprocess_iterable: bool | None = None
 
     total_num_tokens: int | None = Field(
         default=None,
