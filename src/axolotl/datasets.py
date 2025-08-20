@@ -1,5 +1,5 @@
 """
-Module containing Dataset functionality
+Module containing dataset functionality.
 
 We want this to be a wrapper for an existing dataset that we have loaded. Lets use the
 concept of middlewares to wrap each dataset, for example:
@@ -47,6 +47,7 @@ class TokenizedPromptDataset(Dataset):
         )
 
     def process(self, dataset: Dataset | IterableDataset) -> Dataset | IterableDataset:
+        """Apply filtering and tokenization."""
         # For IterableDataset, we can't access features up front. Anyways, we don't care
         # to remove unused columns from streaming datasets.
         features = None
@@ -104,7 +105,8 @@ def wrap_dataset_for_tokenized_prompt(
     return TokenizedPromptDataset(prompt_tokenizer, dataset, **kwargs)
 
 
-# TODO this isn't the best since it can't interleave datasets
+# TODO: this isn't the best since it can't interleave datasets.
+# NOTE: this is only used in a test. Can it be deleted?
 class ConstantLengthDataset(IterableDataset):
     """Iterable dataset that returns constant length chunks of tokens from stream of
     text files.
