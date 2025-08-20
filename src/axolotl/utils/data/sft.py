@@ -111,17 +111,17 @@ def _prepare_standard_dataset(
                 "You should set `eval_sample_packing: False` in your config."
             )
 
+    # Set total_num_steps for training
     if isinstance(train_dataset, IterableDataset):
-        # Streaming case
         total_num_steps = cfg.max_steps
     else:
-        # Non-streaming case
         if cfg.max_steps:
             total_num_steps = min(
                 calculate_total_num_steps(cfg, train_dataset), cfg.max_steps
             )
         else:
             total_num_steps = calculate_total_num_steps(cfg, train_dataset)
+
     LOG.info(f"Maximum number of steps set at {total_num_steps}")
     return train_dataset, eval_dataset, total_num_steps, prompters
 
