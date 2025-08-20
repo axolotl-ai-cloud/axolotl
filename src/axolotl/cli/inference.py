@@ -64,7 +64,7 @@ def do_inference(
             importlib.import_module("axolotl.prompters"), prompter
         )
     elif cfg.chat_template:
-        chat_template_str = get_chat_template(cfg.chat_template)
+        chat_template_str = get_chat_template(cfg.chat_template, tokenizer=tokenizer)
     elif cfg.datasets[0].type == "chat_template":
         chat_template_str = get_chat_template_from_config(
             cfg=cfg, ds_cfg=cfg.datasets[0], tokenizer=tokenizer
