@@ -1,5 +1,7 @@
 """E2E tests for streaming dataset functionality"""
 
+# pylint: disable=duplicate-code
+
 import pytest
 
 from axolotl.common.datasets import load_datasets
