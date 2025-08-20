@@ -145,7 +145,13 @@ def _prepare_standard_dataset(
         return train_dataset, eval_dataset, -1, prompters
 
     # Validate sample packing configuration for evaluation
-    if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
+    # Skip validation for streaming eval datasets since theWhat hy don't have a calculable length
+    if (
+        eval_dataset
+        and cfg.sample_packing
+        and cfg.eval_sample_packing is not False
+        and not isinstance(eval_dataset, IterableDataset)
+    ):
         total_eval_steps = calculate_total_num_steps(cfg, eval_dataset, update=False)
         if total_eval_steps == 0:
             raise ValueError(
@@ -355,7 +361,7 @@ def _load_raw_datasets(
     cfg: DictDefault,
     datasets_configs: list,
     tokenizer: PreTrainedTokenizer,
-    split: str,
+    split: Literal["train", "test"],
     processor: ProcessorMixin | None = None,
 ) -> tuple[Dataset, list[Prompter | None]]:
     """Load, process, merge, and save raw datasets."""
@@ -406,13 +412,14 @@ def _load_and_process_single_dataset(
     dataset_config: DictDefault,
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizer,
-    split: str,
+    split: Literal["train", "test"],
     seed: int,
     processor: ProcessorMixin | None = None,
 ) -> tuple[Dataset | IterableDataset, Prompter | None]:
     """Load and process a single dataset based on the passed config."""
+    use_streaming_for_split = _is_streaming_enabled_for_split(cfg, split)
     dataset = load_dataset_with_config(
-        dataset_config, cfg.hf_use_auth_token, cfg.streaming
+        dataset_config, cfg.hf_use_auth_token, use_streaming_for_split
     )
     d_base_type, d_prompt_style = _parse_dataset_type(dataset_config.type)
 

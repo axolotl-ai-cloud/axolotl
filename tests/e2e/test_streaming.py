@@ -79,7 +79,7 @@ class TestStreamingDatasets:
         check_tensorboard(
             temp_dir + "/runs",
             "train/train_loss",
-            25.0,  # Loss should be reasonable for a smoke test (higher threshold for streaming)
+            2.5,  # Loss should be reasonable for a smoke test (higher threshold for streaming)
             "Train Loss (%s) is too high",
         )
 
@@ -151,13 +151,13 @@ class TestStreamingDatasets:
         check_tensorboard(
             temp_dir + "/runs",
             "train/train_loss",
-            25.0,
+            2.5,
             "Train Loss (%s) is too high",
         )
         check_tensorboard(
             temp_dir + "/runs",
             "eval/eval_loss",
-            25.0,
+            2.5,
             "Eval Loss (%s) is too high",
         )
 
@@ -256,6 +256,6 @@ class TestStreamingDatasets:
         check_tensorboard(
             temp_dir + "/runs",
             "train/train_loss",
-            25.0,
+            2.5,
             "Train Loss (%s) is too high",
         )

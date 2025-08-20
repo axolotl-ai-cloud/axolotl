@@ -1127,6 +1127,30 @@ class PretrainingValidationMixin:
                     data["accelerator_config"]["dispatch_batches"] = False
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_streaming_split_batches_accelerate(cls, data):
+        # Check if either training or eval uses streaming
+        streaming = data.get("streaming", False)
+        eval_streaming = data.get("eval_streaming")
+        if eval_streaming is None:
+            eval_streaming = streaming
+
+        # If either training or eval uses streaming, configure accelerator
+        if streaming or eval_streaming:
+            accelerator_config = data.get("accelerator_config", {})
+            if not accelerator_config:
+                data["accelerator_config"] = {
+                    "split_batches": False,
+                    "dispatch_batches": False,
+                }
+            else:
+                if accelerator_config.get("split_batches") is None:
+                    data["accelerator_config"]["split_batches"] = False
+                if accelerator_config.get("dispatch_batches") is None:
+                    data["accelerator_config"]["dispatch_batches"] = False
+        return data
+
 
 class ModelCompatibilityValidationMixin:
     """Validation methods for specific model compatibility."""
