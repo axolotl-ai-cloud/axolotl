@@ -200,7 +200,7 @@ class ModalCloud(Cloud):
         if family in ["a10", "a10g"]:
             return modal.gpu.A10G(count=count)
         if family == "h100":
-            return modal.gpu.H100(count=count)
+            return f"H100:{count}"
         if family == "t4":
             return modal.gpu.T4(count=count)
         if family == "l4":
