@@ -593,7 +593,6 @@ def _merge_datasets_with_strategy(
     LOG.info(f"Merging datasets with mixing strategy: {strategy}...")
 
     if strategy == "concatenate":
-        # Concatenate only works with non-iterable datasets
         if not all(isinstance(ds, Dataset) for ds in datasets):
             raise ValueError(
                 "Cannot concatenate streaming datasets. Use 'round_robin', 'weighted', "
@@ -605,7 +604,6 @@ def _merge_datasets_with_strategy(
     if strategy == "weighted":
         return interleave_datasets(datasets, probabilities=weights, seed=cfg.seed)
     if strategy == "random":
-        # Random sampling with equal probability
         equal_weights = [1.0 / len(datasets)] * len(datasets)
         return interleave_datasets(datasets, probabilities=equal_weights, seed=cfg.seed)
     raise ValueError(f"Unknown dataset mixing strategy: {strategy}")
