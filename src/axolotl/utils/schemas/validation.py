@@ -1458,17 +1458,24 @@ class StreamingValidationMixin:
     @model_validator(mode="after")
     def check_dataset_mixing_weights(self):
         """Validate dataset mixing weights configuration."""
-        valid_strategies = ["round_robin", "weighted", "random"]
+        valid_strategies = ["concatenate", "round_robin", "weighted", "random"]
+
+        # Get datasets to validate length against
+        datasets = getattr(self, "datasets", None)
+        test_datasets = getattr(self, "test_datasets", None)
 
         # Check main strategy and weights
-        strategy = getattr(self, "dataset_mixing_strategy", "round_robin")
+        strategy = getattr(self, "dataset_mixing_strategy", "concatenate")
         weights = getattr(self, "mixing_weights", None)
+
+        dataset_count = len(datasets) if datasets else 0
         self._validate_dataset_strategy_and_weights(
             strategy,
             weights,
             "dataset_mixing_strategy",
             "mixing_weights",
             valid_strategies,
+            dataset_count,
         )
 
         # Check eval-specific strategy and weights
@@ -1476,12 +1483,14 @@ class StreamingValidationMixin:
         eval_weights = getattr(self, "eval_mixing_weights", None)
 
         if eval_strategy is not None:
+            eval_dataset_count = len(test_datasets) if test_datasets else dataset_count
             self._validate_dataset_strategy_and_weights(
                 eval_strategy,
                 eval_weights,
                 "eval_dataset_mixing_strategy",
                 "eval_mixing_weights",
                 valid_strategies,
+                eval_dataset_count,
             )
         elif eval_weights is not None:
             LOG.warning(
@@ -1492,7 +1501,13 @@ class StreamingValidationMixin:
         return self
 
     def _validate_dataset_strategy_and_weights(
-        self, strategy, weights, strategy_field, weights_field, valid_strategies
+        self,
+        strategy,
+        weights,
+        strategy_field,
+        weights_field,
+        valid_strategies,
+        dataset_count,
     ):
         """Helper method to validate dataset mixing strategy and weights pair."""
         if strategy not in valid_strategies:
@@ -1518,6 +1533,12 @@ class StreamingValidationMixin:
 
             if abs(sum(weights) - 1.0) > 1e-6:
                 raise ValueError(f"{weights_field} must sum to 1.0, got {sum(weights)}")
+
+            # Validate weights length against dataset count
+            if dataset_count > 0 and len(weights) != dataset_count:
+                raise ValueError(
+                    f"{weights_field} length ({len(weights)}) must match number of datasets ({dataset_count})"
+                )
 
         elif weights is not None and strategy != "weighted":
             LOG.warning(

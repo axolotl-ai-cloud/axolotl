@@ -947,7 +947,7 @@ class AxolotlInputConfig(
     dataset_mixing_strategy: str | None = Field(
         default="round_robin",
         json_schema_extra={
-            "description": "Strategy for mixing multiple datasets: 'round_robin' (equal sampling), 'weighted' (use mixing_weights), or 'random' (random sampling with equal probability). Works for both streaming and non-streaming datasets."
+            "description": "Strategy for mixing multiple datasets: 'concatenate', 'round_robin' (equal sampling), 'weighted' (use mixing_weights), or 'random' (random sampling with equal probability). Works for both streaming and non-streaming datasets."
         },
     )
     mixing_weights: list[float] | None = Field(
@@ -959,7 +959,7 @@ class AxolotlInputConfig(
     eval_dataset_mixing_strategy: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Strategy for mixing multiple evaluation datasets. If not set, falls back to dataset_mixing_strategy. Options: 'round_robin', 'weighted', 'random'."
+            "description": "Strategy for mixing multiple evaluation datasets. If not set, falls back to dataset_mixing_strategy. Options: 'concatenate', 'round_robin', 'weighted', 'random'."
         },
     )
     eval_mixing_weights: list[float] | None = Field(
