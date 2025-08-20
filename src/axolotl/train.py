@@ -253,7 +253,9 @@ def save_trained_model(
             # final model weights have already been saved by `ReLoRACallback.on_train_end`
             return
 
-    if trainer.is_fsdp_enabled or cfg.fsdp_config:
+    if (  # pylint: disable=too-many-nested-blocks
+        trainer.is_fsdp_enabled or cfg.fsdp_config
+    ):
         if cfg.fsdp_config or cfg.fsdp:
             if cfg.fsdp_config.final_state_dict_type:
                 state_dict_type = cfg.fsdp_config.final_state_dict_type
@@ -285,6 +287,8 @@ def save_trained_model(
                 if trainer.accelerator.is_main_process:
                     # move all files in merged_path to cfg.output_dir
                     for merged_file in Path(merged_path).iterdir():
+                        if (Path(cfg.output_dir) / merged_file.name).exists():
+                            (Path(cfg.output_dir) / merged_file.name).unlink()
                         shutil.move(str(merged_file), cfg.output_dir)
                     shutil.rmtree(merged_path)  # remove what should be an empty dir
         # TODO(wing):see https://github.com/huggingface/transformers/pull/40207

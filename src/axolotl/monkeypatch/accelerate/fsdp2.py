@@ -187,7 +187,7 @@ def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
 
     # Linear4Bit will keep it's bias term in fp32. If the weight dtype is in bf16 we are not able to
     # wrap this. Therefore we must ensure the bias has the same dtype as the weight
-    if module.base_layer.bias is not None:
+    if hasattr(module.base_layer, "bias") and module.base_layer.bias is not None:
         if module.base_layer.weight.dtype != module.base_layer.bias.dtype:
             log_bias_dtype_mismatch = True
             module.base_layer.bias.data = module.base_layer.bias.data.to(
