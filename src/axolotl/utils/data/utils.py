@@ -193,15 +193,13 @@ def handle_long_seq_in_dataset(
     if hasattr(dataset, "column_names") and dataset.column_names:
         if "input_ids" not in dataset.column_names:
             LOG.warning(
-                "Dataset does not contain 'input_ids' column. Skip drop long seq. This is "
-                "expected for reward modeling."
+                "Dataset does not contain 'input_ids' column. Skip drop long seq. This "
+                "is expected for reward modeling."
             )
             return dataset
-    else:
-        # For IterableDataset, we can't check columns upfront, so skip for streaming
-        if isinstance(dataset, IterableDataset):
-            LOG.info("Skipping drop_long_seq for streaming datasets (not compatible)")
-            return dataset
+    elif isinstance(dataset, IterableDataset):
+        LOG.info("Skipping drop_long_seq for streaming datasets (not compatible)")
+        return dataset
 
     drop_long = functools.partial(
         drop_long_seq,

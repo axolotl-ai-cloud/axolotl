@@ -555,7 +555,7 @@ def merge_datasets(
 
     if has_iterable:
         LOG.info("Merging streaming datasets...")
-        merged_dataset = interleave_datasets(datasets, seed=cfg.seed)
+        merged_dataset = _merge_streaming_datasets(datasets, cfg)
     else:
         # If enabled, shuffle each dataset independently before merging.
         # This allows curriculum learning strategies to be applied at the dataset level.
@@ -581,3 +581,31 @@ def merge_datasets(
             LOG.debug("Not shuffling merged datasets.")
 
     return merged_dataset
+
+
+def _merge_streaming_datasets(
+    datasets: list[Dataset | IterableDataset], cfg: DictDefault
+) -> IterableDataset:
+    """Merge streaming datasets using the configured mixing strategy.
+
+    Args:
+        datasets: List of datasets to merge (at least one must be IterableDataset).
+        cfg: Configuration object containing streaming mixing settings.
+
+    Returns:
+        Merged IterableDataset.
+    """
+    # Get mixing configuration
+    strategy = cfg.get("streaming_dataset_mixing_strategy", "round_robin")
+    weights = cfg.get("streaming_mixing_weights", None)
+
+    LOG.info(f"Using streaming mixing strategy: {strategy}")
+
+    if strategy == "round_robin":
+        return interleave_datasets(datasets, seed=cfg.seed)
+    if strategy == "weighted":
+        return interleave_datasets(datasets, probabilities=weights, seed=cfg.seed)
+
+    return interleave_datasets(
+        datasets, probabilities=[1.0 / len(datasets)] * len(datasets), seed=cfg.seed
+    )

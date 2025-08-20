@@ -1473,6 +1473,48 @@ class StreamingValidationMixin:
 
         return self
 
+    @model_validator(mode="after")
+    def check_streaming_mixing_weights(self):
+        """Validate streaming_mixing_weights configuration."""
+        strategy = getattr(self, "streaming_dataset_mixing_strategy", "round_robin")
+        weights = getattr(self, "streaming_mixing_weights", None)
+
+        # Validate strategy values
+        valid_strategies = ["round_robin", "weighted", "random"]
+        if strategy not in valid_strategies:
+            raise ValueError(
+                f"streaming_dataset_mixing_strategy must be one of {valid_strategies}, "
+                f"got '{strategy}'"
+            )
+
+        if strategy == "weighted":
+            if weights is None:
+                raise ValueError(
+                    "streaming_mixing_weights must be provided when "
+                    "streaming_dataset_mixing_strategy='weighted'"
+                )
+
+            if not isinstance(weights, list) or not all(
+                isinstance(w, (int, float)) for w in weights
+            ):
+                raise ValueError("streaming_mixing_weights must be a list of numbers")
+
+            if any(w < 0 for w in weights):
+                raise ValueError("streaming_mixing_weights must be non-negative")
+
+            if abs(sum(weights) - 1.0) > 1e-6:
+                raise ValueError(
+                    f"streaming_mixing_weights must sum to 1.0, got {sum(weights)}"
+                )
+
+        elif weights is not None and strategy != "weighted":
+            LOG.warning(
+                f"streaming_mixing_weights provided but strategy is '{strategy}'. "
+                "Weights will be ignored."
+            )
+
+        return self
+
 
 # pylint: disable=too-many-ancestors
 class ValidationMixin(

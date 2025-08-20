@@ -938,25 +938,16 @@ class AxolotlInputConfig(
             "description": "Whether to use streaming datasets (IterableDataset) for processing large datasets that don't fit in memory. When True, data is loaded on-demand during training without upfront preprocessing. Requires max_steps to be set. Pre-training datasets default to streaming unless explicitly set to False."
         },
     )
-
     streaming_dataset_mixing_strategy: str | None = Field(
         default="round_robin",
         json_schema_extra={
             "description": "Strategy for mixing multiple streaming datasets: 'round_robin' (equal sampling), 'weighted' (use streaming_mixing_weights), or 'random' (random sampling with equal probability)."
         },
     )
-
     streaming_mixing_weights: list[float] | None = Field(
         default=None,
         json_schema_extra={
             "description": "Weights for weighted mixing strategy when using multiple streaming datasets. Must sum to 1.0 and have same length as datasets list. Only used when streaming_dataset_mixing_strategy='weighted'."
-        },
-    )
-
-    streaming_buffer_per_dataset: int | None = Field(
-        default=1000,
-        json_schema_extra={
-            "description": "Buffer size per dataset when mixing multiple streaming datasets. Higher values may improve mixing quality but use more memory."
         },
     )
 
