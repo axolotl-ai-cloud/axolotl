@@ -161,7 +161,12 @@ class HyperparametersConfig(BaseModel):
     max_grad_norm: float | None = Field(
         default=None, json_schema_extra={"description": "Gradient clipping max norm"}
     )
-    num_epochs: float = Field(default=1.0)
+    num_epochs: float = Field(
+        default=1.0,
+        json_schema_extra={
+            "description": "Number of iterations over dataset for training"
+        },
+    )
 
     @field_validator("batch_size")
     @classmethod

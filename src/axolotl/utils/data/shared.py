@@ -13,6 +13,7 @@ from datasets import (
     IterableDataset,
     IterableDatasetDict,
     concatenate_datasets,
+    interleave_datasets,
     load_dataset,
     load_from_disk,
 )
@@ -524,7 +525,9 @@ def generate_dataset_hash_from_config(
     return str(md5(config_str))
 
 
-def merge_datasets(datasets: list[Dataset], cfg: DictDefault) -> Dataset:
+def merge_datasets(
+    datasets: list[Dataset | IterableDataset], cfg: DictDefault
+) -> Dataset | IterableDataset:
     """Merge multiple datasets into one with optional shuffling.
 
     Args:
@@ -542,18 +545,28 @@ def merge_datasets(datasets: list[Dataset], cfg: DictDefault) -> Dataset:
         if cfg.curriculum_sampling or not cfg.shuffle_merged_datasets:
             return ds
 
+        # Only shuffle regular datasets, not IterableDatasets
+        if isinstance(ds, IterableDataset):
+            return ds
         return ds.shuffle(seed=cfg.seed)
 
-    # If enabled, shuffle each dataset independently before merging.
-    # This allows curriculum learning strategies to be applied at the dataset level.
-    if cfg.shuffle_before_merging_datasets:
-        LOG.info("Shuffling each dataset individually before merging...")
-        datasets = [ds.shuffle(seed=cfg.seed) for ds in datasets]
+    # Check if we have any IterableDatasets
+    has_iterable = any(isinstance(ds, IterableDataset) for ds in datasets)
 
-    LOG.info("Merging datasets...")
-    merged_dataset = concatenate_datasets(datasets)
+    if has_iterable:
+        LOG.info("Merging streaming datasets...")
+        merged_dataset = interleave_datasets(datasets, seed=cfg.seed)
+    else:
+        # If enabled, shuffle each dataset independently before merging.
+        # This allows curriculum learning strategies to be applied at the dataset level.
+        if cfg.shuffle_before_merging_datasets:
+            LOG.info("Shuffling each dataset individually before merging...")
+            datasets = [ds.shuffle(seed=cfg.seed) for ds in datasets]
 
-    if cfg.shuffle_merged_datasets:
+        LOG.info("Merging datasets...")
+        merged_dataset = concatenate_datasets(datasets)
+
+    if cfg.shuffle_merged_datasets and not isinstance(merged_dataset, IterableDataset):
         LOG.debug("Shuffling merged datasets...")
         if cfg.curriculum_sampling:
             LOG.warning(
@@ -562,6 +575,9 @@ def merge_datasets(datasets: list[Dataset], cfg: DictDefault) -> Dataset:
             )
         merged_dataset = merged_dataset.shuffle(seed=cfg.seed)
     else:
-        LOG.debug("Not shuffling merged datasets.")
+        if isinstance(merged_dataset, IterableDataset):
+            LOG.debug("Skipping shuffle for streaming datasets.")
+        else:
+            LOG.debug("Not shuffling merged datasets.")
 
     return merged_dataset

@@ -547,7 +547,7 @@ def setup_deepspeed_env(cfg, stage=None):
         if stage == 3:
             os.environ["ACCELERATE_DEEPSPEED_ZERO3_INIT"] = "true"
 
-    # NOTE(djsaunde): The distribued state cannot be initialized prior to the
+    # NOTE(djsaunde): The distributed state cannot be initialized prior to the
     # ACCELERATE_USE_DEEPSPEED assignment, but it must be initialized some time prior
     # to model load.
     if (

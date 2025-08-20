@@ -94,10 +94,8 @@ def wrap_dataset_for_tokenized_prompt(
         map_kwargs = {}
         if prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True
-        features = list(dataset.features.keys())
         return dataset.map(
             prompt_tokenizer.tokenize_prompt,
-            remove_columns=features,
             **map_kwargs,
         )
     return TokenizedPromptDataset(prompt_tokenizer, dataset, **kwargs)

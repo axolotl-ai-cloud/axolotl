@@ -3,6 +3,7 @@
 # pylint: disable=too-many-boolean-expressions
 
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -192,6 +193,7 @@ class AttentionValidationMixin:
         return data
 
 
+# pylint: disable=too-many-public-methods
 class TrainingValidationMixin:
     """Validation methods related to training configuration."""
 
@@ -508,8 +510,55 @@ class TrainingValidationMixin:
             # combining these would raise `TypeError: cannot pickle 'dict_keys' object`
             # due to trying to count the number of tokens total in the dataset
             raise ValueError(
-                "pretraining_dataset and include_tokens_per_second cannot be used together."
+                "pretraining_dataset and include_tokens_per_second cannot be used "
+                "together."
             )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_max_steps_num_epochs_conflict(cls, data):
+        """Handle max_steps and num_epochs configuration and auto-set defaults."""
+        max_steps = data.get("max_steps")
+        num_epochs = data.get("num_epochs")
+
+        # Auto-set num_epochs to 1 if neither max_steps nor num_epochs are set
+        if max_steps is None and num_epochs is None:
+            data["num_epochs"] = 1.0
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_saves_per_epoch_conflicts(cls, data):
+        """Ensure saves_per_epoch is compatible with training configuration."""
+        saves_per_epoch = data.get("saves_per_epoch")
+        num_epochs = data.get("num_epochs")
+
+        if saves_per_epoch is not None:
+            # Check if saves_per_epoch is set but num_epochs is unset
+            if num_epochs is None:
+                raise ValueError(
+                    "saves_per_epoch requires num_epochs to be set to calculate save "
+                    "intervals."
+                )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_evals_per_epoch_conflicts(cls, data):
+        """Ensure evals_per_epoch is compatible with training configuration."""
+        evals_per_epoch = data.get("evals_per_epoch")
+        num_epochs = data.get("num_epochs")
+
+        if evals_per_epoch is not None:
+            if num_epochs is None:
+                raise ValueError(
+                    "evals_per_epoch requires num_epochs to be set to calculate "
+                    "evaluation intervals."
+                )
 
         return data
 
@@ -1336,7 +1385,6 @@ class GRPOVllmValidationMixin:
         return self
 
 
-# pylint: disable=too-many-ancestors
 class StreamingValidationMixin:
     """Validation methods related to streaming datasets."""
 
@@ -1360,7 +1408,73 @@ class StreamingValidationMixin:
 
         return self
 
+    @model_validator(mode="after")
+    def check_streaming_validation_splits_conflict(self):
+        """Ensure validation splits are not used with streaming datasets."""
+        # Check if streaming is explicitly enabled
+        streaming_enabled = getattr(self, "streaming", None) is True
 
+        # Check if pretraining dataset exists (defaults to streaming)
+        has_pretraining = getattr(self, "pretraining_dataset", None) is not None
+        streaming_default_for_pretraining = (
+            has_pretraining and getattr(self, "streaming", None) is None
+        )
+
+        # If streaming is enabled (explicitly or by default for pretraining)
+        if streaming_enabled or streaming_default_for_pretraining:
+            val_set_size = getattr(self, "val_set_size", 0.0)
+            if val_set_size and val_set_size > 0:
+                raise ValueError(
+                    "Validation splits not supported for streaming datasets, skipping"
+                )
+
+        return self
+
+    @model_validator(mode="after")
+    def check_streaming_preprocessing_conflict(self):
+        """Ensure preprocessing is not enabled with streaming datasets."""
+        # Check if streaming is explicitly enabled
+        streaming_enabled = getattr(self, "streaming", None) is True
+
+        # Check if pretraining dataset exists (defaults to streaming)
+        has_pretraining = getattr(self, "pretraining_dataset", None) is not None
+        streaming_default_for_pretraining = (
+            has_pretraining and getattr(self, "streaming", None) is None
+        )
+
+        # If streaming is enabled (explicitly or by default for pretraining)
+        if streaming_enabled or streaming_default_for_pretraining:
+            if os.environ.get("AXOLOTL_IS_PREPROCESS") == "1":
+                raise ValueError("preprocess is not supported for streaming datasets")
+
+        return self
+
+    @model_validator(mode="after")
+    def check_streaming_skip_prepare_dataset(self):
+        """Ensure skip_prepare_dataset is set for streaming datasets."""
+        # Check if streaming is explicitly enabled
+        streaming_enabled = getattr(self, "streaming", None) is True
+
+        # Check if pretraining dataset exists (defaults to streaming)
+        has_pretraining = getattr(self, "pretraining_dataset", None) is not None
+        streaming_default_for_pretraining = (
+            has_pretraining and getattr(self, "streaming", None) is None
+        )
+
+        # If streaming is enabled (explicitly or by default for pretraining)
+        if streaming_enabled or streaming_default_for_pretraining:
+            skip_prepare = getattr(self, "skip_prepare_dataset", None)
+            if skip_prepare is False:
+                LOG.warning(
+                    "skip_prepare_dataset=False is not compatible with streaming "
+                    "datasets. Setting skip_prepare_dataset=True."
+                )
+            self.skip_prepare_dataset = True
+
+        return self
+
+
+# pylint: disable=too-many-ancestors
 class ValidationMixin(
     DatasetValidationMixin,
     AttentionValidationMixin,

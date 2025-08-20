@@ -111,14 +111,11 @@ def _prepare_standard_dataset(
                 "You should set `eval_sample_packing: False` in your config."
             )
 
-    # Calculate total number of training steps
     if isinstance(train_dataset, IterableDataset):
-        # For streaming datasets, we must use max_steps
-        if not cfg.max_steps:
-            raise ValueError("max_steps must be set when using streaming datasets")
+        # Streaming case
         total_num_steps = cfg.max_steps
     else:
-        # For regular datasets, calculate from dataset size or use max_steps
+        # Non-streaming case
         if cfg.max_steps:
             total_num_steps = min(
                 calculate_total_num_steps(cfg, train_dataset), cfg.max_steps
@@ -267,26 +264,11 @@ def _load_tokenized_prepared_datasets(
     Returns:
         Tuple of (dataset, prompters list).
     """
-    # Select correct dataset configuration based on split
     datasets_configs = cfg.datasets if split == "train" else cfg.test_datasets
-
-    # Generate dataset hash for caching
-    dataset_hash = generate_dataset_hash_from_config(
-        cfg, datasets_configs, tokenizer.name_or_path
-    )
-
-    # Try loading from hub if push_dataset_to_hub is configured
-    dataset = None
-    if cfg.push_dataset_to_hub:
-        dataset = try_load_from_hub(cfg, dataset_hash, split)
-
-    # If not found on hub, try loading from disk
-    if dataset is None:
-        dataset = load_preprocessed_dataset(cfg, dataset_hash)
-
-    # If not found on disk or skipping prepared dataset, load and process raw datasets
     prompters: list[Prompter | None] = []
-    if dataset is None:
+
+    # For streaming datasets, skip caching and load raw datasets directly
+    if cfg.streaming:
         dataset, prompters = _load_raw_datasets(
             cfg,
             datasets_configs,
@@ -294,6 +276,31 @@ def _load_tokenized_prepared_datasets(
             split,
             processor,
         )
+    else:
+        # Generate dataset hash for caching
+        dataset_hash = generate_dataset_hash_from_config(
+            cfg, datasets_configs, tokenizer.name_or_path
+        )
+
+        # Try loading from hub if push_dataset_to_hub is configured
+        dataset = None
+        if cfg.push_dataset_to_hub:
+            dataset = try_load_from_hub(cfg, dataset_hash, split)
+
+        # If not found on hub, try loading from disk
+        if dataset is None:
+            dataset = load_preprocessed_dataset(cfg, dataset_hash)
+
+        # If not found on disk or skipping prepared dataset, load and process raw
+        # datasets
+        if dataset is None:
+            dataset, prompters = _load_raw_datasets(
+                cfg,
+                datasets_configs,
+                tokenizer,
+                split,
+                processor,
+            )
 
     return dataset, prompters
 
@@ -339,7 +346,6 @@ def _load_raw_datasets(
         if cfg.sample_packing:
             dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
-        # Save the prepared dataset
         dataset_hash = generate_dataset_hash_from_config(
             cfg, datasets_configs, tokenizer.name_or_path
         )
@@ -412,13 +418,12 @@ def _handle_train_dataset_split(
 ) -> tuple[Dataset | IterableDataset, Dataset | IterableDataset | None]:
     """Handle processing for train split, including validation set creation."""
     val_set_size = (
-        int(cfg.val_set_size) if cfg.val_set_size > 1 else float(cfg.val_set_size)
+        int(cfg.val_set_size)
+        if cfg.val_set_size and cfg.val_set_size > 1
+        else float(cfg.val_set_size or 0.0)
     )
 
     if val_set_size:
-        if isinstance(dataset, IterableDataset):
-            LOG.info("Validation splits not supported for streaming datasets, skipping")
-            return dataset, None
         # Create train/validation split
         train_dataset, eval_dataset = create_train_validation_split(
             dataset, cfg, val_set_size
