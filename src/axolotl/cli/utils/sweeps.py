@@ -3,11 +3,12 @@
 import random
 from copy import deepcopy
 from itertools import product
+from typing import Any
 
 
 def generate_sweep_configs(
     base_config: dict[str, list], sweeps_config: dict[str, list]
-) -> list[dict[str, list]]:
+) -> list[dict[str, Any]]:
     """
     Recursively generates all possible configurations by applying sweeps to the base config.
 
