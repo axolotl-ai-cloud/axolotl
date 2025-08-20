@@ -1456,45 +1456,45 @@ class StreamingValidationMixin:
         return self
 
     @model_validator(mode="after")
-    def check_streaming_mixing_weights(self):
-        """Validate streaming_mixing_weights configuration."""
+    def check_dataset_mixing_weights(self):
+        """Validate dataset mixing weights configuration."""
         valid_strategies = ["round_robin", "weighted", "random"]
 
         # Check main strategy and weights
-        strategy = getattr(self, "streaming_dataset_mixing_strategy", "round_robin")
-        weights = getattr(self, "streaming_mixing_weights", None)
-        self._validate_streaming_strategy_and_weights(
+        strategy = getattr(self, "dataset_mixing_strategy", "round_robin")
+        weights = getattr(self, "mixing_weights", None)
+        self._validate_dataset_strategy_and_weights(
             strategy,
             weights,
-            "streaming_dataset_mixing_strategy",
-            "streaming_mixing_weights",
+            "dataset_mixing_strategy",
+            "mixing_weights",
             valid_strategies,
         )
 
         # Check eval-specific strategy and weights
-        eval_strategy = getattr(self, "eval_streaming_dataset_mixing_strategy", None)
-        eval_weights = getattr(self, "eval_streaming_mixing_weights", None)
+        eval_strategy = getattr(self, "eval_dataset_mixing_strategy", None)
+        eval_weights = getattr(self, "eval_mixing_weights", None)
 
         if eval_strategy is not None:
-            self._validate_streaming_strategy_and_weights(
+            self._validate_dataset_strategy_and_weights(
                 eval_strategy,
                 eval_weights,
-                "eval_streaming_dataset_mixing_strategy",
-                "eval_streaming_mixing_weights",
+                "eval_dataset_mixing_strategy",
+                "eval_mixing_weights",
                 valid_strategies,
             )
         elif eval_weights is not None:
             LOG.warning(
-                "eval_streaming_mixing_weights provided but eval_streaming_dataset_mixing_strategy is not set. "
-                "Weights will be ignored unless eval_streaming_dataset_mixing_strategy='weighted'."
+                "eval_mixing_weights provided but eval_dataset_mixing_strategy is not set. "
+                "Weights will be ignored unless eval_dataset_mixing_strategy='weighted'."
             )
 
         return self
 
-    def _validate_streaming_strategy_and_weights(
+    def _validate_dataset_strategy_and_weights(
         self, strategy, weights, strategy_field, weights_field, valid_strategies
     ):
-        """Helper method to validate strategy and weights pair."""
+        """Helper method to validate dataset mixing strategy and weights pair."""
         if strategy not in valid_strategies:
             raise ValueError(
                 f"{strategy_field} must be one of {valid_strategies}, "

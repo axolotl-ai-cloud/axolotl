@@ -944,25 +944,25 @@ class AxolotlInputConfig(
             "description": "Whether to use streaming datasets for evaluation datasets. If not set, falls back to the 'streaming' setting. Useful for streaming large training data while keeping smaller eval datasets in memory."
         },
     )
-    streaming_dataset_mixing_strategy: str | None = Field(
+    dataset_mixing_strategy: str | None = Field(
         default="round_robin",
         json_schema_extra={
-            "description": "Strategy for mixing multiple streaming datasets: 'round_robin' (equal sampling), 'weighted' (use streaming_mixing_weights), or 'random' (random sampling with equal probability)."
+            "description": "Strategy for mixing multiple datasets: 'round_robin' (equal sampling), 'weighted' (use mixing_weights), or 'random' (random sampling with equal probability). Works for both streaming and non-streaming datasets."
         },
     )
-    streaming_mixing_weights: list[float] | None = Field(
+    mixing_weights: list[float] | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Weights for weighted mixing strategy when using multiple streaming datasets. Must sum to 1.0 and have same length as datasets list. Only used when streaming_dataset_mixing_strategy='weighted'."
+            "description": "Weights for weighted mixing strategy when using multiple datasets. Must sum to 1.0 and have same length as datasets list. Only used when dataset_mixing_strategy='weighted'."
         },
     )
-    eval_streaming_dataset_mixing_strategy: str | None = Field(
+    eval_dataset_mixing_strategy: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Strategy for mixing multiple streaming evaluation datasets. If not set, falls back to streaming_dataset_mixing_strategy. Options: 'round_robin', 'weighted', 'random'."
+            "description": "Strategy for mixing multiple evaluation datasets. If not set, falls back to dataset_mixing_strategy. Options: 'round_robin', 'weighted', 'random'."
         },
     )
-    eval_streaming_mixing_weights: list[float] | None = Field(
+    eval_mixing_weights: list[float] | None = Field(
         default=None,
         json_schema_extra={
             "description": "Weights for weighted mixing strategy for evaluation datasets. Must sum to 1.0 and have same length as evaluation datasets list."

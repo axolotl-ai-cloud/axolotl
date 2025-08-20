@@ -75,13 +75,13 @@ def _get_streaming_config_for_split(
 
     # Override with eval-specific configs if they exist
     streaming_cfg = DictDefault(cfg)
-    eval_strategy = cfg.get("eval_streaming_dataset_mixing_strategy")
-    eval_weights = cfg.get("eval_streaming_mixing_weights")
+    eval_strategy = cfg.get("eval_dataset_mixing_strategy")
+    eval_weights = cfg.get("eval_mixing_weights")
 
     if eval_strategy is not None:
-        streaming_cfg["streaming_dataset_mixing_strategy"] = eval_strategy
+        streaming_cfg["dataset_mixing_strategy"] = eval_strategy
     if eval_weights is not None:
-        streaming_cfg["streaming_mixing_weights"] = eval_weights
+        streaming_cfg["mixing_weights"] = eval_weights
 
     return streaming_cfg
 
@@ -392,10 +392,12 @@ def _load_raw_datasets(
         if cfg.sample_packing:
             dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
-        dataset_hash = generate_dataset_hash_from_config(
-            cfg, datasets_configs, tokenizer.name_or_path
-        )
-        save_preprocessed_dataset(cfg, dataset, dataset_hash, split)
+        # Only save regular datasets to disk, not streaming datasets
+        if not isinstance(dataset, IterableDataset):
+            dataset_hash = generate_dataset_hash_from_config(
+                cfg, datasets_configs, tokenizer.name_or_path
+            )
+            save_preprocessed_dataset(cfg, dataset, dataset_hash, split)
 
     return dataset, prompters
 

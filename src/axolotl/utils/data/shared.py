@@ -5,6 +5,7 @@ from __future__ import annotations
 import functools
 import os
 from pathlib import Path
+import random
 from typing import TYPE_CHECKING, Any, Generator
 
 from datasets import (
@@ -561,7 +562,7 @@ def merge_datasets(
             datasets = [ds.shuffle(seed=cfg.seed) for ds in datasets]
 
         LOG.info("Merging datasets...")
-        merged_dataset = concatenate_datasets(datasets)
+        merged_dataset = _merge_regular_datasets(datasets, cfg)
 
     if cfg.shuffle_merged_datasets and not isinstance(merged_dataset, IterableDataset):
         LOG.debug("Shuffling merged datasets...")
@@ -583,7 +584,8 @@ def merge_datasets(
 def _merge_streaming_datasets(
     datasets: list[Dataset | IterableDataset], cfg: DictDefault
 ) -> IterableDataset:
-    """Merge streaming datasets using the configured mixing strategy.
+    """
+    Merge streaming datasets using the configured mixing strategy.
 
     Args:
         datasets: List of datasets to merge (at least one must be IterableDataset).
@@ -593,8 +595,8 @@ def _merge_streaming_datasets(
         Merged IterableDataset.
     """
     # Get mixing configuration
-    strategy = cfg.get("streaming_dataset_mixing_strategy", "round_robin")
-    weights = cfg.get("streaming_mixing_weights", None)
+    strategy = cfg.get("dataset_mixing_strategy", "round_robin")
+    weights = cfg.get("mixing_weights", None)
 
     LOG.info(f"Using streaming mixing strategy: {strategy}")
 
@@ -602,7 +604,121 @@ def _merge_streaming_datasets(
         return interleave_datasets(datasets, seed=cfg.seed)
     if strategy == "weighted":
         return interleave_datasets(datasets, probabilities=weights, seed=cfg.seed)
-
     return interleave_datasets(
         datasets, probabilities=[1.0 / len(datasets)] * len(datasets), seed=cfg.seed
     )
+
+
+def _merge_regular_datasets(datasets: list[Dataset], cfg: DictDefault) -> Dataset:
+    """
+    Merge regular (non-streaming) datasets using the configured mixing strategy.
+
+    Args:
+        datasets: List of regular datasets to merge.
+        cfg: Configuration object containing mixing settings.
+
+    Returns:
+        Merged Dataset.
+    """
+    # Get mixing configuration
+    strategy = cfg.get("dataset_mixing_strategy", "concatenate")
+    weights = cfg.get("mixing_weights", None)
+
+    LOG.info(f"Using dataset mixing strategy: {strategy}")
+
+    if strategy == "concatenate":
+        return concatenate_datasets(datasets)
+    if strategy == "round_robin":
+        return _interleave_regular_datasets_round_robin(datasets, cfg.seed)
+    if strategy == "weighted":
+        return _interleave_regular_datasets_weighted(datasets, weights, cfg.seed)
+    equal_weights = [1.0 / len(datasets)] * len(datasets)
+    return _interleave_regular_datasets_weighted(datasets, equal_weights, cfg.seed)
+
+
+def _interleave_regular_datasets_round_robin(
+    datasets: list[Dataset], seed: int
+) -> Dataset:
+    """Interleave regular datasets in round-robin fashion."""
+    # Create indices for each dataset
+    dataset_indices = []
+    for i, dataset in enumerate(datasets):
+        indices = [(i, j) for j in range(len(dataset))]
+        dataset_indices.extend(indices)
+
+    # Interleave round-robin style
+    max_len = max(len(ds) for ds in datasets)
+    interleaved_indices = []
+
+    for pos in range(max_len):
+        for ds_idx, dataset in enumerate(datasets):
+            if pos < len(dataset):
+                interleaved_indices.append((ds_idx, pos))
+
+    # Create new dataset with interleaved samples
+    def generate_samples():
+        for ds_idx, sample_idx in interleaved_indices:
+            yield datasets[ds_idx][sample_idx]
+
+    # Convert to Dataset
+    samples = list(generate_samples())
+    if not samples:
+        return concatenate_datasets(datasets)  # Fallback
+
+    # Create dataset from samples
+    first_sample = samples[0]
+    features_dict = {
+        key: [sample[key] for sample in samples] for key in first_sample.keys()
+    }
+
+    return Dataset.from_dict(features_dict)
+
+
+def _interleave_regular_datasets_weighted(
+    datasets: list[Dataset], weights: list[float], seed: int
+) -> Dataset:
+    """Interleave regular datasets according to weights."""
+    # Calculate total samples and samples per dataset
+    total_samples = sum(len(ds) for ds in datasets)
+    samples_per_dataset = [int(w * total_samples) for w in weights]
+
+    # Ensure we don't exceed actual dataset sizes and adjust if needed
+    actual_samples = []
+    for i, (ds, requested) in enumerate(zip(datasets, samples_per_dataset)):
+        actual = min(requested, len(ds))
+        actual_samples.append(actual)
+
+    # Create sample indices for each dataset
+    all_samples = []
+    for ds_idx, (dataset, num_samples) in enumerate(zip(datasets, actual_samples)):
+        # Sample indices from this dataset
+        if num_samples >= len(dataset):
+            # Use all samples
+            indices = list(range(len(dataset)))
+        else:
+            # Randomly sample
+            indices = random.sample(range(len(dataset)), num_samples)
+
+        for idx in indices:
+            all_samples.append((ds_idx, idx))
+
+    # Shuffle the combined samples
+    random.shuffle(all_samples)
+
+    # Generate the merged dataset
+    def generate_samples():
+        for ds_idx, sample_idx in all_samples:
+            yield datasets[ds_idx][sample_idx]
+
+    # Convert to Dataset
+    samples = list(generate_samples())
+    if not samples:
+        return concatenate_datasets(datasets)  # Fallback
+
+    # Create dataset from samples
+    first_sample = samples[0]
+    features_dict = {
+        key: [sample[key] for sample in samples] for key in first_sample.keys()
+    }
+
+    return Dataset.from_dict(features_dict)
