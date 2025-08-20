@@ -44,6 +44,48 @@ from axolotl.utils.trainer import (
 LOG = get_logger(__name__)
 
 
+def _is_streaming_enabled_for_split(
+    cfg: DictDefault, split: Literal["train", "test"]
+) -> bool:
+    """Check if streaming is enabled for a specific split."""
+    if split == "test":
+        # For eval datasets, check eval_streaming first, then fall back to streaming
+        eval_streaming = cfg.get("eval_streaming")
+        if eval_streaming is not None:
+            return eval_streaming
+
+    # Fall back to main streaming setting
+    streaming = cfg.get("streaming")
+    if streaming is True:
+        return True
+
+    # Check if pretraining dataset exists (defaults to streaming)
+    has_pretraining = cfg.get("pretraining_dataset") is not None
+    streaming_default_for_pretraining = has_pretraining and streaming is None
+
+    return streaming_default_for_pretraining
+
+
+def _get_streaming_config_for_split(
+    cfg: DictDefault, split: Literal["train", "test"]
+) -> DictDefault:
+    """Get a modified config object with split-specific streaming settings."""
+    if split != "test":
+        return cfg
+
+    # Override with eval-specific configs if they exist
+    streaming_cfg = DictDefault(cfg)
+    eval_strategy = cfg.get("eval_streaming_dataset_mixing_strategy")
+    eval_weights = cfg.get("eval_streaming_mixing_weights")
+
+    if eval_strategy is not None:
+        streaming_cfg["streaming_dataset_mixing_strategy"] = eval_strategy
+    if eval_weights is not None:
+        streaming_cfg["streaming_mixing_weights"] = eval_weights
+
+    return streaming_cfg
+
+
 @retry_on_request_exceptions(max_retries=3, delay=5)
 def prepare_datasets(
     cfg: DictDefault,
@@ -267,10 +309,14 @@ def _load_tokenized_prepared_datasets(
     datasets_configs = cfg.datasets if split == "train" else cfg.test_datasets
     prompters: list[Prompter | None] = []
 
-    # For streaming datasets, skip caching and load raw datasets directly
-    if cfg.streaming:
+    # Check if streaming is enabled for this split
+    use_streaming = _is_streaming_enabled_for_split(cfg, split)
+
+    if use_streaming:
+        # For streaming datasets, skip caching and load raw datasets directly
+        streaming_cfg = _get_streaming_config_for_split(cfg, split)
         dataset, prompters = _load_raw_datasets(
-            cfg,
+            streaming_cfg,
             datasets_configs,
             tokenizer,
             split,

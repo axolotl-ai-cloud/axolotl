@@ -1388,20 +1388,29 @@ class GRPOVllmValidationMixin:
 class StreamingValidationMixin:
     """Validation methods related to streaming datasets."""
 
-    @model_validator(mode="after")
-    def check_streaming_requires_max_steps(self):
-        """Ensure max_steps is set when using streaming datasets."""
-        # Check if streaming is explicitly enabled
-        streaming_enabled = getattr(self, "streaming", None) is True
+    def _is_streaming_enabled(self, context: str = "train") -> bool:
+        """Check if streaming is enabled for a given context (train or eval)."""
+        if context == "eval":
+            eval_streaming = getattr(self, "eval_streaming", None)
+            if eval_streaming is not None:
+                return eval_streaming
+
+        # Fall back to main streaming setting
+        streaming = getattr(self, "streaming", None)
+        if streaming is True:
+            return True
 
         # Check if pretraining dataset exists (defaults to streaming)
         has_pretraining = getattr(self, "pretraining_dataset", None) is not None
-        streaming_default_for_pretraining = (
-            has_pretraining and getattr(self, "streaming", None) is None
-        )
+        streaming_default_for_pretraining = has_pretraining and streaming is None
 
-        # If streaming is enabled (explicitly or by default for pretraining)
-        if streaming_enabled or streaming_default_for_pretraining:
+        return streaming_default_for_pretraining
+
+    @model_validator(mode="after")
+    def check_streaming_requires_max_steps(self):
+        """Ensure max_steps is set when using streaming datasets."""
+        # Check if streaming is enabled for training datasets
+        if self._is_streaming_enabled("train"):
             max_steps = getattr(self, "max_steps", None)
             if not max_steps:
                 raise ValueError("max_steps must be set when using streaming datasets")
@@ -1411,17 +1420,8 @@ class StreamingValidationMixin:
     @model_validator(mode="after")
     def check_streaming_validation_splits_conflict(self):
         """Ensure validation splits are not used with streaming datasets."""
-        # Check if streaming is explicitly enabled
-        streaming_enabled = getattr(self, "streaming", None) is True
-
-        # Check if pretraining dataset exists (defaults to streaming)
-        has_pretraining = getattr(self, "pretraining_dataset", None) is not None
-        streaming_default_for_pretraining = (
-            has_pretraining and getattr(self, "streaming", None) is None
-        )
-
-        # If streaming is enabled (explicitly or by default for pretraining)
-        if streaming_enabled or streaming_default_for_pretraining:
+        # Check if streaming is enabled for training datasets
+        if self._is_streaming_enabled("train"):
             val_set_size = getattr(self, "val_set_size", 0.0)
             if val_set_size and val_set_size > 0:
                 raise ValueError(
@@ -1433,17 +1433,8 @@ class StreamingValidationMixin:
     @model_validator(mode="after")
     def check_streaming_preprocessing_conflict(self):
         """Ensure preprocessing is not enabled with streaming datasets."""
-        # Check if streaming is explicitly enabled
-        streaming_enabled = getattr(self, "streaming", None) is True
-
-        # Check if pretraining dataset exists (defaults to streaming)
-        has_pretraining = getattr(self, "pretraining_dataset", None) is not None
-        streaming_default_for_pretraining = (
-            has_pretraining and getattr(self, "streaming", None) is None
-        )
-
-        # If streaming is enabled (explicitly or by default for pretraining)
-        if streaming_enabled or streaming_default_for_pretraining:
+        # Check if streaming is enabled for training or eval datasets
+        if self._is_streaming_enabled("train") or self._is_streaming_enabled("eval"):
             if os.environ.get("AXOLOTL_IS_PREPROCESS") == "1":
                 raise ValueError("preprocess is not supported for streaming datasets")
 
@@ -1452,17 +1443,8 @@ class StreamingValidationMixin:
     @model_validator(mode="after")
     def check_streaming_skip_prepare_dataset(self):
         """Ensure skip_prepare_dataset is set for streaming datasets."""
-        # Check if streaming is explicitly enabled
-        streaming_enabled = getattr(self, "streaming", None) is True
-
-        # Check if pretraining dataset exists (defaults to streaming)
-        has_pretraining = getattr(self, "pretraining_dataset", None) is not None
-        streaming_default_for_pretraining = (
-            has_pretraining and getattr(self, "streaming", None) is None
-        )
-
-        # If streaming is enabled (explicitly or by default for pretraining)
-        if streaming_enabled or streaming_default_for_pretraining:
+        # Check if streaming is enabled for training or eval datasets
+        if self._is_streaming_enabled("train") or self._is_streaming_enabled("eval"):
             skip_prepare = getattr(self, "skip_prepare_dataset", None)
             if skip_prepare is False:
                 LOG.warning(
@@ -1476,44 +1458,72 @@ class StreamingValidationMixin:
     @model_validator(mode="after")
     def check_streaming_mixing_weights(self):
         """Validate streaming_mixing_weights configuration."""
+        valid_strategies = ["round_robin", "weighted", "random"]
+
+        # Check main strategy and weights
         strategy = getattr(self, "streaming_dataset_mixing_strategy", "round_robin")
         weights = getattr(self, "streaming_mixing_weights", None)
+        self._validate_streaming_strategy_and_weights(
+            strategy,
+            weights,
+            "streaming_dataset_mixing_strategy",
+            "streaming_mixing_weights",
+            valid_strategies,
+        )
 
-        # Validate strategy values
-        valid_strategies = ["round_robin", "weighted", "random"]
+        # Check eval-specific strategy and weights
+        eval_strategy = getattr(self, "eval_streaming_dataset_mixing_strategy", None)
+        eval_weights = getattr(self, "eval_streaming_mixing_weights", None)
+
+        if eval_strategy is not None:
+            self._validate_streaming_strategy_and_weights(
+                eval_strategy,
+                eval_weights,
+                "eval_streaming_dataset_mixing_strategy",
+                "eval_streaming_mixing_weights",
+                valid_strategies,
+            )
+        elif eval_weights is not None:
+            LOG.warning(
+                "eval_streaming_mixing_weights provided but eval_streaming_dataset_mixing_strategy is not set. "
+                "Weights will be ignored unless eval_streaming_dataset_mixing_strategy='weighted'."
+            )
+
+        return self
+
+    def _validate_streaming_strategy_and_weights(
+        self, strategy, weights, strategy_field, weights_field, valid_strategies
+    ):
+        """Helper method to validate strategy and weights pair."""
         if strategy not in valid_strategies:
             raise ValueError(
-                f"streaming_dataset_mixing_strategy must be one of {valid_strategies}, "
+                f"{strategy_field} must be one of {valid_strategies}, "
                 f"got '{strategy}'"
             )
 
         if strategy == "weighted":
             if weights is None:
                 raise ValueError(
-                    "streaming_mixing_weights must be provided when "
-                    "streaming_dataset_mixing_strategy='weighted'"
+                    f"{weights_field} must be provided when "
+                    f"{strategy_field}='weighted'"
                 )
 
             if not isinstance(weights, list) or not all(
                 isinstance(w, (int, float)) for w in weights
             ):
-                raise ValueError("streaming_mixing_weights must be a list of numbers")
+                raise ValueError(f"{weights_field} must be a list of numbers")
 
             if any(w < 0 for w in weights):
-                raise ValueError("streaming_mixing_weights must be non-negative")
+                raise ValueError(f"{weights_field} must be non-negative")
 
             if abs(sum(weights) - 1.0) > 1e-6:
-                raise ValueError(
-                    f"streaming_mixing_weights must sum to 1.0, got {sum(weights)}"
-                )
+                raise ValueError(f"{weights_field} must sum to 1.0, got {sum(weights)}")
 
         elif weights is not None and strategy != "weighted":
             LOG.warning(
-                f"streaming_mixing_weights provided but strategy is '{strategy}'. "
+                f"{weights_field} provided but {strategy_field} is '{strategy}'. "
                 "Weights will be ignored."
             )
-
-        return self
 
 
 # pylint: disable=too-many-ancestors

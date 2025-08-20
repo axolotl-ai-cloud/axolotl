@@ -550,10 +550,7 @@ def merge_datasets(
             return ds
         return ds.shuffle(seed=cfg.seed)
 
-    # Check if we have any IterableDatasets
-    has_iterable = any(isinstance(ds, IterableDataset) for ds in datasets)
-
-    if has_iterable:
+    if any(isinstance(ds, IterableDataset) for ds in datasets):
         LOG.info("Merging streaming datasets...")
         merged_dataset = _merge_streaming_datasets(datasets, cfg)
     else:
