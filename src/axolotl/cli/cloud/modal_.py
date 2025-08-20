@@ -82,7 +82,7 @@ class ModalCloud(Cloud):
         return res
 
     def get_image(self):
-        docker_tag = "main-py3.11-cu124-2.6.0"
+        docker_tag = "main-py3.11-cu126-2.7.1"
         if self.config.docker_tag:
             docker_tag = self.config.docker_tag
         docker_image = f"axolotlai/axolotl:{docker_tag}"
