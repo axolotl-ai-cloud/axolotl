@@ -145,7 +145,7 @@ class TrainerBuilderBase(abc.ABC):
                     profiler_steps_start=self.cfg.profiler_steps_start,
                 )
             )
-        if self.cfg.include_tokens_per_second:
+        if self.cfg.include_tkps:
             callbacks.append(
                 TokensPerSecondCallback(
                     self.cfg.tensor_parallel_size, self.cfg.context_parallel_size
@@ -520,7 +520,7 @@ class TrainerBuilderBase(abc.ABC):
                 self.cfg.eval_batch_size
             )
 
-        training_args_kwargs["include_tkps"] = self.cfg.include_tokens_per_second
+        training_args_kwargs["include_tkps"] = self.cfg.include_tkps
         training_args_kwargs["max_steps"] = self.cfg.max_steps or total_num_steps or -1
         training_args_kwargs["num_train_epochs"] = self.cfg.num_epochs
 
