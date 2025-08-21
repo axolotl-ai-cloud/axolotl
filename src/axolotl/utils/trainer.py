@@ -471,8 +471,13 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 mp_start_method=cfg.sample_packing_mp_start_method or "fork",
             )
 
+            # Remove length column only if it exists
+            dataset_for_loader = train_dataset
+            if "length" in train_dataset.column_names:
+                dataset_for_loader = train_dataset.remove_columns(["length"])
+
             data_loader = DataLoader(
-                train_dataset.remove_columns(["length"]),
+                dataset_for_loader,
                 batch_sampler=sampler,
             )
             data_loader_len = len(data_loader) * cfg.micro_batch_size // cfg.batch_size
