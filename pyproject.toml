@@ -2,6 +2,26 @@
 requires = ["setuptools>=64", "wheel", "setuptools_scm>=8", "packaging==23.2"]
 build-backend = "setuptools.build_meta"
 
+[tool.uv]
+dev-dependencies = [
+    "pytest",
+    "pytest-cov",
+    "pytest-xdist",
+    "pre-commit",
+    "ruff",
+    "mypy",
+]
+
+[[tool.uv.index]]
+url = "https://huggingface.github.io/autogptq-index/whl/cu118/"
+
+[tool.uv.extra-build-dependencies]
+mamba-ssm = ["torch", "causal_conv1d"]
+flash-attn = ["torch", "packaging", "wheel", "setuptools"]
+autoawq = ["torch"]
+triton = ["torch"]
+bitsandbytes = ["torch"]
+
 [project]
 name = "axolotl"
 dynamic = ["version", "dependencies", "optional-dependencies"]

@@ -74,6 +74,9 @@ jobs:
           python-version: ${{ matrix.python_version }}
           cache: 'pip' # caching pip dependencies
 
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
       - name: upgrade pip
         run: |
           pip3 install --upgrade pip
@@ -81,15 +84,17 @@ jobs:
 
       - name: Install PyTorch
         run: |
-          pip3 install torch==${{ matrix.pytorch_version }} torchvision
+          source $HOME/.local/bin/env
+          uv pip install torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Install dependencies
         run: |
-          pip3 show torch
-          pip3 install --no-build-isolation -U -e .
-          python scripts/unsloth_install.py | sh
-          python scripts/cutcrossentropy_install.py | sh
-          pip3 install -r requirements-dev.txt -r requirements-tests.txt
+          source $HOME/.local/bin/env
+          uv pip show torch
+          uv pip install --no-build-isolation -U -e .
+          python scripts/unsloth_install.py --uv | sh
+          python scripts/cutcrossentropy_install.py --uv | sh
+          uv pip install -r requirements-dev.txt -r requirements-tests.txt
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
@@ -149,6 +154,9 @@ jobs:
           python-version: ${{ matrix.python_version }}
           cache: 'pip' # caching pip dependencies
 
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
       - name: upgrade pip
         run: |
           pip3 install --upgrade pip
@@ -156,16 +164,18 @@ jobs:
 
       - name: Install PyTorch
         run: |
-          pip3 install torch==${{ matrix.pytorch_version }} torchvision
+          source $HOME/.local/bin/env
+          uv pip install torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Install dependencies
         run: |
-          pip3 show torch
+          source $HOME/.local/bin/env
+          uv pip show torch
           python -m build --no-isolation --sdist
-          pip3 install --no-build-isolation dist/axolotl*.tar.gz
-          python scripts/unsloth_install.py | sh
-          python scripts/cutcrossentropy_install.py | sh
-          pip3 install -r requirements-dev.txt -r requirements-tests.txt
+          uv pip install --no-build-isolation dist/axolotl*.tar.gz
+          python scripts/unsloth_install.py --uv | sh
+          python scripts/cutcrossentropy_install.py --uv | sh
+          uv pip install -r requirements-dev.txt -r requirements-tests.txt
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
@@ -257,7 +267,7 @@ jobs:
           pip install modal==1.0.2 jinja2
       - name: Update env vars
         run: |
-          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "BASE_TAG=main-base-uv-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
           echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
           echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
@@ -318,7 +328,7 @@ jobs:
           pip install modal==1.0.2 jinja2
       - name: Update env vars
         run: |
-          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "BASE_TAG=main-base-uv-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
           echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
           echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
@@ -361,7 +371,7 @@ jobs:
           pip install modal==1.0.2 jinja2
       - name: Update env vars
         run: |
-          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "BASE_TAG=main-base-uv-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
           echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
           echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV

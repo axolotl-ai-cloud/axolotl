@@ -29,7 +29,19 @@ Follow the instructions at: [https://pytorch.org/get-started/locally/](https://p
 For Blackwell GPUs, please use Pytorch 2.7.0 and CUDA 12.8.
 :::
 
-### PyPI Installation (Recommended) {#sec-pypi}
+### uv Installation (Recommended) {#sec-uv-quick}
+
+For a quick installation with uv:
+
+```{.bash}
+# Install uv if not already installed
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install axolotl
+uv pip install --no-build-isolation axolotl[flash-attn,deepspeed]
+```
+
+### PyPI Installation {#sec-pypi}
 
 ```{.bash}
 pip3 install -U packaging setuptools wheel ninja
@@ -41,7 +53,7 @@ installed) in order not to clobber it, and so that we set the correct version of
 dependencies that are specific to the PyTorch version or other installed
 co-dependencies.
 
-### uv Installation {#sec-uv}
+### Advanced uv Installation {#sec-uv}
 
 uv is a fast, reliable Python package installer and resolver built in Rust. It offers significant performance improvements over pip and provides better dependency resolution, making it an excellent choice for complex environments.
 
@@ -79,6 +91,17 @@ uv pip install --no-build-isolation axolotl[deepspeed,flash-attn,vllm]
 
 For the latest features between releases:
 
+#### Using uv (recommended)
+```{.bash}
+git clone https://github.com/axolotl-ai-cloud/axolotl.git
+cd axolotl
+# Install uv if not already installed
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+uv pip install --no-build-isolation -e '.[flash-attn,deepspeed]'
+```
+
+#### Using pip
 ```{.bash}
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
