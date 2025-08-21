@@ -81,6 +81,20 @@ Features:
 
 ### Installation
 
+#### Using uv (recommended)
+
+```bash
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install axolotl
+uv pip install --no-build-isolation axolotl[flash-attn,deepspeed]
+
+# Download example axolotl configs, deepspeed configs
+axolotl fetch examples
+axolotl fetch deepspeed_configs  # OPTIONAL
+```
+
 #### Using pip
 
 ```bash
