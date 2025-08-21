@@ -1,7 +1,5 @@
 """Module for customized trainers"""
 
-# pylint: disable=too-many-lines
-
 from __future__ import annotations
 
 import os
@@ -285,9 +283,9 @@ class AxolotlTrainer(
         # fmt: off
         if dataloader_key is not None and self.args.dataloader_persistent_workers:
             if hasattr(self, "_eval_dataloaders"):
-                self._eval_dataloaders[dataloader_key] = dataloader  # type: ignore  # pylint: disable=access-member-before-definition
+                self._eval_dataloaders[dataloader_key] = dataloader  # type: ignore
             else:
-                self._eval_dataloaders = {dataloader_key: dataloader}  # pylint: disable=attribute-defined-outside-init
+                self._eval_dataloaders = {dataloader_key: dataloader}
         # fmt: on
 
         return self.accelerator.prepare(dataloader)
@@ -443,7 +441,7 @@ class AxolotlTrainer(
         model,
         inputs,
         return_outputs=False,
-        num_items_in_batch=None,  # pylint: disable=unused-argument
+        num_items_in_batch=None,
     ):
         concat_inputs = AxolotlTrainer.orpo_concatenate_inputs(
             inputs,
@@ -524,9 +522,7 @@ class AxolotlTrainer(
         accelerator_config = self.args.accelerator_config.to_dict()
         use_configured_state = accelerator_config.get("use_configured_state", False)
         if not use_configured_state:
-            AcceleratorState._reset_state(  # pylint: disable=protected-access
-                reset_partial_state=True
-            )
+            AcceleratorState._reset_state(reset_partial_state=True)
 
         super().create_accelerator_and_postprocess()
 
@@ -540,7 +536,6 @@ class AxolotlTrainer(
             ):
                 self.accelerator.state.fsdp_plugin.limit_all_gathers = True
 
-    # pylint: disable=unused-argument
     def additional_accelerator_args(
         self, fp8: bool = False, enable_fsdp_float8_all_gather: bool = False, **kwargs
     ) -> dict[str, Any]:

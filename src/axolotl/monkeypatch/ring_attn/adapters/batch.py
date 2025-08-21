@@ -7,8 +7,6 @@ Our implementation closely follows the structure of that module, but we've minif
 somewhat to support only the latest versions of transformers.
 """
 
-# pylint: disable=protected-access,cyclic-import
-
 import os
 from typing import Callable
 
@@ -20,7 +18,7 @@ from ring_flash_attn import ring_flash_attn_func
 from ring_flash_attn.adapters.hf_adapter import check_params
 from transformers.modeling_flash_attention_utils import is_flash_attn_greater_or_equal
 
-try:  # pylint: disable=duplicate-code
+try:
     from transformers.modeling_flash_attention_utils import _flash_supports_window
 except ImportError:
     try:
@@ -59,7 +57,7 @@ def create_flash_attn_forward_varlen_llama3(
     """
 
     # transformers 4.48+
-    # pylint: disable=unused-argument
+
     def _flash_attention_forward(
         query_states: torch.Tensor,
         key_states: torch.Tensor,

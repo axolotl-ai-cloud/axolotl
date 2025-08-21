@@ -33,7 +33,14 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "C90", "B"]
-ignore = ["E203", "E501"]
+ignore = [
+    "E203",  # Whitespace before ':'
+    "E501",  # Line too long
+    "C901",  # Too complex
+    "B019",  # Use of functools.cache on methods
+    "E722",  # Bare except
+    "F821",  # Undefined name (for dynamic exec)
+]
 
 [tool.ruff.lint.isort]
 known-third-party = ["wandb", "comet_ml"]

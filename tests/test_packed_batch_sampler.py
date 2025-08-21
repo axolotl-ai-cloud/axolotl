@@ -93,7 +93,7 @@ class TestBatchedSamplerPacking:
         loader = DataLoader(
             train_dataset,
             batch_sampler=batch_sampler,
-            collate_fn=V2BatchSamplerDataCollatorForSeq2Seq(  # pylint: disable=unexpected-keyword-arg
+            collate_fn=V2BatchSamplerDataCollatorForSeq2Seq(
                 tokenizer=tokenizer,
                 padding=True,
                 pad_to_multiple_of=max_seq_length,

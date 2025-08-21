@@ -1,7 +1,5 @@
 """Flash attention monkey patch for mistral model"""
 
-# pylint: disable=duplicate-code
-
 from functools import partial
 
 import transformers

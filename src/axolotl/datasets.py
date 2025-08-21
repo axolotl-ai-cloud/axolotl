@@ -26,7 +26,7 @@ class TokenizedPromptDataset(Dataset):
         keep_in_memory: Whether to keep the tokenized dataset in memory.
     """
 
-    def __init__(  # pylint: disable=super-init-not-called
+    def __init__(
         self,
         prompt_tokenizer: PromptTokenizingStrategy,
         dataset: Dataset,
@@ -99,7 +99,7 @@ class ConstantLengthDataset(IterableDataset):
         seq_length: Length of token sequences to return.
     """
 
-    def __init__(  # pylint: disable=super-init-not-called
+    def __init__(
         self,
         tokenizer,
         datasets,

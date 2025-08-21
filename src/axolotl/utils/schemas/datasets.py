@@ -203,7 +203,6 @@ class SFTDataset(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    # pylint: disable=duplicate-code
     def check_chat_template_config(cls, data):
         if isinstance(data, BaseModel):
             data = data.model_dump()

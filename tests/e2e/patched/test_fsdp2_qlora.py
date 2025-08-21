@@ -15,7 +15,6 @@ class TestFSDPPatchIntegration:
             apply_init_unsharded_param_patch,
         )
 
-        # pylint: disable=protected-access
         original_init_sharded = FSDPParam._init_sharded_param
         original_init_unsharded = FSDPParam.init_unsharded_param
 
@@ -23,11 +22,9 @@ class TestFSDPPatchIntegration:
         apply_init_sharded_param_patch()
         apply_init_unsharded_param_patch()
 
-        assert (
-            # pylint: disable=protected-access
-            FSDPParam._init_sharded_param
-            != original_init_sharded
-        ), "_init_sharded_param was not patched"
-        assert (
-            FSDPParam.init_unsharded_param != original_init_unsharded
-        ), "init_unsharded_param was not patched"
+        assert FSDPParam._init_sharded_param != original_init_sharded, (
+            "_init_sharded_param was not patched"
+        )
+        assert FSDPParam.init_unsharded_param != original_init_unsharded, (
+            "init_unsharded_param was not patched"
+        )

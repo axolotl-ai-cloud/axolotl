@@ -65,7 +65,7 @@ def add_options_from_dataclass(config_class: Type[Any]) -> Callable:
         for field in reversed(dataclasses.fields(config_class)):
             field_type = _strip_optional_type(field.type)
 
-            if field_type == bool:
+            if isinstance(field_type, bool):
                 field_name = field.name.replace("_", "-")
                 option_name = f"--{field_name}/--no-{field_name}"
                 function = click.option(
@@ -103,7 +103,7 @@ def add_options_from_config(config_class: Type[BaseModel]) -> Callable:
         for name, field in reversed(config_class.model_fields.items()):
             field_type = _strip_optional_type(field.annotation)
 
-            if field_type == bool:
+            if isinstance(field_type, bool):
                 field_name = name.replace("_", "-")
                 option_name = f"--{field_name}/--no-{field_name}"
                 function = click.option(

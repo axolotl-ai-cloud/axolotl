@@ -1,7 +1,5 @@
 """pytest tests for axolotl CLI utils."""
 
-# pylint: disable=redefined-outer-name
-
 import json
 from unittest.mock import Mock, patch
 
@@ -25,7 +23,7 @@ MOCK_TREE_RESPONSE = {
 def mock_responses():
     """Mock responses for API and file downloads"""
 
-    def mock_get(url, timeout=None):  # pylint: disable=unused-argument
+    def mock_get(url, timeout=None):
         response = Mock()
         if "api.github.com" in url:
             response.text = json.dumps(MOCK_TREE_RESPONSE)
@@ -93,21 +91,21 @@ def assert_launcher_args_in_command(
     called_cmd = mock_subprocess_call.call_args.args[0]
 
     # Verify launcher
-    assert (
-        called_cmd[0] == launcher
-    ), f"Expected launcher {launcher}, got {called_cmd[0]}"
+    assert called_cmd[0] == launcher, (
+        f"Expected launcher {launcher}, got {called_cmd[0]}"
+    )
 
     # Verify launcher args are present
     for arg in expected_launcher_args:
-        assert (
-            arg in called_cmd
-        ), f"Expected launcher arg '{arg}' not found in command: {called_cmd}"
+        assert arg in called_cmd, (
+            f"Expected launcher arg '{arg}' not found in command: {called_cmd}"
+        )
 
     # Verify module is present
     assert "-m" in called_cmd, "Expected -m flag for module execution"
-    assert (
-        command_module in called_cmd
-    ), f"Expected module {command_module} not found in command: {called_cmd}"
+    assert command_module in called_cmd, (
+        f"Expected module {command_module} not found in command: {called_cmd}"
+    )
 
 
 def assert_no_launcher_args_contamination(mock_subprocess_call, launcher: str):
@@ -126,17 +124,17 @@ def assert_no_launcher_args_contamination(mock_subprocess_call, launcher: str):
         launch_idx = called_cmd.index("launch")
         m_idx = called_cmd.index("-m")
         launcher_section = called_cmd[launch_idx + 1 : m_idx]
-        assert (
-            len(launcher_section) == 0
-        ), f"Unexpected launcher args found: {launcher_section}"
+        assert len(launcher_section) == 0, (
+            f"Unexpected launcher args found: {launcher_section}"
+        )
     elif launcher == "torchrun":
         # For torchrun, launcher args should be between 'torchrun' and '-m'
         torchrun_idx = called_cmd.index("torchrun")
         m_idx = called_cmd.index("-m")
         launcher_section = called_cmd[torchrun_idx + 1 : m_idx]
-        assert (
-            len(launcher_section) == 0
-        ), f"Unexpected launcher args found: {launcher_section}"
+        assert len(launcher_section) == 0, (
+            f"Unexpected launcher args found: {launcher_section}"
+        )
 
 
 @pytest.fixture

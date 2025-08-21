@@ -168,16 +168,14 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if plugin_training_args:
                 training_args_kwargs.update(plugin_training_args)
 
-        training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
+        training_args = training_args_cls(
             logging_first_step=True,
             **training_args_kwargs,
         )
 
         # unset run_name so wandb sets up experiment names
         if self.cfg.use_wandb and training_args.run_name == training_args.output_dir:
-            training_args.run_name = (  # pylint: disable=attribute-defined-outside-init
-                None
-            )
+            training_args.run_name = None
 
         return training_args, trainer_kwargs
 

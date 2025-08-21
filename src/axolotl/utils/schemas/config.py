@@ -1,7 +1,5 @@
 """Module with Pydantic models for configuration."""
 
-# pylint: disable=too-many-lines
-
 from typing import Annotated, Any, Literal
 
 from annotated_types import MinLen
@@ -51,7 +49,6 @@ from axolotl.utils.schemas.vllm import VllmConfig
 LOG = get_logger(__name__)
 
 
-# pylint: disable=too-many-ancestors
 class AxolotlInputConfig(
     ModelInputConfig,
     ModelOutputConfig,
@@ -124,10 +121,10 @@ class AxolotlInputConfig(
         },
     )
     trl: TRLConfig | None = Field(
-        default_factory=lambda: TRLConfig(),  # pylint: disable=unnecessary-lambda
+        default_factory=lambda: TRLConfig(),
     )
     vllm: VllmConfig | None = Field(
-        default_factory=lambda: VllmConfig(),  # pylint: disable=unnecessary-lambda
+        default_factory=lambda: VllmConfig(),
     )
     qat: QATConfig | None = None
     quantization: PTQConfig | None = None
@@ -1035,7 +1032,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
         return data
 
-    # pylint: disable=duplicate-code
     @model_validator(mode="before")
     @classmethod
     def check_multigpu_unsloth(cls, data):
@@ -1051,7 +1047,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
         return data
 
-    # pylint: disable=duplicate-code
     @model_validator(mode="before")
     @classmethod
     def check_multigpu_lora_kernels(cls, data):
