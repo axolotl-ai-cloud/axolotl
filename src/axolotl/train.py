@@ -418,7 +418,9 @@ def save_initial_configs(
 
     # Pre-save the tokenizer and model configs
     LOG.info(f"Pre-saving tokenizer to {cfg.output_dir}...")
-    tokenizer.save_pretrained(str(output_dir))
+    tokenizer.save_pretrained(
+        str(Path(cfg.output_dir)), save_jinja_files=cfg.tokenizer_save_jinja_files
+    )
     if hasattr(model, "config"):
         LOG.info(f"Pre-saving model config to {cfg.output_dir}...")
         model.config.save_pretrained(str(output_dir))
@@ -592,6 +594,9 @@ def train(
 
     # Save the trained model and cleanup
     save_trained_model(cfg, trainer, model, safe_serialization)
+    tokenizer.save_pretrained(
+        str(Path(cfg.output_dir)), save_jinja_files=cfg.tokenizer_save_jinja_files
+    )
     create_model_card(cfg, trainer)
     if not cfg.use_ray:
         cleanup_distributed()
