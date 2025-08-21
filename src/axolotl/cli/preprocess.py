@@ -97,7 +97,8 @@ def do_cli(
     """
     # pylint: disable=duplicate-code
     os.environ["AXOLOTL_IS_PREPROCESS"] = "1"
-    parsed_cfg = load_cfg(config, **kwargs)
+    is_preprocess = kwargs.pop("is_preprocess", True)
+    parsed_cfg = load_cfg(config, is_preprocess=is_preprocess, **kwargs)
     parsed_cfg.is_preprocess = True
     parser = transformers.HfArgumentParser(PreprocessCliArgs)
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(

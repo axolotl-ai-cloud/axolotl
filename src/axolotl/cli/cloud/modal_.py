@@ -82,7 +82,7 @@ class ModalCloud(Cloud):
         return res
 
     def get_image(self):
-        docker_tag = "main-py3.11-cu124-2.6.0"
+        docker_tag = "main-py3.11-cu126-2.7.1"
         if self.config.docker_tag:
             docker_tag = self.config.docker_tag
         docker_image = f"axolotlai/axolotl:{docker_tag}"
@@ -200,7 +200,7 @@ class ModalCloud(Cloud):
         if family in ["a10", "a10g"]:
             return modal.gpu.A10G(count=count)
         if family == "h100":
-            return modal.gpu.H100(count=count)
+            return f"H100:{count}"
         if family == "t4":
             return modal.gpu.T4(count=count)
         if family == "l4":
