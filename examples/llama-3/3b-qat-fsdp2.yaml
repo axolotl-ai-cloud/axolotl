@@ -21,14 +21,14 @@ datasets:
 
 output_dir: ./outputs/qat_out/
 
-sample_packing: true
-
-sequence_len: 512
-
-flex_attention: true
-flex_attn_compile_kwargs:
-  dynamic: false
-  mode: max-autotune-no-cudagraphs
+# sample_packing: true
+sequence_len: 10000
+flash_attention: true
+pad_to_sequence_len: False
+# flex_attention: true
+# flex_attn_compile_kwargs:
+#   dynamic: false
+#   mode: max-autotune-no-cudagraphs
 
 qat:
   activation_dtype: int8
