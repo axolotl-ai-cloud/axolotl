@@ -673,12 +673,12 @@ class TestDatasetPreparation:
         cfg = DictDefault({"streaming": True, "eval_streaming": False})
 
         assert _is_streaming_enabled_for_split(cfg, "train")
-        assert _is_streaming_enabled_for_split(cfg, "test")
+        assert not _is_streaming_enabled_for_split(cfg, "test")
 
         # Test train streaming disabled, eval streaming enabled
         cfg2 = DictDefault({"streaming": False, "eval_streaming": True})
 
-        assert _is_streaming_enabled_for_split(cfg2, "train")
+        assert not _is_streaming_enabled_for_split(cfg2, "train")
         assert _is_streaming_enabled_for_split(cfg2, "test")
 
     def test_eval_specific_mixing_configs(self):
