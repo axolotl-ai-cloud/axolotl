@@ -1,6 +1,6 @@
 """Pydantic models for PEFT-related configuration"""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -130,6 +130,12 @@ class LoraConfig(BaseModel):
     )
 
     merge_lora: bool | None = None
+    merge_method: Literal["standard", "memory_efficient"] | None = Field(
+        default="standard",
+        json_schema_extra={
+            "description": "Method to use for LoRA merging. 'standard' loads the full model into memory, 'memory_efficient' processes shards individually to reduce memory usage."
+        },
+    )
 
     @model_validator(mode="before")
     @classmethod
