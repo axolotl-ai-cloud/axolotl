@@ -72,3 +72,7 @@ axolotl-contribs-lgpl==0.0.6
 axolotl-contribs-mit==0.0.5
 
 mistral-common==1.8.3
+
+# TUI dependencies
+textual==1.0.0
+rich==14.1.0

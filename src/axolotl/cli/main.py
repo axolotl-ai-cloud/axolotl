@@ -344,6 +344,26 @@ def delinearize_llama4(model: str, output: str):
 cli.add_command(lm_eval)
 
 
+@cli.command()
+def tui():
+    """
+    Launch the Axolotl Terminal User Interface (TUI).
+
+    Provides an interactive interface for configuration management,
+    training monitoring, dataset handling, and model operations.
+    """
+    try:
+        from axolotl.tui.app import run
+
+        run()
+    except ImportError:
+        click.echo(
+            "TUI dependencies not installed. Install with: pip install textual rich"
+        )
+    except Exception as e:
+        click.echo(f"Error launching TUI: {e}")
+
+
 def main():
     cli()
 
