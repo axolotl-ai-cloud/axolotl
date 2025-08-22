@@ -1457,21 +1457,6 @@ class StreamingValidationMixin:
         return self
 
     @model_validator(mode="after")
-    def check_streaming_skip_prepare_dataset(self):
-        """Ensure skip_prepare_dataset is set for streaming datasets."""
-        # Check if streaming is enabled for training datasets
-        if self._is_streaming_enabled():
-            skip_prepare = getattr(self, "skip_prepare_dataset", None)
-            if skip_prepare is False:
-                LOG.warning(
-                    "skip_prepare_dataset=False is not compatible with streaming "
-                    "datasets. Setting skip_prepare_dataset=True."
-                )
-            self.skip_prepare_dataset = True
-
-        return self
-
-    @model_validator(mode="after")
     def check_dataset_mixing_weights(self):
         """Validate dataset mixing weights configuration."""
         valid_strategies = ["concatenate", "round_robin", "weighted", "random"]
