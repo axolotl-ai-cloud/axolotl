@@ -94,8 +94,6 @@ def wrap_dataset_for_tokenized_prompt(
         if prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True
 
-        # For IterableDataset, we need to get original columns to remove them.
-        # We'll peek at the first example using a separate iterator to avoid consuming the main one.
         def peek_and_get_columns():
             # Create a fresh iterator just for peeking
             temp_iter = iter(dataset)

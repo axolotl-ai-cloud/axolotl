@@ -100,6 +100,10 @@ def get_dataset_wrapper(
             dataset_config, tokenizer, cfg, dataset, dataset_kwargs
         )
 
+    # Skip preparation if configured
+    if cfg.skip_prepare_dataset:
+        return dataset, None
+
     # Bradley-Terry dataset
     if dataset_config.type.startswith("bradley_terry"):
         return _handle_bradley_terry_dataset(

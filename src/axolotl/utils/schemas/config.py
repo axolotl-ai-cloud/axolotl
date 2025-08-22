@@ -938,12 +938,6 @@ class AxolotlInputConfig(
             "description": "Whether to use streaming datasets (IterableDataset) for training datasets. When True, data is loaded on-demand during training without upfront preprocessing. Requires max_steps to be set. Pre-training datasets default to streaming unless explicitly set to False."
         },
     )
-    eval_streaming: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Whether to use streaming datasets for evaluation datasets. If not set, falls back to the 'streaming' setting. Useful for streaming large training data while keeping smaller eval datasets in memory."
-        },
-    )
     dataset_mixing_strategy: str | None = Field(
         default="round_robin",
         json_schema_extra={
@@ -954,18 +948,6 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Weights for weighted mixing strategy when using multiple datasets. Must sum to 1.0 and have same length as datasets list. Only used when dataset_mixing_strategy='weighted'."
-        },
-    )
-    eval_dataset_mixing_strategy: str | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Strategy for mixing multiple evaluation datasets. If not set, falls back to dataset_mixing_strategy. Options: 'concatenate', 'round_robin', 'weighted', 'random'."
-        },
-    )
-    eval_mixing_weights: list[float] | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Weights for weighted mixing strategy for evaluation datasets. Must sum to 1.0 and have same length as evaluation datasets list."
         },
     )
 

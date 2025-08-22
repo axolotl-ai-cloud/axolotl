@@ -112,12 +112,12 @@ class TestStreamingDatasets:
                     {
                         "path": "mhenrichsen/alpaca_2k_test",
                         "type": "alpaca",
-                        "split": "train",  # Specify train split for eval dataset
+                        "split": "train",
                     },
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
-                        "split": "train",  # Specify train split for eval dataset
+                        "split": "train",
                     },
                 ],
                 # Streaming config

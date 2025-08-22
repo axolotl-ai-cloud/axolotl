@@ -1130,14 +1130,11 @@ class PretrainingValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_streaming_split_batches_accelerate(cls, data):
-        # Check if either training or eval uses streaming
+        # Check if streaming is enabled for training
         streaming = data.get("streaming", False)
-        eval_streaming = data.get("eval_streaming")
-        if eval_streaming is None:
-            eval_streaming = streaming
 
-        # If either training or eval uses streaming, configure accelerator
-        if streaming or eval_streaming:
+        # If streaming is enabled, configure accelerator
+        if streaming:
             accelerator_config = data.get("accelerator_config", {})
             if not accelerator_config:
                 data["accelerator_config"] = {
@@ -1412,13 +1409,8 @@ class GRPOVllmValidationMixin:
 class StreamingValidationMixin:
     """Validation methods related to streaming datasets."""
 
-    def _is_streaming_enabled(self, context: str = "train") -> bool:
-        """Check if streaming is enabled for a given context (train or eval)."""
-        if context == "eval":
-            eval_streaming = getattr(self, "eval_streaming", None)
-            if eval_streaming is not None:
-                return eval_streaming
-
+    def _is_streaming_enabled(self) -> bool:
+        """Check if streaming is enabled."""
         # Fall back to main streaming setting
         streaming = getattr(self, "streaming", None)
         if streaming is True:
@@ -1426,15 +1418,15 @@ class StreamingValidationMixin:
 
         # Check if pretraining dataset exists (defaults to streaming)
         has_pretraining = getattr(self, "pretraining_dataset", None) is not None
-        streaming_default_for_pretraining = has_pretraining and streaming is None
+        streaming = has_pretraining and streaming is None
 
-        return streaming_default_for_pretraining
+        return streaming
 
     @model_validator(mode="after")
     def check_streaming_requires_max_steps(self):
         """Ensure max_steps is set when using streaming datasets."""
         # Check if streaming is enabled for training datasets
-        if self._is_streaming_enabled("train"):
+        if self._is_streaming_enabled():
             max_steps = getattr(self, "max_steps", None)
             if not max_steps:
                 raise ValueError("max_steps must be set when using streaming datasets")
@@ -1445,7 +1437,7 @@ class StreamingValidationMixin:
     def check_streaming_validation_splits_conflict(self):
         """Ensure validation splits are not used with streaming datasets."""
         # Check if streaming is enabled for training datasets
-        if self._is_streaming_enabled("train"):
+        if self._is_streaming_enabled():
             val_set_size = getattr(self, "val_set_size", 0.0)
             if val_set_size and val_set_size > 0:
                 raise ValueError(
@@ -1457,8 +1449,8 @@ class StreamingValidationMixin:
     @model_validator(mode="after")
     def check_streaming_preprocessing_conflict(self):
         """Ensure preprocessing is not enabled with streaming datasets."""
-        # Check if streaming is enabled for training or eval datasets
-        if self._is_streaming_enabled("train") or self._is_streaming_enabled("eval"):
+        # Check if streaming is enabled for training datasets
+        if self._is_streaming_enabled():
             if os.environ.get("AXOLOTL_IS_PREPROCESS") == "1":
                 raise ValueError("preprocess is not supported for streaming datasets")
 
@@ -1467,8 +1459,8 @@ class StreamingValidationMixin:
     @model_validator(mode="after")
     def check_streaming_skip_prepare_dataset(self):
         """Ensure skip_prepare_dataset is set for streaming datasets."""
-        # Check if streaming is enabled for training or eval datasets
-        if self._is_streaming_enabled("train") or self._is_streaming_enabled("eval"):
+        # Check if streaming is enabled for training datasets
+        if self._is_streaming_enabled():
             skip_prepare = getattr(self, "skip_prepare_dataset", None)
             if skip_prepare is False:
                 LOG.warning(
@@ -1486,7 +1478,6 @@ class StreamingValidationMixin:
 
         # Get datasets to validate length against
         datasets = getattr(self, "datasets", None)
-        test_datasets = getattr(self, "test_datasets", None)
 
         # Check main strategy and weights
         strategy = getattr(self, "dataset_mixing_strategy", "concatenate")
@@ -1501,26 +1492,6 @@ class StreamingValidationMixin:
             valid_strategies,
             dataset_count,
         )
-
-        # Check eval-specific strategy and weights
-        eval_strategy = getattr(self, "eval_dataset_mixing_strategy", None)
-        eval_weights = getattr(self, "eval_mixing_weights", None)
-
-        if eval_strategy is not None:
-            eval_dataset_count = len(test_datasets) if test_datasets else dataset_count
-            self._validate_dataset_strategy_and_weights(
-                eval_strategy,
-                eval_weights,
-                "eval_dataset_mixing_strategy",
-                "eval_mixing_weights",
-                valid_strategies,
-                eval_dataset_count,
-            )
-        elif eval_weights is not None:
-            LOG.warning(
-                "eval_mixing_weights provided but eval_dataset_mixing_strategy is not set. "
-                "Weights will be ignored unless eval_dataset_mixing_strategy='weighted'."
-            )
 
         return self
 

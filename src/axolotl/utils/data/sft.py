@@ -44,46 +44,17 @@ from axolotl.utils.trainer import (
 LOG = get_logger(__name__)
 
 
-def _is_streaming_enabled_for_split(
-    cfg: DictDefault, split: Literal["train", "test"]
-) -> bool:
+def _is_streaming_enabled(cfg: DictDefault) -> bool:
     """Check if streaming is enabled for a specific split."""
-    if split == "test":
-        # For eval datasets, check eval_streaming first, then fall back to streaming
-        eval_streaming = cfg.get("eval_streaming")
-        if eval_streaming is not None:
-            return eval_streaming
-
-    # Fall back to main streaming setting
     streaming = cfg.get("streaming")
     if streaming is True:
         return True
 
     # Check if pretraining dataset exists (defaults to streaming)
     has_pretraining = cfg.get("pretraining_dataset") is not None
-    streaming_default_for_pretraining = has_pretraining and streaming is None
+    streaming = has_pretraining and streaming is None
 
-    return streaming_default_for_pretraining
-
-
-def _get_streaming_config_for_split(
-    cfg: DictDefault, split: Literal["train", "test"]
-) -> DictDefault:
-    """Get a modified config object with split-specific streaming settings."""
-    if split != "test":
-        return cfg
-
-    # Override with eval-specific configs if they exist
-    streaming_cfg = DictDefault(cfg)
-    eval_strategy = cfg.get("eval_dataset_mixing_strategy")
-    eval_weights = cfg.get("eval_mixing_weights")
-
-    if eval_strategy is not None:
-        streaming_cfg["dataset_mixing_strategy"] = eval_strategy
-    if eval_weights is not None:
-        streaming_cfg["mixing_weights"] = eval_weights
-
-    return streaming_cfg
+    return streaming
 
 
 @retry_on_request_exceptions(max_retries=3, delay=5)
@@ -145,7 +116,6 @@ def _prepare_standard_dataset(
         return train_dataset, eval_dataset, -1, prompters
 
     # Validate sample packing configuration for evaluation
-    # Skip validation for streaming eval datasets since theWhat hy don't have a calculable length
     if (
         eval_dataset
         and cfg.sample_packing
@@ -315,14 +285,14 @@ def _load_tokenized_prepared_datasets(
     datasets_configs = cfg.datasets if split == "train" else cfg.test_datasets
     prompters: list[Prompter | None] = []
 
-    # Check if streaming is enabled for this split
-    use_streaming = _is_streaming_enabled_for_split(cfg, split)
+    use_streaming = False
+    if split == "train":
+        use_streaming = _is_streaming_enabled(cfg)
 
     if use_streaming:
         # For streaming datasets, skip caching and load raw datasets directly
-        streaming_cfg = _get_streaming_config_for_split(cfg, split)
         dataset, prompters = _load_raw_datasets(
-            streaming_cfg,
+            cfg,
             datasets_configs,
             tokenizer,
             split,
@@ -417,9 +387,12 @@ def _load_and_process_single_dataset(
     processor: ProcessorMixin | None = None,
 ) -> tuple[Dataset | IterableDataset, Prompter | None]:
     """Load and process a single dataset based on the passed config."""
-    use_streaming_for_split = _is_streaming_enabled_for_split(cfg, split)
+    use_streaming = False
+    if split == "train":
+        use_streaming = _is_streaming_enabled(cfg)
+
     dataset = load_dataset_with_config(
-        dataset_config, cfg.hf_use_auth_token, use_streaming_for_split
+        dataset_config, cfg.hf_use_auth_token, use_streaming
     )
     d_base_type, d_prompt_style = _parse_dataset_type(dataset_config.type)
 
