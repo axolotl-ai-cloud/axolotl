@@ -114,7 +114,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
         parsed_cfg.lora_model_dir = parsed_cfg.output_dir
     if not Path(parsed_cfg.lora_model_dir).exists():
         raise ValueError(
-            f"Target directory for LoRA merged model does not exist: `{parsed_cfg.lora_model_dir}`"
+            f"Target directory for LoRA adapter weights does not exist: `{parsed_cfg.lora_model_dir}`"
         )
 
     do_merge_lora(cfg=parsed_cfg)
