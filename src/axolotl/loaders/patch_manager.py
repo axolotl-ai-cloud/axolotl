@@ -277,6 +277,14 @@ class PatchManager:
                 has_remote_code=has_remote_code,
             )
 
+        if self.cfg.sample_packing:
+            from axolotl.monkeypatch.data.batch_dataset_fetcher import (
+                apply_multipack_dataloader_patch,
+            )
+
+            LOG.info("Applying multipack dataloader patch for sample packing...")
+            apply_multipack_dataloader_patch()
+
     def _apply_fsdp2_bnb_patches(self):
         """Apply FSDP2 BNB patches."""
         if (
