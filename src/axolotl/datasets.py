@@ -94,19 +94,10 @@ def wrap_dataset_for_tokenized_prompt(
         if prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True
 
-        def peek_and_get_columns():
-            # Create a fresh iterator just for peeking
-            temp_iter = iter(dataset)
-            first_example = next(temp_iter)
-            return list(first_example.keys())
-
-        original_columns = peek_and_get_columns()
-
         # Map the dataset and remove original columns
-        # This ensures only tokenized columns remain
         return dataset.map(
             prompt_tokenizer.tokenize_prompt,
-            remove_columns=original_columns,
+            remove_columns=list(dataset.features.keys()),
             **map_kwargs,
         )
     return TokenizedPromptDataset(prompt_tokenizer, dataset, **kwargs)
