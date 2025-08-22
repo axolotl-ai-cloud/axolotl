@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from datasets import Dataset
 
+import axolotl.monkeypatch.data.batch_dataset_fetcher  # noqa: F401
 from axolotl.cli.args import PreprocessCliArgs, TrainerCliArgs
 from axolotl.loaders import load_processor, load_tokenizer
 from axolotl.utils.data import prepare_datasets, prepare_preference_datasets
