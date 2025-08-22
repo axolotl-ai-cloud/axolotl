@@ -61,7 +61,6 @@ class PatchManager:
         self._apply_gradient_checkpointing_patches()
         self._patch_attention()
         self._apply_multipack_patches()
-        self._apply_multipack_dataloader_patch()
         self._patch_loss_llama()
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
@@ -278,8 +277,6 @@ class PatchManager:
                 has_remote_code=has_remote_code,
             )
 
-    def _apply_multipack_dataloader_patch(self):
-        """Apply multipack dataloader patch if sample packing is enabled."""
         if self.cfg.sample_packing:
             from axolotl.monkeypatch.data.batch_dataset_fetcher import (
                 apply_multipack_dataloader_patch,
