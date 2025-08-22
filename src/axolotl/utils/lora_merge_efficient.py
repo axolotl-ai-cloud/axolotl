@@ -125,7 +125,7 @@ def merge_lora_sharded_efficient(
                 f"LoRA adapter weights not found in {lora_adapter_path}"
             )
 
-    LOG.info(f"Loading LoRA weights from {lora_file}")
+    LOG.debug(f"Loading LoRA weights from {lora_file}")
 
     if lora_file.suffix == ".safetensors":
         lora_state = safetensors.torch.load_file(lora_file)
