@@ -1,22 +1,20 @@
 """Model management screen for Axolotl TUI."""
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, ScrollableContainer
+from textual.containers import Container, ScrollableContainer
 from textual.widgets import (
     Button,
     DataTable,
     Footer,
     Header,
-    Input,
     Label,
     Log,
     ProgressBar,
-    Select,
     Static,
     TabbedContent,
     TabPane,
@@ -96,56 +94,38 @@ class ModelScreen(BaseScreen):
     def compose(self) -> ComposeResult:
         """Compose the model screen layout."""
         yield Header()
-        yield Container(
-            Static("🦾 Model Management", classes="screen-title"),
-            Static(
+        with Container(id="content"):
+            yield Static("🦾 Model Management", classes="screen-title")
+            yield Static(
                 "Manage trained models, merge LoRA adapters, and quantize models",
                 classes="screen-subtitle",
-            ),
-            Container(
-                Container(
-                    Label("Available Models"),
-                    DataTable(id="model-table"),
-                    Container(
-                        Button("Merge LoRA", id="merge-lora", variant="primary"),
-                        Button("Quantize", id="quantize", variant="success"),
-                        Button("Evaluate", id="evaluate", variant="warning"),
-                        Button("Refresh", id="refresh", variant="default"),
-                        classes="model-actions",
-                    ),
-                    classes="model-list",
-                ),
-                Container(
-                    TabbedContent(
-                        TabPane(
-                            "Operations",
-                            Container(
-                                Log(id="operations-log", wrap=True, highlight=True),
-                                Container(
-                                    Label("Operation Progress:"),
-                                    ProgressBar(
+            )
+            with Container(classes="model-container"):
+                with Container(classes="model-list"):
+                    yield Label("Available Models")
+                    yield DataTable(id="model-table")
+                    with Container(classes="model-actions"):
+                        yield Button("Merge LoRA", id="merge-lora", variant="primary")
+                        yield Button("Quantize", id="quantize", variant="success")
+                        yield Button("Evaluate", id="evaluate", variant="warning")
+                        yield Button("Refresh", id="refresh", variant="default")
+                with Container(classes="model-operations"):
+                    with TabbedContent():
+                        with TabPane("Operations"):
+                            with Container():
+                                yield Log(id="operations-log")
+                                with Container():
+                                    yield Label("Operation Progress:")
+                                    yield ProgressBar(
                                         total=100,
                                         id="operation-progress",
-                                    ),
-                                ),
-                            ),
-                        ),
-                        TabPane(
-                            "Model Info",
-                            ScrollableContainer(
-                                Static(
+                                    )
+                        with TabPane("Model Info"):
+                            with ScrollableContainer():
+                                yield Static(
                                     "Model information will appear here",
                                     id="model-info",
-                                ),
-                            ),
-                        ),
-                    ),
-                    classes="model-operations",
-                ),
-                classes="model-container",
-            ),
-            id="content",
-        )
+                                )
         yield Footer()
 
     def on_mount(self) -> None:
@@ -210,10 +190,10 @@ class ModelScreen(BaseScreen):
     @on(DataTable.RowSelected)
     def handle_model_selected(self, event: DataTable.RowSelected) -> None:
         """Handle model selection from table."""
-        if event.row_index >= 0:
+        if event.cursor_row >= 0:
             model_names = list(self.models.keys())
-            if event.row_index < len(model_names):
-                self.selected_model = model_names[event.row_index]
+            if event.cursor_row < len(model_names):
+                self.selected_model = model_names[event.cursor_row]
                 self.update_model_info()
 
     def update_model_info(self) -> None:

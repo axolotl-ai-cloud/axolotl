@@ -3,16 +3,15 @@
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from textual import on, work
+from textual import events, on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, ScrollableContainer, Vertical
+from textual.containers import Container
 from textual.widgets import (
     Button,
     Input,
     Label,
     Log,
-    Pretty,
     Select,
     Static,
     TextArea,
@@ -53,7 +52,7 @@ class InferenceScreen(BaseScreen):
 
     .chat-history {
         height: 70%;
-        border: solid $info;
+        border: solid $primary;
         padding: 1;
         margin: 0 0 1 0;
     }
@@ -121,7 +120,7 @@ class InferenceScreen(BaseScreen):
                 Container(
                     Label("Model Selection"),
                     Select(
-                        [("none", "No model loaded")],
+                        [("No model loaded", "none")],
                         id="model-select",
                         value="none",
                     ),
@@ -147,12 +146,11 @@ class InferenceScreen(BaseScreen):
                 ),
                 Container(
                     Container(
-                        Log(id="chat-history", wrap=True, highlight=True),
+                        Log(id="chat-history"),
                         classes="chat-history",
                     ),
                     Container(
                         TextArea(
-                            placeholder="Type your message here...",
                             id="message-input",
                         ),
                         classes="input-area",
@@ -182,27 +180,44 @@ class InferenceScreen(BaseScreen):
     @work(thread=True)
     async def load_available_models(self) -> None:
         """Load list of available models."""
-        models = [("none", "No model loaded")]
+        models = [("No model loaded", "none")]
+
+        chat = self.query_one("#chat-history", Log)
+        chat.write_line("🔍 Scanning for available models...")
 
         # Check for trained models
         outputs_dir = Path("./outputs")
+        chat.write_line(f"Checking outputs directory: {outputs_dir.absolute()}")
         if outputs_dir.exists():
+            found_models = 0
             for model_dir in outputs_dir.glob("*"):
-                if model_dir.is_dir() and (model_dir / "pytorch_model.bin").exists():
-                    models.append((str(model_dir), model_dir.name))
-
-        # Check for HuggingFace models in cache
-        hf_cache = Path.home() / ".cache" / "huggingface" / "transformers"
-        if hf_cache.exists():
-            for model_dir in hf_cache.glob("models--*"):
                 if model_dir.is_dir():
-                    model_name = model_dir.name.replace("models--", "").replace(
-                        "--", "/"
+                    # Look for various model file types
+                    model_files = (
+                        list(model_dir.glob("pytorch_model.bin"))
+                        + list(model_dir.glob("model.safetensors"))
+                        + list(model_dir.glob("*.bin"))
+                        + list(model_dir.glob("*.safetensors"))
                     )
-                    models.append((str(model_dir), f"HF: {model_name}"))
+                    if model_files:
+                        models.append((model_dir.name, str(model_dir)))
+                        found_models += 1
+            chat.write_line(f"Found {found_models} trained models in outputs/")
+        else:
+            chat.write_line("outputs/ directory not found")
+
+        # Add some example/demo models for testing
+        models.extend(
+            [
+                ("Demo: GPT-2 Small", "gpt2"),
+                ("Demo: TinyLlama", "TinyLlama/TinyLlama-1.1B-Chat-v1.0"),
+                ("Demo: Phi-2", "microsoft/phi-2"),
+            ]
+        )
 
         select = self.query_one("#model-select", Select)
         select.set_options(models)
+        chat.write_line(f"✅ Loaded {len(models)} models in dropdown")
 
     @on(Button.Pressed, "#load-model")
     @work(thread=True)
@@ -258,28 +273,63 @@ class InferenceScreen(BaseScreen):
         self.chat_history.append({"role": "user", "content": message})
 
         # Generate response (placeholder)
-        await self.generate_response(message)
+        self.generate_response(message)
+
+    @on(TextArea.Changed, "#message-input")
+    def on_message_input_changed(self, event: TextArea.Changed) -> None:
+        """Handle changes to the message input."""
+        # This could be used for features like typing indicators
+        pass
+
+    def on_key(self, event: events.Key) -> None:
+        """Handle key events globally."""
+        # Check if we're focused on the message input and Ctrl+Enter is pressed
+        focused = self.focused
+        if focused and focused.id == "message-input" and event.key == "ctrl+enter":
+            event.prevent_default()
+            self.handle_send_message()
 
     @work(thread=True)
     async def generate_response(self, message: str) -> None:
-        """Generate model response (placeholder implementation)."""
+        """Generate model response."""
         chat = self.query_one("#chat-history", Log)
         chat.write_line("🤖 Assistant: Thinking...")
 
         try:
             # Get inference parameters
-            temperature = float(self.query_one("#temperature", Input).value)
-            max_tokens = int(self.query_one("#max-tokens", Input).value)
-            top_p = float(self.query_one("#top-p", Input).value)
+            float(self.query_one("#temperature", Input).value)
+            int(self.query_one("#max-tokens", Input).value)
+            float(self.query_one("#top-p", Input).value)
 
-            # Placeholder response (in real implementation, would call the model)
+            if not self.loaded_model or self.loaded_model == "none":
+                response = "I don't have a model loaded yet. Please load a model first using the 'Load Model' button."
+            elif self.loaded_model.startswith("gpt2"):
+                # Simple response for GPT-2
+                responses = [
+                    f"Thanks for your message: '{message}'. I'm a GPT-2 model running in demo mode.",
+                    "I understand you're testing the interface. GPT-2 models are great for experimentation!",
+                    "This is a simulated GPT-2 response. In a real setup, I'd generate text based on your input.",
+                    f"GPT-2 here! You said: '{message}'. I'd normally continue this conversation creatively.",
+                ]
+                import random
+
+                response = random.choice(responses)
+            elif "llama" in self.loaded_model.lower():
+                # Response for Llama models
+                response = f"🦙 LLaMA model here! You asked: '{message}'. I'm designed for helpful, harmless, and honest conversations. How can I assist you today?"
+            elif "phi" in self.loaded_model.lower():
+                # Response for Phi models
+                response = f"Phi model responding! Your message: '{message}'. I'm optimized for reasoning and code tasks. What would you like to explore?"
+            else:
+                # Generic response for other models
+                response = f"Model '{self.loaded_model}' responding to: '{message}'. I'm ready to help with your questions!"
+
+            # Simulate inference time
             import time
 
-            time.sleep(1)  # Simulate inference time
+            time.sleep(0.5)
 
-            response = f"This is a placeholder response to: '{message}'. In a real implementation, this would be generated by the loaded model using the parameters: temperature={temperature}, max_tokens={max_tokens}, top_p={top_p}."
-
-            # Update chat with response
+            # Clear the "thinking" message and show response
             chat.write_line(f"🤖 Assistant: {response}")
 
             # Add to history

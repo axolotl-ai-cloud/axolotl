@@ -76,3 +76,4 @@ mistral-common==1.8.3
 # TUI dependencies
 textual==1.0.0
 rich==14.1.0
+tree_sitter_ruby==0.23.1

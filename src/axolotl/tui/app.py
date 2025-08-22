@@ -3,9 +3,9 @@
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, ScrollableContainer
+from textual.containers import Container
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, Label, Static
+from textual.widgets import Button, Footer, Header, Static
 
 from axolotl.tui.screens.config import ConfigScreen
 from axolotl.tui.screens.datasets import DatasetScreen
@@ -117,7 +117,6 @@ class AxolotlTUI(App):
         text-style: bold;
         padding: 1;
         color: $primary;
-        content-align: center middle;
     }
 
     .subtitle {
@@ -129,6 +128,7 @@ class AxolotlTUI(App):
     .welcome-container {
         align: center middle;
         height: 100%;
+        width: 100%;
     }
 
     .menu-container {
@@ -144,7 +144,7 @@ class AxolotlTUI(App):
         margin: 1;
     }
 
-    Screen {
+    WelcomeScreen {
         align: center middle;
     }
     """

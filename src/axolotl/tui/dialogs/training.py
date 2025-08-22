@@ -4,7 +4,7 @@ from pathlib import Path
 
 from textual import on
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select, Static
 

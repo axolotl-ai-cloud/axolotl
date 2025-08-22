@@ -1,7 +1,5 @@
 """Training management screen for Axolotl TUI."""
 
-import asyncio
-import os
 import subprocess
 import threading
 from dataclasses import dataclass
@@ -12,24 +10,16 @@ from typing import Dict, List, Optional
 from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, ScrollableContainer, Vertical
-from textual.reactive import reactive
+from textual.containers import Container
 from textual.widgets import (
     Button,
     DataTable,
     Footer,
     Header,
-    Input,
     Label,
-    LoadingIndicator,
     Log,
-    ProgressBar,
-    Select,
     Sparkline,
     Static,
-    Switch,
-    TabbedContent,
-    TabPane,
 )
 
 from axolotl.tui.screens.base import BaseScreen
@@ -101,7 +91,7 @@ class TrainingScreen(BaseScreen):
     .metrics-panel {
         layout: horizontal;
         height: 10;
-        border: solid $info;
+        border: solid $primary;
         padding: 1;
         margin: 1;
     }
@@ -227,20 +217,7 @@ class TrainingScreen(BaseScreen):
                     classes="sparkline-container",
                 ),
                 Container(
-                    TabbedContent(
-                        TabPane(
-                            "Training Logs",
-                            Log(id="training-logs", wrap=True, highlight=True),
-                        ),
-                        TabPane(
-                            "System Logs",
-                            Log(id="system-logs", wrap=True, highlight=True),
-                        ),
-                        TabPane(
-                            "Validation",
-                            Log(id="validation-logs", wrap=True, highlight=True),
-                        ),
-                    ),
+                    Log(id="training-logs"),
                     classes="log-viewer",
                 ),
                 classes="job-details-container",
@@ -338,10 +315,10 @@ class TrainingScreen(BaseScreen):
     @on(DataTable.RowSelected)
     def handle_row_selected(self, event: DataTable.RowSelected) -> None:
         """Handle job selection from table."""
-        if event.row_index >= 0:
+        if event.cursor_row >= 0:
             job_ids = list(self.jobs.keys())
-            if event.row_index < len(job_ids):
-                self.selected_job_id = job_ids[event.row_index]
+            if event.cursor_row < len(job_ids):
+                self.selected_job_id = job_ids[event.cursor_row]
                 self.update_selected_job_metrics()
                 self.load_job_logs()
 

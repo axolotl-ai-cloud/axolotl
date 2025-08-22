@@ -4,7 +4,7 @@ import psutil
 from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container
 from textual.widgets import (
     Button,
     DataTable,
@@ -15,8 +15,6 @@ from textual.widgets import (
     ProgressBar,
     Sparkline,
     Static,
-    TabbedContent,
-    TabPane,
 )
 
 from axolotl.tui.screens.base import BaseScreen
@@ -59,7 +57,6 @@ class MonitorScreen(BaseScreen):
         text-style: bold;
         text-align: center;
         padding: 1;
-        font-size: 2;
     }
 
     .charts-container {
@@ -70,7 +67,7 @@ class MonitorScreen(BaseScreen):
 
     .chart-panel {
         width: 50%;
-        border: solid $info;
+        border: solid $primary;
         padding: 1;
         margin: 0 1;
     }
@@ -179,36 +176,9 @@ class MonitorScreen(BaseScreen):
                     classes="charts-container",
                 ),
                 Container(
-                    TabbedContent(
-                        TabPane(
-                            "Processes",
-                            Container(
-                                DataTable(id="process-table"),
-                                Container(
-                                    Button(
-                                        "Kill Process",
-                                        id="kill-process",
-                                        variant="error",
-                                    ),
-                                    Button("Refresh", id="refresh", variant="default"),
-                                    Button(
-                                        "Auto Refresh",
-                                        id="auto-refresh",
-                                        variant="primary",
-                                    ),
-                                    classes="process-controls",
-                                ),
-                            ),
-                        ),
-                        TabPane(
-                            "GPU Info",
-                            Log(id="gpu-info", wrap=True, highlight=True),
-                        ),
-                        TabPane(
-                            "System Logs",
-                            Log(id="system-logs", wrap=True, highlight=True),
-                        ),
-                    ),
+                    DataTable(id="process-table"),
+                    Log(id="gpu-info"),
+                    Log(id="system-logs"),
                     classes="processes-container",
                 ),
                 classes="monitor-container",
@@ -360,7 +330,7 @@ class MonitorScreen(BaseScreen):
         """Update system information."""
         try:
             # System info
-            boot_time = psutil.boot_time()
+            psutil.boot_time()
             cpu_count = psutil.cpu_count()
             memory = psutil.virtual_memory()
 

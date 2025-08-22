@@ -8,26 +8,19 @@ import yaml
 from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, ScrollableContainer, Vertical
-from textual.message import Message
+from textual.containers import Container
 from textual.reactive import reactive
 from textual.widgets import (
     Button,
-    DataTable,
     DirectoryTree,
     Footer,
     Header,
-    Input,
     Label,
-    LoadingIndicator,
     Log,
-    Select,
     Static,
-    Switch,
     TextArea,
 )
 
-from axolotl.cli.config import load_cfg
 from axolotl.tui.screens.base import BaseScreen
 
 
@@ -154,7 +147,7 @@ class ConfigScreen(BaseScreen):
                         classes="config-actions",
                     ),
                     Container(
-                        Log(id="validation-log", wrap=True, highlight=True),
+                        Log(id="validation-log"),
                         classes="validation-log",
                     ),
                     classes="config-editor",

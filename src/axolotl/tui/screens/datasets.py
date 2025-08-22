@@ -2,27 +2,21 @@
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, ScrollableContainer, Vertical
+from textual.containers import Container
 from textual.widgets import (
     Button,
     DataTable,
     Footer,
     Header,
-    Input,
     Label,
-    LoadingIndicator,
     Log,
-    Pretty,
     ProgressBar,
-    Select,
     Static,
-    TabbedContent,
-    TabPane,
     TextArea,
 )
 
@@ -76,7 +70,7 @@ class DatasetScreen(BaseScreen):
 
     .preview-container {
         height: 100%;
-        border: solid $info;
+        border: solid $primary;
         padding: 1;
     }
 
@@ -157,84 +151,25 @@ class DatasetScreen(BaseScreen):
                     classes="dataset-list",
                 ),
                 Container(
-                    TabbedContent(
-                        TabPane(
-                            "Preview",
-                            Container(
-                                TextArea(
-                                    "",
-                                    language="json",
-                                    theme="monokai",
-                                    id="dataset-preview",
-                                    read_only=True,
-                                ),
-                                classes="preview-container",
-                            ),
-                        ),
-                        TabPane(
-                            "Statistics",
-                            Container(
-                                Container(
-                                    Static("Dataset Name:", classes="stat-label"),
-                                    Static("-", id="stat-name", classes="stat-value"),
-                                    classes="stat-row",
-                                ),
-                                Container(
-                                    Static("Type:", classes="stat-label"),
-                                    Static("-", id="stat-type", classes="stat-value"),
-                                    classes="stat-row",
-                                ),
-                                Container(
-                                    Static("Size:", classes="stat-label"),
-                                    Static("-", id="stat-size", classes="stat-value"),
-                                    classes="stat-row",
-                                ),
-                                Container(
-                                    Static("Samples:", classes="stat-label"),
-                                    Static(
-                                        "-", id="stat-samples", classes="stat-value"
-                                    ),
-                                    classes="stat-row",
-                                ),
-                                Container(
-                                    Static("Features:", classes="stat-label"),
-                                    Static(
-                                        "-", id="stat-features", classes="stat-value"
-                                    ),
-                                    classes="stat-row",
-                                ),
-                                Container(
-                                    Static("Format:", classes="stat-label"),
-                                    Static("-", id="stat-format", classes="stat-value"),
-                                    classes="stat-row",
-                                ),
-                                Container(
-                                    Static("Preprocessed:", classes="stat-label"),
-                                    Static(
-                                        "-",
-                                        id="stat-preprocessed",
-                                        classes="stat-value",
-                                    ),
-                                    classes="stat-row",
-                                ),
-                                classes="stats-container",
-                            ),
-                        ),
-                        TabPane(
-                            "Processing",
-                            Container(
-                                Log(id="processing-log", wrap=True, highlight=True),
-                                Container(
-                                    Label("Preprocessing Progress:"),
-                                    ProgressBar(
-                                        total=100,
-                                        id="preprocessing-progress",
-                                    ),
-                                    classes="progress-container",
-                                ),
-                            ),
-                        ),
+                    TextArea("", id="dataset-preview", read_only=True),
+                    Container(
+                        Static("Dataset Name:", classes="stat-label"),
+                        Static("-", id="stat-name", classes="stat-value"),
+                        Static("Type:", classes="stat-label"),
+                        Static("-", id="stat-type", classes="stat-value"),
+                        Static("Size:", classes="stat-label"),
+                        Static("-", id="stat-size", classes="stat-value"),
+                        Static("Samples:", classes="stat-label"),
+                        Static("-", id="stat-samples", classes="stat-value"),
+                        Static("Features:", classes="stat-label"),
+                        Static("-", id="stat-features", classes="stat-value"),
+                        Static("Format:", classes="stat-label"),
+                        Static("-", id="stat-format", classes="stat-value"),
+                        Static("Preprocessed:", classes="stat-label"),
+                        Static("-", id="stat-preprocessed", classes="stat-value"),
                     ),
+                    Log(id="processing-log"),
+                    ProgressBar(total=100, id="preprocessing-progress"),
                     classes="dataset-details",
                 ),
                 classes="dataset-container",
@@ -325,10 +260,10 @@ class DatasetScreen(BaseScreen):
     @on(DataTable.RowSelected)
     def handle_dataset_selected(self, event: DataTable.RowSelected) -> None:
         """Handle dataset selection from table."""
-        if event.row_index >= 0:
+        if event.cursor_row >= 0:
             dataset_names = list(self.datasets.keys())
-            if event.row_index < len(dataset_names):
-                self.selected_dataset = dataset_names[event.row_index]
+            if event.cursor_row < len(dataset_names):
+                self.selected_dataset = dataset_names[event.cursor_row]
                 self.load_dataset_preview()
                 self.update_dataset_stats()
 
