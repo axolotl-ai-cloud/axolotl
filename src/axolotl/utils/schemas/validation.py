@@ -1441,7 +1441,8 @@ class StreamingValidationMixin:
             val_set_size = getattr(self, "val_set_size", 0.0)
             if val_set_size and val_set_size > 0:
                 raise ValueError(
-                    "Validation splits not supported for streaming datasets, skipping"
+                    "Validation splits not supported for streaming datasets, please "
+                    "use test_datasets: ... instead"
                 )
 
         return self

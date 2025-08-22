@@ -13,6 +13,16 @@ class PreprocessCliArgs:
     debug_num_examples: int = field(default=1)
     prompter: Optional[str] = field(default=None)
     download: Optional[bool] = field(default=True)
+    iterable: Optional[bool] = field(
+        default=False,
+        metadata={
+            "help": (
+                "[DEPRECATED] No longer supported. For streaming datasets, use "
+                "'axolotl train' and set 'streaming: true' in your YAML config, or "
+                "pass --streaming instead in the CLI."
+            )
+        },
+    )
 
 
 @dataclass
