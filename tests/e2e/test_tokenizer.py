@@ -4,12 +4,12 @@ e2e test for saving the tokenizer
 
 from unittest.mock import patch
 
-from e2e.utils import check_model_output_exists
-
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
+
+from tests.e2e.utils import check_model_output_exists
 
 
 def test_tokenizer_no_save_jinja_files(temp_dir):
