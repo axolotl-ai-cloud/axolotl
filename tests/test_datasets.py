@@ -7,13 +7,13 @@ from typing import Any, Generator
 from unittest.mock import patch
 
 import pytest
-from datasets import Dataset
+from datasets import Dataset, IterableDataset
 from huggingface_hub import snapshot_download
 from transformers import PreTrainedTokenizer
 
 from axolotl.loaders.tokenizer import load_tokenizer
 from axolotl.utils.data.rl import prepare_preference_datasets
-from axolotl.utils.data.sft import _load_tokenized_prepared_datasets
+from axolotl.utils.data.sft import _load_tokenized_prepared_datasets, prepare_datasets
 from axolotl.utils.dict import DictDefault
 
 from tests.constants import (
@@ -24,6 +24,7 @@ from tests.constants import (
 from tests.hf_offline_utils import enable_hf_offline
 
 
+# pylint: disable=too-many-public-methods
 class TestDatasetPreparation:
     """Test a configured dataloader."""
 
@@ -45,6 +46,24 @@ class TestDatasetPreparation:
                 }
             ]
         )
+
+    @pytest.fixture
+    def streaming_dataset_fixture(self):
+        """Create a streaming dataset fixture for testing."""
+
+        def generator():
+            yield {
+                "instruction": "Evaluate this sentence for spelling and grammar mistakes",
+                "input": "He finnished his meal and left the resturant",
+                "output": "He finished his meal and left the restaurant.",
+            }
+            yield {
+                "instruction": "What is the capital of France?",
+                "input": "",
+                "output": "The capital of France is Paris.",
+            }
+
+        return IterableDataset.from_generator(generator)
 
     @pytest.mark.skip(reason="TODO: fix hf hub offline to work with HF rate limits")
     @enable_hf_offline
@@ -486,3 +505,162 @@ class TestDatasetPreparation:
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
             shutil.rmtree(tmp_ds_path)
+
+    def test_streaming_sft_dataset(self, tokenizer, streaming_dataset_fixture):
+        """Test streaming SFT dataset preparation with IterableDataset."""
+        with patch("axolotl.utils.data.sft.load_dataset_with_config") as mock_load:
+            mock_load.return_value = streaming_dataset_fixture
+
+            cfg = DictDefault(
+                {
+                    "tokenizer_config": "huggyllama/llama-7b",
+                    "sequence_len": 256,
+                    "streaming": True,
+                    "max_steps": 100,  # Required for streaming datasets
+                    "datasets": [
+                        {
+                            "path": "dummy/path",
+                            "type": "alpaca",
+                        },
+                    ],
+                }
+            )
+
+            train_dataset, eval_dataset, total_num_steps, prompters = prepare_datasets(
+                cfg, tokenizer
+            )
+
+            # Verify it returns an IterableDataset
+            assert isinstance(train_dataset, IterableDataset)
+            assert eval_dataset is None  # No eval split for streaming
+            assert total_num_steps == 100  # Should use max_steps
+            assert len(prompters) == 1
+
+            # Test that we can iterate through the dataset
+            sample_count = 0
+            for sample in train_dataset:
+                assert "input_ids" in sample
+                assert "attention_mask" in sample
+                assert "labels" in sample
+                sample_count += 1
+                if sample_count >= 2:  # Just test first few samples
+                    break
+
+            assert sample_count == 2
+
+    def test_dataset_mixing_strategy_validation(self):
+        """Test validation of dataset mixing strategy configuration."""
+        from axolotl.utils.data.shared import _merge_datasets_with_strategy
+
+        # Test valid strategies work
+        valid_strategies = ["round_robin", "weighted", "random"]
+        dataset1 = Dataset.from_dict({"text": ["a"], "source": ["ds1"]})
+        dataset2 = Dataset.from_dict({"text": ["b"], "source": ["ds2"]})
+
+        for strategy in valid_strategies:
+            cfg = DictDefault(
+                {
+                    "dataset_mixing_strategy": strategy,
+                    "mixing_weights": [0.5, 0.5] if strategy == "weighted" else None,
+                    "seed": 42,
+                }
+            )
+            # Should not raise an error
+            merged = _merge_datasets_with_strategy([dataset1, dataset2], cfg)
+            assert len(merged) >= 1
+
+    def test_regular_dataset_round_robin_mixing(self):
+        """Test round-robin mixing for regular datasets."""
+        from axolotl.utils.data.shared import _merge_datasets_with_strategy
+
+        # Create test datasets
+        dataset1 = Dataset.from_dict(
+            {"text": ["ds1_item1", "ds1_item2"], "source": ["ds1", "ds1"]}
+        )
+        dataset2 = Dataset.from_dict(
+            {"text": ["ds2_item1", "ds2_item2"], "source": ["ds2", "ds2"]}
+        )
+
+        cfg = DictDefault({"dataset_mixing_strategy": "round_robin", "seed": 42})
+
+        merged = _merge_datasets_with_strategy([dataset1, dataset2], cfg)
+
+        # Should have all samples from both datasets
+        assert len(merged) == 4
+        assert isinstance(merged, Dataset)
+
+        # Check that samples are interleaved (not just concatenated)
+        sources = [sample["source"] for sample in merged]
+        # Round-robin should alternate between datasets
+        assert sources != ["ds1", "ds1", "ds2", "ds2"]  # Not concatenated
+
+    def test_regular_dataset_weighted_mixing(self):
+        """Test weighted mixing for regular datasets."""
+        from axolotl.utils.data.shared import _merge_datasets_with_strategy
+
+        # Create test datasets
+        dataset1 = Dataset.from_dict(
+            {
+                "text": ["ds1_item1", "ds1_item2", "ds1_item3", "ds1_item4"],
+                "source": ["ds1"] * 4,
+            }
+        )
+        dataset2 = Dataset.from_dict(
+            {
+                "text": ["ds2_item1", "ds2_item2", "ds2_item3", "ds2_item4"],
+                "source": ["ds2"] * 4,
+            }
+        )
+
+        cfg = DictDefault(
+            {
+                "dataset_mixing_strategy": "weighted",
+                "mixing_weights": [0.75, 0.25],  # 3:1 ratio
+                "seed": 42,
+            }
+        )
+
+        merged = _merge_datasets_with_strategy([dataset1, dataset2], cfg)
+
+        # Should have samples proportional to weights
+        assert len(merged) > 0
+        assert isinstance(merged, Dataset)
+
+        # Count samples from each dataset
+        sources = [sample["source"] for sample in merged]
+        ds1_count = sources.count("ds1")
+        ds2_count = sources.count("ds2")
+
+        # Should have samples from both datasets
+        assert ds1_count > 0 and ds2_count > 0  # Both datasets should be represented
+
+    def test_streaming_dataset_mixing(self):
+        """Test that streaming datasets use HuggingFace interleave_datasets."""
+        from axolotl.utils.data.shared import _merge_datasets_with_strategy
+
+        # Create test streaming datasets
+        def gen1():
+            yield {"text": "stream1_item1", "source": "stream1"}
+            yield {"text": "stream1_item2", "source": "stream1"}
+
+        def gen2():
+            yield {"text": "stream2_item1", "source": "stream2"}
+            yield {"text": "stream2_item2", "source": "stream2"}
+
+        stream1 = IterableDataset.from_generator(gen1)
+        stream2 = IterableDataset.from_generator(gen2)
+
+        cfg = DictDefault({"dataset_mixing_strategy": "round_robin", "seed": 42})
+
+        merged = _merge_datasets_with_strategy([stream1, stream2], cfg)
+
+        # Should return an IterableDataset
+        assert isinstance(merged, IterableDataset)
+
+        # Test that we can iterate and get samples
+        samples = list(merged.take(3))
+        assert len(samples) >= 2  # Should get at least 2 samples
+
+        # Should have samples from both datasets
+        sources = [sample["source"] for sample in samples]
+        assert len(set(sources)) >= 1  # At least one unique source

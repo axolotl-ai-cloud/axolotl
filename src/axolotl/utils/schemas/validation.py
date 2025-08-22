@@ -3,6 +3,7 @@
 # pylint: disable=too-many-boolean-expressions
 
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -192,6 +193,7 @@ class AttentionValidationMixin:
         return data
 
 
+# pylint: disable=too-many-public-methods
 class TrainingValidationMixin:
     """Validation methods related to training configuration."""
 
@@ -508,8 +510,55 @@ class TrainingValidationMixin:
             # combining these would raise `TypeError: cannot pickle 'dict_keys' object`
             # due to trying to count the number of tokens total in the dataset
             raise ValueError(
-                "pretraining_dataset and include_tokens_per_second cannot be used together."
+                "pretraining_dataset and include_tokens_per_second cannot be used "
+                "together."
             )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_max_steps_num_epochs_conflict(cls, data):
+        """Handle max_steps and num_epochs configuration and auto-set defaults."""
+        max_steps = data.get("max_steps")
+        num_epochs = data.get("num_epochs")
+
+        # Auto-set num_epochs to 1 if neither max_steps nor num_epochs are set
+        if max_steps is None and num_epochs is None:
+            data["num_epochs"] = 1.0
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_saves_per_epoch_conflicts(cls, data):
+        """Ensure saves_per_epoch is compatible with training configuration."""
+        saves_per_epoch = data.get("saves_per_epoch")
+        num_epochs = data.get("num_epochs")
+
+        if saves_per_epoch is not None:
+            # Check if saves_per_epoch is set but num_epochs is unset
+            if num_epochs is None:
+                raise ValueError(
+                    "saves_per_epoch requires num_epochs to be set to calculate save "
+                    "intervals."
+                )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_evals_per_epoch_conflicts(cls, data):
+        """Ensure evals_per_epoch is compatible with training configuration."""
+        evals_per_epoch = data.get("evals_per_epoch")
+        num_epochs = data.get("num_epochs")
+
+        if evals_per_epoch is not None:
+            if num_epochs is None:
+                raise ValueError(
+                    "evals_per_epoch requires num_epochs to be set to calculate "
+                    "evaluation intervals."
+                )
 
         return data
 
@@ -1078,6 +1127,27 @@ class PretrainingValidationMixin:
                     data["accelerator_config"]["dispatch_batches"] = False
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_streaming_split_batches_accelerate(cls, data):
+        # Check if streaming is enabled for training
+        streaming = data.get("streaming", False)
+
+        # If streaming is enabled, configure accelerator
+        if streaming:
+            accelerator_config = data.get("accelerator_config", {})
+            if not accelerator_config:
+                data["accelerator_config"] = {
+                    "split_batches": False,
+                    "dispatch_batches": False,
+                }
+            else:
+                if accelerator_config.get("split_batches") is None:
+                    data["accelerator_config"]["split_batches"] = False
+                if accelerator_config.get("dispatch_batches") is None:
+                    data["accelerator_config"]["dispatch_batches"] = False
+        return data
+
 
 class ModelCompatibilityValidationMixin:
     """Validation methods for specific model compatibility."""
@@ -1336,6 +1406,128 @@ class GRPOVllmValidationMixin:
         return self
 
 
+class StreamingValidationMixin:
+    """Validation methods related to streaming datasets."""
+
+    def _is_streaming_enabled(self) -> bool:
+        """Check if streaming is enabled."""
+        # Fall back to main streaming setting
+        streaming = getattr(self, "streaming", None)
+        if streaming is True:
+            return True
+
+        # Check if pretraining dataset exists (defaults to streaming)
+        has_pretraining = getattr(self, "pretraining_dataset", None) is not None
+        streaming = has_pretraining and streaming is None
+
+        return streaming
+
+    @model_validator(mode="after")
+    def check_streaming_requires_max_steps(self):
+        """Ensure max_steps is set when using streaming datasets."""
+        # Check if streaming is enabled for training datasets
+        if self._is_streaming_enabled():
+            max_steps = getattr(self, "max_steps", None)
+            if not max_steps:
+                raise ValueError("max_steps must be set when using streaming datasets")
+
+        return self
+
+    @model_validator(mode="after")
+    def check_streaming_validation_splits_conflict(self):
+        """Ensure validation splits are not used with streaming datasets."""
+        # Check if streaming is enabled for training datasets
+        if self._is_streaming_enabled():
+            val_set_size = getattr(self, "val_set_size", 0.0)
+            if val_set_size and val_set_size > 0:
+                raise ValueError(
+                    "Validation splits not supported for streaming datasets, please "
+                    "use test_datasets: ... instead"
+                )
+
+        return self
+
+    @model_validator(mode="after")
+    def check_streaming_preprocessing_conflict(self):
+        """Ensure preprocessing is not enabled with streaming datasets."""
+        # Check if streaming is enabled for training datasets
+        if self._is_streaming_enabled():
+            if os.environ.get("AXOLOTL_IS_PREPROCESS") == "1":
+                raise ValueError("preprocess is not supported for streaming datasets")
+
+        return self
+
+    @model_validator(mode="after")
+    def check_dataset_mixing_weights(self):
+        """Validate dataset mixing weights configuration."""
+        valid_strategies = ["concatenate", "round_robin", "weighted", "random"]
+
+        # Get datasets to validate length against
+        datasets = getattr(self, "datasets", None)
+
+        # Check main strategy and weights
+        strategy = getattr(self, "dataset_mixing_strategy", "concatenate")
+        weights = getattr(self, "mixing_weights", None)
+
+        dataset_count = len(datasets) if datasets else 0
+        self._validate_dataset_strategy_and_weights(
+            strategy,
+            weights,
+            "dataset_mixing_strategy",
+            "mixing_weights",
+            valid_strategies,
+            dataset_count,
+        )
+
+        return self
+
+    def _validate_dataset_strategy_and_weights(
+        self,
+        strategy,
+        weights,
+        strategy_field,
+        weights_field,
+        valid_strategies,
+        dataset_count,
+    ):
+        """Helper method to validate dataset mixing strategy and weights pair."""
+        if strategy not in valid_strategies:
+            raise ValueError(
+                f"{strategy_field} must be one of {valid_strategies}, "
+                f"got '{strategy}'"
+            )
+
+        if strategy == "weighted":
+            if weights is None:
+                raise ValueError(
+                    f"{weights_field} must be provided when "
+                    f"{strategy_field}='weighted'"
+                )
+
+            if not isinstance(weights, list) or not all(
+                isinstance(w, (int, float)) for w in weights
+            ):
+                raise ValueError(f"{weights_field} must be a list of numbers")
+
+            if any(w < 0 for w in weights):
+                raise ValueError(f"{weights_field} must be non-negative")
+
+            if abs(sum(weights) - 1.0) > 1e-6:
+                raise ValueError(f"{weights_field} must sum to 1.0, got {sum(weights)}")
+
+            # Validate weights length against dataset count
+            if dataset_count > 0 and len(weights) != dataset_count:
+                raise ValueError(
+                    f"{weights_field} length ({len(weights)}) must match number of datasets ({dataset_count})"
+                )
+
+        elif weights is not None and strategy != "weighted":
+            LOG.warning(
+                f"{weights_field} provided but {strategy_field} is '{strategy}'. "
+                "Weights will be ignored."
+            )
+
+
 # pylint: disable=too-many-ancestors
 class ValidationMixin(
     DatasetValidationMixin,
@@ -1347,6 +1539,7 @@ class ValidationMixin(
     SystemValidationMixin,
     ChatTemplateValidationMixin,
     PretrainingValidationMixin,
+    StreamingValidationMixin,
     ModelCompatibilityValidationMixin,
     ComplexValidationMixin,
     GRPOVllmValidationMixin,

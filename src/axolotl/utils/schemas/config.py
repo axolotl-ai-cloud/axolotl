@@ -932,9 +932,27 @@ class AxolotlInputConfig(
 
     fix_untrained_tokens: int | list[int] | None = None
 
+    streaming: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use streaming datasets (IterableDataset) for training datasets. When True, data is loaded on-demand during training without upfront preprocessing. Requires max_steps to be set. Pre-training datasets default to streaming unless explicitly set to False."
+        },
+    )
+    dataset_mixing_strategy: str | None = Field(
+        default="round_robin",
+        json_schema_extra={
+            "description": "Strategy for mixing multiple datasets: 'concatenate', 'round_robin' (equal sampling), 'weighted' (use mixing_weights), or 'random' (random sampling with equal probability). Works for both streaming and non-streaming datasets."
+        },
+    )
+    mixing_weights: list[float] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Weights for weighted mixing strategy when using multiple datasets. Must sum to 1.0 and have same length as datasets list. Only used when dataset_mixing_strategy='weighted'."
+        },
+    )
+
     # INTERNALS - document for now, generally not set externally
     is_preprocess: bool | None = None
-    preprocess_iterable: bool | None = None
 
     total_num_tokens: int | None = Field(
         default=None,

@@ -35,10 +35,20 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
     check_accelerate_default_config()
     check_user_token()
 
+    if cli_args.iterable:
+        LOG.error(
+            "The --iterable CLI argument for 'axolotl preprocess' is no longer "
+            "supported. For training, set 'streaming: true' in your YAML config or "
+            "pass '--streaming' in your 'axolotl train' command for on-the-fly "
+            "preprocessing."
+        )
+        return
+
     for key in ["skip_prepare_dataset", "pretraining_dataset"]:
         if cfg.get(key):
             LOG.error(
-                f"You have set `{key}:`. `preprocess` is not needed. Run the `axolotl train` CLI directly instead."
+                f"You have set `{key}:`. `preprocess` is not needed. Run the 'axolotl "
+                "train' CLI directly instead."
             )
             return
 

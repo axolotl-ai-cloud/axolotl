@@ -9,6 +9,7 @@ from datasets import (
     Dataset,
     DatasetDict,
     IterableDataset,
+    IterableDatasetDict,
     load_dataset,
 )
 from transformers import PreTrainedTokenizer, ProcessorMixin
@@ -43,12 +44,24 @@ from axolotl.utils.trainer import (
 LOG = get_logger(__name__)
 
 
+def _is_streaming_enabled(cfg: DictDefault) -> bool:
+    """Check if streaming is enabled for a specific split."""
+    streaming = cfg.get("streaming")
+    if streaming is True:
+        return True
+
+    # Check if pretraining dataset exists (defaults to streaming)
+    has_pretraining = cfg.get("pretraining_dataset") is not None
+    streaming = has_pretraining and streaming is None
+
+    return streaming
+
+
 @retry_on_request_exceptions(max_retries=3, delay=5)
 def prepare_datasets(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizer,
     processor: ProcessorMixin | None = None,
-    preprocess_iterable: bool = False,
 ) -> tuple[IterableDataset | Dataset, Dataset | None, int, list[Prompter | None]]:
     """Prepare training and evaluation datasets based on configuration.
 
@@ -56,23 +69,19 @@ def prepare_datasets(
         cfg: Dictionary mapping `axolotl` config keys to values.
         tokenizer: Tokenizer to use for processing text.
         processor: Optional processor for multimodal datasets.
-        preprocess_iterable: Whether to use iterable preprocessing.
 
     Returns:
         Tuple of (train_dataset, eval_dataset, total_steps, prompters).
     """
     if cfg.pretraining_dataset:
-        return _prepare_pretraining_dataset(
-            cfg, tokenizer, processor, preprocess_iterable
-        )
-    return _prepare_standard_dataset(cfg, tokenizer, processor, preprocess_iterable)
+        return _prepare_pretraining_dataset(cfg, tokenizer, processor)
+    return _prepare_standard_dataset(cfg, tokenizer, processor)
 
 
 def _prepare_standard_dataset(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizer,
     processor: ProcessorMixin | None,
-    preprocess_iterable: bool,
 ) -> tuple[Dataset, Dataset | None, int, list[Prompter | None]]:
     """Prepare standard (non-pretraining) datasets."""
 
@@ -83,7 +92,6 @@ def _prepare_standard_dataset(
             cfg,
             split="train",
             processor=processor,
-            preprocess_iterable=preprocess_iterable,
         )
 
         # Overwrite eval_dataset if test data exists
@@ -93,7 +101,6 @@ def _prepare_standard_dataset(
                 cfg,
                 split="test",
                 processor=processor,
-                preprocess_iterable=preprocess_iterable,
             )
 
         return train_dataset, eval_dataset, prompters
@@ -109,7 +116,12 @@ def _prepare_standard_dataset(
         return train_dataset, eval_dataset, -1, prompters
 
     # Validate sample packing configuration for evaluation
-    if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
+    if (
+        eval_dataset
+        and cfg.sample_packing
+        and cfg.eval_sample_packing is not False
+        and not isinstance(eval_dataset, IterableDataset)
+    ):
         total_eval_steps = calculate_total_num_steps(cfg, eval_dataset, update=False)
         if total_eval_steps == 0:
             raise ValueError(
@@ -117,13 +129,17 @@ def _prepare_standard_dataset(
                 "You should set `eval_sample_packing: False` in your config."
             )
 
-    # Calculate total number of training steps
-    if cfg.max_steps:
-        total_num_steps = min(
-            calculate_total_num_steps(cfg, train_dataset), cfg.max_steps
-        )
+    # Set total_num_steps for training
+    if isinstance(train_dataset, IterableDataset):
+        total_num_steps = cfg.max_steps
     else:
-        total_num_steps = calculate_total_num_steps(cfg, train_dataset)
+        if cfg.max_steps:
+            total_num_steps = min(
+                calculate_total_num_steps(cfg, train_dataset), cfg.max_steps
+            )
+        else:
+            total_num_steps = calculate_total_num_steps(cfg, train_dataset)
+
     LOG.info(f"Maximum number of steps set at {total_num_steps}")
     return train_dataset, eval_dataset, total_num_steps, prompters
 
@@ -132,7 +148,6 @@ def _prepare_pretraining_dataset(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizer,
     processor: ProcessorMixin | None,
-    preprocess_iterable: bool,
 ) -> tuple[IterableDataset, Dataset | None, int, list[Prompter | None]]:
     """
     Prepare dataset for pretraining mode.
@@ -153,7 +168,6 @@ def _prepare_pretraining_dataset(
             cfg,
             split="test",
             processor=processor,
-            preprocess_iterable=preprocess_iterable,
         )
 
     if cfg.dataset_exact_deduplication:
@@ -256,7 +270,6 @@ def _load_tokenized_prepared_datasets(
     cfg: DictDefault,
     split: Literal["train", "test"] = "train",
     processor: ProcessorMixin | None = None,
-    preprocess_iterable: bool = False,
 ) -> tuple[Dataset | DatasetDict, list[Prompter | None]]:
     """Load or create tokenized and prepared datasets for training or testing.
 
@@ -265,39 +278,51 @@ def _load_tokenized_prepared_datasets(
         cfg: Configuration object.
         split: Dataset split to load ('train' or 'test').
         processor: Optional processor for multimodal datasets.
-        preprocess_iterable: Whether to use iterable preprocessing.
 
     Returns:
         Tuple of (dataset, prompters list).
     """
-    # Select correct dataset configuration based on split
     datasets_configs = cfg.datasets if split == "train" else cfg.test_datasets
-
-    # Generate dataset hash for caching
-    dataset_hash = generate_dataset_hash_from_config(
-        cfg, datasets_configs, tokenizer.name_or_path
-    )
-
-    # Try loading from hub if push_dataset_to_hub is configured
-    dataset = None
-    if cfg.push_dataset_to_hub:
-        dataset = try_load_from_hub(cfg, dataset_hash, split)
-
-    # If not found on hub, try loading from disk
-    if dataset is None:
-        dataset = load_preprocessed_dataset(cfg, dataset_hash)
-
-    # If not found on disk or skipping prepared dataset, load and process raw datasets
     prompters: list[Prompter | None] = []
-    if dataset is None:
+
+    use_streaming = False
+    if split == "train":
+        use_streaming = _is_streaming_enabled(cfg)
+
+    if use_streaming:
+        # For streaming datasets, skip caching and load raw datasets directly
         dataset, prompters = _load_raw_datasets(
             cfg,
             datasets_configs,
             tokenizer,
             split,
             processor,
-            preprocess_iterable,
         )
+    else:
+        # Generate dataset hash for caching
+        dataset_hash = generate_dataset_hash_from_config(
+            cfg, datasets_configs, tokenizer.name_or_path
+        )
+
+        # Try loading from hub if push_dataset_to_hub is configured
+        dataset = None
+        if cfg.push_dataset_to_hub:
+            dataset = try_load_from_hub(cfg, dataset_hash, split)
+
+        # If not found on hub, try loading from disk
+        if dataset is None:
+            dataset = load_preprocessed_dataset(cfg, dataset_hash)
+
+        # If not found on disk or skipping prepared dataset, load and process raw
+        # datasets
+        if dataset is None:
+            dataset, prompters = _load_raw_datasets(
+                cfg,
+                datasets_configs,
+                tokenizer,
+                split,
+                processor,
+            )
 
     return dataset, prompters
 
@@ -306,9 +331,8 @@ def _load_raw_datasets(
     cfg: DictDefault,
     datasets_configs: list,
     tokenizer: PreTrainedTokenizer,
-    split: str,
+    split: Literal["train", "test"],
     processor: ProcessorMixin | None = None,
-    preprocess_iterable: bool = False,
 ) -> tuple[Dataset, list[Prompter | None]]:
     """Load, process, merge, and save raw datasets."""
     LOG.info("Loading raw datasets...", main_process_only=False)
@@ -329,7 +353,6 @@ def _load_raw_datasets(
             split=split,
             seed=cfg.seed,
             processor=processor,
-            preprocess_iterable=preprocess_iterable,
         )
         datasets.append(dataset_wrapper)
         prompters.append(dataset_prompter)
@@ -345,11 +368,12 @@ def _load_raw_datasets(
         if cfg.sample_packing:
             dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
-        # Save the prepared dataset
-        dataset_hash = generate_dataset_hash_from_config(
-            cfg, datasets_configs, tokenizer.name_or_path
-        )
-        save_preprocessed_dataset(cfg, dataset, dataset_hash, split)
+        # Only save regular datasets to disk, not streaming datasets
+        if not isinstance(dataset, IterableDataset):
+            dataset_hash = generate_dataset_hash_from_config(
+                cfg, datasets_configs, tokenizer.name_or_path
+            )
+            save_preprocessed_dataset(cfg, dataset, dataset_hash, split)
 
     return dataset, prompters
 
@@ -358,22 +382,22 @@ def _load_and_process_single_dataset(
     dataset_config: DictDefault,
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizer,
-    split: str,
+    split: Literal["train", "test"],
     seed: int,
     processor: ProcessorMixin | None = None,
-    preprocess_iterable: bool = False,
 ) -> tuple[Dataset | IterableDataset, Prompter | None]:
     """Load and process a single dataset based on the passed config."""
-    # Load the dataset
-    dataset = load_dataset_with_config(
-        dataset_config, cfg.hf_use_auth_token, streaming=preprocess_iterable
-    )
+    use_streaming = False
+    if split == "train":
+        use_streaming = _is_streaming_enabled(cfg)
 
-    # Parse dataset type
+    dataset = load_dataset_with_config(
+        dataset_config, cfg.hf_use_auth_token, use_streaming
+    )
     d_base_type, d_prompt_style = _parse_dataset_type(dataset_config.type)
 
     # Select the appropriate split
-    if isinstance(dataset, DatasetDict):
+    if isinstance(dataset, (DatasetDict, IterableDatasetDict)):
         if dataset_config.split and dataset_config.split in dataset:
             dataset = dataset[dataset_config.split]
         elif split in dataset:
@@ -418,11 +442,13 @@ def _parse_dataset_type(d_type: str) -> tuple[str | None, str | None]:
 
 
 def _handle_train_dataset_split(
-    dataset: Dataset, cfg: DictDefault
-) -> tuple[Dataset, Dataset | None]:
+    dataset: Dataset | IterableDataset, cfg: DictDefault
+) -> tuple[Dataset | IterableDataset, Dataset | IterableDataset | None]:
     """Handle processing for train split, including validation set creation."""
     val_set_size = (
-        int(cfg.val_set_size) if cfg.val_set_size > 1 else float(cfg.val_set_size)
+        int(cfg.val_set_size)
+        if cfg.val_set_size and cfg.val_set_size > 1
+        else float(cfg.val_set_size or 0.0)
     )
 
     if val_set_size:
@@ -433,27 +459,33 @@ def _handle_train_dataset_split(
         return train_dataset, eval_dataset
 
     # No validation split - apply deduplication if needed and return as train dataset
-    if cfg.dataset_exact_deduplication:
+    if cfg.dataset_exact_deduplication and not isinstance(dataset, IterableDataset):
         train_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
     else:
+        if cfg.dataset_exact_deduplication and isinstance(dataset, IterableDataset):
+            LOG.info("Deduplication skipped for streaming datasets (not compatible)")
         train_dataset = dataset
 
     return train_dataset, None
 
 
 def _handle_test_dataset_split(
-    dataset: Dataset, cfg: DictDefault
-) -> tuple[None, Dataset | None]:
+    dataset: Dataset | IterableDataset, cfg: DictDefault
+) -> tuple[None, Dataset | IterableDataset | None]:
     """Handle processing for test split."""
-    if cfg.dataset_exact_deduplication:
+    if cfg.dataset_exact_deduplication and not isinstance(dataset, IterableDataset):
         eval_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
     else:
+        if cfg.dataset_exact_deduplication and isinstance(dataset, IterableDataset):
+            LOG.info("Deduplication skipped for streaming datasets (not compatible)")
         eval_dataset = dataset
 
     return None, eval_dataset
 
 
-def _apply_dataset_sharding(dataset: Dataset, cfg: DictDefault) -> Dataset:
+def _apply_dataset_sharding(
+    dataset: Dataset | IterableDataset, cfg: DictDefault
+) -> Dataset | IterableDataset:
     """Apply dataset sharding if configured.
 
     Args:
@@ -479,7 +511,6 @@ def _load_and_prepare_datasets(
     cfg: DictDefault,
     split: Literal["train", "test"] = "train",
     processor: ProcessorMixin | None = None,
-    preprocess_iterable: bool = False,
 ) -> tuple[Dataset | None, Dataset | None, list[Prompter | None]]:
     """Load and prepare datasets with optional validation split and sharding.
 
@@ -488,7 +519,6 @@ def _load_and_prepare_datasets(
         cfg: Configuration object.
         split: Dataset split to load ('train' or 'test').
         processor: Optional processor for multimodal datasets.
-        preprocess_iterable: Whether to use iterable preprocessing.
 
     Returns:
         Tuple of (train_dataset, eval_dataset, prompters).
@@ -499,7 +529,6 @@ def _load_and_prepare_datasets(
         cfg,
         split=split,
         processor=processor,
-        preprocess_iterable=preprocess_iterable,
     )
 
     # Apply dataset sharding if configured using shared function
