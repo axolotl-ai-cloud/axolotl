@@ -95,9 +95,14 @@ def wrap_dataset_for_tokenized_prompt(
             map_kwargs["batched"] = True
 
         # Map the dataset and remove original columns
+        # For IterableDataset, features might be None until first iteration
+        remove_columns = None
+        if dataset.features is not None:
+            remove_columns = list(dataset.features.keys())
+
         return dataset.map(
             prompt_tokenizer.tokenize_prompt,
-            remove_columns=list(dataset.features.keys()),
+            remove_columns=remove_columns,
             **map_kwargs,
         )
     return TokenizedPromptDataset(prompt_tokenizer, dataset, **kwargs)
