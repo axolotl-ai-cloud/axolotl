@@ -4,7 +4,6 @@ Processes model shards individually without loading the full model into memory.
 """
 
 import os
-import re
 import shutil
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -25,18 +24,16 @@ def find_lora_weights(
     """
     Find corresponding LoRA A and B weights for a given key.
     """
-    clean_key = key.strip(".weight")
-    clean_key = re.sub(r"^(base_model\.model\.|language_model\.)", "", clean_key)
+    clean_key = key.rstrip(".weight")
 
     lora_a = None
     lora_b = None
 
     for lora_key, lora_weight in lora_state.items():
-        if clean_key in lora_key:
-            if "lora_A" in lora_key:
-                lora_a = lora_weight
-            elif "lora_B" in lora_key:
-                lora_b = lora_weight
+        if lora_key.endswith(f"{clean_key}.lora_A.weight"):
+            lora_a = lora_weight
+        elif lora_key.endswith(f"{clean_key}.lora_B.weight"):
+            lora_b = lora_weight
 
     if lora_a is not None and lora_b is not None:
         return lora_a, lora_b
@@ -47,7 +44,7 @@ def get_model_shards(model_path: Path) -> list[Path]:
     """Find all model shards in the given path."""
     shards = list[Path]()
 
-    patterns = ["model*.safetensors", "model*.bin", "pytorch_model*.bin"]
+    patterns = ["model*.safetensors", "pytorch_model*.bin"]
 
     for pattern in patterns:
         shards.extend(model_path.glob(pattern))

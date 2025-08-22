@@ -16,24 +16,31 @@ LOG = get_logger(__name__)
 
 def do_merge_lora(*, cfg: DictDefault) -> None:
     """
-    Merges LoRA adapters with base model using either standard or memory-efficient approach.
+    Merges LoRA adapters with base model using either memory-efficient or legacy approach.
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
-    merge_method = getattr(cfg, "merge_method", "standard")
-    if merge_method == "memory_efficient":
-        _do_merge_lora_efficient(cfg=cfg)
+    merge_method = getattr(cfg, "merge_method", "memory_efficient")
+    LOG.info(f"Using {merge_method} LoRA merge method")
+
+    if merge_method == "legacy":
+        _do_merge_lora_legacy(cfg=cfg)
     else:
-        _do_merge_lora_standard(cfg=cfg)
+        try:
+            _do_merge_lora_efficient(cfg=cfg)
+        except RuntimeError as e:
+            LOG.error(f"Memory-efficient merge failed: {e}")
+            LOG.info("Falling back to legacy merge method...")
+            _do_merge_lora_legacy(cfg=cfg)
 
 
-def _do_merge_lora_standard(*, cfg: DictDefault) -> None:
+def _do_merge_lora_legacy(*, cfg: DictDefault) -> None:
     """
-    Standard LoRA merging using `merge_and_unload`.
+    Legacy LoRA merging using `merge_and_unload`.
     Loads the full model into memory before merging.
     """
-    LOG.info("Using standard LoRA merging method...")
+    LOG.info("Using legacy LoRA merging method...")
     model, tokenizer, processor = load_model_and_tokenizer(cfg=cfg)
     safe_serialization = cfg.save_safetensors is True
 
@@ -66,6 +73,9 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
     """
     Memory-efficient LoRA merging using shard-by-shard processing.
     Does not load the full model into memory.
+
+    Note: Currently only supports standard LoRA, not advanced methods like DoRA or RSLoRA.
+    Will automatically fall back to legacy method for unsupported configurations.
     """
     LOG.info("Using memory-efficient LoRA merging method...")
 
@@ -114,7 +124,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
         parsed_cfg.lora_model_dir = parsed_cfg.output_dir
     if not Path(parsed_cfg.lora_model_dir).exists():
         raise ValueError(
-            f"Target directory for LoRA adapter weights does not exist: `{parsed_cfg.lora_model_dir}`"
+            f"Target directory for LoRA merged model does not exist: `{parsed_cfg.lora_model_dir}`"
         )
 
     do_merge_lora(cfg=parsed_cfg)
