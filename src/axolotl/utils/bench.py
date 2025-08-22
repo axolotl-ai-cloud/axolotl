@@ -60,6 +60,7 @@ def gpu_memory_usage_all(device=0):
     active = torch.cuda.memory_stats().get("active_bytes.all.peak", 0) / 1024.0**3
     allocated = torch.cuda.max_memory_allocated(device) / 1024.0**3
     reserved = torch.cuda.max_memory_reserved(device) / 1024.0**3
+    torch.cuda.reset_peak_memory_stats(device)
     return active, allocated, reserved
 
 
