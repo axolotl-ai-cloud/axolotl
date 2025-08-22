@@ -20,6 +20,41 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -456,7 +491,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.monkeypatch.data.batch_dataset_fetcher" id="toc-axolotl.monkeypatch.data.batch_dataset_fetcher" class="nav-link active" data-scroll-target="#axolotl.monkeypatch.data.batch_dataset_fetcher">monkeypatch.data.batch_dataset_fetcher</a></li>
+  <li><a href="#axolotl.monkeypatch.data.batch_dataset_fetcher" id="toc-axolotl.monkeypatch.data.batch_dataset_fetcher" class="nav-link active" data-scroll-target="#axolotl.monkeypatch.data.batch_dataset_fetcher">monkeypatch.data.batch_dataset_fetcher</a>
+  <ul class="collapse">
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.monkeypatch.data.batch_dataset_fetcher.apply_multipack_dataloader_patch" id="toc-axolotl.monkeypatch.data.batch_dataset_fetcher.apply_multipack_dataloader_patch" class="nav-link" data-scroll-target="#axolotl.monkeypatch.data.batch_dataset_fetcher.apply_multipack_dataloader_patch">apply_multipack_dataloader_patch</a></li>
+  <li><a href="#axolotl.monkeypatch.data.batch_dataset_fetcher.patch_fetchers" id="toc-axolotl.monkeypatch.data.batch_dataset_fetcher.patch_fetchers" class="nav-link" data-scroll-target="#axolotl.monkeypatch.data.batch_dataset_fetcher.patch_fetchers">patch_fetchers</a></li>
+  <li><a href="#axolotl.monkeypatch.data.batch_dataset_fetcher.patched_worker_loop" id="toc-axolotl.monkeypatch.data.batch_dataset_fetcher.patched_worker_loop" class="nav-link" data-scroll-target="#axolotl.monkeypatch.data.batch_dataset_fetcher.patched_worker_loop">patched_worker_loop</a></li>
+  <li><a href="#axolotl.monkeypatch.data.batch_dataset_fetcher.remove_multipack_dataloader_patch" id="toc-axolotl.monkeypatch.data.batch_dataset_fetcher.remove_multipack_dataloader_patch" class="nav-link" data-scroll-target="#axolotl.monkeypatch.data.batch_dataset_fetcher.remove_multipack_dataloader_patch">remove_multipack_dataloader_patch</a></li>
+  </ul></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
@@ -469,9 +513,59 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.monkeypatch.data.batch_dataset_fetcher" class="level1">
 <h1>monkeypatch.data.batch_dataset_fetcher</h1>
 <p><code>monkeypatch.data.batch_dataset_fetcher</code></p>
-<p>monkey patches for the dataset fetcher to handle batches of packed indexes</p>
+<p>Monkey patches for the dataset fetcher to handle batches of packed indexes.</p>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.monkeypatch.data.batch_dataset_fetcher.apply_multipack_dataloader_patch">apply_multipack_dataloader_patch</a></td>
+<td>This patch allows DataLoader to correctly process batches that contain multiple bins</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.monkeypatch.data.batch_dataset_fetcher.patch_fetchers">patch_fetchers</a></td>
+<td>Apply patches to PyTorch’s DataLoader components.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.monkeypatch.data.batch_dataset_fetcher.patched_worker_loop">patched_worker_loop</a></td>
+<td>Worker loop that ensures patches are applied in worker processes.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.monkeypatch.data.batch_dataset_fetcher.remove_multipack_dataloader_patch">remove_multipack_dataloader_patch</a></td>
+<td>Remove the monkeypatch and restore original PyTorch DataLoader behavior.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.monkeypatch.data.batch_dataset_fetcher.apply_multipack_dataloader_patch" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.data.batch_dataset_fetcher.apply_multipack_dataloader_patch">apply_multipack_dataloader_patch</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.data.batch_dataset_fetcher.apply_multipack_dataloader_patch()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>This patch allows DataLoader to correctly process batches that contain multiple bins
+of packed sequences.</p>
+</section>
+<section id="axolotl.monkeypatch.data.batch_dataset_fetcher.patch_fetchers" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.data.batch_dataset_fetcher.patch_fetchers">patch_fetchers</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.data.batch_dataset_fetcher.patch_fetchers()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Apply patches to PyTorch’s DataLoader components.</p>
+</section>
+<section id="axolotl.monkeypatch.data.batch_dataset_fetcher.patched_worker_loop" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.data.batch_dataset_fetcher.patched_worker_loop">patched_worker_loop</h3>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.data.batch_dataset_fetcher.patched_worker_loop(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Worker loop that ensures patches are applied in worker processes.</p>
+</section>
+<section id="axolotl.monkeypatch.data.batch_dataset_fetcher.remove_multipack_dataloader_patch" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.data.batch_dataset_fetcher.remove_multipack_dataloader_patch">remove_multipack_dataloader_patch</h3>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.data.batch_dataset_fetcher.remove_multipack_dataloader_patch()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Remove the monkeypatch and restore original PyTorch DataLoader behavior.</p>
 
 
+</section>
+</section>
 </section>
 
 </main> <!-- /main -->
