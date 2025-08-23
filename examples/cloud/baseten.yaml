@@ -1,8 +1,5 @@
 provider: baseten
 project_name:
-volumes:
-  - name: axolotl-artifacts
-    mount: /workspace/artifacts
 
 secrets:
   - HF_TOKEN

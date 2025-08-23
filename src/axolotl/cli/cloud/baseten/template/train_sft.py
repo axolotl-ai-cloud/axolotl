@@ -14,10 +14,6 @@ gpu = cloud_config.get("gpu", "h100")
 gpu_count = int(cloud_config.get("gpu_count", 1))
 node_count = int(cloud_config.get("node_count", 1))
 project_name = cloud_config.get("project_name", "axolotl-project") or "axolotl-project"
-volume_mounts = cloud_config.get("volumes", [])
-checkpoint_mount_dir = (
-    volume_mounts[0]["mount"] if volume_mounts else "/workspace/artifacts"
-)
 secrets = cloud_config.get("secrets", [])
 launcher = cloud_config.get("launcher", "accelerate")
 launcher_args = cloud_config.get("launcher_args", [])
@@ -36,8 +32,6 @@ BASE_IMAGE = "axolotlai/axolotl:main-py3.11-cu126-2.7.1"
 # Secrets from the baseten workspace like API keys are referenced using
 # `SecretReference`.
 
-# checkpointing = CheckpointingConfig(enabled=True, checkpoint_path=checkpoint_mount_dir)
-
 env_vars = {
     "AXOLOTL_LAUNCHER": launcher,
     "AXOLOTL_LAUNCHER_ARGS": launcher_args_str,
@@ -50,16 +44,14 @@ training_runtime = definitions.Runtime(
         f"/bin/sh -c 'chmod +x ./{script_name} && ./{script_name}'"
     ],
     environment_variables=env_vars,
-    # checkpointing_config=checkpointing,
-    enable_cache=True,
 )
 
 # 3. Define the Compute Resources for the Training Job
 training_compute = definitions.Compute(
-    node_count=2,
+    node_count=node_count,
     accelerator=truss_config.AcceleratorSpec(
         accelerator=truss_config.Accelerator.H100,
-        count=8,
+        count=gpu_count,
     ),
 )
 
