@@ -444,11 +444,12 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 tokenized_prompt = dict(tokenized_res)
 
             if not self.train_on_inputs:
-                if isinstance(prompt_ids, dict):
-                    user_prompt_len = len(prompt_ids["input_ids"])
-                else:
-                    user_prompt_len = len(prompt_ids)
-                labels = [-100] * user_prompt_len + input_ids[user_prompt_len:]
+                labels = input_ids.copy()
+                for i, turn in enumerate(turns):
+                    if turn.get("role") == "user":
+                        start_idx, end_idx = self.find_turn(turns, i)
+                        if start_idx != -1 and end_idx != -1:
+                            labels[start_idx:end_idx] = [-100] * (end_idx - start_idx)
             else:
                 labels = input_ids
 
