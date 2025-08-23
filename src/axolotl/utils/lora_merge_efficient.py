@@ -110,7 +110,7 @@ def merge_lora_sharded_efficient(
         raise FileNotFoundError(f"LoRA config not found: {config_file}")
 
     lora_config = LoraConfig.from_json_file(config_file)
-    scale = lora_config.lora_alpha / lora_config.r
+    scale = lora_config["lora_alpha"] / lora_config["r"]
 
     LOG.info(f"LoRA scale factor: {scale}")
 
