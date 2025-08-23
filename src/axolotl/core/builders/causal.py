@@ -10,6 +10,7 @@ import transformers
 from transformers import (
     DataCollatorWithFlattening,
     EarlyStoppingCallback,
+    Trainer,
 )
 from trl.trainer.utils import RewardDataCollatorWithPadding
 
@@ -385,10 +386,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 **data_collator_kwargs,
             )
         sig = inspect.signature(trainer_cls)
-        if "processing_class" in sig.parameters:
+        if "processing_class" in sig.parameters or issubclass(trainer_cls, Trainer):
             trainer_kwargs["processing_class"] = self.tokenizer
         elif "tokenizer" in sig.parameters:
             trainer_kwargs["tokenizer"] = self.tokenizer
+
         if (
             trainer_cls not in [AxolotlRewardTrainer, AxolotlPRMTrainer]
             and self.cfg.datasets is not None
