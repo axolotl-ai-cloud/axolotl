@@ -476,6 +476,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 )
             ):
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
+                if self.cfg.squash_position_ids:
+                    kwargs["squash_position_ids"] = True
             else:
                 collator = BatchSamplerDataCollatorForSeq2Seq
         else:
