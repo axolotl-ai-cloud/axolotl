@@ -112,7 +112,7 @@ def merge_lora_sharded_efficient(
     lora_config = LoraConfig.from_json_file(config_file)
     scale = lora_config["lora_alpha"] / lora_config["r"]
 
-    LOG.info(f"LoRA scale factor: {scale}")
+    LOG.debug(f"LoRA scale factor: {scale}")
 
     lora_file = lora_adapter_path / "adapter_model.safetensors"
     if not lora_file.exists():
@@ -130,7 +130,7 @@ def merge_lora_sharded_efficient(
         lora_state = torch.load(lora_file, map_location="cpu", weights_only=True)
 
     if device != "cpu":
-        LOG.info(f"Moving LoRA weights to {device}")
+        LOG.debug(f"Moving LoRA weights to {device}")
         for key, value in tqdm(lora_state.items(), desc="Moving LoRA to device"):
             lora_state[key] = value.to(device)
 
@@ -138,7 +138,7 @@ def merge_lora_sharded_efficient(
     if not model_shards:
         raise FileNotFoundError(f"No model shards found in {base_model_path}")
 
-    LOG.info(f"Found {len(model_shards)} model shards")
+    LOG.debug(f"Found {len(model_shards)} model shards")
     copy_non_model_files(base_model_path, output_path, model_shards)
 
     merged_count = 0
