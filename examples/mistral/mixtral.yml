@@ -7,6 +7,9 @@ tokenizer_type: LlamaTokenizer
 
 trust_remote_code: true
 
+plugins:
+  - axolotl.integrations.moe_kernels.plugin.MoeOptimizedPlugin
+
 load_in_8bit: false
 load_in_4bit: true
 
@@ -78,8 +81,13 @@ warmup_ratio: 0.1
 evals_per_epoch: 4
 saves_per_epoch: 1
 
-deepspeed: deepspeed_configs/zero2.json
+# deepspeed: deepspeed_configs/zero2.json
 weight_decay: 0.0
 special_tokens:
+
+moe_kernels: true
+moe_group_size: 128  # Optimal for most hardware
+moe_persistent_kernel: true  # Enable L2 cache optimization
+moe_kernel_models: ["mixtral"]
 
 # save_first_step: true  # uncomment this to validate checkpoint saving works with your config
