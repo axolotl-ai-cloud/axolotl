@@ -226,17 +226,18 @@ def cg_grouped_gemm_forward(
     M, K = inputs.shape
     num_experts, N, K_w = expert_weights.shape
     assert K == K_w, f"Input K ({K}) must match weight K ({K_w})"
-    assert (
-        expert_indices.shape[0] == M
-    ), "Expert indices must have same length as input rows"
+    assert expert_indices.shape[0] == M, (
+        "Expert indices must have same length as input rows"
+    )
 
     # Create output tensor
     output = torch.empty((M, N), device=inputs.device, dtype=inputs.dtype)
 
     # Launch kernel
-    grid = lambda META: (
-        triton.cdiv(M, META["BLOCK_SIZE_M"]) * triton.cdiv(N, META["BLOCK_SIZE_N"]),
-    )
+    def grid(META):
+        return (
+            triton.cdiv(M, META["BLOCK_SIZE_M"]) * triton.cdiv(N, META["BLOCK_SIZE_N"]),
+        )
 
     _kernel_cg_forward[grid](
         inputs,
