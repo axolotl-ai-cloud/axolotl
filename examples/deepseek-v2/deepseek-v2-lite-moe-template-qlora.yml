@@ -1,0 +1,147 @@
+base_model: deepseek-ai/DeepSeek-V2-Lite-Chat
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+
+# Optimized MoE Kernels
+# Note: DeepSeek-V2 uses a different MoE architecture
+# This config is a template for when support is added
+# Currently commented out as DeepSeek-V2 support needs to be implemented
+# moe_optimized: true
+# moe_group_size: 64  # Smaller group size for DeepSeek's architecture
+# moe_persistent_kernel: true
+# moe_kernel_models:
+#   - deepseek_v2  # Requires adding DeepSeek support to plugin
+
+trust_remote_code: true
+
+# QLoRA Configuration for memory-efficient training
+load_in_8bit: false
+load_in_4bit: true
+adapter: qlora
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_linear: false
+# Target specific modules for DeepSeek-V2
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+# Dataset Configuration
+datasets:
+  - path: HuggingFaceH4/ultrachat_200k
+    type: alpaca
+    conversation: deepseek  # DeepSeek chat format
+
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.01
+output_dir: ./outputs/deepseek-v2-lite-moe-template-qlora
+
+# Model Configuration
+model_config:
+  output_router_logits: true
+  # DeepSeek-V2 specific
+  moe_intermediate_size: 1536  # DeepSeek uses smaller experts
+  n_shared_experts: 2  # Shared experts in addition to routed ones
+
+# Sequence Configuration
+sequence_len: 4096
+sample_packing: true
+pad_to_sequence_len: true
+eval_sample_packing: false
+
+# Training Configuration
+num_epochs: 1
+gradient_accumulation_steps: 8
+micro_batch_size: 1
+
+# Optimizer and Learning Rate
+optimizer: paged_adamw_8bit  # Memory-efficient optimizer
+lr_scheduler: cosine
+learning_rate: 1e-5
+warmup_ratio: 0.05
+weight_decay: 0.0
+
+# Mixed Precision and Performance
+bf16: true
+fp16: false
+tf32: false
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+flash_attention: true
+
+# MoE Training Settings
+router_aux_loss_coef: 0.01  # Higher coefficient for DeepSeek's architecture
+moe_train_capacity_factor: 1.25
+moe_eval_capacity_factor: 2.0
+
+# Loss Monitoring
+loss_watchdog_threshold: 10.0  # Higher threshold for MoE training
+loss_watchdog_patience: 5
+
+# Logging and Evaluation
+logging_steps: 10
+evals_per_epoch: 4
+eval_table_size: 5
+eval_table_max_new_tokens: 128
+saves_per_epoch: 2
+save_strategy: steps
+save_steps: 250
+
+# Wandb Configuration
+wandb_project: deepseek-v2-moe-template
+wandb_entity:
+wandb_watch:
+wandb_name: deepseek-v2-lite-moe-template-qlora
+wandb_log_model:
+
+# FSDP Configuration with CPU offloading for large model
+fsdp:
+  - full_shard
+  - auto_wrap
+fsdp_config:
+  fsdp_limit_all_gathers: true
+  fsdp_sync_module_states: true
+  fsdp_offload_params: true  # Enable CPU offloading
+  fsdp_use_orig_params: false
+  fsdp_cpu_ram_efficient_loading: true
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_transformer_layer_cls_to_wrap: DeepseekV2MoE
+  fsdp_state_dict_type: SHARDED_STATE_DICT
+  fsdp_sharding_strategy: FULL_SHARD
+  fsdp_backward_prefetch: BACKWARD_PRE
+
+# Alternative: DeepSpeed with CPU offloading
+# deepspeed:
+#   deepspeed_configs/zero3_offload.json
+
+# Special tokens
+special_tokens:
+  pad_token: "<｜pad｜>"
+  eos_token: "<｜end▁of▁sentence｜>"
+  bos_token: "<｜begin▁of▁sentence｜>"
+
+# Chat template
+chat_template: deepseek
+
+# Additional Configuration
+strict: false
+resume_from_checkpoint:
+early_stopping_patience: 3
+max_grad_norm: 1.0
+ddp_timeout: 7200  # Longer timeout for large model
+
+# Memory optimization
+max_memory:  # Set based on your GPU
+  0: "22GB"  # GPU 0
+  # 1: "22GB"  # GPU 1 if multi-GPU
+
+# Debugging
+debug: false
+# save_first_step: true

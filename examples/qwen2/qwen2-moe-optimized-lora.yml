@@ -1,0 +1,138 @@
+base_model: Qwen/Qwen2.5-A14B-Instruct
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+
+# Optimized MoE Kernels
+# High-performance kernels for MoE layers
+moe_optimized: true
+moe_group_size: 128
+moe_persistent_kernel: true
+# Auto-detects qwen2_moe model type
+
+trust_remote_code: true
+
+# LoRA Configuration (using regular LoRA instead of QLoRA for better performance)
+load_in_8bit: false
+load_in_4bit: false
+adapter: lora
+lora_r: 64
+lora_alpha: 32
+lora_dropout: 0.1
+lora_target_linear: true
+# Target MoE-specific modules for efficient fine-tuning
+lora_target_modules:
+  - gate
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  # MoE expert projections
+  - gate_up_proj
+  - down_proj
+
+# Dataset Configuration
+datasets:
+  - path: Open-Orca/SlimOrca
+    type: alpaca
+    conversation: qwen2  # Use Qwen2 chat format
+
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.005
+output_dir: ./outputs/qwen2-moe-optimized-lora
+
+# Model Configuration
+model_config:
+  output_router_logits: true  # For MoE load balancing
+  # Qwen2 MoE specific settings
+  norm_topk_prob: true  # Normalize top-k probabilities
+
+# Sequence Configuration
+sequence_len: 8192  # Qwen2 supports longer context
+sample_packing: true
+pad_to_sequence_len: true
+eval_sample_packing: false
+
+# Training Configuration
+num_epochs: 2
+gradient_accumulation_steps: 8
+micro_batch_size: 1  # Adjust based on GPU memory
+
+# Optimizer and Learning Rate
+optimizer: adamw_torch
+lr_scheduler: cosine
+learning_rate: 5e-5
+warmup_steps: 100
+weight_decay: 0.01
+adam_beta1: 0.9
+adam_beta2: 0.95
+adam_epsilon: 1e-8
+
+# Mixed Precision and Performance
+bf16: true  # Qwen2 works well with bf16
+fp16: false
+tf32: true
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+flash_attention: true
+
+# MoE-specific Training Settings
+# Load balancing coefficient for auxiliary loss
+router_aux_loss_coef: 0.001
+
+# Evaluation and Checkpointing
+logging_steps: 10
+eval_strategy: steps
+eval_steps: 250
+eval_table_size: 10
+eval_table_max_new_tokens: 128
+save_strategy: steps
+save_steps: 500
+save_total_limit: 3
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+
+# Wandb Configuration
+wandb_project: qwen2-moe-optimized
+wandb_entity:
+wandb_watch:
+wandb_name: qwen2-moe-a14b-optimized-lora
+wandb_log_model: checkpoint
+
+# FSDP Configuration for distributed training
+fsdp:
+  - full_shard
+  - auto_wrap
+fsdp_config:
+  fsdp_limit_all_gathers: true
+  fsdp_sync_module_states: true
+  fsdp_offload_params: false
+  fsdp_use_orig_params: false
+  fsdp_cpu_ram_efficient_loading: true
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_transformer_layer_cls_to_wrap: Qwen2MoeSparseMoeBlock
+  fsdp_state_dict_type: SHARDED_STATE_DICT
+  fsdp_sharding_strategy: FULL_SHARD
+
+# Alternative: DeepSpeed Zero3 (comment out FSDP above and uncomment this)
+# deepspeed: deepspeed_configs/zero3.json
+
+# Special tokens
+special_tokens:
+  pad_token: "<|endoftext|>"
+  eos_token: "<|im_end|>"
+  bos_token: "<|im_start|>"
+
+# Chat template
+chat_template: qwen2
+
+# Additional Settings
+strict: false
+resume_from_checkpoint:
+early_stopping_patience: 3
+max_grad_norm: 1.0
+
+# Debugging
+debug: false
+# save_first_step: true  # Validate checkpoint saving
