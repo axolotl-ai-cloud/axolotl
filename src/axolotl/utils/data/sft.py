@@ -26,6 +26,8 @@ from axolotl.utils.data.shared import (
     save_preprocessed_dataset,
     try_load_from_hub,
 )
+from axolotl.utils.data.streaming import wrap_streaming_sft_dataset
+from axolotl.utils.data.streaming_sft import wrap_streaming_sft_dataset_optimized
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
     handle_long_seq_in_dataset,
@@ -73,7 +75,7 @@ def _prepare_standard_dataset(
     tokenizer: PreTrainedTokenizer,
     processor: ProcessorMixin | None,
     preprocess_iterable: bool,
-) -> tuple[Dataset, Dataset | None, int, list[Prompter | None]]:
+) -> tuple[Dataset | IterableDataset, Dataset | None, int, list[Prompter | None]]:
     """Prepare standard (non-pretraining) datasets."""
 
     def _load_datasets():
@@ -118,7 +120,14 @@ def _prepare_standard_dataset(
             )
 
     # Calculate total number of training steps
-    if cfg.max_steps:
+    # For streaming datasets, we must use max_steps
+    if isinstance(train_dataset, IterableDataset):
+        if not cfg.max_steps:
+            raise ValueError(
+                "When using streaming datasets, you must set max_steps in your config"
+            )
+        total_num_steps = cfg.max_steps
+    elif cfg.max_steps:
         total_num_steps = min(
             calculate_total_num_steps(cfg, train_dataset), cfg.max_steps
         )
@@ -342,14 +351,18 @@ def _load_raw_datasets(
             dataset = handle_long_seq_in_dataset(dataset, cfg.eval_sequence_len, cfg)
         else:
             dataset = handle_long_seq_in_dataset(dataset, cfg.sequence_len, cfg)
-        if cfg.sample_packing:
+
+        # Skip packing processing for streaming datasets - they handle it differently
+        if cfg.sample_packing and not isinstance(dataset, IterableDataset):
             dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
-        # Save the prepared dataset
-        dataset_hash = generate_dataset_hash_from_config(
-            cfg, datasets_configs, tokenizer.name_or_path
-        )
-        save_preprocessed_dataset(cfg, dataset, dataset_hash, split)
+        # Skip saving for streaming datasets as they can't be cached
+        if not isinstance(dataset, IterableDataset):
+            # Save the prepared dataset
+            dataset_hash = generate_dataset_hash_from_config(
+                cfg, datasets_configs, tokenizer.name_or_path
+            )
+            save_preprocessed_dataset(cfg, dataset, dataset_hash, split)
 
     return dataset, prompters
 
@@ -365,8 +378,10 @@ def _load_and_process_single_dataset(
 ) -> tuple[Dataset | IterableDataset, Prompter | None]:
     """Load and process a single dataset based on the passed config."""
     # Load the dataset
+    # Use streaming if enabled in config or if using iterable preprocessing
+    use_streaming = cfg.streaming or preprocess_iterable
     dataset = load_dataset_with_config(
-        dataset_config, cfg.hf_use_auth_token, streaming=preprocess_iterable
+        dataset_config, cfg.hf_use_auth_token, streaming=use_streaming
     )
 
     # Parse dataset type
@@ -391,16 +406,63 @@ def _load_and_process_single_dataset(
             num_shards=dataset_config.shards, index=shards_idx
         )
 
-    # Apply dataset wrapper
-    dataset_wrapper, dataset_prompter = get_dataset_wrapper(
-        dataset_config=dataset_config,
-        tokenizer=tokenizer,
-        cfg=cfg,
-        dataset_base_type=d_base_type,
-        dataset=dataset,
-        dataset_prompt_style=d_prompt_style,
-        processor=processor,
-    )
+    # For streaming datasets, we need to handle tokenization differently
+    if isinstance(dataset, IterableDataset):
+        # Use pretraining's approach for multipack streaming
+        if cfg.sample_packing:
+            # Create the dataset wrapper function once
+            def ds_wrapper_fn(dataset=None):
+                wrapped_dataset, prompter = get_dataset_wrapper(
+                    dataset_config=dataset_config,
+                    tokenizer=tokenizer,
+                    cfg=cfg,
+                    dataset_base_type=d_base_type,
+                    dataset=dataset,
+                    dataset_prompt_style=d_prompt_style,
+                    processor=processor,
+                )
+                return wrapped_dataset, prompter
+
+            # Use optimized streaming wrapper to avoid repeated preprocessing logs
+            dataset_wrapper = wrap_streaming_sft_dataset_optimized(
+                dataset,
+                tokenizer,
+                cfg,
+                ds_wrapper_fn,
+                max_tokens=cfg.sequence_len,
+                batch_size=max(
+                    1, cfg.sequence_len // 512
+                ),  # Estimate sequences per pack
+                seed=cfg.seed or 42,
+                buffer_size=cfg.pretrain_multipack_buffer_size or 1_000,
+            )
+        else:
+            # Use regular streaming wrapper
+            dataset_wrapper = wrap_streaming_sft_dataset(
+                dataset,
+                tokenizer,
+                cfg,
+                dataset_config,
+                d_base_type,
+                d_prompt_style,
+                processor,
+                max_tokens=cfg.sequence_len,
+                buffer_size=10_000,
+            )
+
+        # For streaming, we don't have a specific prompter
+        dataset_prompter = None
+    else:
+        # Apply dataset wrapper for regular datasets
+        dataset_wrapper, dataset_prompter = get_dataset_wrapper(
+            dataset_config=dataset_config,
+            tokenizer=tokenizer,
+            cfg=cfg,
+            dataset_base_type=d_base_type,
+            dataset=dataset,
+            dataset_prompt_style=d_prompt_style,
+            processor=processor,
+        )
 
     return dataset_wrapper, dataset_prompter
 

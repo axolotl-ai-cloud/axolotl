@@ -178,8 +178,8 @@ def truncate_long_seq(sample, sequence_len=2048, min_sequence_len=2):
 
 
 def handle_long_seq_in_dataset(
-    dataset: Dataset, sequence_len: int, cfg: DictDefault
-) -> Dataset:
+    dataset: Dataset | IterableDataset, sequence_len: int, cfg: DictDefault
+) -> Dataset | IterableDataset:
     """Remove sequences longer than configured maximum from dataset.
 
     Args:
@@ -190,7 +190,14 @@ def handle_long_seq_in_dataset(
     Returns:
         Filtered dataset with long sequences removed.
     """
-    if "input_ids" not in dataset.column_names:
+    # Streaming datasets don't support filtering the same way
+    if isinstance(dataset, IterableDataset):
+        LOG.info(
+            "Streaming dataset detected - long sequence filtering will be done on-the-fly"
+        )
+        return dataset
+
+    if not hasattr(dataset, "column_names") or "input_ids" not in dataset.column_names:
         LOG.warning(
             "Dataset does not contain 'input_ids' column. Skip drop long seq. This is "
             "expected for reward modeling."

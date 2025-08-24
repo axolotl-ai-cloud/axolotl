@@ -1,0 +1,52 @@
+# Example configuration for streaming SFT training
+# This enables training on datasets larger than memory by streaming them from HuggingFace Hub
+
+base_model: HuggingFaceTB/SmolLM2-135M
+
+# Enable streaming mode for datasets
+streaming: true
+
+# When using streaming, max_steps is required
+max_steps: 3  # Just test a few steps
+
+# Training datasets - these will be streamed
+# datasets:
+#   - path: tatsu-lab/alpaca
+#     type: alpaca
+#     split: train
+
+pretraining_dataset:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+    split: train
+
+# Dataset configuration
+sequence_len: 2048
+sample_packing: true  # Enable multipack batching
+pretrain_multipack_attn: true  # Enable multipack attention masking
+pretrain_multipack_buffer_size: 1000  # Buffer size for packing (smaller for streaming SFT)
+special_tokens:
+  pad_token: <|endoftext|>
+
+# Training hyperparameters
+gradient_accumulation_steps: 4
+micro_batch_size: 1  # Always 1 for multipack - sequences are packed into single samples
+num_epochs: 1  # With streaming, typically use max_steps instead
+optimizer: adamw_torch
+lr_scheduler: cosine
+learning_rate: 2e-5
+
+# Enable efficient training
+bf16: auto
+tf32: false
+gradient_checkpointing: true
+flash_attention: true  # Enable flash attention with multipack
+
+# Logging and checkpointing
+logging_steps: 10
+eval_steps: 100
+save_steps: 200
+output_dir: ./outputs/streaming-model
+
+# Warmup
+warmup_steps: 100

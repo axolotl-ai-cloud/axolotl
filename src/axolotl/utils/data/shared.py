@@ -524,7 +524,9 @@ def generate_dataset_hash_from_config(
     return str(md5(config_str))
 
 
-def merge_datasets(datasets: list[Dataset], cfg: DictDefault) -> Dataset:
+def merge_datasets(
+    datasets: list[Dataset | IterableDataset], cfg: DictDefault
+) -> Dataset | IterableDataset:
     """Merge multiple datasets into one with optional shuffling.
 
     Args:
@@ -534,6 +536,41 @@ def merge_datasets(datasets: list[Dataset], cfg: DictDefault) -> Dataset:
     Returns:
         Merged dataset.
     """
+    # Check if we're dealing with streaming datasets
+    if any(isinstance(ds, IterableDataset) for ds in datasets):
+        # All datasets must be streaming for merging
+        if not all(isinstance(ds, IterableDataset) for ds in datasets):
+            raise ValueError(
+                "Cannot mix streaming and non-streaming datasets. "
+                "Either all datasets must be streaming or none."
+            )
+
+        if len(datasets) == 1:
+            ds = datasets[0]
+            # Streaming datasets handle shuffling differently
+            if cfg.shuffle_merged_datasets and not cfg.curriculum_sampling:
+                return ds.shuffle(seed=cfg.seed, buffer_size=10_000)
+            return ds
+
+        # Merge streaming datasets
+        LOG.info("Merging streaming datasets...")
+        from datasets import interleave_datasets
+
+        # For streaming, we interleave datasets instead of concatenating
+        merged_dataset = interleave_datasets(datasets)
+
+        if cfg.shuffle_merged_datasets:
+            LOG.debug("Shuffling merged streaming datasets...")
+            if cfg.curriculum_sampling:
+                LOG.warning(
+                    "Shuffling merged datasets with curriculum sampling is not recommended. "
+                    "This will randomize the order of samples."
+                )
+            merged_dataset = merged_dataset.shuffle(seed=cfg.seed, buffer_size=10_000)
+
+        return merged_dataset
+
+    # Original logic for non-streaming datasets
     if len(datasets) == 1:
         ds = datasets[0]
 

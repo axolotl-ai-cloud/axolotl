@@ -1,0 +1,61 @@
+# Example configuration for streaming pretraining
+# This demonstrates how to pretrain on large datasets that don't fit in memory
+
+base_model: TinyLlama/TinyLlama-1.1B-Chat-v1.0
+model_type: LlamaForCausalLM
+tokenizer_type: LlamaTokenizer
+
+# Required: max_steps for streaming pretraining
+max_steps: 10000
+
+# Pretraining dataset configuration
+# These are automatically streamed
+pretraining_dataset:
+  - path: allenai/c4
+    name: en
+    type: pretrain
+    # Optional: skip N samples (useful for resuming)
+    # skip: 1000000
+
+# Can also use multiple pretraining datasets
+# pretraining_dataset:
+#   - path: allenai/c4
+#     name: en
+#     type: pretrain
+#   - path: HuggingFaceFW/fineweb
+#     type: pretrain
+
+val_set_size: 0.0
+
+# Sequence and packing configuration
+sequence_len: 2048
+sample_packing: true
+pretrain_multipack_attn: true
+pretrain_multipack_buffer_size: 10000  # Buffer size for multipack batching
+
+# Training hyperparameters
+gradient_accumulation_steps: 8
+micro_batch_size: 4
+optimizer: adamw_torch
+lr_scheduler: cosine
+learning_rate: 3e-4
+
+# Memory optimizations
+bf16: auto
+tf32: false
+gradient_checkpointing: true
+flash_attention: true
+
+# Checkpointing and logging
+output_dir: ./outputs/pretrain-streaming
+logging_steps: 10
+save_steps: 500
+save_total_limit: 3  # Keep only last 3 checkpoints
+
+# Warmup
+warmup_ratio: 0.1
+
+# Optional: enable wandb for monitoring
+# wandb_project: streaming-pretrain
+# wandb_entity: your-entity
+# wandb_name: c4-pretrain

@@ -244,6 +244,12 @@ class AxolotlInputConfig(
     dataloader_num_workers: int | None = None
     dataloader_prefetch_factor: int | None = None
     dataloader_drop_last: bool | None = None
+    streaming: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable streaming mode for training datasets to reduce memory usage and enable training on datasets larger than memory"
+        },
+    )
 
     accelerator_config: dict[str, Any] | None = None
 

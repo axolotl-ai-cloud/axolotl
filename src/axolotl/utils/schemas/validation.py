@@ -1074,6 +1074,24 @@ class PretrainingValidationMixin:
                     data["accelerator_config"]["dispatch_batches"] = False
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_pretraining_split_batches_accelerate(cls, data):
+        # alternatively set ACCELERATE_SPLIT_BATCHES=False
+        if data.get("streaming"):
+            accelerator_config = data.get("accelerator_config", {})
+            if not accelerator_config:
+                data["accelerator_config"] = {
+                    "split_batches": False,
+                    "dispatch_batches": False,
+                }
+            else:
+                if accelerator_config.get("split_batches") is None:
+                    data["accelerator_config"]["split_batches"] = False
+                if accelerator_config.get("dispatch_batches") is None:
+                    data["accelerator_config"]["dispatch_batches"] = False
+        return data
+
 
 class ModelCompatibilityValidationMixin:
     """Validation methods for specific model compatibility."""
