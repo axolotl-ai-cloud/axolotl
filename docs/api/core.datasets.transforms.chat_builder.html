@@ -510,7 +510,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.core.datasets.transforms.chat_builder" class="level1">
 <h1>core.datasets.transforms.chat_builder</h1>
 <p><code>core.datasets.transforms.chat_builder</code></p>
-<p>This module contains a function that builds a transform that takes a row from the dataset and converts it to a Chat.</p>
+<p>This module contains a function that builds a transform that takes a row from the
+dataset and converts it to a Chat.</p>
 <section id="functions" class="level2">
 <h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
@@ -532,19 +533,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.datasets.transforms.chat_builder.chat_message_transform_builder(</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    train_on_inputs<span class="op">=</span><span class="va">False</span>,</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    conversations_field<span class="op">=</span><span class="st">'conversations'</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    message_field_role<span class="op">=</span>[<span class="st">'role'</span>, <span class="st">'from'</span>],</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    message_field_content<span class="op">=</span>[<span class="st">'value'</span>, <span class="st">'text'</span>, <span class="st">'content'</span>],</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    message_field_training<span class="op">=</span>[<span class="st">'train'</span>, <span class="st">'weight'</span>],</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    message_field_role<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    message_field_content<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    message_field_training<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Builds a transform that takes a row from the dataset and converts it to a Chat</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 12%">
+<col style="width: 13%">
 <col style="width: 10%">
-<col style="width: 61%">
-<col style="width: 16%">
+<col style="width: 65%">
+<col style="width: 10%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -571,19 +572,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>message_field_role</td>
 <td>str | list[str]</td>
 <td>The field name of the role. Defaults to “role”.</td>
-<td><code>['role', 'from']</code></td>
+<td><code>None</code></td>
 </tr>
 <tr class="even">
 <td>message_field_content</td>
 <td>str | list[str]</td>
 <td>The field name of the message content. Defaults to “content”.</td>
-<td><code>['value', 'text', 'content']</code></td>
+<td><code>None</code></td>
 </tr>
 <tr class="odd">
 <td>message_field_training</td>
 <td>str | list[str]</td>
 <td>The field name of the train/weight. Defaults to “weight”.</td>
-<td><code>['train', 'weight']</code></td>
+<td><code>None</code></td>
 </tr>
 </tbody>
 </table>

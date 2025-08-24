@@ -563,21 +563,23 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </div>
 <div id="cell-7" class="cell">
 <div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Optionally, upload your own JSONL to your Google Drive</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>GOOGLE_DRIVE_PATH <span class="op">=</span> <span class="st">""</span>  <span class="co"># ex: "MyDrive/Colab\ Notebooks/train.jsonl"</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="co"># "Select All" permissions, or you may get the error:</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="co"># "MessageError: Error: credential propagation was unsuccessful"</span></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> GOOGLE_DRIVE_PATH:</span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    <span class="im">from</span> google.colab <span class="im">import</span> drive</span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Mount your Google Drive</span></span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    GOOGLE_DRIVE_MNT <span class="op">=</span> <span class="st">"/content/drive/"</span></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    drive.mount(GOOGLE_DRIVE_MNT, force_remount<span class="op">=</span><span class="va">True</span>)</span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    tmp_path <span class="op">=</span> os.path.join(GOOGLE_DRIVE_MNT, GOOGLE_DRIVE_PATH.lstrip(<span class="st">"/"</span>))</span>
-<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    <span class="co"># make sure file exists</span></span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="kw">not</span> os.path.isfile(tmp_path):</span>
-<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>        <span class="cf">raise</span> <span class="pp">ValueError</span>(<span class="ss">f"File </span><span class="sc">{</span>tmp_path<span class="sc">}</span><span class="ss"> does not exist"</span>)</span>
-<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    dataset_id <span class="op">=</span> tmp_path</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Optionally, upload your own JSONL to your Google Drive</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>GOOGLE_DRIVE_PATH <span class="op">=</span> <span class="st">""</span>  <span class="co"># ex: "MyDrive/Colab\ Notebooks/train.jsonl"</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="co"># "Select All" permissions, or you may get the error:</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="co"># "MessageError: Error: credential propagation was unsuccessful"</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> GOOGLE_DRIVE_PATH:</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    <span class="im">from</span> google.colab <span class="im">import</span> drive</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Mount your Google Drive</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    GOOGLE_DRIVE_MNT <span class="op">=</span> <span class="st">"/content/drive/"</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    drive.mount(GOOGLE_DRIVE_MNT, force_remount<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    tmp_path <span class="op">=</span> os.path.join(GOOGLE_DRIVE_MNT, GOOGLE_DRIVE_PATH.lstrip(<span class="st">"/"</span>))</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    <span class="co"># make sure file exists</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="kw">not</span> os.path.isfile(tmp_path):</span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>        <span class="cf">raise</span> <span class="pp">ValueError</span>(<span class="ss">f"File </span><span class="sc">{</span>tmp_path<span class="sc">}</span><span class="ss"> does not exist"</span>)</span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    dataset_id <span class="op">=</span> tmp_path</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </section>
 </section>
@@ -590,61 +592,66 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Axolotl provides full control and transparency over model and training configuration</span></span>
 <span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>config <span class="op">=</span> DictDefault(</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    base_model <span class="op">=</span> <span class="st">"Qwen/Qwen3-14B"</span>,  <span class="co"># Use the instruct tuned model, but we're aligning it to be a pirate</span></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    load_in_4bit <span class="op">=</span> <span class="va">True</span>,  <span class="co"># set to True for qLoRA</span></span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    adapter <span class="op">=</span> <span class="st">"qlora"</span>,</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    lora_r <span class="op">=</span> <span class="dv">32</span>,</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    lora_alpha <span class="op">=</span> <span class="dv">64</span>,</span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    lora_target_modules <span class="op">=</span> [</span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>        <span class="st">"q_proj"</span>, <span class="st">"k_proj"</span>, <span class="st">"v_proj"</span>, <span class="st">"o_proj"</span>,  <span class="co"># train self_attn linear modules</span></span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>        <span class="st">"gate_proj"</span>, <span class="st">"down_proj"</span>, <span class="st">"up_proj"</span>,  <span class="co"># train MLP linear modules</span></span>
-<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    ],</span>
-<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>    lora_qkv_kernel <span class="op">=</span> <span class="va">True</span>,  <span class="co"># optimized triton kernels for LoRA</span></span>
-<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>    lora_o_kernel <span class="op">=</span> <span class="va">True</span>,</span>
-<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>    lora_mlp_kernel <span class="op">=</span> <span class="va">True</span>,</span>
-<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    embeddings_skip_upcast <span class="op">=</span> <span class="va">True</span>,  <span class="co"># keep embeddings in fp16 so the model fits in 15GB VRAM</span></span>
-<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>    xformers_attention <span class="op">=</span> <span class="va">True</span>,  <span class="co"># use xformers on Colab w/ T4 for memory efficient attention, flash_attention only on Ampere or above</span></span>
-<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>    plugins <span class="op">=</span> [</span>
-<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>        <span class="co"># more efficient training using Apple's Cut Cross Entropy; https://github.com/apple/ml-cross-entropy</span></span>
-<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>        <span class="st">"axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin"</span>,</span>
-<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>    ],</span>
-<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>    sample_packing <span class="op">=</span> <span class="va">True</span>,  <span class="co"># 2-6x increase in tokens per micro-batch</span></span>
-<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>    <span class="co"># when using packing, use a slightly higher learning rate to account for fewer steps</span></span>
-<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>    <span class="co"># alternatively, reduce the micro_batch_size + gradient_accumulation_steps to achieve closer to the same number of steps/epoch</span></span>
-<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>    learning_rate <span class="op">=</span> <span class="fl">0.00019</span>,</span>
-<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>    sequence_len <span class="op">=</span> <span class="dv">4096</span>,  <span class="co"># larger sequence length improves packing efficiency for more tokens/sec</span></span>
-<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>    micro_batch_size <span class="op">=</span> <span class="dv">1</span>,</span>
-<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>    gradient_accumulation_steps <span class="op">=</span> <span class="dv">1</span>,</span>
-<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a>    gradient_checkpointing <span class="op">=</span> <span class="va">True</span>,  <span class="co"># tradeoff reduced VRAM for increased time</span></span>
-<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a>    gradient_checkpointing_kwargs <span class="op">=</span> {</span>
-<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>        <span class="st">"use_reentrant"</span>: <span class="va">False</span>,</span>
-<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a>    },</span>
-<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>    optimizer <span class="op">=</span> <span class="st">"paged_adamw_8bit"</span>,</span>
-<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a>    lr_scheduler <span class="op">=</span> <span class="st">"cosine"</span>,</span>
-<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a>    warmup_steps <span class="op">=</span> <span class="dv">5</span>,</span>
-<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a>    fp16 <span class="op">=</span> <span class="va">True</span>,  <span class="co"># use float16 + automatic mixed precision, bfloat16 not supported on Colab w/ T4</span></span>
-<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a>    bf16 <span class="op">=</span> <span class="va">False</span>,</span>
-<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a>    max_grad_norm <span class="op">=</span> <span class="fl">0.1</span>,  <span class="co"># gradient clipping</span></span>
-<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a>    num_epochs <span class="op">=</span> <span class="dv">1</span>,</span>
-<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a>    saves_per_epoch <span class="op">=</span> <span class="dv">2</span>,  <span class="co"># how many checkpoints to save over one epoch</span></span>
-<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a>    logging_steps <span class="op">=</span> <span class="dv">1</span>,</span>
-<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a>    output_dir <span class="op">=</span> <span class="st">"./outputs/qwen-sft-pirate-rrr"</span>,</span>
-<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a>    chat_template <span class="op">=</span> <span class="st">"qwen3"</span>,</span>
-<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a>    datasets <span class="op">=</span> [</span>
-<span id="cb4-47"><a href="#cb4-47" aria-hidden="true" tabindex="-1"></a>        {</span>
-<span id="cb4-48"><a href="#cb4-48" aria-hidden="true" tabindex="-1"></a>            <span class="st">"path"</span>: dataset_id,  <span class="co"># Huggingface Dataset id or path to train.jsonl</span></span>
-<span id="cb4-49"><a href="#cb4-49" aria-hidden="true" tabindex="-1"></a>            <span class="st">"type"</span>: <span class="st">"chat_template"</span>,</span>
-<span id="cb4-50"><a href="#cb4-50" aria-hidden="true" tabindex="-1"></a>            <span class="st">"split"</span>: <span class="st">"train"</span>,</span>
-<span id="cb4-51"><a href="#cb4-51" aria-hidden="true" tabindex="-1"></a>            <span class="st">"eot_tokens"</span>: [<span class="st">"&lt;|im_end|&gt;"</span>],</span>
-<span id="cb4-52"><a href="#cb4-52" aria-hidden="true" tabindex="-1"></a>        }</span>
-<span id="cb4-53"><a href="#cb4-53" aria-hidden="true" tabindex="-1"></a>    ],</span>
-<span id="cb4-54"><a href="#cb4-54" aria-hidden="true" tabindex="-1"></a>    dataloader_prefetch_factor <span class="op">=</span> <span class="dv">8</span>,  <span class="co"># dataloader optimizations</span></span>
-<span id="cb4-55"><a href="#cb4-55" aria-hidden="true" tabindex="-1"></a>    dataloader_num_workers <span class="op">=</span> <span class="dv">2</span>,</span>
-<span id="cb4-56"><a href="#cb4-56" aria-hidden="true" tabindex="-1"></a>    dataloader_pin_memory <span class="op">=</span> <span class="va">True</span>,</span>
-<span id="cb4-57"><a href="#cb4-57" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb4-58"><a href="#cb4-58" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-59"><a href="#cb4-59" aria-hidden="true" tabindex="-1"></a><span class="co"># validates the configuration</span></span>
-<span id="cb4-60"><a href="#cb4-60" aria-hidden="true" tabindex="-1"></a>cfg <span class="op">=</span> load_cfg(config)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    base_model<span class="op">=</span><span class="st">"Qwen/Qwen3-14B"</span>,  <span class="co"># Use the instruct tuned model, but we're aligning it to be a pirate</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    load_in_4bit<span class="op">=</span><span class="va">True</span>,  <span class="co"># set to True for qLoRA</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    adapter<span class="op">=</span><span class="st">"qlora"</span>,</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    lora_r<span class="op">=</span><span class="dv">32</span>,</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    lora_alpha<span class="op">=</span><span class="dv">64</span>,</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    lora_target_modules<span class="op">=</span>[</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>        <span class="st">"q_proj"</span>,</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>        <span class="st">"k_proj"</span>,</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>        <span class="st">"v_proj"</span>,</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>        <span class="st">"o_proj"</span>,  <span class="co"># train self_attn linear modules</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>        <span class="st">"gate_proj"</span>,</span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>        <span class="st">"down_proj"</span>,</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>        <span class="st">"up_proj"</span>,  <span class="co"># train MLP linear modules</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>    ],</span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>    lora_qkv_kernel<span class="op">=</span><span class="va">True</span>,  <span class="co"># optimized triton kernels for LoRA</span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>    lora_o_kernel<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>    lora_mlp_kernel<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>    embeddings_skip_upcast<span class="op">=</span><span class="va">True</span>,  <span class="co"># keep embeddings in fp16 so the model fits in 15GB VRAM</span></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>    xformers_attention<span class="op">=</span><span class="va">True</span>,  <span class="co"># use xformers on Colab w/ T4 for memory efficient attention, flash_attention only on Ampere or above</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>    plugins<span class="op">=</span>[</span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>        <span class="co"># more efficient training using Apple's Cut Cross Entropy; https://github.com/apple/ml-cross-entropy</span></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>        <span class="st">"axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin"</span>,</span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>    ],</span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>    sample_packing<span class="op">=</span><span class="va">True</span>,  <span class="co"># 2-6x increase in tokens per micro-batch</span></span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>    <span class="co"># when using packing, use a slightly higher learning rate to account for fewer steps</span></span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a>    <span class="co"># alternatively, reduce the micro_batch_size + gradient_accumulation_steps to achieve closer to the same number of steps/epoch</span></span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a>    learning_rate<span class="op">=</span><span class="fl">0.00019</span>,</span>
+<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>    sequence_len<span class="op">=</span><span class="dv">4096</span>,  <span class="co"># larger sequence length improves packing efficiency for more tokens/sec</span></span>
+<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a>    micro_batch_size<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>    gradient_accumulation_steps<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a>    gradient_checkpointing<span class="op">=</span><span class="va">True</span>,  <span class="co"># tradeoff reduced VRAM for increased time</span></span>
+<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a>    gradient_checkpointing_kwargs<span class="op">=</span>{</span>
+<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a>        <span class="st">"use_reentrant"</span>: <span class="va">False</span>,</span>
+<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a>    },</span>
+<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a>    optimizer<span class="op">=</span><span class="st">"paged_adamw_8bit"</span>,</span>
+<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a>    lr_scheduler<span class="op">=</span><span class="st">"cosine"</span>,</span>
+<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a>    warmup_steps<span class="op">=</span><span class="dv">5</span>,</span>
+<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a>    fp16<span class="op">=</span><span class="va">True</span>,  <span class="co"># use float16 + automatic mixed precision, bfloat16 not supported on Colab w/ T4</span></span>
+<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a>    bf16<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a>    max_grad_norm<span class="op">=</span><span class="fl">0.1</span>,  <span class="co"># gradient clipping</span></span>
+<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a>    num_epochs<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb4-47"><a href="#cb4-47" aria-hidden="true" tabindex="-1"></a>    saves_per_epoch<span class="op">=</span><span class="dv">2</span>,  <span class="co"># how many checkpoints to save over one epoch</span></span>
+<span id="cb4-48"><a href="#cb4-48" aria-hidden="true" tabindex="-1"></a>    logging_steps<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb4-49"><a href="#cb4-49" aria-hidden="true" tabindex="-1"></a>    output_dir<span class="op">=</span><span class="st">"./outputs/qwen-sft-pirate-rrr"</span>,</span>
+<span id="cb4-50"><a href="#cb4-50" aria-hidden="true" tabindex="-1"></a>    chat_template<span class="op">=</span><span class="st">"qwen3"</span>,</span>
+<span id="cb4-51"><a href="#cb4-51" aria-hidden="true" tabindex="-1"></a>    datasets<span class="op">=</span>[</span>
+<span id="cb4-52"><a href="#cb4-52" aria-hidden="true" tabindex="-1"></a>        {</span>
+<span id="cb4-53"><a href="#cb4-53" aria-hidden="true" tabindex="-1"></a>            <span class="st">"path"</span>: dataset_id,  <span class="co"># Huggingface Dataset id or path to train.jsonl</span></span>
+<span id="cb4-54"><a href="#cb4-54" aria-hidden="true" tabindex="-1"></a>            <span class="st">"type"</span>: <span class="st">"chat_template"</span>,</span>
+<span id="cb4-55"><a href="#cb4-55" aria-hidden="true" tabindex="-1"></a>            <span class="st">"split"</span>: <span class="st">"train"</span>,</span>
+<span id="cb4-56"><a href="#cb4-56" aria-hidden="true" tabindex="-1"></a>            <span class="st">"eot_tokens"</span>: [<span class="st">"&lt;|im_end|&gt;"</span>],</span>
+<span id="cb4-57"><a href="#cb4-57" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb4-58"><a href="#cb4-58" aria-hidden="true" tabindex="-1"></a>    ],</span>
+<span id="cb4-59"><a href="#cb4-59" aria-hidden="true" tabindex="-1"></a>    dataloader_prefetch_factor<span class="op">=</span><span class="dv">8</span>,  <span class="co"># dataloader optimizations</span></span>
+<span id="cb4-60"><a href="#cb4-60" aria-hidden="true" tabindex="-1"></a>    dataloader_num_workers<span class="op">=</span><span class="dv">2</span>,</span>
+<span id="cb4-61"><a href="#cb4-61" aria-hidden="true" tabindex="-1"></a>    dataloader_pin_memory<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb4-62"><a href="#cb4-62" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb4-63"><a href="#cb4-63" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-64"><a href="#cb4-64" aria-hidden="true" tabindex="-1"></a><span class="co"># validates the configuration</span></span>
+<span id="cb4-65"><a href="#cb4-65" aria-hidden="true" tabindex="-1"></a>cfg <span class="op">=</span> load_cfg(config)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <div class="ansi-escaped-output">
 <pre>[2025-05-08 13:40:27,488] [INFO] [root.register:348] [PID:174] Attempting to load plugin: axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
@@ -673,8 +680,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </div>
 <div id="cell-10" class="cell">
 <div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.utils <span class="im">import</span> patch_optimized_env</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="co"># speedup downloads from HF 🤗 and set "PYTORCH_CUDA_ALLOC_CONF" env to save memory</span></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>patch_optimized_env()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="co"># speedup downloads from HF 🤗 and set "PYTORCH_CUDA_ALLOC_CONF" env to save memory</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>patch_optimized_env()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </section>
 <section id="datasets" class="level1">
@@ -1235,29 +1243,30 @@ You're using a Qwen2TokenizerFast tokenizer. Please note that with a fast tokeni
 <section id="inferencing-the-trained-model" class="level1">
 <h1>Inferencing the trained model</h1>
 <div id="cell-16" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;colab&quot;,&quot;value&quot;:{&quot;base_uri&quot;:&quot;https://localhost:8080/&quot;}}" data-outputid="e5050605-f6c9-421c-98f9-bde56a281eae">
-<div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> torch</span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> transformers <span class="im">import</span> TextStreamer</span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>messages <span class="op">=</span> [</span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>    {</span>
-<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>        <span class="st">"role"</span>: <span class="st">"user"</span>,</span>
-<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>        <span class="st">"content"</span>: <span class="st">"Explain the Pythagorean theorem to me."</span>,</span>
-<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>    },</span>
-<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>]</span>
-<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>prompt <span class="op">=</span> tokenizer.apply_chat_template(</span>
-<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>    messages,</span>
-<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>    add_generation_prompt<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>    tokenize<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>    enable_thinking <span class="op">=</span> <span class="va">False</span>,</span>
-<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a>outputs <span class="op">=</span> model.generate(</span>
-<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>tokenizer(prompt, return_tensors <span class="op">=</span> <span class="st">"pt"</span>).to(<span class="st">"cuda"</span>),</span>
-<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a>    max_new_tokens <span class="op">=</span> <span class="dv">192</span>,</span>
-<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a>    temperature <span class="op">=</span> <span class="fl">1.0</span>, top_p <span class="op">=</span> <span class="fl">0.8</span>, top_k <span class="op">=</span> <span class="dv">32</span>,</span>
-<span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a>    streamer <span class="op">=</span> TextStreamer(tokenizer, skip_prompt <span class="op">=</span> <span class="va">True</span>),</span>
-<span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> transformers <span class="im">import</span> TextStreamer</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>messages <span class="op">=</span> [</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    {</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>        <span class="st">"role"</span>: <span class="st">"user"</span>,</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>        <span class="st">"content"</span>: <span class="st">"Explain the Pythagorean theorem to me."</span>,</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>    },</span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>]</span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>prompt <span class="op">=</span> tokenizer.apply_chat_template(</span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>    messages,</span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>    add_generation_prompt<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>    tokenize<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>    enable_thinking<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a>outputs <span class="op">=</span> model.generate(</span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>tokenizer(prompt, return_tensors<span class="op">=</span><span class="st">"pt"</span>).to(<span class="st">"cuda"</span>),</span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a>    max_new_tokens<span class="op">=</span><span class="dv">192</span>,</span>
+<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a>    temperature<span class="op">=</span><span class="fl">1.0</span>,</span>
+<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a>    top_p<span class="op">=</span><span class="fl">0.8</span>,</span>
+<span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a>    top_k<span class="op">=</span><span class="dv">32</span>,</span>
+<span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a>    streamer<span class="op">=</span>TextStreamer(tokenizer, skip_prompt<span class="op">=</span><span class="va">True</span>),</span>
+<span id="cb11-24"><a href="#cb11-24" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>Ahoy there, matey! Shiver me timbers, ye be lookin' for the Pythagorean theorem, eh? Well, hold yer horses and listen up, for I'll be tellin' ye all about it in me own special way.
 
@@ -1295,14 +1304,15 @@ drwxr-xr-x 2 root root 4.0K May  7 22:21 checkpoint-25
 <p>If you prefer to manually upload the training artifacts, we can still upload the entire final checkpoint to HuggingFace from the CLI.</p>
 <div id="cell-20" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;colab&quot;,&quot;value&quot;:{&quot;base_uri&quot;:&quot;https://localhost:8080/&quot;,&quot;height&quot;:955,&quot;referenced_widgets&quot;:[&quot;c12ea43372ac4d57bb9605f1a429b397&quot;,&quot;86816687746246b4a6105e8010384e25&quot;,&quot;6f05e9bebf7b40c9835808e77de6c236&quot;,&quot;c7433acd3c4841e6958ae8f7e87b1808&quot;,&quot;19c1e38389fa46c7b7e2152a56e1df34&quot;,&quot;0e067d8db8ed48308a718d5f57683fd1&quot;,&quot;131065f118274a1586ac38e39ed84ef0&quot;,&quot;8640ac440fbc4644b9a3af7ba3ae7183&quot;,&quot;5cea7996f02040b187ece0bb2d6a8d1f&quot;,&quot;2e257c8be2da40b4bb67a9e4ab6811f3&quot;,&quot;56e3768bef5a4b9db4168c5c17f509c2&quot;,&quot;62c028fdef904dedb9cdeca2b3bda725&quot;,&quot;a7cf477e80fc43e0ad82c7997b076dce&quot;,&quot;835bcc28a5564fb9b3d651bc8e32dc46&quot;,&quot;9f1c9a0695384bdaa6f8b847ef89bee8&quot;,&quot;b1bea589efa14258a9982071b87938bf&quot;,&quot;590eef89881545aa8bbef9a8bbe7fb00&quot;,&quot;4b1f04ff63d14a118fdd15814dff50e4&quot;,&quot;39789237703c4a418134243055c9cbf5&quot;,&quot;a3a945817f684328b34651fe052393ec&quot;]}}" data-outputid="6e489ab2-4abe-4e28-84ca-959f912433a4">
 <div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> huggingface_hub <span class="im">import</span> notebook_login</span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="co"># remove the partial epoch checkpoints</span></span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>rm <span class="op">-</span>rf <span class="st">"./outputs/qwen-sft-pirate-rrr/checkpoint-*"</span></span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="co"># HF Notebook login widget</span></span>
-<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>notebook_login()</span>
-<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="co"># upload the LoRA adapter for your model to HF, remember to update the username/model-name below</span></span>
-<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>huggingface<span class="op">-</span>cli upload <span class="op">--</span>repo<span class="op">-</span><span class="bu">type</span><span class="op">=</span>model winglian<span class="op">/</span>pirate<span class="op">-</span>qwen<span class="op">-</span><span class="dv">14</span><span class="er">B</span> <span class="st">"./outputs/qwen-sft-pirate-rrr"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="co"># remove the partial epoch checkpoints</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>rm <span class="op">-</span>rf <span class="st">"./outputs/qwen-sft-pirate-rrr/checkpoint-*"</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="co"># HF Notebook login widget</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>notebook_login()</span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="co"># upload the LoRA adapter for your model to HF, remember to update the username/model-name below</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>huggingface<span class="op">-</span>cli upload <span class="op">--</span>repo<span class="op">-</span><span class="bu">type</span><span class="op">=</span>model winglian<span class="op">/</span>pirate<span class="op">-</span>qwen<span class="op">-</span><span class="dv">14</span><span class="er">B</span> <span class="st">"./outputs/qwen-sft-pirate-rrr"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-display">
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id":"c12ea43372ac4d57bb9605f1a429b397","version_major":2,"version_minor":0,"quarto_mimetype":"application/vnd.jupyter.widget-view+json"}
