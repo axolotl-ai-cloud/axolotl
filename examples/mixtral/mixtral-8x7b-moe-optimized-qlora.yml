@@ -1,0 +1,128 @@
+base_model: mistralai/Mixtral-8x7B-Instruct-v0.1
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+
+# Optimized MoE Kernels
+# This enables high-performance MoE kernels providing significant speedups for expert computation
+moe_optimized: true
+moe_group_size: 128  # Optimal for most hardware
+moe_persistent_kernel: true  # Enable L2 cache optimization
+
+trust_remote_code: true
+
+# QLoRA Configuration for efficient fine-tuning
+load_in_8bit: false
+load_in_4bit: true
+adapter: qlora
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_linear: true
+# Optionally target specific modules:
+# lora_target_modules:
+#   - gate
+#   - q_proj
+#   - k_proj
+#   - v_proj
+#   - o_proj
+#   - w1
+#   - w2
+#   - w3
+
+# Dataset Configuration
+datasets:
+  - path: teknium/OpenHermes-2.5
+    type: alpaca
+    conversation: chatml  # Use ChatML format for Instruct model
+
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.01
+output_dir: ./outputs/mixtral-8x7b-moe-optimized-qlora
+
+# Model Configuration
+model_config:
+  output_router_logits: true  # Enable for load balancing loss
+
+# Sequence and Packing
+sequence_len: 4096
+sample_packing: true
+pad_to_sequence_len: true
+eval_sample_packing: false
+
+# Training Configuration
+num_epochs: 1
+gradient_accumulation_steps: 4
+micro_batch_size: 2  # Adjust based on GPU memory
+
+# Optimizer and Learning Rate
+optimizer: adamw_bnb_8bit  # 8-bit optimizer for memory efficiency
+lr_scheduler: cosine
+learning_rate: 2e-5
+warmup_ratio: 0.1
+weight_decay: 0.0
+
+# Mixed Precision and Performance
+bf16: auto
+fp16: false
+tf32: false
+gradient_checkpointing: true
+flash_attention: true
+
+# Loss Monitoring
+loss_watchdog_threshold: 5.0
+loss_watchdog_patience: 3
+
+# Logging and Evaluation
+logging_steps: 10
+evals_per_epoch: 4
+eval_table_size: 5
+eval_table_max_new_tokens: 128
+saves_per_epoch: 2
+save_strategy: steps
+save_steps: 500
+
+# Wandb Configuration (optional)
+wandb_project: mixtral-moe-optimized
+wandb_entity:
+wandb_watch:
+wandb_name: mixtral-8x7b-moe-optimized-qlora
+wandb_log_model:
+
+# DeepSpeed Configuration (optional, comment out for single GPU)
+# deepspeed: deepspeed_configs/zero2.json
+
+# FSDP Configuration (alternative to DeepSpeed)
+# fsdp:
+#   - full_shard
+#   - auto_wrap
+# fsdp_config:
+#   fsdp_limit_all_gathers: true
+#   fsdp_sync_module_states: true
+#   fsdp_offload_params: false
+#   fsdp_use_orig_params: false
+#   fsdp_cpu_ram_efficient_loading: true
+#   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+#   fsdp_transformer_layer_cls_to_wrap: MixtralSparseMoeBlock
+#   fsdp_state_dict_type: SHARDED_STATE_DICT
+#   fsdp_sharding_strategy: FULL_SHARD
+
+# Special tokens configuration
+special_tokens:
+  pad_token: "<pad>"
+  eos_token: "<|im_end|>"
+  bos_token: "<s>"
+  unk_token: "<unk>"
+
+# Chat template for instruction following
+chat_template: chatml
+
+# Additional Configuration
+strict: false
+resume_from_checkpoint:
+early_stopping_patience:
+local_rank:
+xformers_attention: false  # Use flash_attention instead
+
+# Debug options
+debug: false
+# save_first_step: true  # Uncomment to validate checkpoint saving
