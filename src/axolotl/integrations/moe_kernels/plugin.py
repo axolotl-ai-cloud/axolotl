@@ -252,7 +252,6 @@ def patch_qwen2_moe_forward_optimized(
         )
 
         # Activation
-        intermediate_size = gate_up_states.shape[-1] // 2
         gate_states, up_states = gate_up_states.chunk(2, dim=-1)
         gate_states = self.act_fn(gate_states)
         current_states = gate_states * up_states
