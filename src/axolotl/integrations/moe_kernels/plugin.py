@@ -78,10 +78,22 @@ def patch_mixtral_moe_forward_optimized(
         )
 
         # Prepare expert weights as a single tensor
-        # Stack all expert weights: [num_experts, intermediate_size, hidden_dim]
+        # Kernel expects [num_experts, N, K] where N=out_features, K=in_features
+        # PyTorch weights are already [out_features, in_features], so just stack
         w1_weights = torch.stack([expert.w1.weight for expert in self.experts])
         w3_weights = torch.stack([expert.w3.weight for expert in self.experts])
         w2_weights = torch.stack([expert.w2.weight for expert in self.experts])
+
+        # Sanity check dimensions
+        expected_hidden_dim = sorted_states.shape[1]
+        if w1_weights.shape[2] != expected_hidden_dim:
+            raise ValueError(
+                f"Weight dimension mismatch: w1 input dim {w1_weights.shape[2]} != hidden dim {expected_hidden_dim}"
+            )
+        if w2_weights.shape[1] != expected_hidden_dim:
+            raise ValueError(
+                f"Weight dimension mismatch: w2 output dim {w2_weights.shape[1]} != hidden dim {expected_hidden_dim}"
+            )
 
         # First linear: w1 and w3 in parallel
         h1 = cg_grouped_gemm_forward(
