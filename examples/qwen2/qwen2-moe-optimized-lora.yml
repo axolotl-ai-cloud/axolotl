@@ -4,7 +4,7 @@ tokenizer_type: AutoTokenizer
 
 # Optimized MoE Kernels
 # High-performance kernels for MoE layers
-moe_optimized: true
+moe_kernels: true
 moe_group_size: 128
 moe_persistent_kernel: true
 # Auto-detects qwen2_moe model type
@@ -125,7 +125,7 @@ special_tokens:
   bos_token: "<|im_start|>"
 
 # Chat template
-chat_template: qwen2
+chat_template: qwen2_5
 
 # Additional Settings
 strict: false

@@ -5,7 +5,7 @@ Tests for optimized MoE kernels
 import pytest
 import torch
 
-from axolotl.integrations.moe_optimized.plugin import (
+from axolotl.integrations.moe_kernels.plugin import (
     MoeOptimizedPlugin,
     sort_tokens_by_expert,
 )
@@ -114,7 +114,7 @@ class TestMoeOptimizedPlugin:
         plugin = MoeOptimizedPlugin()
 
         cfg = {
-            "moe_optimized": True,
+            "moe_kernels": True,
             "moe_group_size": 64,
             "moe_kernel_models": ["mixtral", "qwen3_moe"],
         }
@@ -130,7 +130,7 @@ class TestMoeOptimizedPlugin:
         plugin = MoeOptimizedPlugin()
         args_path = plugin.get_input_args()
 
-        assert args_path == "axolotl.integrations.moe_optimized.args.MoeOptimizedArgs"
+        assert args_path == "axolotl.integrations.moe_kernels.args.MoeOptimizedArgs"
 
 
 if __name__ == "__main__":
