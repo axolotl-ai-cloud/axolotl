@@ -22,7 +22,6 @@ class TestMamba(unittest.TestCase):
 
     @with_temp_dir
     def test_fft(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "state-spaces/mamba-130m",

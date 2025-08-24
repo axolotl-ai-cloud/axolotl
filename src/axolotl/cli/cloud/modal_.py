@@ -41,7 +41,7 @@ def run_cmd(cmd: str, run_folder: str, volumes=None):
     if exit_code := subprocess.call(  # nosec B603
         cmd.split(), cwd=run_folder, env=new_env
     ):
-        exit(exit_code)  # pylint: disable=consider-using-sys-exit
+        exit(exit_code)
 
     # Commit writes to volume.
     if volumes:
@@ -130,7 +130,6 @@ class ModalCloud(Cloud):
         res = []
         if self.config.secrets:
             for key in self.config.get("secrets", []):
-                # pylint: disable=duplicate-code
                 if isinstance(key, str):
                     if val := os.environ.get(key, ""):
                         res.append(modal.Secret.from_dict({key: val}))
@@ -177,8 +176,8 @@ class ModalCloud(Cloud):
             with self.app.run(detach=True):
                 modal_fn.remote(
                     config_yaml,
-                    volumes={k: v[0] for k, v in self.volumes.items()},
                     *args,
+                    volumes={k: v[0] for k, v in self.volumes.items()},
                     **kwargs,
                 )
 
@@ -187,7 +186,7 @@ class ModalCloud(Cloud):
             return int(self.config.timeout)
         return 60 * 60 * 24  # 24 hours
 
-    def get_train_gpu(self):  # pylint: disable=too-many-return-statements
+    def get_train_gpu(self):
         count = self.config.gpu_count or 1
         family = self.config.gpu.lower() or "l40s"
 
@@ -277,7 +276,7 @@ def _train(
     launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
     launcher_args: list[str] | None = None,
     volumes=None,
-    **kwargs,  # pylint: disable=unused-argument
+    **kwargs,
 ):
     Path("/workspace/mounts").mkdir(parents=True, exist_ok=True)
     with open("/workspace/mounts/config.yaml", "w", encoding="utf-8") as f_out:

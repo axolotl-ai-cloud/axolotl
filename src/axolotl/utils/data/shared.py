@@ -337,7 +337,7 @@ def generate_split_fingerprints(
     dataset: Dataset, val_set_size: int | float, seed: int
 ) -> tuple[str, str]:
     """Generate consistent fingerprints for train/test splits."""
-    fingerprint = dataset._fingerprint  # pylint: disable=protected-access
+    fingerprint = dataset._fingerprint
 
     train_hash_input = f"{fingerprint}|{val_set_size}|train|{seed}"
     test_hash_input = f"{fingerprint}|{val_set_size}|test|{seed}"
@@ -497,7 +497,7 @@ def try_load_from_hub(
             token=cfg.hf_use_auth_token,
         )
         return dataset[split]
-    except Exception:  # pylint: disable=broad-except # nosec
+    except Exception:
         LOG.info("Unable to find prepared dataset in HuggingFace Hub")
         return None
 

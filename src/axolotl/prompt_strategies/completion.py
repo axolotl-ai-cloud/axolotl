@@ -42,8 +42,8 @@ class CompletionPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
     def tokenize_prompt(self, prompt):
         res = defaultdict(lambda: [])
         feature_names = list(prompt.keys())
-        for row in zip(*prompt.values()):
-            prompt_row = dict(zip(feature_names, row))
+        for row in zip(*prompt.values(), strict=False):
+            prompt_row = dict(zip(feature_names, row, strict=False))
             (
                 instruction,
                 _,
@@ -59,9 +59,7 @@ class CompletionPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
 
         return dict(res)
 
-    def _build_full_prompt(
-        self, instruction, input, response
-    ):  # pylint: disable=redefined-builtin
+    def _build_full_prompt(self, instruction, input, response):
         return next(iter(self.prompter.build_prompt(instruction, input, response)))
 
 
@@ -73,8 +71,8 @@ class CompletionPrompter:
     def build_prompt(
         self,
         instruction: str,
-        input=None,  # pylint: disable=redefined-builtin, unused-argument
-        output=None,  # pylint: disable=unused-argument
+        input=None,
+        output=None,
     ) -> Generator[str, None, None]:
         yield instruction
 
