@@ -2,18 +2,14 @@
 Tests for optimized MoE kernels
 """
 
-from unittest.mock import MagicMock, Mock, patch
-
 import pytest
 import torch
-import torch.nn as nn
 
 from axolotl.integrations.moe_optimized.plugin import (
     MoeOptimizedPlugin,
     sort_tokens_by_expert,
 )
 from axolotl.kernels.moe import (
-    ContiguousGroupedGEMM,
     cg_grouped_gemm_forward,
 )
 
