@@ -113,7 +113,7 @@ def _map_dataset(
 
     dataset = dataset.map(
         ds_transform_fn,
-        num_proc=cfg.dataset_processes,
+        num_proc=cfg.dataset_num_proc,
         load_from_cache_file=not cfg.is_preprocess,
         desc="Mapping RL Dataset",
         **map_kwargs,
@@ -234,7 +234,7 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
             prior_len = len(split_datasets[i])
             split_datasets[i] = split_datasets[i].filter(
                 drop_long,
-                num_proc=cfg.dataset_processes,
+                num_proc=cfg.dataset_num_proc,
                 load_from_cache_file=not cfg.is_preprocess,
                 desc="Dropping Long Sequences",
             )
