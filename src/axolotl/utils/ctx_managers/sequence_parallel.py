@@ -5,8 +5,8 @@ import inspect
 
 import torch
 import torch.distributed as dist
-from accelerate import PartialState
 from torch import nn
+from torch.distributed import DeviceMesh
 from torch.utils.hooks import RemovableHandle
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.utils import ModelOutput
@@ -26,7 +26,7 @@ def apply_sequence_parallelism(
     local_rank: int,
     local_world_size: int,
     gradient_accumulation_steps: int,
-    ring_attn_func: RingAttnFunc,  # pylint: disable=unused-argument
+    ring_attn_func: RingAttnFunc,
 ) -> tuple[dict[str, torch.Tensor], int, int]:
     """
     Apply sequence parallelism slicing to a batch.
@@ -194,6 +194,7 @@ class SequenceParallelContextManager:
         ring_attn_func: RingAttnFunc,
         heads_k_stride: int | None,
         gather_outputs: bool,
+        device_mesh: DeviceMesh | None = None,
     ):
         self.models = models
         self.context_parallel_size = context_parallel_size
@@ -201,6 +202,7 @@ class SequenceParallelContextManager:
         self.ring_attn_func = ring_attn_func
         self.heads_k_stride = heads_k_stride
         self.gather_outputs = gather_outputs
+        self.device_mesh = device_mesh
 
         self._register_ring_attn()
 
@@ -240,9 +242,8 @@ class SequenceParallelContextManager:
 
     def _register_ring_attn(self):
         # Initialize ring attn for sequence parallelism
-        partial_state = PartialState()
         register_ring_attn_from_device_mesh(
-            device_mesh=partial_state.device_mesh,
+            device_mesh=self.device_mesh,
             context_parallel_dim=("cp",),
             heads_k_stride=self.heads_k_stride,
             ring_attn_func=self.ring_attn_func,

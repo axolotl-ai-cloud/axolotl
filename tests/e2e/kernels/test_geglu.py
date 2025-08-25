@@ -85,6 +85,6 @@ def test_geglu_inplace_preservation():
 
     assert not torch.equal(gate, gate_copy), "Gate should be modified in-place"
     assert not torch.equal(up, up_copy), "Up should be modified in-place"
-    assert not torch.equal(
-        grad_output, grad_copy
-    ), "Grad output should be modified in-place"
+    assert not torch.equal(grad_output, grad_copy), (
+        "Grad output should be modified in-place"
+    )

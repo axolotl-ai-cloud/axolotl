@@ -274,6 +274,7 @@ website:
             - docs/dataset_preprocessing.qmd
             - docs/multipack.qmd
             - docs/mixed_precision.qmd
+            - docs/optimizers.qmd
 
         - section: "Advanced Features"
           contents:

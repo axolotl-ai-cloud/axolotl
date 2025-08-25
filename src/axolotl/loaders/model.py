@@ -1,5 +1,5 @@
-"""Model loader class implementation for loading, configuring, and patching various
-models.
+"""
+Model loader class implementation for loading, configuring, and patching various models.
 """
 
 import gc
@@ -13,7 +13,7 @@ import peft
 import torch
 import transformers
 import transformers.modeling_utils
-from accelerate import PartialState, init_empty_weights
+from accelerate import init_empty_weights
 from accelerate.parallelism_config import ParallelismConfig
 from peft import (
     PeftConfig,
@@ -22,8 +22,10 @@ from peft import (
     PeftModelForCausalLM,
     prepare_model_for_kbit_training,
 )
+from torch.distributed import DeviceMesh
 from transformers import (
     AutoModelForCausalLM,
+    AutoModelForImageTextToText,
     AutoModelForVision2Seq,
     AwqConfig,
     BitsAndBytesConfig,
@@ -49,7 +51,11 @@ from axolotl.loaders.utils import (
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import get_device_count, get_device_type, get_world_size
+from axolotl.utils.distributed import (
+    build_parallelism_config,
+    get_device_count,
+    get_device_type,
+)
 from axolotl.utils.logging import get_logger
 from axolotl.utils.model_shard_quant import load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
@@ -87,6 +93,7 @@ class ModelLoader:
 
     use_parallel_config: bool | None = False
     parallelism_config: ParallelismConfig | None = None
+    device_mesh: DeviceMesh | None = None
 
     def __init__(
         self,
@@ -95,7 +102,7 @@ class ModelLoader:
         *,
         inference: bool = False,
         reference_model: bool = False,
-        **kwargs,  # pylint: disable=unused-argument
+        **kwargs,
     ):
         """Initializes the ModelLoader.
 
@@ -127,7 +134,7 @@ class ModelLoader:
 
         # Init model config
         self.model_config = load_model_config(cfg)
-        self.auto_model_loader = AutoModelForCausalLM  # pylint: disable=invalid-name
+        self.auto_model_loader = AutoModelForCausalLM
 
         # Initialize the patch manager
         self.patch_manager = PatchManager(
@@ -202,8 +209,11 @@ class ModelLoader:
         self._set_device_map_config()
         if self.cfg.revision_of_model:
             self.model_kwargs["revision"] = self.cfg.revision_of_model
+        if self.cfg.use_kernels:
+            self.model_kwargs["use_kernels"] = self.cfg.use_kernels
         self._set_quantization_config()
         self._set_attention_config()
+        self._check_model_requirements()
 
     def _apply_post_model_load_setup(self):
         """Configure the model after it has been loaded."""
@@ -300,7 +310,10 @@ class ModelLoader:
             )
 
         # Handle DeepSpeed Zero3
-        if is_deepspeed_zero3_enabled():
+        if (
+            is_deepspeed_zero3_enabled()
+            or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3"
+        ):
             self._set_z3_leaf_modules()
 
         # Apply gradient checkpointing if needed
@@ -405,85 +418,12 @@ class ModelLoader:
             gc.collect()
             torch.cuda.empty_cache()
 
-    @staticmethod
-    def _get_parallel_config_kwargs(
-        world_size: int,
-        tensor_parallel_size: int = 1,
-        context_parallel_size: int = 1,
-        dp_shard_size: int | None = None,
-        dp_replicate_size: int | None = None,
-        is_fsdp: bool = False,
-    ):
-        pc_kwargs = {}
-        remaining_world_size = world_size
-
-        if tensor_parallel_size and tensor_parallel_size > 1:
-            pc_kwargs["tp_size"] = tensor_parallel_size
-            remaining_world_size = remaining_world_size // tensor_parallel_size
-
-        if context_parallel_size and context_parallel_size > 1:
-            pc_kwargs["cp_size"] = context_parallel_size
-            remaining_world_size = remaining_world_size // context_parallel_size
-
-        if dp_shard_size is None and dp_replicate_size in (None, 1):
-            if remaining_world_size > 1:
-                pc_kwargs["dp_shard_size"] = remaining_world_size
-                remaining_world_size = 1
-
-        if dp_replicate_size and dp_replicate_size > 1:
-            pc_kwargs["dp_replicate_size"] = dp_replicate_size
-            remaining_world_size = remaining_world_size // dp_replicate_size
-
-        if remaining_world_size > 1 and dp_shard_size and dp_shard_size > 1:
-            if not is_fsdp:
-                raise ValueError(
-                    "dp_shard_size was configured without a corresponding fsdp_config! "
-                    "Please ensure you have configured FSDP using fsdp_config."
-                )
-            pc_kwargs["dp_shard_size"] = dp_shard_size
-            remaining_world_size = remaining_world_size // dp_shard_size
-            if remaining_world_size > 1 and "dp_replicate_size" not in pc_kwargs:
-                pc_kwargs["dp_replicate_size"] = remaining_world_size
-                remaining_world_size = 1
-
-        if remaining_world_size > 1:
-            if "dp_shard_size" not in pc_kwargs and is_fsdp:
-                pc_kwargs["dp_shard_size"] = remaining_world_size
-                remaining_world_size = 1
-
-        if remaining_world_size > 1:
-            raise ValueError(
-                f"The configured parallelisms are incompatible with the current world size ({get_world_size()})!\n"
-                f"{pc_kwargs}"
-            )
-
-        return pc_kwargs
-
     def _set_parallel_config(self):
         """Set parallelism configuration (DP, FSDP, TP, CP) in PartialState/Accelerator"""
-        pc_kwargs = ModelLoader._get_parallel_config_kwargs(
-            get_world_size(),
-            self.cfg.tensor_parallel_size,
-            self.cfg.context_parallel_size,
-            self.cfg.dp_shard_size,
-            self.cfg.dp_replicate_size,
-            bool(self.cfg.fsdp or self.cfg.fsdp_config),
-        )
-
-        if pc_kwargs:
-            self.parallelism_config = ParallelismConfig(
-                **pc_kwargs,
-            )
-            device_mesh = self.parallelism_config.build_device_mesh("cuda")
-            partial_state = PartialState()
-            # fmt: off
-            partial_state._shared_state["parallelism_config"] = (  # pylint: disable=protected-access
-                self.parallelism_config
-            )
-            partial_state._shared_state["device_mesh"] = (  # pylint: disable=protected-access
-                device_mesh
-            )
-            # fmt: on
+        parallelism_config, device_mesh = build_parallelism_config(self.cfg)
+        if parallelism_config:
+            self.parallelism_config = parallelism_config
+            self.device_mesh = device_mesh
 
     def _set_auto_model_loader(self):
         """Set `self.auto_model_loader`. Defaults to `transformers.AutoModelForCausalLM`
@@ -494,6 +434,8 @@ class ModelLoader:
             self.auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
                 self.model_config.model_type, AutoModelForVision2Seq
             )
+            if isinstance(self.auto_model_loader, str):
+                self.auto_model_loader = AutoModelForImageTextToText
 
     def _set_device_map_config(self):
         """Setup `device_map` according to config"""
@@ -565,8 +507,17 @@ class ModelLoader:
 
     def _set_quantization_config(self):
         """Set up quantization config (bitsandbytes, awq, gptq, etc.)"""
-        self.model_kwargs["load_in_8bit"] = self.cfg.load_in_8bit
-        self.model_kwargs["load_in_4bit"] = self.cfg.load_in_4bit
+
+        if self.cfg.model_quantization_config == "Mxfp4Config":
+            from transformers import Mxfp4Config
+
+            mxfp4_kwargs = {}
+            if self.cfg.model_quantization_config_kwargs:
+                mxfp4_kwargs = self.cfg.model_quantization_config_kwargs
+            self.model_kwargs["quantization_config"] = Mxfp4Config(**mxfp4_kwargs)
+        else:
+            self.model_kwargs["load_in_8bit"] = self.cfg.load_in_8bit
+            self.model_kwargs["load_in_4bit"] = self.cfg.load_in_4bit
 
         if self.cfg.gptq:
             if not hasattr(self.model_config, "quantization_config"):
@@ -604,6 +555,8 @@ class ModelLoader:
         elif (
             self.cfg.adapter in ["qlora", "qalora"]
             and self.model_kwargs["load_in_4bit"]
+        elif self.cfg.adapter == "qlora" and self.model_kwargs.get(
+            "load_in_4bit", False
         ):
             bnb_config = {
                 "load_in_4bit": True,
@@ -630,7 +583,9 @@ class ModelLoader:
             self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
                 **bnb_config,
             )
-        elif self.cfg.adapter == "lora" and self.model_kwargs["load_in_8bit"]:
+        elif self.cfg.adapter == "lora" and self.model_kwargs.get(
+            "load_in_8bit", False
+        ):
             bnb_config = {
                 "load_in_8bit": True,
             }
@@ -651,32 +606,36 @@ class ModelLoader:
 
     def _set_attention_config(self):
         """Sample packing uses custom FA2 patch"""
-        if self.cfg.flex_attention:
+        if self.cfg.attn_implementation:
+            self.model_kwargs["attn_implementation"] = self.cfg.attn_implementation
+        elif self.cfg.flex_attention:
             self.model_kwargs["attn_implementation"] = "flex_attention"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "flex_attention"
-            )
+            self.model_config._attn_implementation = "flex_attention"
 
         elif self.cfg.flash_attention:
             if not self.cfg.sample_packing and self.cfg.s2_attention:
                 pass
             self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "flash_attention_2"
-            )
+            self.model_config._attn_implementation = "flash_attention_2"
         elif self.cfg.sdp_attention:
             self.model_kwargs["attn_implementation"] = "sdpa"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "sdpa"
-            )
+            self.model_config._attn_implementation = "sdpa"
         elif self.cfg.eager_attention:
             self.model_kwargs["attn_implementation"] = "eager"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "eager"
-            )
+            self.model_config._attn_implementation = "eager"
 
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True
+
+    def _check_model_requirements(self):
+        if self.cfg.model_config_type in ["lfm2-vl", "lfm2"]:
+            from transformers.utils.import_utils import is_causal_conv1d_available
+
+            if is_causal_conv1d_available():
+                raise ImportError(
+                    "The 'causal-conv1d' package is installed but causes compatibility issues with LFM2 models. "
+                    "Please uninstall it by running: `pip uninstall -y causal-conv1d`"
+                )
 
     def _configure_zero3_memory_efficient_loading(
         self,
@@ -724,7 +683,7 @@ class ModelLoader:
         if self.cfg.tensor_parallel_size > 1:
             self.model_kwargs["tp_size"] = self.cfg.tensor_parallel_size
             self.model_kwargs["tp_plan"] = "auto"
-            self.model_kwargs["device_mesh"] = PartialState().device_mesh
+            self.model_kwargs["device_mesh"] = self.device_mesh
             if "device_map" in self.model_kwargs:
                 del self.model_kwargs["device_map"]  # not compatible with `tp_plan`
 
@@ -739,6 +698,18 @@ class ModelLoader:
                     del self.model_kwargs["device_map"]
             elif self.is_qlora_and_fsdp_enabled:
                 skip_move_to_device = True
+
+            if (
+                self.cfg.tensor_parallel_size <= 1
+                and self.cfg.fsdp_config.cpu_ram_efficient_loading
+                and self.cfg.fsdp_version == 2
+            ):
+                # setting device_map for TP is not supported
+                local_rank = int(os.getenv("LOCAL_RANK", "0"))
+                if local_rank == 0:
+                    self.model_kwargs["device_map"] = "cpu"
+                else:
+                    self.model_kwargs["device_map"] = "meta"
 
         if (
             self.is_qlora_and_fsdp_enabled
@@ -791,7 +762,7 @@ class ModelLoader:
                 )
         elif self.model_type == "MambaLMHeadModel":
             # FIXME this is janky at best and hacked together to make it work
-            MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name
+            MambaLMHeadModel = fix_mamba_attn_for_loss()
 
             self.model_kwargs["dtype"] = self.model_kwargs["torch_dtype"]
             self.model_kwargs["device"] = torch.cuda.current_device()
@@ -840,13 +811,15 @@ class ModelLoader:
         if is_deepspeed_zero3_enabled():
             skip_move_to_device = True
 
-        # pylint: disable=protected-access
         if self.cfg.tensor_parallel_size > 1:
             # workaround for upstream 4.54.0 not setting _tp_size or _device_mesh
             # TODO(wing): remove once 4.54.1 is released
             if self.model._tp_size != self.cfg.tensor_parallel_size:
                 self.model._tp_size = self.cfg.tensor_parallel_size
                 self.model._device_mesh = self.model_kwargs["device_mesh"]
+
+        if self.cfg.experimental_skip_move_to_device is not None:
+            skip_move_to_device = self.cfg.experimental_skip_move_to_device
 
         return skip_move_to_device
 

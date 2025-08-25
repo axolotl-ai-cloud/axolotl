@@ -1,8 +1,7 @@
 """Module with validation methods for config pydantic model."""
 
-# pylint: disable=too-many-boolean-expressions
-
 import json
+import sys
 import tempfile
 from pathlib import Path
 
@@ -15,7 +14,6 @@ from transformers.utils.import_utils import is_torch_npu_available
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
 
-# pylint: disable=too-many-lines
 
 LOG = get_logger(__name__)
 
@@ -345,7 +343,6 @@ class TrainingValidationMixin:
     @model_validator(mode="after")
     def check_fft_possible_bad_config(self):
         if (
-            # pylint: disable=too-many-boolean-expressions
             not (self.bf16 or self.bfloat16)
             and (self.fp16 or self.float16)
             and not self.adapter
@@ -369,10 +366,10 @@ class TrainingValidationMixin:
                 "see speed improvements. Please consider setting `torch_compile: "
                 "true` in your config."
             )
+        fsdp_config = data.get("fsdp_config") or {}
         if data.get("fp8") and (
-            data.get("fsdp_config", {}).get("activation_checkpointing", False) is True
-            or data.get("fsdp_config", {}).get("fsdp_activation_checkpointing", False)
-            is True
+            fsdp_config.get("activation_checkpointing", False) is True
+            or fsdp_config.get("fsdp_activation_checkpointing", False) is True
         ):
             LOG.warning(
                 "FP8 + FSDP2 + activation checkpointing may be slower than BF16 "
@@ -459,12 +456,12 @@ class TrainingValidationMixin:
     @classmethod
     def check_mistral_common_import(cls, tokenizer_use_mistral_common):
         if tokenizer_use_mistral_common:
-            try:
-                import mistral_common  # noqa: F401 # pylint:disable=unused-import
-            except ImportError as exception:
+            import importlib.util
+
+            if importlib.util.find_spec("mistral_common") is None:
                 raise ImportError(
                     "mistral-common is required for mistral models. Please install it with `pip install axolotl` or `pip install -e .`."
-                ) from exception
+                )
 
         return tokenizer_use_mistral_common
 
@@ -561,20 +558,6 @@ class LoRAValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_lora_8bit(cls, data):
-        if (
-            data.get("lora_mlp_kernel")
-            or data.get("lora_qkv_kernel")
-            or data.get("lora_o_kernel")
-        ):
-            if data.get("adapter") == "lora" and data.get("load_in_8bit"):
-                raise ValueError(
-                    "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with 8-bit LoRA"
-                )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_lora_axolotl_unsloth(cls, data):
         is_lora_kernel = any(
             data.get(k) for k in ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
@@ -606,6 +589,8 @@ class LoRAValidationMixin:
                 raise ValueError("QALoRA requires qalora_group_size to be specified")
             if self.merge_lora:
                 raise ValueError("QALoRA does not support merge_lora yet")
+        if self.adapter in ["lora", "qlora"] and self.flash_attn_fuse_mlp:
+            raise ValueError("Fused modules are not supported with LoRA/QLoRA")
         return self
 
     @model_validator(mode="before")
@@ -630,7 +615,7 @@ class LoRAValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_lora_kernel_8bit(cls, data):
+    def check_lora_kernels_8bit(cls, data):
         if (
             data.get("lora_mlp_kernel")
             or data.get("lora_qkv_kernel")
@@ -638,20 +623,36 @@ class LoRAValidationMixin:
         ):
             if data.get("adapter") == "lora" and data.get("load_in_8bit"):
                 raise ValueError(
-                    "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with 8-bit LoRA"
+                    "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
+                    "compatible with 8-bit LoRA a the moment."
                 )
         return data
 
     @model_validator(mode="before")
     @classmethod
-    def check_lora_kernel_rl(cls, data):
+    def check_lora_kernels_dora(cls, data):
+        if (
+            data.get("lora_mlp_kernel")
+            or data.get("lora_qkv_kernel")
+            or data.get("lora_o_kernel")
+        ) and data.get("peft_use_dora"):
+            raise ValueError(
+                "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
+                "compatible with DoRA at the moment."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_lora_kernels_rl(cls, data):
         if (
             data.get("lora_mlp_kernel")
             or data.get("lora_qkv_kernel")
             or data.get("lora_o_kernel")
         ) and data.get("rl"):
             raise ValueError(
-                "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with RL at the moment."
+                "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
+                "compatible with RL at the moment."
             )
         return data
 
@@ -695,7 +696,7 @@ class RLValidationMixin:
         # TODO: SalmanMohammadi
         # Distributed RL with QLoRA + gradient checkpointing
         # and use_reentrant = True is broken upstream in TRL
-        # pylint: disable=too-many-boolean-expressions
+
         if (
             data.get("rl")
             and data.get("gradient_checkpointing")
@@ -828,13 +829,13 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_fsdp_version_in_fsdp_config(cls, data):
-        if data.get("fsdp_config"):
-            if data.get("fsdp_config", {}).get("fsdp_version"):
-                LOG.warning(
-                    "Configuring `fsdp_version` in `fsdp_config` is deprecated. "
-                    "Please configure `fsdp_version` as a top-level field."
-                )
-                data["fsdp_version"] = data.get("fsdp_config").pop("fsdp_version")
+        fsdp_config = data.get("fsdp_config") or {}
+        if fsdp_config and fsdp_config.get("fsdp_version"):
+            LOG.warning(
+                "Configuring `fsdp_version` in `fsdp_config` is deprecated. "
+                "Please configure `fsdp_version` as a top-level field."
+            )
+            data["fsdp_version"] = fsdp_config.pop("fsdp_version")
         return data
 
     @model_validator(mode="before")
@@ -981,6 +982,16 @@ class SystemValidationMixin:
     def check_fsdp_deepspeed(cls, data):
         if data.get("deepspeed") and data.get("fsdp"):
             raise ValueError("deepspeed and fsdp cannot be used together.")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_model_quantization_config_vs_bnb(cls, data):
+        if data.get("model_quantization_config"):
+            if data.get("load_in_8bit") or data.get("load_in_4bit"):
+                raise ValueError(
+                    "model_quantization_config and load_in_8bit or load_in_4bit cannot be used together."
+                )
         return data
 
     @model_validator(mode="before")
@@ -1148,6 +1159,17 @@ class ModelCompatibilityValidationMixin:
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_gpt_oss_fsdp_loading(cls, data):
+        if data.get("model_quantization_config", "") == "Mxfp4Config":
+            fsdp_config = data.get("fsdp_config") or {}
+            if fsdp_config.get("cpu_ram_efficient_loading", False) is True:
+                raise ValueError(
+                    "FSDP cpu_ram_efficient_loading is not supported for Mxfp4Config model quantization."
+                )
+        return data
+
 
 class ComplexValidationMixin:
     """Complex validation methods that involve multiple systems."""
@@ -1195,7 +1217,7 @@ class ComplexValidationMixin:
                     "ReLoRA is not compatible with the one_cycle scheduler"
                 )
 
-            if self.flash_attn_fuse_qkv or self.flash_attn_fuse_mlp:
+            if self.flash_attn_fuse_mlp:
                 raise ValueError("Fused modules are not supported with ReLoRA")
         return self
 
@@ -1241,12 +1263,21 @@ class ComplexValidationMixin:
 
             try:
                 import transformers.modeling_flash_attention_utils
+                from transformers.utils import is_flash_attn_greater_or_equal
 
-                # pylint: disable=protected-access
-                transformers.modeling_flash_attention_utils._flash_supports_window_size = (
-                    transformers.modeling_flash_attention_utils._flash_supports_window
+                transformers.modeling_flash_attention_utils._flash_supports_window = (
+                    True
                 )
-                import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
+                sys.modules[
+                    "transformers.modeling_flash_attention_utils"
+                ]._flash_supports_window = True
+                sys.modules[
+                    "transformers.modeling_flash_attention_utils"
+                ]._flash_supports_window_size = True
+                sys.modules[
+                    "transformers.modeling_flash_attention_utils"
+                ].is_flash_attn_greater_or_equal = is_flash_attn_greater_or_equal
+                import ring_flash_attn  # noqa: F401  # Required after monkey-patching
             except ImportError as exception:
                 raise ImportError(
                     "context_parallel_size > 1 but ring_flash_attn is not installed. "
@@ -1311,7 +1342,6 @@ class GRPOVllmValidationMixin:
         return self
 
 
-# pylint: disable=too-many-ancestors
 class ValidationMixin(
     DatasetValidationMixin,
     AttentionValidationMixin,

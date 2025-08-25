@@ -14,7 +14,6 @@ class AxolotlTrainingMixins:
     Mixin class for the Axolotl training args.
     """
 
-    # pylint: disable=duplicate-code
     model_type: Optional[str] = field(
         default=None, metadata={"help": "HF model configuration model_type."}
     )
@@ -243,3 +242,18 @@ class AxolotlTrainingMixins:
     )
 
     # end of multi-modal section
+
+    dion_learning_rate: float | None = field(
+        default=None,
+        metadata={"help": "The learning rate for Dion"},
+    )
+    dion_momentum: float | None = field(
+        default=None,
+        metadata={"help": "The momentum for Dion"},
+    )
+    dion_rank_fraction: float | None = field(
+        default=None,
+    )
+    dion_rank_multiple_of: int | None = field(
+        default=None,
+    )

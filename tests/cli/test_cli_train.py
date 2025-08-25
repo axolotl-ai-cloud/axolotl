@@ -1,7 +1,5 @@
 """Tests for train CLI command."""
 
-# pylint: disable=duplicate-code
-
 from unittest.mock import MagicMock, patch
 
 from axolotl.cli.main import cli
@@ -85,7 +83,7 @@ class TestTrainCommand(BaseCliTest):
         config_path = tmp_path / "config.yml"
         config_path.write_text(valid_test_config)
 
-        with patch("subprocess.run") as mock_subprocess:
+        with patch("os.execvpe") as mock_subprocess:
             result = cli_runner.invoke(
                 cli,
                 [
@@ -104,7 +102,7 @@ class TestTrainCommand(BaseCliTest):
             mock_subprocess.assert_called_once()
 
             # Verify launcher args are passed to torchrun
-            called_cmd = mock_subprocess.call_args.args[0]
+            called_cmd = mock_subprocess.call_args.args[1]
             assert called_cmd[0] == "torchrun"
             assert "--nproc_per_node=2" in called_cmd
             assert "--nnodes=1" in called_cmd
@@ -118,7 +116,7 @@ class TestTrainCommand(BaseCliTest):
         config_path = tmp_path / "config.yml"
         config_path.write_text(valid_test_config)
 
-        with patch("subprocess.run") as mock_subprocess:
+        with patch("os.execvpe") as mock_subprocess:
             result = cli_runner.invoke(
                 cli,
                 [
@@ -137,7 +135,8 @@ class TestTrainCommand(BaseCliTest):
             mock_subprocess.assert_called_once()
 
             # Verify launcher args are passed to accelerate
-            called_cmd = mock_subprocess.call_args.args[0]
+            assert mock_subprocess.call_args.args[0] == "accelerate"
+            called_cmd = mock_subprocess.call_args.args[1]
             assert called_cmd[0] == "accelerate"
             assert called_cmd[1] == "launch"
             assert "--config_file=accelerate_config.yml" in called_cmd
@@ -152,7 +151,7 @@ class TestTrainCommand(BaseCliTest):
         config_path = tmp_path / "config.yml"
         config_path.write_text(valid_test_config)
 
-        with patch("subprocess.run") as mock_subprocess:
+        with patch("os.execvpe") as mock_subprocess:
             result = cli_runner.invoke(
                 cli,
                 [
@@ -170,7 +169,8 @@ class TestTrainCommand(BaseCliTest):
             mock_subprocess.assert_called_once()
 
             # Verify no launcher args contamination
-            called_cmd = mock_subprocess.call_args.args[0]
+            assert mock_subprocess.call_args.args[0] == "accelerate"
+            called_cmd = mock_subprocess.call_args.args[1]
             assert called_cmd[0] == "accelerate"
             assert called_cmd[1] == "launch"
             # Should not contain any extra launcher args
@@ -186,7 +186,7 @@ class TestTrainCommand(BaseCliTest):
         config_path = tmp_path / "config.yml"
         config_path.write_text(valid_test_config)
 
-        with patch("subprocess.run") as mock_subprocess:
+        with patch("os.execvpe") as mock_subprocess:
             result = cli_runner.invoke(
                 cli,
                 [
@@ -207,7 +207,8 @@ class TestTrainCommand(BaseCliTest):
             assert result.exit_code == 0
             mock_subprocess.assert_called_once()
 
-            called_cmd = mock_subprocess.call_args.args[0]
+            assert mock_subprocess.call_args.args[0] == "torchrun"
+            called_cmd = mock_subprocess.call_args.args[1]
             # Verify launcher args
             assert "--nproc_per_node=8" in called_cmd
             # Verify axolotl args are also present

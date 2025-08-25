@@ -7,6 +7,7 @@ import functools
 import sys
 
 import torch
+import torch.distributed as dist
 from torch import nn
 
 from axolotl.utils.bench import log_gpu_memory_usage
@@ -36,25 +37,49 @@ def fsdp2_load_full_state_dict(
 
     meta_sharded_sd = model.state_dict()
     sharded_sd = {}
-    for param_name, full_tensor in full_sd.items():
-        sharded_meta_param = meta_sharded_sd.get(param_name)
-        full_tensor = full_tensor.to(sharded_meta_param.dtype).to(torch.device("cuda"))
+    for param_name, sharded_meta_param in meta_sharded_sd.items():
+        full_tensor = None
+        if _accelerator.is_main_process:
+            full_tensor = full_sd[param_name]
+            full_tensor = full_tensor.to(sharded_meta_param.dtype)
+
         if hasattr(sharded_meta_param, "device_mesh"):
+            device_mesh = sharded_meta_param.device_mesh
+            if _accelerator.is_main_process:
+                full_tensor = full_tensor.to(device_mesh.device_type)
+            else:
+                full_tensor = torch.empty(
+                    sharded_meta_param.size(),
+                    device=device_mesh.device_type,
+                    dtype=sharded_meta_param.dtype,
+                )
             sharded_param = distribute_tensor(
                 full_tensor,
-                sharded_meta_param.device_mesh,
+                device_mesh,
                 sharded_meta_param.placements,
                 src_data_rank=0,
             )
         else:
-            sharded_param = full_tensor
+            # Non-sharded parameters
+            if _accelerator.is_main_process:
+                sharded_param = full_tensor.to(torch.device("cuda"))
+            else:
+                # broadcast manually
+                sharded_param = torch.empty_like(
+                    sharded_meta_param,
+                    device=torch.device("cuda"),
+                    dtype=sharded_meta_param.dtype,
+                )
+            dist.broadcast(sharded_param, src=0)
 
         if offload_to_cpu:
             sharded_param = sharded_param.cpu()
 
         sharded_sd[param_name] = nn.Parameter(sharded_param)
+
         del full_tensor
         full_sd[param_name] = None
+
     model.load_state_dict(sharded_sd, assign=True, strict=True)
     end_time = time.time()
     LOG.debug(
@@ -105,9 +130,9 @@ def get_state_dict(self, model, unwrap=True):
                         "Deepspeed TP requires deepspeed >= 0.16.4, Please update DeepSpeed via `pip install deepspeed -U`."
                     )
                 state_dict = (
-                    model._consolidated_16bit_state_dict()  # pylint: disable=protected-access
+                    model._consolidated_16bit_state_dict()
                     if tp_sharding
-                    else model._zero3_consolidated_16bit_state_dict()  # pylint: disable=protected-access
+                    else model._zero3_consolidated_16bit_state_dict()
                 )
             else:
                 raise ValueError(
@@ -162,7 +187,7 @@ def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
 
     # Linear4Bit will keep it's bias term in fp32. If the weight dtype is in bf16 we are not able to
     # wrap this. Therefore we must ensure the bias has the same dtype as the weight
-    if module.base_layer.bias is not None:
+    if hasattr(module.base_layer, "bias") and module.base_layer.bias is not None:
         if module.base_layer.weight.dtype != module.base_layer.bias.dtype:
             log_bias_dtype_mismatch = True
             module.base_layer.bias.data = module.base_layer.bias.data.to(
@@ -206,8 +231,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     )
 
     is_type_fsdp = isinstance(model, FSDPModule) or (
-        is_compiled_module(model)
-        and isinstance(model._orig_mod, FSDPModule)  # pylint: disable=protected-access
+        is_compiled_module(model) and isinstance(model._orig_mod, FSDPModule)
     )
     if is_type_fsdp:
         return model

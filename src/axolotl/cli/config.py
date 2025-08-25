@@ -153,15 +153,14 @@ def prepare_plugins(cfg: DictDefault):
         plugin_manager = PluginManager.get_instance()
         for plugin_name in cfg["plugins"]:
             plugin_manager.register(plugin_name)
+        for plugin in plugin_manager.plugins.values():
+            plugin.register(cfg)
 
 
 def plugin_set_cfg(cfg: DictDefault):
     if cfg.get("plugins"):
         plugin_manager = PluginManager.get_instance()
         plugin_manager.cfg = cfg
-        # now that we have the finalized cfg, register the plugins individually
-        for plugin in plugin_manager.plugins.values():
-            plugin.register(cfg)
 
 
 def load_cfg(
@@ -211,7 +210,7 @@ def load_cfg(
     try:
         device_props = torch.cuda.get_device_properties("cuda")
         gpu_version = "sm_" + str(device_props.major) + str(device_props.minor)
-    except:  # pylint: disable=bare-except # noqa: E722
+    except:
         gpu_version = None
 
     prepare_plugins(cfg)
