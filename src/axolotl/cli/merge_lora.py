@@ -43,7 +43,10 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
             safe_serialization=safe_serialization,
             progressbar=True,
         )
-        tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
+        tokenizer.save_pretrained(
+            str(Path(cfg.output_dir) / "merged"),
+            save_jinja_files=cfg.tokenizer_save_jinja_files,
+        )
 
         if processor:
             processor.save_pretrained(str(Path(cfg.output_dir) / "merged"))

@@ -42,6 +42,7 @@ from axolotl.core.trainers.utils import (
 )
 from axolotl.utils import get_not_null
 from axolotl.utils.bench import get_gpu_memory_usage
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
@@ -63,6 +64,15 @@ class AxolotlTrainer(
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
     tag_names = ["axolotl"]
+    _axolotl_cfg: DictDefault | None = None
+
+    @property
+    def axolotl_cfg(self):
+        return self._axolotl_cfg
+
+    @axolotl_cfg.setter
+    def axolotl_cfg(self, cfg):
+        self._axolotl_cfg = cfg
 
     def __init__(
         self,
@@ -657,6 +667,11 @@ class AxolotlTrainer(
                 LOG.info(
                     "Saving Trainer.data_collator.tokenizer by default as Trainer.processing_class is `None`"
                 )
-                self.data_collator.tokenizer.save_pretrained(output_dir)
+                save_jinja_files = True
+                if self.axolotl_cfg:
+                    save_jinja_files = self.axolotl_cfg.tokenizer_save_jinja_files
+                self.data_collator.tokenizer.save_pretrained(
+                    output_dir, save_jinja_files=save_jinja_files
+                )
             # Good practice: save your training arguments together with the trained model
             torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
