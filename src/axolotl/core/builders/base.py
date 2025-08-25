@@ -24,12 +24,10 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from accelerate import PartialState
 from transformers import (
     TrainerCallback,
 )
 from transformers.trainer_pt_utils import AcceleratorConfig
-from transformers.training_args import OptimizerNames
 
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
@@ -40,12 +38,13 @@ from axolotl.utils.callbacks import (
     SaveModelOnFirstStepCallback,
 )
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
+from axolotl.utils.distributed import build_parallelism_config
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
 LOG = logging.getLogger(__name__)
 
 with suppress(ImportError):
-    import torch._dynamo  # pylint: disable=ungrouped-imports
+    import torch._dynamo
 
 
 class TrainerBuilderBase(abc.ABC):
@@ -261,32 +260,29 @@ class TrainerBuilderBase(abc.ABC):
                 adam_kwargs["eps"] = training_args_kwargs.get("adam_epsilon")
 
             if self.cfg.optimizer == "muon":
-                from axolotl.contribs.mit.muon import (  # pylint: disable=no-name-in-module
+                from axolotl.contribs.mit.muon import (
                     MuonOptimizerFactory,
                 )
 
                 optimizer_cls = MuonOptimizerFactory
                 optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "dion":
+                from axolotl.contribs.mit.dion import (
+                    DionOptimizerFactory,
+                )
+
+                optimizer_cls = DionOptimizerFactory
+                optimizer_kwargs["dion_lr"] = training_args_kwargs["dion_learning_rate"]
+                optimizer_kwargs["dion_mu"] = training_args_kwargs["dion_momentum"]
+                optimizer_kwargs.update(adam_kwargs)
+                _, device_mesh = build_parallelism_config(self.cfg)
+                if device_mesh is not None:
+                    optimizer_kwargs["device_mesh"] = device_mesh
             elif self.cfg.optimizer == "optimi_adamw":
                 from optimi import AdamW
 
                 optimizer_kwargs["foreach"] = False
                 optimizer_cls = AdamW
-                optimizer_kwargs.update(adam_kwargs)
-            elif self.cfg.optimizer == "ao_adamw_4bit":
-                # TODO remove 20250401
-                from torchao.prototype.low_bit_optim import AdamW4bit
-
-                optimizer_cls = AdamW4bit
-                optimizer_kwargs.update(adam_kwargs)
-
-                LOG.warning(
-                    f"`ao_adamw_4bit` will be deprecated soon. Please use `{OptimizerNames.ADAMW_TORCH_4BIT}` instead."
-                )
-            elif self.cfg.optimizer == "ao_adamw_8bit":
-                from torchao.prototype.low_bit_optim import AdamW8bit
-
-                optimizer_cls = AdamW8bit
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "ao_adamw_fp8":
                 from torchao.prototype.low_bit_optim import AdamWFp8
@@ -418,12 +414,8 @@ class TrainerBuilderBase(abc.ABC):
 
     def _configure_torch_compile(self, training_args_kwargs: dict):
         if self.cfg.torch_compile and getattr(torch, "_dynamo", None):
-            torch._dynamo.config.suppress_errors = (  # pylint: disable=protected-access
-                True
-            )
-            torch._dynamo.config.accumulated_cache_size_limit = (  # pylint: disable=protected-access
-                256
-            )
+            torch._dynamo.config.suppress_errors = True
+            torch._dynamo.config.accumulated_cache_size_limit = 256
             training_args_kwargs["torch_compile"] = self.cfg.torch_compile
             if self.cfg.torch_compile_backend:
                 training_args_kwargs["torch_compile_backend"] = (
@@ -433,30 +425,12 @@ class TrainerBuilderBase(abc.ABC):
                 training_args_kwargs["torch_compile_mode"] = self.cfg.torch_compile_mode
 
     def _configure_accelerator_config(self, training_args_kwargs: dict):
-        partial_state = PartialState()
-        has_pc_attr = (
-            hasattr(partial_state, "parallelism_config")
-            and partial_state.parallelism_config
-        )
-        has_pc_key = (
-            "parallelism_config"
-            in partial_state._shared_state  # pylint: disable=protected-access
-            and partial_state._shared_state[  # pylint: disable=protected-access
-                "parallelism_config"
-            ]
-        )
-        use_configured_state = has_pc_attr or has_pc_key
         if self.cfg.accelerator_config:
-            use_configured_state = self.cfg.accelerator_config.pop(
-                "use_configured_state", use_configured_state
-            )
             training_args_kwargs["accelerator_config"] = AcceleratorConfig(
-                use_configured_state=use_configured_state, **self.cfg.accelerator_config
+                **self.cfg.accelerator_config
             )
         else:
-            training_args_kwargs["accelerator_config"] = AcceleratorConfig(
-                use_configured_state=use_configured_state,
-            )
+            training_args_kwargs["accelerator_config"] = AcceleratorConfig()
 
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
         if self.cfg.activation_offloading is True:
@@ -516,9 +490,19 @@ class TrainerBuilderBase(abc.ABC):
             "include_tokens_per_second",
             "weight_decay",
             "seed",
+            "dion_momentum",
+            "dion_rank_fraction",
+            "dion_rank_multiple_of",
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
                 training_args_kwargs[arg] = getattr(self.cfg, arg)
+
+        arg_map = {
+            "dion_learning_rate": "dion_lr",
+        }
+        for kwarg, cfg_arg in arg_map.items():
+            if hasattr(self.cfg, cfg_arg) and getattr(self.cfg, cfg_arg) is not None:
+                training_args_kwargs[kwarg] = getattr(self.cfg, cfg_arg)
 
         training_args_kwargs["per_device_train_batch_size"] = self.cfg.micro_batch_size
         training_args_kwargs["average_tokens_across_devices"] = False

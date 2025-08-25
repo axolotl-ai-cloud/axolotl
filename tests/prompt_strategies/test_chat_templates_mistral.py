@@ -28,7 +28,7 @@ def test_mistral_chat_template(
     request: pytest.FixtureRequest,
 ):
     """Test chat template with the Magistral/Devstral tokenizer"""
-    # pylint: disable=duplicate-code
+
     from axolotl.prompt_strategies.chat_template import MistralPrompter, MistralStrategy
 
     tokenizer: HFMistralTokenizer = request.getfixturevalue(tokenizer_str)

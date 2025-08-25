@@ -20,7 +20,6 @@ sequence_len: 2048
 sample_packing: true
 eval_sample_packing: false
 
-qlora: true
 qalora_group_size: 16
 
 lora_r: 32

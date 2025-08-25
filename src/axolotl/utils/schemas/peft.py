@@ -130,14 +130,8 @@ class LoraConfig(BaseModel):
             "description": "loraplus learning rate for lora embedding layers. Default value is 1e-6."
         },
     )
-    use_qalora: bool | None = Field(
-        default=False,
-        json_schema_extra={
-            "description": "Enable Quantization-Aware Low-Rank Adaptation"
-        },
-    )
     qalora_group_size: int | None = Field(
-        default=16,
+        default=None,
         json_schema_extra={"description": "Group size for QALoRA quantization pooling"},
     )
 

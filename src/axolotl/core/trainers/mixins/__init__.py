@@ -1,6 +1,5 @@
 """Init for axolotl.core.trainers.mixins"""
 
-# pylint: disable=unused-import
 # flake8: noqa
 
 from .activation_checkpointing import ActivationOffloadingMixin

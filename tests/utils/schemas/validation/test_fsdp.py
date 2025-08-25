@@ -2,7 +2,6 @@
 tests for pydantic fsdp validation
 """
 
-# pylint: disable=too-many-boolean-expressions
 import pytest
 
 from axolotl.utils.config import validate_config

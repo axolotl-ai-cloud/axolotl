@@ -22,7 +22,6 @@ class TestPackedFlex(unittest.TestCase):
     @require_torch_2_6_0
     @with_temp_dir
     def test_loss_llama(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

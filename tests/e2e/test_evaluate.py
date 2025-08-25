@@ -13,7 +13,6 @@ class TestE2eEvaluate:
     """Test cases for evaluate CLI"""
 
     def test_evaluate(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

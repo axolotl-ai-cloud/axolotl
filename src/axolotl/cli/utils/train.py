@@ -2,7 +2,9 @@
 
 import os
 import subprocess  # nosec
+import sys
 import tempfile
+from pathlib import Path
 from typing import Any, Iterator, Literal
 
 import yaml
@@ -64,10 +66,18 @@ def build_command(base_cmd: list[str], options: dict[str, Any]) -> list[str]:
     return cmd
 
 
-def generate_config_files(config: str, sweep: str | None) -> Iterator[str]:
-    """Generate list of configuration files to process."""
+def generate_config_files(config: str, sweep: str | None) -> Iterator[tuple[str, bool]]:
+    """
+    Generate list of configuration files to process. Yields a tuple of the configuration file name and a boolean indicating
+    whether this is a group of configurations (i.e., a sweep).
+
+    Args:
+        config: Base configuration file
+        sweep: Sweep configuration file
+    """
+
     if not sweep:
-        yield config
+        yield config, False
         return
 
     # Load sweep and base configurations
@@ -78,8 +88,13 @@ def generate_config_files(config: str, sweep: str | None) -> Iterator[str]:
 
     # Generate all possible configurations
     permutations = generate_sweep_configs(base_config, sweep_config)
-    for permutation in permutations:
-        # pylint: disable=consider-using-with
+    is_group = len(permutations) > 1
+    base_output_dir = base_config.get("output_dir", "./model-out")
+    for idx, permutation in enumerate(permutations, start=1):
+        permutation_dir = Path(permutation.get("output_dir", base_output_dir))
+        permutation_id = f"sweep{idx:04d}"
+        permutation["output_dir"] = str(permutation_dir / permutation_id)
+
         temp_file = tempfile.NamedTemporaryFile(
             mode="w",
             suffix=".yaml",
@@ -88,7 +103,7 @@ def generate_config_files(config: str, sweep: str | None) -> Iterator[str]:
         )
         yaml.dump(permutation, temp_file)
         temp_file.close()
-        yield temp_file.name
+        yield temp_file.name, is_group
 
 
 def launch_training(
@@ -97,6 +112,7 @@ def launch_training(
     cloud: str | None,
     kwargs: dict,
     launcher_args: list[str] | None = None,
+    use_exec: bool = False,
 ) -> None:
     """Execute training with the given configuration."""
     launcher_args = launcher_args or []
@@ -105,11 +121,14 @@ def launch_training(
         _launch_cloud_training(cloud, cfg_file, launcher, kwargs, launcher_args)
     elif launcher:
         if launcher == "accelerate":
-            _launch_accelerate_training(cfg_file, kwargs, launcher_args)
+            _launch_accelerate_training(cfg_file, kwargs, launcher_args, use_exec)
         elif launcher == "torchrun":
-            _launch_torchrun_training(cfg_file, kwargs, launcher_args)
+            _launch_torchrun_training(cfg_file, kwargs, launcher_args, use_exec)
         elif launcher == "python":
             _launch_python_training(cfg_file, kwargs)
+    elif launcher is None:
+        # handle ray train launch
+        _launch_python_training(cfg_file, kwargs)
 
 
 def _launch_cloud_training(
@@ -136,7 +155,10 @@ def _launch_cloud_training(
 
 
 def _launch_accelerate_training(
-    cfg_file: str, kwargs: dict, launcher_args: list[str] | None = None
+    cfg_file: str,
+    kwargs: dict,
+    launcher_args: list[str] | None = None,
+    use_exec: bool = False,
 ) -> None:
     """Execute training via accelerate launcher."""
     launcher_args = launcher_args or []
@@ -161,11 +183,20 @@ def _launch_accelerate_training(
         base_cmd.append(cfg_file)
 
     cmd = build_command(base_cmd, kwargs)
-    subprocess.run(cmd, check=True)  # nosec B603
+    if use_exec:
+        # make sure to flush stdout and stderr before replacing the process
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.execvpe(cmd[0], cmd, os.environ)  # nosec B606
+    else:
+        subprocess.run(cmd, check=True)  # nosec B603
 
 
 def _launch_torchrun_training(
-    cfg_file: str, kwargs: dict, launcher_args: list[str] | None = None
+    cfg_file: str,
+    kwargs: dict,
+    launcher_args: list[str] | None = None,
+    use_exec: bool = False,
 ) -> None:
     """Execute training via torchrun launcher."""
     launcher_args = launcher_args or []
@@ -178,7 +209,13 @@ def _launch_torchrun_training(
         base_cmd.append(cfg_file)
 
     cmd = build_command(base_cmd, kwargs)
-    subprocess.run(cmd, check=True)  # nosec B603
+    if use_exec:
+        # make sure to flush stdout and stderr before replacing the process
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.execvpe(cmd[0], cmd, os.environ)  # nosec B606
+    else:
+        subprocess.run(cmd, check=True)  # nosec B603
 
 
 def _launch_python_training(cfg_file: str, kwargs: dict) -> None:

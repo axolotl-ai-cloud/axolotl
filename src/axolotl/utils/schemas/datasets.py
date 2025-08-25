@@ -118,6 +118,18 @@ class SFTDataset(BaseModel):
             "description": 'Key containing the tools (default: "tools"). Must be a list[dict] and follow [JSON schema](https://json-schema.org/learn/getting-started-step-by-step).'
         },
     )
+    field_thinking: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": 'Key containing the reasoning trace (default: "reasoning_content").'
+        },
+    )
+    template_thinking_key: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "The key the chat template expects that indicates the reasoning trace."
+        },
+    )
     # deprecated, use message_property_mappings
     message_field_role: str | None = None
     # deprecated, use message_property_mappings
@@ -191,7 +203,6 @@ class SFTDataset(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    # pylint: disable=duplicate-code
     def check_chat_template_config(cls, data):
         if isinstance(data, BaseModel):
             data = data.model_dump()

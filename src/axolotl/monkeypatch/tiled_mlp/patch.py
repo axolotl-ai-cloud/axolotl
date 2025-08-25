@@ -40,7 +40,6 @@ def patch_tiled_mlp(model_type, use_original_mlp=True, cfg_num_shards=None):
         is_distributed = int(os.environ.get("WORLD_SIZE", 1)) > 1
 
         def tiled_mlp_forward(self, x):
-            # pylint: disable=protected-access
             input_shape = x.shape
             seqlen = input_shape[-2]
             hidden = input_shape[-1]
@@ -79,14 +78,13 @@ def patch_tiled_mlp(model_type, use_original_mlp=True, cfg_num_shards=None):
             return down_res
 
         mlp_cls.forward = tiled_mlp_forward
-        mlp_cls._compute_params = []  # pylint: disable=protected-access
-        mlp_cls._tiled_mlp_dist_impl = None  # pylint: disable=protected-access
+        mlp_cls._compute_params = []
+        mlp_cls._tiled_mlp_dist_impl = None
         LOG.info(
             f"Successfully monkey-patched TiledMLP for model_type: {model_type}",
             main_process_only=True,
         )
     except (ImportError, AttributeError) as e:
         raise RuntimeError(
-            f"Could not import MLP class for model_type: {model_type}. "
-            f"Error: {str(e)}"
+            f"Could not import MLP class for model_type: {model_type}. Error: {str(e)}"
         ) from e

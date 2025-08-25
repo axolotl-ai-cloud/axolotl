@@ -40,6 +40,12 @@ class VllmServeCliArgs:
         default=None,
         metadata={"help": "Number of tensor parallel workers to use."},
     )
+    data_parallel_size: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Number of data parallel workers to use for vLLM serving. This controls how many model replicas are used for parallel inference."
+        },
+    )
     host: Optional[str] = field(
         default=None,  # nosec B104
         metadata={"help": "Host address to run the server on."},

@@ -92,7 +92,7 @@ def get_lora_act_offloading_ctx_manager(
         `contextlib.ContextDecorator`:
             Activation offloading context manager for the model.
     """
-    # pylint: disable=unnecessary-dunder-call
+
     activations_handling_ctx = OffloadActivations(
         use_pin_memory=use_pin_memory,
         use_streams=use_streams,

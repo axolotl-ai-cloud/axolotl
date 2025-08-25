@@ -1,7 +1,5 @@
 """Module with Pydantic models for configuration."""
 
-# pylint: disable=too-many-lines
-
 from typing import Annotated, Any, Literal
 
 from annotated_types import MinLen
@@ -51,7 +49,6 @@ from axolotl.utils.schemas.vllm import VllmConfig
 LOG = get_logger(__name__)
 
 
-# pylint: disable=too-many-ancestors
 class AxolotlInputConfig(
     ModelInputConfig,
     ModelOutputConfig,
@@ -110,6 +107,13 @@ class AxolotlInputConfig(
         },
     )
 
+    trainer_cls: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "module to custom trainer class to use for training"
+        },
+    )
+
     rl: RLType | None = Field(
         default=None,
         json_schema_extra={
@@ -117,10 +121,10 @@ class AxolotlInputConfig(
         },
     )
     trl: TRLConfig | None = Field(
-        default_factory=lambda: TRLConfig(),  # pylint: disable=unnecessary-lambda
+        default_factory=lambda: TRLConfig(),
     )
     vllm: VllmConfig | None = Field(
-        default_factory=lambda: VllmConfig(),  # pylint: disable=unnecessary-lambda
+        default_factory=lambda: VllmConfig(),
     )
     qat: QATConfig | None = None
     quantization: PTQConfig | None = None
@@ -407,6 +411,12 @@ class AxolotlInputConfig(
             "description": "The maximum length of an input to train with, this should typically be less than 2048 as most models have a token/context limit of 2048"
         },
     )
+    excess_length_strategy: Literal["drop", "truncate"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "What to do when a tokenized row exceeds sequence_len. 'drop' removes the row; 'truncate' slices tensors to sequence_len. Defaults to 'drop' for backward compatibility."
+        },
+    )
     eval_sequence_len: int | None = Field(
         default=None,
         json_schema_extra={
@@ -531,12 +541,6 @@ class AxolotlInputConfig(
             "description": "Whether to use flash-attention rms norm implementation - advanced use only"
         },
     )
-    flash_attn_fuse_qkv: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Whether to fuse QKV into a single operation"
-        },
-    )
     flash_attn_fuse_mlp: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -549,6 +553,13 @@ class AxolotlInputConfig(
     )
 
     eager_attention: bool | None = None
+
+    attn_implementation: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Specify a custom attention implementation, used mostly for kernels."
+        },
+    )
 
     unsloth_cross_entropy_loss: bool | None = None
     unsloth_lora_mlp: bool | None = None
@@ -1021,7 +1032,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
         return data
 
-    # pylint: disable=duplicate-code
     @model_validator(mode="before")
     @classmethod
     def check_multigpu_unsloth(cls, data):
@@ -1037,7 +1047,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
         return data
 
-    # pylint: disable=duplicate-code
     @model_validator(mode="before")
     @classmethod
     def check_multigpu_lora_kernels(cls, data):

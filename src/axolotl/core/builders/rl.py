@@ -15,6 +15,7 @@ from axolotl.core.trainers.grpo import GRPOStrategy
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import ensure_dtype
 from axolotl.utils.callbacks.qat import QATCallback
+from axolotl.utils.import_helper import get_cls_from_module_str
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
 
@@ -71,6 +72,16 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             trainer_cls = AxolotlCPOTrainer
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
+
+        if self.cfg.trainer_cls:
+            # override the trainer cls
+            try:
+                trainer_cls = get_cls_from_module_str(self.cfg.trainer_cls)
+                LOG.debug(f"Using custom trainer class: {self.cfg.trainer_cls}")
+            except (ImportError, AttributeError, ValueError) as e:
+                raise ValueError(
+                    f"Failed to load custom trainer class '{self.cfg.trainer_cls}': {e}"
+                ) from e
 
         return trainer_cls, trainer_cls_args
 
@@ -157,16 +168,14 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if plugin_training_args:
                 training_args_kwargs.update(plugin_training_args)
 
-        training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
+        training_args = training_args_cls(
             logging_first_step=True,
             **training_args_kwargs,
         )
 
         # unset run_name so wandb sets up experiment names
         if self.cfg.use_wandb and training_args.run_name == training_args.output_dir:
-            training_args.run_name = (  # pylint: disable=attribute-defined-outside-init
-                None
-            )
+            training_args.run_name = None
 
         return training_args, trainer_kwargs
 

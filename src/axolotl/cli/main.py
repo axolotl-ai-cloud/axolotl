@@ -1,7 +1,5 @@
 """Click CLI definitions for various axolotl commands."""
 
-# pylint: disable=redefined-outer-name
-
 import os
 import subprocess  # nosec B404
 from typing import Literal, Optional
@@ -123,9 +121,10 @@ def train(
     _launcher = None if kwargs.get("use_ray") else launcher
 
     # Process each configuration
-    for cfg_file in generate_config_files(config, sweep):
+    for cfg_file, is_group in generate_config_files(config, sweep):
         try:
-            launch_training(cfg_file, _launcher, cloud, kwargs, launcher_args)
+            use_exec = is_group is not True
+            launch_training(cfg_file, _launcher, cloud, kwargs, launcher_args, use_exec)
         except subprocess.CalledProcessError as exc:
             LOG.error(f"Failed to train/fine-tune config '{cfg_file}': {exc}")
             if not sweep:

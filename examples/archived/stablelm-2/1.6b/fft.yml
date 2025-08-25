@@ -47,7 +47,6 @@ logging_steps: 1
 flash_attention: true
 flash_attn_cross_entropy: false
 flash_attn_rms_norm: true
-flash_attn_fuse_qkv: false
 flash_attn_fuse_mlp: true
 
 warmup_ratio: 0.1

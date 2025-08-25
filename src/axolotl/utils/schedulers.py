@@ -4,6 +4,7 @@ import math
 from functools import partial
 from typing import Sequence
 
+from torch import Tensor
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR, LRScheduler
 
@@ -45,8 +46,10 @@ class RexLR(LRScheduler):
 
         # Ensure each parameter group has an "initial_lr" key to avoid issues when resuming.
         for group in optimizer.param_groups:
-            group.setdefault("initial_lr", group["lr"])
-
+            initial_lr = group["lr"]
+            if isinstance(initial_lr, Tensor):
+                initial_lr = initial_lr.clone()
+            group.setdefault("initial_lr", initial_lr)
         # Pass self.last_step as last_epoch to the parent.
         super().__init__(optimizer, last_epoch=self.last_step)
 
@@ -104,9 +107,7 @@ class InterpolatingLogScheduler(LRScheduler):
         self.num_steps = num_steps
         self.min_lr = min_lr
         self.max_lr = max_lr
-        self.q = (max_lr / min_lr) ** (  # pylint: disable=invalid-name
-            1 / (num_steps - 1)
-        )
+        self.q = (max_lr / min_lr) ** (1 / (num_steps - 1))
         super().__init__(optimizer, last_epoch)
 
     def get_lr(self):
@@ -307,7 +308,6 @@ class JaggedLRRestartScheduler(LRScheduler):
         jagged_restart_anneal_steps: int = 1,
         min_lr_scale: float = 0.001,
     ) -> None:
-        # pylint: disable=duplicate-code
         self.inner_schedule = inner_schedule
         self.restarts_steps = jagged_restart_steps
         self.warmup_steps = jagged_restart_warmup_steps
