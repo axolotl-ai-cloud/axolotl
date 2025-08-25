@@ -23,5 +23,5 @@ class MoeOptimizedArgs(BaseModel):
 
     moe_kernel_models: list[str] | None = Field(
         default=None,
-        description="List of models to apply MoE kernel optimization to (e.g., ['mixtral', 'qwen3_moe'])",
+        description="List of models to apply MoE kernel optimization to (e.g., ['mixtral', 'qwen3_moe', 'qwen2_moe', 'deepseek_v3'])",
     )
