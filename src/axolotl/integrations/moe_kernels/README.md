@@ -41,6 +41,7 @@ moe_kernel_models:
 - **Mixtral** (all variants)
 - **Qwen3-MoE**
 - **Qwen2-MoE**
+- **DeepSeek-V3** (671B MoE with 256 experts)
 
 The integration automatically detects the model type and applies appropriate patches.
 
