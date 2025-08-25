@@ -20,14 +20,7 @@ pip3 install --no-build-isolation -e '.[flash-attn]'
 python scripts/cutcrossentropy_install.py | sh
 ```
 
-2. Please install HunYuan's [transformers PR](https://github.com/huggingface/transformers/pull/39606)
-
-```bash
-pip3 uninstall transformers
-pip3 install git+https://github.com/huggingface/transformers@06b8c1323b366ecb5b8f8d7768f3a8b73e82f4cb
-```
-
-3. Run the finetuning example:
+2. Run the finetuning example:
 
 ```bash
 axolotl train examples/hunyuan/hunyuan-v1-dense-qlora.yaml
