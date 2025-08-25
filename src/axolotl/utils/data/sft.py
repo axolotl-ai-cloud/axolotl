@@ -27,7 +27,6 @@ from axolotl.utils.data.shared import (
     try_load_from_hub,
 )
 from axolotl.utils.data.streaming import wrap_streaming_sft_dataset
-from axolotl.utils.data.streaming_sft import wrap_streaming_sft_dataset_optimized
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
     handle_long_seq_in_dataset,
@@ -423,18 +422,18 @@ def _load_and_process_single_dataset(
                 )
                 return wrapped_dataset, prompter
 
-            # Use optimized streaming wrapper to avoid repeated preprocessing logs
-            dataset_wrapper = wrap_streaming_sft_dataset_optimized(
+            # Use pretraining wrapper for efficient streaming SFT with packing
+            from axolotl.utils.data.pretraining import wrap_pretraining_dataset
+            
+            dataset_wrapper = wrap_pretraining_dataset(
                 dataset,
                 tokenizer,
                 cfg,
                 ds_wrapper_fn,
                 max_tokens=cfg.sequence_len,
-                batch_size=max(
-                    1, cfg.sequence_len // 512
-                ),  # Estimate sequences per pack
-                seed=cfg.seed or 42,
-                buffer_size=cfg.pretrain_multipack_buffer_size or 1_000,
+                batch_size=cfg.micro_batch_size,
+                seed=cfg.seed,
+                buffer_size=cfg.pretrain_multipack_buffer_size,
             )
         else:
             # Use regular streaming wrapper
