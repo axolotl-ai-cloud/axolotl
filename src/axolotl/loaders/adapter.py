@@ -98,6 +98,8 @@ def load_lora(
         lora_config_kwargs["use_rslora"] = cfg.peft_use_rslora
     if cfg.peft_layer_replication:
         lora_config_kwargs["layer_replication"] = cfg.peft_layer_replication
+    if cfg.peft_trainable_token_indices:
+        lora_config_kwargs["trainable_token_indices"] = cfg.peft_trainable_token_indices
 
     lora_config = LoraConfig(
         r=cfg.lora_r,
