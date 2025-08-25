@@ -1,4 +1,3 @@
-# pylint: disable=too-many-lines
 """Module for testing the validation module"""
 
 import os
@@ -49,7 +48,6 @@ class BaseValidation:
         self._caplog = caplog
 
 
-# pylint: disable=too-many-public-methods
 class TestValidation(BaseValidation):
     """
     Test the validation module
@@ -241,7 +239,7 @@ class TestValidation(BaseValidation):
 
     def test_lr_as_float(self, minimal_cfg):
         cfg = (
-            DictDefault(  # pylint: disable=unsupported-binary-operation
+            DictDefault(
                 {
                     "learning_rate": "5e-5",
                 }
@@ -303,7 +301,7 @@ class TestValidation(BaseValidation):
         )
 
         cfg = (
-            DictDefault(  # pylint: disable=unsupported-binary-operation
+            DictDefault(
                 {
                     "load_in_8bit": True,
                 }
@@ -315,7 +313,7 @@ class TestValidation(BaseValidation):
             validate_config(cfg)
 
         cfg = (
-            DictDefault(  # pylint: disable=unsupported-binary-operation
+            DictDefault(
                 {
                     "gptq": True,
                 }
@@ -327,7 +325,7 @@ class TestValidation(BaseValidation):
             validate_config(cfg)
 
         cfg = (
-            DictDefault(  # pylint: disable=unsupported-binary-operation
+            DictDefault(
                 {
                     "load_in_4bit": False,
                 }
@@ -339,7 +337,7 @@ class TestValidation(BaseValidation):
             validate_config(cfg)
 
         cfg = (
-            DictDefault(  # pylint: disable=unsupported-binary-operation
+            DictDefault(
                 {
                     "load_in_4bit": True,
                 }
@@ -361,7 +359,7 @@ class TestValidation(BaseValidation):
         )
 
         cfg = (
-            DictDefault(  # pylint: disable=unsupported-binary-operation
+            DictDefault(
                 {
                     "load_in_8bit": True,
                 }
@@ -373,7 +371,7 @@ class TestValidation(BaseValidation):
             validate_config(cfg)
 
         cfg = (
-            DictDefault(  # pylint: disable=unsupported-binary-operation
+            DictDefault(
                 {
                     "gptq": True,
                 }
@@ -385,7 +383,7 @@ class TestValidation(BaseValidation):
             validate_config(cfg)
 
         cfg = (
-            DictDefault(  # pylint: disable=unsupported-binary-operation
+            DictDefault(
                 {
                     "load_in_4bit": True,
                 }
@@ -692,7 +690,7 @@ class TestValidation(BaseValidation):
                     "bf16": True,
                     "capabilities": {"bf16": False},
                     "env_capabilities": {
-                        "torch_version": "2.5.1",
+                        "torch_version": "2.6.0",
                     },
                 }
             )
@@ -1202,7 +1200,7 @@ class TestValidation(BaseValidation):
                 cfg, capabilities=capabilities, env_capabilities=env_capabilities
             )
 
-        env_capabilities = {"torch_version": "2.5.1"}
+        env_capabilities = {"torch_version": "2.6.0"}
         capabilities = {"bf16": False}
         _ = validate_config(
             cfg, capabilities=capabilities, env_capabilities=env_capabilities
@@ -1244,7 +1242,7 @@ class TestTorchCompileValidation(BaseValidation):
             | minimal_cfg
         )
 
-        env_capabilities = {"torch_version": "2.5.1"}
+        env_capabilities = {"torch_version": "2.6.0"}
         capabilities = {"bf16": True}
         updated_cfg = validate_config(
             cfg, capabilities=capabilities, env_capabilities=env_capabilities
@@ -1690,3 +1688,18 @@ class TestValidationMLflow(BaseValidation):
         assert new_cfg.use_mlflow is True
 
         os.environ.pop("MLFLOW_EXPERIMENT_NAME", None)
+
+
+class TestDataloaderValidation(BaseValidation):
+    """
+    tests for dataloader_* sane defaults
+    """
+
+    def test_dataloader_auto_defaults(self, minimal_cfg):
+        cfg = minimal_cfg
+
+        new_cfg = validate_config(cfg, {"n_gpu": 8}, {"torch_version": "2.6.0"})
+
+        assert new_cfg.dataloader_num_workers == 8
+        assert new_cfg.dataloader_pin_memory is True
+        assert new_cfg.dataloader_prefetch_factor == 256

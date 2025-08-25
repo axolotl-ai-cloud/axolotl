@@ -67,7 +67,7 @@ def encode_pretraining(
     buffer_labels = torch.tensor([], dtype=torch.long)
     buffer_attention_mask = torch.tensor([], dtype=torch.long)
 
-    for ids, labels, mask in zip(input_ids, targets, attention_mask):
+    for ids, labels, mask in zip(input_ids, targets, attention_mask, strict=False):
         if buffer_input_ids.numel() == max_tokens:
             new_input_ids.append(buffer_input_ids)
             new_labels.append(buffer_labels)
@@ -224,10 +224,10 @@ def wrap_pretraining_dataset(
     remove_columns = []
     if dataset.features is None:
         for first_row in dataset:
-            remove_columns = first_row.keys()
+            remove_columns = list(first_row.keys())
             break
     else:
-        remove_columns = dataset.features.keys()
+        remove_columns = list(dataset.features.keys())
 
     dataset = dataset.map(
         encode,
@@ -247,7 +247,6 @@ def encode_packed_pretraining(
     batch_size: int = 4,
     multipack_attn: Optional[bool] = True,
 ) -> Dict[str, List]:
-    # pylint: disable=duplicate-code
     # tokenize all the examples
     # rows get split with stride (overlap)
     train_dataset = ds_wrapper(dataset=Dataset.from_dict(examples))[0]
@@ -267,6 +266,7 @@ def encode_packed_pretraining(
         batch_size=1,
         batch_max_len=batch_size * max_seq_length,
         drop_last=True,
+        num_processes=1,
     )
 
     chunked_data = defaultdict(list)

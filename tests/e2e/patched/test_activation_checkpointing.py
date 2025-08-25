@@ -32,10 +32,9 @@ class TestActivationCheckpointing:
     def test_activation_checkpointing_offload(
         self,
         temp_dir,
-        fix_checkpoint_after_test,  # pylint: disable=unused-argument,redefined-outer-name
+        fix_checkpoint_after_test,
         gradient_checkpointing,
     ):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -69,6 +68,8 @@ class TestActivationCheckpointing:
                 "bf16": True,
                 "save_safetensors": True,
                 "gradient_checkpointing": gradient_checkpointing,
+                "save_first_step": False,
+                "dataset_processes": 4,
             }
         )
 

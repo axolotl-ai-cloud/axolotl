@@ -30,7 +30,6 @@ def fixture_assistant_dataset():
 
 @pytest.fixture(name="sharegpt_dataset")
 def fixture_sharegpt_dataset():
-    # pylint: disable=duplicate-code
     return Dataset.from_list(
         [
             {
@@ -47,7 +46,6 @@ def fixture_sharegpt_dataset():
 
 @pytest.fixture(name="basic_dataset")
 def fixture_basic_dataset():
-    # pylint: disable=duplicate-code
     return Dataset.from_list(
         [
             {
@@ -65,7 +63,6 @@ def fixture_basic_dataset():
 
 @pytest.fixture(name="toolcalling_dataset")
 def fixture_toolcalling_dataset():
-    # pylint: disable=duplicate-code
     return Dataset.from_list(
         [
             {
@@ -112,7 +109,7 @@ def fixture_toolcalling_dataset():
 @enable_hf_offline
 def fixture_llama3_tokenizer(
     download_llama3_8b_instruct_model_fixture,
-):  # pylint: disable=unused-argument,redefined-outer-name
+):
     tokenizer = AutoTokenizer.from_pretrained("NousResearch/Meta-Llama-3-8B-Instruct")
 
     return tokenizer
@@ -129,7 +126,7 @@ def fixture_smollm2_tokenizer():
 @enable_hf_offline
 def fixture_mistralv03_tokenizer(
     download_mlx_mistral_7b_model_fixture,
-):  # pylint: disable=unused-argument,redefined-outer-name
+):
     tokenizer = AutoTokenizer.from_pretrained(
         "mlx-community/Mistral-7B-Instruct-v0.3-4bit"
     )
@@ -143,6 +140,12 @@ def fixture_phi35_tokenizer():
     return tokenizer
 
 
+@pytest.fixture(name="phi4_tokenizer", scope="session", autouse=True)
+def fixture_phi4_tokenizer():
+    tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-4-reasoning")
+    return tokenizer
+
+
 @pytest.fixture(name="gemma2_tokenizer", scope="session", autouse=True)
 def fixture_gemma2_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("mlx-community/gemma-2-9b-it-4bit")
@@ -152,9 +155,25 @@ def fixture_gemma2_tokenizer():
 
 @pytest.fixture(name="magistral_tokenizer")
 def fixture_magistral_tokenizer():
-    from axolotl.utils.mistral_tokenizer import HFMistralTokenizer
+    from axolotl.utils.mistral import HFMistralTokenizer
 
     tokenizer = HFMistralTokenizer.from_pretrained("mistralai/Magistral-Small-2506")
+    return tokenizer
+
+
+@pytest.fixture(name="devstral_tokenizer")
+def fixture_devstral_tokenizer():
+    from axolotl.utils.mistral import HFMistralTokenizer
+
+    tokenizer = HFMistralTokenizer.from_pretrained("mistralai/Devstral-Small-2505")
+    return tokenizer
+
+
+@pytest.fixture(name="devstral_1_1_tokenizer")
+def fixture_devstral_1_1_tokenizer():
+    from axolotl.utils.mistral import HFMistralTokenizer
+
+    tokenizer = HFMistralTokenizer.from_pretrained("mistralai/Devstral-Small-2507")
     return tokenizer
 
 

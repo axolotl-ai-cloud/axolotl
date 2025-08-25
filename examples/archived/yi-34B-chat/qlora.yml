@@ -1,0 +1,64 @@
+base_model: 01-ai/Yi-34B-Chat
+# optionally might have model_type or tokenizer_type
+model_type: LlamaForCausalLM
+tokenizer_type: LlamaTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+load_in_8bit: false
+load_in_4bit: true
+sequence_len: 1024
+bf16: auto
+tf32: false
+flash_attention: true
+special_tokens:
+  bos_token: "<|startoftext|>"
+  eos_token: "<|endoftext|>"
+  unk_token: "<unk>"
+
+# Data
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+warmup_ratio: 0.1
+
+# Iterations
+num_epochs: 1
+
+# Evaluation
+val_set_size: 0.1
+evals_per_epoch: 5
+eval_sample_packing: false
+eval_batch_size: 1
+
+# LoRA
+output_dir: ./outputs/qlora-out
+adapter: qlora
+lora_model_dir:
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_linear: true
+lora_target_modules:
+
+# Sampling
+sample_packing: false
+pad_to_sequence_len: false
+
+# Batching
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+gradient_checkpointing: true
+
+# wandb
+wandb_project:
+
+# Optimizer
+optimizer: paged_adamw_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+# Misc
+resume_from_checkpoint:
+logging_steps: 1
+weight_decay: 0

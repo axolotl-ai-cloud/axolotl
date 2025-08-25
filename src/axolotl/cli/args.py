@@ -30,8 +30,6 @@ class TrainerCliArgs:
     debug_num_examples: int = field(default=0)
     prompter: Optional[str] = field(default=None)
     shard: bool = field(default=False)
-    main_process_port: Optional[int] = field(default=None)
-    num_processes: Optional[int] = field(default=None)
 
 
 @dataclass
@@ -41,6 +39,12 @@ class VllmServeCliArgs:
     tensor_parallel_size: Optional[int] = field(
         default=None,
         metadata={"help": "Number of tensor parallel workers to use."},
+    )
+    data_parallel_size: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Number of data parallel workers to use for vLLM serving. This controls how many model replicas are used for parallel inference."
+        },
     )
     host: Optional[str] = field(
         default=None,  # nosec B104

@@ -1,0 +1,77 @@
+base_model: LnL-AI/dbrx-base-converted-v2
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+trust_remote_code: true
+
+load_in_8bit: true
+load_in_4bit: false
+
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.0
+output_dir: ./outputs/out
+
+sequence_len: 512
+sample_packing: false
+pad_to_sequence_len: false
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+adapter: lora
+lora_model_dir:
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.05
+# w1, w2, & v1 will hang the trainer
+lora_target_modules:
+  - q_proj # attn
+  - k_proj # attn
+  - v_proj # attn
+  - out_proj # attn
+  - layer # router
+#  - w1
+#  - w2
+#  - v1
+
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 1
+optimizer: paged_adamw_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: false
+
+gradient_checkpointing: false  # don't use with fsdp_activation_checkpointing
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+resume_from_checkpoint:
+logging_steps: 1
+flash_attention: true
+
+warmup_ratio: 0.1
+evals_per_epoch:
+saves_per_epoch: 1
+
+weight_decay: 0.0
+fsdp:
+  - full_shard
+  - auto_wrap
+fsdp_config:
+  fsdp_limit_all_gathers: true
+  fsdp_sync_module_states: true
+  fsdp_offload_params: false
+  fsdp_use_orig_params: false
+  fsdp_cpu_ram_efficient_loading: true
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_transformer_layer_cls_to_wrap: DbrxBlock
+  fsdp_state_dict_type: FULL_STATE_DICT
+  fsdp_activation_checkpointing: true

@@ -26,14 +26,16 @@ import traceback
 from typing import TYPE_CHECKING, Callable, OrderedDict, Union
 
 from peft import PeftModel
+from torch import nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from transformers import PreTrainedModel, Trainer
+from transformers.trainer_pt_utils import get_parameter_names
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
-LOG = get_logger(__name__, use_environ=True)
+LOG = get_logger(__name__)
 
 if TYPE_CHECKING:
     from axolotl.common.datasets import TrainDatasetMeta
@@ -74,8 +76,8 @@ class BasePlugin:
     def __init__(self):
         """Initializes the BasePlugin."""
 
-    def register(self, cfg: DictDefault):  # pylint: disable=unused-argument
-        """Registers the plugin with the given configuration.
+    def register(self, cfg: dict):
+        """Registers the plugin with the given configuration as an unparsed dict.
 
         Args:
             cfg: The configuration for the plugin.
@@ -102,14 +104,13 @@ class BasePlugin:
             dataset_meta: The metadata for the training dataset.
         """
 
-    def pre_model_load(self, cfg: DictDefault):  # pylint: disable=unused-argument
+    def pre_model_load(self, cfg: DictDefault):
         """Performs actions before the model is loaded.
 
         Args:
             cfg: The configuration for the plugin.
         """
 
-    # pylint: disable=unused-argument
     def post_model_build(self, cfg: DictDefault, model: PreTrainedModel):
         """Performs actions after the model is built/loaded, but before any adapters are applied.
 
@@ -117,7 +118,6 @@ class BasePlugin:
             cfg: The configuration for the plugin.
         """
 
-    # pylint: disable=unused-argument
     def pre_lora_load(self, cfg: DictDefault, model: PreTrainedModel):
         """Performs actions before LoRA weights are loaded.
 
@@ -126,7 +126,6 @@ class BasePlugin:
             model: The loaded model.
         """
 
-    # pylint: disable=unused-argument
     def post_lora_load(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
         """Performs actions after LoRA weights are loaded.
 
@@ -135,7 +134,6 @@ class BasePlugin:
             model: The loaded model.
         """
 
-    # pylint: disable=unused-argument
     def post_model_load(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
         """Performs actions after the model is loaded.
 
@@ -144,7 +142,6 @@ class BasePlugin:
             model: The loaded model.
         """
 
-    # pylint: disable=unused-argument
     def get_trainer_cls(self, cfg: DictDefault) -> Trainer | None:
         """Returns a custom class for the trainer.
 
@@ -155,7 +152,6 @@ class BasePlugin:
             The first non-`None` trainer class returned by a plugin.
         """
 
-    # pylint: disable=unused-argument
     def post_trainer_create(self, cfg: DictDefault, trainer: Trainer):
         """Performs actions after the trainer is created.
 
@@ -164,7 +160,7 @@ class BasePlugin:
             trainer: The trainer object for training.
         """
 
-    def get_training_args(self, cfg: DictDefault):  # pylint: disable=unused-argument):
+    def get_training_args(self, cfg: DictDefault):
         """
         Returns custom training arguments to set on TrainingArgs.
 
@@ -175,9 +171,7 @@ class BasePlugin:
             object: dict containing the training arguments.
         """
 
-    def get_collator_cls_and_kwargs(
-        self, cfg: DictDefault, is_eval: bool = False
-    ):  # pylint: disable=unused-argument):
+    def get_collator_cls_and_kwargs(self, cfg: DictDefault, is_eval: bool = False):
         """
         Returns a custom class for the collator.
 
@@ -189,7 +183,6 @@ class BasePlugin:
             class: The class for the collator.
         """
 
-    # pylint: disable=unused-argument
     def create_optimizer(self, cfg: DictDefault, trainer: Trainer) -> Optimizer | None:
         """Creates and returns an optimizer for training.
 
@@ -201,7 +194,6 @@ class BasePlugin:
             The created optimizer.
         """
 
-    # pylint: disable=unused-argument
     def create_lr_scheduler(
         self,
         cfg: DictDefault,
@@ -221,7 +213,6 @@ class BasePlugin:
             The created learning rate scheduler.
         """
 
-    # pylint: disable=unused-argument
     def add_callbacks_pre_trainer(
         self, cfg: DictDefault, model: PreTrainedModel
     ) -> list[Callable]:
@@ -236,7 +227,6 @@ class BasePlugin:
         """
         return []
 
-    # pylint: disable=unused-argument
     def add_callbacks_post_trainer(
         self, cfg: DictDefault, trainer: Trainer
     ) -> list[Callable]:
@@ -252,7 +242,6 @@ class BasePlugin:
         """
         return []
 
-    # pylint: disable=unused-argument
     def post_train(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
         """Performs actions after training is complete.
 
@@ -261,7 +250,7 @@ class BasePlugin:
             model: The loaded model.
         """
 
-    def post_train_unload(self, cfg: DictDefault):  # pylint: disable=unused-argument
+    def post_train_unload(self, cfg: DictDefault):
         """Performs actions after training is complete and the model is unloaded.
 
         Args:
@@ -309,7 +298,7 @@ def load_plugin(plugin_name: str) -> BasePlugin:
     return plugin
 
 
-class PluginManager:  # pylint: disable=too-many-public-methods
+class PluginManager:
     """The `PluginManager` class is responsible for loading and managing plugins. It
     should be a singleton so it can be accessed from anywhere in the codebase.
 
@@ -641,3 +630,24 @@ class BaseOptimizerFactory:
         self, opt_model, training_args, **optimizer_kwargs
     ) -> Optimizer | None:
         pass
+
+    # duplicated from transformers
+    def get_decay_parameter_names(self, model) -> list[str]:
+        """
+        Get all parameter names that weight decay will be applied to.
+
+        This function filters out parameters in two ways:
+        1. By layer type (instances of layers specified in ALL_LAYERNORM_LAYERS)
+        2. By parameter name patterns (containing 'bias', or variation of 'norm')
+        """
+        forbidden_name_patterns = [
+            r"bias",
+            r"layernorm",
+            r"rmsnorm",
+            r"(?:^|\.)norm(?:$|\.)",
+            r"_norm(?:$|\.)",
+        ]
+        decay_parameters = get_parameter_names(
+            model, [nn.LayerNorm], forbidden_name_patterns
+        )
+        return decay_parameters

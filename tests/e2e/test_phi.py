@@ -19,7 +19,6 @@ class TestPhi(unittest.TestCase):
 
     @with_temp_dir
     def test_phi_ft(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "microsoft/phi-1_5",
@@ -53,6 +52,7 @@ class TestPhi(unittest.TestCase):
                 "save_steps": 10,
                 "eval_steps": 10,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
@@ -64,7 +64,6 @@ class TestPhi(unittest.TestCase):
 
     @with_temp_dir
     def test_phi_qlora(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "microsoft/phi-1_5",
@@ -102,6 +101,7 @@ class TestPhi(unittest.TestCase):
                 "save_steps": 10,
                 "eval_steps": 10,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

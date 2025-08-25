@@ -9,11 +9,11 @@ description: Frequently asked questions
 
 > A: Usually an issue with the GPUs communicating with each other. See the [NCCL doc](nccl.qmd)
 
-**Q: Exitcode -9**
+**Q: exitcode: -9**
 
 > A: This usually happens when you run out of system RAM.
 
-**Q: Exitcode -7 while using deepspeed**
+**Q: exitcode: -7 while using deepspeed**
 
 > A: Try upgrading deepspeed w: `pip install -U deepspeed`
 
@@ -50,6 +50,18 @@ description: Frequently asked questions
 >   # str. If you're not sure, set to same as `eos_token`.
 >   pad_token: "..."
 > ```
+
+**Q: `IterableDataset error` or `KeyError: 'input_ids'` when using `preprocess` CLI**
+
+> A: This is because you may be using `preprocess` CLI with `pretraining_dataset:` or `skip_prepare_dataset: true` respectively. Please use `axolotl train` CLI directly instead as these datasets are prepared on demand.
+
+**Q: vLLM is not working with Axolotl**
+
+> A: We currently recommend torch 2.6.0 for use with `vllm`. Please ensure you use the right version. For Docker, please use the `main-py3.11-cu124-2.6.0` tag.
+
+**Q: FA2 2.8.0 `undefined symbol` runtime error on CUDA 12.4**
+
+> A: There seems to be a wheel issue with FA2 2.8.0 on CUDA 12.4. Try CUDA 12.6 instead or downgrade to FA2 2.7.4. Please refer to the upstream issue: https://github.com/Dao-AILab/flash-attention/issues/1717.
 
 ### Chat templates
 
@@ -124,3 +136,7 @@ description: Frequently asked questions
 >   dynamic: false
 >   mode: max-autotune-no-cudagraphs
 > ```
+
+**Q: `ValueError("Backward pass should have cleared tracker of all tensors")`
+
+> A: This may happen due to edge cases in using the modern OffloadActivations context manager for CUDA streams. If you encounter this error, you may have success using the naive implementation with `offload_activations: legacy` in your YAML.

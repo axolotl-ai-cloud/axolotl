@@ -6,6 +6,9 @@ tokenizer_use_mistral_common: true
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
 load_in_8bit: false
 load_in_4bit: true
 
@@ -23,7 +26,6 @@ lora_model_dir:
 sequence_len: 2048
 sample_packing: true
 eval_sample_packing: false
-pad_to_sequence_len: true
 
 lora_r: 32
 lora_alpha: 16
@@ -70,3 +72,5 @@ fsdp_config:
   fsdp_state_dict_type: FULL_STATE_DICT
   fsdp_transformer_layer_cls_to_wrap: MistralDecoderLayer
   fsdp_activation_checkpointing: true
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

@@ -67,6 +67,7 @@ def min_cfg(temp_dir):
         "output_dir": temp_dir,
         "save_safetensors": True,
         "use_tensorboard": True,
+        "save_first_step": False,
     }
 
 
@@ -80,7 +81,7 @@ class TestKnowledgeDistillation:
     @require_torch_2_5_1
     def test_llama_kd(self, temp_dir, kd_min_cfg):
         cfg = DictDefault(kd_min_cfg)
-        # pylint: disable=duplicate-code
+
         # write cfg to yaml file
         Path(temp_dir).mkdir(parents=True, exist_ok=True)
         with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
@@ -122,7 +123,7 @@ class TestKnowledgeDistillation:
             }
             | kd_min_cfg
         )
-        # pylint: disable=duplicate-code
+
         # write cfg to yaml file
         Path(temp_dir).mkdir(parents=True, exist_ok=True)
         with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:

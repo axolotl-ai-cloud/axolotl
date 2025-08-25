@@ -19,7 +19,6 @@ class TestProcessRewardSmolLM2(unittest.TestCase):
 
     @with_temp_dir
     def test_prm(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -49,6 +48,7 @@ class TestProcessRewardSmolLM2(unittest.TestCase):
                 "use_tensorboard": True,
                 "special_tokens": {"pad_token": "<|endoftext|>"},
                 "seed": 42,
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

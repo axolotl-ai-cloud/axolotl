@@ -6,6 +6,8 @@ load_in_4bit: true
 ddp_find_unused_parameters: true
 
 chat_template: gemma3
+eot_tokens:
+  - <end_of_turn>
 datasets:
   - path: cgato/SlimOrcaDedupCleaned
     type: chat_template
@@ -23,7 +25,7 @@ lora_model_dir:
 
 sequence_len: 2048
 sample_packing: true
-pad_to_sequence_len: true
+
 
 lora_r: 32
 lora_alpha: 16
@@ -58,3 +60,5 @@ warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
 weight_decay: 0.0
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

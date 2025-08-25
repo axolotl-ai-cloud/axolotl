@@ -1,6 +1,7 @@
 """Data handling specific to SFT."""
 
 import functools
+import os
 import tempfile
 from typing import Literal
 
@@ -27,7 +28,7 @@ from axolotl.utils.data.shared import (
 )
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
-    drop_long_seq_in_dataset,
+    handle_long_seq_in_dataset,
     retry_on_request_exceptions,
 )
 from axolotl.utils.data.wrappers import get_dataset_wrapper
@@ -103,6 +104,9 @@ def _prepare_standard_dataset(
         train_dataset, eval_dataset, prompters = loader.load(_load_datasets)
     finally:
         loader.cleanup()
+
+    if os.environ.get("AXOLOTL_IS_PREPROCESS") == "1":
+        return train_dataset, eval_dataset, -1, prompters
 
     # Validate sample packing configuration for evaluation
     if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
@@ -308,7 +312,7 @@ def _load_raw_datasets(
 ) -> tuple[Dataset, list[Prompter | None]]:
     """Load, process, merge, and save raw datasets."""
     LOG.info("Loading raw datasets...", main_process_only=False)
-    if not cfg.is_preprocess:
+    if not cfg.is_preprocess and not cfg.skip_prepare_dataset:
         LOG.warning(
             "Processing datasets during training can lead to VRAM instability. Please "
             "pre-process your dataset using `axolotl preprocess path/to/config.yml`."
@@ -334,7 +338,10 @@ def _load_raw_datasets(
     dataset = merge_datasets(datasets, cfg)
 
     if not cfg.skip_prepare_dataset:
-        dataset = drop_long_seq_in_dataset(dataset, cfg)
+        if split == "test" and cfg.eval_sequence_len:
+            dataset = handle_long_seq_in_dataset(dataset, cfg.eval_sequence_len, cfg)
+        else:
+            dataset = handle_long_seq_in_dataset(dataset, cfg.sequence_len, cfg)
         if cfg.sample_packing:
             dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 

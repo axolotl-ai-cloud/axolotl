@@ -1,0 +1,58 @@
+base_model: bigcode/starcoder2-3b
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+load_in_8bit: false
+load_in_4bit: true
+
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+
+
+dataset_prepared_path:
+val_set_size: 0.2
+output_dir: ./outputs/qlora
+
+adapter: qlora
+lora_model_dir:
+
+sequence_len: 8192
+sample_packing: true
+
+
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_linear: true
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_run_id:
+wandb_log_model:
+
+gradient_accumulation_steps: 8
+micro_batch_size: 2
+num_epochs: 3
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 2e-5
+
+bf16: auto
+fp16: false
+tf32: false
+
+gradient_checkpointing: true
+resume_from_checkpoint:
+logging_steps: 1
+flash_attention: true
+
+warmup_ratio: 0.1
+evals_per_epoch: 4
+eval_steps:
+saves_per_epoch: 4
+save_steps:
+save_total_limit: 2
+weight_decay:
+special_tokens:

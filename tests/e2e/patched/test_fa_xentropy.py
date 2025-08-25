@@ -23,7 +23,6 @@ class TestFAXentropyLlama:
         [1, 4],
     )
     def test_lora_packing_fa_cross_entropy(self, temp_dir, gradient_accumulation_steps):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -62,6 +61,7 @@ class TestFAXentropyLlama:
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -78,5 +78,5 @@ class TestFAXentropyLlama:
         check_model_output_exists(temp_dir, cfg)
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 1.5, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 1.5, "Train Loss (%s) is too high"
         )

@@ -19,7 +19,6 @@ class TestCustomSchedulers(unittest.TestCase):
 
     @with_temp_dir
     def test_rex_scheduler(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -51,6 +50,7 @@ class TestCustomSchedulers(unittest.TestCase):
                 "lr_scheduler": "rex",
                 "warmup_steps": 5,
                 "cosine_min_lr_ratio": 0.05,
+                "save_first_step": False,
             }
         )
 

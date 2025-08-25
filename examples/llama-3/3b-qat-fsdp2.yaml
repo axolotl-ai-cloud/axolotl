@@ -22,7 +22,7 @@ datasets:
 output_dir: ./outputs/qat_out/
 
 sample_packing: true
-pad_to_sequence_len: true
+
 sequence_len: 512
 
 flex_attention: true
@@ -58,7 +58,7 @@ logging_steps: 1
 evals_per_epoch: 1
 saves_per_epoch: 1
 
-warmup_steps: 10
+warmup_ratio: 0.1
 weight_decay: 0.0
 fsdp:
   - full_shard
@@ -77,3 +77,5 @@ fsdp_config:
 
 special_tokens:
   pad_token: <|end_of_text|>
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

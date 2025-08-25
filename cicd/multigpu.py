@@ -2,8 +2,6 @@
 modal application to run axolotl gpu tests in Modal
 """
 
-# pylint: disable=duplicate-code
-
 import os
 import pathlib
 import tempfile
@@ -24,9 +22,9 @@ df_template = template_env.get_template("Dockerfile.jinja")
 df_args = {
     "AXOLOTL_EXTRAS": os.environ.get("AXOLOTL_EXTRAS", ""),
     "AXOLOTL_ARGS": os.environ.get("AXOLOTL_ARGS", ""),
-    "PYTORCH_VERSION": os.environ.get("PYTORCH_VERSION", "2.5.1"),
-    "BASE_TAG": os.environ.get("BASE_TAG", "main-base-py3.11-cu124-2.5.1"),
-    "CUDA": os.environ.get("CUDA", "124"),
+    "PYTORCH_VERSION": os.environ.get("PYTORCH_VERSION", "2.6.0"),
+    "BASE_TAG": os.environ.get("BASE_TAG", "main-base-py3.11-cu126-2.6.0"),
+    "CUDA": os.environ.get("CUDA", "126"),
     "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/main"),
     "GITHUB_SHA": os.environ.get("GITHUB_SHA", ""),
     "CODECOV_TOKEN": os.environ.get("CODECOV_TOKEN", ""),
@@ -63,13 +61,13 @@ def run_cmd(cmd: str, run_folder: str):
 
     # Propagate errors from subprocess.
     if exit_code := subprocess.call(cmd.split(), cwd=run_folder):  # nosec
-        exit(exit_code)  # pylint: disable=consider-using-sys-exit
+        exit(exit_code)
 
 
 @app.function(
     image=cicd_image,
     gpu=GPU_CONFIG,
-    timeout=90 * 60,
+    timeout=120 * 60,
     cpu=16.0,
     memory=131072 * N_GPUS,
     volumes=VOLUME_CONFIG,

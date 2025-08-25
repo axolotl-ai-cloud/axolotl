@@ -1,5 +1,6 @@
 project:
   type: website
+  pre-render: docs/scripts/generate_config_docs.py
 
 quartodoc:
   dir: docs/api
@@ -34,25 +35,30 @@ quartodoc:
         - cli.train
         - cli.evaluate
         - cli.args
+        - cli.art
         - cli.checks
         - cli.config
+        - cli.delinearize_llama4
         - cli.inference
         - cli.merge_lora
         - cli.merge_sharded_fsdp_weights
         - cli.preprocess
-        - cli.sweeps
-        - cli.utils
+        - cli.quantize
         - cli.vllm_serve
         - cli.cloud.base
         - cli.cloud.modal_
-        - cli.quantize
+        - cli.utils
+        - cli.utils.args
+        - cli.utils.fetch
+        - cli.utils.load
+        - cli.utils.sweeps
+        - cli.utils.train
     - title: Trainers
       desc: Training implementations
       contents:
         - core.trainers.base
         - core.trainers.trl
         - core.trainers.mamba
-        - core.trainers.relora
         - core.trainers.dpo.trainer
         - core.trainers.grpo.trainer
         - core.trainers.grpo.sampler
@@ -235,7 +241,7 @@ website:
             - docs/installation.qmd
             - docs/inference.qmd
             - docs/cli.qmd
-            - docs/config.qmd
+            - docs/config-reference.qmd
             - text: "API Reference"
               href: docs/api
 
@@ -267,6 +273,8 @@ website:
             - docs/batch_vs_grad.qmd
             - docs/dataset_preprocessing.qmd
             - docs/multipack.qmd
+            - docs/mixed_precision.qmd
+            - docs/optimizers.qmd
 
         - section: "Advanced Features"
           contents:
@@ -275,6 +283,8 @@ website:
             - docs/torchao.qmd
             - docs/custom_integrations.qmd
             - docs/sequence_parallelism.qmd
+            - docs/gradient_checkpointing.qmd
+            - docs/nd_parallelism.qmd
 
         - section: "Troubleshooting"
           contents:

@@ -35,6 +35,9 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "deepseek_v3",
     "glm",
     "glm4",
+    "smollm3",
+    "gpt_oss",
+    "arcee",
 ]
 
 
@@ -42,9 +45,11 @@ def patch_for_multipack(model_type, model_name=None, has_remote_code=False):
     if has_remote_code:
         patch_remote(model_name)
     elif hasattr(transformers, "modeling_flash_attention_utils"):
-        transformers.modeling_flash_attention_utils._get_unpad_data = (  # pylint: disable=protected-access
-            get_unpad_data
-        )
+        # sanity check in case upstream api changes on this
+        assert hasattr(
+            transformers.modeling_flash_attention_utils, "_get_unpad_data"
+        ), "transformers api changed for _get_unpad_data for flash attention"
+        transformers.modeling_flash_attention_utils._get_unpad_data = get_unpad_data
 
     if model_type == "mixtral" and is_deepspeed_zero3_enabled():
         patch_mixtral_moe_forward_zero3()
@@ -60,6 +65,4 @@ def patch_remote(model_name):
     module_name = ".".join(parts)
     modeling_arch = importlib.import_module(module_name)
     if hasattr(modeling_arch, "_get_unpad_data"):
-        modeling_arch._get_unpad_data = (  # pylint: disable=protected-access
-            get_unpad_data
-        )
+        modeling_arch._get_unpad_data = get_unpad_data

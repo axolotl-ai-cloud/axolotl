@@ -26,7 +26,9 @@ from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
-LOG = get_logger(__name__, use_environ=True)
+LOG = get_logger(__name__)
+
+API_KEY_FIELDS = {"comet_api_key"}
 
 
 def check_remote_config(config: Union[str, Path]) -> Union[str, Path]:
@@ -151,6 +153,8 @@ def prepare_plugins(cfg: DictDefault):
         plugin_manager = PluginManager.get_instance()
         for plugin_name in cfg["plugins"]:
             plugin_manager.register(plugin_name)
+        for plugin in plugin_manager.plugins.values():
+            plugin.register(cfg)
 
 
 def plugin_set_cfg(cfg: DictDefault):
@@ -195,19 +199,18 @@ def load_cfg(
     # If there are any options passed in the cli, if it is something that seems valid
     # from the yaml, then overwrite the value
     cfg_keys = cfg.keys()
-    for k, _ in kwargs.items():
-        # if not strict, allow writing to cfg even if it's not in the yml already
-        if k in cfg_keys or not cfg.strict:
-            # handle booleans
-            if isinstance(cfg[k], bool):
-                cfg[k] = bool(kwargs[k])
+    for key, value in kwargs.items():
+        # If not strict, allow writing to cfg even if it's not in the yml already
+        if key in cfg_keys or not cfg.strict:
+            if isinstance(cfg[key], bool):
+                cfg[key] = bool(value)
             else:
-                cfg[k] = kwargs[k]
+                cfg[key] = value
 
     try:
         device_props = torch.cuda.get_device_properties("cuda")
         gpu_version = "sm_" + str(device_props.major) + str(device_props.minor)
-    except:  # pylint: disable=bare-except # noqa: E722
+    except:
         gpu_version = None
 
     prepare_plugins(cfg)
@@ -232,5 +235,16 @@ def load_cfg(
     setup_mlflow_env_vars(cfg)
     setup_comet_env_vars(cfg)
     plugin_set_cfg(cfg)
+
+    cfg_to_log = {
+        k: "[REDACTED]" if k in API_KEY_FIELDS else v
+        for k, v in cfg.items()
+        if v is not None
+    }
+
+    LOG.info(
+        "config:\n%s",
+        json.dumps(cfg_to_log, indent=2, default=str, sort_keys=True),
+    )
 
     return cfg

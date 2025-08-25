@@ -1,5 +1,6 @@
 """CLI to run preprocessing of a dataset."""
 
+import os
 import warnings
 from pathlib import Path
 from typing import Union
@@ -8,11 +9,9 @@ import fire
 import transformers
 from accelerate import init_empty_weights
 from colorama import Fore
-from dotenv import load_dotenv
 from transformers import AutoModelForCausalLM
 
 from axolotl.cli.args import PreprocessCliArgs
-from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
@@ -33,9 +32,15 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
         cfg: Dictionary mapping `axolotl` config keys to values.
         cli_args: Preprocessing-specific CLI arguments.
     """
-    print_axolotl_text_art()
     check_accelerate_default_config()
     check_user_token()
+
+    for key in ["skip_prepare_dataset", "pretraining_dataset"]:
+        if cfg.get(key):
+            LOG.error(
+                f"You have set `{key}:`. `preprocess` is not needed. Run the `axolotl train` CLI directly instead."
+            )
+            return
 
     if not cfg.dataset_prepared_path:
         msg = (
@@ -68,7 +73,7 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
                     AutoModelForCausalLM.from_pretrained(
                         model_name, trust_remote_code=True
                     )
-                except Exception as exc:  # pylint: disable=broad-exception-caught,unused-variable  # nosec B110  # noqa F841
+                except Exception:  # nosec B110
                     pass
                 # fmt: on
 
@@ -90,8 +95,10 @@ def do_cli(
         config: Path to `axolotl` config YAML file.
         kwargs: Additional keyword arguments to override config file values.
     """
-    # pylint: disable=duplicate-code
-    parsed_cfg = load_cfg(config, **kwargs)
+
+    os.environ["AXOLOTL_IS_PREPROCESS"] = "1"
+    is_preprocess = kwargs.pop("is_preprocess", True)
+    parsed_cfg = load_cfg(config, is_preprocess=is_preprocess, **kwargs)
     parsed_cfg.is_preprocess = True
     parser = transformers.HfArgumentParser(PreprocessCliArgs)
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(
@@ -102,5 +109,4 @@ def do_cli(
 
 
 if __name__ == "__main__":
-    load_dotenv()
     fire.Fire(do_cli)

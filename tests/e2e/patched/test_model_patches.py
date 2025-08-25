@@ -45,6 +45,7 @@ class TestModelPatches(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
@@ -78,6 +79,7 @@ class TestModelPatches(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
@@ -87,5 +89,5 @@ class TestModelPatches(unittest.TestCase):
 
         assert (
             "torch.jit"
-            in transformers.modeling_flash_attention_utils._get_unpad_data.__module__  # pylint: disable=protected-access
+            in transformers.modeling_flash_attention_utils._get_unpad_data.__module__
         )

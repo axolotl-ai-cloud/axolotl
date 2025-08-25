@@ -26,7 +26,6 @@ class TestPacking(unittest.TestCase):
 
     @enable_hf_offline
     def setUp(self) -> None:
-        # pylint: disable=duplicate-code
         self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
         self.tokenizer.add_special_tokens(
             {
@@ -75,7 +74,6 @@ class TestPacking(unittest.TestCase):
 
     @with_temp_dir
     def test_lora_packing(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -99,6 +97,7 @@ class TestPacking(unittest.TestCase):
                         "type": "alpaca",
                     },
                 ],
+                "dataset_processes": 4,
                 "num_epochs": 1,
                 "max_steps": 20,
                 "save_steps": 10,
@@ -126,9 +125,7 @@ class TestPacking(unittest.TestCase):
             _,
         ) = setup_model_and_trainer(cfg, dataset_meta)
 
-        sampler = trainer._get_eval_sampler(  # pylint: disable=protected-access
-            trainer.eval_dataset
-        )
+        sampler = trainer._get_eval_sampler(trainer.eval_dataset)
         assert "MultipackBatchSampler" in sampler.__class__.__name__
         assert (
             "V2BatchSamplerDataCollatorForSeq2Seq"
@@ -139,9 +136,7 @@ class TestPacking(unittest.TestCase):
         batch = next(dataloader_iter)
         assert batch["input_ids"].shape == (1, 8192)
 
-        sampler = trainer._get_train_sampler(  # pylint: disable=protected-access
-            trainer.train_dataset
-        )
+        sampler = trainer._get_train_sampler(trainer.train_dataset)
         assert "MultipackBatchSampler" in sampler.__class__.__name__
         assert (
             "V2BatchSamplerDataCollatorForSeq2Seq"

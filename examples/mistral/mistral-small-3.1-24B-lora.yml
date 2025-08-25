@@ -48,11 +48,13 @@ tf32: true
 
 gradient_checkpointing: true
 logging_steps: 1
-flash_attention: false # PixtralVisionModel does not support Flash Attention 2.0 yet.
-eager_attention:
+# flash_attention: false # PixtralVisionModel does not support Flash Attention 2.0 yet.
+sdp_attention: true
 
 warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
 weight_decay: 0.0
 special_tokens:
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

@@ -11,14 +11,13 @@ from typing import List, Optional
 import numpy as np
 import torch
 import torch.cuda
-from accelerate.logging import get_logger
 from datasets import IterableDataset, disable_caching, enable_caching
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.monkeypatch.trainer_eval_guard import patch_evaluation_loop_for_fsdp2
-from axolotl.utils.distributed import reduce_and_broadcast
+from axolotl.utils.distributed import init_distributed_state, reduce_and_broadcast
 from axolotl.utils.environment import check_cuda_p2p_ib_support
+from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger(__name__)
@@ -381,6 +380,7 @@ def process_pretraining_datasets_for_packing(
     if not skip_position_ids:
         train_dataset = train_dataset.map(
             add_position_ids,
+            batched=True,
             desc="Add position_id column (Pretraining Sample Packing)",
         )
     if drop_attention_mask:
@@ -441,7 +441,8 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                     - 1
                 )
                 * cfg.num_epochs
-                * cfg.sequence_parallel_degree
+                * cfg.context_parallel_size
+                * cfg.tensor_parallel_size
             )
             LOG.debug(
                 f"total_num_tokens: {cfg.total_num_tokens:_}, total_num_steps: {total_num_steps:_}"
@@ -467,6 +468,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 sequential=cfg.sample_packing_sequentially,
                 drop_last=True,
                 num_processes=cfg.dataset_processes,
+                mp_start_method=cfg.sample_packing_mp_start_method or "fork",
             )
 
             data_loader = DataLoader(
@@ -479,7 +481,10 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             # on the agreed on value for sample_packing_eff_est
             total_num_steps = int(
                 math.floor(
-                    data_loader_len * cfg.num_epochs * cfg.sequence_parallel_degree
+                    data_loader_len
+                    * cfg.num_epochs
+                    * cfg.context_parallel_size
+                    * cfg.tensor_parallel_size
                 )
             )
             if cfg.dataloader_drop_last:
@@ -491,7 +496,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 return max(estimates)
 
             sample_packing_actual_eff_all = reduce_and_broadcast(
-                lambda: sampler.efficiency(),  # pylint: disable=unnecessary-lambda
+                lambda: sampler.efficiency(),
                 calc_sample_packing_eff_est,
             )
             sample_packing_eff_est = (
@@ -505,7 +510,8 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             math.ceil(
                 len(train_dataset)
                 * cfg.num_epochs
-                * cfg.sequence_parallel_degree
+                * cfg.context_parallel_size
+                * cfg.tensor_parallel_size
                 / cfg.batch_size
             )
         )
@@ -533,47 +539,89 @@ def setup_deepspeed_env(cfg, stage=None):
 
     os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
     os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
+    os.environ["ACCELERATE_GRADIENT_ACCUMULATION_STEPS"] = str(
+        cfg.gradient_accumulation_steps
+    )
     if stage:
         os.environ["ACCELERATE_DEEPSPEED_ZERO_STAGE"] = str(stage)
         if stage == 3:
             os.environ["ACCELERATE_DEEPSPEED_ZERO3_INIT"] = "true"
+
+    # NOTE(djsaunde): The distribued state cannot be initialized prior to the
+    # ACCELERATE_USE_DEEPSPEED assignment, but it must be initialized some time prior
+    # to model load.
+    if (
+        int(os.environ.get("WORLD_SIZE", "1")) == 1
+        and os.environ.get("AXOLOTL_IS_PREPROCESS", "0") != "1"
+    ):
+        os.environ["WORLD_SIZE"] = "1"  # force it in case not set
+        os.environ["LOCAL_RANK"] = "0"  # force it in case not set
+        os.environ["RANK"] = os.environ.get("LOCAL_RANK", "0")
+        import deepspeed.comm as dist
+
+        dist.init_distributed(
+            dist_backend="nccl", auto_mpi_discovery=False, dist_init_required=True
+        )
+    init_distributed_state()
+
     # If we don't assign this, it doesn't actually get set in the accelerate weakref
     _ = HfTrainerDeepSpeedConfig(cfg.deepspeed)
 
 
 def setup_fsdp_envs(cfg):
     os.environ["ACCELERATE_USE_FSDP"] = "true"
-    if str(cfg.fsdp_config.fsdp_version) == "2":
+
+    # TODO @SalmanMohammadi remove FSDP1 args in 0.12
+    if str(cfg.fsdp_version) == "2":
         os.environ["FSDP_VERSION"] = "2"
-    if cfg.fsdp_config.fsdp_activation_checkpointing:
+    if cfg.fsdp_config.activation_checkpointing:
         os.environ["FSDP_ACTIVATION_CHECKPOINTING"] = "true"
-    if cfg.fsdp_config.fsdp_offload_params:
+    if cfg.fsdp_config.offload_params:
         os.environ["FSDP_OFFLOAD_PARAMS"] = "true"
-    if cfg.fsdp_config.fsdp_sync_module_states:
+    if cfg.fsdp_config.sync_module_states:
         os.environ["FSDP_SYNC_MODULE_STATES"] = "true"
-    if cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+    if cfg.fsdp_config.cpu_ram_efficient_loading:
         os.environ["FSDP_CPU_RAM_EFFICIENT_LOADING"] = "true"
-    if cfg.fsdp_config.fsdp_use_orig_params:
+    if cfg.fsdp_config.use_orig_params:
         os.environ["FSDP_USE_ORIG_PARAMS"] = "true"
-    if cfg.fsdp_config.fsdp_state_dict_type:
-        os.environ["FSDP_STATE_DICT_TYPE"] = cfg.fsdp_config.fsdp_state_dict_type
-    if cfg.fsdp_config.fsdp_auto_wrap_policy:
-        os.environ["FSDP_AUTO_WRAP_POLICY"] = cfg.fsdp_config.fsdp_auto_wrap_policy
-    if cfg.fsdp_config.fsdp_transformer_layer_cls_to_wrap:
+    if cfg.fsdp_config.state_dict_type:
+        os.environ["FSDP_STATE_DICT_TYPE"] = cfg.fsdp_config.state_dict_type
+    if cfg.fsdp_config.auto_wrap_policy:
+        os.environ["FSDP_AUTO_WRAP_POLICY"] = cfg.fsdp_config.auto_wrap_policy
+    if cfg.fsdp_config.transformer_layer_cls_to_wrap:
         os.environ["FSDP_TRANSFORMER_CLS_TO_WRAP"] = (
-            cfg.fsdp_config.fsdp_transformer_layer_cls_to_wrap
+            cfg.fsdp_config.transformer_layer_cls_to_wrap
         )
-    if cfg.fsdp_config.fsdp_reshard_after_forward is not None:
-        os.environ["FSDP_RESHARD_AFTER_FORWARD"] = (
-            "true" if cfg.fsdp_config.fsdp_reshard_after_forward else "false"
-        )
+    if cfg.fsdp_config.reshard_after_forward:
+        os.environ["FSDP_RESHARD_AFTER_FORWARD"] = "true"
+
+
+def setup_parallelism_envs(cfg):
+    set_accelerate_parallelism_config = False
+    if cfg.tensor_parallel_size and cfg.tensor_parallel_size > 1:
+        set_accelerate_parallelism_config = True
+        os.environ["PARALLELISM_CONFIG_TP_SIZE"] = str(cfg.tensor_parallel_size)
+    if cfg.dp_shard_size and cfg.dp_shard_size > 1:
+        set_accelerate_parallelism_config = True
+        os.environ["PARALLELISM_CONFIG_DP_SHARD_SIZE"] = str(cfg.dp_shard_size)
+    if cfg.dp_replicate_size and cfg.dp_replicate_size > 1:
+        set_accelerate_parallelism_config = True
+        os.environ["PARALLELISM_CONFIG_DP_REPLICATE_SIZE"] = str(cfg.dp_replicate_size)
+    if cfg.context_parallel_size and cfg.context_parallel_size > 1:
+        set_accelerate_parallelism_config = True
+        os.environ["PARALLELISM_CONFIG_CP_SIZE"] = str(cfg.context_parallel_size)
+        os.environ["ACCELERATE_ALLOW_CP_STANDALONE"] = "true"
+    if set_accelerate_parallelism_config:
+        os.environ["ACCELERATE_USE_PARALLELISM_CONFIG"] = "true"
 
 
 def prepare_optim_env(cfg):
     if not check_cuda_p2p_ib_support():
         if os.getenv("NCCL_P2P_DISABLE") is None:
             os.environ["NCCL_P2P_DISABLE"] = "1"
-    if cfg.fsdp:
+    # TODO @SalmanMohammadi remove the cfg.fsdp check in 0.12
+    if cfg.fsdp or cfg.fsdp_config:
+        cfg.fsdp = True if not cfg.fsdp else cfg.fsdp
         setup_fsdp_envs(cfg)
     elif cfg.deepspeed:
         stage = None
@@ -585,6 +633,7 @@ def prepare_optim_env(cfg):
             stage = deepspeed_config.get("zero_optimization", {}).get("stage", None)
         setup_deepspeed_env(cfg, stage=stage)
 
+    setup_parallelism_envs(cfg)
     setup_torch_compile_env(cfg)
 
     if cfg.fp8:
@@ -600,6 +649,9 @@ def prepare_optim_env(cfg):
 def prepare_opinionated_env(cfg):
     if cfg.qlora_sharded_model_loading:
         # model loading is forked after the tokenizer
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    if cfg.sample_packing:
+        # multipack parallel packing sampler defaults to using fork
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
@@ -634,12 +686,6 @@ def setup_trainer(
     """
     from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 
-    if (
-        cfg.torch_compile
-        and cfg.fsdp_config
-        and str(cfg.fsdp_config.fsdp_version) == "2"
-    ):
-        patch_evaluation_loop_for_fsdp2()
     if cfg.rl:
         trainer_builder = HFRLTrainerBuilder(cfg, model, tokenizer, processor)
         trainer_builder.model_ref = model_ref

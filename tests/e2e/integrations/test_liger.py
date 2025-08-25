@@ -17,7 +17,6 @@ class LigerIntegrationTestCase:
 
     @require_torch_2_4_1
     def test_llama_wo_flce(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -50,9 +49,10 @@ class LigerIntegrationTestCase:
                 "save_safetensors": True,
                 "bf16": "auto",
                 "max_steps": 5,
+                "save_first_step": False,
             }
         )
-        # pylint: disable=duplicate-code
+
         cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
@@ -63,7 +63,6 @@ class LigerIntegrationTestCase:
 
     @require_torch_2_4_1
     def test_llama_w_flce(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -96,9 +95,10 @@ class LigerIntegrationTestCase:
                 "save_safetensors": True,
                 "bf16": "auto",
                 "max_steps": 5,
+                "save_first_step": False,
             }
         )
-        # pylint: disable=duplicate-code
+
         cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)

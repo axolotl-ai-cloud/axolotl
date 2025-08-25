@@ -6,6 +6,10 @@ from typing import Optional, Tuple, Union
 import torch
 import transformers
 
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
+
 
 def patch_flex_wrapper(**flex_attn_compile_kwargs):
     # TODO remove this patch when transformers#37285 is merged and in a release
@@ -46,21 +50,24 @@ def patch_flex_wrapper(**flex_attn_compile_kwargs):
                 # cause errors. The suggested fix is to compile with "max-autotune-no-cudagraphs"
                 # see https://github.com/pytorch/pytorch/issues/146260 for training
                 self.training = training
+                LOG.info(
+                    "Compiling flex attention with kwargs: %s. This may take a while...",
+                    flex_attn_compile_kwargs,
+                )
                 self._compiled_flex_attention = torch.compile(
                     flex_attention,
                     **flex_attn_compile_kwargs,
                 )
+                LOG.info("Flex attention compiled successfully.")
                 self._is_flex_compiled = True
 
         def __call__(self):
             return self._compiled_flex_attention
 
     transformers.integrations.flex_attention.WrappedFlexAttention = WrappedFlexAttention
-    setattr(
-        sys.modules["transformers.integrations.flex_attention"],
-        "WrappedFlexAttention",
-        WrappedFlexAttention,
-    )
+    sys.modules[
+        "transformers.integrations.flex_attention"
+    ].WrappedFlexAttention = WrappedFlexAttention
 
 
 def patch_flex_make_mask():
@@ -135,9 +142,7 @@ def patch_flex_make_mask():
         # computation prior to the softmax. For sample packing, we need both the
         # logic for both causal mask and document mask. See PyTorch's official
         # blog post for more details: https://pytorch.org/blog/flexattention/#mask-mods
-        def causal_mask_mod(
-            batch_idx, head_idx, q_idx, kv_idx
-        ):  # pylint: disable=unused-argument
+        def causal_mask_mod(batch_idx, head_idx, q_idx, kv_idx):
             """
             Defines the logic of a block causal mask by combining both a standard causal mask
             and a block diagonal document mask.
@@ -189,14 +194,12 @@ def patch_flex_make_mask():
     for n in tuple(sys.modules):
         if ".modeling_" in n:
             if hasattr(sys.modules[n], "make_flex_block_causal_mask"):
-                sys.modules[n].make_flex_block_causal_mask = (
-                    patched_make_flex_block_causal_mask
-                )
-                setattr(
-                    sys.modules[n],
-                    "make_flex_block_causal_mask",
-                    patched_make_flex_block_causal_mask,
-                )
+                sys.modules[
+                    n
+                ].make_flex_block_causal_mask = patched_make_flex_block_causal_mask
+                sys.modules[
+                    n
+                ].make_flex_block_causal_mask = patched_make_flex_block_causal_mask
 
     transformers.integrations.flex_attention.make_flex_block_causal_mask = (
         patched_make_flex_block_causal_mask

@@ -28,14 +28,12 @@ LOG = get_logger(__name__)
 def setup_quantized_meta_for_peft(model: torch.nn.Module):
     """Replaces `quant_state.to` with a dummy function to prevent PEFT from moving `quant_state` to meta device"""
 
-    def temp_to_method(self, *args, **kwargs):  # pylint: disable=unused-argument
+    def temp_to_method(self, *args, **kwargs):
         return self
 
     for param in model.parameters():
         if isinstance(param, Params4bit):
-            param.quant_state._orig_to = (  # pylint: disable=protected-access
-                param.quant_state.to
-            )
+            param.quant_state._orig_to = param.quant_state.to
             param.quant_state.to = types.MethodType(temp_to_method, param.quant_state)
 
 
@@ -43,10 +41,8 @@ def setup_quantized_peft_meta_for_training(model: torch.nn.Module):
     """Replaces dummy `quant_state.to` method with the original function to allow training to continue"""
     for param in model.parameters():
         if isinstance(param, Params4bit) and hasattr(param.quant_state, "_orig_to"):
-            param.quant_state.to = (
-                param.quant_state._orig_to  # pylint: disable=protected-access
-            )
-            param.quant_state._orig_to = None  # pylint: disable=protected-access
+            param.quant_state.to = param.quant_state._orig_to
+            param.quant_state._orig_to = None
 
 
 def find_all_linear_names(model):
@@ -76,6 +72,7 @@ def load_lora(
     config_only: bool = False,
 ) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]:
     lora_target_modules = cfg.lora_target_modules or []
+    lora_target_parameters = cfg.lora_target_parameters or []
 
     if cfg.lora_target_linear:
         linear_names = find_all_linear_names(model)
@@ -106,6 +103,7 @@ def load_lora(
         r=cfg.lora_r,
         lora_alpha=cfg.lora_alpha,
         target_modules=lora_target_modules,
+        target_parameters=lora_target_parameters,
         layers_to_transform=cfg.peft_layers_to_transform,
         layers_pattern=cfg.peft_layers_pattern,
         lora_dropout=cfg.lora_dropout,
@@ -122,9 +120,9 @@ def load_lora(
     rank = int(os.environ.get("LOCAL_RANK", 0))
 
     if (
-        cfg.fsdp
+        cfg.fsdp_config
         and cfg.adapter
-        and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        and cfg.fsdp_config.cpu_ram_efficient_loading
         and rank != 0
     ):
         setup_quantized_meta_for_peft(model)
@@ -152,9 +150,9 @@ def load_lora(
                 "Exception caught during model.print_trainable_parameters(): %s", exc
             )
     elif (
-        cfg.fsdp
+        cfg.fsdp_config
         and cfg.adapter
-        and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
+        and cfg.fsdp_config.cpu_ram_efficient_loading
         and rank != 0
     ):
         setup_quantized_peft_meta_for_training(model)

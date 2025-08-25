@@ -21,7 +21,6 @@ class TestPackedLlama(unittest.TestCase):
 
     @with_temp_dir
     def test_loss_packed(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -48,6 +47,7 @@ class TestPackedLlama(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -62,5 +62,5 @@ class TestPackedLlama(unittest.TestCase):
         train(cfg=cfg, dataset_meta=dataset_meta)
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss (%s) is too high"
         )

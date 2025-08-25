@@ -66,14 +66,19 @@ def parse_requirements(extras_require_map):
 
             if (major, minor) >= (2, 7):
                 _install_requires.pop(_install_requires.index(xformers_version))
-                # _install_requires.append("xformers==0.0.29.post3")  # xformers seems to be hard pinned to 2.6.0
-                extras_require_map["vllm"] = ["vllm==0.8.5.post1"]
+                if patch == 0:
+                    _install_requires.append("xformers==0.0.30")
+                    # vllm 0.9.x is incompatible with latest transformers
+                    extras_require_map.pop("vllm")
+                else:
+                    _install_requires.append("xformers==0.0.31")
+                    extras_require_map["vllm"] = ["vllm>=0.10.0"]
             elif (major, minor) >= (2, 6):
                 _install_requires.pop(_install_requires.index(xformers_version))
-                _install_requires.append(
-                    "xformers==0.0.29.post2"
-                )  # vllm needs post2 w torch 2.6
-                extras_require_map["vllm"] = ["vllm==0.8.5.post1"]
+                _install_requires.append("xformers==0.0.29.post3")
+                # since we only support 2.6.0+cu126
+                _dependency_links.append("https://download.pytorch.org/whl/cu126")
+                extras_require_map.pop("vllm")
             elif (major, minor) >= (2, 5):
                 _install_requires.pop(_install_requires.index(xformers_version))
                 if patch == 0:
@@ -81,7 +86,9 @@ def parse_requirements(extras_require_map):
                 else:
                     _install_requires.append("xformers>=0.0.28.post3")
                 _install_requires.pop(_install_requires.index(autoawq_version))
+                extras_require_map.pop("vllm")
             elif (major, minor) >= (2, 4):
+                extras_require_map.pop("vllm")
                 if patch == 0:
                     _install_requires.pop(_install_requires.index(xformers_version))
                     _install_requires.append("xformers>=0.0.27")
@@ -111,14 +118,14 @@ def get_package_version():
 
 
 extras_require = {
-    "flash-attn": ["flash-attn==2.7.4.post1"],
+    "flash-attn": ["flash-attn==2.8.3"],
     "ring-flash-attn": [
-        "flash-attn==2.7.4.post1",
-        "ring-flash-attn>=0.1.4",
+        "flash-attn==2.8.3",
+        "ring-flash-attn>=0.1.7",
         "yunchang==0.6.0",
     ],
     "deepspeed": [
-        "deepspeed==0.17.0",
+        "deepspeed==0.17.2",
         "deepspeed-kernels",
     ],
     "mamba-ssm": [
@@ -148,13 +155,12 @@ extras_require = {
         "ray[train]",
     ],
     "vllm": [
-        "vllm==0.7.2",
+        "vllm==0.10.0",
     ],
     "llmcompressor": [
         "llmcompressor==0.5.1",
     ],
 }
-
 install_requires, dependency_links, extras_require_build = parse_requirements(
     extras_require
 )

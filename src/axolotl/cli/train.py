@@ -7,17 +7,14 @@ from typing import Union
 
 import fire
 from accelerate import Accelerator
-from dotenv import load_dotenv
 from transformers.hf_argparser import HfArgumentParser
 
 from axolotl.cli.args import TrainerCliArgs
-from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.checks import check_accelerate_default_config, check_user_token
 from axolotl.cli.config import load_cfg
 from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.integrations.base import PluginManager
 from axolotl.train import train
-from axolotl.utils import patch_optimized_env
 from axolotl.utils.config import normalize_config, resolve_dtype
 from axolotl.utils.dict import DictDefault
 
@@ -32,10 +29,6 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         cfg: Dictionary mapping `axolotl` config keys to values.
         cli_args: Training-specific CLI arguments.
     """
-    # Enable expandable segments for cuda allocation to improve VRAM usage
-    patch_optimized_env()
-
-    print_axolotl_text_art()
     check_accelerate_default_config()
     if int(os.getenv("LOCAL_RANK", "0")) == 0:
         check_user_token()
@@ -66,7 +59,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
         config: Path to `axolotl` config YAML file.
         kwargs: Additional keyword arguments to override config file values.
     """
-    # pylint: disable=duplicate-code
+
     parsed_cfg = load_cfg(config, **kwargs)
     parser = HfArgumentParser(TrainerCliArgs)
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(
@@ -111,11 +104,17 @@ def ray_train_func(kwargs: dict):
     # initialize accelerator before model instantiation
     Accelerator(gradient_accumulation_steps=cfg.gradient_accumulation_steps)
 
+    # Register plugins in Ray workers
+    if cfg.get("plugins"):
+        from axolotl.cli.config import plugin_set_cfg, prepare_plugins
+
+        prepare_plugins(cfg)
+        plugin_set_cfg(cfg)
+
     kwargs["cfg"] = cfg
 
     do_train(**kwargs)
 
 
 if __name__ == "__main__":
-    load_dotenv()
     fire.Fire(do_cli)

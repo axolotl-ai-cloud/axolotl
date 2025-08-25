@@ -52,15 +52,15 @@ class TestLoadModelUtils:
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
+                "tensor_parallel_size": 1,
+                "context_parallel_size": 1,
             }
         )
-        self.model_loader = (  # pylint: disable=attribute-defined-outside-init
-            ModelLoader(
-                cfg=self.cfg,
-                tokenizer="",
-                inference=False,
-                reference_model=True,
-            )
+        self.model_loader = ModelLoader(
+            cfg=self.cfg,
+            tokenizer="",
+            inference=False,
+            reference_model=True,
         )
 
     @pytest.mark.parametrize("embedding_modules", ["embed_tokens", "lm_head"])
@@ -72,7 +72,7 @@ class TestLoadModelUtils:
         self, temp_dir, embedding_modules, dist_dtype, before_kbit_train_or_finetune
     ):
         self.cfg.output_dir = temp_dir
-        self.model_loader.tokenizer = load_tokenizer(self.cfg)  # pylint: disable=all
+        self.model_loader.tokenizer = load_tokenizer(self.cfg)
         self.model_loader.load()
         self.model_loader._convert_embedding_modules_dtype(
             embedding_modules, dist_dtype, before_kbit_train_or_finetune

@@ -22,7 +22,6 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_qlora_w_fa2(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
@@ -61,6 +60,7 @@ class TestMixtral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
 
@@ -77,7 +77,6 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_qlora_wo_fa2(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
@@ -116,6 +115,7 @@ class TestMixtral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
 
@@ -132,7 +132,6 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_16bit_lora_w_fa2(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
@@ -170,6 +169,7 @@ class TestMixtral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -190,7 +190,6 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_16bit_lora_wo_fa2(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
@@ -228,6 +227,7 @@ class TestMixtral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
 
@@ -248,7 +248,6 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_ft(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
@@ -273,6 +272,7 @@ class TestMixtral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():

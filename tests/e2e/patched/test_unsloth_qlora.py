@@ -12,7 +12,6 @@ from axolotl.utils.dict import DictDefault
 from ..utils import check_model_output_exists, check_tensorboard
 
 
-# pylint: disable=duplicate-code
 @pytest.mark.skip(
     reason="Unsloth integration will be broken going into latest transformers"
 )
@@ -62,6 +61,7 @@ class TestUnslothQLoRA:
                 "lr_scheduler": "cosine",
                 "use_tensorboard": True,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
 
@@ -73,7 +73,7 @@ class TestUnslothQLoRA:
         check_model_output_exists(temp_dir, cfg)
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss (%s) is too high"
         )
 
     def test_unsloth_llama_qlora_unpacked(self, temp_dir):
@@ -112,6 +112,7 @@ class TestUnslothQLoRA:
                 "lr_scheduler": "cosine",
                 "use_tensorboard": True,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
 
@@ -123,7 +124,7 @@ class TestUnslothQLoRA:
         check_model_output_exists(temp_dir, cfg)
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -167,6 +168,7 @@ class TestUnslothQLoRA:
                 "lr_scheduler": "cosine",
                 "use_tensorboard": True,
                 "fp16": True,
+                "save_first_step": False,
             }
         )
 
@@ -178,5 +180,5 @@ class TestUnslothQLoRA:
         check_model_output_exists(temp_dir, cfg)
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss (%s) is too high"
         )

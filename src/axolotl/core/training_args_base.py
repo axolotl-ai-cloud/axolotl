@@ -14,7 +14,6 @@ class AxolotlTrainingMixins:
     Mixin class for the Axolotl training args.
     """
 
-    # pylint: disable=duplicate-code
     model_type: Optional[str] = field(
         default=None, metadata={"help": "HF model configuration model_type."}
     )
@@ -37,6 +36,14 @@ class AxolotlTrainingMixins:
         metadata={
             "help": "Use next-fit sample packing that preserves the order of samples coming from the sampler. Use in combination with curriculum_sampling for fully sequential packing."
         },
+    )
+    sample_packing_mp_start_method: str | None = field(
+        default=None,
+        metadata={"help": "The multiprocessing start method to use."},
+    )
+    sample_packing_drop_attention_mask: bool = field(
+        default=False,
+        metadata={"help": "Drop attention mask from inputs when using packing."},
     )
     multipack_real_batches: bool = field(
         default=False,
@@ -74,17 +81,25 @@ class AxolotlTrainingMixins:
         default=None,
         metadata={"help": "how often to reset for ReLoRA"},
     )
-    relora_warmup_steps: Optional[int] = field(
-        default=None,
-        metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
-    )
-    relora_anneal_steps: Optional[int] = field(
-        default=None,
-        metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
-    )
     relora_prune_ratio: Optional[float] = field(
         default=0.9,
         metadata={"help": "prune ratio for magnitude pruning of the optimizer"},
+    )
+    jagged_restart_steps: Optional[int] = field(
+        default=None,
+        metadata={"help": "how often to reset for jagged restarts"},
+    )
+    jagged_restart_warmup_steps: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "how many warmup steps to take after reset for jagged restarts"
+        },
+    )
+    jagged_restart_anneal_steps: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "how many anneal steps to take before reset for jagged restarts"
+        },
     )
     bench_split: Optional[str] = field(
         default="eval", metadata={"help": "The benchmark split to run on"}
@@ -209,6 +224,11 @@ class AxolotlTrainingMixins:
         },
     )
 
+    activation_offloading: bool | None = field(
+        default=None,
+        metadata={"help": "Use activation offloading with CUDA streams for training."},
+    )
+
     # multi-modal section
 
     image_size: int | tuple[int, int] | None = field(
@@ -222,3 +242,18 @@ class AxolotlTrainingMixins:
     )
 
     # end of multi-modal section
+
+    dion_learning_rate: float | None = field(
+        default=None,
+        metadata={"help": "The learning rate for Dion"},
+    )
+    dion_momentum: float | None = field(
+        default=None,
+        metadata={"help": "The momentum for Dion"},
+    )
+    dion_rank_fraction: float | None = field(
+        default=None,
+    )
+    dion_rank_multiple_of: int | None = field(
+        default=None,
+    )

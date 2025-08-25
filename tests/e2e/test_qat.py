@@ -18,7 +18,6 @@ class TestQATLlama:
     """
 
     def test_qat(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -57,6 +56,7 @@ class TestQATLlama:
                 "max_steps": 5,
                 "save_safetensors": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
@@ -67,7 +67,6 @@ class TestQATLlama:
         check_model_output_exists(Path(temp_dir) / "checkpoint-5", cfg)
 
     def test_qat_dpo(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -115,6 +114,7 @@ class TestQATLlama:
                     "weight_dtype": "int8",
                     "group_size": 8,
                 },
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
@@ -129,5 +129,5 @@ class TestQATLlama:
             temp_dir + "/runs",
             "train/train_loss",
             loss_threshold,
-            "Train Loss is too high",
+            "Train Loss (%s) is too high",
         )

@@ -13,4 +13,4 @@ from axolotl.core.training_args import AxolotlTrainingMixins
 class AxolotlGRPOConfig(AxolotlTrainingMixins, GRPOConfig):
     """Axolotl GRPO Config for GRPO training"""
 
-    sequence_parallel_degree: int | None = None
+    context_parallel_size: int | None = None

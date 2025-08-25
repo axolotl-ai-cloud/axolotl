@@ -19,7 +19,6 @@ class TestEmbeddingsLrScale(unittest.TestCase):
 
     @with_temp_dir
     def test_train_w_embedding_lr_scale(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -48,6 +47,7 @@ class TestEmbeddingsLrScale(unittest.TestCase):
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -64,7 +64,6 @@ class TestEmbeddingsLrScale(unittest.TestCase):
 
     @with_temp_dir
     def test_train_w_embedding_lr(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -93,6 +92,7 @@ class TestEmbeddingsLrScale(unittest.TestCase):
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

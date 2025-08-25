@@ -5,6 +5,7 @@ into fixed-capacity batches to optimize memory usage and training throughput.
 
 import gc
 import math
+import time
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import cpu_count, get_context
 from typing import Iterable, Iterator, Union
@@ -127,7 +128,7 @@ def pack_parallel(
     bin_size: int,
     num_processes: int | None = None,
     safe_mode: bool = True,
-    mp_start_method: str | None = "spawn",
+    mp_start_method: str | None = "fork",
 ) -> list[list[int]]:
     """Pack sequences into bins using parallel processing.
 
@@ -260,13 +261,14 @@ class MultipackBatchSampler(BatchSampler):
         lengths: np.ndarray,  # Sequence lengths
         packing_efficiency_estimate: float = 1.0,  # Initial efficiency estimate
         drop_last: bool = True,  # Whether to drop final batches (might be incomplete)
-        num_count_samples: int = 8,  # Number of times to estimate batch count
+        num_count_samples: int = 4,  # Number of times to estimate batch count
         sequential: bool = False,  # Whether to use sequential packing
         group_size: int = 100_000,  # Size of groups for parallel packing
         bin_size: int = 200,  # The max number of samples that can be packed in a single bin
         num_processes: int | None = None,  # Number of processes for parallel packing
         safe_mode: bool = True,  # Conservative packing to prevent training instability
-        **kwargs,  # pylint: disable=unused-argument
+        mp_start_method: str = "fork",
+        **kwargs,
     ):
         super().__init__(sampler, batch_size, drop_last)
         self.batch_size = batch_size
@@ -278,6 +280,7 @@ class MultipackBatchSampler(BatchSampler):
         self.bin_size = bin_size
         self.num_processes = num_processes
         self.safe_mode = safe_mode
+        self.mp_start_method = mp_start_method
 
         assert isinstance(self.lengths, np.ndarray)
 
@@ -314,9 +317,7 @@ class MultipackBatchSampler(BatchSampler):
             return self._batches
 
         # Get indices from the sampler
-        indices = [  # pylint: disable=unnecessary-comprehension
-            idx for idx in self.sampler
-        ]
+        indices = [idx for idx in self.sampler]
 
         # Get lengths of the selected sequences
         lengths = self.lengths[indices]
@@ -333,13 +334,15 @@ class MultipackBatchSampler(BatchSampler):
             bins = [[indices[b_idx] for b_idx in bin_indices] for bin_indices in bins]
         else:
             # Use parallel packing
+            num_processes = self.num_processes or 1
             all_bins = pack_parallel(
                 lengths,
                 bin_capacity=self.batch_max_len,
                 group_size=self.group_size,
                 bin_size=self.bin_size,
-                num_processes=self.num_processes,
+                num_processes=min(4, num_processes) if num_processes else 4,
                 safe_mode=self.safe_mode,
+                mp_start_method=self.mp_start_method,
             )
 
             # Map bin indices back to original indices
@@ -412,7 +415,7 @@ class MultipackBatchSampler(BatchSampler):
 
         # Gather efficiency from all ranks and apply the calculation function
         sample_packing_actual_eff_all = reduce_and_broadcast(
-            lambda: float(self.efficiency()),  # pylint: disable=unnecessary-lambda
+            lambda: float(self.efficiency()),
             calc_sample_packing_eff_est,
         )
 
@@ -449,7 +452,10 @@ class MultipackBatchSampler(BatchSampler):
             _sampled_lens = []
             for _ in range(self.num_count_samples):
                 self._batches = None  # Reset cached batches
+                # log timer for generating batches
+                start_time = time.time()
                 _sampled_lens.append(len(self.generate_batches(set_stats=False)))
+                LOG.debug(f"generate_batches time: {time.time() - start_time}")
             len_batches = min(_sampled_lens)
 
             # Gather minimum across all ranks

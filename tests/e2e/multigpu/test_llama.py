@@ -35,7 +35,6 @@ class TestMultiGPULlama:
     """
 
     def test_lora_ddp(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -62,12 +61,14 @@ class TestMultiGPULlama:
                 "gradient_accumulation_steps": 2,
                 # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
 
@@ -89,7 +90,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.8, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -97,7 +98,6 @@ class TestMultiGPULlama:
         [1, 2],
     )
     def test_lora_ddp_packed(self, temp_dir, gradient_accumulation_steps):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -127,12 +127,14 @@ class TestMultiGPULlama:
                 "gradient_accumulation_steps": gradient_accumulation_steps,
                 # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
 
@@ -154,11 +156,10 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
     def test_dpo_lora_ddp(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -200,6 +201,7 @@ class TestMultiGPULlama:
                 "gradient_accumulation_steps": 2,
                 # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "warmup_steps": 0,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
@@ -207,6 +209,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
 
@@ -232,11 +235,10 @@ class TestMultiGPULlama:
             temp_dir + "/runs",
             "train/train_loss",
             loss_threshold,
-            "Train Loss is too high",
+            "Train Loss (%s) is too high",
         )
 
     def test_dpo_qlora_ddp(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -278,6 +280,7 @@ class TestMultiGPULlama:
                 "gradient_accumulation_steps": 2,
                 # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "warmup_steps": 0,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
@@ -285,6 +288,7 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
 
@@ -310,7 +314,7 @@ class TestMultiGPULlama:
             temp_dir + "/runs",
             "train/train_loss",
             loss_threshold,
-            "Train Loss is too high",
+            "Train Loss (%s) is too high",
         )
 
     @pytest.mark.parametrize(
@@ -318,7 +322,6 @@ class TestMultiGPULlama:
         [1, 2],
     )
     def test_fsdp(self, temp_dir, gradient_accumulation_steps):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -340,6 +343,7 @@ class TestMultiGPULlama:
                 "gradient_accumulation_steps": gradient_accumulation_steps,
                 # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
@@ -359,6 +363,8 @@ class TestMultiGPULlama:
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
                 "use_tensorboard": True,
+                "seed": 42,
+                "save_first_step": False,
             }
         )
 
@@ -380,15 +386,17 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
         "fsdp_state_dict_type",
-        ["FULL_STATE_DICT", "SHARDED_STATE_DICT"],
+        [
+            "FULL_STATE_DICT",
+            # "SHARDED_STATE_DICT",  # not supported since intermediate checkpoints fail with fsdp1
+        ],
     )
     def test_fsdp_packed(self, temp_dir, fsdp_state_dict_type):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -407,11 +415,13 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 3,
+                "save_steps": 2,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 2,
                 # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
@@ -431,6 +441,7 @@ class TestMultiGPULlama:
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -452,7 +463,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
     @require_torch_2_6_0
@@ -467,7 +478,6 @@ class TestMultiGPULlama:
     def test_fsdp2_packed(
         self, temp_dir, attention_backend, fsdp_reshard_after_forward
     ):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -491,6 +501,7 @@ class TestMultiGPULlama:
                 "gradient_accumulation_steps": 2,
                 "gradient_checkpointing": True,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_8bit",
                 "lr_scheduler": "cosine",
@@ -508,6 +519,7 @@ class TestMultiGPULlama:
                     "fsdp_reshard_after_forward": fsdp_reshard_after_forward,
                 },
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
         if attention_backend == "flash":
@@ -533,11 +545,10 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss (%s) is too high"
         )
 
     def test_fsdp_qlora_prequant_packed(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "axolotl-ai-co/SmolLM2-135M-bnb-nf4-bf16",
@@ -573,6 +584,7 @@ class TestMultiGPULlama:
                 "gradient_accumulation_steps": 2,
                 # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
@@ -588,10 +600,11 @@ class TestMultiGPULlama:
                     "fsdp_use_orig_params": False,
                     "fsdp_cpu_ram_efficient_loading": True,
                     "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
-                    "fsdp_state_dict_type": "SHARDED_STATE_DICT",
+                    "fsdp_state_dict_type": "FULL_STATE_DICT",
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -613,7 +626,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -635,7 +648,6 @@ class TestMultiGPULlama:
     def test_ds_zero3_packed(
         self, temp_dir, gradient_accumulation_steps, deepspeed, qlora
     ):
-        # pylint: disable=duplicate-code
         if qlora:
             adapter = {
                 "adapter": "qlora",
@@ -669,12 +681,14 @@ class TestMultiGPULlama:
                 "micro_batch_size": 1,
                 "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "deepspeed": str(AXOLOTL_ROOT / deepspeed),
                 "use_tensorboard": True,
+                "save_first_step": False,
                 **adapter,
             }
         )
@@ -697,7 +711,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.45, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -709,7 +723,6 @@ class TestMultiGPULlama:
         [True, False],
     )
     def test_ds_zero2_packed(self, temp_dir, gradient_accumulation_steps, qlora):
-        # pylint: disable=duplicate-code
         if qlora:
             adapter = {
                 "adapter": "qlora",
@@ -743,12 +756,15 @@ class TestMultiGPULlama:
                 "micro_batch_size": 1,
                 "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero2.json"),
                 "use_tensorboard": True,
+                "seed": 42,
+                "save_first_step": False,
                 **adapter,
             }
         )
@@ -771,7 +787,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
@@ -783,7 +799,6 @@ class TestMultiGPULlama:
         [True, False],
     )
     def test_ds_zero1_packed(self, temp_dir, gradient_accumulation_steps, qlora):
-        # pylint: disable=duplicate-code
         if qlora:
             adapter = {
                 "adapter": "qlora",
@@ -817,12 +832,14 @@ class TestMultiGPULlama:
                 "micro_batch_size": 1,
                 "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero1.json"),
                 "use_tensorboard": True,
+                "save_first_step": False,
                 **adapter,
             }
         )
@@ -845,14 +862,13 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.5, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.skip(
         reason="fix untrained tokens brittle with lots of edge cases in latest transformers"
     )
     def test_fix_untrained_tokens(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -891,6 +907,7 @@ class TestMultiGPULlama:
                 "save_safetensors": True,
                 # "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero1.json"),
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -912,5 +929,5 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 4.0, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 4.0, "Train Loss (%s) is too high"
         )

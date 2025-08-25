@@ -9,10 +9,10 @@ order: 3
 Chat Template strategy uses a jinja2 template that converts a list of messages into a prompt. Support using tokenizer's template, a supported template, or custom jinja2.
 
 ```{.json filename="data.jsonl"}
-{"conversations": [{"role": "...", "content": "..."}]}
+{"messages": [{"role": "...", "content": "..."}, {"role": "...", "content": "..."}, ...]}
 ```
 
-See [configs](../config.qmd) for full configs and supported templates.
+See [configs](../config-reference.qmd) for full configs and supported templates.
 
 ### Migrating from sharegpt
 
@@ -130,13 +130,13 @@ datasets:
 ```
 
 ::: {.callout-tip}
-See [config documentation](../config.qmd) for detailed explanations of "turn", "last", and "all" options for training on tokens.
+See [config documentation](../config-reference.qmd) for detailed explanations of "turn", "last", and "all" options for training on tokens.
 :::
 
 ::: {.callout-note}
 Using `eot_tokens` requires each token that exists in `chat_template` to be a single token in the tokenizer. Otherwise, the tokenizer will split the token and cause unexpected behavior.
 
-You can add those tokens as new tokens under `tokens: ` or (recommended) override unused added_tokens via `added_tokens_overrides: `. See [config](../config.qmd) for more details.
+You can add those tokens as new tokens under `tokens: ` or (recommended) override unused added_tokens via `added_tokens_overrides: `. See [config](../config-reference.qmd) for more details.
 :::
 
 - Continuing from the previous example, if you want to train on all EOT token trainable turns but only last EOS token, set `train_on_eos: last`.
@@ -187,6 +187,7 @@ Instead of passing `tools` via the system prompt, an alternative method would be
             "role": "assistant", // call the function via assistant
             "tool_calls": [
                 {
+                    "id": "...",  // required only for mistral
                     "type": "function",
                     "function": {
                         "name": "...",
@@ -199,6 +200,7 @@ Instead of passing `tools` via the system prompt, an alternative method would be
         },
         {
             "role": "tool",
+            "tool_call_id": "...",  // required only for mistral
             "name": "...",
             "content": "..."
         },
@@ -210,10 +212,11 @@ Instead of passing `tools` via the system prompt, an alternative method would be
 Tools need to follow [JSON schema](https://json-schema.org/learn/getting-started-step-by-step).
 :::
 
+Example config for Llama4:
 ```yaml
 chat_template: llama4
 datasets:
-  - path: ...
+  - path: Nanobit/text-tools-2k-test
     type: chat_template
     # field_tools: tools # default is `tools`
 ```

@@ -131,6 +131,17 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
             f"Please include [{lora_modules_to_save_joined}] in `lora_modules_to_save`."
         )
 
+    if (
+        cfg.tensor_parallel_size
+        and cfg.tensor_parallel_size > 1
+        and hasattr(model_config, "tie_word_embeddings")
+        and model_config.tie_word_embeddings
+    ):
+        raise ValueError(
+            "Tensor parallelism is incompatible with models configured with `tie_word_embeddings` enabled. "
+            "Please use a model without `tie_word_embeddings`, or disable tensor parallelism."
+        )
+
 
 def load_model_config(cfg: DictDefault) -> PretrainedConfig | addict.Dict:
     """Loads and configures a model configuration from HuggingFace or local sources.
@@ -195,9 +206,11 @@ def ensure_dtype(model: PreTrainedModel, dtype: torch.dtype = torch.bfloat16):
             bias_mismatch = module.bias.dtype != dtype
 
         if weight_mismatch:
-            print(f"Converting module {name}.weight: {module.weight.dtype} -> {dtype}")
+            LOG.debug(
+                f"Converting module {name}.weight: {module.weight.dtype} -> {dtype}"
+            )
         if bias_mismatch:
-            print(f"Converting module {name}.bias: {module.bias.dtype} -> {dtype}")
+            LOG.debug(f"Converting module {name}.bias: {module.bias.dtype} -> {dtype}")
         if weight_mismatch or bias_mismatch:
             module.to(dtype)
 

@@ -22,7 +22,6 @@ class TestLoraLlama(unittest.TestCase):
 
     @with_temp_dir
     def test_lora_packing(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -55,6 +54,7 @@ class TestLoraLlama(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -72,7 +72,6 @@ class TestLoraLlama(unittest.TestCase):
     @pytest.mark.skipif(not is_auto_gptq_available(), reason="auto-gptq not available")
     @with_temp_dir
     def test_lora_gptq_packed(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "lilmeaty/SmolLM2-135M-Instruct-GPTQ",
@@ -108,6 +107,7 @@ class TestLoraLlama(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

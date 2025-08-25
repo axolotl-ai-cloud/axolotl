@@ -1,7 +1,5 @@
 """Module containing Dataset functionality"""
 
-import os
-
 import torch
 from datasets import Dataset, IterableDataset
 
@@ -28,7 +26,7 @@ class TokenizedPromptDataset(Dataset):
         keep_in_memory: Whether to keep the tokenized dataset in memory.
     """
 
-    def __init__(  # pylint: disable=super-init-not-called
+    def __init__(
         self,
         prompt_tokenizer: PromptTokenizingStrategy,
         dataset: Dataset,
@@ -46,14 +44,6 @@ class TokenizedPromptDataset(Dataset):
 
     def process(self, dataset):
         features = dataset.features.keys()
-        num_proc = min(64, self.process_count if self.process_count else os.cpu_count())
-
-        # Disable multiprocessing if the tokenizer doesn't support it (e.g., mistral_common)
-        if not getattr(self.prompt_tokenizer, "supports_multiprocessing", True):
-            LOG.info(
-                "Disabling multiprocessing for tokenizer as it doesn't support it (e.g., mistral_common)"
-            )
-            num_proc = 1
 
         map_kwargs = {}
         if self.prompt_tokenizer.supports_batched:
@@ -66,13 +56,13 @@ class TokenizedPromptDataset(Dataset):
         ):
             dataset = dataset.filter(
                 self.prompt_tokenizer.filter_rows,
-                num_proc=num_proc,
+                num_proc=self.process_count,
                 desc="Strategy Filtering Rows",
             )
 
         return dataset.map(
             self.prompt_tokenizer.tokenize_prompt,
-            num_proc=num_proc,
+            num_proc=self.process_count,
             remove_columns=features,
             keep_in_memory=self.keep_in_memory,
             desc="Tokenizing Prompts",
@@ -109,7 +99,7 @@ class ConstantLengthDataset(IterableDataset):
         seq_length: Length of token sequences to return.
     """
 
-    def __init__(  # pylint: disable=super-init-not-called
+    def __init__(
         self,
         tokenizer,
         datasets,

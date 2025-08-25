@@ -22,7 +22,6 @@ class TestPretrainLlama:
         ],
     )
     def test_pretrain(self, temp_dir, sample_packing, pretrain_multipack_attn):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -53,6 +52,7 @@ class TestPretrainLlama:
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -69,5 +69,5 @@ class TestPretrainLlama:
             temp_dir + "/runs",
             "train/train_loss",
             loss_threshold,
-            "Train Loss is too high",
+            "Train Loss (%s) is too high",
         )

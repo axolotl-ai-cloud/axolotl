@@ -16,7 +16,7 @@ output_dir: ./outputs/out
 
 sequence_len: 4096
 sample_packing: true
-pad_to_sequence_len: true
+
 eval_sample_packing: false
 
 wandb_project:
@@ -47,7 +47,7 @@ logging_steps: 1
 xformers_attention:
 flash_attention: true
 
-warmup_steps: 100
+warmup_ratio: 0.1
 evals_per_epoch: 2
 eval_table_size:
 saves_per_epoch: 1
@@ -75,3 +75,5 @@ llmcompressor:
           ]
           start: 0
   save_compressed: true
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

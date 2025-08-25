@@ -4,12 +4,12 @@ import inspect
 import types
 
 import torch
-from accelerate.logging import get_logger
 from peft import PeftModelForCausalLM
 from torch import nn
 from transformers.models.llama.modeling_llama import LlamaFlashAttention2
 
 from axolotl.monkeypatch.utils import detab_code
+from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
@@ -17,27 +17,19 @@ ORIGINAL_QKV_CODE = """
     query_states = self.q_proj(hidden_states)
     key_states = self.k_proj(hidden_states)
     value_states = self.v_proj(hidden_states)
-""".lstrip(
-    "\n"
-)
+""".lstrip("\n")
 
 PATCHED_QKV_CODE = """
     query_states, key_states, value_states = self.apply_qkv(self, hidden_states)
-""".lstrip(
-    "\n"
-)
+""".lstrip("\n")
 
 ORIGINAL_O_CODE = """
     attn_output = self.o_proj(attn_output)
-""".lstrip(
-    "\n"
-)
+""".lstrip("\n")
 
 PATCHED_O_CODE = """
     attn_output = self.apply_o(self, attn_output)
-""".lstrip(
-    "\n"
-)
+""".lstrip("\n")
 
 
 def original_apply_qkv(self, hidden_states):
@@ -66,13 +58,13 @@ def check_self_attn_is_patchable() -> bool:
 def integrate_cross_entropy_loss_patch(model_type: str = "llama") -> None:
     from unsloth.kernels.cross_entropy_loss import fast_cross_entropy_loss
 
-    def UnslothForCausalLMLoss(  # pylint: disable=invalid-name
+    def UnslothForCausalLMLoss(
         logits,
         labels,
-        vocab_size: int,  # pylint: disable=unused-argument
+        vocab_size: int,
         num_items_in_batch: int = None,
-        ignore_index: int = -100,  # pylint: disable=unused-argument
-        **kwargs,  # pylint: disable=unused-argument
+        ignore_index: int = -100,
+        **kwargs,
     ):
         # Upcast to float if we need to compute the loss to avoid potential precision issues
         logits = logits.float()
@@ -93,18 +85,16 @@ def integrate_cross_entropy_loss_patch(model_type: str = "llama") -> None:
         raise ValueError("Unsupported model type")
 
 
-self_attn_lora_patched = False  # pylint: disable=invalid-name
+self_attn_lora_patched = False
 
 
 def patch_self_attn_lora():
-    global self_attn_lora_patched  # pylint: disable=global-statement
+    global self_attn_lora_patched
     if self_attn_lora_patched:
         # prevent patching multiple times
         return
     self_attn_forward = get_self_attn_code()
-    LlamaFlashAttention2._original_forward = (  # pylint: disable=protected-access
-        self_attn_forward
-    )
+    LlamaFlashAttention2._original_forward = self_attn_forward
     self_attn_forward, _ = detab_code(self_attn_forward)
     assert ORIGINAL_QKV_CODE in self_attn_forward, "Original qkv code not found"
     assert ORIGINAL_O_CODE in self_attn_forward, "Original o code not found"
@@ -125,27 +115,25 @@ def patch_self_attn_lora():
         if item in self_attn_forward:
             items_to_import.append(item)
 
-    exec(  # pylint: disable=exec-used  # nosec B102
+    exec(
         "from transformers.models.llama.modeling_llama import ("
         + ", ".join(x for x in items_to_import)
         + ")",
         globals(),
     )
-    exec(self_attn_forward, globals())  # pylint: disable=exec-used  # nosec B102
+    exec(self_attn_forward, globals())
     self_attn_lora_patched = True
     LOG.info("patching unsloth attn lora")
-    LlamaFlashAttention2.forward = (
-        unsloth_attn_forward  # pylint: disable=undefined-variable  # noqa: F821
-    )
+    LlamaFlashAttention2.forward = unsloth_attn_forward
 
 
 def integrate_rope_embeddings():
     import transformers.models.llama.modeling_llama
     from unsloth.kernels.rope_embedding import fast_rope_embedding
 
-    def apply_rotary_pos_emb(  # pylint: disable=unused-argument
-        q,  # pylint: disable=invalid-name
-        k,  # pylint: disable=invalid-name
+    def apply_rotary_pos_emb(
+        q,
+        k,
         cos,
         sin,
         position_ids=None,

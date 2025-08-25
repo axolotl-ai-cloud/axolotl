@@ -9,7 +9,7 @@ class LoftQConfig(BaseModel):
     """LoftQ configuration subset"""
 
     loftq_bits: int = Field(
-        default=4, json_schema_extra={"description": "Quantization bits for LoftQ"}
+        default=4, json_schema_extra={"description": "typically 4 bits"}
     )
     # loftq_iter: int = Field(default=1, json_schema_extra={"description": "Alternating iterations for LoftQ"})
 
@@ -17,31 +17,79 @@ class LoftQConfig(BaseModel):
 class PeftConfig(BaseModel):
     """peftq configuration subset"""
 
-    loftq_config: LoftQConfig | None = None
+    loftq_config: LoftQConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Configuration options for loftq initialization for LoRA"
+        },
+    )
 
 
 class LoraConfig(BaseModel):
     """Peft / LoRA configuration subset"""
 
-    load_in_8bit: bool | None = Field(default=False)
-    load_in_4bit: bool | None = Field(default=False)
+    load_in_8bit: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "This will attempt to quantize the model down to 8 bits and use adam 8 bit optimizer"
+        },
+    )
+    load_in_4bit: bool | None = Field(
+        default=False, json_schema_extra={"description": "Use bitsandbytes 4 bit"}
+    )
 
-    adapter: str | None = None
-    lora_model_dir: str | None = None
+    adapter: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "If you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model"
+        },
+    )
+    lora_model_dir: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "If you already have a lora model trained that you want to load, put that here. This means after training, if you want to test the model, you should set this to the value of `output_dir`. Note that if you merge an adapter to the base model, a new subdirectory `merged` will be created under the `output_dir`."
+        },
+    )
     lora_r: int | None = None
     lora_alpha: int | None = None
     lora_fan_in_fan_out: bool | None = None
     lora_target_modules: str | list[str] | None = None
-    lora_target_linear: bool | None = None
-    lora_modules_to_save: list[str] | None = None
+    lora_target_parameters: str | list[str] | None = None
+    lora_target_linear: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "If true, will target all linear modules"},
+    )
+    lora_modules_to_save: list[str] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens. For LLaMA and Mistral, you need to save `embed_tokens` and `lm_head`. It may vary for other models. `embed_tokens` converts tokens to embeddings, and `lm_head` converts embeddings to token probabilities."
+        },
+    )
     lora_dropout: float | None = 0.0
-    peft_layers_to_transform: list[int] | None = None
+    peft_layers_to_transform: list[int] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "The layer indices to transform, otherwise, apply to all layers"
+        },
+    )
     peft_layers_pattern: list[str] | None = None
     peft: PeftConfig | None = None
-    peft_use_dora: bool | None = None
-    peft_use_rslora: bool | None = None
-    peft_layer_replication: list[tuple[int, int]] | None = None
-    peft_init_lora_weights: bool | str | None = None
+    peft_use_dora: bool | None = Field(
+        default=None, json_schema_extra={"description": "Whether to use DoRA."}
+    )
+    peft_use_rslora: bool | None = Field(
+        default=None, json_schema_extra={"description": "Whether to use RSLoRA."}
+    )
+    peft_layer_replication: list[tuple[int, int]] | None = Field(
+        default=None,
+        json_schema_extra={"description": "List of layer indices to replicate."},
+    )
+    peft_init_lora_weights: bool | str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "How to initialize LoRA weights. Default to True which is MS original implementation."
+        },
+    )
 
     qlora_sharded_model_loading: bool | None = Field(
         default=False,
@@ -49,9 +97,24 @@ class LoraConfig(BaseModel):
             "description": "load qlora model in sharded format for FSDP using answer.ai technique."
         },
     )
-    lora_on_cpu: bool | None = None
-    gptq: bool | None = None
-    bnb_config_kwargs: dict[str, Any] | None = None
+    lora_on_cpu: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Do the LoRA/PEFT loading on CPU -- this is required if the base model is so large it takes up most or all of the available GPU VRAM, e.g. during a model and LoRA merge"
+        },
+    )
+    gptq: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether you are training a 4-bit GPTQ quantized model"
+        },
+    )
+    bnb_config_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "optional overrides to the bnb 4bit quantization configuration"
+        },
+    )
 
     loraplus_lr_ratio: float | None = Field(
         default=None,
@@ -62,7 +125,7 @@ class LoraConfig(BaseModel):
     loraplus_lr_embedding: float | None = Field(
         default=1e-6,
         json_schema_extra={
-            "description": "loraplus learning rate for lora embedding layers."
+            "description": "loraplus learning rate for lora embedding layers. Default value is 1e-6."
         },
     )
 
@@ -125,8 +188,21 @@ class LoraConfig(BaseModel):
 class ReLoRAConfig(BaseModel):
     """ReLoRA configuration subset"""
 
-    relora_steps: int | None = None
-    relora_warmup_steps: int | None = None
-    relora_anneal_steps: int | None = None
-    relora_prune_ratio: float | None = None
-    relora_cpu_offload: bool | None = None
+    relora: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use ReLoRA. Use with jagged_restart_*steps options."
+        },
+    )
+    relora_prune_ratio: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "threshold for optimizer magnitude when pruning"
+        },
+    )
+    relora_cpu_offload: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "True to perform lora weight merges on cpu during restarts, for modest gpu memory savings"
+        },
+    )
