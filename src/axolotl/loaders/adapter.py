@@ -95,10 +95,12 @@ def load_lora(
         lora_config_kwargs["init_lora_weights"] = "loftq"
 
     if cfg.adapter == "qalora":
-        if hasattr(cfg, "use_qalora") and cfg.use_qalora:
-            lora_config_kwargs["use_qalora"] = True
+        lora_config_kwargs["use_qalora"] = True
+
         if hasattr(cfg, "qalora_group_size") and cfg.qalora_group_size:
             lora_config_kwargs["qalora_group_size"] = cfg.qalora_group_size
+        else:
+            ValueError("qalora_group_size must be set when using qalora")
 
     if cfg.peft_init_lora_weights:
         lora_config_kwargs["init_lora_weights"] = cfg.peft_init_lora_weights

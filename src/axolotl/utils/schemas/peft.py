@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from axolotl.utils.schemas.enums import AdapterEnum
+
 
 class LoftQConfig(BaseModel):
     """LoftQ configuration subset"""
@@ -38,7 +40,7 @@ class LoraConfig(BaseModel):
         default=False, json_schema_extra={"description": "Use bitsandbytes 4 bit"}
     )
 
-    adapter: str | None = Field(
+    adapter: AdapterEnum | None = Field(
         default=None,
         json_schema_extra={
             "description": "If you want to use 'lora' or 'qlora' or 'qalora' or leave blank to train all parameters in original model"
