@@ -556,8 +556,9 @@ class ModelLoader:
             self.cfg.adapter in ["qlora", "qalora"]
             and self.model_kwargs["load_in_4bit"]
         ):
+            quantization_config = getattr(self.model_config, "quantization_config", {})
             self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
-                **self.model_config.quantization_config
+                **quantization_config
             )
         elif self.cfg.adapter == "qlora" and self.model_kwargs.get(
             "load_in_4bit", False

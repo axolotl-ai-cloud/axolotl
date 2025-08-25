@@ -541,6 +541,12 @@ class AxolotlInputConfig(
             "description": "Whether to use flash-attention rms norm implementation - advanced use only"
         },
     )
+    flash_attn_fuse_qkv: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to fuse QKV projection into a single operation"
+        },
+    )
     flash_attn_fuse_mlp: bool | None = Field(
         default=None,
         json_schema_extra={
