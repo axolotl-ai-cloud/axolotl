@@ -129,7 +129,7 @@ class LoraConfig(BaseModel):
         },
     )
     qalora_group_size: int | None = Field(
-        default=16,
+        default=None,
         json_schema_extra={"description": "Group size for QALoRA quantization pooling"},
     )
 
