@@ -73,11 +73,19 @@ class PatchManager:
         self._apply_voxtral_patches()
 
     def _apply_transformers_patches(self):
-        from axolotl.monkeypatch.transformers.modeling_flash_attention_utils import (
-            patch_prepare_from_posids,
+        from axolotl.monkeypatch.transformers.trainer_loss_calc import (
+            patch_evaluation_loop,
+            patch_maybe_log_save_evaluate,
         )
 
-        patch_prepare_from_posids()
+        patch_fsdp2 = (
+            self.cfg.torch_compile
+            and self.cfg.fsdp_config
+            and self.cfg.fsdp_version == 2
+        )
+
+        patch_evaluation_loop(patch_fsdp2)
+        patch_maybe_log_save_evaluate()
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
@@ -104,6 +112,14 @@ class PatchManager:
 
     def _apply_fsdp_patches(self):
         """Apply patches for FSDP configurations."""
+        if self.cfg.context_parallel_size > 1 or (
+            self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2"
+        ):
+            from axolotl.monkeypatch.accelerate.parallelism_config import (
+                patch_parallelism_config,
+            )
+
+            patch_parallelism_config()
         if self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2":
             from axolotl.monkeypatch.accelerate.fsdp2 import patch_accelerate_fsdp2
 
@@ -261,6 +277,14 @@ class PatchManager:
                 has_remote_code=has_remote_code,
             )
 
+        if self.cfg.sample_packing:
+            from axolotl.monkeypatch.data.batch_dataset_fetcher import (
+                apply_multipack_dataloader_patch,
+            )
+
+            LOG.info("Applying multipack dataloader patch for sample packing...")
+            apply_multipack_dataloader_patch()
+
     def _apply_fsdp2_bnb_patches(self):
         """Apply FSDP2 BNB patches."""
         if (
@@ -269,12 +293,10 @@ class PatchManager:
             and self.cfg.adapter == "qlora"
         ):
             from axolotl.monkeypatch.fsdp2_qlora import (
-                apply_bnb_torch_function_patch,
                 apply_init_sharded_param_patch,
                 apply_init_unsharded_param_patch,
             )
 
-            apply_bnb_torch_function_patch()
             apply_init_sharded_param_patch()
             apply_init_unsharded_param_patch()
 

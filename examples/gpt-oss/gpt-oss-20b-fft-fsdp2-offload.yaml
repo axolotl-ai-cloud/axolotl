@@ -10,16 +10,18 @@ plugins:
 experimental_skip_move_to_device: true  # prevent OOM by NOT putting model to GPU before sharding
 
 datasets:
-  - path: winglian/pirate-ultrachat-10k
+  - path: HuggingFaceH4/Multilingual-Thinking
     type: chat_template
-    split: train
+    field_thinking: thinking
+    template_thinking_key: thinking
 
-dataset_prepared_path: last_run_prepared
+dataset_prepared_path: ./outputs/last_run_prepared
 val_set_size: 0
 output_dir: ./outputs/gpt-oss-out/
 
 sequence_len: 4096
 sample_packing: true
+pad_to_sequence_len: true
 
 wandb_project:
 wandb_entity:
@@ -39,7 +41,7 @@ bf16: true
 tf32: true
 
 flash_attention: true
-attn_implementation: kernels-community/vllm-flash-attn3
+attn_implementation: kernels-community/vllm-flash-attn3  # this is not needed if using flash_attn >= 2.8.3
 
 gradient_checkpointing: true
 activation_offloading: true
@@ -47,7 +49,7 @@ activation_offloading: true
 logging_steps: 1
 saves_per_epoch: 1
 
-warmup_ratio: 0.1
+warmup_ratio: 0.03
 
 special_tokens:
 eot_tokens:
@@ -60,3 +62,7 @@ fsdp_config:
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: GptOssDecoderLayer
   reshard_after_forward: true
+  #  cpu_ram_efficient_loading: true
+
+# cpu_ram_efficient_loading cannot be used with MXFP4 model quantization.
+# It can only be used with a dequantized model like `axolotl-ai-co/gpt-oss-120b-dequantized`

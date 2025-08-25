@@ -101,11 +101,11 @@ class AxolotlDPOTrainer(
     ) -> dict[str, torch.Tensor]:
         if self.args.dpo_norm_loss:
             # fmt: off
-            loss_type: str = self.loss_type  # type: ignore[has-type]  # pylint: disable=access-member-before-definition
+            loss_type: str = self.loss_type  # type: ignore[has-type]
             # fmt: on
             # concatenated_forward handles avg token logprob for ipo case already
-            self.loss_type = "ipo"  # pylint: disable=attribute-defined-outside-init
+            self.loss_type = "ipo"
             res = super().concatenated_forward(model, batch, is_ref_model=is_ref_model)
-            self.loss_type = loss_type  # pylint: disable=attribute-defined-outside-init
+            self.loss_type = loss_type
             return res
         return super().concatenated_forward(model, batch, is_ref_model=is_ref_model)

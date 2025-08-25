@@ -10,9 +10,10 @@ plugins:
 experimental_skip_move_to_device: true  # prevent OOM by not putting model to GPU before sharding
 
 datasets:
-  - path: winglian/pirate-ultrachat-10k
+  - path: HuggingFaceH4/Multilingual-Thinking
     type: chat_template
-    split: train
+    field_thinking: thinking
+    template_thinking_key: thinking
 
 dataset_prepared_path: last_run_prepared
 val_set_size: 0
@@ -26,11 +27,13 @@ lora_r: 8
 lora_alpha: 16
 lora_dropout: 0.0  # dropout not supported when using LoRA over expert parameters
 lora_target_linear: true
-lora_target_parameters:  # target the experts in the last two layers
-  - "22._checkpoint_wrapped_module.mlp.experts.gate_up_proj"
-  - "22._checkpoint_wrapped_module.mlp.experts.down_proj"
-  - "23._checkpoint_wrapped_module.mlp.experts.gate_up_proj"
-  - "23._checkpoint_wrapped_module.mlp.experts.down_proj"
+
+# TODO: not supported for now, see peft#2710
+#lora_target_parameters:  # target the experts in the last two layers
+#  - "22._checkpoint_wrapped_module.mlp.experts.gate_up_proj"
+#  - "22._checkpoint_wrapped_module.mlp.experts.down_proj"
+#  - "23._checkpoint_wrapped_module.mlp.experts.gate_up_proj"
+#  - "23._checkpoint_wrapped_module.mlp.experts.down_proj"
 
 wandb_project:
 wandb_entity:
@@ -50,7 +53,7 @@ bf16: true
 tf32: true
 
 flash_attention: true
-attn_implementation: kernels-community/vllm-flash-attn3
+attn_implementation: kernels-community/vllm-flash-attn3  # this is not needed if using flash_attn >= 2.8.3
 
 gradient_checkpointing: true
 activation_offloading: true

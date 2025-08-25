@@ -1,7 +1,5 @@
 """Module for customized trainers"""
 
-# pylint: disable=too-many-lines
-
 from __future__ import annotations
 
 import os
@@ -10,8 +8,11 @@ from functools import partial, wraps
 from typing import Any, Callable, Literal, Optional
 
 import datasets
+import safetensors
 import torch
+from accelerate.state import AcceleratorState
 from datasets import Dataset
+from peft import PeftModel
 from torch.utils.data import (
     BatchSampler,
     DataLoader,
@@ -19,8 +20,10 @@ from torch.utils.data import (
     Sampler,
     SequentialSampler,
 )
-from transformers import Trainer
+from transformers import PreTrainedModel, Trainer
+from transformers.trainer import TRAINING_ARGS_NAME
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length, seed_worker
+from transformers.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME, is_peft_available
 from trl.trainer.utils import pad_to_length
 from typing_extensions import override
 
@@ -280,9 +283,9 @@ class AxolotlTrainer(
         # fmt: off
         if dataloader_key is not None and self.args.dataloader_persistent_workers:
             if hasattr(self, "_eval_dataloaders"):
-                self._eval_dataloaders[dataloader_key] = dataloader  # type: ignore  # pylint: disable=access-member-before-definition
+                self._eval_dataloaders[dataloader_key] = dataloader  # type: ignore
             else:
-                self._eval_dataloaders = {dataloader_key: dataloader}  # pylint: disable=attribute-defined-outside-init
+                self._eval_dataloaders = {dataloader_key: dataloader}
         # fmt: on
 
         return self.accelerator.prepare(dataloader)
@@ -438,7 +441,7 @@ class AxolotlTrainer(
         model,
         inputs,
         return_outputs=False,
-        num_items_in_batch=None,  # pylint: disable=unused-argument
+        num_items_in_batch=None,
     ):
         concat_inputs = AxolotlTrainer.orpo_concatenate_inputs(
             inputs,
@@ -515,7 +518,16 @@ class AxolotlTrainer(
 
     @wraps(Trainer.create_accelerator_and_postprocess)
     def create_accelerator_and_postprocess(self):
-        res = super().create_accelerator_and_postprocess()
+        # cleanup the PartialState states so Accelerate automatically configures everything from the env vars
+        accelerator_config = self.args.accelerator_config.to_dict()
+        use_configured_state = accelerator_config.get("use_configured_state", False)
+        if not use_configured_state:
+            AcceleratorState._reset_state(reset_partial_state=True)
+
+        super().create_accelerator_and_postprocess()
+
+        # now we need to put parallelism_config back on the PartialState since we rely on that info in other places
+        # PartialState().parallelism_config = self.accelerator.state.parallelism_config
 
         if self.is_fsdp_enabled:
             if (
@@ -524,9 +536,6 @@ class AxolotlTrainer(
             ):
                 self.accelerator.state.fsdp_plugin.limit_all_gathers = True
 
-        return res
-
-    # pylint: disable=unused-argument
     def additional_accelerator_args(
         self, fp8: bool = False, enable_fsdp_float8_all_gather: bool = False, **kwargs
     ) -> dict[str, Any]:
@@ -590,3 +599,64 @@ class AxolotlTrainer(
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
         return super()._save_checkpoint(model, trial, **kwargs)
+
+    # TODO(wing): remove once https://github.com/huggingface/transformers/pull/39866/files is merged
+    def _save(self, output_dir: Optional[str] = None, state_dict=None):
+        # If we are executing this function, we are the process zero, so we don't check for that.
+        output_dir = output_dir if output_dir is not None else self.args.output_dir
+        os.makedirs(output_dir, exist_ok=True)
+        LOG.info(f"Saving model checkpoint to {output_dir}")
+        supported_classes = (
+            (PreTrainedModel,)
+            if not is_peft_available()
+            else (PreTrainedModel, PeftModel)
+        )
+        # Save a trained model and configuration using `save_pretrained()`.
+        # They can then be reloaded using `from_pretrained()`
+        if not isinstance(self.model, supported_classes):
+            if state_dict is None:
+                state_dict = self.model.state_dict()
+            if isinstance(
+                self.accelerator.unwrap_model(self.model, keep_torch_compile=False),
+                supported_classes,
+            ):
+                self.accelerator.unwrap_model(
+                    self.model, keep_torch_compile=False
+                ).save_pretrained(
+                    output_dir,
+                    state_dict=state_dict,
+                    safe_serialization=self.args.save_safetensors,
+                )
+            else:
+                LOG.info(
+                    "Trainer.model is not a `PreTrainedModel`, only saving its state dict."
+                )
+                if self.args.save_safetensors:
+                    safetensors.torch.save_file(
+                        state_dict,
+                        os.path.join(output_dir, SAFE_WEIGHTS_NAME),
+                        metadata={"format": "pt"},
+                    )
+                else:
+                    torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
+        else:
+            self.model.save_pretrained(
+                output_dir,
+                state_dict=state_dict,
+                safe_serialization=self.args.save_safetensors,
+                is_main_process=self.accelerator.is_main_process,
+            )
+
+            if self.processing_class is not None:
+                self.processing_class.save_pretrained(output_dir)
+            elif (
+                self.data_collator is not None
+                and hasattr(self.data_collator, "tokenizer")
+                and self.data_collator.tokenizer is not None
+            ):
+                LOG.info(
+                    "Saving Trainer.data_collator.tokenizer by default as Trainer.processing_class is `None`"
+                )
+                self.data_collator.tokenizer.save_pretrained(output_dir)
+            # Good practice: save your training arguments together with the trained model
+            torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))

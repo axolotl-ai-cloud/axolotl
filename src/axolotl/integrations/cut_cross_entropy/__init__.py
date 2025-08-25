@@ -18,6 +18,7 @@ Module for the Plugin for Cut Cross Entropy integration with Axolotl.
 Cut Cross Entropy is an optimized implementation of cross entropy loss
 from Apple's ML team.
 """
+
 import importlib
 from functools import partial
 
@@ -28,13 +29,13 @@ from axolotl.utils import get_pytorch_version
 from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
 from axolotl.utils.logging import get_logger
 
-from .args import CutCrossEntropyArgs  # pylint: disable=unused-import. # noqa: F401
+from .args import CutCrossEntropyArgs as CutCrossEntropyArgs
 
 LOG = get_logger(__name__)
 
 _CCE_INSTALL_MESSAGE = (
     "Please install Axolotl's fork of cut_cross_entropy with transformers support using "
-    '`pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@48b5169"`'
+    '`pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@0ee9ee8"`'
 )
 
 
@@ -106,9 +107,7 @@ class CutCrossEntropyPlugin(BasePlugin):
         """
         from cut_cross_entropy.transformers.patch import PATCH_FNS
 
-        def patch_generic(
-            maybe_model, patch_options, model_type: str
-        ):  # pylint: disable=unused-argument
+        def patch_generic(maybe_model, patch_options, model_type: str):
             import cut_cross_entropy.transformers.llama
             from cut_cross_entropy.transformers.llama import cce_forward
 
@@ -121,12 +120,10 @@ class CutCrossEntropyPlugin(BasePlugin):
                 )
                 model_cls = getattr(module, f"{model_cls_prefix}ForCausalLM")
 
-                cut_cross_entropy.transformers.llama._PATCH_OPTS = (  # pylint: disable=protected-access
-                    patch_options
-                )
+                cut_cross_entropy.transformers.llama._PATCH_OPTS = patch_options
 
                 model_cls.forward = cce_forward
-            # pylint: disable=duplicate-code
+
             except (ImportError, AttributeError) as e:
                 raise RuntimeError(
                     f"Could not import ForCausalLM class for model_type: {model_type}. "

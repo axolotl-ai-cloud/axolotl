@@ -10,17 +10,14 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
 
 ## Getting started
 
-1. Install Axolotl following the [installation guide](https://docs.axolotl.ai/docs/installation.html). You need to install from main as Devstral is only on nightly or use our latest [Docker images](https://docs.axolotl.ai/docs/docker.html).
+1. Install Axolotl following the [installation guide](https://docs.axolotl.ai/docs/installation.html).
 
-    Here is an example of how to install from main for pip:
+    Here is an example of how to install from pip:
 
 ```bash
-# Ensure you have Pytorch installed (Pytorch 2.6.0+)
-git clone https://github.com/axolotl-ai-cloud/axolotl.git
-cd axolotl
-
+# Ensure you have Pytorch installed (Pytorch 2.6.0 min)
 pip3 install packaging==23.2 setuptools==75.8.0 wheel ninja
-pip3 install --no-build-isolation -e '.[flash-attn]'
+pip3 install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
 ```
 
 2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage

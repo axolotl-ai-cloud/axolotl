@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from accelerate import PartialState
 from transformers import (
     TrainerCallback,
 )
@@ -39,12 +38,13 @@ from axolotl.utils.callbacks import (
     SaveModelOnFirstStepCallback,
 )
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
+from axolotl.utils.distributed import build_parallelism_config
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
 LOG = logging.getLogger(__name__)
 
 with suppress(ImportError):
-    import torch._dynamo  # pylint: disable=ungrouped-imports
+    import torch._dynamo
 
 
 class TrainerBuilderBase(abc.ABC):
@@ -260,14 +260,14 @@ class TrainerBuilderBase(abc.ABC):
                 adam_kwargs["eps"] = training_args_kwargs.get("adam_epsilon")
 
             if self.cfg.optimizer == "muon":
-                from axolotl.contribs.mit.muon import (  # pylint: disable=no-name-in-module
+                from axolotl.contribs.mit.muon import (
                     MuonOptimizerFactory,
                 )
 
                 optimizer_cls = MuonOptimizerFactory
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "dion":
-                from axolotl.contribs.mit.dion import (  # pylint: disable=no-name-in-module
+                from axolotl.contribs.mit.dion import (
                     DionOptimizerFactory,
                 )
 
@@ -275,8 +275,9 @@ class TrainerBuilderBase(abc.ABC):
                 optimizer_kwargs["dion_lr"] = training_args_kwargs["dion_learning_rate"]
                 optimizer_kwargs["dion_mu"] = training_args_kwargs["dion_momentum"]
                 optimizer_kwargs.update(adam_kwargs)
-                partial_state = PartialState()
-                optimizer_kwargs["device_mesh"] = partial_state.device_mesh
+                _, device_mesh = build_parallelism_config(self.cfg)
+                if device_mesh is not None:
+                    optimizer_kwargs["device_mesh"] = device_mesh
             elif self.cfg.optimizer == "optimi_adamw":
                 from optimi import AdamW
 
@@ -413,12 +414,8 @@ class TrainerBuilderBase(abc.ABC):
 
     def _configure_torch_compile(self, training_args_kwargs: dict):
         if self.cfg.torch_compile and getattr(torch, "_dynamo", None):
-            torch._dynamo.config.suppress_errors = (  # pylint: disable=protected-access
-                True
-            )
-            torch._dynamo.config.accumulated_cache_size_limit = (  # pylint: disable=protected-access
-                256
-            )
+            torch._dynamo.config.suppress_errors = True
+            torch._dynamo.config.accumulated_cache_size_limit = 256
             training_args_kwargs["torch_compile"] = self.cfg.torch_compile
             if self.cfg.torch_compile_backend:
                 training_args_kwargs["torch_compile_backend"] = (
@@ -428,30 +425,12 @@ class TrainerBuilderBase(abc.ABC):
                 training_args_kwargs["torch_compile_mode"] = self.cfg.torch_compile_mode
 
     def _configure_accelerator_config(self, training_args_kwargs: dict):
-        partial_state = PartialState()
-        has_pc_attr = (
-            hasattr(partial_state, "parallelism_config")
-            and partial_state.parallelism_config
-        )
-        has_pc_key = (
-            "parallelism_config"
-            in partial_state._shared_state  # pylint: disable=protected-access
-            and partial_state._shared_state[  # pylint: disable=protected-access
-                "parallelism_config"
-            ]
-        )
-        use_configured_state = has_pc_attr or has_pc_key
         if self.cfg.accelerator_config:
-            use_configured_state = self.cfg.accelerator_config.pop(
-                "use_configured_state", use_configured_state
-            )
             training_args_kwargs["accelerator_config"] = AcceleratorConfig(
-                use_configured_state=use_configured_state, **self.cfg.accelerator_config
+                **self.cfg.accelerator_config
             )
         else:
-            training_args_kwargs["accelerator_config"] = AcceleratorConfig(
-                use_configured_state=use_configured_state,
-            )
+            training_args_kwargs["accelerator_config"] = AcceleratorConfig()
 
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
         if self.cfg.activation_offloading is True:

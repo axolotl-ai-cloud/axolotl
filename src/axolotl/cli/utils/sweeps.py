@@ -3,11 +3,12 @@
 import random
 from copy import deepcopy
 from itertools import product
+from typing import Any
 
 
 def generate_sweep_configs(
     base_config: dict[str, list], sweeps_config: dict[str, list]
-) -> list[dict[str, list]]:
+) -> list[dict[str, Any]]:
     """
     Recursively generates all possible configurations by applying sweeps to the base config.
 
@@ -48,7 +49,10 @@ def generate_sweep_configs(
                 new_config = {}
                 # new_config = deepcopy(base_config)
                 # Combine regular parameters with paired parameters
-                full_combo = {**dict(zip(param_names, reg_combo)), **paired_set}
+                full_combo = {
+                    **dict(zip(param_names, reg_combo, strict=False)),
+                    **paired_set,
+                }
                 for param_name, param_value in full_combo.items():
                     new_config[param_name] = param_value
                 print(new_config)
@@ -57,7 +61,7 @@ def generate_sweep_configs(
             # If no paired values, just use regular combinations
             # new_config = deepcopy(base_config)
             new_config = {}
-            for param_name, param_value in zip(param_names, reg_combo):
+            for param_name, param_value in zip(param_names, reg_combo, strict=False):
                 new_config[param_name] = param_value
             print(new_config)
             all_combinations.append(new_config)

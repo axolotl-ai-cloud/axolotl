@@ -212,10 +212,11 @@ Instead of passing `tools` via the system prompt, an alternative method would be
 Tools need to follow [JSON schema](https://json-schema.org/learn/getting-started-step-by-step).
 :::
 
+Example config for Llama4:
 ```yaml
 chat_template: llama4
 datasets:
-  - path: ...
+  - path: Nanobit/text-tools-2k-test
     type: chat_template
     # field_tools: tools # default is `tools`
 ```

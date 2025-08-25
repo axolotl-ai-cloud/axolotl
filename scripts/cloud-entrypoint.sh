@@ -81,5 +81,13 @@ if [ ! -L "/workspace/axolotl/outputs" ]; then
     ln -sf /workspace/data/axolotl-artifacts /workspace/axolotl/outputs
 fi
 
+# start the runpod slurm init
+SLURM_INIT="${SLURM_INIT:-/slurm-init.sh}"
+
+if [[ -f "$SLURM_INIT" ]]; then
+  echo "[entrypoint] running $SLURM_INIT..."
+  bash "$SLURM_INIT"
+fi
+
 # Execute the passed arguments (CMD)
 exec "$@"

@@ -344,16 +344,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_args_cls = AxolotlPRMConfig
         else:
             training_args_cls = AxolotlTrainingArguments
-        training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
+        training_args = training_args_cls(
             **training_arguments_kwargs,
         )
         training_args = self.hook_post_create_training_args(training_args)
 
         # unset run_name so wandb sets up experiment names
         if self.cfg.use_wandb and training_args.run_name == training_args.output_dir:
-            training_args.run_name = (  # pylint: disable=attribute-defined-outside-init
-                None
-            )
+            training_args.run_name = None
 
         data_collator_kwargs = {
             "padding": True,  # True/"longest" is the default
@@ -363,7 +361,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             data_collator_kwargs["pad_to_multiple_of"] = multiple * math.ceil(
                 self.cfg.sequence_len / multiple
             )
-        else:
+        elif self.cfg.pad_to_sequence_len is None:
             # A100 is best at 64, while others at 8. Let's use the larger so we don't have to check
             # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
             data_collator_kwargs["pad_to_multiple_of"] = multiple
