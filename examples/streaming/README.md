@@ -5,7 +5,10 @@ functionality, which enables memory-efficient training with large datasets.
 
 ## Examples
 
-### Pretraining with Streaming (`pretrain.yaml`)
+Run the following examples with e.g. `axolotl train examples/streaming/sft.yaml`; no
+`axolotl preprocess` required!
+
+### Pretraining (`pretrain.yaml`)
 
 Demonstrates streaming configuration for pretraining tasks using the fineweb-edu dataset
 with SmolLM2-135M.
@@ -14,27 +17,13 @@ with SmolLM2-135M.
 - Multipack attention control to prevent cross-attention between packed sequences
 - Buffer size configuration for memory management
 
-### SFT with Streaming (`sft.yaml`)
+### SFT (`sft.yaml`)
 
 Shows how to use streaming for supervised fine-tuning with the Alpaca dataset.
 
 - Explicit `streaming: true` flag for SFT datasets
 - Evaluation dataset handling with streaming
 - Memory-efficient training on instruction datasets
-
-## Usage
-
-To use these configurations:
-
-```bash
-# For pretraining
-axolotl train examples/streaming/pretrain.yaml
-
-# For SFT
-axolotl train examples/streaming/sft.yaml
-```
-
-No `axolotl preprocess` required!
 
 ## Key Configuration Options
 
