@@ -11,9 +11,10 @@ incrementally rather than loading the entire dataset into memory at once.
 
 Use streaming when:
 - Your dataset is too large to fit in memory
+  - E.g., you're doing pretraining with massive text corpora
 - You want to start training immediately without preprocessing the entire dataset
-- You're doing pretraining with massive text corpora
-- You're working with datasets from the HuggingFace Hub or stored locally
+
+Streaming works with both remote and locally stored datasets!
 
 ## Configuration
 
