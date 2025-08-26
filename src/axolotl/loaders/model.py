@@ -59,6 +59,9 @@ from axolotl.utils.distributed import (
 from axolotl.utils.logging import get_logger
 from axolotl.utils.model_shard_quant import load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
+from axolotl.monkeypatch.utils import (
+    patch_deepspeed_zero3_missing_attributes,
+)
 
 LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
@@ -215,6 +218,11 @@ class ModelLoader:
         self._set_attention_config()
         self._check_model_requirements()
 
+        try:
+            if is_deepspeed_zero3_enabled() or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3":
+                patch_deepspeed_zero3_missing_attributes()
+        except Exception:
+            LOG.warning("DeepSpeed ZeRO Stage 3 missing attributes patch not applied")
     def _apply_post_model_load_setup(self):
         """Configure the model after it has been loaded."""
         # Handle PeftModel if needed
