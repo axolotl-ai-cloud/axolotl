@@ -153,7 +153,7 @@ class LLama2ChatTokenizingStrategy(PromptTokenizingStrategy):
         }
 
 
-class Llama2ChatPrompter:  # pylint: disable=too-few-public-methods
+class Llama2ChatPrompter:
     """
     A prompter that generates prompts for Llama2 models.
     """
@@ -190,7 +190,7 @@ class Llama2ChatPrompter:  # pylint: disable=too-few-public-methods
             # Skip the first one if it is not from human
             source = source[1:]
 
-        conv.messages = []  # pylint: disable=R0801
+        conv.messages = []
         for j, sentence in enumerate(source):
             role = roles[sentence["from"]]
             assert role == conv.roles[j % 2], ALTERNATING_ASSERTION_FAILED_ROLE

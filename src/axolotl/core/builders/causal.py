@@ -344,16 +344,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_args_cls = AxolotlPRMConfig
         else:
             training_args_cls = AxolotlTrainingArguments
-        training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
+        training_args = training_args_cls(
             **training_arguments_kwargs,
         )
         training_args = self.hook_post_create_training_args(training_args)
 
         # unset run_name so wandb sets up experiment names
         if self.cfg.use_wandb and training_args.run_name == training_args.output_dir:
-            training_args.run_name = (  # pylint: disable=attribute-defined-outside-init
-                None
-            )
+            training_args.run_name = None
 
         data_collator_kwargs = {
             "padding": True,  # True/"longest" is the default

@@ -19,9 +19,7 @@ class KDTemperatureSchedulerCallback(TrainerCallback):
 
         self.trainer = trainer
 
-    def on_step_end(
-        self, args, state, control, **kwargs
-    ):  # pylint: disable=unused-argument
+    def on_step_end(self, args, state, control, **kwargs):
         # cosine decay temperature over the max steps
 
         progress = state.global_step / state.max_steps

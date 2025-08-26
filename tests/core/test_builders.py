@@ -1,7 +1,5 @@
 """Unit tests for axolotl.core.builders"""
 
-# pylint: disable=protected-access
-
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -330,7 +328,6 @@ def rand_reward_func(prompts, completions) -> list[float]:
         )
 
     def test_grpo_training_arguments(self, grpo_cfg, model, tokenizer, tmp_path):
-
         rewards_dir = tmp_path / "rewards_test"
         self._write_rewards_file(rewards_dir)
 
@@ -477,7 +474,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
 
             assert trainer.optimizer_cls_and_kwargs is not None
 
-            from axolotl.contribs.mit.muon import (  # pylint: disable=no-name-in-module
+            from axolotl.contribs.mit.muon import (
                 Muon,
                 MuonOptimizerFactory,
             )
@@ -559,7 +556,7 @@ class TestHFCausalTrainerBuilder:
 
         assert trainer.optimizer_cls_and_kwargs is not None
 
-        from axolotl.contribs.mit.muon import (  # pylint: disable=no-name-in-module
+        from axolotl.contribs.mit.muon import (
             Muon,
             MuonOptimizerFactory,
         )
@@ -599,6 +596,6 @@ class TestTrainerClsPlugin:
         except TypeError as e:
             # Error raised if trainer_cls is None
             assert "'tuple' object has no attribute 'config'" not in str(e)
-        except Exception:  # pylint: disable=broad-exception-caught
+        except Exception:
             # Another error happens, so we passed trainer_cls to builder
             pass

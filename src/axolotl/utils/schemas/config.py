@@ -1,7 +1,5 @@
 """Module with Pydantic models for configuration."""
 
-# pylint: disable=too-many-lines
-
 from typing import Annotated, Any, Literal
 
 from annotated_types import MinLen
@@ -51,7 +49,6 @@ from axolotl.utils.schemas.vllm import VllmConfig
 LOG = get_logger(__name__)
 
 
-# pylint: disable=too-many-ancestors
 class AxolotlInputConfig(
     ModelInputConfig,
     ModelOutputConfig,
@@ -124,10 +121,10 @@ class AxolotlInputConfig(
         },
     )
     trl: TRLConfig | None = Field(
-        default_factory=lambda: TRLConfig(),  # pylint: disable=unnecessary-lambda
+        default_factory=lambda: TRLConfig(),
     )
     vllm: VllmConfig | None = Field(
-        default_factory=lambda: VllmConfig(),  # pylint: disable=unnecessary-lambda
+        default_factory=lambda: VllmConfig(),
     )
     qat: QATConfig | None = None
     quantization: PTQConfig | None = None
@@ -412,6 +409,12 @@ class AxolotlInputConfig(
         default=512,
         json_schema_extra={
             "description": "The maximum length of an input to train with, this should typically be less than 2048 as most models have a token/context limit of 2048"
+        },
+    )
+    excess_length_strategy: Literal["drop", "truncate"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "What to do when a tokenized row exceeds sequence_len. 'drop' removes the row; 'truncate' slices tensors to sequence_len. Defaults to 'drop' for backward compatibility."
         },
     )
     eval_sequence_len: int | None = Field(
@@ -1029,7 +1032,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
         return data
 
-    # pylint: disable=duplicate-code
     @model_validator(mode="before")
     @classmethod
     def check_multigpu_unsloth(cls, data):
@@ -1045,7 +1047,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
         return data
 
-    # pylint: disable=duplicate-code
     @model_validator(mode="before")
     @classmethod
     def check_multigpu_lora_kernels(cls, data):

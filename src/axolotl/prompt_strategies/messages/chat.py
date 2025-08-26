@@ -19,7 +19,7 @@ class ChatMessageDatasetWrappingStrategy(DatasetWrappingStrategy):
         processor,
         message_transform=None,
         formatter=None,
-        **kwargs,  # pylint: disable=unused-argument
+        **kwargs,
     ):
         """
         :param processor: tokenizer or image processor
@@ -35,7 +35,7 @@ class ChatMessageDatasetWrappingStrategy(DatasetWrappingStrategy):
         dataset,
         process_count: Optional[int] = None,
         keep_in_memory: Optional[bool] = False,
-        **kwargs,  # pylint: disable=unused-argument
+        **kwargs,
     ):
         self.dataset = TokenizedChatDataset(
             dataset,
@@ -72,9 +72,10 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         builder_kwargs["message_field_training"] = message_field_training
 
     chat_template = ds_cfg.get("chat_template", cfg.get("chat_template", "chatml"))
-    format_message = (
-        lambda x: x  # noqa E731  # pylint: disable=unnecessary-lambda-assignment
-    )
+
+    def format_message(x):
+        return x
+
     if chat_template == "chatml":
         from axolotl.core.chat.format.chatml import format_message  # noqa F811
     if chat_template.startswith("llama3"):

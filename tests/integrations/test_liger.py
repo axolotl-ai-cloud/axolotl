@@ -10,7 +10,6 @@ from axolotl.utils.config import prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
 
-# pylint: disable=duplicate-code
 @pytest.fixture(name="minimal_liger_cfg")
 def fixture_cfg():
     return DictDefault(
@@ -30,7 +29,6 @@ def fixture_cfg():
     )
 
 
-# pylint: disable=too-many-public-methods
 class TestValidation:
     """
     Test the validation module for liger

@@ -5,7 +5,6 @@ Collators for multi-modal chat messages and packing
 from dataclasses import dataclass
 from typing import Any, Optional, Union
 
-import torch
 from torch import Tensor
 from transformers import PreTrainedTokenizerBase
 from transformers.data.data_collator import DataCollatorMixin
@@ -42,62 +41,19 @@ class MultiModalChatDataCollator(DataCollatorMixin):
         examples = self.processing_strategy(examples)
 
         # Initialize batch
-        batch: dict[str, Any] = {}
+        messages = [ex["messages"] for ex in examples]
 
-        # Process each example
-        for example in examples:
-            # Apply chat template to process the example
-            # This method requires transformers>=4.49.0
-            result = self.processing_strategy.processor.apply_chat_template(
-                example["messages"],
-                add_generation_prompt=False,
-                tokenize=True,
-                return_tensors="pt",
-                padding=True,
-                return_dict=True,
-                chat_template=self.processing_strategy.chat_template,
-            )
-
-            # TODO: Check if need handling for len(input_ids) > sequence_len
-
-            # Add the processed tensors to our batch
-            for key in result.keys():
-                if key not in batch:
-                    batch[key] = []
-
-                batch[key].append(result[key].squeeze(0))
-
-        # Pad sequences to the same length
-        input_ids = torch.nn.utils.rnn.pad_sequence(
-            batch["input_ids"],
-            batch_first=True,
-            padding_value=self.tokenizer.pad_token_id,
+        batch = self.processing_strategy.processor.apply_chat_template(
+            messages,
+            add_generation_prompt=False,
+            tokenize=True,
+            return_tensors="pt",
+            padding=True,
+            return_dict=True,
+            chat_template=self.processing_strategy.chat_template,
         )
-
-        attention_mask = torch.nn.utils.rnn.pad_sequence(
-            batch["attention_mask"], batch_first=True, padding_value=0
-        )
-
-        # Create the final batch
-        final_batch = {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-        }
-
-        for key, val in batch.items():
-            if key in ["input_ids", "attention_mask"]:
-                continue
-
-            if key in ["token_type_ids", "cross_attention_mask"]:
-                final_batch[key] = torch.nn.utils.rnn.pad_sequence(
-                    val, batch_first=True, padding_value=0
-                )
-            else:
-                final_batch[key] = torch.stack(val)
 
         # Process the labels
-        final_batch["labels"] = self.processing_strategy.process_labels(
-            final_batch["input_ids"]
-        )
+        batch["labels"] = self.processing_strategy.process_labels(batch["input_ids"])
 
-        return final_batch
+        return batch

@@ -14,7 +14,6 @@ class AxolotlTrainingMixins:
     Mixin class for the Axolotl training args.
     """
 
-    # pylint: disable=duplicate-code
     model_type: Optional[str] = field(
         default=None, metadata={"help": "HF model configuration model_type."}
     )

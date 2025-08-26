@@ -44,7 +44,7 @@ from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 LOG = logging.getLogger(__name__)
 
 with suppress(ImportError):
-    import torch._dynamo  # pylint: disable=ungrouped-imports
+    import torch._dynamo
 
 
 class TrainerBuilderBase(abc.ABC):
@@ -260,14 +260,14 @@ class TrainerBuilderBase(abc.ABC):
                 adam_kwargs["eps"] = training_args_kwargs.get("adam_epsilon")
 
             if self.cfg.optimizer == "muon":
-                from axolotl.contribs.mit.muon import (  # pylint: disable=no-name-in-module
+                from axolotl.contribs.mit.muon import (
                     MuonOptimizerFactory,
                 )
 
                 optimizer_cls = MuonOptimizerFactory
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "dion":
-                from axolotl.contribs.mit.dion import (  # pylint: disable=no-name-in-module
+                from axolotl.contribs.mit.dion import (
                     DionOptimizerFactory,
                 )
 
@@ -414,12 +414,8 @@ class TrainerBuilderBase(abc.ABC):
 
     def _configure_torch_compile(self, training_args_kwargs: dict):
         if self.cfg.torch_compile and getattr(torch, "_dynamo", None):
-            torch._dynamo.config.suppress_errors = (  # pylint: disable=protected-access
-                True
-            )
-            torch._dynamo.config.accumulated_cache_size_limit = (  # pylint: disable=protected-access
-                256
-            )
+            torch._dynamo.config.suppress_errors = True
+            torch._dynamo.config.accumulated_cache_size_limit = 256
             training_args_kwargs["torch_compile"] = self.cfg.torch_compile
             if self.cfg.torch_compile_backend:
                 training_args_kwargs["torch_compile_backend"] = (

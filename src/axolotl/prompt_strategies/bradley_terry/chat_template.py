@@ -34,7 +34,6 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
 
         max_length = self.prompter.max_length
 
-        # pylint: disable=duplicate-code
         prompt["messages"] = []
         if prompt["system"]:
             prompt["messages"].append({"role": "system", "content": prompt["system"]})
@@ -52,7 +51,6 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
                 :max_length
             ]
 
-        # pylint: disable=duplicate-code
         prompt["messages"] = []
         if prompt["system"]:
             prompt["messages"].append({"role": "system", "content": prompt["system"]})

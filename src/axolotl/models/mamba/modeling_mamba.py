@@ -1,4 +1,3 @@
-# pylint: skip-file
 import os
 from collections import namedtuple
 from functools import partial
@@ -112,7 +111,7 @@ class MambaLMHeadModel(nn.Module, GenerationMixin):
         self,
         save_directory: Union[str, os.PathLike],
         state_dict: Optional[dict] = None,
-        safe_serialization: Optional[bool] = None,  # pylint: disable=unused-argument
+        safe_serialization: Optional[bool] = None,
     ):
         if state_dict is None:
             state_dict = self.state_dict()

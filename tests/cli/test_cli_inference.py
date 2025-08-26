@@ -1,7 +1,5 @@
 """pytest tests for axolotl CLI inference command."""
 
-# pylint: disable=duplicate-code
-
 from unittest.mock import patch
 
 from axolotl.cli.main import cli

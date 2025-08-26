@@ -16,7 +16,6 @@ class TestLlama:
     """
 
     def test_fft_trust_remote_code(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -57,7 +56,6 @@ class TestLlama:
         check_model_output_exists(temp_dir, cfg)
 
     def test_fix_untrained_tokens(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -105,7 +103,6 @@ class TestLlama:
         check_model_output_exists(temp_dir, cfg)
 
     def test_fix_untrained_tokens_already_trained(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -150,7 +147,6 @@ class TestLlama:
         check_model_output_exists(temp_dir, cfg)
 
     def test_batch_flattening(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

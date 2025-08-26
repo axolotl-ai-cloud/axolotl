@@ -59,7 +59,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
         config: Path to `axolotl` config YAML file.
         kwargs: Additional keyword arguments to override config file values.
     """
-    # pylint: disable=duplicate-code
+
     parsed_cfg = load_cfg(config, **kwargs)
     parser = HfArgumentParser(TrainerCliArgs)
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(

@@ -25,6 +25,7 @@ from peft import (
 from torch.distributed import DeviceMesh
 from transformers import (
     AutoModelForCausalLM,
+    AutoModelForImageTextToText,
     AutoModelForVision2Seq,
     AwqConfig,
     BitsAndBytesConfig,
@@ -101,7 +102,7 @@ class ModelLoader:
         *,
         inference: bool = False,
         reference_model: bool = False,
-        **kwargs,  # pylint: disable=unused-argument
+        **kwargs,
     ):
         """Initializes the ModelLoader.
 
@@ -133,7 +134,7 @@ class ModelLoader:
 
         # Init model config
         self.model_config = load_model_config(cfg)
-        self.auto_model_loader = AutoModelForCausalLM  # pylint: disable=invalid-name
+        self.auto_model_loader = AutoModelForCausalLM
 
         # Initialize the patch manager
         self.patch_manager = PatchManager(
@@ -212,6 +213,7 @@ class ModelLoader:
             self.model_kwargs["use_kernels"] = self.cfg.use_kernels
         self._set_quantization_config()
         self._set_attention_config()
+        self._check_model_requirements()
 
     def _apply_post_model_load_setup(self):
         """Configure the model after it has been loaded."""
@@ -432,6 +434,8 @@ class ModelLoader:
             self.auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
                 self.model_config.model_type, AutoModelForVision2Seq
             )
+            if isinstance(self.auto_model_loader, str):
+                self.auto_model_loader = AutoModelForImageTextToText
 
     def _set_device_map_config(self):
         """Setup `device_map` according to config"""
@@ -603,30 +607,32 @@ class ModelLoader:
             self.model_kwargs["attn_implementation"] = self.cfg.attn_implementation
         elif self.cfg.flex_attention:
             self.model_kwargs["attn_implementation"] = "flex_attention"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "flex_attention"
-            )
+            self.model_config._attn_implementation = "flex_attention"
 
         elif self.cfg.flash_attention:
             if not self.cfg.sample_packing and self.cfg.s2_attention:
                 pass
             self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "flash_attention_2"
-            )
+            self.model_config._attn_implementation = "flash_attention_2"
         elif self.cfg.sdp_attention:
             self.model_kwargs["attn_implementation"] = "sdpa"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "sdpa"
-            )
+            self.model_config._attn_implementation = "sdpa"
         elif self.cfg.eager_attention:
             self.model_kwargs["attn_implementation"] = "eager"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "eager"
-            )
+            self.model_config._attn_implementation = "eager"
 
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True
+
+    def _check_model_requirements(self):
+        if self.cfg.model_config_type in ["lfm2-vl", "lfm2"]:
+            from transformers.utils.import_utils import is_causal_conv1d_available
+
+            if is_causal_conv1d_available():
+                raise ImportError(
+                    "The 'causal-conv1d' package is installed but causes compatibility issues with LFM2 models. "
+                    "Please uninstall it by running: `pip uninstall -y causal-conv1d`"
+                )
 
     def _configure_zero3_memory_efficient_loading(
         self,
@@ -753,7 +759,7 @@ class ModelLoader:
                 )
         elif self.model_type == "MambaLMHeadModel":
             # FIXME this is janky at best and hacked together to make it work
-            MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name
+            MambaLMHeadModel = fix_mamba_attn_for_loss()
 
             self.model_kwargs["dtype"] = self.model_kwargs["torch_dtype"]
             self.model_kwargs["device"] = torch.cuda.current_device()
@@ -802,7 +808,6 @@ class ModelLoader:
         if is_deepspeed_zero3_enabled():
             skip_move_to_device = True
 
-        # pylint: disable=protected-access
         if self.cfg.tensor_parallel_size > 1:
             # workaround for upstream 4.54.0 not setting _tp_size or _device_mesh
             # TODO(wing): remove once 4.54.1 is released

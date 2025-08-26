@@ -26,7 +26,7 @@ def check_cuda_p2p_ib_support():
                 for unsupported_device in unsupported_devices
             ):
                 return False
-    except Exception:  # pylint: disable=broad-except # nosec
+    except Exception:  # nosec B110
         pass
     return True
 

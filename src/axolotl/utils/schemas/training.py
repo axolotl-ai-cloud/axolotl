@@ -96,9 +96,9 @@ class HyperparametersConfig(BaseModel):
             "description": "Path to torch distx for optim 'adamw_anyprecision'"
         },
     )
-    lr_scheduler: (SchedulerType | Literal["one_cycle"] | Literal["rex"]) | None = (
-        SchedulerType.COSINE
-    )
+    lr_scheduler: (
+        SchedulerType | Literal["one_cycle"] | Literal["rex"]
+    ) | None = SchedulerType.COSINE
     lr_scheduler_kwargs: dict[str, Any] | None = Field(
         default=None,
         json_schema_extra={

@@ -37,7 +37,6 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
     target_logprobs. It also creates a teacher_mask to indicate which entries are valid.
     """
 
-    # pylint: disable=duplicate-code
     tokenizer: PreTrainedTokenizerBase
     model: Optional[Any] = None
     padding: Union[bool, str, PaddingStrategy] = True
@@ -72,7 +71,7 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
                         // self.pad_to_multiple_of
                     ) * self.pad_to_multiple_of
 
-                for f in features:  # pylint: disable=invalid-name
+                for f in features:
                     remainder = [pad_token_id] * (max_len - len(f[feature_name]))
                     if isinstance(f[feature_name], list):
                         f[feature_name] = (
@@ -101,7 +100,7 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
 
         if has_teacher_data:
             # Extract and remove from features
-            for f in features:  # pylint: disable=invalid-name
+            for f in features:
                 target_logprobs_list.append(f.pop("target_logprobs"))
                 target_token_ids_list.append(f.pop("target_token_ids"))
                 target_mask_list.append(f.pop("target_mask"))
@@ -117,24 +116,25 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
             padded_teacher_mask_list = []
 
             for t_logprobs, t_ids, t_mask in zip(
-                target_logprobs_list, target_token_ids_list, target_mask_list
+                target_logprobs_list,
+                target_token_ids_list,
+                target_mask_list,
+                strict=False,
             ):
                 t_logprobs_padded = []
                 t_ids_padded = []
                 t_mask_padded = []
 
-                for lp, ids, mask in zip(  # pylint: disable=invalid-name
-                    t_logprobs, t_ids, t_mask
-                ):
+                for lp, ids, mask in zip(t_logprobs, t_ids, t_mask, strict=False):
                     lp_len = len(lp)
                     if lp_len < max_k:
                         # Use -1e9 for padding logprobs and 0 for token_ids
                         pad_len = max_k - lp_len
-                        lp = lp + [-1e9] * pad_len  # pylint: disable=invalid-name
+                        lp = lp + [-1e9] * pad_len
                         ids = ids + [0] * pad_len
                         mask = mask + [0] * pad_len
                     else:
-                        lp = lp[:max_k]  # pylint: disable=invalid-name
+                        lp = lp[:max_k]
                         ids = ids[:max_k]
                         mask = mask[:max_k]
 
@@ -216,9 +216,7 @@ class KDBatchSamplerDataCollatorForSeq2Seq(DataCollatorForKD):
         #    We want to produce a single "merged" feature dict for each sub-batch.
         out_features = [{} for _ in features]
 
-        for i, sub_features in enumerate(  # pylint: disable=too-many-nested-blocks
-            features
-        ):
+        for i, sub_features in enumerate(features):
             # sub_features is a list of dicts, each dict = one sequence’s features
             # We'll merge them into out_features[i].
             #
@@ -255,9 +253,7 @@ class KDBatchSamplerDataCollatorForSeq2Seq(DataCollatorForKD):
                         if field_name in feat and isinstance(
                             feat[field_name], (list, torch.Tensor)
                         ):
-                            if isinstance(
-                                feat[field_name][0], (dict, str)
-                            ):  # pylint: disable=too-many-nested-blocks
+                            if isinstance(feat[field_name][0], (dict, str)):
                                 continue
                             arr = np.array(feat[field_name])
                             arrays.append(arr)

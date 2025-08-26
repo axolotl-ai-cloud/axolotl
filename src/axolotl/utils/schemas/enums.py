@@ -1,7 +1,5 @@
 """Enums for Axolotl input config"""
 
-# pylint: disable=invalid-name
-
 from enum import Enum
 
 import torch
