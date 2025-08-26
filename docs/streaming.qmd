@@ -4,8 +4,6 @@ description: How to use streaming mode for large-scale datasets and memory-effic
 order: 10
 ---
 
-# Streaming Datasets
-
 Streaming enables memory-efficient training with large datasets by loading data
 incrementally rather than loading the entire dataset into memory at once.
 
@@ -28,8 +26,7 @@ streaming: true
 
 ### Pretraining with Streaming
 
-For pretraining tasks, streaming is automatically enabled when using
-`pretraining_dataset`:
+For pretraining tasks, streaming is automatically enabled when using `pretraining_dataset`:
 
 ```yaml
 pretraining_dataset:
