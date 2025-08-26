@@ -9,7 +9,7 @@ pretraining_dataset:
     split: train
 
 # Streaming-specific settings
-streaming_multipack_buffer_size: 10_000
+streaming_multipack_buffer_size: 10000
 shuffle_merged_datasets: true
 
 # Training configuration
@@ -44,7 +44,7 @@ save_steps: 250
 save_total_limit: 3
 
 # Weights & Biases (optional)
-wandb_project: smollm2-pretrain-streaming
+wandb_project:
 wandb_entity:
 wandb_watch:
 wandb_name:

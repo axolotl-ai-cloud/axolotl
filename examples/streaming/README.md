@@ -22,8 +22,8 @@ with SmolLM2-135M.
 Shows how to use streaming for supervised fine-tuning with the Alpaca dataset.
 
 - Explicit `streaming: true` flag for SFT datasets
-- Evaluation dataset handling with streaming
 - Memory-efficient training on instruction datasets
+- Evaluation datasets are currently not streamed
 
 ## Key Configuration Options
 
