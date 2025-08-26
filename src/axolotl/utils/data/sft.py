@@ -139,7 +139,6 @@ def _prepare_streaming_dataset(
         if cfg.sample_packing:
             # TODO(djsaunde): Implement for multiple datasets
             dataset_config = DictDefault(cfg.datasets[0])
-            dataset_config.type = cfg.datasets[0].type
 
             # Ensure we have a split set - default to 'train' if not specified
             if not hasattr(dataset_config, "split") or not dataset_config.split:

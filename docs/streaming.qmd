@@ -39,7 +39,7 @@ pretraining_dataset:
     split: train
 
 # Optionally, enable sample packing
-streaming_multipack_buffer_size: 10_000
+streaming_multipack_buffer_size: 10000
 sample_packing: true
 ```
 
@@ -55,7 +55,7 @@ datasets:
     split: train
 
 # Optionally, enable sample packing
-streaming_multipack_buffer_size: 10_000
+streaming_multipack_buffer_size: 10000
 sample_packing: true
 ```
 
@@ -79,7 +79,7 @@ packed into a single sequence to maximize GPU utilization:
 
 ```yaml
 sample_packing: true
-streaming_multipack_buffer_size: 10_000
+streaming_multipack_buffer_size: 10000
 
 # For SFT: attention is automatically isolated between packed samples
 # For pretraining: control with pretrain_multipack_attn
