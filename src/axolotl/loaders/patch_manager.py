@@ -475,15 +475,17 @@ class PatchManager:
 
     def _apply_patch_deepspeed_zero3(self):
         try:
-            from axolotl.monkeypatch.deepspeed_utils import (
+            from axolotl.monkeypatch.utils import (
                 patch_deepspeed_zero3_missing_attributes,
             )
-            from transformers import is_deepspeed_zero3_enabled
+            from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
             if (
                 is_deepspeed_zero3_enabled()
                 or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3"
             ):
                 patch_deepspeed_zero3_missing_attributes()
-        except Exception:
-            LOG.warning("DeepSpeed ZeRO Stage 3 missing attributes patch not applied")
+        except Exception as e:
+            LOG.warning(
+                f"DeepSpeed ZeRO Stage 3 missing attributes patch not applied: {e}"
+            )

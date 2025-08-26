@@ -245,11 +245,11 @@ def detab_code(code: str) -> Tuple[str, str]:
 def patch_deepspeed_zero3_missing_attributes():
     """
     Patch for DeepSpeed ZeRO Stage 3 missing ds_grads_remaining attribute
-    
+
     This addresses the issue where Linear modules (and potentially other modules)
     don't have the ds_grads_remaining attribute that DeepSpeed expects during
     backward pass hooks.
-    
+
     References:
     - https://github.com/deepspeedai/DeepSpeed/issues/7203
     """
@@ -265,7 +265,7 @@ def patch_deepspeed_zero3_missing_attributes():
                 LOG.debug(f"Initialized ds_grads_remaining for {type(self).__name__}")
             return object.__getattribute__(self, "_ds_grads_remaining")
         return original_getattribute(self, name)
-    
+
     def patched_setattr(self, name: str, value: Any) -> None:
         """
         Patched __setattr__ to handle ds_grads_remaining assignment
@@ -274,7 +274,7 @@ def patch_deepspeed_zero3_missing_attributes():
             object.__setattr__(self, "_ds_grads_remaining", value)
         else:
             object.__setattr__(self, name, value)
-    
+
     torch.nn.Module.__getattribute__ = patched_getattribute
     torch.nn.Module.__setattr__ = patched_setattr
     LOG.debug("DeepSpeed ZeRO Stage 3 patch applied successfully")
