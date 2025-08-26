@@ -236,11 +236,9 @@ def _load_from_local_path(
         try:
             return load_from_disk(dataset_config.path)
         except FileNotFoundError:
-            load_dataset_kwargs["streaming"] = False
             return load_dataset(dataset_config.path, **load_dataset_kwargs)
     elif local_path.is_file():
         dataset_type = get_dataset_type(dataset_config)
-        load_dataset_kwargs["streaming"] = False
         return load_dataset(
             dataset_type,
             data_files=dataset_config.path,

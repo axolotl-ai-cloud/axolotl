@@ -61,8 +61,8 @@ def prepare_datasets(
     Returns:
         Tuple of (train_dataset, eval_dataset, total_steps, prompters).
     """
-    if cfg.pretraining_dataset:
-        return _prepare_pretraining_dataset(
+    if cfg.streaming or cfg.pretraining_dataset:
+        return _prepare_streaming_dataset(
             cfg, tokenizer, processor, preprocess_iterable
         )
     return _prepare_standard_dataset(cfg, tokenizer, processor, preprocess_iterable)
@@ -128,22 +128,45 @@ def _prepare_standard_dataset(
     return train_dataset, eval_dataset, total_num_steps, prompters
 
 
-def _prepare_pretraining_dataset(
+def _prepare_streaming_dataset(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizer,
     processor: ProcessorMixin | None,
     preprocess_iterable: bool,
 ) -> tuple[IterableDataset, Dataset | None, int, list[Prompter | None]]:
     """
-    Prepare dataset for pretraining mode.
+    Prepare dataset for streaming mode.
 
-    Note: Pre-training datasets are streamed from the HuggingFace Hub.
+    Note: Streaming datasets are loaded incrementally from the source.
     """
-    # Extract pretraining dataset configuration
-    pretraining_config = _extract_pretraining_config(cfg)
-
-    # Load streaming dataset for training
-    train_dataset = _load_pretraining_dataset(pretraining_config, cfg, tokenizer)
+    # For backward compatibility, handle pretraining_dataset config
+    if cfg.pretraining_dataset:
+        # Extract pretraining dataset configuration
+        dataset_config = _extract_pretraining_config(cfg)
+        # Load streaming dataset for training
+        train_dataset = _load_pretraining_dataset(dataset_config, cfg, tokenizer)
+    else:
+        # For cfg.streaming=True with regular datasets
+        if cfg.sample_packing:
+            # Use pretraining-style packing for streaming datasets with sample packing
+            # Create a config that uses the existing dataset but with pretraining wrapper
+            dataset_config = DictDefault(cfg.datasets[0])
+            dataset_config.type = cfg.datasets[
+                0
+            ].type  # Keep original type (alpaca, etc)
+            train_dataset = _load_pretraining_dataset(dataset_config, cfg, tokenizer)
+        else:
+            # Use standard streaming approach without packing
+            train_dataset, eval_dataset, prompters = _load_and_prepare_datasets(
+                tokenizer,
+                cfg,
+                split="train",
+                processor=processor,
+                preprocess_iterable=True,  # Force streaming for datasets
+            )
+            # Return early for non-packed streaming datasets
+            total_num_steps = cfg.max_steps if cfg.max_steps else -1
+            return train_dataset, eval_dataset, total_num_steps, prompters
 
     # Load evaluation dataset if specified
     eval_dataset = None
@@ -157,10 +180,11 @@ def _prepare_pretraining_dataset(
         )
 
     if cfg.dataset_exact_deduplication:
-        LOG.info("Deduplication not available for pretrained datasets")
+        LOG.info("Deduplication not available for streaming datasets")
 
-    # For pretraining, we return max_steps directly from config
-    return train_dataset, eval_dataset, cfg.max_steps, []
+    # For streaming, we return max_steps directly from config or -1 if not set
+    total_num_steps = cfg.max_steps if cfg.max_steps else -1
+    return train_dataset, eval_dataset, total_num_steps, []
 
 
 def _extract_pretraining_config(cfg: DictDefault) -> DictDefault:
@@ -337,7 +361,7 @@ def _load_raw_datasets(
     # Merge datasets
     dataset = merge_datasets(datasets, cfg)
 
-    if not cfg.skip_prepare_dataset:
+    if not cfg.skip_prepare_dataset and not preprocess_iterable:
         if split == "test" and cfg.eval_sequence_len:
             dataset = handle_long_seq_in_dataset(dataset, cfg.eval_sequence_len, cfg)
         else:

@@ -55,7 +55,7 @@ def load_datasets(
     """
     tokenizer = load_tokenizer(cfg)
     processor = load_processor(cfg, tokenizer=tokenizer) if cfg.processor_type else None
-    preprocess_iterable = getattr(cli_args, "iterable", False)
+    preprocess_iterable = cfg.streaming or getattr(cli_args, "iterable", False)
 
     train_dataset, eval_dataset, total_num_steps, prompters = prepare_datasets(
         cfg,
