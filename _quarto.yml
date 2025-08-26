@@ -153,7 +153,7 @@ quartodoc:
         - utils.distributed
         - utils.dict
         - utils.optimizers.adopt
-        - utils.data.pretraining
+        - utils.data.streaming
         - utils.data.sft
         - utils.quantization
     - title: Schemas
