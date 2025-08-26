@@ -29,7 +29,7 @@ class TestStreamingDatasets:
                 "sequence_len": 1024,
                 "sample_packing": sample_packing,
                 "pretrain_multipack_attn": sample_packing,
-                "pretrain_multipack_buffer_size": 10000,
+                "streaming_multipack_buffer_size": 10000,
                 "dataset_processes": 1,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",

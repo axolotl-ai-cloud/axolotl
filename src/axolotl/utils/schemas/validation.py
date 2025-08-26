@@ -340,6 +340,27 @@ class TrainingValidationMixin:
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_multipack_buffer_size(cls, data):
+        if data.get("pretrain_multipack_buffer_size") and not data.get(
+            "streaming_multipack_buffer_size"
+        ):
+            LOG.warning(
+                "`pretrain_multipack_buffer_size` is deprecated. Please use `streaming_multipack_buffer_size` instead."
+            )
+            data["streaming_multipack_buffer_size"] = data[
+                "pretrain_multipack_buffer_size"
+            ]
+            del data["pretrain_multipack_buffer_size"]
+        elif data.get("pretrain_multipack_buffer_size") and data.get(
+            "streaming_multipack_buffer_size"
+        ):
+            raise ValueError(
+                "pretrain_multipack_buffer_size is deprecated, use streaming_multipack_buffer_size; both are set, please remove the deprecated pretrain_multipack_buffer_size setting"
+            )
+        return data
+
     @model_validator(mode="after")
     def check_fft_possible_bad_config(self):
         if (
