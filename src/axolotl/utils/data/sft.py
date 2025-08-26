@@ -9,6 +9,7 @@ from datasets import (
     Dataset,
     DatasetDict,
     IterableDataset,
+    IterableDatasetDict,
     load_dataset,
 )
 from transformers import PreTrainedTokenizer, ProcessorMixin
@@ -154,6 +155,9 @@ def _prepare_streaming_dataset(
             dataset_config.type = cfg.datasets[
                 0
             ].type  # Keep original type (alpaca, etc)
+            # Ensure we have a split set - default to 'train' if not specified
+            if not hasattr(dataset_config, "split") or not dataset_config.split:
+                dataset_config.split = "train"
             train_dataset = _load_pretraining_dataset(dataset_config, cfg, tokenizer)
         else:
             # Use standard streaming approach without packing
@@ -397,7 +401,7 @@ def _load_and_process_single_dataset(
     d_base_type, d_prompt_style = _parse_dataset_type(dataset_config.type)
 
     # Select the appropriate split
-    if isinstance(dataset, DatasetDict):
+    if isinstance(dataset, (DatasetDict, IterableDatasetDict)):
         if dataset_config.split and dataset_config.split in dataset:
             dataset = dataset[dataset_config.split]
         elif split in dataset:
