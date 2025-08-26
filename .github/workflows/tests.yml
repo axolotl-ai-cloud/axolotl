@@ -55,7 +55,7 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.11"]
-        pytorch_version: ["2.6.0", "2.7.0", "2.7.1"]
+        pytorch_version: ["2.6.0", "2.7.0", "2.7.1", "2.8.0"]
     timeout-minutes: 20
 
     steps:
@@ -130,7 +130,7 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.11"]
-        pytorch_version: ["2.6.0", "2.7.0", "2.7.1"]
+        pytorch_version: ["2.6.0", "2.7.0", "2.7.1", "2.8.0"]
     timeout-minutes: 20
 
     steps:
@@ -296,6 +296,12 @@ jobs:
             cuda_version: 12.8.1
             python_version: "3.11"
             pytorch: 2.7.1
+            num_gpus: 1
+            axolotl_extras:
+          - cuda: 128
+            cuda_version: 12.8.1
+            python_version: "3.11"
+            pytorch: 2.8.0
             num_gpus: 1
             axolotl_extras:
     steps:
