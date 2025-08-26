@@ -18,9 +18,9 @@ LOG = get_logger(__name__)
 
 
 def encode_streaming(
+    examples: Dict[str, List],
     tokenizer: PreTrainedTokenizerBase,
     max_tokens: int,
-    examples: Dict[str, List],
     text_column: str = "text",
     concatenate: bool = True,
 ) -> Dict[str, List]:
@@ -212,11 +212,14 @@ def wrap_streaming_dataset(
         # NOTE: This is not reachable for SFT datasets since we use the pre-existing
         # loading function for non-packed streaming datasets. Refer to
         # _prepare_streaming_datasets in sft.py for that code path.
+        text_column = (
+            getattr(cfg.pretraining_dataset[0], "text_column", "text") or "text"
+        )
         encode = functools.partial(
             encode_streaming,
-            tokenizer,
+            tokenizer=tokenizer,
             max_tokens=cfg.sequence_len,
-            text_column=getattr(cfg.pretraining_dataset[0], "text_column", "text"),
+            text_column=text_column,
             concatenate=cfg.pretraining_sample_concatenation is True,
         )
 

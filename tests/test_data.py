@@ -39,7 +39,7 @@ class TestEncodePretraining(unittest.TestCase):
                 "hello, hello",
             ]
         }
-        result = encode_streaming(self.tokenizer, self.max_tokens, examples)
+        result = encode_streaming(examples, self.tokenizer, self.max_tokens)
 
         self.assertEqual(len(result["input_ids"]), 3)
 
