@@ -1095,6 +1095,26 @@ class PretrainingValidationMixin:
                     data["accelerator_config"]["dispatch_batches"] = False
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_pretraining_w_val_set_size(cls, data):
+        if data.get("pretraining_dataset") and data.get("val_set_size"):
+            raise ValueError(
+                "val_set_size is not supported with pretraining_dataset. "
+                "Use test_datasets to specify evaluation datasets for pretraining."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_streaming_w_val_set_size(cls, data):
+        if data.get("streaming") and data.get("val_set_size"):
+            raise ValueError(
+                "val_set_size is not supported with streaming datasets. "
+                "Use test_datasets to specify evaluation datasets when streaming is enabled."
+            )
+        return data
+
 
 class ModelCompatibilityValidationMixin:
     """Validation methods for specific model compatibility."""

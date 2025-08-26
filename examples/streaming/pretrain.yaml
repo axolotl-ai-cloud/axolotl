@@ -1,6 +1,4 @@
 base_model: HuggingFaceTB/SmolLM2-135M
-model_type: LlamaForCausalLM
-tokenizer_type: LlamaTokenizer
 
 # Streaming pretraining configuration
 pretraining_dataset:
@@ -16,13 +14,13 @@ shuffle_merged_datasets: true
 
 # Training configuration
 max_steps: 1000
-val_set_size: 0.0
 output_dir: ./outputs/smollm2-135m-pretrain-streaming
 
 # Sequence and packing settings
-sequence_len: 2048
+sequence_len: 1024
 sample_packing: true
 pretrain_multipack_attn: true  # Prevent cross-attention between packed sequences
+flash_attention: true
 
 # Batch size settings
 gradient_accumulation_steps: 8
@@ -39,10 +37,6 @@ weight_decay: 0.01
 # Precision and performance
 bf16: auto
 tf32: true
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: false
-flash_attention: true
 
 # Logging and checkpointing
 logging_steps: 10
