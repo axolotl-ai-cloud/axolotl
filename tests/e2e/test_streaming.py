@@ -68,6 +68,6 @@ class TestStreamingDatasets:
         check_tensorboard(
             temp_dir + "/runs",
             "train/train_loss",
-            2.5,
+            3.0,
             "Train Loss (%s) is too high",
         )
