@@ -42,7 +42,6 @@ datasets:
   - path: HuggingFaceH4/llava-instruct-mix-vsft
     type: chat_template
     split: train[:1%]
-    field_messages: messages
 
 # (optional) if doing lora, only finetune the Language model,
 # leave the vision model and vision tower frozen
