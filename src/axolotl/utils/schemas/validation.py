@@ -62,6 +62,23 @@ class DatasetValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_pretraining_streaming_deprecation(cls, data):
+        """Warn about deprecated implicit streaming behavior with pretraining_dataset."""
+        if data.get("pretraining_dataset") and not data.get("streaming"):
+            import warnings
+
+            warnings.warn(
+                "Setting `pretraining_dataset` without explicitly setting `streaming: true` is "
+                "deprecated. In a future release, streaming will not be automatically enabled "
+                "when using pretraining_dataset. Please explicitly set `streaming: true` in "
+                "your configuration to maintain current behavior.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_push_ds_auth(cls, data):
         if (
             data.get("push_dataset_to_hub")
