@@ -71,10 +71,9 @@ class ModelInputConfig(BaseModel):
     )
 
     experimental_skip_move_to_device: bool | None = Field(
-        default=None,
+        default=True,
         json_schema_extra={
-            "description": "Don't move the model to the device before sharding. "
-            "This is an experimental feature that may be included in the future as the default."
+            "description": "Don't move the model to the device before sharding. Set to `false` to revert to legacy behavior."
         },
     )
 
