@@ -8,11 +8,8 @@ order: 10
 
 Streaming enables memory-efficient training with large datasets by loading data
 incrementally rather than loading the entire dataset into memory at once. This is
-particularly useful for:
-
-- Large pretraining datasets that don't fit in memory
-- Continuous training scenarios where data is constantly updated
-- Resource-constrained environments
+particularly useful for large pretraining datasets that don't fit in memory, or in
+other situations where you don't want to pay the up-front cost of dataset preprocessing.
 
 ## When to Use Streaming
 
@@ -34,7 +31,8 @@ streaming: true
 
 ### Pretraining with Streaming
 
-For pretraining tasks, streaming is automatically enabled when using `pretraining_dataset`:
+For pretraining tasks, streaming is automatically enabled when using
+`pretraining_dataset`:
 
 ```yaml
 pretraining_dataset:
@@ -90,6 +88,8 @@ streaming_multipack_buffer_size: 10_000
 # For pretraining: control with pretrain_multipack_attn
 pretrain_multipack_attn: true  # prevent cross-attention between packed samples
 ```
+
+For more information, see our [documentation](multipack.qmd) on multipacking.
 
 ## Important Considerations
 
