@@ -219,10 +219,14 @@ class ModelLoader:
         self._check_model_requirements()
 
         try:
-            if is_deepspeed_zero3_enabled() or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3":
+            if (
+                is_deepspeed_zero3_enabled()
+                or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3"
+            ):
                 patch_deepspeed_zero3_missing_attributes()
         except Exception:
             LOG.warning("DeepSpeed ZeRO Stage 3 missing attributes patch not applied")
+
     def _apply_post_model_load_setup(self):
         """Configure the model after it has been loaded."""
         # Handle PeftModel if needed
