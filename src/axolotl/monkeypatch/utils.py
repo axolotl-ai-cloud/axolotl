@@ -12,9 +12,6 @@ from transformers.modeling_attn_mask_utils import (
     _prepare_4d_causal_attention_mask_for_sdpa,
 )
 from transformers.utils import is_torch_bf16_gpu_available
-from axolotl.utils.logging import get_logger
-
-LOG = get_logger(__name__)
 
 
 @torch.jit.script
