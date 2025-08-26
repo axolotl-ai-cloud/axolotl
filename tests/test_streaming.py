@@ -186,9 +186,9 @@ class TestStreamingWithSamplePacking(unittest.TestCase):
         mock_ds_wrapper = Mock()
 
         with patch(
-            "axolotl.utils.data.pretraining.PretrainingBatchSamplerDataCollatorForSeq2Seq"
+            "axolotl.utils.data.streaming.PretrainingBatchSamplerDataCollatorForSeq2Seq"
         ) as mock_collator:
-            with patch("axolotl.utils.data.pretraining.encode_packed_streaming"):
+            with patch("axolotl.utils.data.streaming.encode_packed_streaming"):
                 wrap_streaming_dataset(
                     mock_dataset, self.tokenizer, cfg, mock_ds_wrapper
                 )
@@ -221,9 +221,9 @@ class TestStreamingWithSamplePacking(unittest.TestCase):
         mock_ds_wrapper = Mock()
 
         with patch(
-            "axolotl.utils.data.pretraining.PretrainingBatchSamplerDataCollatorForSeq2Seq"
+            "axolotl.utils.data.streaming.PretrainingBatchSamplerDataCollatorForSeq2Seq"
         ) as mock_collator:
-            with patch("axolotl.utils.data.pretraining.encode_packed_streaming"):
+            with patch("axolotl.utils.data.streaming.encode_packed_streaming"):
                 wrap_streaming_dataset(
                     mock_dataset, self.tokenizer, cfg, mock_ds_wrapper
                 )
