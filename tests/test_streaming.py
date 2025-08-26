@@ -165,7 +165,7 @@ class TestStreamingWithSamplePacking(unittest.TestCase):
 
     def test_multipack_attn_forced_true_for_sft(self):
         """Test that multipack_attn is forced to True for SFT with sample packing."""
-        from axolotl.utils.data.pretraining import wrap_streaming_dataset
+        from axolotl.utils.data.streaming import wrap_streaming_dataset
 
         cfg = DictDefault(
             {
@@ -200,7 +200,7 @@ class TestStreamingWithSamplePacking(unittest.TestCase):
 
     def test_multipack_attn_respects_config_for_pretraining(self):
         """Test that multipack_attn respects config for pretraining datasets."""
-        from axolotl.utils.data.pretraining import wrap_streaming_dataset
+        from axolotl.utils.data.streaming import wrap_streaming_dataset
 
         cfg = DictDefault(
             {

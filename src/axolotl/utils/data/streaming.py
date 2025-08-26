@@ -1,4 +1,4 @@
-"""data handling specific to pretraining"""
+"""Data handling specific to streaming datasets."""
 
 import functools
 from collections import defaultdict
@@ -209,11 +209,14 @@ def wrap_streaming_dataset(
         # again
         cfg.micro_batch_size = 1
     else:
+        # NOTE: This is not reachable for SFT datasets since we use the pre-existing
+        # loading function for non-packed streaming datasets. Refer to
+        # _prepare_streaming_datasets in sft.py for that code path.
         encode = functools.partial(
             encode_streaming,
             tokenizer,
             max_tokens=cfg.sequence_len,
-            text_column=cfg.pretraining_dataset[0].text_column or "text",
+            text_column=getattr(cfg.pretraining_dataset[0], "text_column", "text"),
             concatenate=cfg.pretraining_sample_concatenation is True,
         )
 
@@ -279,8 +282,6 @@ def encode_packed_streaming(
     for batch in sampler:
         for data in batch:
             features = train_dataset[data]
-            if "num_truncated_tokens" in features:
-                del features["num_truncated_tokens"]
             if "num_truncated_tokens" in features:
                 del features["num_truncated_tokens"]
             if "overflow_to_sample_mapping" in features:

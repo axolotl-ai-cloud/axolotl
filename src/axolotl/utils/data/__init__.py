@@ -1,6 +1,6 @@
 """Init for `axolotl.utils.data` module."""
 
-from axolotl.utils.data.pretraining import (
+from axolotl.utils.data.streaming import (
     encode_streaming,
     wrap_streaming_dataset,
 )
