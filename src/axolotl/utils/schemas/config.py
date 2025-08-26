@@ -475,12 +475,6 @@ class AxolotlInputConfig(
         },
     )
     multipack_real_batches: bool | None = None
-    pretraining_sample_concatenation: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "whether to concatenate samples during pretraining",
-        },
-    )
 
     batch_flattening: Literal["auto"] | bool | None = Field(
         default=None,
@@ -495,13 +489,23 @@ class AxolotlInputConfig(
     pose_max_context_len: int | None = None
     pose_num_chunks: int | None = None
 
-    pretrain_multipack_buffer_size: int | None = 10_000
+    # Deprecated: Use streaming_multipack_buffer_size instead
+    pretrain_multipack_buffer_size: int | None = None
     pretrain_multipack_attn: bool | None = Field(
         default=True,
         json_schema_extra={
             "description": "whether to prevent cross attention for packed sequences during pretraining",
         },
     )
+    pretraining_sample_concatenation: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "whether to concatenate samples during pretraining",
+        },
+    )
+
+    streaming: bool | None = None
+    streaming_multipack_buffer_size: int | None = 10_000
 
     xformers_attention: bool | None = Field(
         default=None,
@@ -937,7 +941,6 @@ class AxolotlInputConfig(
     # INTERNALS - document for now, generally not set externally
     is_preprocess: bool | None = None
     preprocess_iterable: bool | None = None
-    streaming: bool | None = None
 
     total_num_tokens: int | None = Field(
         default=None,

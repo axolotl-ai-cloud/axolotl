@@ -248,7 +248,7 @@ def _load_pretraining_dataset(
         max_tokens=cfg.sequence_len,
         batch_size=cfg.micro_batch_size,
         seed=cfg.seed,
-        buffer_size=cfg.pretrain_multipack_buffer_size or 10_000,
+        buffer_size=cfg.streaming_multipack_buffer_size,
     )
 
     # Format for PyTorch
