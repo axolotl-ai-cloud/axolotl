@@ -16,7 +16,7 @@ from transformers import PreTrainedTokenizer, ProcessorMixin
 
 from axolotl.prompters import Prompter
 from axolotl.utils.data.lock import FileLockLoader
-from axolotl.utils.data.pretraining import wrap_streaming_dataset
+from axolotl.utils.data.streaming import wrap_streaming_dataset
 from axolotl.utils.data.shared import (
     create_train_validation_split,
     datasets_with_name_generator,
@@ -138,6 +138,11 @@ def _prepare_streaming_dataset(
     else:
         if cfg.sample_packing:
             # TODO(djsaunde): Implement for multiple datasets
+            if len(cfg.datasets) > 1:
+                raise NotImplementedError(
+                    "Sample packing with multiple streaming datasets is not yet "
+                    "supported"
+                )
             dataset_config = DictDefault(cfg.datasets[0])
 
             # Ensure we have a split set - default to 'train' if not specified
@@ -145,13 +150,15 @@ def _prepare_streaming_dataset(
                 dataset_config.split = "train"
             train_dataset = _load_streaming_dataset(dataset_config, cfg, tokenizer)
         else:
+            # Use legacy loading function for non-packed streaming datasets
             train_dataset, eval_dataset, prompters = _load_and_prepare_datasets(
                 tokenizer,
                 cfg,
                 split="train",
                 processor=processor,
-                preprocess_iterable=True,
+                streaming=True,
             )
+
             # Return early for non-packed streaming datasets
             total_num_steps = cfg.max_steps if cfg.max_steps else -1
             return train_dataset, eval_dataset, total_num_steps, prompters
@@ -164,7 +171,7 @@ def _prepare_streaming_dataset(
             cfg,
             split="test",
             processor=processor,
-            preprocess_iterable=False,
+            streaming=False,
         )
 
     if cfg.dataset_exact_deduplication:
@@ -264,7 +271,7 @@ def _load_tokenized_prepared_datasets(
     cfg: DictDefault,
     split: Literal["train", "test"] = "train",
     processor: ProcessorMixin | None = None,
-    preprocess_iterable: bool = False,
+    streaming: bool = False,
 ) -> tuple[Dataset | DatasetDict, list[Prompter | None]]:
     """Load or create tokenized and prepared datasets for training or testing.
 
@@ -273,7 +280,7 @@ def _load_tokenized_prepared_datasets(
         cfg: Configuration object.
         split: Dataset split to load ('train' or 'test').
         processor: Optional processor for multimodal datasets.
-        preprocess_iterable: Whether to use iterable preprocessing.
+        streaming: Whether to use iterable preprocessing.
 
     Returns:
         Tuple of (dataset, prompters list).
@@ -304,7 +311,7 @@ def _load_tokenized_prepared_datasets(
             tokenizer,
             split,
             processor,
-            preprocess_iterable,
+            streaming,
         )
 
     return dataset, prompters
@@ -316,7 +323,7 @@ def _load_raw_datasets(
     tokenizer: PreTrainedTokenizer,
     split: str,
     processor: ProcessorMixin | None = None,
-    preprocess_iterable: bool = False,
+    streaming: bool = False,
 ) -> tuple[Dataset, list[Prompter | None]]:
     """Load, process, merge, and save raw datasets."""
     LOG.info("Loading raw datasets...", main_process_only=False)
@@ -337,7 +344,7 @@ def _load_raw_datasets(
             split=split,
             seed=cfg.seed,
             processor=processor,
-            preprocess_iterable=preprocess_iterable,
+            streaming=streaming,
         )
         datasets.append(dataset_wrapper)
         prompters.append(dataset_prompter)
@@ -345,7 +352,7 @@ def _load_raw_datasets(
     # Merge datasets
     dataset = merge_datasets(datasets, cfg)
 
-    if not cfg.skip_prepare_dataset and not preprocess_iterable:
+    if not cfg.skip_prepare_dataset and not streaming:
         if split == "test" and cfg.eval_sequence_len:
             dataset = handle_long_seq_in_dataset(dataset, cfg.eval_sequence_len, cfg)
         else:
@@ -369,12 +376,12 @@ def _load_and_process_single_dataset(
     split: str,
     seed: int,
     processor: ProcessorMixin | None = None,
-    preprocess_iterable: bool = False,
+    streaming: bool = False,
 ) -> tuple[Dataset | IterableDataset, Prompter | None]:
     """Load and process a single dataset based on the passed config."""
     # Load the dataset
     dataset = load_dataset_with_config(
-        dataset_config, cfg.hf_use_auth_token, streaming=preprocess_iterable
+        dataset_config, cfg.hf_use_auth_token, streaming=streaming
     )
 
     # Parse dataset type
@@ -487,7 +494,7 @@ def _load_and_prepare_datasets(
     cfg: DictDefault,
     split: Literal["train", "test"] = "train",
     processor: ProcessorMixin | None = None,
-    preprocess_iterable: bool = False,
+    streaming: bool = False,
 ) -> tuple[Dataset | None, Dataset | None, list[Prompter | None]]:
     """Load and prepare datasets with optional validation split and sharding.
 
@@ -496,7 +503,7 @@ def _load_and_prepare_datasets(
         cfg: Configuration object.
         split: Dataset split to load ('train' or 'test').
         processor: Optional processor for multimodal datasets.
-        preprocess_iterable: Whether to use iterable preprocessing.
+        streaming: Whether to use iterable preprocessing.
 
     Returns:
         Tuple of (train_dataset, eval_dataset, prompters).
@@ -507,7 +514,7 @@ def _load_and_prepare_datasets(
         cfg,
         split=split,
         processor=processor,
-        preprocess_iterable=preprocess_iterable,
+        streaming=streaming,
     )
 
     # Apply dataset sharding if configured using shared function
