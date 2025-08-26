@@ -23,7 +23,6 @@ flash_attention: true
 # Batch size settings
 gradient_accumulation_steps: 4
 micro_batch_size: 1
-num_epochs: 1
 
 # Optimizer and scheduler
 optimizer: adamw_torch

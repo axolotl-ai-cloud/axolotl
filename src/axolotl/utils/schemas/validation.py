@@ -1115,6 +1115,16 @@ class PretrainingValidationMixin:
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_streaming_w_max_steps(cls, data):
+        if data.get("streaming") and not data.get("max_steps"):
+            raise ValueError(
+                "max_steps must be set when using streaming datasets. "
+                "Trainer cannot infer dataset length for iterable datasets."
+            )
+        return data
+
 
 class ModelCompatibilityValidationMixin:
     """Validation methods for specific model compatibility."""
