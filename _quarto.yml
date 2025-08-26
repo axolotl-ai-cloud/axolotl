@@ -272,6 +272,7 @@ website:
           contents:
             - docs/batch_vs_grad.qmd
             - docs/dataset_preprocessing.qmd
+            - docs/streaming.qmd
             - docs/multipack.qmd
             - docs/mixed_precision.qmd
             - docs/optimizers.qmd
