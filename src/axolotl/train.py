@@ -234,17 +234,21 @@ def save_trained_model(
 
     # handle QAT
     if cfg.qat:
-        from axolotl.utils.quantization import convert_qat_model_for_ptq
+        from axolotl.utils.quantization import qat_prepare_or_convert_model
 
         LOG.info("Processing QAT model for saving...")
-        convert_qat_model_for_ptq(
+        qat_prepare_or_convert_model(
             model,
+            step="convert",
+            weight_dtype=cfg.qat.weight_dtype,
+            group_size=cfg.qat.group_size,
+            activation_dtype=cfg.qat.activation_dtype,
             quantize_embedding=cfg.qat.quantize_embedding,
         )
-        LOG.info(
-            "QAT modules have been converted for PTQ. Please ensure you quantize "
-            "your model weights with `axolotl quantize`."
-        )
+        # LOG.info(
+        #     "QAT modules have been converted for PTQ. Please ensure you quantize "
+        #     "your model weights with `axolotl quantize`."
+        # )
     # Handle ReLoRA early return case
     if cfg.relora:
         if cfg.adapter == "lora" and not (cfg.load_in_4bit or cfg.load_in_8bit):

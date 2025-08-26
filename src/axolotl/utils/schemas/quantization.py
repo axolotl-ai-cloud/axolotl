@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from axolotl.utils.schemas.enums import TorchIntDType
+from axolotl.utils.schemas.enums import TorchAOQuantDType
 
 
 class QATConfig(BaseModel):
@@ -14,12 +14,12 @@ class QATConfig(BaseModel):
     QAT Config Schema
     """
 
-    activation_dtype: TorchIntDType | None = Field(
+    activation_dtype: TorchAOQuantDType | None = Field(
         default=None,
         description='Fake quantization layout to use for activation quantization. Valid options are "int4" and "int8"',
     )
-    weight_dtype: TorchIntDType = Field(
-        default=TorchIntDType.int8,
+    weight_dtype: TorchAOQuantDType = Field(
+        default=TorchAOQuantDType.int8,
         description='Fake quantization layout to use for weight quantization. Valid options are "int4" and "int8"',
     )
     quantize_embedding: bool | None = Field(
@@ -35,11 +35,11 @@ class QATConfig(BaseModel):
 
     @field_validator("activation_dtype", "weight_dtype", mode="before")
     @classmethod
-    def validate_dtype(cls, v: Any) -> TorchIntDType | None:
+    def validate_dtype(cls, v: Any) -> TorchAOQuantDType | None:
         if v == "int4":
-            return TorchIntDType.int4
+            return TorchAOQuantDType.int4
         if v == "int8":
-            return TorchIntDType.int8
+            return TorchAOQuantDType.int8
         raise ValueError(f"Invalid dtype: '{v}'. Must be one of: ['int4', 'int8']")
 
 
@@ -48,11 +48,11 @@ class PTQConfig(BaseModel):
     PTQ Config Schema
     """
 
-    weight_dtype: TorchIntDType = Field(
-        default=TorchIntDType.int8,
+    weight_dtype: TorchAOQuantDType = Field(
+        default=TorchAOQuantDType.int8,
         description="Fake quantization layout to use for weight quantization. Valid options are uintX for X in [1, 2, 3, 4, 5, 6, 7], or int4, or int8",
     )
-    activation_dtype: TorchIntDType | None = Field(
+    activation_dtype: TorchAOQuantDType | None = Field(
         default=None,
         description='Fake quantization layout to use for activation quantization. Valid options are "int4" and "int8"',
     )
@@ -66,9 +66,9 @@ class PTQConfig(BaseModel):
 
     @field_validator("activation_dtype", "weight_dtype", mode="before")
     @classmethod
-    def validate_dtype(cls, v: Any) -> TorchIntDType | None:
+    def validate_dtype(cls, v: Any) -> TorchAOQuantDType | None:
         if v == "int4":
-            return TorchIntDType.int4
+            return TorchAOQuantDType.int4
         if v == "int8":
-            return TorchIntDType.int8
+            return TorchAOQuantDType.int8
         raise ValueError(f"Invalid dtype: '{v}'. Must be one of: ['int4', 'int8']")
