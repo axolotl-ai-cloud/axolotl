@@ -217,6 +217,7 @@ class ModelLoader:
         self._set_quantization_config()
         self._set_attention_config()
         self._check_model_requirements()
+        self.patch_manager._apply_patch_deepspeed_zero3()
 
         try:
             if (
