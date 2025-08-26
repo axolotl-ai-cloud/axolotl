@@ -9,7 +9,7 @@ import torch
 from datasets import IterableDataset
 from torch.utils.data import DataLoader
 
-from axolotl.utils.data import get_dataset_wrapper, wrap_pretraining_dataset
+from axolotl.utils.data import get_dataset_wrapper, wrap_streaming_dataset
 from axolotl.utils.dict import DictDefault
 
 
@@ -77,14 +77,11 @@ class TestPretrainingPacking:
         )
 
         original_bsz = cfg.micro_batch_size
-        train_dataset = wrap_pretraining_dataset(
+        train_dataset = wrap_streaming_dataset(
             dataset,
             tokenizer_huggyllama,
             cfg,
             ds_wrapper_partial,
-            max_tokens=cfg.sequence_len,
-            batch_size=cfg.micro_batch_size,
-            seed=cfg.seed or 42,
         )
 
         trainer_loader = DataLoader(

@@ -16,7 +16,7 @@ from transformers import PreTrainedTokenizer, ProcessorMixin
 
 from axolotl.prompters import Prompter
 from axolotl.utils.data.lock import FileLockLoader
-from axolotl.utils.data.pretraining import wrap_pretraining_dataset
+from axolotl.utils.data.pretraining import wrap_streaming_dataset
 from axolotl.utils.data.shared import (
     create_train_validation_split,
     datasets_with_name_generator,
@@ -134,7 +134,7 @@ def _prepare_streaming_dataset(
     """
     if cfg.pretraining_dataset:
         dataset_config = _extract_pretraining_config(cfg)
-        train_dataset = _load_pretraining_dataset(dataset_config, cfg, tokenizer)
+        train_dataset = _load_streaming_dataset(dataset_config, cfg, tokenizer)
     else:
         if cfg.sample_packing:
             # TODO(djsaunde): Implement for multiple datasets
@@ -144,7 +144,7 @@ def _prepare_streaming_dataset(
             # Ensure we have a split set - default to 'train' if not specified
             if not hasattr(dataset_config, "split") or not dataset_config.split:
                 dataset_config.split = "train"
-            train_dataset = _load_pretraining_dataset(dataset_config, cfg, tokenizer)
+            train_dataset = _load_streaming_dataset(dataset_config, cfg, tokenizer)
         else:
             train_dataset, eval_dataset, prompters = _load_and_prepare_datasets(
                 tokenizer,
@@ -205,7 +205,7 @@ def _extract_pretraining_config(cfg: DictDefault) -> DictDefault:
     )
 
 
-def _load_pretraining_dataset(
+def _load_streaming_dataset(
     pretraining_config: DictDefault, cfg: DictDefault, tokenizer: PreTrainedTokenizer
 ) -> IterableDataset:
     """Load and prepare a streaming dataset for pretraining."""
@@ -240,15 +240,11 @@ def _load_pretraining_dataset(
         iter_dataset = iter_dataset.skip(pretraining_config["skip"])
 
     # Wrap the dataset for pretraining
-    train_dataset = wrap_pretraining_dataset(
+    train_dataset = wrap_streaming_dataset(
         iter_dataset,
         tokenizer,
         cfg,
         dataset_wrapper_partial,
-        max_tokens=cfg.sequence_len,
-        batch_size=cfg.micro_batch_size,
-        seed=cfg.seed,
-        buffer_size=cfg.streaming_multipack_buffer_size,
     )
 
     # Format for PyTorch

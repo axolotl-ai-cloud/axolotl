@@ -6,7 +6,7 @@ import unittest
 
 from transformers import LlamaTokenizer
 
-from axolotl.utils.data import encode_pretraining, md5
+from axolotl.utils.data import encode_streaming, md5
 
 from tests.hf_offline_utils import enable_hf_offline
 
@@ -39,7 +39,7 @@ class TestEncodePretraining(unittest.TestCase):
                 "hello, hello",
             ]
         }
-        result = encode_pretraining(self.tokenizer, self.max_tokens, examples)
+        result = encode_streaming(self.tokenizer, self.max_tokens, examples)
 
         self.assertEqual(len(result["input_ids"]), 3)
 
