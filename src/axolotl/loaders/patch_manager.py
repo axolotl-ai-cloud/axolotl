@@ -2,7 +2,8 @@
 
 Applies pre- and post-model load patches for various fixes and optimizations.
 """
-import os 
+
+import os
 import importlib.util
 from functools import cached_property
 

@@ -239,6 +239,3 @@ def detab_code(code: str) -> Tuple[str, str]:
     except AttributeError:
         return code, ""
     return code, spaces
-
-
-
