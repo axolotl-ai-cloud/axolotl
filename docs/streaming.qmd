@@ -7,11 +7,7 @@ order: 10
 # Streaming Datasets
 
 Streaming enables memory-efficient training with large datasets by loading data
-incrementally rather than loading the entire dataset into memory at once. This is
-particularly useful for large pretraining datasets that don't fit in memory, or in
-other situations where you don't want to pay the up-front cost of dataset preprocessing.
-
-## When to Use Streaming
+incrementally rather than loading the entire dataset into memory at once.
 
 Use streaming when:
 - Your dataset is too large to fit in memory
