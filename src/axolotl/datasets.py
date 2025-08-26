@@ -1,4 +1,10 @@
-"""Module containing Dataset functionality"""
+"""
+Module containing dataset functionality.
+
+We want this to be a wrapper for an existing dataset that we have loaded. Lets use the
+concept of middlewares to wrap each dataset. We'll use the collators later on to pad the
+datasets.
+"""
 
 import torch
 from datasets import Dataset, IterableDataset
@@ -6,12 +12,6 @@ from datasets import Dataset, IterableDataset
 from axolotl.utils.logging import get_logger
 
 from .prompt_tokenizers import PromptTokenizingStrategy
-
-# We want this to be a wrapper for an existing dataset that we have loaded
-# lets use the concept of middlewares to wrap each dataset, for example
-# ConstantLengthDataset(ShuffledDataset([TokenizedPromptDataset(alpaca_dataset)]))
-# let's check to ensure we don't truncate an item in the middle, we'll use
-# the collators later on to pad the datasets
 
 LOG = get_logger(__name__)
 

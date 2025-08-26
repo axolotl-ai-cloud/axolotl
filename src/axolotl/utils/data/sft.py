@@ -49,7 +49,6 @@ def prepare_datasets(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizer,
     processor: ProcessorMixin | None = None,
-    preprocess_iterable: bool = False,
 ) -> tuple[IterableDataset | Dataset, Dataset | None, int, list[Prompter | None]]:
     """Prepare training and evaluation datasets based on configuration.
 
@@ -57,23 +56,19 @@ def prepare_datasets(
         cfg: Dictionary mapping `axolotl` config keys to values.
         tokenizer: Tokenizer to use for processing text.
         processor: Optional processor for multimodal datasets.
-        preprocess_iterable: Whether to use iterable preprocessing.
 
     Returns:
         Tuple of (train_dataset, eval_dataset, total_steps, prompters).
     """
     if cfg.streaming or cfg.pretraining_dataset:
-        return _prepare_streaming_dataset(
-            cfg, tokenizer, processor, preprocess_iterable
-        )
-    return _prepare_standard_dataset(cfg, tokenizer, processor, preprocess_iterable)
+        return _prepare_streaming_dataset(cfg, tokenizer, processor)
+    return _prepare_standard_dataset(cfg, tokenizer, processor)
 
 
 def _prepare_standard_dataset(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizer,
     processor: ProcessorMixin | None,
-    preprocess_iterable: bool,
 ) -> tuple[Dataset, Dataset | None, int, list[Prompter | None]]:
     """Prepare standard (non-pretraining) datasets."""
 
@@ -84,7 +79,6 @@ def _prepare_standard_dataset(
             cfg,
             split="train",
             processor=processor,
-            preprocess_iterable=preprocess_iterable,
         )
 
         # Overwrite eval_dataset if test data exists
@@ -94,7 +88,6 @@ def _prepare_standard_dataset(
                 cfg,
                 split="test",
                 processor=processor,
-                preprocess_iterable=preprocess_iterable,
             )
 
         return train_dataset, eval_dataset, prompters
@@ -133,40 +126,32 @@ def _prepare_streaming_dataset(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizer,
     processor: ProcessorMixin | None,
-    preprocess_iterable: bool,
 ) -> tuple[IterableDataset, Dataset | None, int, list[Prompter | None]]:
     """
     Prepare dataset for streaming mode.
 
     Note: Streaming datasets are loaded incrementally from the source.
     """
-    # For backward compatibility, handle pretraining_dataset config
     if cfg.pretraining_dataset:
-        # Extract pretraining dataset configuration
         dataset_config = _extract_pretraining_config(cfg)
-        # Load streaming dataset for training
         train_dataset = _load_pretraining_dataset(dataset_config, cfg, tokenizer)
     else:
-        # For cfg.streaming=True with regular datasets
         if cfg.sample_packing:
-            # Use pretraining-style packing for streaming datasets with sample packing
-            # Create a config that uses the existing dataset but with pretraining wrapper
+            # TODO(djsaunde): Implement for multiple datasets
             dataset_config = DictDefault(cfg.datasets[0])
-            dataset_config.type = cfg.datasets[
-                0
-            ].type  # Keep original type (alpaca, etc)
+            dataset_config.type = cfg.datasets[0].type
+
             # Ensure we have a split set - default to 'train' if not specified
             if not hasattr(dataset_config, "split") or not dataset_config.split:
                 dataset_config.split = "train"
             train_dataset = _load_pretraining_dataset(dataset_config, cfg, tokenizer)
         else:
-            # Use standard streaming approach without packing
             train_dataset, eval_dataset, prompters = _load_and_prepare_datasets(
                 tokenizer,
                 cfg,
                 split="train",
                 processor=processor,
-                preprocess_iterable=True,  # Force streaming for datasets
+                preprocess_iterable=True,
             )
             # Return early for non-packed streaming datasets
             total_num_steps = cfg.max_steps if cfg.max_steps else -1
@@ -180,7 +165,7 @@ def _prepare_streaming_dataset(
             cfg,
             split="test",
             processor=processor,
-            preprocess_iterable=preprocess_iterable,
+            preprocess_iterable=False,
         )
 
     if cfg.dataset_exact_deduplication:

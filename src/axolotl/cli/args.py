@@ -14,9 +14,13 @@ class PreprocessCliArgs:
     prompter: Optional[str] = field(default=None)
     download: Optional[bool] = field(default=True)
     iterable: Optional[bool] = field(
-        default=None,
+        default=False,
         metadata={
-            "help": "Use IterableDataset for streaming processing of large datasets"
+            "help": (
+                "[DEPRECATED] No longer supported. For streaming datasets, use "
+                "'axolotl train' and set 'streaming: true' in your YAML config, or "
+                "pass --streaming instead in the CLI."
+            )
         },
     )
 
