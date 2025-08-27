@@ -475,7 +475,9 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 train_dataset.remove_columns(["length"]),
                 batch_sampler=sampler,
             )
-            data_loader_len = max(1, len(data_loader) * cfg.micro_batch_size // cfg.batch_size)
+            data_loader_len = max(
+                1, len(data_loader) * cfg.micro_batch_size // cfg.batch_size
+            )
             LOG.debug(f"data_loader_len: {data_loader_len}")
             # FIXME: is there a bug here somewhere? the total num steps depends
             # on the agreed on value for sample_packing_eff_est
