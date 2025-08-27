@@ -8,38 +8,39 @@ LOG = get_logger(__name__)
 
 def patch_deepspeed_zero3_missing_attributes():
     """
-    Patch for DeepSpeed ZeRO Stage 3 missing ds_grads_remaining attribute
+    Patch DeepSpeed's parameter_offload module to properly initialize ds_grads_remaining.
 
-    This addresses the issue where Linear modules (and potentially other modules)
-    don't have the ds_grads_remaining attribute that DeepSpeed expects during
-    backward pass hooks.
+    This addresses the issue where DeepSpeed expects ds_grads_remaining attribute
+    but doesn't initialize it.
 
     References:
     - https://github.com/deepspeedai/DeepSpeed/issues/7203
     """
 
-    LOG.debug("Applying DeepSpeed ZeRO Stage 3 missing attributes patch")
-    # original_getattribute = torch.nn.Module.__getattribute__
+    LOG.info("Applying DeepSpeed ZeRO Stage 3 ds_grads_remaining patch")
+    
+    try:
+        import deepspeed.runtime.zero.parameter_offload as param_offload
 
-    def patched_getattribute(self, name):
-        if name == "ds_grads_remaining":
-            if not hasattr(self, "_ds_grads_remaining"):
-                object.__setattr__(self, "_ds_grads_remaining", 0)
-                LOG.debug(f"Initialized ds_grads_remaining for {type(self).__name__}")
-            return object.__getattribute__(self, "_ds_grads_remaining")
+        original_register_module = param_offload.DeepSpeedZeRoOffload._register_deepspeed_module
+        
+        def patched_register_deepspeed_module(self, module, count=[0]):
+            """
+            Patched version that initializes ds_grads_remaining before DeepSpeed
+            tries to use it in its hooks.
+            """
+            if not hasattr(module, 'ds_grads_remaining'):
+                module.ds_grads_remaining = 0
+                LOG.debug(f"Initialized ds_grads_remaining for {type(module).__name__}")
+            return original_register_module(self, module, count)
+        
 
-    def patched_setattr(self, name: str, value: Any) -> None:
-        """
-        Patched __setattr__ to handle ds_grads_remaining assignment
-        """
-        if name == "ds_grads_remaining":
-            object.__setattr__(self, "_ds_grads_remaining", value)
-        else:
-            object.__setattr__(self, name, value)
+        param_offload.DeepSpeedZeRoOffload._register_deepspeed_module = patched_register_deepspeed_module
+        LOG.info("DeepSpeed ZeRO Stage 3 patch applied successfully to _register_deepspeed_module")
+        
+    except ImportError as e:
+        LOG.warning(f"Could not import DeepSpeed parameter_offload module: {e}")
 
-    torch.nn.Module.__getattribute__ = patched_getattribute
-    torch.nn.Module.__setattr__ = patched_setattr
-    LOG.debug("DeepSpeed ZeRO Stage 3 patch applied successfully")
 
 
 def apply_deepspeed_patches():
