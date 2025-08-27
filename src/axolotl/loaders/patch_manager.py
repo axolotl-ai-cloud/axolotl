@@ -475,7 +475,7 @@ class PatchManager:
 
     def _apply_patch_deepspeed_zero3(self):
         try:
-            from axolotl.monkeypatch.utils import (
+            from axolotl.monkeypatch.deepspeed_utils import (
                 patch_deepspeed_zero3_missing_attributes,
             )
             from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
