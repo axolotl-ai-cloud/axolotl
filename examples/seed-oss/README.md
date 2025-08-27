@@ -17,9 +17,12 @@ cd axolotl
 
 pip3 install packaging==23.2 setuptools==75.8.0 wheel ninja
 pip3 install --no-build-isolation -e '.[flash-attn]'
+
+# Install Cut Cross Entropy
+python scripts/cutcrossentropy_install.py | sh
 ```
 
-2. Install their transformers PR:
+2. Install Seed-OSS transformers commit:
 
 ```bash
 pip3 uninstall -y transformers
@@ -33,7 +36,7 @@ pip3 install git+https://github.com/huggingface/transformers.git@56d68c6706ee052
 axolotl train examples/seed-oss/seed-oss-36b-qlora.yaml
 ```
 
-This config uses about (XYZ) GiB VRAM.
+This config uses about 27.7 GiB VRAM.
 
 Let us know how it goes. Happy finetuning! 🚀
 
