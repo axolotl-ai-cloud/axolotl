@@ -1,6 +1,6 @@
 # Finetune ByteDance's Seed-OSS with Axolotl
 
-[Seed-OSS](https://huggingface.co/collections/arcee-ai/afm-45b-68823397c351603014963473) are a series of 36B parameter open source models trained by ByteDance's Seed Team.
+[Seed-OSS](https://huggingface.co/collections/ByteDance-Seed/seed-oss-68a609f4201e788db05b5dcd) are a series of 36B parameter open source models trained by ByteDance's Seed Team.
 
 This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.
 
