@@ -42,7 +42,7 @@ Let us know how it goes. Happy finetuning! 🚀
 
 ### TIPS
 
-- For inference, the official Arcee.ai team recommends `top_p=0.95` and `temperature=1.1`.
+- For inference, the official Seed Team recommends `top_p=0.95` and `temperature=1.1`.
 - You can run a full finetuning by removing the `adapter: qlora` and `load_in_4bit: true` from the config.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
