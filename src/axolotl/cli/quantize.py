@@ -10,7 +10,7 @@ from transformers import AutoModelForCausalLM
 from axolotl.cli.config import load_cfg
 from axolotl.loaders import load_tokenizer
 from axolotl.utils.logging import get_logger
-from axolotl.utils.quantization import TorchIntDType, quantize_model_for_ptq
+from axolotl.utils.quantization import TorchAOQuantDType, quantize_model_for_ptq
 
 LOG = get_logger(__name__)
 
@@ -45,11 +45,11 @@ def do_quantize(
 
     model_path = cli_args.get("base_model") or cfg.output_dir
     if weight_dtype := cli_args.get("weight_dtype"):
-        weight_dtype = TorchIntDType[weight_dtype]
+        weight_dtype = TorchAOQuantDType[weight_dtype]
     else:
         weight_dtype = quantize_cfg.weight_dtype
     if activation_dtype := cli_args.get("activation_dtype"):
-        activation_dtype = TorchIntDType[activation_dtype]
+        activation_dtype = TorchAOQuantDType[activation_dtype]
     else:
         activation_dtype = quantize_cfg.activation_dtype
     group_size = cli_args.get("group_size") or quantize_cfg.group_size
