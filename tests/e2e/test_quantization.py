@@ -150,7 +150,7 @@ class TestQuantization:
     @pytest.mark.parametrize(
         "activation_dtype", [None, TorchAOQuantDType.int8]
     )
-    @pytest.mark.parametrize("group_size", [4, 8])
+    @pytest.mark.parametrize("group_size", [8, 16])
     @pytest.mark.parametrize("quantize_embedding", [False, True])
     @require_torch_2_6_0
     def test_prepare_model_for_qat(
@@ -189,7 +189,7 @@ class TestQuantization:
     @require_torch_2_6_0
     def test_convert_qat_model_for_ptq(self, model):
         config = QATConfig(
-            weight_dtype="int8",
+            weight_dtype="int4",
             activation_dtype="int8",
             group_size=8,
             quantize_embedding=True,
@@ -240,7 +240,7 @@ class TestQuantizationCallback:
     @require_torch_2_6_0
     def test_qat_callback_fake_quant_after_n_steps(self, model, trainer_state):
         cfg = QATConfig(
-            weight_dtype="int8",
+            weight_dtype="int4",
             activation_dtype="int8",
             group_size=8,
             quantize_embedding=True,
@@ -291,7 +291,7 @@ class TestQuantizationCallback:
     @require_torch_2_6_0
     def test_qat_callback_fake_quant_after_n_steps_is_none(self, model, trainer_state):
         cfg = QATConfig(
-            weight_dtype="int8",
+            weight_dtype="int4",
             activation_dtype="int8",
             group_size=8,
             quantize_embedding=True,

@@ -59,12 +59,8 @@ def get_quantization_config(
                 f"Use Int8DynamicActivationInt4WeightConfig with activation_dtype=TorchAOQuantDType.int8 and weight_dtype=TorchAOQuantDType.int4 instead."
             )
         if weight_dtype == TorchAOQuantDType.int4:
-            if group_size is None:
-                raise ValueError(
-                    "group_size must be specified for int4 weight only quantization"
-                )
             return Int4WeightOnlyConfig(
-                group_size=group_size,
+                group_size=group_size or -1,
                 version=2
             )
     if activation_dtype == TorchAOQuantDType.int4 and weight_dtype == TorchAOQuantDType.int4:
@@ -78,7 +74,9 @@ def get_quantization_config(
             f"Use Int8DynamicActivationInt4WeightConfig with activation_dtype=TorchAOQuantDType.int8 and weight_dtype=TorchAOQuantDType.int4 instead."
         )
     if activation_dtype == TorchAOQuantDType.int8 and weight_dtype == TorchAOQuantDType.int4:
-        return Int8DynamicActivationInt4WeightConfig()
+        return Int8DynamicActivationInt4WeightConfig(
+            group_size=group_size or -1
+        )
     if activation_dtype == TorchAOQuantDType.float8_e4m3fn and weight_dtype == TorchAOQuantDType.float8_e4m3fn:
         return Float8DynamicActivationFloat8WeightConfig(version=2)
     if activation_dtype == TorchAOQuantDType.float8_e4m3fn and weight_dtype == TorchAOQuantDType.int4:
