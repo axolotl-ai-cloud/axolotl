@@ -352,10 +352,11 @@ class ModelLoader:
     def _configure_qat(self):
         """Configure QAT."""
         if self.cfg.qat:
-            from axolotl.utils.quantization import prepare_model_for_qat
+            from axolotl.utils.quantization import qat_prepare_or_convert_model
 
-            prepare_model_for_qat(
+            qat_prepare_or_convert_model(
                 self.model,
+                "prepare",
                 self.cfg.qat.weight_dtype,
                 self.cfg.qat.group_size,
                 self.cfg.qat.activation_dtype,

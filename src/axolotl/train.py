@@ -30,11 +30,7 @@ from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
 from axolotl.integrations.base import PluginManager
-from axolotl.loaders import (
-    ModelLoader,
-    load_processor,
-    load_tokenizer,
-)
+from axolotl.loaders import load_processor, load_tokenizer, ModelLoader
 from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
@@ -245,10 +241,9 @@ def save_trained_model(
             activation_dtype=cfg.qat.activation_dtype,
             quantize_embedding=cfg.qat.quantize_embedding,
         )
-        # LOG.info(
-        #     "QAT modules have been converted for PTQ. Please ensure you quantize "
-        #     "your model weights with `axolotl quantize`."
-        # )
+        LOG.info(
+            "QAT modules have been converted for PTQ; quantized weights will be saved."
+        )
     # Handle ReLoRA early return case
     if cfg.relora:
         if cfg.adapter == "lora" and not (cfg.load_in_4bit or cfg.load_in_8bit):
@@ -341,9 +336,7 @@ def save_trained_model(
 
     if hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
         # TODO: add integration support so this can be implemented completely within the plugin
-        from axolotl.integrations.llm_compressor.utils import (
-            save_compressed_model,
-        )
+        from axolotl.integrations.llm_compressor.utils import save_compressed_model
 
         save_compressed_model(
             model=model,
@@ -491,9 +484,7 @@ def handle_untrained_tokens_fix(
         )
 
 
-def setup_model_and_trainer(
-    cfg: DictDefault, dataset_meta: TrainDatasetMeta
-) -> tuple[
+def setup_model_and_trainer(cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> tuple[
     "HFRLTrainerBuilder" | "HFCausalTrainerBuilder",
     PeftModel | PreTrainedModel,
     PreTrainedTokenizer,
