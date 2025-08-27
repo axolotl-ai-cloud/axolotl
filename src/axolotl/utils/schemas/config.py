@@ -830,10 +830,15 @@ class AxolotlInputConfig(
     include_tokens_per_second: bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "bool of whether to include tokens trainer per second in the training metrics. This iterates over the entire dataset once, so it takes some time."
+            "description": "bool of whether to report tokens per second at the end of training. This is not supported with pre-training datasets."
         },
     )
-
+    include_tkps: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "bool of whether to report tokens per second during training by measuring throughput of non-padding tokens."
+        },
+    )
     neftune_noise_alpha: float | None = Field(
         default=None,
         json_schema_extra={
