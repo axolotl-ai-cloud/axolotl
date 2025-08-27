@@ -72,6 +72,10 @@ Features:
 
 ### Installation
 
+#### Using Google Colab
+
+Please check our notebook on [Google Colab](https://colab.research.google.com/drive/1EscYgLM38dWMcG5IyJz1qHl3VO7a2hZz) or [GitHub](examples/colab-notebooks/colab-axolotl-example.ipynb).
+
 #### Using pip
 
 ```bash
