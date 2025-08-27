@@ -24,9 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from transformers import (
-    TrainerCallback,
-)
+from transformers import TrainerCallback
 from transformers.trainer_pt_utils import AcceleratorConfig
 
 from axolotl.integrations.base import PluginManager
@@ -38,6 +36,7 @@ from axolotl.utils.callbacks import (
     SaveModelOnFirstStepCallback,
 )
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
+from axolotl.utils.callbacks.tokens_per_second import TokensPerSecondCallback
 from axolotl.utils.distributed import build_parallelism_config
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
@@ -144,6 +143,12 @@ class TrainerBuilderBase(abc.ABC):
                 PytorchProfilerCallback(
                     steps_to_profile=self.cfg.profiler_steps,
                     profiler_steps_start=self.cfg.profiler_steps_start,
+                )
+            )
+        if self.cfg.include_tkps:
+            callbacks.append(
+                TokensPerSecondCallback(
+                    self.cfg.tensor_parallel_size, self.cfg.context_parallel_size
                 )
             )
 
@@ -512,6 +517,7 @@ class TrainerBuilderBase(abc.ABC):
                 self.cfg.eval_batch_size
             )
 
+        training_args_kwargs["include_tkps"] = self.cfg.include_tkps
         training_args_kwargs["max_steps"] = self.cfg.max_steps or total_num_steps or -1
         training_args_kwargs["num_train_epochs"] = self.cfg.num_epochs
 
