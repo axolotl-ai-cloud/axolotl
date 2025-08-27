@@ -190,3 +190,7 @@ out/
 
 # vim
 *.swp
+
+# macOS resource fork files
+._*
+.DS_Store
