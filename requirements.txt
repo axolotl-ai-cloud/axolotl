@@ -2,7 +2,6 @@
 
 # START section of dependencies that don't install on Darwin/MacOS
 bitsandbytes==0.47.0
-# triton 3.4.0 is not compatible with CCE
 triton>=3.0.0
 mamba-ssm==1.2.0.post1
 xformers>=0.0.23.post1
