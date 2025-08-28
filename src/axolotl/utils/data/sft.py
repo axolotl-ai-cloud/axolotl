@@ -138,11 +138,6 @@ def _prepare_streaming_dataset(
     else:
         if cfg.sample_packing:
             # TODO(djsaunde): Implement for multiple datasets
-            if len(cfg.datasets) > 1:
-                raise NotImplementedError(
-                    "Sample packing with multiple streaming datasets is not yet "
-                    "supported"
-                )
             dataset_config = DictDefault(cfg.datasets[0])
 
             # Ensure we have a split set - default to 'train' if not specified

@@ -15,6 +15,11 @@ Use streaming when:
 
 Streaming works with both remote and locally stored datasets!
 
+::: {.callout-note}
+Streaming currently only supports a single dataset. Multi-dataset support will be added soon.
+:::
+
+
 ## Configuration
 
 ### Basic Streaming
