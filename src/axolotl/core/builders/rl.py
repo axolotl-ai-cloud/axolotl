@@ -151,6 +151,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_cls = GRPOStrategy.get_training_args_class()
             training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()
+            
+            if self.cfg.max_prompt_len:
+                training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
         elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             training_args_cls = AxolotlDPOConfig
