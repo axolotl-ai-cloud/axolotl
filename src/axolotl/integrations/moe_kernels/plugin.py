@@ -1,6 +1,4 @@
-"""
-Plugin to apply optimized MoE kernels to supported models
-"""
+"""Plugin to apply optimized MoE kernels to supported models"""
 
 import logging
 from typing import Optional
@@ -116,7 +114,9 @@ def patch_mixtral_moe_forward_optimized(
 
         # Apply routing weights
         output_states = output_states.view(*topk_weight.shape, -1)
-        output_states = (output_states * topk_weight.unsqueeze(-1)).sum(dim=1)
+        output_states = (output_states * topk_weight.unsqueeze(-1)).sum(
+            dim=1, dtype=output_states.dtype
+        )
 
         final_hidden_states = output_states.reshape(
             batch_size, sequence_length, hidden_dim
@@ -189,7 +189,9 @@ def patch_qwen3_moe_forward_optimized(
         # Restore order and apply weights
         output_states = output_states[inverse_indices]
         output_states = output_states.view(*topk_weight.shape, -1)
-        output_states = (output_states * topk_weight.unsqueeze(-1)).sum(dim=1)
+        output_states = (output_states * topk_weight.unsqueeze(-1)).sum(
+            dim=1, dtype=output_states.dtype
+        )
 
         final_hidden_states = output_states.reshape(
             batch_size, sequence_length, hidden_dim
@@ -272,7 +274,9 @@ def patch_deepseek_v3_moe_forward_optimized(
             batch_size * seq_len, topk_indices.shape[-1], -1
         )
         topk_weights_expanded = topk_weights_flat.unsqueeze(-1)
-        output_states = (output_states * topk_weights_expanded).sum(dim=1)
+        output_states = (output_states * topk_weights_expanded).sum(
+            dim=1, dtype=output_states.dtype
+        )
 
         # Reshape back to original shape
         output_states = output_states.view(*orig_shape)
@@ -325,7 +329,9 @@ def patch_deepseek_v3_moe_forward_optimized(
         # Restore order and apply weights
         output_states = output_states[inverse_indices]
         output_states = output_states.view(batch_size, topk_indices.shape[-1], -1)
-        output_states = (output_states * topk_weights.unsqueeze(-1)).sum(dim=1)
+        output_states = (output_states * topk_weights.unsqueeze(-1)).sum(
+            dim=1, dtype=output_states.dtype
+        )
 
         return output_states.type(hidden_states.dtype)
 
@@ -335,54 +341,16 @@ def patch_deepseek_v3_moe_forward_optimized(
 
         DeepseekV3MoE.forward = moe_forward_optimized
         DeepseekV3MoE.moe = moe_optimized
+        # Set the optimization parameters as class attributes
+        DeepseekV3MoE._group_size_m = group_size_m
+        DeepseekV3MoE._persistent_kernel = persistent_kernel
         logger.info(
             "Successfully patched standard DeepSeek v3 MoE with optimized kernels"
         )
     except ImportError:
-        logger.warning("Standard DeepSeek v3 model not found")
-
-    # Also try to patch any custom/trust_remote_code versions
-    try:
-        import sys
-
-        # Look for any loaded deepseek modeling modules
-        deepseek_modules = [
-            name
-            for name in sys.modules.keys()
-            if "deepseek" in name.lower() and "modeling" in name.lower()
-        ]
-
-        for module_name in deepseek_modules:
-            module = sys.modules[module_name]
-            if hasattr(module, "DeepseekV3MoE"):
-                logger.info(f"Found DeepseekV3MoE in {module_name}, patching...")
-                module.DeepseekV3MoE.forward = moe_forward_optimized
-                module.DeepseekV3MoE.moe = moe_optimized
-
-    except Exception as e:
-        logger.warning(f"Could not patch custom deepseek modules: {e}")
-
-    # Dynamic patching hook - patch any DeepseekV3MoE that gets imported later
-    import builtins
-
-    original_import = builtins.__import__
-
-    def patched_import(name, *args, **kwargs):
-        module = original_import(name, *args, **kwargs)
-
-        if "deepseek" in name.lower() and "modeling" in name.lower():
-            if hasattr(module, "DeepseekV3MoE") and not hasattr(
-                module.DeepseekV3MoE, "_axolotl_patched"
-            ):
-                logger.info(f"🎯 Dynamic patching DeepseekV3MoE in {name}")
-                module.DeepseekV3MoE.forward = moe_forward_optimized
-                module.DeepseekV3MoE.moe = moe_optimized
-                # Mark as patched to avoid double patching
-                module.DeepseekV3MoE._axolotl_patched = True
-
-        return module
-
-    builtins.__import__ = patched_import
+        logger.warning(
+            "Standard DeepSeek v3 model not found, skipping optimized MoE patch"
+        )
 
 
 def patch_qwen2_moe_forward_optimized(
@@ -458,7 +426,9 @@ def patch_qwen2_moe_forward_optimized(
         # Restore order
         output_states = output_states[inverse_indices]
         output_states = output_states.view(*topk_weight.shape, -1)
-        output_states = (output_states * topk_weight.unsqueeze(-1)).sum(dim=1)
+        output_states = (output_states * topk_weight.unsqueeze(-1)).sum(
+            dim=1, dtype=output_states.dtype
+        )
 
         # Add shared expert output if exists
         if shared_expert_output is not None:
@@ -590,125 +560,3 @@ class MoeOptimizedPlugin(BasePlugin):
         )
 
         logger.info(f"Optimized MoE patches applied to {models_to_patch}")
-
-    def post_model_load(self, cfg: DictDefault, model):
-        """
-        Apply patches after model loading for trust_remote_code models.
-        """
-        if not self.enabled:
-            return
-
-        # Find and patch any actual MoE modules in the loaded model
-        patched_count = 0
-        for name, module in model.named_modules():
-            if "DeepseekV3MoE" in str(type(module)):
-                # Get the module's class and patch it
-                module_class = type(module)
-                if not hasattr(module_class, "_axolotl_patched"):
-                    # Import our optimized functions
-
-                    # Create the optimized methods (we need to redefine them here)
-                    def moe_forward_optimized(
-                        self, hidden_states: torch.Tensor
-                    ) -> torch.Tensor:
-                        """Optimized forward pass for DeepSeekV3MoE."""
-                        residuals = hidden_states
-                        orig_shape = hidden_states.shape
-
-                        # Get routing weights from gate
-                        topk_indices, topk_weights = self.gate(hidden_states)
-
-                        # Reshape for processing
-                        batch_size, seq_len, hidden_dim = hidden_states.shape
-                        hidden_states_flat = hidden_states.view(-1, hidden_dim)
-                        topk_indices_flat = topk_indices.view(
-                            -1, topk_indices.shape[-1]
-                        )
-                        topk_weights_flat = topk_weights.view(
-                            -1, topk_weights.shape[-1]
-                        )
-
-                        # Sort tokens by expert for contiguous memory access
-                        topk = topk_indices.shape[-1]  # Get topk from the indices shape
-                        from axolotl.integrations.moe_kernels.plugin import (
-                            sort_tokens_by_expert,
-                        )
-
-                        sorted_states, sort_indices, inverse_indices, expert_indices = (
-                            sort_tokens_by_expert(
-                                hidden_states_flat, topk_indices_flat, topk
-                            )
-                        )
-
-                        # Stack expert weights - DeepSeek v3 uses gate_proj, up_proj, down_proj
-                        gate_weights = torch.stack(
-                            [expert.gate_proj.weight for expert in self.experts]
-                        )
-                        up_weights = torch.stack(
-                            [expert.up_proj.weight for expert in self.experts]
-                        )
-                        down_weights = torch.stack(
-                            [expert.down_proj.weight for expert in self.experts]
-                        )
-
-                        # First projection: gate and up in parallel
-                        from axolotl.kernels.moe import cg_grouped_gemm_forward
-
-                        gate_states = cg_grouped_gemm_forward(
-                            sorted_states,
-                            gate_weights,
-                            expert_indices,
-                            self._group_size_m,
-                            self._persistent_kernel,
-                        )
-                        up_states = cg_grouped_gemm_forward(
-                            sorted_states,
-                            up_weights,
-                            expert_indices,
-                            self._group_size_m,
-                            self._persistent_kernel,
-                        )
-
-                        # Apply activation and element-wise multiplication
-                        current_states = self.experts[0].act_fn(gate_states) * up_states
-
-                        # Down projection
-                        output_states = cg_grouped_gemm_forward(
-                            current_states,
-                            down_weights,
-                            expert_indices,
-                            self._group_size_m,
-                            self._persistent_kernel,
-                        )
-
-                        # Restore original token order
-                        output_states = output_states[inverse_indices]
-
-                        # Apply routing weights
-                        output_states = output_states.view(
-                            batch_size * seq_len, topk_indices.shape[-1], -1
-                        )
-                        topk_weights_expanded = topk_weights_flat.unsqueeze(-1)
-                        output_states = (output_states * topk_weights_expanded).sum(
-                            dim=1
-                        )
-
-                        # Reshape back to original shape
-                        output_states = output_states.view(*orig_shape)
-
-                        # Add shared expert output (always activated)
-                        shared_expert_output = self.shared_experts(residuals)
-                        output_states = output_states + shared_expert_output
-
-                        return output_states
-
-                    # Patch the class
-                    module_class.forward = moe_forward_optimized
-                    # Store optimization parameters on the module
-                    module._group_size_m = self.group_size_m
-                    module._persistent_kernel = self.persistent_kernel
-                    # Mark as patched
-                    module_class._axolotl_patched = True
-                    patched_count += 1
-
-        return model
