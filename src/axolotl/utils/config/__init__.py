@@ -77,7 +77,7 @@ def resolve_dtype(cfg):
     if cfg.device == "mps":
         cfg.load_in_8bit = False
         cfg.tf32 = False
-        if cfg.bf16:
+        if cfg.bf16 and cfg.fp16 is not False:
             cfg.fp16 = True
         cfg.bf16 = False
     else:

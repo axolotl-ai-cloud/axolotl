@@ -49,6 +49,12 @@ class AxolotlTrainingMixins:
         default=False,
         metadata={"help": "Use real batches for efficient training."},
     )
+    include_tkps: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to include tokens per second in the training metrics."
+        },
+    )
     eval_sample_packing: Optional[bool] = field(
         default=None,
         metadata={"help": "Use sample packing for efficient evals."},

@@ -59,16 +59,21 @@ class ModelInputConfig(BaseModel):
     processor_type: str | None = Field(
         default=None, json_schema_extra={"description": "transformers processor class"}
     )
+    tokenizer_save_jinja_files: bool | None = Field(
+        default=True,  # match the default behavior from transformers
+        json_schema_extra={
+            "description": "Whether to save jinja files for tokenizer, transformers default is True"
+        },
+    )
     trust_remote_code: bool | None = Field(
         default=None,
         json_schema_extra={"description": "Trust remote code for untrusted source"},
     )
 
     experimental_skip_move_to_device: bool | None = Field(
-        default=None,
+        default=True,
         json_schema_extra={
-            "description": "Don't move the model to the device before sharding. "
-            "This is an experimental feature that may be included in the future as the default."
+            "description": "Don't move the model to the device before sharding. Set to `false` to revert to legacy behavior."
         },
     )
 

@@ -404,6 +404,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             **trainer_kwargs,
         )
         trainer = self.hook_post_create_trainer(trainer)
+        # if the trainer has the `axolotl_cfg` property, set it
+        if hasattr(trainer, "axolotl_cfg"):
+            trainer.axolotl_cfg = self.cfg
         for callback in self.get_post_trainer_create_callbacks(trainer):
             trainer.add_callback(callback)
 
