@@ -1139,6 +1139,20 @@ class PretrainingValidationMixin:
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_streaming_w_multiple_datasets(cls, data):
+        if (
+            data.get("streaming")
+            and data.get("sample_packing")
+            and data.get("datasets")
+            and len(data.get("datasets")) > 1
+        ):
+            raise NotImplementedError(
+                "Sample packing with multiple streaming datasets is not yet supported"
+            )
+        return data
+
 
 class ModelCompatibilityValidationMixin:
     """Validation methods for specific model compatibility."""
