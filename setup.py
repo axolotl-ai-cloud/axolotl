@@ -1,12 +1,12 @@
-"""setup.py for axolotl"""
+#!/usr/bin/env python
+"""
+Minimal setup.py for backward compatibility.
+All configuration is now in pyproject.toml.
+"""
 
-import ast
-import os
-import platform
-import re
-from importlib.metadata import PackageNotFoundError, version
-from pathlib import Path
+from setuptools import setup
 
+<<<<<<< HEAD
 from setuptools import find_packages, setup
 
 
@@ -180,3 +180,7 @@ setup(
     },
     extras_require=extras_require_build,
 )
+=======
+if __name__ == "__main__":
+    setup()
+>>>>>>> 01544ca0 (wip)

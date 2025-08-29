@@ -1,5 +1,13 @@
---extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
+# This file is kept for backward compatibility
+# All dependencies are now defined in pyproject.toml
+# To install axolotl with all dependencies, run:
+#   pip install .
+# To install with extras (e.g., flash-attn):
+#   pip install .[flash-attn]
+# To install for development:
+#   pip install -e .[dev]
 
+<<<<<<< HEAD
 # START section of dependencies that don't install on Darwin/MacOS
 bitsandbytes==0.47.0
 triton>=3.0.0
@@ -71,3 +79,7 @@ axolotl-contribs-lgpl==0.0.6
 axolotl-contribs-mit==0.0.5
 
 mistral-common==1.8.5
+
+# For UV users:
+#   uv pip install .
+#   uv pip install -e .[dev]

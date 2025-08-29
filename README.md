@@ -87,6 +87,9 @@ Features:
 # Install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
+# Create virtualenv
+uv venv
+
 # Install axolotl
 uv pip install --no-build-isolation axolotl[flash-attn,deepspeed]
 
