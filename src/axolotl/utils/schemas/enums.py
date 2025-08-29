@@ -5,6 +5,7 @@ from enum import Enum
 import torch
 
 
+# TODO: rename this
 class TorchIntDType(Enum):
     """Torch integer data types - `getattr` guards against torch < 2.6 which does not support int4"""
 
@@ -17,6 +18,8 @@ class TorchIntDType(Enum):
     uint7 = getattr(torch, "uint7", None)
     int4 = getattr(torch, "int4", None)
     int8 = getattr(torch, "int8", None)
+    # There is no torch.dtype for nvfp4, so we just use a string here as a placeholder
+    nvfp4 = "nvfp4"
 
 
 class RLType(str, Enum):

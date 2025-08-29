@@ -7,9 +7,8 @@ from torch import nn
 from torchao.core.config import AOBaseConfig
 from torchao.quantization import quantize_
 from torchao.quantization.qat import (
-    FakeQuantizeConfig,
-    FromIntXQuantizationAwareTrainingConfig,
-    IntXQuantizationAwareTrainingConfig,
+    IntxFakeQuantizeConfig,
+    QATConfig,
 )
 from torchao.quantization.quant_api import (
     Int4DynamicActivationInt4WeightConfig,
@@ -45,7 +44,10 @@ def get_ptq_config(
             or if the group size is not specified for int8 or int4 weight only quantization.
     """
     if activation_dtype is None:
-        if not weight_dtype.value.is_signed:  # type: ignore[attr-defined,union-attr]
+        if (
+            isinstance(weight_dtype.value, torch.dtype) and
+            not weight_dtype.value.is_signed
+        ):  # type: ignore[attr-defined,union-attr]
             return UIntXWeightOnlyConfig(
                 dtype=weight_dtype.value,
                 group_size=group_size,
@@ -67,6 +69,11 @@ def get_ptq_config(
             return Int4WeightOnlyConfig(
                 group_size=group_size,
             )
+        if weight_dtype == TorchIntDType.nvfp4:
+            from torchao.prototype.mx_formats import NVFP4InferenceConfig
+            if group_size is not None and group_size != 16:
+                raise ValueError("NVFP4 quantization must use a group_size of 16")
+            return NVFP4InferenceConfig()
     if activation_dtype == TorchIntDType.int4 and weight_dtype == TorchIntDType.int4:
         return Int4DynamicActivationInt4WeightConfig()
     if activation_dtype == TorchIntDType.int8 and weight_dtype == TorchIntDType.int8:
@@ -101,20 +108,30 @@ def prepare_model_for_qat(
         ValueError: If the activation/weight dtype combination is invalid.
     """
     if activation_dtype:
-        activation_config = FakeQuantizeConfig(
+        activation_config = IntxFakeQuantizeConfig(
             dtype=activation_dtype.value, granularity="per_token", is_symmetric=False
         )
-    weight_config = FakeQuantizeConfig(dtype=weight_dtype.value, group_size=group_size)
-    linear_quantize_config = IntXQuantizationAwareTrainingConfig(
-        activation_config=None if activation_dtype is None else activation_config,
+    else:
+        activation_config = None
+    if weight_dtype == TorchIntDType.nvfp4:
+        from torchao.prototype.qat import NVFP4FakeQuantizeConfig
+        if group_size is not None and group_size != 16:
+            raise ValueError("NVFP4 quantization must use a group_size of 16")
+        weight_config = NVFP4FakeQuantizeConfig()
+    else:
+        weight_config = IntxFakeQuantizeConfig(dtype=weight_dtype.value, group_size=group_size)
+    linear_quantize_config = QATConfig(
+        activation_config=activation_config,
         weight_config=weight_config,
+        step="prepare",
     )
     quantize_(model, linear_quantize_config)
     if quantize_embedding:
         # activation fake quantization is not supported for embedding layers
-        embedding_quantize_config = IntXQuantizationAwareTrainingConfig(
+        embedding_quantize_config = QATConfig(
             activation_config=None,
             weight_config=weight_config,
+            step="prepare",
         )
         quantize_(
             model,
@@ -182,4 +199,4 @@ def convert_qat_model_for_ptq(
 
     else:
         filter_fn = _is_linear
-    quantize_(model, FromIntXQuantizationAwareTrainingConfig(), filter_fn=filter_fn)
+    quantize_(model, QATConfig(step="convert"), filter_fn=filter_fn)
