@@ -1,57 +1,64 @@
+import importlib
 import importlib.util
+import inspect
 from axolotl.utils.logging import get_logger
+from axolotl.monkeypatch.utils import detab_code
 
 LOG = get_logger(__name__)
 
 
-def patch_deepspeed_zero3_missing_attributes():
+def patch_checkpoint_wrapper_setattr():
     """
-    Patch DeepSpeed's parameter_offload module to properly initialize ds_grads_remaining.
-
-    This addresses the issue where DeepSpeed expects ds_grads_remaining attribute
-    but doesn't initialize it.
-
+    Patch CheckpointWrapper to properly forward DeepSpeed attributes to wrapped modules.
+    
+    This fixes the issue where CheckpointWrapper doesn't forward ds_* attributes
+    (like ds_grads_remaining) to the actual wrapped module, causing DeepSpeed
+    ZeRO-3 to fail when gradient checkpointing is enabled.
+    
+    This issue occurs specifically with:
+    - QLoRA + DeepSpeed ZeRO-3
+    - gradient_checkpointing: true
+    - activation_offloading: true
+    
     References:
     - https://github.com/deepspeedai/DeepSpeed/issues/7203
+    - https://github.com/deepspeedai/DeepSpeed/blob/38d1a9eb64c9e01e32eccc50b25ba18925287441/deepspeed/runtime/zero/parameter_offload.py#L424-L458
+    - https://github.com/axolotl-ai-cloud/axolotl/pull/3102
     """
-
-    LOG.info("Applying DeepSpeed ZeRO Stage 3 ds_grads_remaining patch")
-
+    
     try:
-        import deepspeed.runtime.zero.parameter_offload as param_offload
-
-        original_register_module = (
-            param_offload.DeepSpeedZeRoOffload._register_deepspeed_module
-        )
-
-        def patched_register_deepspeed_module(self, module, count=None):
-            """
-            Patched version that initializes ds_grads_remaining before DeepSpeed
-            tries to use it in its hooks.
-            """
-            if count is None:
-                count = [0]
-            if not hasattr(module, "ds_grads_remaining"):
-                module.ds_grads_remaining = 0
-                LOG.debug(f"Initialized ds_grads_remaining for {type(module).__name__}")
-            return original_register_module(self, module, count)
-
-        param_offload.DeepSpeedZeRoOffload._register_deepspeed_module = (
-            patched_register_deepspeed_module
-        )
-        LOG.info(
-            "DeepSpeed ZeRO Stage 3 patch applied successfully to _register_deepspeed_module"
-        )
-
+        from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import CheckpointWrapper
+        
+        # Check if already patched
+        if hasattr(CheckpointWrapper, "_axolotl_setattr_patched"):
+            LOG.debug("CheckpointWrapper already patched")
+            return
+        
+        original_setattr = CheckpointWrapper.__setattr__
+        
+        def new_setattr(self, name: str, value) -> None:
+            if name.startswith('ds_') and hasattr(self, '_checkpoint_wrapped_module'):
+                setattr(self._checkpoint_wrapped_module, name, value)
+                LOG.debug(f"Forwarded {name} to wrapped module {type(self._checkpoint_wrapped_module).__name__}")
+            else:
+                original_setattr(self, name, value)
+        
+        CheckpointWrapper.__setattr__ = new_setattr
+        CheckpointWrapper._axolotl_setattr_patched = True
+        
+        LOG.info("CheckpointWrapper patched to forward DeepSpeed attributes")
+        
     except ImportError as e:
-        LOG.warning(f"Could not import DeepSpeed parameter_offload module: {e}")
+        LOG.debug(f"CheckpointWrapper not available: {e}")
+    except Exception as e:
+        LOG.warning(f"Failed to patch CheckpointWrapper: {e}")
 
 
 def apply_deepspeed_patches():
     """
-    Apply all DeepSpeed-related patches
+    Apply DeepSpeed-related patches
     """
     if importlib.util.find_spec("deepspeed") is not None:
-        patch_deepspeed_zero3_missing_attributes()
+        patch_checkpoint_wrapper_setattr()
     else:
         LOG.debug("DeepSpeed not available, skipping patches")

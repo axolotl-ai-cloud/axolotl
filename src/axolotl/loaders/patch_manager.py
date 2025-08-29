@@ -67,6 +67,7 @@ class PatchManager:
         self._apply_mistral_cross_entropy_patch()
         self._apply_self_attention_lora_patch()
         self._apply_fsdp2_bnb_patches()
+        self._apply_patch_deepspeed_zero3()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
@@ -475,17 +476,15 @@ class PatchManager:
 
     def _apply_patch_deepspeed_zero3(self):
         try:
-            from axolotl.monkeypatch.deepspeed_utils import (
-                patch_deepspeed_zero3_missing_attributes,
-            )
+            from axolotl.monkeypatch.deepspeed_utils import apply_deepspeed_patches
             from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
             if (
                 is_deepspeed_zero3_enabled()
                 or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3"
             ):
-                patch_deepspeed_zero3_missing_attributes()
-        except Exception as e:
+                apply_deepspeed_patches()
+        except ImportError as e:
             LOG.warning(
-                f"DeepSpeed ZeRO Stage 3 missing attributes patch not applied: {e}"
+                f"DeepSpeed patches not applied: {e}"
             )

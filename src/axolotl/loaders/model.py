@@ -214,7 +214,6 @@ class ModelLoader:
         self._set_quantization_config()
         self._set_attention_config()
         self._check_model_requirements()
-        self.patch_manager._apply_patch_deepspeed_zero3()
 
     def _apply_post_model_load_setup(self):
         """Configure the model after it has been loaded."""
