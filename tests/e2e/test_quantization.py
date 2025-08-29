@@ -8,8 +8,8 @@ import torch
 from axolotl.utils.callbacks.qat import QATCallback
 from axolotl.utils.quantization import (
     get_quantization_config,
-    qat_prepare_or_convert_model,
-    quantize_model_for_ptq,
+    prepare_model_for_qat,
+    quantize_model,
 )
 from axolotl.utils.schemas.enums import TorchAOQuantDType
 from axolotl.utils.schemas.quantization import QATConfig
@@ -22,6 +22,8 @@ from torchao.quantization.linear_activation_quantized_tensor import (
 from torchao.quantization.qat.embedding import FakeQuantizedEmbedding
 from torchao.quantization.qat.linear import FakeQuantizedLinear
 from torchao.quantization.quant_api import (
+    Float8DynamicActivationFloat8WeightConfig,
+    Float8DynamicActivationInt4WeightConfig,
     Int4WeightOnlyConfig,
     Int8DynamicActivationInt4WeightConfig,
 )
@@ -35,7 +37,7 @@ from tests.e2e.utils import require_torch_2_6_0
 def model():
     dummy_model = AutoModelForCausalLM.from_pretrained(
         "HuggingFaceTB/SmolLM2-135M",
-        device_map="auto",
+        device_map="cuda",
         torch_dtype=torch.bfloat16,
     )
     with torch.device(dummy_model.device):
@@ -49,7 +51,13 @@ def model():
 
 ptq_config_test_cases = [
     # weight_dtype, activation_dtype, group_size, expected_type, expected_params
-    (TorchAOQuantDType.int4, None, 4, Int4WeightOnlyConfig, {"group_size": 4, "version": 2}),
+    (
+        TorchAOQuantDType.int4,
+        None,
+        4,
+        Int4WeightOnlyConfig,
+        {"group_size": 4, "version": 2},
+    ),
     (
         TorchAOQuantDType.int4,
         TorchAOQuantDType.int8,
@@ -57,18 +65,57 @@ ptq_config_test_cases = [
         Int8DynamicActivationInt4WeightConfig,
         {},
     ),
+    (
+        TorchAOQuantDType.float8_e4m3fn,
+        TorchAOQuantDType.float8_e4m3fn,
+        None,
+        Float8DynamicActivationFloat8WeightConfig,
+        {"version": 2},
+    ),
+    (
+        TorchAOQuantDType.int4,
+        TorchAOQuantDType.float8_e4m3fn,
+        None,
+        Float8DynamicActivationInt4WeightConfig,
+        {},
+    ),
 ]
 
 ptq_test_cases = [
     # weight_dtype, activation_dtype, group_size, quantize_embedding, expected_exception
-    # Supported cases
     (TorchAOQuantDType.int4, None, 4, True, None),
     (TorchAOQuantDType.int4, TorchAOQuantDType.int8, 8, False, None),
-    (TorchAOQuantDType.int4, None, None, False, ValueError),  # group_size required for int4 weight only
-    # Deprecated configs that should raise ValueError
-    (TorchAOQuantDType.int8, None, 8, False, ValueError),  # Int8WeightOnlyConfig deprecated
-    (TorchAOQuantDType.int4, TorchAOQuantDType.int4, 8, False, ValueError),  # Int4DynamicActivationInt4WeightConfig deprecated
-    (TorchAOQuantDType.int8, TorchAOQuantDType.int8, 8, True, ValueError),  # Int8DynamicActivationInt8WeightConfig deprecated
+    (TorchAOQuantDType.float8_e4m3fn, TorchAOQuantDType.float8_e4m3fn, None, False, None),
+    (TorchAOQuantDType.int4, TorchAOQuantDType.float8_e4m3fn, None, True, None),
+    (
+        TorchAOQuantDType.int4,
+        None,
+        None,
+        False,
+        ValueError,
+    ),
+    # Deprecated configs 
+    (
+        TorchAOQuantDType.int8,
+        None,
+        8,
+        False,
+        ValueError,
+    ), 
+    (
+        TorchAOQuantDType.int4,
+        TorchAOQuantDType.int4,
+        8,
+        False,
+        ValueError,
+    ),  
+    (
+        TorchAOQuantDType.int8,
+        TorchAOQuantDType.int8,
+        8,
+        True,
+        ValueError,
+    ),  
 ]
 
 
@@ -118,7 +165,7 @@ class TestQuantization:
     ):
         if expected_exception:
             with pytest.raises(expected_exception):
-                quantize_model_for_ptq(
+                quantize_model(
                     model,
                     weight_dtype,
                     group_size,
@@ -126,7 +173,7 @@ class TestQuantization:
                     quantize_embedding,
                 )
         else:
-            quantize_model_for_ptq(
+            quantize_model(
                 model, weight_dtype, group_size, activation_dtype, quantize_embedding
             )
             if quantize_embedding:
@@ -145,19 +192,27 @@ class TestQuantization:
                         ), "Linear weight should be quantized without activation quantization"
 
     @pytest.mark.parametrize(
-        "weight_dtype", [TorchAOQuantDType.int4]
+        "weight_dtype,activation_dtype,group_size,quantize_embedding",
+        [
+            (TorchAOQuantDType.int4, None, 8, False),
+            (TorchAOQuantDType.int4, None, 16, True),
+            (TorchAOQuantDType.int4, TorchAOQuantDType.int8, 8, False),
+            (TorchAOQuantDType.int4, TorchAOQuantDType.int8, 16, True),
+            (TorchAOQuantDType.float8_e4m3fn, TorchAOQuantDType.float8_e4m3fn, None, False),
+            (TorchAOQuantDType.int4, TorchAOQuantDType.float8_e4m3fn, None, True),
+        ],
     )
-    @pytest.mark.parametrize(
-        "activation_dtype", [None, TorchAOQuantDType.int8]
-    )
-    @pytest.mark.parametrize("group_size", [8, 16])
-    @pytest.mark.parametrize("quantize_embedding", [False, True])
     @require_torch_2_6_0
     def test_prepare_model_for_qat(
         self, model, weight_dtype, activation_dtype, group_size, quantize_embedding
     ):
-        qat_prepare_or_convert_model(
-            model, "prepare", weight_dtype, group_size, activation_dtype, quantize_embedding
+        prepare_model_for_qat(
+            model,
+            "prepare",
+            weight_dtype,
+            group_size,
+            activation_dtype,
+            quantize_embedding,
         )
         if quantize_embedding:
             assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
@@ -187,7 +242,7 @@ class TestQuantization:
                     assert child.activation_fake_quantizer is None
 
     @require_torch_2_6_0
-    def test_convert_qat_model_for_ptq(self, model):
+    def test_convert_qat_model(self, model):
         config = QATConfig(
             weight_dtype="int4",
             activation_dtype="int8",
@@ -196,7 +251,7 @@ class TestQuantization:
         )
 
         # quantize model for qat
-        qat_prepare_or_convert_model(
+        prepare_model_for_qat(
             model,
             "prepare",
             config.weight_dtype,
@@ -209,12 +264,8 @@ class TestQuantization:
         assert isinstance(model.lm_head, FakeQuantizedLinear)
 
         # apply conversion
-        qat_prepare_or_convert_model(
+        prepare_model_for_qat(
             model,
-            "convert",
-            config.weight_dtype,
-            config.group_size,
-            config.activation_dtype,
             config.quantize_embedding,
         )
         # ensure modules have been swapped out
@@ -247,7 +298,7 @@ class TestQuantizationCallback:
             fake_quant_after_n_steps=100,
         )
 
-        qat_prepare_or_convert_model(
+        prepare_model_for_qat(
             model,
             "prepare",
             cfg.weight_dtype,
@@ -298,7 +349,7 @@ class TestQuantizationCallback:
             fake_quant_after_n_steps=None,
         )
 
-        qat_prepare_or_convert_model(
+        prepare_model_for_qat(
             model,
             "prepare",
             cfg.weight_dtype,

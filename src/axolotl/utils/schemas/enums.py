@@ -9,7 +9,6 @@ class TorchAOQuantDType(Enum):
     int4 = getattr(torch, "int4", None)
     int8 = getattr(torch, "int8", None)
     float8_e4m3fn = getattr(torch, "float8_e4m3fn", None)
-    float8_e5m2 = getattr(torch, "float8_e5m2", None)
 
 
 class RLType(str, Enum):

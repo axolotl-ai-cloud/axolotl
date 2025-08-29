@@ -12,7 +12,7 @@ from axolotl.loaders import load_tokenizer
 from axolotl.utils.logging import get_logger
 from axolotl.utils.quantization import (
     get_quantization_config,
-    quantize_model_for_ptq,
+    quantize_model,
     TorchAOQuantDType,
 )
 
@@ -77,7 +77,7 @@ def do_quantize(
         f"\tquantize_embedding: {quantize_embedding}"
     )
 
-    quantize_model_for_ptq(
+    quantize_model(
         model, weight_dtype, group_size, activation_dtype, quantize_embedding
     )
 

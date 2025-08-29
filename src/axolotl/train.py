@@ -230,19 +230,15 @@ def save_trained_model(
 
     # handle QAT
     if cfg.qat:
-        from axolotl.utils.quantization import qat_prepare_or_convert_model
+        from axolotl.utils.quantization import convert_qat_model
 
-        LOG.info("Processing QAT model for saving...")
-        qat_prepare_or_convert_model(
+        convert_qat_model(
             model,
-            step="convert",
-            weight_dtype=cfg.qat.weight_dtype,
-            group_size=cfg.qat.group_size,
-            activation_dtype=cfg.qat.activation_dtype,
             quantize_embedding=cfg.qat.quantize_embedding,
         )
         LOG.info(
-            "QAT modules have been converted for PTQ; quantized weights will be saved."
+            "QAT usage note: please ensure you quantize your model fine-tuned using QAT by running `axolotl quantize`" 
+            " with the same config which you used for training."
         )
     # Handle ReLoRA early return case
     if cfg.relora:

@@ -57,7 +57,7 @@ class AxolotlTrainingMixins:
     )
     eval_sample_packing: Optional[bool] = field(
         default=None,
-        metadata={"helps": "Use sample packing for efficient evals."},
+        metadata={"help": "Use sample packing for efficient evals."},
     )
     sample_packing_efficiency: float = field(
         default=1.0,
