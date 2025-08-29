@@ -62,7 +62,7 @@ def do_inference(
         )
     elif cfg.chat_template:
         chat_template_str = get_chat_template_from_config(
-            cfg.chat_template, ds_cfg=None, tokenizer=tokenizer
+            cfg, ds_cfg=None, tokenizer=tokenizer
         )
     elif cfg.datasets[0].type == "chat_template":
         chat_template_str = get_chat_template_from_config(
@@ -159,7 +159,11 @@ def do_inference_gradio(
         )
     elif cfg.chat_template:
         chat_template_str = get_chat_template_from_config(
-            cfg.chat_template, ds_cfg=None, tokenizer=tokenizer
+            cfg, ds_cfg=None, tokenizer=tokenizer
+        )
+    elif cfg.datasets[0].type == "chat_template":
+        chat_template_str = get_chat_template_from_config(
+            cfg=cfg, ds_cfg=cfg.datasets[0], tokenizer=tokenizer
         )
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
