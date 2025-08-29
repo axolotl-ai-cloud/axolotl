@@ -15,6 +15,7 @@
 """
 Plugin args for KD support.
 """
+
 from dataclasses import dataclass
 from enum import Enum
 
@@ -26,8 +27,8 @@ class InferenceServerType(str, Enum):
     Online inferences server types to handle different request args
     """
 
-    vllm = "vllm"  # pylint: disable=invalid-name
-    sglang = "sglang"  # pylint: disable=invalid-name
+    vllm = "vllm"
+    sglang = "sglang"
 
 
 class KDArgs(BaseModel):

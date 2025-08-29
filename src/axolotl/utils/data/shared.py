@@ -337,7 +337,7 @@ def generate_split_fingerprints(
     dataset: Dataset, val_set_size: int | float, seed: int
 ) -> tuple[str, str]:
     """Generate consistent fingerprints for train/test splits."""
-    fingerprint = dataset._fingerprint  # pylint: disable=protected-access
+    fingerprint = dataset._fingerprint
 
     train_hash_input = f"{fingerprint}|{val_set_size}|train|{seed}"
     test_hash_input = f"{fingerprint}|{val_set_size}|test|{seed}"
@@ -430,10 +430,11 @@ def save_preprocessed_dataset(
             num_shards=cfg.num_dataset_shards_to_save,
         )
     else:
+        min_rows_per_proc = 256
         os.makedirs(prepared_ds_path, exist_ok=True)
         dataset.save_to_disk(
             str(prepared_ds_path),
-            num_proc=min(max(1, len(dataset) // 8), num_workers),
+            num_proc=min(max(1, len(dataset) // min_rows_per_proc), num_workers),
             max_shard_size=None,
             num_shards=cfg.num_dataset_shards_to_save,
         )
@@ -496,7 +497,7 @@ def try_load_from_hub(
             token=cfg.hf_use_auth_token,
         )
         return dataset[split]
-    except Exception:  # pylint: disable=broad-except # nosec
+    except Exception:
         LOG.info("Unable to find prepared dataset in HuggingFace Hub")
         return None
 
@@ -542,6 +543,12 @@ def merge_datasets(datasets: list[Dataset], cfg: DictDefault) -> Dataset:
             return ds
 
         return ds.shuffle(seed=cfg.seed)
+
+    # If enabled, shuffle each dataset independently before merging.
+    # This allows curriculum learning strategies to be applied at the dataset level.
+    if cfg.shuffle_before_merging_datasets:
+        LOG.info("Shuffling each dataset individually before merging...")
+        datasets = [ds.shuffle(seed=cfg.seed) for ds in datasets]
 
     LOG.info("Merging datasets...")
     merged_dataset = concatenate_datasets(datasets)

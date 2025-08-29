@@ -22,7 +22,7 @@ HAS_PRINTED_LOGO = False
 def print_axolotl_text_art():
     """Prints axolotl ASCII art."""
 
-    global HAS_PRINTED_LOGO  # pylint: disable=global-statement
+    global HAS_PRINTED_LOGO
     if HAS_PRINTED_LOGO:
         return
     if is_main_process():

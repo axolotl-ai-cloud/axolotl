@@ -19,7 +19,6 @@ class TestProcessRewardSmolLM2(unittest.TestCase):
 
     @with_temp_dir
     def test_prm(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

@@ -76,7 +76,6 @@ class TestPretrainingPacking:
             cfg.pretraining_dataset[0]["type"] or "pretrain",
         )
 
-        # pylint: disable=duplicate-code
         original_bsz = cfg.micro_batch_size
         train_dataset = wrap_pretraining_dataset(
             dataset,

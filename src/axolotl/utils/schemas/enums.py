@@ -1,7 +1,5 @@
 """Enums for Axolotl input config"""
 
-# pylint: disable=invalid-name
-
 from enum import Enum
 
 import torch
@@ -62,6 +60,7 @@ class ChatTemplate(str, Enum):
     llava = "llava"
     qwen2_vl = "qwen2_vl"
     gemma3 = "gemma3"
+    gemma3n = "gemma3n"
     command_a = "command_a"
     command_a_tool_use = "command_a_tool_use"
     command_a_rag = "command_a_rag"
@@ -78,6 +77,7 @@ class CustomSupportedOptimizers(str, Enum):
     adopt_adamw = "adopt_adamw"
     came_pytorch = "came_pytorch"
     muon = "muon"
+    dion = "dion"
 
 
 class RingAttnFunc(str, Enum):

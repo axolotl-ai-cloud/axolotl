@@ -1,17 +1,18 @@
 """Module for customized trainers"""
 
-# pylint: disable=too-many-lines
-
 from __future__ import annotations
 
 import os
 from collections import defaultdict
 from functools import partial, wraps
-from typing import Callable, Literal, Optional
+from typing import Any, Callable, Literal, Optional
 
 import datasets
+import safetensors
 import torch
+from accelerate.state import AcceleratorState
 from datasets import Dataset
+from peft import PeftModel
 from torch.utils.data import (
     BatchSampler,
     DataLoader,
@@ -19,14 +20,17 @@ from torch.utils.data import (
     Sampler,
     SequentialSampler,
 )
-from transformers import Trainer
+from transformers import PreTrainedModel, Trainer
+from transformers.trainer import TRAINING_ARGS_NAME
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length, seed_worker
+from transformers.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME, is_peft_available
 from trl.trainer.utils import pad_to_length
 from typing_extensions import override
 
 from axolotl.core.trainers.mixins import (
     ActivationOffloadingMixin,
     CheckpointSaveMixin,
+    DistributedParallelMixin,
     OptimizerMixin,
     PackingMixin,
     RngLoaderMixin,
@@ -37,6 +41,9 @@ from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_tagging,
 )
 from axolotl.utils import get_not_null
+from axolotl.utils.bench import get_gpu_memory_usage
+from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import is_main_process
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
@@ -50,12 +57,22 @@ class AxolotlTrainer(
     RngLoaderMixin,
     CheckpointSaveMixin,
     ActivationOffloadingMixin,
+    DistributedParallelMixin,
     Trainer,
 ):
     """Extend the base Trainer for axolotl helpers"""
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
     tag_names = ["axolotl"]
+    _axolotl_cfg: DictDefault | None = None
+
+    @property
+    def axolotl_cfg(self):
+        return self._axolotl_cfg
+
+    @axolotl_cfg.setter
+    def axolotl_cfg(self, cfg):
+        self._axolotl_cfg = cfg
 
     def __init__(
         self,
@@ -71,7 +88,6 @@ class AxolotlTrainer(
         self._signature_columns = None  # workaround for pylint
 
         super().__init__(*_args, **kwargs)
-
         self.train_data_collator = self.data_collator
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
         if self.args.orpo_alpha:
@@ -276,9 +292,9 @@ class AxolotlTrainer(
         # fmt: off
         if dataloader_key is not None and self.args.dataloader_persistent_workers:
             if hasattr(self, "_eval_dataloaders"):
-                self._eval_dataloaders[dataloader_key] = dataloader  # type: ignore  # pylint: disable=access-member-before-definition
+                self._eval_dataloaders[dataloader_key] = dataloader  # type: ignore
             else:
-                self._eval_dataloaders = {dataloader_key: dataloader}  # pylint: disable=attribute-defined-outside-init
+                self._eval_dataloaders = {dataloader_key: dataloader}
         # fmt: on
 
         return self.accelerator.prepare(dataloader)
@@ -320,6 +336,17 @@ class AxolotlTrainer(
         #     outputs = model(**inputs)
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
+
+        # track number of tokens for tokens per second calculation
+        if self.args.include_tkps:
+            inputs_key = "labels" if "labels" in inputs else "input_ids"
+            if hasattr(self.state, "num_tokens"):
+                self.state.num_tokens = (
+                    self.state.num_tokens + (inputs[inputs_key] != -100).sum()
+                )
+            else:
+                self.state.num_tokens = (inputs[inputs_key] != -100).sum()
+
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
                 model,
@@ -434,7 +461,7 @@ class AxolotlTrainer(
         model,
         inputs,
         return_outputs=False,
-        num_items_in_batch=None,  # pylint: disable=unused-argument
+        num_items_in_batch=None,
     ):
         concat_inputs = AxolotlTrainer.orpo_concatenate_inputs(
             inputs,
@@ -511,7 +538,13 @@ class AxolotlTrainer(
 
     @wraps(Trainer.create_accelerator_and_postprocess)
     def create_accelerator_and_postprocess(self):
-        res = super().create_accelerator_and_postprocess()
+        # cleanup the PartialState states so Accelerate automatically configures everything from the env vars
+        accelerator_config = self.args.accelerator_config.to_dict()
+        use_configured_state = accelerator_config.get("use_configured_state", False)
+        if not use_configured_state:
+            AcceleratorState._reset_state(reset_partial_state=True)
+
+        super().create_accelerator_and_postprocess()
 
         if self.is_fsdp_enabled:
             if (
@@ -520,17 +553,24 @@ class AxolotlTrainer(
             ):
                 self.accelerator.state.fsdp_plugin.limit_all_gathers = True
 
-        return res
-
     def additional_accelerator_args(
-        self, fp8=None, **kwargs
-    ):  # pylint: disable=unused-argument
+        self, fp8: bool = False, enable_fsdp_float8_all_gather: bool = False, **kwargs
+    ) -> dict[str, Any]:
         ret_kwargs = {}
         if fp8:
             from accelerate.utils import AORecipeKwargs
+            from torchao.float8 import Float8LinearConfig
+
+            # By default, Float8LinearConfig is instantiated using the "tensorwise"
+            # scaling strategy. See more details here:
+            # https://github.com/pytorch/ao/tree/main/torchao/float8.
+            config = Float8LinearConfig(
+                enable_fsdp_float8_all_gather=enable_fsdp_float8_all_gather,
+                force_recompute_fp8_weight_in_bwd=enable_fsdp_float8_all_gather is True,
+            )
 
             ret_kwargs["mixed_precision"] = "fp8"
-            ret_kwargs["kwargs_handlers"] = [AORecipeKwargs()]
+            ret_kwargs["kwargs_handlers"] = [AORecipeKwargs(config=config)]  # type: ignore
             os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
 
         return ret_kwargs
@@ -548,6 +588,24 @@ class AxolotlTrainer(
         # Add averaged stored metrics to logs
         for key, metrics in self._stored_metrics[train_eval].items():
             logs[key] = torch.tensor(metrics).mean().item()
+
+        if is_main_process():
+            # Add memory usage
+            try:
+                active, allocated, reserved = get_gpu_memory_usage()
+                logs["memory/max_active (GiB)"] = round(active, 2)
+                logs["memory/max_allocated (GiB)"] = round(allocated, 2)
+                logs["memory/device_reserved (GiB)"] = round(reserved, 2)
+            except (ValueError, TypeError, FileNotFoundError):
+                pass
+
+        if self.args.include_tkps and train_eval == "train":
+            # each rank will log its own tokens per second
+            # for logging_steps > 1 we obtain a moving average of this metric
+            logs["tokens_per_second_per_gpu"] = round(
+                self.state.last_tokens_per_second.item() / self.args.logging_steps, 2
+            )
+
         del self._stored_metrics[train_eval]
 
         return super().log(logs, start_time)
@@ -565,3 +623,69 @@ class AxolotlTrainer(
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
         return super()._save_checkpoint(model, trial, **kwargs)
+
+    # TODO(wing): remove once https://github.com/huggingface/transformers/pull/39866/files is merged
+    def _save(self, output_dir: Optional[str] = None, state_dict=None):
+        # If we are executing this function, we are the process zero, so we don't check for that.
+        output_dir = output_dir if output_dir is not None else self.args.output_dir
+        os.makedirs(output_dir, exist_ok=True)
+        LOG.info(f"Saving model checkpoint to {output_dir}")
+        supported_classes = (
+            (PreTrainedModel,)
+            if not is_peft_available()
+            else (PreTrainedModel, PeftModel)
+        )
+        # Save a trained model and configuration using `save_pretrained()`.
+        # They can then be reloaded using `from_pretrained()`
+        if not isinstance(self.model, supported_classes):
+            if state_dict is None:
+                state_dict = self.model.state_dict()
+            if isinstance(
+                self.accelerator.unwrap_model(self.model, keep_torch_compile=False),
+                supported_classes,
+            ):
+                self.accelerator.unwrap_model(
+                    self.model, keep_torch_compile=False
+                ).save_pretrained(
+                    output_dir,
+                    state_dict=state_dict,
+                    safe_serialization=self.args.save_safetensors,
+                )
+            else:
+                LOG.info(
+                    "Trainer.model is not a `PreTrainedModel`, only saving its state dict."
+                )
+                if self.args.save_safetensors:
+                    safetensors.torch.save_file(
+                        state_dict,
+                        os.path.join(output_dir, SAFE_WEIGHTS_NAME),
+                        metadata={"format": "pt"},
+                    )
+                else:
+                    torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
+        else:
+            self.model.save_pretrained(
+                output_dir,
+                state_dict=state_dict,
+                safe_serialization=self.args.save_safetensors,
+                is_main_process=self.accelerator.is_main_process,
+            )
+
+            if self.processing_class is not None:
+                self.processing_class.save_pretrained(output_dir)
+            elif (
+                self.data_collator is not None
+                and hasattr(self.data_collator, "tokenizer")
+                and self.data_collator.tokenizer is not None
+            ):
+                LOG.info(
+                    "Saving Trainer.data_collator.tokenizer by default as Trainer.processing_class is `None`"
+                )
+                save_jinja_files = True
+                if self.axolotl_cfg:
+                    save_jinja_files = self.axolotl_cfg.tokenizer_save_jinja_files
+                self.data_collator.tokenizer.save_pretrained(
+                    output_dir, save_jinja_files=save_jinja_files
+                )
+            # Good practice: save your training arguments together with the trained model
+            torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))

@@ -1,0 +1,10 @@
+provider: baseten
+project_name:
+
+secrets:
+  - HF_TOKEN
+  - WANDB_API_KEY
+
+gpu: h100
+gpu_count: 8
+node_count: 1

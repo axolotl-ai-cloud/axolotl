@@ -70,11 +70,11 @@ class OptimizerMixin(Trainer):
                 }
             )
         if params["embeddings"]:
-            lr = optimizer_kwargs["lr"]  # pylint: disable=invalid-name
+            lr = optimizer_kwargs["lr"]
             if self.args.embedding_lr_scale:
-                lr *= self.args.embedding_lr_scale  # pylint: disable=invalid-name
+                lr *= self.args.embedding_lr_scale
             elif self.args.embedding_lr:
-                lr = self.args.embedding_lr  # pylint: disable=invalid-name
+                lr = self.args.embedding_lr
             optimizer_grouped_parameters.append(
                 {
                     "params": list(params["embeddings"].values()),
@@ -143,7 +143,7 @@ class OptimizerMixin(Trainer):
                 loraplus_lr_embedding = getattr(
                     self.args, "loraplus_lr_embedding", 1e-6
                 )
-                self.optimizer = create_loraplus_optimizer(  # pylint: disable=attribute-defined-outside-init
+                self.optimizer = create_loraplus_optimizer(
                     opt_model,
                     optimizer_cls,
                     loraplus_lr_ratio=loraplus_lr_ratio,
@@ -185,17 +185,15 @@ class OptimizerMixin(Trainer):
                                 p.data_ptr(): p.numel() for p in module.parameters()
                             }.values()
                         )
-                        LOG.info(f"skipped {module}: {skipped/2**20}M params")
+                        LOG.info(f"skipped {module}: {skipped / 2**20}M params")
                         manager.register_module_override(
                             module, "weight", {"optim_bits": 32}
                         )
                         LOG.debug(f"bitsandbytes: will optimize {module} in fp32")
-                LOG.info(f"skipped: {skipped/2**20}M params")
+                LOG.info(f"skipped: {skipped / 2**20}M params")
 
         if is_sagemaker_mp_enabled():
-            self.optimizer = smp.DistributedOptimizer(  # pylint: disable=attribute-defined-outside-init
-                self.optimizer
-            )
+            self.optimizer = smp.DistributedOptimizer(self.optimizer)
 
         return self.optimizer
 

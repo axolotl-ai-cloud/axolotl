@@ -40,10 +40,9 @@ def kldiv_forward_llama_like(
     output_attentions: Optional[bool] = None,
     output_hidden_states: Optional[bool] = None,
     cache_position: Optional[torch.LongTensor] = None,
-    logits_to_keep: Union[int, torch.Tensor] = 0,  # pylint: disable=unused-argument
+    logits_to_keep: Union[int, torch.Tensor] = 0,
     **kwargs: Unpack[TransformersKwargs],  # type: ignore[misc]
 ) -> CausalLMOutputWithPast:
-    # pylint: disable=duplicate-code
     output_attentions = (
         output_attentions
         if output_attentions is not None

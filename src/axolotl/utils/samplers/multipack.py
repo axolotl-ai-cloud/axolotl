@@ -5,6 +5,7 @@ into fixed-capacity batches to optimize memory usage and training throughput.
 
 import gc
 import math
+import time
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import cpu_count, get_context
 from typing import Iterable, Iterator, Union
@@ -267,7 +268,7 @@ class MultipackBatchSampler(BatchSampler):
         num_processes: int | None = None,  # Number of processes for parallel packing
         safe_mode: bool = True,  # Conservative packing to prevent training instability
         mp_start_method: str = "fork",
-        **kwargs,  # pylint: disable=unused-argument
+        **kwargs,
     ):
         super().__init__(sampler, batch_size, drop_last)
         self.batch_size = batch_size
@@ -316,9 +317,7 @@ class MultipackBatchSampler(BatchSampler):
             return self._batches
 
         # Get indices from the sampler
-        indices = [  # pylint: disable=unnecessary-comprehension
-            idx for idx in self.sampler
-        ]
+        indices = [idx for idx in self.sampler]
 
         # Get lengths of the selected sequences
         lengths = self.lengths[indices]
@@ -416,7 +415,7 @@ class MultipackBatchSampler(BatchSampler):
 
         # Gather efficiency from all ranks and apply the calculation function
         sample_packing_actual_eff_all = reduce_and_broadcast(
-            lambda: float(self.efficiency()),  # pylint: disable=unnecessary-lambda
+            lambda: float(self.efficiency()),
             calc_sample_packing_eff_est,
         )
 
@@ -453,7 +452,10 @@ class MultipackBatchSampler(BatchSampler):
             _sampled_lens = []
             for _ in range(self.num_count_samples):
                 self._batches = None  # Reset cached batches
+                # log timer for generating batches
+                start_time = time.time()
                 _sampled_lens.append(len(self.generate_batches(set_stats=False)))
+                LOG.debug(f"generate_batches time: {time.time() - start_time}")
             len_batches = min(_sampled_lens)
 
             # Gather minimum across all ranks

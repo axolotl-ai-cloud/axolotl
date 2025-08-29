@@ -3,6 +3,7 @@
 Applies pre- and post-model load patches for various fixes and optimizations.
 """
 
+import os
 import importlib.util
 from functools import cached_property
 
@@ -49,6 +50,7 @@ class PatchManager:
 
     def apply_pre_model_load_patches(self):
         """Apply pre-model load patches based on config."""
+        self._apply_transformers_patches()
         # self._apply_flex_attention_patches()
         self._apply_flash_attention_patches()
         self._apply_chunked_cross_entropy_patch()
@@ -64,9 +66,28 @@ class PatchManager:
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
         self._apply_self_attention_lora_patch()
-        self._apply_gemma3_conditional_generation_forward_patch()
-        self._apply_sequence_parallel_patches()
+        self._apply_fsdp2_bnb_patches()
+        self._apply_patch_deepspeed_zero3()
+
+    def apply_post_plugin_pre_model_load_patches(self):
+        """Apply post plugin-pre_model_load load patches based on config."""
         self._apply_tiled_mlp(self.cfg.model_config_type)
+        self._apply_voxtral_patches()
+
+    def _apply_transformers_patches(self):
+        from axolotl.monkeypatch.transformers.trainer_loss_calc import (
+            patch_evaluation_loop,
+            patch_maybe_log_save_evaluate,
+        )
+
+        patch_fsdp2 = (
+            self.cfg.torch_compile
+            and self.cfg.fsdp_config
+            and self.cfg.fsdp_version == 2
+        )
+
+        patch_evaluation_loop(patch_fsdp2)
+        patch_maybe_log_save_evaluate()
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
@@ -93,6 +114,14 @@ class PatchManager:
 
     def _apply_fsdp_patches(self):
         """Apply patches for FSDP configurations."""
+        if self.cfg.context_parallel_size > 1 or (
+            self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2"
+        ):
+            from axolotl.monkeypatch.accelerate.parallelism_config import (
+                patch_parallelism_config,
+            )
+
+            patch_parallelism_config()
         if self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2":
             from axolotl.monkeypatch.accelerate.fsdp2 import patch_accelerate_fsdp2
 
@@ -120,14 +149,12 @@ class PatchManager:
     def _apply_flex_attention_patches(self):
         """Apply patches for flexible attention."""
         if self.cfg.flex_attention:
-            # from axolotl.monkeypatch.attention.flex_attn import (
-            #     patch_flex_make_mask,
-            #     patch_flex_wrapper,
-            # )
-            #
-            # flex_attn_compile_kwargs = self.cfg.flex_attn_compile_kwargs or {}
-            # patch_flex_wrapper(**flex_attn_compile_kwargs)
-            # patch_flex_make_mask()
+            from axolotl.monkeypatch.attention.flex_attn import (
+                patch_flex_wrapper,
+            )
+
+            flex_attn_compile_kwargs = self.cfg.flex_attn_compile_kwargs or {}
+            patch_flex_wrapper(**flex_attn_compile_kwargs)
             if self.cfg.sample_packing:
                 from axolotl.core.attention.flex_block_mask import (
                     patch_create_causal_mask,
@@ -154,7 +181,9 @@ class PatchManager:
                 patch_create_accelerate_code_for_fp8,
             )
 
-            patch_create_accelerate_code_for_fp8()
+            patch_create_accelerate_code_for_fp8(
+                self.cfg.fp8_enable_fsdp_float8_all_gather
+            )
 
     def _apply_flash_attention_peft_patches(self):
         """Apply patches for Flash Attention with PEFT."""
@@ -248,35 +277,49 @@ class PatchManager:
                 has_remote_code=has_remote_code,
             )
 
-    def _apply_gemma3_conditional_generation_forward_patch(self):
-        """Apply gemma3 conditional generation forward patch."""
-        if self.model_config.model_type in ["gemma3", "gemma3_text"]:
-            from axolotl.monkeypatch.models.gemma3.modeling import (
-                patch_gemma3_conditional_generation_forward,
+        if self.cfg.sample_packing:
+            from axolotl.monkeypatch.data.batch_dataset_fetcher import (
+                apply_multipack_dataloader_patch,
             )
 
-            patch_gemma3_conditional_generation_forward()
+            LOG.info("Applying multipack dataloader patch for sample packing...")
+            apply_multipack_dataloader_patch()
 
-    def _apply_sequence_parallel_patches(self):
-        """Apply sequence parallelism patches."""
-        if self.cfg.sequence_parallel_degree and self.cfg.sequence_parallel_degree > 1:
-            from axolotl.monkeypatch.ring_attn.patch import (
-                patch_prepare_data_loader,
-                patch_prepare_device_mesh,
+    def _apply_fsdp2_bnb_patches(self):
+        """Apply FSDP2 BNB patches."""
+        if (
+            self.cfg.fsdp_config
+            and str(self.cfg.fsdp_version) == "2"
+            and self.cfg.adapter == "qlora"
+        ):
+            from axolotl.monkeypatch.fsdp2_qlora import (
+                apply_init_sharded_param_patch,
+                apply_init_unsharded_param_patch,
             )
 
-            patch_prepare_data_loader()
-            patch_prepare_device_mesh(self.cfg.sequence_parallel_degree, self.cfg.fsdp)
+            apply_init_sharded_param_patch()
+            apply_init_unsharded_param_patch()
 
     def _apply_tiled_mlp(self, model_type: str):
         if self.cfg.tiled_mlp:
-            from axolotl.monkeypatch.tiled_mlp import patch_tiled_mlp
+            from axolotl.monkeypatch.tiled_mlp import (
+                patch_tiled_mlp,
+            )
 
             patch_tiled_mlp(
                 model_type,
                 use_original_mlp=self.cfg.tiled_mlp_use_original_mlp,
                 cfg_num_shards=self.cfg.tiled_mlp_num_shards,
             )
+
+    def _apply_voxtral_patches(self):
+        """Apply patches for Voxtral model."""
+        if self.cfg.model_config_type == "voxtral":
+            from axolotl.monkeypatch.models.voxtral.modeling import (
+                patch_voxtral_conditional_generation_forward,
+            )
+
+            patch_voxtral_conditional_generation_forward()
 
     def _patch_attention(self):
         """Apply attention-specific patches based on model type."""
@@ -327,31 +370,21 @@ class PatchManager:
 
             patch_self_attn_lora()
 
-    def _patch_llama_flash_attention(self, packed=False):
+    def _patch_llama_flash_attention(self):
         """Apply Flash Attention patches for LLaMA models."""
         from axolotl.monkeypatch.llama_attn_hijack_flash import (
             replace_llama_attn_with_flash_attn,
         )
 
-        if packed:
-            if self.cfg.device not in ["mps", "cpu"] and not self.inference:
-                LOG.info("patching with flash attention for sample packing")
-                replace_llama_attn_with_flash_attn(
-                    packed=True,
-                    cross_entropy=self.cfg.flash_attn_cross_entropy,
-                    rms_norm=self.cfg.flash_attn_rms_norm,
-                )
-        elif self.cfg.s2_attention:
+        if self.cfg.s2_attention:
             LOG.info("patching w/ flash-enabled, shifted-sparse attention")
             replace_llama_attn_with_flash_attn(
-                packed=False,
                 cross_entropy=self.cfg.flash_attn_cross_entropy,
                 rms_norm=self.cfg.flash_attn_rms_norm,
                 use_shifted_sparse_attn=True,
             )
         elif self.cfg.flash_attn_cross_entropy or self.cfg.flash_attn_rms_norm:
             replace_llama_attn_with_flash_attn(
-                packed=False,
                 cross_entropy=self.cfg.flash_attn_cross_entropy,
                 rms_norm=self.cfg.flash_attn_rms_norm,
             )
@@ -382,7 +415,7 @@ class PatchManager:
             and self.cfg.sample_packing
         ):
             if self.cfg.flash_attention:
-                self._patch_llama_flash_attention(packed=self.cfg.sample_packing)
+                self._patch_llama_flash_attention()
             elif self.cfg.xformers_attention:
                 self._patch_llama_xformers_attention()
             elif self.cfg.sample_packing:
@@ -405,16 +438,11 @@ class PatchManager:
             from axolotl.monkeypatch.llama_attn_hijack_flash import (
                 is_xformers_swiglu_available,
                 replace_llama_mlp_with_swiglu,
-                replace_llama_qkv_with_fused,
             )
 
             if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
                 LOG.info("Patching with SwiGLU...")
                 replace_llama_mlp_with_swiglu(model)
-
-            if self.cfg.flash_attn_fuse_qkv:
-                LOG.info("Patching with fused QKV...")
-                replace_llama_qkv_with_fused(model)
 
     def _apply_unsloth_patches(self, model):
         """Apply unsloth optimization patches."""
@@ -443,3 +471,16 @@ class PatchManager:
             from axolotl.monkeypatch.lora_kernels import apply_lora_kernel_patches
 
             apply_lora_kernel_patches(model=model, cfg=self.cfg)
+
+    def _apply_patch_deepspeed_zero3(self):
+        try:
+            from axolotl.monkeypatch.deepspeed_utils import apply_deepspeed_patches
+            from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
+
+            if self.cfg.activation_offloading is True and (
+                is_deepspeed_zero3_enabled()
+                or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3"
+            ):
+                apply_deepspeed_patches()
+        except ImportError as e:
+            LOG.warning(f"DeepSpeed patches not applied: {e}")

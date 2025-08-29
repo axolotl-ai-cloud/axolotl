@@ -44,8 +44,13 @@ add_keys_to_authorized() {
     chmod 700 -R ~/.ssh
 }
 
+# Set SSH port
+if [ ! -z "$SSH_PORT" ]; then
+    sed -i "s/#Port 22/Port $SSH_PORT/" /etc/ssh/sshd_config
+fi
+
 if [[ $PUBLIC_KEY ]]; then
-    # runpod
+    # runpod, prime intellect
     add_keys_to_authorized "$PUBLIC_KEY"
     # Start the SSH service in the background
     service ssh start
@@ -74,6 +79,14 @@ if [ ! -d "/workspace/data/axolotl-artifacts" ]; then
 fi
 if [ ! -L "/workspace/axolotl/outputs" ]; then
     ln -sf /workspace/data/axolotl-artifacts /workspace/axolotl/outputs
+fi
+
+# start the runpod slurm init
+SLURM_INIT="${SLURM_INIT:-/slurm-init.sh}"
+
+if [[ -f "$SLURM_INIT" ]]; then
+  echo "[entrypoint] running $SLURM_INIT..."
+  bash "$SLURM_INIT"
 fi
 
 # Execute the passed arguments (CMD)

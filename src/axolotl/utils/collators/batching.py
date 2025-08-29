@@ -161,6 +161,8 @@ class V2BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
     Collator for multipack specific to the using the BatchSampler
     """
 
+    squash_position_ids: bool = False
+
     def __call__(self, features, return_tensors=None):
         if not isinstance(features[0], list):
             features: List[List[dict]] = [features]
@@ -176,6 +178,15 @@ class V2BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
                         if feature in item
                     ]
                     out_features[i][feature] = np.concatenate(arrays)
+                elif feature == "position_ids" and self.squash_position_ids:
+                    arrays = [
+                        np.array(item[feature]) for item in features_ if feature in item
+                    ]
+                    # concatenate, get total length and create arange of new total position ids
+                    position_ids = np.concatenate(arrays)
+                    total_length = position_ids.shape[0]
+                    position_ids = np.arange(total_length)
+                    out_features[i][feature] = position_ids
                 else:
                     arrays = [
                         np.array(item[feature]) for item in features_ if feature in item

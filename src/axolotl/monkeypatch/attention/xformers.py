@@ -23,15 +23,15 @@ def xformers_attention_forward(
     value: torch.Tensor,
     attention_mask: Optional[torch.Tensor] = None,
     position_ids: Optional[torch.LongTensor] = None,
-    dropout: float = 0.0,  # pylint: disable=unused-argument
-    scaling: Optional[float] = None,  # pylint: disable=unused-argument
-    sliding_window: Optional[int] = None,  # pylint: disable=unused-argument
-    softcap: Optional[float] = None,  # pylint: disable=unused-argument
+    dropout: float = 0.0,
+    scaling: Optional[float] = None,
+    sliding_window: Optional[int] = None,
+    softcap: Optional[float] = None,
     cu_seq_lens_q: Optional[torch.LongTensor] = None,
     cu_seq_lens_k: Optional[torch.LongTensor] = None,
     max_length_q: Optional[int] = None,
-    max_length_k: Optional[int] = None,  # pylint: disable=unused-argument
-    **kwargs,  # pylint: disable=unused-argument
+    max_length_k: Optional[int] = None,
+    **kwargs,
 ):
     # Get dimensions
     # query: [batch, heads, seq_len, hidden_dim]

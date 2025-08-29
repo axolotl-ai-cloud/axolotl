@@ -2,7 +2,7 @@
 unit tests for generating sweep configurations
 """
 
-from axolotl.cli.main import generate_sweep_configs
+from axolotl.cli.utils import generate_sweep_configs
 
 
 def test_generate_sweep_configs_no_pairs():

@@ -58,7 +58,7 @@ logging_steps: 1
 evals_per_epoch: 1
 saves_per_epoch: 1
 
-warmup_steps: 10
+warmup_ratio: 0.1
 weight_decay: 0.0
 fsdp:
   - full_shard

@@ -17,15 +17,15 @@ class DictDefault(Dict):
     def __setitem__(self, name, value):
         # workaround for pickle/unpickle issues and __frozen not being available
         try:
-            isFrozen = hasattr(  # pylint: disable=invalid-name
+            isFrozen = hasattr(self, "__frozen") and object.__getattribute__(
                 self, "__frozen"
-            ) and object.__getattribute__(self, "__frozen")
+            )
         except AttributeError:
-            isFrozen = False  # pylint: disable=invalid-name
+            isFrozen = False
 
         if isFrozen and name not in super().keys():
             raise KeyError(name)
-        super(Dict, self).__setitem__(name, value)  # pylint: disable=bad-super-call
+        super(Dict, self).__setitem__(name, value)
         try:
             p = object.__getattribute__(self, "__parent")
             key = object.__getattribute__(self, "__key")
@@ -36,3 +36,16 @@ class DictDefault(Dict):
             p[key] = self
             object.__delattr__(self, "__parent")
             object.__delattr__(self, "__key")
+
+
+def remove_none_values(obj):
+    """
+    Remove null from a dictionary-like obj or list.
+    These can appear due to Dataset loading causing schema merge.
+    See https://github.com/axolotl-ai-cloud/axolotl/pull/2909
+    """
+    if hasattr(obj, "items"):
+        return {k: remove_none_values(v) for k, v in obj.items() if v is not None}
+    if isinstance(obj, list):
+        return [remove_none_values(elem) for elem in obj]
+    return obj

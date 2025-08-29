@@ -8,7 +8,11 @@ import torch
 from torch import nn
 from trl import DPOTrainer
 
-from axolotl.core.trainers.mixins import RngLoaderMixin, SchedulerMixin
+from axolotl.core.trainers.mixins import (
+    DistributedParallelMixin,
+    RngLoaderMixin,
+    SchedulerMixin,
+)
 from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
 from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
@@ -17,7 +21,12 @@ from axolotl.core.trainers.utils import (
 
 
 class AxolotlDPOTrainer(
-    RngLoaderMixin, SchedulerMixin, OptimizerMixin, OptimizerInitMixin, DPOTrainer
+    RngLoaderMixin,
+    SchedulerMixin,
+    OptimizerMixin,
+    OptimizerInitMixin,
+    DPOTrainer,
+    DistributedParallelMixin,
 ):
     """Extend the base DPOTrainer for axolotl helpers."""
 
@@ -92,11 +101,11 @@ class AxolotlDPOTrainer(
     ) -> dict[str, torch.Tensor]:
         if self.args.dpo_norm_loss:
             # fmt: off
-            loss_type: str = self.loss_type  # type: ignore[has-type]  # pylint: disable=access-member-before-definition
+            loss_type: str = self.loss_type  # type: ignore[has-type]
             # fmt: on
             # concatenated_forward handles avg token logprob for ipo case already
-            self.loss_type = "ipo"  # pylint: disable=attribute-defined-outside-init
+            self.loss_type = "ipo"
             res = super().concatenated_forward(model, batch, is_ref_model=is_ref_model)
-            self.loss_type = loss_type  # pylint: disable=attribute-defined-outside-init
+            self.loss_type = loss_type
             return res
         return super().concatenated_forward(model, batch, is_ref_model=is_ref_model)

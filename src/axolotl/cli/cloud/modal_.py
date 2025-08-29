@@ -8,7 +8,7 @@ import os
 import subprocess  # nosec B404
 from pathlib import Path
 from random import randint
-from typing import Optional
+from typing import Literal
 
 import modal
 
@@ -41,7 +41,7 @@ def run_cmd(cmd: str, run_folder: str, volumes=None):
     if exit_code := subprocess.call(  # nosec B603
         cmd.split(), cwd=run_folder, env=new_env
     ):
-        exit(exit_code)  # pylint: disable=consider-using-sys-exit
+        exit(exit_code)
 
     # Commit writes to volume.
     if volumes:
@@ -82,7 +82,7 @@ class ModalCloud(Cloud):
         return res
 
     def get_image(self):
-        docker_tag = "main-py3.11-cu124-2.6.0"
+        docker_tag = "main-py3.11-cu126-2.7.1"
         if self.config.docker_tag:
             docker_tag = self.config.docker_tag
         docker_image = f"axolotlai/axolotl:{docker_tag}"
@@ -130,7 +130,6 @@ class ModalCloud(Cloud):
         res = []
         if self.config.secrets:
             for key in self.config.get("secrets", []):
-                # pylint: disable=duplicate-code
                 if isinstance(key, str):
                     if val := os.environ.get(key, ""):
                         res.append(modal.Secret.from_dict({key: val}))
@@ -177,8 +176,8 @@ class ModalCloud(Cloud):
             with self.app.run(detach=True):
                 modal_fn.remote(
                     config_yaml,
-                    volumes={k: v[0] for k, v in self.volumes.items()},
                     *args,
+                    volumes={k: v[0] for k, v in self.volumes.items()},
                     **kwargs,
                 )
 
@@ -187,7 +186,7 @@ class ModalCloud(Cloud):
             return int(self.config.timeout)
         return 60 * 60 * 24  # 24 hours
 
-    def get_train_gpu(self):  # pylint: disable=too-many-return-statements
+    def get_train_gpu(self):
         count = self.config.gpu_count or 1
         family = self.config.gpu.lower() or "l40s"
 
@@ -200,7 +199,7 @@ class ModalCloud(Cloud):
         if family in ["a10", "a10g"]:
             return modal.gpu.A10G(count=count)
         if family == "h100":
-            return modal.gpu.H100(count=count)
+            return f"H100:{count}"
         if family == "t4":
             return modal.gpu.T4(count=count)
         if family == "l4":
@@ -230,8 +229,9 @@ class ModalCloud(Cloud):
     def train(
         self,
         config_yaml: str,
-        accelerate: bool = True,
-        local_dirs: Optional[dict[str, str]] = None,
+        launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
+        launcher_args: list[str] | None = None,
+        local_dirs: dict[str, str] | None = None,
         **kwargs,
     ):
         modal_fn = self.get_train_env(local_dirs)(_train)
@@ -239,7 +239,8 @@ class ModalCloud(Cloud):
             with self.app.run(detach=True):
                 modal_fn.remote(
                     config_yaml,
-                    accelerate=accelerate,
+                    launcher=launcher,
+                    launcher_args=launcher_args,
                     volumes={k: v[0] for k, v in self.volumes.items()},
                     **kwargs,
                 )
@@ -270,20 +271,35 @@ def _preprocess(config_yaml: str, volumes=None):
     )
 
 
-def _train(config_yaml: str, accelerate: bool = True, volumes=None, **kwargs):
+def _train(
+    config_yaml: str,
+    launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
+    launcher_args: list[str] | None = None,
+    volumes=None,
+    **kwargs,
+):
     Path("/workspace/mounts").mkdir(parents=True, exist_ok=True)
     with open("/workspace/mounts/config.yaml", "w", encoding="utf-8") as f_out:
         f_out.write(config_yaml)
     run_folder = "/workspace/mounts"
-    if accelerate:
-        accelerate_args = "--accelerate"
+
+    launcher_args = launcher_args or []
+
+    # Build the base command
+    if launcher == "accelerate":
+        launcher_arg = "--launcher accelerate"
+    elif launcher == "torchrun":
+        launcher_arg = "--launcher torchrun"
     else:
-        accelerate_args = "--no-accelerate"
-    num_processes_args = ""
-    if num_processes := kwargs.pop("num_processes", None):
-        num_processes_args = f"--num-processes {num_processes}"
+        launcher_arg = "--launcher python"
+
+    # Build launcher args string
+    launcher_args_str = ""
+    if launcher_args:
+        launcher_args_str = "-- " + " ".join(launcher_args)
+
     run_cmd(
-        f"axolotl train {accelerate_args} {num_processes_args} /workspace/mounts/config.yaml",
+        f"axolotl train {launcher_arg} /workspace/mounts/config.yaml {launcher_args_str}".strip(),
         run_folder,
         volumes,
     )

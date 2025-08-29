@@ -2,7 +2,6 @@
 tests for chat_template prompt strategy
 """
 
-# pylint: disable=duplicate-code
 import unittest
 
 from axolotl.prompt_strategies.messages.chat import load
@@ -53,9 +52,9 @@ class TestMessagesChatLlama3:
         # fmt: on
         LOG.debug(f"Expected input_ids: {expected_input_ids}")
         LOG.debug(f"Actual input_ids: {input_ids}")
-        assert (
-            input_ids == expected_input_ids
-        ), f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+        assert input_ids == expected_input_ids, (
+            f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+        )
 
 
 if __name__ == "__main__":

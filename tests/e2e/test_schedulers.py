@@ -19,7 +19,6 @@ class TestCustomSchedulers(unittest.TestCase):
 
     @with_temp_dir
     def test_rex_scheduler(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

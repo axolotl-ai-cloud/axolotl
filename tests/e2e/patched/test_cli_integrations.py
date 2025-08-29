@@ -10,7 +10,6 @@ from axolotl.cli.config import load_cfg
 from axolotl.utils.dict import DictDefault
 
 
-# pylint: disable=duplicate-code
 class TestPluginArgs:
     """
     test class for plugin args loaded from the config file

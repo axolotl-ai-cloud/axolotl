@@ -1,7 +1,5 @@
 """Module with Pydantic models for configuration."""
 
-# pylint: disable=too-many-lines
-
 from typing import Annotated, Any, Literal
 
 from annotated_types import MinLen
@@ -43,7 +41,7 @@ from axolotl.utils.schemas.model import (
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
 from axolotl.utils.schemas.quantization import PTQConfig, QATConfig
-from axolotl.utils.schemas.training import HyperparametersConfig
+from axolotl.utils.schemas.training import HyperparametersConfig, JaggedLRConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.validation import ValidationMixin
 from axolotl.utils.schemas.vllm import VllmConfig
@@ -51,12 +49,12 @@ from axolotl.utils.schemas.vllm import VllmConfig
 LOG = get_logger(__name__)
 
 
-# pylint: disable=too-many-ancestors
 class AxolotlInputConfig(
     ModelInputConfig,
     ModelOutputConfig,
     LoraConfig,
     ReLoRAConfig,
+    JaggedLRConfig,
     HyperparametersConfig,
     WandbConfig,
     MLFlowConfig,
@@ -109,6 +107,13 @@ class AxolotlInputConfig(
         },
     )
 
+    trainer_cls: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "module to custom trainer class to use for training"
+        },
+    )
+
     rl: RLType | None = Field(
         default=None,
         json_schema_extra={
@@ -116,10 +121,10 @@ class AxolotlInputConfig(
         },
     )
     trl: TRLConfig | None = Field(
-        default_factory=lambda: TRLConfig(),  # pylint: disable=unnecessary-lambda
+        default_factory=lambda: TRLConfig(),
     )
     vllm: VllmConfig | None = Field(
-        default_factory=lambda: VllmConfig(),  # pylint: disable=unnecessary-lambda
+        default_factory=lambda: VllmConfig(),
     )
     qat: QATConfig | None = None
     quantization: PTQConfig | None = None
@@ -177,6 +182,12 @@ class AxolotlInputConfig(
         default=True,
         json_schema_extra={
             "description": "If false, the datasets will not be shuffled and will keep their original order in `datasets`. The same applies to the `test_datasets` option and the `pretraining_dataset` option. Default is true."
+        },
+    )
+    shuffle_before_merging_datasets: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "If true, each dataset in `datasets` will be shuffled before merging. This allows curriculum learning strategies to be applied at the dataset level. Default is false."
         },
     )
     dataset_prepared_path: str | None = Field(
@@ -343,7 +354,20 @@ class AxolotlInputConfig(
     fp16: bool | None = Field(
         default=None, json_schema_extra={"description": "Use CUDA fp16"}
     )
-    fp8: bool | None = None
+    fp8: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable FP8 mixed precision training using TorchAO. Best "
+            "used in combination with torch.compile."
+        },
+    )
+    fp8_enable_fsdp_float8_all_gather: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable FSDP float8 all-gather optimization for FP8 training. Can "
+            "improve training speed by 10-15% when FSDP is enabled."
+        },
+    )
     bfloat16: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -385,6 +409,12 @@ class AxolotlInputConfig(
         default=512,
         json_schema_extra={
             "description": "The maximum length of an input to train with, this should typically be less than 2048 as most models have a token/context limit of 2048"
+        },
+    )
+    excess_length_strategy: Literal["drop", "truncate"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "What to do when a tokenized row exceeds sequence_len. 'drop' removes the row; 'truncate' slices tensors to sequence_len. Defaults to 'drop' for backward compatibility."
         },
     )
     eval_sequence_len: int | None = Field(
@@ -511,12 +541,6 @@ class AxolotlInputConfig(
             "description": "Whether to use flash-attention rms norm implementation - advanced use only"
         },
     )
-    flash_attn_fuse_qkv: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Whether to fuse QKV into a single operation"
-        },
-    )
     flash_attn_fuse_mlp: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -529,6 +553,13 @@ class AxolotlInputConfig(
     )
 
     eager_attention: bool | None = None
+
+    attn_implementation: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Specify a custom attention implementation, used mostly for kernels."
+        },
+    )
 
     unsloth_cross_entropy_loss: bool | None = None
     unsloth_lora_mlp: bool | None = None
@@ -584,7 +615,7 @@ class AxolotlInputConfig(
     )
 
     tiled_mlp_use_original_mlp: bool | None = Field(
-        default=None,
+        default=True,
         json_schema_extra={
             "description": "Whether to use original mlp for ALST tiled mlp. Otherwise uses a generic MLP based on llama."
         },
@@ -631,7 +662,23 @@ class AxolotlInputConfig(
         },
     )
 
+    dp_shard_size: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of devices to shard across. If not set, will use all available devices."
+        },
+    )
+    dp_replicate_size: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "Number of devices to replicate across."},
+    )
     sequence_parallel_degree: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Deprecated: use `context_parallel_size` instead"
+        },
+    )
+    context_parallel_size: int | None = Field(
         default=None,
         json_schema_extra={
             "description": "Set to a divisor of the number of GPUs available to split sequences into chunks of equal size. Use in long context training to prevent OOM when sequences cannot fit into a single GPU's VRAM. E.g., if 4 GPUs are available, set this value to 2 to split each sequence into two equal-sized subsequences, or set to 4 to split into four equal-sized subsequences. See https://docs.axolotl.ai/docs/sequence_parallelism.html for more details."
@@ -783,10 +830,15 @@ class AxolotlInputConfig(
     include_tokens_per_second: bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "bool of whether to include tokens trainer per second in the training metrics. This iterates over the entire dataset once, so it takes some time."
+            "description": "bool of whether to report tokens per second at the end of training. This is not supported with pre-training datasets."
         },
     )
-
+    include_tkps: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "bool of whether to report tokens per second during training by measuring throughput of non-padding tokens."
+        },
+    )
     neftune_noise_alpha: float | None = Field(
         default=None,
         json_schema_extra={
@@ -985,7 +1037,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
         return data
 
-    # pylint: disable=duplicate-code
     @model_validator(mode="before")
     @classmethod
     def check_multigpu_unsloth(cls, data):
@@ -1001,7 +1052,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
         return data
 
-    # pylint: disable=duplicate-code
     @model_validator(mode="before")
     @classmethod
     def check_multigpu_lora_kernels(cls, data):

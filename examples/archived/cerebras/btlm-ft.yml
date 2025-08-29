@@ -66,7 +66,7 @@ flash_optimum:
 gptq_groupsize:
 gptq_model_v1:
 
-warmup_steps: 32
+warmup_ratio: 0.1
 evals_per_epoch: 4
 saves_per_epoch: 1
 save_total_limit:

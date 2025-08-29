@@ -18,7 +18,9 @@ class TestEvaluateCommand(BaseCliTest):
 
     def test_evaluate_basic_execution(self, cli_runner, tmp_path, valid_test_config):
         """Test basic successful execution"""
-        self._test_basic_execution(cli_runner, tmp_path, valid_test_config, "evaluate")
+        self._test_basic_execution(
+            cli_runner, tmp_path, valid_test_config, "evaluate", train=False
+        )
 
     def test_evaluate_basic_execution_no_accelerate(
         self, cli_runner, tmp_path, valid_test_config
@@ -33,7 +35,8 @@ class TestEvaluateCommand(BaseCliTest):
                 [
                     "evaluate",
                     str(config_path),
-                    "--no-accelerate",
+                    "--launcher",
+                    "python",
                 ],
                 catch_exceptions=False,
             )
@@ -55,7 +58,8 @@ class TestEvaluateCommand(BaseCliTest):
                     "2",
                     "--sequence-len",
                     "128",
-                    "--no-accelerate",
+                    "--launcher",
+                    "python",
                 ],
                 catch_exceptions=False,
             )
@@ -65,3 +69,104 @@ class TestEvaluateCommand(BaseCliTest):
             cfg = mock_evaluate.call_args[0][0]
             assert cfg.micro_batch_size == 2
             assert cfg.sequence_len == 128
+
+    def test_evaluate_with_launcher_args_torchrun(
+        self, cli_runner, tmp_path, valid_test_config
+    ):
+        """Test evaluate with torchrun launcher arguments"""
+        config_path = tmp_path / "config.yml"
+        config_path.write_text(valid_test_config)
+
+        with patch("subprocess.run") as mock_subprocess:
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "evaluate",
+                    str(config_path),
+                    "--launcher",
+                    "torchrun",
+                    "--",
+                    "--nproc_per_node=2",
+                    "--nnodes=1",
+                ],
+                catch_exceptions=False,
+            )
+
+            assert result.exit_code == 0
+            mock_subprocess.assert_called_once()
+
+            # Verify launcher args are passed to torchrun
+            called_cmd = mock_subprocess.call_args.args[0]
+            assert called_cmd[0] == "torchrun"
+            assert "--nproc_per_node=2" in called_cmd
+            assert "--nnodes=1" in called_cmd
+            assert "-m" in called_cmd
+            assert "axolotl.cli.evaluate" in called_cmd
+
+    def test_evaluate_with_launcher_args_accelerate(
+        self, cli_runner, tmp_path, valid_test_config
+    ):
+        """Test evaluate with accelerate launcher arguments"""
+        config_path = tmp_path / "config.yml"
+        config_path.write_text(valid_test_config)
+
+        with patch("subprocess.run") as mock_subprocess:
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "evaluate",
+                    str(config_path),
+                    "--launcher",
+                    "accelerate",
+                    "--",
+                    "--config_file=accelerate_config.yml",
+                    "--num_processes=4",
+                ],
+                catch_exceptions=False,
+            )
+
+            assert result.exit_code == 0
+            mock_subprocess.assert_called_once()
+
+            # Verify launcher args are passed to accelerate
+            called_cmd = mock_subprocess.call_args.args[0]
+            assert called_cmd[0] == "accelerate"
+            assert called_cmd[1] == "launch"
+            assert "--config_file=accelerate_config.yml" in called_cmd
+            assert "--num_processes=4" in called_cmd
+            assert "-m" in called_cmd
+            assert "axolotl.cli.evaluate" in called_cmd
+
+    def test_evaluate_backward_compatibility_no_launcher_args(
+        self, cli_runner, tmp_path, valid_test_config
+    ):
+        """Test that existing evaluate commands work without launcher args"""
+        config_path = tmp_path / "config.yml"
+        config_path.write_text(valid_test_config)
+
+        with patch("subprocess.run") as mock_subprocess:
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "evaluate",
+                    str(config_path),
+                    "--launcher",
+                    "accelerate",
+                    "--micro-batch-size",
+                    "2",
+                ],
+                catch_exceptions=False,
+            )
+
+            assert result.exit_code == 0
+            mock_subprocess.assert_called_once()
+
+            # Verify no launcher args contamination
+            called_cmd = mock_subprocess.call_args.args[0]
+            assert called_cmd[0] == "accelerate"
+            assert called_cmd[1] == "launch"
+            # Should not contain any extra launcher args
+            launcher_section = called_cmd[2 : called_cmd.index("-m")]
+            assert (
+                len(launcher_section) == 0
+            )  # No launcher args between 'launch' and '-m'

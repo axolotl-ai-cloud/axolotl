@@ -62,7 +62,7 @@ resume_from_checkpoint:
 logging_steps: 1
 flash_attention: true
 
-warmup_steps: 10
+warmup_ratio: 0.1
 evals_per_epoch: 4
 saves_per_epoch: 1
 weight_decay: 0.0

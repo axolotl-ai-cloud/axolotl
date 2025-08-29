@@ -1,0 +1,78 @@
+base_model: google/gemma-3n-E2B-it
+processor_type: AutoProcessor
+
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+cut_cross_entropy: true
+
+# for use with fft to only train on language model layers
+# unfrozen_parameters:
+  # - model.language_model.*
+  # - lm_head
+  # - embed_tokens
+
+load_in_4bit: true
+
+# these 3 lines are needed for now to handle vision chat templates w images
+skip_prepare_dataset: true
+remove_unused_columns: false
+sample_packing: false
+
+# gemma3 doesn't seem to play nice with ddp
+ddp_find_unused_parameters: true
+
+chat_template: gemma3n
+eot_tokens:
+  - <end_of_turn>
+
+# sample dataset below requires downloading audio/image in advance
+# wget https://huggingface.co/datasets/Nanobit/text-vision-audio-2k-test/resolve/main/African_elephant.jpg
+# wget https://huggingface.co/datasets/Nanobit/text-vision-audio-2k-test/resolve/main/En-us-African_elephant.oga
+datasets:
+  - path: Nanobit/text-vision-audio-2k-test
+    type: chat_template
+dataset_prepared_path:
+val_set_size: 0.01
+output_dir: ./outputs/out
+
+adapter: qlora
+lora_model_dir:
+
+sequence_len: 2048
+pad_to_sequence_len: false
+
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 4
+micro_batch_size: 2
+num_epochs: 1
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: true
+fp16:
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+logging_steps: 1
+# flash_attention: true  # Any attention impl does not work with gemma3n now
+
+warmup_ratio: 0.1
+evals_per_epoch: 1
+saves_per_epoch: 1
+weight_decay: 0.0

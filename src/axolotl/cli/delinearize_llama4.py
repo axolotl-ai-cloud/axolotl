@@ -9,7 +9,6 @@ from typing import Generator, Union
 import fire
 import torch
 from accelerate import init_empty_weights
-from dotenv import load_dotenv
 from transformers import AutoProcessor
 
 
@@ -152,5 +151,4 @@ def do_cli(model: Union[Path, str], output: Union[Path, str]) -> None:
 
 
 if __name__ == "__main__":
-    load_dotenv()
     fire.Fire(do_cli)

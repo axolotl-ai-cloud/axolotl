@@ -21,7 +21,6 @@ class TestMultiGPUEval:
     """
 
     def test_eval_sample_packing(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -93,7 +92,6 @@ class TestMultiGPUEval:
         check_tensorboard(temp_dir + "/runs", "eval/loss", 2.5, "Eval Loss is too high")
 
     def test_eval(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

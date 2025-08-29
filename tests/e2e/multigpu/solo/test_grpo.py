@@ -80,7 +80,7 @@ def start_vllm(
     cmd_env = env.copy()
     cmd_env.update({"VLLM_LOGGING_CONFIG_PATH": vllm_logging_json})
     # start `trl vllm-serve` command in the background and capture the process id
-    process = subprocess.Popen(  # pylint: disable=consider-using-with
+    process = subprocess.Popen(
         cmd,
         env=cmd_env,
         stdout=subprocess.DEVNULL if quiet else subprocess.PIPE,
@@ -298,7 +298,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "sequence_parallel_degree": 2,
+                "context_parallel_size": 2,
                 "flash_attention": True,
                 "sequence_len": 1024,
                 "special_tokens": {

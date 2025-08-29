@@ -49,7 +49,8 @@ class GRPOStrategy:
 
         if trl.use_vllm:
             grpo_args_kwargs["use_vllm"] = trl.use_vllm
-            grpo_args_kwargs["vllm_mode"] = trl.vllm_mode
+            if trl.vllm_mode:
+                grpo_args_kwargs["vllm_mode"] = trl.vllm_mode
             if trl.vllm_mode == "colocate":
                 grpo_args_kwargs["vllm_gpu_memory_utilization"] = (
                     vllm_cfg.gpu_memory_utilization
@@ -82,8 +83,13 @@ class GRPOStrategy:
         grpo_args_kwargs["log_completions"] = trl.log_completions
         grpo_args_kwargs["num_completions_to_print"] = trl.num_completions_to_print
 
-        if cfg.sequence_parallel_degree > 1:
-            grpo_args_kwargs["sequence_parallel_degree"] = cfg.sequence_parallel_degree
+        if cfg.context_parallel_size > 1:
+            grpo_args_kwargs["context_parallel_size"] = cfg.context_parallel_size
+
+        if trl.importance_sampling_level is not None:
+            grpo_args_kwargs["importance_sampling_level"] = (
+                trl.importance_sampling_level
+            )
 
         if trl.reward_weights:
             grpo_args_kwargs["reward_weights"] = trl.reward_weights
@@ -122,9 +128,7 @@ class GRPOStrategy:
         return grpo_args_kwargs
 
     @classmethod
-    def set_trainer_args(
-        cls, cfg: DictDefault
-    ) -> list[Any]:  # pylint: disable=unused-argument
+    def set_trainer_args(cls, cfg: DictDefault) -> list[Any]:
         trainer_args = []
         if cfg.trl and cfg.trl.reward_funcs:
             reward_funcs = []
@@ -145,7 +149,7 @@ class GRPOStrategy:
         return trainer_kwargs
 
     @classmethod
-    def get_collator(cls, *args, **kwargs):  # pylint: disable=unused-argument
+    def get_collator(cls, *args, **kwargs):
         # No data collation is needed in GRPO, handled by trl's trainer __init__
         return None
 

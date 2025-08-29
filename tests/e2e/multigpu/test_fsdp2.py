@@ -1,7 +1,5 @@
 """Test module for FSDP2 multi-GPU functionality."""
 
-# pylint: disable=duplicate-code
-
 import os
 from pathlib import Path
 
@@ -29,9 +27,9 @@ def verify_training_success(temp_dir):
     assert len(model_files) > 0, "No model files found - training may have failed"
 
     checkpoint_files = list(output_path.glob("checkpoint-*"))
-    assert (
-        len(checkpoint_files) > 0
-    ), "No checkpoint files found - training may have failed"
+    assert len(checkpoint_files) > 0, (
+        "No checkpoint files found - training may have failed"
+    )
 
     tb_log_path = most_recent_subdir(temp_dir + "/runs")
     if tb_log_path:
@@ -43,9 +41,9 @@ def verify_training_success(temp_dir):
             train_loss_df = df[df.tag == "train/train_loss"]
             if len(train_loss_df) > 0:
                 final_loss = train_loss_df.value.values[-1]
-                assert not torch.isnan(
-                    torch.tensor(final_loss)
-                ), f"Training loss is NaN: {final_loss}"
+                assert not torch.isnan(torch.tensor(final_loss)), (
+                    f"Training loss is NaN: {final_loss}"
+                )
 
 
 class TestFSDP2:
@@ -175,6 +173,69 @@ class TestFSDP2:
         verify_training_success(temp_dir)
 
     @require_torch_2_7_0
+    def test_lora_sft_kernels(self, temp_dir):
+        cfg = DictDefault(
+            {
+                "base_model": "Qwen/Qwen2.5-0.5B",
+                "sequence_len": 2048,
+                "val_set_size": 0.01,
+                "datasets": [
+                    {
+                        "path": "tatsu-lab/alpaca",
+                        "type": "alpaca",
+                        "split": "train[:10%]",
+                    },
+                ],
+                "adapter": "lora",
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_target_linear": True,
+                "num_epochs": 1,
+                "max_steps": 2,
+                "micro_batch_size": 2,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_torch_fused",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+                "fsdp_version": 2,
+                "fsdp_config": {
+                    "offload_params": False,
+                    "cpu_ram_efficient_loading": False,
+                    "transformer_layer_cls_to_wrap": "Qwen2DecoderLayer",
+                    "state_dict_type": "FULL_STATE_DICT",
+                    "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                    "reshard_after_forward": True,
+                },
+                "use_tensorboard": True,
+                "bf16": True,
+                "lora_mlp_kernel": True,
+                "lora_qkv_kernel": True,
+                "lora_o_kernel": True,
+            }
+        )
+
+        # write cfg to yaml file
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
+            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
+
+        execute_subprocess_async(
+            [
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
+                "--num-processes",
+                "2",
+                "--main-process-port",
+                f"{get_torch_dist_unique_port()}",
+            ]
+        )
+
+        verify_training_success(temp_dir)
+
+    @require_torch_2_7_0
     def test_qlora_sft(self, temp_dir):
         cfg = DictDefault(
             {
@@ -214,6 +275,70 @@ class TestFSDP2:
                 },
                 "use_tensorboard": True,
                 "bf16": True,
+            }
+        )
+
+        # write cfg to yaml file
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
+            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
+
+        execute_subprocess_async(
+            [
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
+                "--num-processes",
+                "2",
+                "--main-process-port",
+                f"{get_torch_dist_unique_port()}",
+            ]
+        )
+
+        verify_training_success(temp_dir)
+
+    @require_torch_2_7_0
+    def test_qlora_sft_kernels(self, temp_dir):
+        cfg = DictDefault(
+            {
+                "base_model": "Qwen/Qwen2.5-0.5B",
+                "sequence_len": 2048,
+                "val_set_size": 0.01,
+                "datasets": [
+                    {
+                        "path": "tatsu-lab/alpaca",
+                        "type": "alpaca",
+                        "split": "train[:10%]",
+                    },
+                ],
+                "load_in_4bit": True,
+                "adapter": "qlora",
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_target_linear": True,
+                "num_epochs": 1,
+                "max_steps": 2,
+                "micro_batch_size": 2,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_torch_fused",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+                "fsdp_version": 2,
+                "fsdp_config": {
+                    "offload_params": False,
+                    "cpu_ram_efficient_loading": False,
+                    "transformer_layer_cls_to_wrap": "Qwen2DecoderLayer",
+                    "state_dict_type": "FULL_STATE_DICT",
+                    "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                    "reshard_after_forward": True,
+                },
+                "use_tensorboard": True,
+                "bf16": True,
+                "lora_mlp_kernel": True,
+                "lora_qkv_kernel": True,
+                "lora_o_kernel": True,
             }
         )
 

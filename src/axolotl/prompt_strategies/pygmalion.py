@@ -69,7 +69,6 @@ class PygmalionPromptTokenizingStrategy(PromptTokenizingStrategy):
                 LOG.warning(f"unknown role in conversation: {role}")
                 res = defaultdict(lambda: [])
 
-            # pylint: disable=duplicate-code
             result, current_len = parse_tokenized_to_result(
                 result,
                 current_len,
@@ -89,7 +88,10 @@ class PygmalionPrompter:
         pass
 
     def build_prompt(
-        self, source, *args, **kwargs  # pylint: disable=unused-argument
+        self,
+        source,
+        *args,
+        **kwargs,
     ) -> Generator[Tuple[str, str], None, None]:
         for msg in source:
             yield msg["role"], msg["value"]

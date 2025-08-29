@@ -22,10 +22,9 @@ class InstructionWSystemPromptTokenizingStrategy(PromptTokenizingStrategy):
         )
 
     def tokenize_prompt(self, prompt):
-        # pylint: disable=duplicate-code
         (
             instruction,
-            input,  # pylint: disable=redefined-builtin
+            input,
             response,
             system,
         ) = self.parse_instruction_fields(prompt)
@@ -64,7 +63,7 @@ class SystemDataPrompter(AlpacaPrompter):
         self,
         system: str,
         instruction: str,
-        input: Union[None, str] = None,  # pylint: disable=redefined-builtin
+        input: Union[None, str] = None,
         output: Union[None, str] = None,
     ) -> Generator[str, None, None]:
         # returns the full prompt from instruction and optional input
@@ -93,7 +92,6 @@ class OpenOrcaSystemDataPrompter(SystemDataPrompter):
     """
 
     def match_prompt_style(self):
-        # pylint: disable=duplicate-code
         if self.prompt_style == PromptStyle.INSTRUCT.value:
             self.turn_format = "### Human:\n{instruction}\n### Additional Context:\n{input}\n### Assistant:\n"
             self.turn_no_input_format = "### Human:\n{instruction}\n### Assistant:\n"

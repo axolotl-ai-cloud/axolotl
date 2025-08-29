@@ -67,9 +67,9 @@ class TestAssistantChatTemplateLlama3:
         # fmt: on
         LOG.debug(f"Expected input_ids: {expected_input_ids}")
         LOG.debug(f"Actual input_ids: {input_ids}")
-        assert (
-            input_ids == expected_input_ids
-        ), f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+        assert input_ids == expected_input_ids, (
+            f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+        )
 
     def test_llama3(self, llama3_tokenizer, assistant_dataset):
         LOG.info("Testing llama-3 with assistant dataset")
@@ -109,9 +109,9 @@ class TestAssistantChatTemplateLlama3:
         # fmt: on
         LOG.debug(f"Expected input_ids: {expected_input_ids}")
         LOG.debug(f"Actual input_ids: {input_ids}")
-        assert (
-            input_ids == expected_input_ids
-        ), f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+        assert input_ids == expected_input_ids, (
+            f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+        )
 
     def test_phi35(self, phi35_tokenizer, assistant_dataset):
         LOG.info("Testing phi-3.5 with assistant dataset")
@@ -161,15 +161,15 @@ class TestAssistantChatTemplateLlama3:
         # fmt: on
         LOG.debug(f"Expected input_ids: {expected_input_ids}")
         LOG.debug(f"Actual input_ids: {input_ids}")
-        assert (
-            input_ids == expected_input_ids
-        ), f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+        assert input_ids == expected_input_ids, (
+            f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+        )
 
         LOG.debug(f"Expected labels : {expected_labels}")
         LOG.debug(f"Actual labels : {labels}")
-        assert (
-            labels == expected_labels
-        ), f"Input IDs mismatch: {labels} != {expected_labels}"
+        assert labels == expected_labels, (
+            f"Input IDs mismatch: {labels} != {expected_labels}"
+        )
 
     def test_llama3_with_training_data(self, llama3_tokenizer, assistant_dataset):
         LOG.info("Testing llama-3 with assistant dataset including training data")
@@ -234,7 +234,7 @@ class TestSharegptChatTemplateLlama3:
 
     def test_llama3_assistant(self, llama3_tokenizer, sharegpt_dataset):
         LOG.info("Testing ShareGPT style datasets with llama-3 assistant prompts")
-        # pylint: disable=duplicate-code
+
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
                 llama3_tokenizer,
@@ -285,16 +285,16 @@ class TestSharegptChatTemplateLlama3:
         LOG.debug(f"Expected labels: {expected_labels}")
         LOG.debug(f"Actual labels: {labels}")
 
-        assert (
-            input_ids == expected_input_ids
-        ), f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
-        assert (
-            labels == expected_labels
-        ), f"Labels mismatch: {labels} != {expected_labels}"
+        assert input_ids == expected_input_ids, (
+            f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+        )
+        assert labels == expected_labels, (
+            f"Labels mismatch: {labels} != {expected_labels}"
+        )
 
     def test_llama3_human(self, llama3_tokenizer, sharegpt_dataset):
         LOG.info("Testing ShareGPT style datasets with llama-3 human prompts")
-        # pylint: disable=duplicate-code
+
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
                 llama3_tokenizer,
@@ -345,16 +345,16 @@ class TestSharegptChatTemplateLlama3:
         LOG.debug(f"Expected labels: {expected_labels}")
         LOG.debug(f"Actual labels: {labels}")
 
-        assert (
-            input_ids == expected_input_ids
-        ), f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
-        assert (
-            labels == expected_labels
-        ), f"Labels mismatch: {labels} != {expected_labels}"
+        assert input_ids == expected_input_ids, (
+            f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+        )
+        assert labels == expected_labels, (
+            f"Labels mismatch: {labels} != {expected_labels}"
+        )
 
     def test_llama3_system_human(self, llama3_tokenizer, basic_dataset):
         LOG.info("Testing ShareGPT style datasets with llama-3 system/human prompts")
-        # pylint: disable=duplicate-code
+
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
                 llama3_tokenizer,
@@ -409,12 +409,12 @@ class TestSharegptChatTemplateLlama3:
         LOG.debug(f"Expected labels: {expected_labels}")
         LOG.debug(f"Actual labels: {labels}")
 
-        assert (
-            input_ids == expected_input_ids
-        ), f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
-        assert (
-            labels == expected_labels
-        ), f"Labels mismatch: {labels} != {expected_labels}"
+        assert input_ids == expected_input_ids, (
+            f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+        )
+        assert labels == expected_labels, (
+            f"Labels mismatch: {labels} != {expected_labels}"
+        )
 
 
 class TestAssistantToolCallingChatTemplateLlama32Vision:
@@ -481,13 +481,13 @@ class TestAssistantToolCallingChatTemplateLlama32Vision:
         ]
         # fmt: on
 
-        assert (
-            input_ids == expected_input_ids
-        ), f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+        assert input_ids == expected_input_ids, (
+            f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+        )
 
-        assert (
-            labels == expected_labels
-        ), f"Labels mismatch: {labels} != {expected_labels}"
+        assert labels == expected_labels, (
+            f"Labels mismatch: {labels} != {expected_labels}"
+        )
 
     def test_llama32vision_train_on_tools(
         self, llama3_tokenizer, toolcalling_dataset, llama3_2_vision_chat_template_jinja
@@ -495,7 +495,6 @@ class TestAssistantToolCallingChatTemplateLlama32Vision:
         LOG.info(
             "Testing assistant style datasets with tool_calling with llama-32 chat template, training on tools"
         )
-        # pylint: disable=duplicate-code
 
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
@@ -549,13 +548,13 @@ class TestAssistantToolCallingChatTemplateLlama32Vision:
         ]
         # fmt: on
 
-        assert (
-            input_ids == expected_input_ids
-        ), f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+        assert input_ids == expected_input_ids, (
+            f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+        )
 
-        assert (
-            labels == expected_labels
-        ), f"Labels mismatch: {labels} != {expected_labels}"
+        assert labels == expected_labels, (
+            f"Labels mismatch: {labels} != {expected_labels}"
+        )
 
 
 if __name__ == "__main__":

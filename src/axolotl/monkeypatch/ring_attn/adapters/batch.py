@@ -7,8 +7,6 @@ Our implementation closely follows the structure of that module, but we've minif
 somewhat to support only the latest versions of transformers.
 """
 
-# pylint: disable=protected-access,cyclic-import
-
 import os
 from typing import Callable
 
@@ -18,10 +16,18 @@ import transformers
 import transformers.modeling_flash_attention_utils
 from ring_flash_attn import ring_flash_attn_func
 from ring_flash_attn.adapters.hf_adapter import check_params
-from transformers.modeling_flash_attention_utils import (
-    _flash_supports_window_size,
-    is_flash_attn_greater_or_equal,
-)
+from transformers.modeling_flash_attention_utils import is_flash_attn_greater_or_equal
+
+try:
+    from transformers.modeling_flash_attention_utils import _flash_supports_window
+except ImportError:
+    try:
+        from transformers.modeling_flash_attention_utils import (
+            _flash_supports_window_size as _flash_supports_window,
+        )
+    except ImportError:
+        _flash_supports_window = True
+
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
 from axolotl.utils.schemas.enums import RingAttnFunc
@@ -51,7 +57,7 @@ def create_flash_attn_forward_varlen_llama3(
     """
 
     # transformers 4.48+
-    # pylint: disable=unused-argument
+
     def _flash_attention_forward(
         query_states: torch.Tensor,
         key_states: torch.Tensor,
@@ -112,7 +118,7 @@ def create_flash_attn_forward_varlen_llama3(
 
         # Handle sliding window
         use_sliding_windows = (
-            _flash_supports_window_size
+            _flash_supports_window
             and sliding_window is not None
             and key_states.shape[1] > sliding_window
         )

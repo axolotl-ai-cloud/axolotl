@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from datasets import Dataset
 
-import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
+import axolotl.monkeypatch.data.batch_dataset_fetcher  # noqa: F401
 from axolotl.cli.args import PreprocessCliArgs, TrainerCliArgs
 from axolotl.loaders import load_processor, load_tokenizer
 from axolotl.utils.data import prepare_datasets, prepare_preference_datasets
@@ -122,7 +122,7 @@ def load_preference_datasets(
             math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
         )
 
-    if (cli_args and cli_args.debug) or cfg.debug:
+    if ((cli_args and cli_args.debug) or cfg.debug) and cfg.rl != RLType.ORPO:
         LOG.info("check_dataset_labels...")
 
         num_examples = cli_args.debug_num_examples if cli_args else 1

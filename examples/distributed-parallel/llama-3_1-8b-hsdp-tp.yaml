@@ -1,0 +1,47 @@
+base_model: meta-llama/Llama-3.1-8B
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+dp_shard_size: 4
+dp_replicate_size: 2
+tensor_parallel_size: 2
+# context_parallel_size: 2
+
+dataset_prepared_path: last_run_prepared
+
+special_tokens:
+  pad_token: <|end_of_text|>
+
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  state_dict_type: FULL_STATE_DICT
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: LlamaDecoderLayer
+  reshard_after_forward: true
+
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+
+output_dir: ./outputs/ndp-out/
+
+sequence_len: 2048
+sample_packing: true
+flash_attention: true
+
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 2
+optimizer: adamw_torch_fused
+lr_scheduler: constant_with_warmup
+learning_rate: 2e-6
+
+bf16: true
+tf32: true
+
+logging_steps: 1
+saves_per_epoch: 1
+
+warmup_ratio: 0.1

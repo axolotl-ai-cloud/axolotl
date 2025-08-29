@@ -39,4 +39,4 @@ def _get_learning_rate(self):
 def patch_trainer_get_lr():
     from transformers.trainer import Trainer
 
-    Trainer._get_learning_rate = _get_learning_rate  # pylint: disable=protected-access
+    Trainer._get_learning_rate = _get_learning_rate

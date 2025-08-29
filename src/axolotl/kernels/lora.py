@@ -7,13 +7,12 @@ See "LoRA: Low-Rank Adaptation of Large Language Models"
 Credit to `unsloth` (https://unsloth.ai/) for inspiration for this implementation.
 """
 
-# pylint: disable=invalid-name
-
 from typing import Callable
 
 import torch
 from bitsandbytes.functional import QuantState
 from torch import nn
+from torch.distributed.tensor import DTensor
 
 from .geglu import geglu_backward, geglu_forward
 from .quantize import dequantize
@@ -25,6 +24,7 @@ def get_lora_parameters(
     proj: nn.Module,
 ) -> tuple[
     torch.Tensor,
+    torch.Tensor | None,
     QuantState | None,
     torch.Tensor | None,
     torch.Tensor | None,
@@ -37,39 +37,54 @@ def get_lora_parameters(
         proj: The projection module to extract parameters from.
 
     Returns:
-        A tuple containing the base weight matrix, quantization state, LoRA A matrix,
-        LoRA B matrix, and scaling factor. States and matrices may be None if not
-        available.
+        A tuple containing the base weights, quantization state, LoRA A and B weights,
+        scaling factor, and base layer bias. Quant state, weights, and bias may be
+        `None` if not available.
     """
     # For DPO or disabled adapters
     base_layer = proj.base_layer if hasattr(proj, "base_layer") else proj
     W = base_layer.weight
+    b = base_layer.bias
 
     if not hasattr(proj, "disable_adapters") or proj.disable_adapters or proj.merged:
         quant_state = getattr(W, "quant_state", None)
-        return W, quant_state, None, None, None
+        return W, b, quant_state, None, None, None
+
+    quant_state = getattr(W, "quant_state", None)
 
     active_adapter = (
         proj.active_adapters[0]
         if hasattr(proj, "active_adapters")
         else proj.active_adapter
     )
-    A = proj.lora_A[active_adapter].weight
-    B = proj.lora_B[active_adapter].weight
+
+    linear_A = proj.lora_A[active_adapter]
+    linear_B = proj.lora_B[active_adapter]
+
+    # This manual unsharding is needed for FSDP2 + LoRA kernels compatibility.
+    # We fuse linear layers + LoRA adapters calculations into a single
+    # torch.autograd.Function, bypassing the registered unshard / reshard behavior.
+    # Note that we don't apply resharding later in this module (it gets messy quickly),
+    # but LoRA parameters are generally small enough that this is not an issue.
+    if isinstance(linear_A.weight, DTensor):
+        linear_A.unshard()
+        linear_B.unshard()
+
+    A = linear_A.weight
+    B = linear_B.weight
     s = proj.scaling[active_adapter]
 
-    quant_state = getattr(W, "quant_state", None)
-
-    return W, quant_state, A, B, s
+    return W, b, quant_state, A, B, s
 
 
 def matmul_lora(
     X: torch.Tensor,
     W: torch.Tensor,
-    W_quant: QuantState,
-    A: torch.Tensor,
-    B: torch.Tensor,
-    s: float,
+    b: torch.Tensor | None,
+    W_quant: QuantState | None,
+    A: torch.Tensor | None,
+    B: torch.Tensor | None,
+    s: float | None,
     out: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """
@@ -90,20 +105,22 @@ def matmul_lora(
     dtype = X.dtype
     W = dequantize(W.t(), W_quant)
 
+    reshape = False
     if X.dim() == 3:
         batch, seq_len, _ = X.shape
         X = X.view(-1, X.shape[-1])
         reshape = True
-    else:
-        reshape = False
 
     out = torch.matmul(X, W, out=out)
     if W_quant is not None:
         del W
 
     if A is not None:
-        A, B = A.t(), B.t()
-        out += (X @ A.to(dtype)) @ (s * B.to(dtype))
+        A, B = A.t().to(dtype), B.t().to(dtype)  # type: ignore[union-attr]
+        out += s * X @ A @ B
+
+    if b is not None:
+        out += b
 
     return out.view(batch, seq_len, -1) if reshape else out
 
@@ -117,17 +134,20 @@ class LoRA_MLP(torch.autograd.Function):
         ctx,
         X: torch.Tensor,
         gate_weight: torch.Tensor,
-        gate_quant: object | None,
+        gate_bias: torch.Tensor | None,
+        gate_quant: QuantState | None,
         gate_A: torch.Tensor | None,
         gate_B: torch.Tensor | None,
         gate_scale: float,
         up_weight: torch.Tensor,
-        up_quant: object | None,
+        up_bias: torch.Tensor | None,
+        up_quant: QuantState | None,
         up_A: torch.Tensor | None,
         up_B: torch.Tensor | None,
         up_scale: float,
         down_weight: torch.Tensor,
-        down_quant: object | None,
+        down_bias: torch.Tensor | None,
+        down_quant: QuantState | None,
         down_A: torch.Tensor | None,
         down_B: torch.Tensor | None,
         down_scale: float,
@@ -142,20 +162,22 @@ class LoRA_MLP(torch.autograd.Function):
             ctx: Autograd context
             X: Input features
             gate_weight: Gate projection weight
+            gate_bias: Gate projection bias
             gate_quant: Gate quantization state
             gate_A: Gate LoRA A matrix
             gate_B: Gate LoRA B matrix
             gate_scale: Gate LoRA scale
-            up_weight: Up-projection weight
-            up_quant: Up-projection quantization state
-            up_A: Up-projection LoRA A matrix
-            up_B: Up-projection LoRA B matrix
-            up_scale: Up-projection LoRA scale
-            down_weight: Down-projection weight
-            down_quant: Down-projection quantization state
-            down_A: Down-projection LoRA A matrix
-            down_B: Down-projection LoRA B matrix
-            down_scale: Down-projection LoRA scale
+            up_weight: Up projection weight
+            up_quant: Up projection quantization state
+            up_A: Up projection LoRA A matrix
+            up_B: Up projection LoRA B matrix
+            up_scale: Up projection LoRA scale
+            down_weight: Down projection weight
+            down_bias: Down projection bias
+            down_quant: Down projection quantization state
+            down_A: Down projection LoRA A matrix
+            down_B: Down projection LoRA B matrix
+            down_scale: Down projection LoRA scale
             activation_fn: Forward activation function
             activation_fn_backward: Backward activation function
             inplace: Whether to perform operations in-place
@@ -164,15 +186,17 @@ class LoRA_MLP(torch.autograd.Function):
             Output transformed by multi-layer perceptron and activation function
         """
         # Compute projections
-        gate = matmul_lora(X, gate_weight, gate_quant, gate_A, gate_B, gate_scale)
-        up = matmul_lora(X, up_weight, up_quant, up_A, up_B, up_scale)
+        gate = matmul_lora(
+            X, gate_weight, gate_bias, gate_quant, gate_A, gate_B, gate_scale
+        )
+        up = matmul_lora(X, up_weight, up_bias, up_quant, up_A, up_B, up_scale)
 
         # Activation
         hidden = activation_fn(gate, up)
 
         # Down projection
         output = matmul_lora(
-            hidden, down_weight, down_quant, down_A, down_B, down_scale
+            hidden, down_weight, down_bias, down_quant, down_A, down_B, down_scale
         )
 
         # Save for backward
@@ -195,18 +219,22 @@ class LoRA_MLP(torch.autograd.Function):
         torch.Tensor | None,
         None,
         None,
-        torch.Tensor | None,
-        torch.Tensor | None,
-        None,
-        None,
         None,
         torch.Tensor | None,
         torch.Tensor | None,
         None,
         None,
         None,
+        None,
         torch.Tensor | None,
         torch.Tensor | None,
+        None,
+        None,
+        None,
+        None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        None,
         None,
         None,
         None,
@@ -222,7 +250,7 @@ class LoRA_MLP(torch.autograd.Function):
         Returns:
             Tuple containing gradients for all inputs from forward pass:
             - Input gradient tensor (or `None`)
-            - `None` for weights/quantization states
+            - `None` for weights/biases/quantization states
             - LoRA A/B matrix gradients (or `None`)
             - `None` for scaling factors
             - `None` for activation functions and flags
@@ -265,9 +293,10 @@ class LoRA_MLP(torch.autograd.Function):
         dtype = X.dtype
 
         # Down projection
-        DW = matmul_lora(
+        grad_down = matmul_lora(
             grad_output,
             down_weight.t(),
+            None,
             down_quant,
             down_B,
             down_A,
@@ -275,7 +304,7 @@ class LoRA_MLP(torch.autograd.Function):
         )
 
         # Activation backward
-        h, grad_gate, grad_up = ctx.activation_fn_backward(DW, gate, up)
+        h, grad_gate, grad_up = ctx.activation_fn_backward(grad_down, gate, up)
 
         # Initialize and compute LoRA gradients
         d_down_A = d_down_B = d_up_A = d_up_B = d_gate_A = d_gate_B = None
@@ -315,8 +344,8 @@ class LoRA_MLP(torch.autograd.Function):
                 dX += grad_up @ up_B.to(dtype).t() @ (up_scale * up_A.to(dtype).t())
 
             # Gate projection gradients
-            gate_weight = dequantize(gate_weight.t(), gate_quant)
-            dX += grad_gate @ gate_weight.t()
+            gate_weight = dequantize(gate_weight, gate_quant)
+            dX += grad_gate @ gate_weight
             del gate_weight
 
             if gate_A is not None and gate_B is not None:
@@ -334,8 +363,10 @@ class LoRA_MLP(torch.autograd.Function):
             dX,
             None,
             None,
+            None,
             d_gate_A.t() if d_gate_A is not None else None,
             d_gate_B.t() if d_gate_B is not None else None,
+            None,
             None,
             None,
             None,
@@ -344,8 +375,10 @@ class LoRA_MLP(torch.autograd.Function):
             None,
             None,
             None,
+            None,
             d_down_A.t() if d_down_A is not None else None,
             d_down_B.t() if d_down_B is not None else None,
+            None,
             None,
             None,
             None,
@@ -364,23 +397,26 @@ def apply_lora_mlp_swiglu(self, X: torch.Tensor, inplace: bool = True) -> torch.
     Returns:
         Output tensor after applying LoRA-adapted MLP with SwiGLU activation
     """
-    gateW, gateW_quant, gateA, gateB, gateS = get_lora_parameters(self.gate_proj)
-    upW, upW_quant, upA, upB, upS = get_lora_parameters(self.up_proj)
-    downW, downW_quant, downA, downB, downS = get_lora_parameters(self.down_proj)
+    gateW, gateb, gateW_quant, gateA, gateB, gateS = get_lora_parameters(self.gate_proj)
+    upW, upb, upW_quant, upA, upB, upS = get_lora_parameters(self.up_proj)
+    downW, downb, downW_quant, downA, downB, downS = get_lora_parameters(self.down_proj)
 
     out = LoRA_MLP.apply(
         X,
         gateW,
+        gateb,
         gateW_quant,
         gateA,
         gateB,
         gateS,
         upW,
+        upb,
         upW_quant,
         upA,
         upB,
         upS,
         downW,
+        downb,
         downW_quant,
         downA,
         downB,
@@ -404,22 +440,25 @@ def apply_lora_mlp_geglu(self, X: torch.Tensor, inplace: bool = True) -> torch.T
     Returns:
         Output tensor after applying LoRA-adapted MLP with GEGLU activation
     """
-    gateW, gateW_quant, gateA, gateB, gateS = get_lora_parameters(self.gate_proj)
-    upW, upW_quant, upA, upB, upS = get_lora_parameters(self.up_proj)
-    downW, downW_quant, downA, downB, downS = get_lora_parameters(self.down_proj)
+    gateW, gateb, gateW_quant, gateA, gateB, gateS = get_lora_parameters(self.gate_proj)
+    upW, upb, upW_quant, upA, upB, upS = get_lora_parameters(self.up_proj)
+    downW, downb, downW_quant, downA, downB, downS = get_lora_parameters(self.down_proj)
     out = LoRA_MLP.apply(
         X,
         gateW,
+        gateb,
         gateW_quant,
         gateA,
         gateB,
         gateS,
         upW,
+        upb,
         upW_quant,
         upA,
         upB,
         upS,
         downW,
+        downb,
         downW_quant,
         downA,
         downB,
@@ -446,16 +485,19 @@ class LoRA_QKV(torch.autograd.Function):
         ctx: torch.autograd.function.FunctionCtx,
         X: torch.Tensor,
         q_weight: torch.Tensor,
+        q_bias: torch.Tensor | None,
         q_quant: QuantState | None,
         q_A: torch.Tensor | None,
         q_B: torch.Tensor | None,
         q_scale: float,
         k_weight: torch.Tensor,
+        k_bias: torch.Tensor | None,
         k_quant: QuantState | None,
         k_A: torch.Tensor | None,
         k_B: torch.Tensor | None,
         k_scale: float,
         v_weight: torch.Tensor,
+        v_bias: torch.Tensor | None,
         v_quant: QuantState | None,
         v_A: torch.Tensor | None,
         v_B: torch.Tensor | None,
@@ -469,16 +511,19 @@ class LoRA_QKV(torch.autograd.Function):
             ctx: Autograd context
             X: Input tensor
             q_weight: Query projection weight
+            q_bias: Query projection bias
             q_quant: Query quantization state
             q_A: Query LoRA A matrix
             q_B: Query LoRA B matrix
             q_scale: Query LoRA scale
             k_weight: Key projection weight
+            k_bias: Key projection bias
             k_quant: Key quantization state
             k_A: Key LoRA A matrix
             k_B: Key LoRA B matrix
             k_scale: Key LoRA scale
             v_weight: Value projection weight
+            v_bias: Value projection bias
             v_quant: Value quantization state
             v_A: Value LoRA A matrix
             v_B: Value LoRA B matrix
@@ -488,20 +533,21 @@ class LoRA_QKV(torch.autograd.Function):
         Returns:
             Tuple of (Query, Key, Value) projection tensors
         """
-        Q = matmul_lora(X, q_weight, q_quant, q_A, q_B, q_scale)
-        K = matmul_lora(X, k_weight, k_quant, k_A, k_B, k_scale)
-        V = matmul_lora(X, v_weight, v_quant, v_A, v_B, v_scale)
+        Q = matmul_lora(X, q_weight, q_bias, q_quant, q_A, q_B, q_scale)
+        K = matmul_lora(X, k_weight, k_bias, k_quant, k_A, k_B, k_scale)
+        V = matmul_lora(X, v_weight, v_bias, v_quant, v_A, v_B, v_scale)
 
         ctx.save_for_backward(X, q_A, q_B, k_A, k_B, v_A, v_B)
         ctx.scales = (q_scale, k_scale, v_scale)
         ctx.quants = (q_quant, k_quant, v_quant)
         ctx.weights = (q_weight, k_weight, v_weight)
+        ctx.biases = (q_bias, k_bias, v_bias)
         ctx.inplace = inplace
 
         return Q, K, V
 
     @staticmethod
-    @torch_amp_custom_fwd
+    @torch_amp_custom_bwd
     def backward(
         ctx: torch.autograd.function.FunctionCtx,
         q_grad: torch.Tensor,
@@ -511,13 +557,16 @@ class LoRA_QKV(torch.autograd.Function):
         torch.Tensor,
         None,
         None,
+        None,
         torch.Tensor | None,
         torch.Tensor | None,
         None,
         None,
         None,
+        None,
         torch.Tensor | None,
         torch.Tensor | None,
+        None,
         None,
         None,
         None,
@@ -608,19 +657,17 @@ class LoRA_QKV(torch.autograd.Function):
         # Transpose gradients if needed
         if d_A_q is not None:
             d_A_q = d_A_q.t()
-        if d_B_q is not None:
-            d_B_q = d_B_q.t()
+            d_B_q = d_B_q.t()  # type: ignore[union-attr]
         if d_A_k is not None:
             d_A_k = d_A_k.t()
-        if d_B_k is not None:
-            d_B_k = d_B_k.t()
+            d_B_k = d_B_k.t()  # type: ignore[union-attr]
         if d_A_v is not None:
             d_A_v = d_A_v.t()
-        if d_B_v is not None:
-            d_B_v = d_B_v.t()
+            d_B_v = d_B_v.t()  # type: ignore[union-attr]
 
         return (
             grad_X.view(batch, seq_len, -1),
+            None,
             None,
             None,
             d_A_q,
@@ -628,8 +675,10 @@ class LoRA_QKV(torch.autograd.Function):
             None,
             None,
             None,
+            None,
             d_A_k,
             d_B_k,
+            None,
             None,
             None,
             None,
@@ -653,22 +702,25 @@ def apply_lora_qkv(
     Returns:
         Tuple of (Query, Key, Value) projection tensors
     """
-    QW, QW_quant, QA, QB, QS = get_lora_parameters(self.q_proj)
-    KW, KW_quant, KA, KB, KS = get_lora_parameters(self.k_proj)
-    VW, VW_quant, VA, VB, VS = get_lora_parameters(self.v_proj)
+    QW, Qb, QW_quant, QA, QB, QS = get_lora_parameters(self.q_proj)
+    KW, Kb, KW_quant, KA, KB, KS = get_lora_parameters(self.k_proj)
+    VW, Vb, VW_quant, VA, VB, VS = get_lora_parameters(self.v_proj)
     Q, K, V = LoRA_QKV.apply(
         X,
         QW,
+        Qb,
         QW_quant,
         QA,
         QB,
         QS,
         KW,
+        Kb,
         KW_quant,
         KA,
         KB,
         KS,
         VW,
+        Vb,
         VW_quant,
         VA,
         VB,
@@ -688,10 +740,11 @@ class LoRA_O(torch.autograd.Function):
         ctx: torch.autograd.function.FunctionCtx,
         X: torch.Tensor,
         W: torch.Tensor,
+        b: torch.Tensor,
         W_quant: QuantState | None,
-        A: torch.Tensor | None,
-        B: torch.Tensor | None,
-        S: float,
+        A: torch.Tensor,
+        B: torch.Tensor,
+        s: float,
     ) -> torch.Tensor:
         """
         Forward pass for output projection with LoRA.
@@ -700,19 +753,20 @@ class LoRA_O(torch.autograd.Function):
             ctx: Autograd context
             X: Input tensor
             W: Output projection weight
+            b: Output projection bias
             W_quant: Weight quantization state
             A: LoRA A matrix
             B: LoRA B matrix
-            S: LoRA scaling factor
+            s: LoRA scaling factor
 
         Returns:
-            Output projection tensor
+            Output projection result
         """
-        XW = matmul_lora(X, W, W_quant, A, B, S)
+        XW = matmul_lora(X, W, b, W_quant, A, B, s)
         ctx.custom_saved_tensors = (
             W,
             W_quant,
-            S,
+            s,
         )
         ctx.save_for_backward(A, B, X)
 
@@ -727,8 +781,9 @@ class LoRA_O(torch.autograd.Function):
         torch.Tensor,
         None,
         None,
-        torch.Tensor | None,
-        torch.Tensor | None,
+        None,
+        torch.Tensor,
+        torch.Tensor,
         None,
     ]:
         """
@@ -741,7 +796,7 @@ class LoRA_O(torch.autograd.Function):
         Returns:
             Tuple containing gradients for all forward inputs
         """
-        W, W_quant, S = ctx.custom_saved_tensors
+        W, W_quant, s = ctx.custom_saved_tensors
         A, B, X = ctx.saved_tensors
 
         batch, seq_len, hd = X.shape
@@ -751,17 +806,19 @@ class LoRA_O(torch.autograd.Function):
 
         # Weight projection
         dY_X = X.t() @ dY
-        d_A = S * dY_X @ B
-        d_B = S * A @ dY_X
+        d_A = s * dY_X @ B
+        d_B = s * A @ dY_X
 
         # Get derivative for dX
         W = dequantize(W.t(), W_quant)
         dX = dY @ W.t()
         del W
-        dX += dY @ B.to(dtype) @ (S * A.to(dtype))
 
-        # W, W_quant, A, B, S
-        return dX.view(batch, seq_len, hd), None, None, d_A.t(), d_B.t(), None
+        A, B = A.to(dtype), B.to(dtype)
+        dX += s * dY @ B @ A
+
+        # W, b, W_quant, A, B, s
+        return dX.view(batch, seq_len, hd), None, None, None, d_A.t(), d_B.t(), None
 
 
 def apply_lora_o(self, X: torch.Tensor) -> torch.Tensor:
@@ -774,7 +831,7 @@ def apply_lora_o(self, X: torch.Tensor) -> torch.Tensor:
     Returns:
         Transformed output tensor
     """
-    OW, OW_quant, OA, OB, OS = get_lora_parameters(self.o_proj)
-    output = LoRA_O.apply(X, OW, OW_quant, OA, OB, OS)
+    OW, Ob, OW_quant, OA, OB, OS = get_lora_parameters(self.o_proj)
+    output = LoRA_O.apply(X, OW, Ob, OW_quant, OA, OB, OS)
 
     return output
