@@ -108,7 +108,7 @@ Refer to [our docs](https://docs.axolotl.ai/docs/dataset-formats/conversation.ht
 
 ### Thinking and chat_template masking conflict
 
-OpenAI's Harmony template hides non-last turn's `thinking` content in which conflicts with our chat_template masking.
+OpenAI’s Harmony template hides `thinking` in all non-final turns, which conflicts with Axolotl’s `chat_template` masking.
 
 If your dataset has `thinking` content mid-turn, there are two paths we recommend:
 
