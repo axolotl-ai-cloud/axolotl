@@ -6,3 +6,4 @@ quartodoc
 jupyter
 blobfile
 tiktoken
+fbgemm-gpu-genai >= 1.2.0
