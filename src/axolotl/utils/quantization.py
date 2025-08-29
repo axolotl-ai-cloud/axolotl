@@ -41,8 +41,7 @@ def get_quantization_config(
     if activation_dtype is None:
         if weight_dtype == TorchAOQuantDType.int8:
             raise ValueError(
-                "Int8WeightOnlyConfig is not supported by torchao QAT. "
-                "Use Int8DynamicActivationInt4WeightConfig with activation_dtype=TorchAOQuantDType.int8 and weight_dtype=TorchAOQuantDType.int4 instead."
+                "Int8WeightOnlyConfig is not supported by torchao QAT."
             )
         if weight_dtype == TorchAOQuantDType.int4:
             return Int4WeightOnlyConfig(group_size=group_size or -1, version=2)
@@ -51,16 +50,14 @@ def get_quantization_config(
         and weight_dtype == TorchAOQuantDType.int4
     ):
         raise ValueError(
-            "Int4DynamicActivationInt4WeightConfig is not supported by torchao QAT. "
-            "Use Int8DynamicActivationInt4WeightConfig with activation_dtype=TorchAOQuantDType.int8 and weight_dtype=TorchAOQuantDType.int4 instead."
+            "Int4DynamicActivationInt4WeightConfig is not supported by torchao QAT."
         )
     if (
         activation_dtype == TorchAOQuantDType.int8
         and weight_dtype == TorchAOQuantDType.int8
     ):
         raise ValueError(
-            "Int8DynamicActivationInt8WeightConfig is not supported by torchao QAT. "
-            "Use Int8DynamicActivationInt4WeightConfig with activation_dtype=TorchAOQuantDType.int8 and weight_dtype=TorchAOQuantDType.int4 instead."
+            "Int8DynamicActivationInt8WeightConfig is not supported by torchao QAT."
         )
     if (
         activation_dtype == TorchAOQuantDType.int8
