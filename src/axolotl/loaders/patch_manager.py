@@ -3,6 +3,7 @@
 Applies pre- and post-model load patches for various fixes and optimizations.
 """
 
+import os
 import importlib.util
 from functools import cached_property
 
@@ -66,6 +67,7 @@ class PatchManager:
         self._apply_mistral_cross_entropy_patch()
         self._apply_self_attention_lora_patch()
         self._apply_fsdp2_bnb_patches()
+        self._apply_patch_deepspeed_zero3()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
@@ -471,3 +473,16 @@ class PatchManager:
             from axolotl.monkeypatch.lora_kernels import apply_lora_kernel_patches
 
             apply_lora_kernel_patches(model=model, cfg=self.cfg)
+
+    def _apply_patch_deepspeed_zero3(self):
+        try:
+            from axolotl.monkeypatch.deepspeed_utils import apply_deepspeed_patches
+            from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
+
+            if self.cfg.activation_offloading is True and (
+                is_deepspeed_zero3_enabled()
+                or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3"
+            ):
+                apply_deepspeed_patches()
+        except ImportError as e:
+            LOG.warning(f"DeepSpeed patches not applied: {e}")
