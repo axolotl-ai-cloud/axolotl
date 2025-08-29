@@ -46,3 +46,23 @@ class BasetenCloud(Cloud):
             subprocess.run(  # nosec B603 B607
                 ["truss", "train", "push", "train_sft.py"], cwd=tmp_dir, check=False
             )
+
+    def lm_eval(
+        self,
+        config_yaml: str,
+    ):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = self.config.copy()
+            with open(tmp_dir + "/cloud.yaml", "w", encoding="utf-8") as cloud_fout:
+                yaml.dump(config, cloud_fout)
+            with open(tmp_dir + "/eval.yaml", "w", encoding="utf-8") as config_fout:
+                config_fout.write(config_yaml)
+            shutil.copyfile(
+                dirname(__file__) + "/template/eval.sh", tmp_dir + "/eval.sh"
+            )
+            shutil.copyfile(
+                dirname(__file__) + "/template/eval_sft.py", tmp_dir + "/eval_sft.py"
+            )
+            subprocess.run(  # nosec B603 B607
+                ["truss", "train", "push", "eval_sft.py"], cwd=tmp_dir, check=False
+            )
