@@ -479,7 +479,7 @@ class PatchManager:
             from axolotl.monkeypatch.deepspeed_utils import apply_deepspeed_patches
             from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
-            if (
+            if self.cfg.activation_offloading is True and (
                 is_deepspeed_zero3_enabled()
                 or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3"
             ):
