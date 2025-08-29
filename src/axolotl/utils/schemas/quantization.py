@@ -16,11 +16,11 @@ class QATConfig(BaseModel):
 
     activation_dtype: TorchIntDType | None = Field(
         default=None,
-        description='Fake quantization layout to use for activation quantization. Valid options are "int4" and "int8"',
+        description='Fake quantization layout to use for activation quantization. Valid options are "int4", "int8", and "nvfp4"',
     )
     weight_dtype: TorchIntDType = Field(
         default=TorchIntDType.int8,
-        description='Fake quantization layout to use for weight quantization. Valid options are "int4" and "int8"',
+        description='Fake quantization layout to use for weight quantization. Valid options are "int4", "int8", and "nvfp4"',
     )
     quantize_embedding: bool | None = Field(
         default=False, description="Quantize embedding"
@@ -40,7 +40,9 @@ class QATConfig(BaseModel):
             return TorchIntDType.int4
         if v == "int8":
             return TorchIntDType.int8
-        raise ValueError(f"Invalid dtype: '{v}'. Must be one of: ['int4', 'int8']")
+        if v == "nvfp4":
+            return TorchIntDType.nvfp4
+        raise ValueError(f"Invalid dtype: '{v}'. Must be one of: ['int4', 'int8', 'nvfp4']")
 
 
 class PTQConfig(BaseModel):
@@ -71,4 +73,6 @@ class PTQConfig(BaseModel):
             return TorchIntDType.int4
         if v == "int8":
             return TorchIntDType.int8
-        raise ValueError(f"Invalid dtype: '{v}'. Must be one of: ['int4', 'int8']")
+        if v == "nvfp4":
+            return TorchIntDType.nvfp4
+        raise ValueError(f"Invalid dtype: '{v}'. Must be one of: ['int4', 'int8', 'nvfp4']")
