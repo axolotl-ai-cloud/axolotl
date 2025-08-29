@@ -64,6 +64,7 @@ langdetect==1.0.9
 immutabledict==4.2.0
 antlr4-python3-runtime==4.13.2
 
+--extra-index-url https://download.pytorch.org/whl/cu118
 torchao==0.13.0
 schedulefree==1.4.1
 
