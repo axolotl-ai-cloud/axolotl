@@ -356,7 +356,6 @@ class ModelLoader:
 
             prepare_model_for_qat(
                 self.model,
-                "prepare",
                 self.cfg.qat.weight_dtype,
                 self.cfg.qat.group_size,
                 self.cfg.qat.activation_dtype,

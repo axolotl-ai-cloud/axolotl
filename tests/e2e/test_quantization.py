@@ -221,7 +221,6 @@ class TestQuantization:
     ):
         prepare_model_for_qat(
             model,
-            "prepare",
             weight_dtype,
             group_size,
             activation_dtype,
@@ -266,7 +265,6 @@ class TestQuantization:
         # quantize model for qat
         prepare_model_for_qat(
             model,
-            "prepare",
             config.weight_dtype,
             config.group_size,
             config.activation_dtype,
@@ -313,7 +311,6 @@ class TestQuantizationCallback:
 
         prepare_model_for_qat(
             model,
-            "prepare",
             cfg.weight_dtype,
             cfg.group_size,
             cfg.activation_dtype,
@@ -364,7 +361,6 @@ class TestQuantizationCallback:
 
         prepare_model_for_qat(
             model,
-            "prepare",
             cfg.weight_dtype,
             cfg.group_size,
             cfg.activation_dtype,
