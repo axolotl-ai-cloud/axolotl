@@ -39,11 +39,6 @@ def get_quantization_config(
             or if the group size is not specified for int8 or int4 weight only quantization.
     """
     if activation_dtype is None:
-        if not weight_dtype.value.is_signed:  # type: ignore[attr-defined,union-attr]
-            raise ValueError(
-                f"UIntXWeightOnlyConfig with {weight_dtype} is not supported by torchao QAT. "
-                f"Use Int4WeightOnlyConfig with TorchAOQuantDType.int4 instead."
-            )
         if weight_dtype == TorchAOQuantDType.int8:
             raise ValueError(
                 "Int8WeightOnlyConfig is not supported by torchao QAT. "
@@ -112,6 +107,7 @@ def quantize_model(
     )
     quantize_(model, linear_ptq_config)
     if quantize_embedding:
+        # activation fake quantization is not supported for embedding layers
         embedding_quantize_config = get_quantization_config(
             weight_dtype=weight_dtype,
             activation_dtype=None,
