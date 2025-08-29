@@ -118,7 +118,7 @@ ring-flash-attn = [
 
 # Deep learning frameworks
 deepspeed = [
-    "deepspeed>=0.17.0",  # Allow newer versions
+    "deepspeed>=0.17.5",
     "deepspeed-kernels",
 ]
 
