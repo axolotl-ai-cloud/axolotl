@@ -485,6 +485,4 @@ class PatchManager:
             ):
                 apply_deepspeed_patches()
         except ImportError as e:
-            LOG.warning(
-                f"DeepSpeed patches not applied: {e}"
-            )
+            LOG.warning(f"DeepSpeed patches not applied: {e}")
