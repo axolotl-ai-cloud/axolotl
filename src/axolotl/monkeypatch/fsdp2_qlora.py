@@ -15,7 +15,6 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
-# pylint: disable=protected-access
 def apply_init_sharded_param_patch():
     """Apply patch to FSDPParam._init_sharded_param to support Params4bit."""
     from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
@@ -66,14 +65,14 @@ def apply_init_sharded_param_patch():
             if item in patched_source:
                 items_to_import.append(item)
 
-        exec(  # pylint: disable=exec-used  # nosec B102
+        exec(  # nosec B102
             f"from {module_name} import ({', '.join(items_to_import)})",
             globals(),
         )
-        exec(patched_source, globals())  # pylint: disable=exec-used  # nosec B102
+        exec(patched_source, globals())  # nosec B102
 
         # Replace the method
-        FSDPParam._init_sharded_param = patched_init_sharded_param  # pylint: disable=undefined-variable  # noqa: F821
+        FSDPParam._init_sharded_param = patched_init_sharded_param
         LOG.info("Successfully applied FSDP _init_sharded_param patch")
     else:
         LOG.warning("Could not find target code for _init_sharded_param patching")
@@ -131,14 +130,14 @@ def apply_init_unsharded_param_patch():
             if item in patched_source:
                 items_to_import.append(item)
 
-        exec(  # pylint: disable=exec-used  # nosec B102
+        exec(  # nosec B102
             f"from {module_name} import ({', '.join(items_to_import)})",
             globals(),
         )
-        exec(patched_source, globals())  # pylint: disable=exec-used  # nosec B102
+        exec(patched_source, globals())  # nosec B102
 
         # Replace the method
-        FSDPParam.init_unsharded_param = patched_init_unsharded_param  # pylint: disable=undefined-variable  # noqa: F821
+        FSDPParam.init_unsharded_param = patched_init_unsharded_param
         LOG.info("Successfully applied FSDP init_unsharded_param patch")
     else:
         LOG.warning("Could not find target code for patching")

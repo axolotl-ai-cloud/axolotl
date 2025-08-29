@@ -496,7 +496,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 return max(estimates)
 
             sample_packing_actual_eff_all = reduce_and_broadcast(
-                lambda: sampler.efficiency(),  # pylint: disable=unnecessary-lambda
+                lambda: sampler.efficiency(),
                 calc_sample_packing_eff_est,
             )
             sample_packing_eff_est = (

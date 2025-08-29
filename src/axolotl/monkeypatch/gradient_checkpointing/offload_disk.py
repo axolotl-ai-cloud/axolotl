@@ -62,9 +62,9 @@ class DiskOffloadManager:
 
         # Track tensor paths and their status
         self.tensor_paths: deque = deque()  # Ordered history of tensor paths (LIFO)
-        self.file_locks: Dict[str, threading.Lock] = (
-            {}
-        )  # Maps file_path -> threading.Lock()
+        self.file_locks: Dict[
+            str, threading.Lock
+        ] = {}  # Maps file_path -> threading.Lock()
         # Maps file_path -> status ("saving", "ready", "prefetching", "loaded", "deleted")
         self.file_status: Dict[str, str] = {}
 
@@ -236,7 +236,7 @@ class DiskOffloadManager:
             self.tensor_paths.append(file_path)
 
         # Acquire semaphore to limit concurrent save operations
-        self.save_semaphore.acquire()  # pylint: disable=consider-using-with
+        self.save_semaphore.acquire()
         # Queue tensor for saving in background
         self.save_queue.put((tensor.detach(), file_path))
 

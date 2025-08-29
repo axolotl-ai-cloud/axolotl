@@ -44,7 +44,7 @@ def retry_on_request_exceptions(
 
     def decorator(func):
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):  # pylint: disable=inconsistent-return-statements
+        def wrapper(*args, **kwargs):
             for attempt in range(max_retries):
                 try:
                     return func(*args, **kwargs)

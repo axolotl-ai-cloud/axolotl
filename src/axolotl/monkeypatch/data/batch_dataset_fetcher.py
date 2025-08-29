@@ -1,7 +1,5 @@
 """Monkey patches for the dataset fetcher to handle batches of packed indexes."""
 
-# pylint: disable=protected-access
-
 import torch
 from torch.utils.data._utils.fetch import _BaseDatasetFetcher
 from torch.utils.data._utils.worker import _worker_loop

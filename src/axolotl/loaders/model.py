@@ -102,7 +102,7 @@ class ModelLoader:
         *,
         inference: bool = False,
         reference_model: bool = False,
-        **kwargs,  # pylint: disable=unused-argument
+        **kwargs,
     ):
         """Initializes the ModelLoader.
 
@@ -134,7 +134,7 @@ class ModelLoader:
 
         # Init model config
         self.model_config = load_model_config(cfg)
-        self.auto_model_loader = AutoModelForCausalLM  # pylint: disable=invalid-name
+        self.auto_model_loader = AutoModelForCausalLM
 
         # Initialize the patch manager
         self.patch_manager = PatchManager(
@@ -607,27 +607,19 @@ class ModelLoader:
             self.model_kwargs["attn_implementation"] = self.cfg.attn_implementation
         elif self.cfg.flex_attention:
             self.model_kwargs["attn_implementation"] = "flex_attention"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "flex_attention"
-            )
+            self.model_config._attn_implementation = "flex_attention"
 
         elif self.cfg.flash_attention:
             if not self.cfg.sample_packing and self.cfg.s2_attention:
                 pass
             self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "flash_attention_2"
-            )
+            self.model_config._attn_implementation = "flash_attention_2"
         elif self.cfg.sdp_attention:
             self.model_kwargs["attn_implementation"] = "sdpa"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "sdpa"
-            )
+            self.model_config._attn_implementation = "sdpa"
         elif self.cfg.eager_attention:
             self.model_kwargs["attn_implementation"] = "eager"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "eager"
-            )
+            self.model_config._attn_implementation = "eager"
 
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True
@@ -767,7 +759,7 @@ class ModelLoader:
                 )
         elif self.model_type == "MambaLMHeadModel":
             # FIXME this is janky at best and hacked together to make it work
-            MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name
+            MambaLMHeadModel = fix_mamba_attn_for_loss()
 
             self.model_kwargs["dtype"] = self.model_kwargs["torch_dtype"]
             self.model_kwargs["device"] = torch.cuda.current_device()
@@ -816,7 +808,6 @@ class ModelLoader:
         if is_deepspeed_zero3_enabled():
             skip_move_to_device = True
 
-        # pylint: disable=protected-access
         if self.cfg.tensor_parallel_size > 1:
             # workaround for upstream 4.54.0 not setting _tp_size or _device_mesh
             # TODO(wing): remove once 4.54.1 is released
