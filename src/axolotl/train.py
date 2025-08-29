@@ -237,7 +237,7 @@ def save_trained_model(
             quantize_embedding=cfg.qat.quantize_embedding,
         )
         LOG.info(
-            "QAT usage note: please ensure you quantize your model fine-tuned using QAT by running `axolotl quantize`" 
+            "QAT usage note: please ensure you quantize your model fine-tuned using QAT by running `axolotl quantize`"
             " with the same config which you used for training."
         )
     # Handle ReLoRA early return case
@@ -482,7 +482,9 @@ def handle_untrained_tokens_fix(
         )
 
 
-def setup_model_and_trainer(cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> tuple[
+def setup_model_and_trainer(
+    cfg: DictDefault, dataset_meta: TrainDatasetMeta
+) -> tuple[
     "HFRLTrainerBuilder" | "HFCausalTrainerBuilder",
     PeftModel | PreTrainedModel,
     PreTrainedTokenizer,

@@ -5,7 +5,7 @@ CLI to post-training quantize a model using torchao
 from pathlib import Path
 from typing import Union
 
-from transformers import AutoModelForCausalLM, TorchAoConfig
+from transformers import AutoModelForCausalLM, TorchAoConfig, AutoConfig
 
 from axolotl.cli.config import load_cfg
 from axolotl.loaders import load_tokenizer
@@ -65,8 +65,9 @@ def do_quantize(
     LOG.info(f"Loading model from {model_path}...")
     tokenizer = load_tokenizer(cfg)
     config = AutoConfig.from_pretrained(model_path)
+    torch_dtype = config.torch_dtype if hasattr(config, "torch_dtype") else None
     model = AutoModelForCausalLM.from_pretrained(
-        model_path, device_map="auto", torch_dtype=config.torch_dtype
+        model_path, device_map="auto", torch_dtype=torch_dtype
     )
 
     LOG.info(
@@ -82,7 +83,7 @@ def do_quantize(
     )
 
     quantization_config = TorchAoConfig(
-        get_quantization_config(weight_dtype, group_size, activation_dtype),
+        get_quantization_config(weight_dtype, activation_dtype, group_size),
         include_input_output_embeddings=quantize_embedding,
     )
     model.quantization_config = quantization_config

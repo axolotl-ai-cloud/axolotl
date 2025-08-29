@@ -3,25 +3,16 @@ Utilities for quantization including QAT and PTQ using torchao.
 """
 
 import torch
-from torch import nn
 from torchao.core.config import AOBaseConfig
 from torchao.quantization import quantize_
 from torchao.quantization.qat import (
-    FakeQuantizeConfig,
-    FromIntXQuantizationAwareTrainingConfig,
-    IntXQuantizationAwareTrainingConfig,
     QATConfig,
 )
 from torchao.quantization.quant_api import (
-    _is_linear,
     Float8DynamicActivationFloat8WeightConfig,
     Float8DynamicActivationInt4WeightConfig,
-    Int4DynamicActivationInt4WeightConfig,
     Int4WeightOnlyConfig,
     Int8DynamicActivationInt4WeightConfig,
-    Int8DynamicActivationInt8WeightConfig,
-    Int8WeightOnlyConfig,
-    UIntXWeightOnlyConfig,
 )
 
 from axolotl.utils.schemas.enums import TorchAOQuantDType
@@ -55,8 +46,8 @@ def get_quantization_config(
             )
         if weight_dtype == TorchAOQuantDType.int8:
             raise ValueError(
-                f"Int8WeightOnlyConfig is not supported by torchao QAT. "
-                f"Use Int8DynamicActivationInt4WeightConfig with activation_dtype=TorchAOQuantDType.int8 and weight_dtype=TorchAOQuantDType.int4 instead."
+                "Int8WeightOnlyConfig is not supported by torchao QAT. "
+                "Use Int8DynamicActivationInt4WeightConfig with activation_dtype=TorchAOQuantDType.int8 and weight_dtype=TorchAOQuantDType.int4 instead."
             )
         if weight_dtype == TorchAOQuantDType.int4:
             return Int4WeightOnlyConfig(group_size=group_size or -1, version=2)
@@ -65,16 +56,16 @@ def get_quantization_config(
         and weight_dtype == TorchAOQuantDType.int4
     ):
         raise ValueError(
-            f"Int4DynamicActivationInt4WeightConfig is not supported by torchao QAT. "
-            f"Use Int8DynamicActivationInt4WeightConfig with activation_dtype=TorchAOQuantDType.int8 and weight_dtype=TorchAOQuantDType.int4 instead."
+            "Int4DynamicActivationInt4WeightConfig is not supported by torchao QAT. "
+            "Use Int8DynamicActivationInt4WeightConfig with activation_dtype=TorchAOQuantDType.int8 and weight_dtype=TorchAOQuantDType.int4 instead."
         )
     if (
         activation_dtype == TorchAOQuantDType.int8
         and weight_dtype == TorchAOQuantDType.int8
     ):
         raise ValueError(
-            f"Int8DynamicActivationInt8WeightConfig is not supported by torchao QAT. "
-            f"Use Int8DynamicActivationInt4WeightConfig with activation_dtype=TorchAOQuantDType.int8 and weight_dtype=TorchAOQuantDType.int4 instead."
+            "Int8DynamicActivationInt8WeightConfig is not supported by torchao QAT. "
+            "Use Int8DynamicActivationInt4WeightConfig with activation_dtype=TorchAOQuantDType.int8 and weight_dtype=TorchAOQuantDType.int4 instead."
         )
     if (
         activation_dtype == TorchAOQuantDType.int8
@@ -153,15 +144,14 @@ def prepare_model_for_qat(
         quantize_embedding: Whether to quantize the model's embedding weights.
 
     Raises:
-        ValueError: If the activation/weight dtype combination is invalid, or step
-            is not one of "prepare" or "convert".
+        ValueError: If the activation/weight dtype combination is invalid.
     """
     base_config = get_quantization_config(
         weight_dtype=weight_dtype,
         activation_dtype=activation_dtype,
-        group_size=group_size,L:e
+        group_size=group_size,
     )
-    qat_config = QATConfig(base_config, step=step)
+    qat_config = QATConfig(base_config)
     quantize_(model, qat_config)
     if quantize_embedding:
         # activation fake quantization is not supported for embedding layers
@@ -170,7 +160,7 @@ def prepare_model_for_qat(
             activation_dtype=None,
             group_size=group_size,
         )
-        embedding_qat_config = QATConfig(embedding_base_config, step=step)
+        embedding_qat_config = QATConfig(embedding_base_config)
         quantize_(
             model,
             embedding_qat_config,

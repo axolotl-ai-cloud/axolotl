@@ -85,7 +85,13 @@ ptq_test_cases = [
     # weight_dtype, activation_dtype, group_size, quantize_embedding, expected_exception
     (TorchAOQuantDType.int4, None, 4, True, None),
     (TorchAOQuantDType.int4, TorchAOQuantDType.int8, 8, False, None),
-    (TorchAOQuantDType.float8_e4m3fn, TorchAOQuantDType.float8_e4m3fn, None, False, None),
+    (
+        TorchAOQuantDType.float8_e4m3fn,
+        TorchAOQuantDType.float8_e4m3fn,
+        None,
+        False,
+        None,
+    ),
     (TorchAOQuantDType.int4, TorchAOQuantDType.float8_e4m3fn, None, True, None),
     (
         TorchAOQuantDType.int4,
@@ -94,28 +100,28 @@ ptq_test_cases = [
         False,
         ValueError,
     ),
-    # Deprecated configs 
+    # Deprecated configs
     (
         TorchAOQuantDType.int8,
         None,
         8,
         False,
         ValueError,
-    ), 
+    ),
     (
         TorchAOQuantDType.int4,
         TorchAOQuantDType.int4,
         8,
         False,
         ValueError,
-    ),  
+    ),
     (
         TorchAOQuantDType.int8,
         TorchAOQuantDType.int8,
         8,
         True,
         ValueError,
-    ),  
+    ),
 ]
 
 
@@ -185,11 +191,13 @@ class TestQuantization:
                     if activation_dtype:
                         assert isinstance(
                             child.weight, LinearActivationQuantizedTensor
-                        ), "Linear weight should be quantized with activation quantization"
+                        ), (
+                            "Linear weight should be quantized with activation quantization"
+                        )
                     else:
-                        assert isinstance(
-                            child.weight, AffineQuantizedTensor
-                        ), "Linear weight should be quantized without activation quantization"
+                        assert isinstance(child.weight, AffineQuantizedTensor), (
+                            "Linear weight should be quantized without activation quantization"
+                        )
 
     @pytest.mark.parametrize(
         "weight_dtype,activation_dtype,group_size,quantize_embedding",
@@ -198,7 +206,12 @@ class TestQuantization:
             (TorchAOQuantDType.int4, None, 16, True),
             (TorchAOQuantDType.int4, TorchAOQuantDType.int8, 8, False),
             (TorchAOQuantDType.int4, TorchAOQuantDType.int8, 16, True),
-            (TorchAOQuantDType.float8_e4m3fn, TorchAOQuantDType.float8_e4m3fn, None, False),
+            (
+                TorchAOQuantDType.float8_e4m3fn,
+                TorchAOQuantDType.float8_e4m3fn,
+                None,
+                False,
+            ),
             (TorchAOQuantDType.int4, TorchAOQuantDType.float8_e4m3fn, None, True),
         ],
     )
