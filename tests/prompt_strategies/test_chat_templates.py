@@ -149,14 +149,20 @@ class TestAssistantChatTemplateLlama3:
             1781, 26966, 32007,  # assistant eot
         ]
         expected_labels = [
-            -100,  # user
-            -100, -100,  # user eot
-            -100,  # assistant
-            -100, -100,  # assistant eot,
-            -100,  # user
-            -100, -100, -100,  # user eot
-            -100,  # assistant
-            1781, 26966, 32007,  # assistant eot
+            32010,  # user
+            -100,   # user  (masked)
+            32007,  # user eot
+            32001,  # assistant
+            22172,  # assistant
+            32007,  # assistant eot
+            32010,  # user
+            -100,   # user content (masked)
+            -100,   # user content continued (masked)
+            32007,  # user eot
+            32001,  # assistant
+            1781,   # assistant
+            26966,  # assistant
+            32007,  # assistant eot
         ]
         # fmt: on
         LOG.debug(f"Expected input_ids: {expected_input_ids}")
