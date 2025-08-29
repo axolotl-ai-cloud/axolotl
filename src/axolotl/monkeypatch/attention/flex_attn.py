@@ -1,11 +1,12 @@
 """Flex attention monkey patch"""
 
 import sys
+from packaging import version
 from typing import Optional, Tuple, Union
 
 import torch
 import transformers
-
+from transformers.utils.import_utils import _torch_version, is_torch_less_or_equal
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -46,19 +47,25 @@ def patch_flex_wrapper(**flex_attn_compile_kwargs):
             """
             self.training = None
             if not self._is_flex_compiled or training != self.training:
+                self.training = training
+                if is_torch_less_or_equal("2.5.1"):
+                    self._compiled_flex_attention = torch.compile(
+                        flex_attention, dynamic=False
+                    )
                 # In PyTorch 2.6.0, there's a known issue with flex attention compilation which may
                 # cause errors. The suggested fix is to compile with "max-autotune-no-cudagraphs"
                 # see https://github.com/pytorch/pytorch/issues/146260 for training
-                self.training = training
-                LOG.info(
-                    "Compiling flex attention with kwargs: %s. This may take a while...",
-                    flex_attn_compile_kwargs,
-                )
-                self._compiled_flex_attention = torch.compile(
-                    flex_attention,
-                    **flex_attn_compile_kwargs,
-                )
-                LOG.info("Flex attention compiled successfully.")
+                elif version.parse(_torch_version).base_version == "2.6.0" and training:
+                    self._compiled_flex_attention = torch.compile(
+                        flex_attention, dynamic=False, mode="max-autotune-no-cudagraphs"
+                    )
+                # Fallback, usually the most recent torch 2.7.x+ versions
+                else:
+                    self._compiled_flex_attention = torch.compile(
+                        flex_attention,
+                        **flex_attn_compile_kwargs,
+                    )
+
                 self._is_flex_compiled = True
 
         def __call__(self):
