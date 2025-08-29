@@ -7,6 +7,7 @@ All configuration is now in pyproject.toml.
 from setuptools import setup
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 from setuptools import find_packages, setup
 
 
@@ -181,6 +182,7 @@ setup(
     extras_require=extras_require_build,
 )
 =======
+=======
+>>>>>>> 7212dc6c (rebase)
 if __name__ == "__main__":
     setup()
->>>>>>> 01544ca0 (wip)
