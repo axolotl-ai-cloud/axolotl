@@ -547,6 +547,15 @@ def setup_deepspeed_env(cfg, stage=None):
         if stage == 3:
             os.environ["ACCELERATE_DEEPSPEED_ZERO3_INIT"] = "true"
 
+    device_count = torch.cuda.device_count()
+    if device_count == 1:
+        if "WORLD_SIZE" not in os.environ:
+            os.environ["WORLD_SIZE"] = "1"
+            os.environ["LOCAL_RANK"] = "0"
+        if "MASTER_ADDR" not in os.environ:
+            os.environ["MASTER_ADDR"] = "0.0.0.0"  # nosec B104
+            os.environ["MASTER_PORT"] = "29500"
+
     # NOTE(djsaunde): The distribued state cannot be initialized prior to the
     # ACCELERATE_USE_DEEPSPEED assignment, but it must be initialized some time prior
     # to model load.
