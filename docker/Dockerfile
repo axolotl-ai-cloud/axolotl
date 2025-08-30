@@ -26,8 +26,8 @@ RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
     else \
         uv pip install --no-build-isolation -e .[deepspeed,flash-attn,ring-flash-attn,optimizers,ray] $AXOLOTL_ARGS; \
     fi && \
-    python scripts/unsloth_install.py --uv | sh && \
-    python scripts/cutcrossentropy_install.py --uv | sh && \
+    python scripts/unsloth_install.py | sh && \
+    python scripts/cutcrossentropy_install.py | sh && \
     uv pip install pytest
 
 # fix so that git fetch/pull from remote works with shallow clone
