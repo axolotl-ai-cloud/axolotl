@@ -35,9 +35,7 @@ else:
     torch_cuda_amp_custom_bwd = torch.amp.custom_bwd(device_type="cuda")
 
 
-class CPU_Offloaded_Gradient_Checkpointer(  # pylint: disable=invalid-name
-    torch.autograd.Function
-):
+class CPU_Offloaded_Gradient_Checkpointer(torch.autograd.Function):
     """
     Saves VRAM by smartly offloading to RAM.
     Tiny hit to performance, since we mask the movement via non blocking calls.
@@ -66,6 +64,4 @@ class CPU_Offloaded_Gradient_Checkpointer(  # pylint: disable=invalid-name
         return (
             None,
             hidden_states.grad,
-        ) + (
-            None,
-        ) * len(ctx.args)
+        ) + (None,) * len(ctx.args)

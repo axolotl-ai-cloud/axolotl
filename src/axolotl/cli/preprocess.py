@@ -73,7 +73,7 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
                     AutoModelForCausalLM.from_pretrained(
                         model_name, trust_remote_code=True
                     )
-                except Exception as exc:  # pylint: disable=broad-exception-caught,unused-variable  # nosec B110  # noqa F841
+                except Exception:  # nosec B110
                     pass
                 # fmt: on
 
@@ -95,7 +95,7 @@ def do_cli(
         config: Path to `axolotl` config YAML file.
         kwargs: Additional keyword arguments to override config file values.
     """
-    # pylint: disable=duplicate-code
+
     os.environ["AXOLOTL_IS_PREPROCESS"] = "1"
     is_preprocess = kwargs.pop("is_preprocess", True)
     parsed_cfg = load_cfg(config, is_preprocess=is_preprocess, **kwargs)

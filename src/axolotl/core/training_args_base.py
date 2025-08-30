@@ -14,7 +14,6 @@ class AxolotlTrainingMixins:
     Mixin class for the Axolotl training args.
     """
 
-    # pylint: disable=duplicate-code
     model_type: Optional[str] = field(
         default=None, metadata={"help": "HF model configuration model_type."}
     )
@@ -49,6 +48,12 @@ class AxolotlTrainingMixins:
     multipack_real_batches: bool = field(
         default=False,
         metadata={"help": "Use real batches for efficient training."},
+    )
+    include_tkps: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to include tokens per second in the training metrics."
+        },
     )
     eval_sample_packing: Optional[bool] = field(
         default=None,

@@ -39,7 +39,7 @@ class AlpacaChatPrompter(AlpacaPrompter):
     system_prompt = "Below is an instruction from a USER that describes a task, paired with an input that provides further context. The ASSISTANT writes a response that concisely and appropriately completes the request.\n\n"
     system_no_input_prompt = "Below is an instruction from a USER that describes a task. The ASSISTANT writes a response that appropriately and concisely completes the request.\n\n"
 
-    def __init__(self):  # pylint: disable=super-init-not-called
+    def __init__(self):
         self.prompt_style = PromptStyle.CHAT.value
         self.match_prompt_style()
 
@@ -54,7 +54,7 @@ class NoSystemPrompter(AlpacaPrompter):
     turn_format = "{instruction} {input} "
     turn_no_input_format = "{instruction} "
 
-    def __init__(self):  # pylint: disable=super-init-not-called
+    def __init__(self):
         pass
 
 

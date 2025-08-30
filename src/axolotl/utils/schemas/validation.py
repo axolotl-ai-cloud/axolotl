@@ -1,7 +1,5 @@
 """Module with validation methods for config pydantic model."""
 
-# pylint: disable=too-many-boolean-expressions
-
 import json
 import sys
 import tempfile
@@ -16,7 +14,6 @@ from transformers.utils.import_utils import is_torch_npu_available
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
 
-# pylint: disable=too-many-lines
 
 LOG = get_logger(__name__)
 
@@ -346,7 +343,6 @@ class TrainingValidationMixin:
     @model_validator(mode="after")
     def check_fft_possible_bad_config(self):
         if (
-            # pylint: disable=too-many-boolean-expressions
             not (self.bf16 or self.bfloat16)
             and (self.fp16 or self.float16)
             and not self.adapter
@@ -460,12 +456,12 @@ class TrainingValidationMixin:
     @classmethod
     def check_mistral_common_import(cls, tokenizer_use_mistral_common):
         if tokenizer_use_mistral_common:
-            try:
-                import mistral_common  # noqa: F401 # pylint:disable=unused-import
-            except ImportError as exception:
+            import importlib.util
+
+            if importlib.util.find_spec("mistral_common") is None:
                 raise ImportError(
                     "mistral-common is required for mistral models. Please install it with `pip install axolotl` or `pip install -e .`."
-                ) from exception
+                )
 
         return tokenizer_use_mistral_common
 
@@ -685,7 +681,7 @@ class RLValidationMixin:
         # TODO: SalmanMohammadi
         # Distributed RL with QLoRA + gradient checkpointing
         # and use_reentrant = True is broken upstream in TRL
-        # pylint: disable=too-many-boolean-expressions
+
         if (
             data.get("rl")
             and data.get("gradient_checkpointing")
@@ -1252,26 +1248,19 @@ class ComplexValidationMixin:
                 import transformers.modeling_flash_attention_utils
                 from transformers.utils import is_flash_attn_greater_or_equal
 
-                # pylint: disable=protected-access
                 transformers.modeling_flash_attention_utils._flash_supports_window = (
                     True
                 )
-                setattr(
-                    sys.modules["transformers.modeling_flash_attention_utils"],
-                    "_flash_supports_window",
-                    True,
-                )
-                setattr(
-                    sys.modules["transformers.modeling_flash_attention_utils"],
-                    "_flash_supports_window_size",
-                    True,
-                )
-                setattr(
-                    sys.modules["transformers.modeling_flash_attention_utils"],
-                    "is_flash_attn_greater_or_equal",
-                    is_flash_attn_greater_or_equal,
-                )
-                import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
+                sys.modules[
+                    "transformers.modeling_flash_attention_utils"
+                ]._flash_supports_window = True
+                sys.modules[
+                    "transformers.modeling_flash_attention_utils"
+                ]._flash_supports_window_size = True
+                sys.modules[
+                    "transformers.modeling_flash_attention_utils"
+                ].is_flash_attn_greater_or_equal = is_flash_attn_greater_or_equal
+                import ring_flash_attn  # noqa: F401  # Required after monkey-patching
             except ImportError as exception:
                 raise ImportError(
                     "context_parallel_size > 1 but ring_flash_attn is not installed. "
@@ -1336,7 +1325,6 @@ class GRPOVllmValidationMixin:
         return self
 
 
-# pylint: disable=too-many-ancestors
 class ValidationMixin(
     DatasetValidationMixin,
     AttentionValidationMixin,

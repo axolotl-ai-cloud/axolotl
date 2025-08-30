@@ -156,9 +156,9 @@ class ProcessingStrategy:
                 image_value = load_image(image_value)
 
                 if self.image_size is not None:
-                    assert hasattr(
-                        image_value, "resize"
-                    ), "Image does not have a resize method"
+                    assert hasattr(image_value, "resize"), (
+                        "Image does not have a resize method"
+                    )
 
                     if isinstance(self.image_size, tuple):
                         image_value = image_value.resize(

@@ -1,7 +1,5 @@
 """Module for customized trainers"""
 
-# pylint: disable=too-many-lines
-
 from __future__ import annotations
 
 import os
@@ -44,6 +42,7 @@ from axolotl.core.trainers.utils import (
 )
 from axolotl.utils import get_not_null
 from axolotl.utils.bench import get_gpu_memory_usage
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
@@ -65,6 +64,15 @@ class AxolotlTrainer(
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
     tag_names = ["axolotl"]
+    _axolotl_cfg: DictDefault | None = None
+
+    @property
+    def axolotl_cfg(self):
+        return self._axolotl_cfg
+
+    @axolotl_cfg.setter
+    def axolotl_cfg(self, cfg):
+        self._axolotl_cfg = cfg
 
     def __init__(
         self,
@@ -80,7 +88,6 @@ class AxolotlTrainer(
         self._signature_columns = None  # workaround for pylint
 
         super().__init__(*_args, **kwargs)
-
         self.train_data_collator = self.data_collator
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
         if self.args.orpo_alpha:
@@ -285,9 +292,9 @@ class AxolotlTrainer(
         # fmt: off
         if dataloader_key is not None and self.args.dataloader_persistent_workers:
             if hasattr(self, "_eval_dataloaders"):
-                self._eval_dataloaders[dataloader_key] = dataloader  # type: ignore  # pylint: disable=access-member-before-definition
+                self._eval_dataloaders[dataloader_key] = dataloader  # type: ignore
             else:
-                self._eval_dataloaders = {dataloader_key: dataloader}  # pylint: disable=attribute-defined-outside-init
+                self._eval_dataloaders = {dataloader_key: dataloader}
         # fmt: on
 
         return self.accelerator.prepare(dataloader)
@@ -329,6 +336,17 @@ class AxolotlTrainer(
         #     outputs = model(**inputs)
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
+
+        # track number of tokens for tokens per second calculation
+        if self.args.include_tkps:
+            inputs_key = "labels" if "labels" in inputs else "input_ids"
+            if hasattr(self.state, "num_tokens"):
+                self.state.num_tokens = (
+                    self.state.num_tokens + (inputs[inputs_key] != -100).sum()
+                )
+            else:
+                self.state.num_tokens = (inputs[inputs_key] != -100).sum()
+
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
                 model,
@@ -443,7 +461,7 @@ class AxolotlTrainer(
         model,
         inputs,
         return_outputs=False,
-        num_items_in_batch=None,  # pylint: disable=unused-argument
+        num_items_in_batch=None,
     ):
         concat_inputs = AxolotlTrainer.orpo_concatenate_inputs(
             inputs,
@@ -524,14 +542,9 @@ class AxolotlTrainer(
         accelerator_config = self.args.accelerator_config.to_dict()
         use_configured_state = accelerator_config.get("use_configured_state", False)
         if not use_configured_state:
-            AcceleratorState._reset_state(  # pylint: disable=protected-access
-                reset_partial_state=True
-            )
+            AcceleratorState._reset_state(reset_partial_state=True)
 
         super().create_accelerator_and_postprocess()
-
-        # now we need to put parallelism_config back on the PartialState since we rely on that info in other places
-        # PartialState().parallelism_config = self.accelerator.state.parallelism_config
 
         if self.is_fsdp_enabled:
             if (
@@ -540,7 +553,6 @@ class AxolotlTrainer(
             ):
                 self.accelerator.state.fsdp_plugin.limit_all_gathers = True
 
-    # pylint: disable=unused-argument
     def additional_accelerator_args(
         self, fp8: bool = False, enable_fsdp_float8_all_gather: bool = False, **kwargs
     ) -> dict[str, Any]:
@@ -581,11 +593,18 @@ class AxolotlTrainer(
             # Add memory usage
             try:
                 active, allocated, reserved = get_gpu_memory_usage()
-                logs["memory/max_mem_active(gib)"] = round(active, 2)
-                logs["memory/max_mem_allocated(gib)"] = round(allocated, 2)
-                logs["memory/device_mem_reserved(gib)"] = round(reserved, 2)
+                logs["memory/max_active (GiB)"] = round(active, 2)
+                logs["memory/max_allocated (GiB)"] = round(allocated, 2)
+                logs["memory/device_reserved (GiB)"] = round(reserved, 2)
             except (ValueError, TypeError, FileNotFoundError):
                 pass
+
+        if self.args.include_tkps and train_eval == "train":
+            # each rank will log its own tokens per second
+            # for logging_steps > 1 we obtain a moving average of this metric
+            logs["tokens_per_second_per_gpu"] = round(
+                self.state.last_tokens_per_second.item() / self.args.logging_steps, 2
+            )
 
         del self._stored_metrics[train_eval]
 
@@ -662,6 +681,11 @@ class AxolotlTrainer(
                 LOG.info(
                     "Saving Trainer.data_collator.tokenizer by default as Trainer.processing_class is `None`"
                 )
-                self.data_collator.tokenizer.save_pretrained(output_dir)
+                save_jinja_files = True
+                if self.axolotl_cfg:
+                    save_jinja_files = self.axolotl_cfg.tokenizer_save_jinja_files
+                self.data_collator.tokenizer.save_pretrained(
+                    output_dir, save_jinja_files=save_jinja_files
+                )
             # Good practice: save your training arguments together with the trained model
             torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))

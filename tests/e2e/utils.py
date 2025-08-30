@@ -2,6 +2,7 @@
 helper utils for tests
 """
 
+import importlib.util
 import os
 import shutil
 import tempfile
@@ -107,12 +108,7 @@ def require_vllm(test_case):
     """
 
     def is_vllm_installed():
-        try:
-            import vllm  # pylint: disable=unused-import  # noqa: F401
-
-            return True
-        except ImportError:
-            return False
+        return importlib.util.find_spec("vllm") is not None
 
     return unittest.skipUnless(
         is_vllm_installed(), "test requires vllm to be installed"
@@ -125,12 +121,7 @@ def require_llmcompressor(test_case):
     """
 
     def is_llmcompressor_installed():
-        try:
-            import llmcompressor  # pylint: disable=unused-import  # noqa: F401
-
-            return True
-        except ImportError:
-            return False
+        return importlib.util.find_spec("llmcompressor") is not None
 
     return unittest.skipUnless(
         is_llmcompressor_installed(), "test requires llmcompressor to be installed"
@@ -159,8 +150,8 @@ def check_tensorboard(
     tb_log_path = most_recent_subdir(temp_run_dir)
     event_file = os.path.join(tb_log_path, sorted(os.listdir(tb_log_path))[0])
     reader = SummaryReader(event_file)
-    df = reader.scalars  # pylint: disable=invalid-name
-    df = df[(df.tag == tag)]  # pylint: disable=invalid-name
+    df = reader.scalars
+    df = df[(df.tag == tag)]
     lt_val = (1 + rtol) * lt_val
     if "%s" in assertion_err:
         assert df.value.values[-1] < lt_val, assertion_err % df.value.values[-1]

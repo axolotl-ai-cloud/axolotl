@@ -107,9 +107,7 @@ class InterpolatingLogScheduler(LRScheduler):
         self.num_steps = num_steps
         self.min_lr = min_lr
         self.max_lr = max_lr
-        self.q = (max_lr / min_lr) ** (  # pylint: disable=invalid-name
-            1 / (num_steps - 1)
-        )
+        self.q = (max_lr / min_lr) ** (1 / (num_steps - 1))
         super().__init__(optimizer, last_epoch)
 
     def get_lr(self):
@@ -310,7 +308,6 @@ class JaggedLRRestartScheduler(LRScheduler):
         jagged_restart_anneal_steps: int = 1,
         min_lr_scale: float = 0.001,
     ) -> None:
-        # pylint: disable=duplicate-code
         self.inner_schedule = inner_schedule
         self.restarts_steps = jagged_restart_steps
         self.warmup_steps = jagged_restart_warmup_steps

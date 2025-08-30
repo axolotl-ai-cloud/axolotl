@@ -26,7 +26,7 @@ def apply_sequence_parallelism(
     local_rank: int,
     local_world_size: int,
     gradient_accumulation_steps: int,
-    ring_attn_func: RingAttnFunc,  # pylint: disable=unused-argument
+    ring_attn_func: RingAttnFunc,
 ) -> tuple[dict[str, torch.Tensor], int, int]:
     """
     Apply sequence parallelism slicing to a batch.

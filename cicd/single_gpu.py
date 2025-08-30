@@ -1,7 +1,5 @@
 """Modal app to run axolotl GPU tests"""
 
-# pylint: disable=duplicate-code
-
 import os
 import pathlib
 import tempfile
@@ -70,4 +68,4 @@ def run_cmd(cmd: str, run_folder: str):
 
     # Propagate errors from subprocess.
     if exit_code := subprocess.call(cmd.split(), cwd=run_folder, env=sp_env):  # nosec
-        exit(exit_code)  # pylint: disable=consider-using-sys-exit
+        exit(exit_code)

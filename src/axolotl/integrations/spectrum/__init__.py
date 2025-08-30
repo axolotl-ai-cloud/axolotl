@@ -23,7 +23,7 @@ import requests
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils.logging import get_logger
 
-from .args import SpectrumArgs  # pylint: disable=unused-import. # noqa: F401
+from .args import SpectrumArgs as SpectrumArgs
 
 LOG = get_logger(__name__)
 
@@ -46,7 +46,7 @@ def _generate_unfrozen_params_yaml(snr_data, top_fraction=0.5):
         "^lm_head.weight$",
         "^model.embed_tokens.weight$",
     ]
-    for layer_type, layer_names in top_layers_by_type.items():
+    for _, layer_names in top_layers_by_type.items():
         for layer_name in layer_names:
             unfrozen_parameters.append(layer_name)
     return unfrozen_parameters
@@ -84,7 +84,7 @@ class SpectrumPlugin(BasePlugin):
                 snr_data = json.load(fin)
         except FileNotFoundError:
             pass
-        except Exception as exc:  # pylint: disable=broad-exception-caught
+        except Exception as exc:
             LOG.warning(f"Failed to read SNR data from {snr_path}: {exc}")
 
         if not snr_data:

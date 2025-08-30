@@ -95,7 +95,6 @@ def generate_config_files(config: str, sweep: str | None) -> Iterator[tuple[str,
         permutation_id = f"sweep{idx:04d}"
         permutation["output_dir"] = str(permutation_dir / permutation_id)
 
-        # pylint: disable=consider-using-with
         temp_file = tempfile.NamedTemporaryFile(
             mode="w",
             suffix=".yaml",

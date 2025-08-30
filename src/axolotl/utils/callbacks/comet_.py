@@ -22,10 +22,10 @@ class SaveAxolotlConfigtoCometCallback(TrainerCallback):
 
     def on_train_begin(
         self,
-        args: "AxolotlTrainingArguments",  # pylint: disable=unused-argument
-        state: TrainerState,  # pylint: disable=unused-argument
+        args: "AxolotlTrainingArguments",
+        state: TrainerState,
         control: TrainerControl,
-        **kwargs,  # pylint: disable=unused-argument
+        **kwargs,
     ):
         if is_main_process():
             try:

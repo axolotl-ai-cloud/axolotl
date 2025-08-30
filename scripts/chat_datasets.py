@@ -27,7 +27,7 @@ def parse_dataset(dataset=None, split="train"):
             break
     if not field_messages:
         raise ValueError(
-            f'No conversation field found in dataset: {", ".join(feature_keys)}'
+            f"No conversation field found in dataset: {', '.join(feature_keys)}"
         )
     ds_cfg["field_messages"] = field_messages
 
@@ -40,7 +40,7 @@ def parse_dataset(dataset=None, split="train"):
             break
     if not message_property_mappings["role"]:
         raise ValueError(
-            f'No role field found in messages: {", ".join(message_fields)}'
+            f"No role field found in messages: {', '.join(message_fields)}"
         )
 
     for key in ["content", "text", "value"]:
@@ -49,7 +49,7 @@ def parse_dataset(dataset=None, split="train"):
             break
     if not message_property_mappings["content"]:
         raise ValueError(
-            f'No content field found in messages: {", ".join(message_fields)}'
+            f"No content field found in messages: {', '.join(message_fields)}"
         )
     ds_cfg["message_property_mappings"] = message_property_mappings
 

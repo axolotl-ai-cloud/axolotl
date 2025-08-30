@@ -2,8 +2,6 @@
 HF Chat Templates prompt strategy
 """
 
-# pylint: disable=too-many-lines
-
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
 
@@ -402,9 +400,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         feature_names = list(prompt.keys())
 
         # Process each prompt individually
-        for row in zip(*prompt.values()):
+        for row in zip(*prompt.values(), strict=False):
             tokenized_prompt = self._tokenize_single_prompt(
-                dict(zip(feature_names, row))
+                dict(zip(feature_names, row, strict=False))
             )
             for key, val in tokenized_prompt.items():
                 res[key].append(val)
@@ -431,9 +429,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 add_generation_prompt=True,
                 images=images,
             )
-            tokenized_res = self.prompter.build_prompt(
-                turns, images=images
-            )  # type: ignore
+            tokenized_res = self.prompter.build_prompt(turns, images=images)  # type: ignore
             tokenized_prompt = {}
             if isinstance(tokenized_res, list):
                 input_ids = prompt_ids + tokenized_res[len(prompt_ids) :]
@@ -613,7 +609,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         """
         Locate the starting and ending indices of the specified turn in a conversation.
         """
-        # pylint: disable=too-many-return-statements
 
         if turn_idx >= len(turns):
             raise ValueError(f"Turn index {turn_idx} out of range")
@@ -850,7 +845,7 @@ class MistralStrategy(ChatTemplateStrategy):
         split_thinking: bool | None = False,
     ):
         # Call the parent's parent __init__ (PromptTokenizingStrategy) to skip ChatTemplateStrategy's validation
-        # pylint: disable=non-parent-init-called,super-init-not-called
+
         PromptTokenizingStrategy.__init__(
             self, prompter, tokenizer, train_on_inputs, sequence_len
         )

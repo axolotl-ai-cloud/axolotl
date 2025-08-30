@@ -35,7 +35,7 @@ def get_multi_line_input() -> str:
 
     instruction = ""
     for line in sys.stdin:
-        instruction += line  # pylint: disable=consider-using-join
+        instruction += line
 
     return instruction
 
@@ -167,7 +167,6 @@ def do_inference_gradio(
         if not instruction:
             return
         if prompter_module:
-            # pylint: disable=stop-iteration-return
             prompt: str = next(
                 prompter_module().build_prompt(instruction=instruction.strip("\n"))
             )
@@ -252,7 +251,7 @@ def do_cli(
         config: Path to `axolotl` config YAML file.
         kwargs: Additional keyword arguments to override config file values.
     """
-    # pylint: disable=duplicate-code
+
     parsed_cfg = load_cfg(config, inference=True, rl=None, **kwargs)
     parsed_cfg.sample_packing = False
     parser = transformers.HfArgumentParser(InferenceCliArgs)

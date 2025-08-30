@@ -59,7 +59,7 @@ def messages_w_reasoning_fixture():
 @pytest.fixture(name="qwen3_tokenizer")
 def qwen3_tokenizer_fixture(
     download_qwen3_half_billion_model,
-):  # pylint: disable=unused-argument
+):
     tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
 
     return tokenizer
@@ -71,7 +71,6 @@ class TestSplitThinking:
     """
 
     def test_splits_think(self, messages_w_reasoning, qwen3_tokenizer):
-        # pylint: disable=duplicate-code
         strategy = load(
             qwen3_tokenizer,
             DictDefault(
@@ -130,6 +129,6 @@ class TestSplitThinking:
                 198,  # \n
             ]
             # fmt: on
-            assert (
-                input_ids == expected_input_ids
-            ), f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+            assert input_ids == expected_input_ids, (
+                f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
+            )

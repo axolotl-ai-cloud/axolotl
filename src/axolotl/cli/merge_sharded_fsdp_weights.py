@@ -32,7 +32,7 @@ LOG = get_logger(__name__)
 class BFloat16CastPlanner(_EmptyStateDictLoadPlanner):
     """A custom planner to cast tensors to bfloat16 on the fly during loading."""
 
-    def commit_tensor(self, read_item, tensor):  # pylint: disable=unused-argument
+    def commit_tensor(self, read_item, tensor):
         tensor.copy_(tensor.to(torch.bfloat16))
 
 
@@ -59,10 +59,10 @@ def _distributed_checkpoint_to_merged_weights(
     state_dict: Dict = {}
     save_path_ = Path(save_path)
     save_path_.mkdir(exist_ok=True)
-    dist_cp_format_utils._load_state_dict(  # pylint: disable=protected-access
+    dist_cp_format_utils._load_state_dict(
         state_dict,
         storage_reader=dist_cp.FileSystemReader(checkpoint_dir),
-        planner=BFloat16CastPlanner(),  # pylint: disable=protected-access
+        planner=BFloat16CastPlanner(),
         no_dist=True,
     )
 
@@ -191,7 +191,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
         config: Path to `axolotl` config YAML file.
         kwargs: Additional keyword arguments to override config file values.
     """
-    # pylint: disable=duplicate-code
+
     parsed_cfg = load_cfg(config, **kwargs)
 
     fsdp_dir = Path(parsed_cfg.output_dir) / "pytorch_model_fsdp_0"

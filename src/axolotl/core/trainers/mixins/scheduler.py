@@ -46,7 +46,7 @@ class SchedulerMixin(Trainer):
         )
 
         # fmt: off
-        if self.lr_scheduler is None:  # type: ignore  # pylint: disable=access-member-before-definition
+        if self.lr_scheduler is None:  # type: ignore
             # fmt: on
             plugin_manager = PluginManager.get_instance()
             lr_scheduler: LRScheduler | None = plugin_manager.create_lr_scheduler(
@@ -90,7 +90,7 @@ class SchedulerMixin(Trainer):
                     LOG.warning(
                         "Both cosine quadratic warmup and min lr detected. Using quadratic warmup.")
 
-                self.lr_scheduler = get_cosine_schedule_with_quadratic_warmup(  # pylint: disable=attribute-defined-outside-init
+                self.lr_scheduler = get_cosine_schedule_with_quadratic_warmup(
                     optimizer,
                     num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                     num_training_steps=num_training_steps,
@@ -98,7 +98,7 @@ class SchedulerMixin(Trainer):
             elif self.args.cosine_min_lr_ratio and self.args.cosine_constant_lr_ratio and use_cosine_min_lr:
                 assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
                 assert 0 <= self.args.cosine_constant_lr_ratio <= 1.0, "cosine_constant_lr_ratio must be between 0.0 and 1.0"
-                self.lr_scheduler = get_cosine_schedule_with_warmup_decay_constant(  # pylint: disable=attribute-defined-outside-init
+                self.lr_scheduler = get_cosine_schedule_with_warmup_decay_constant(
                     optimizer,
                     num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                     num_training_steps=num_training_steps,
@@ -107,7 +107,7 @@ class SchedulerMixin(Trainer):
                 )
             elif self.args.cosine_min_lr_ratio and use_cosine_min_lr:
                 assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
-                self.lr_scheduler = get_cosine_schedule_with_min_lr(  # pylint: disable=attribute-defined-outside-init
+                self.lr_scheduler = get_cosine_schedule_with_min_lr(
                     optimizer,
                     num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                     num_training_steps=num_training_steps,
@@ -133,7 +133,7 @@ class SchedulerMixin(Trainer):
             )
             if not self.lr_scheduler:
                 super().create_scheduler(num_training_steps, optimizer)
-            self.lr_scheduler = JaggedLRRestartScheduler(  # pylint: disable=attribute-defined-outside-init
+            self.lr_scheduler = JaggedLRRestartScheduler(
                 optimizer,
                 self.lr_scheduler,
                 self.args.jagged_restart_steps,

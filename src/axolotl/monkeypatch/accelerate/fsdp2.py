@@ -130,9 +130,9 @@ def get_state_dict(self, model, unwrap=True):
                         "Deepspeed TP requires deepspeed >= 0.16.4, Please update DeepSpeed via `pip install deepspeed -U`."
                     )
                 state_dict = (
-                    model._consolidated_16bit_state_dict()  # pylint: disable=protected-access
+                    model._consolidated_16bit_state_dict()
                     if tp_sharding
-                    else model._zero3_consolidated_16bit_state_dict()  # pylint: disable=protected-access
+                    else model._zero3_consolidated_16bit_state_dict()
                 )
             else:
                 raise ValueError(
@@ -187,7 +187,7 @@ def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
 
     # Linear4Bit will keep it's bias term in fp32. If the weight dtype is in bf16 we are not able to
     # wrap this. Therefore we must ensure the bias has the same dtype as the weight
-    if module.base_layer.bias is not None:
+    if hasattr(module.base_layer, "bias") and module.base_layer.bias is not None:
         if module.base_layer.weight.dtype != module.base_layer.bias.dtype:
             log_bias_dtype_mismatch = True
             module.base_layer.bias.data = module.base_layer.bias.data.to(
@@ -231,8 +231,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     )
 
     is_type_fsdp = isinstance(model, FSDPModule) or (
-        is_compiled_module(model)
-        and isinstance(model._orig_mod, FSDPModule)  # pylint: disable=protected-access
+        is_compiled_module(model) and isinstance(model._orig_mod, FSDPModule)
     )
     if is_type_fsdp:
         return model

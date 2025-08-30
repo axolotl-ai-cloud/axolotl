@@ -18,7 +18,7 @@ class FP8IntegrationTestCase:
     @require_torch_2_7_0
     def test_fp8_single_gpu_smoke(self, temp_dir):
         """Smoke test for single GPU FP8 + torch.compile training"""
-        # pylint: disable=duplicate-code
+
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -53,7 +53,6 @@ class FP8IntegrationTestCase:
             }
         )
 
-        # pylint: disable=duplicate-code
         cfg = validate_config(cfg)
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
