@@ -26,7 +26,7 @@ jobs:
       - name: Update pre-commit hooks
         id: update
         run: |
-          uv pip install pre-commit
+          uv pip --system install pre-commit
           pre-commit autoupdate
           if [[ -n $(git status --porcelain) ]]; then
             echo "changes=true" >> $GITHUB_OUTPUT

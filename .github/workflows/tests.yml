@@ -79,15 +79,15 @@ jobs:
 
       - name: Install PyTorch
         run: |
-          uv pip install torch==${{ matrix.pytorch_version }} torchvision
+          uv pip --system install torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Install dependencies
         run: |
-          uv pip show torch
-          uv pip install --no-build-isolation -U -e .
+          uv pip --system show torch
+          uv pip --system install --no-build-isolation -U -e .
           python scripts/unsloth_install.py --uv | sh
           python scripts/cutcrossentropy_install.py --uv | sh
-          uv pip install -r requirements-dev.txt -r requirements-tests.txt
+          uv pip --system install -r requirements-dev.txt -r requirements-tests.txt
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
@@ -150,17 +150,17 @@ jobs:
 
       - name: Install PyTorch
         run: |
-          uv pip install torch==${{ matrix.pytorch_version }} torchvision
+          uv pip --system install torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Install dependencies
         run: |
-          uv pip show torch
-          uv pip install build
+          uv pip --system show torch
+          uv pip --system install build
           python -m build --no-isolation --sdist
-          uv pip install --no-build-isolation dist/axolotl*.tar.gz
+          uv pip --system install --no-build-isolation dist/axolotl*.tar.gz
           python scripts/unsloth_install.py --uv | sh
           python scripts/cutcrossentropy_install.py --uv | sh
-          uv pip install -r requirements-dev.txt -r requirements-tests.txt
+          uv pip --system install -r requirements-dev.txt -r requirements-tests.txt
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
@@ -249,7 +249,7 @@ jobs:
           version: "latest"
       - name: Install Modal
         run: |
-          uv pip install modal==1.0.2 jinja2
+          uv pip --system install modal==1.0.2 jinja2
       - name: Update env vars
         run: |
           echo "BASE_TAG=main-base-uv-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
@@ -313,7 +313,7 @@ jobs:
           version: "latest"
       - name: Install Modal
         run: |
-          uv pip install modal==1.0.2 jinja2
+          uv pip --system install modal==1.0.2 jinja2
       - name: Update env vars
         run: |
           echo "BASE_TAG=main-base-uv-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
@@ -359,7 +359,7 @@ jobs:
           version: "latest"
       - name: Install Modal
         run: |
-          uv pip install modal==1.0.2 jinja2
+          uv pip --system install modal==1.0.2 jinja2
       - name: Update env vars
         run: |
           echo "BASE_TAG=main-base-uv-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
