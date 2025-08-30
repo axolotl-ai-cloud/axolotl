@@ -40,7 +40,7 @@ def _do_merge_lora_legacy(*, cfg: DictDefault) -> None:
     Legacy LoRA merging using `merge_and_unload`.
     Loads the full model into memory before merging.
     """
-    LOG.info("Using legacy LoRA merging method...")
+    LOG.debug("Using legacy LoRA merging method...")
     model, tokenizer, processor = load_model_and_tokenizer(cfg=cfg)
     safe_serialization = cfg.save_safetensors is True
 
