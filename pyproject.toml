@@ -166,25 +166,25 @@ llmcompressor = [
 dev = [
     # Testing
     "pytest",
-    "pytest-cov", 
+    "pytest-cov",
     "pytest-retry",
     "pytest-sugar",
     "pytest-xdist",
     "codecov",
     "codecov-cli",
     "tbparse",
-    
+
     # Code quality
     "black",
-    "ruff", 
+    "ruff",
     "mypy",
     "pre-commit",
     "types-requests",
-    
+
     # Documentation
     "quartodoc",
     "jupyter",
-    
+
     # Utilities
     "blobfile",
     "tiktoken",
