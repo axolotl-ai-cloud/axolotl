@@ -106,6 +106,16 @@ See [Nanobit/text-tools-2k-test](https://huggingface.co/datasets/Nanobit/text-to
 
 Refer to [our docs](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#using-tool-use) for more info.
 
+### Thinking and chat_template masking conflict
+
+OpenAI’s Harmony template hides `thinking` in all non-final turns, which conflicts with Axolotl’s `chat_template` masking.
+
+If your dataset has `thinking` content mid-turn, there are two paths we recommend:
+
+- Train only on the last turn. This can be accomplished via chat_template's [train on last doc](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#training-on-last-message).
+
+- Adjust your dataset to only have `thinking` content in the last turn.
+
 ### TIPS
 
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
