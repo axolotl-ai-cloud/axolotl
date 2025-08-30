@@ -38,11 +38,16 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
       - name: Install dependencies
         run: |
-          pip3 install wheel packaging==23.2
-          pip3 install --no-build-isolation -e .
-          pip3 install -r requirements-dev.txt -r requirements-tests.txt
+          uv pip install wheel packaging==23.2
+          uv pip install --no-build-isolation -e .
+          uv pip install -r requirements-dev.txt -r requirements-tests.txt
 
       - name: Extract tag name
         id: tag
