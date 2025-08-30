@@ -87,7 +87,6 @@ def merge_lora_sharded_efficient(
     base_model_path: Union[str, Path],
     lora_adapter_path: Union[str, Path],
     output_path: Union[str, Path],
-    device: str = "cpu",
     safe_tensors: bool = True,
 ) -> None:
     """
