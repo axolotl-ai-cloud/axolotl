@@ -26,7 +26,7 @@ classifiers = [
 
 dependencies = [
     # Core dependencies
-    "torch>=2.6.0",  # Minimum 2.6.0, preference for latest stable (2.8.0)
+    "torch>=2.6.0",
     "packaging==23.2",
     "huggingface_hub>=0.33.0",
     "peft==0.17.0",
@@ -56,7 +56,7 @@ dependencies = [
     "einops",
     "colorama",
     "numba",
-    "numpy>=1.24.4,<3.0",  # Flexible range for compatibility
+    "numpy>=1.24.4,<3.0",
     
     # QLora dependencies
     "evaluate==0.4.1",
@@ -74,7 +74,7 @@ dependencies = [
     "ocifs==1.3.2",
     
     # Other utilities
-    "zstandard>=0.23.0",  # Updated for Python 3.13 compatibility
+    "zstandard>=0.23.0",
     "fastcore",
     
     # LM eval harness
@@ -231,7 +231,7 @@ find-links = [
 # UV custom index for specific packages
 [[tool.uv.index]]
 name = "autogptq"
-url = "https://huggingface.github.io/autogptq-index/whl/cu118/"
+url = "https://huggingface.github.io/autogptq-index/whl/"
 
 # Build dependencies for packages that don't declare them properly
 [tool.uv.extra-build-dependencies]
