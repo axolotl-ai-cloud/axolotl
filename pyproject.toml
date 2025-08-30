@@ -94,13 +94,13 @@ dependencies = [
     "mistral-common==1.8.3",
 
     # Platform-specific dependencies (Linux by default, excluded on macOS)
-    "triton>=3.0.0,<3.4.0 ; sys_platform != 'darwin'",
+    "triton>=3.0.0 ; sys_platform != 'darwin'",
     "xformers>=0.0.23.post1 ; sys_platform != 'darwin'",
     "autoawq==0.2.7.post3 ; sys_platform != 'darwin'",
     "liger-kernel==0.6.1 ; sys_platform != 'darwin'",
     "torchao==0.12.0 ; sys_platform != 'darwin'",
     "bitsandbytes==0.47.0 ; sys_platform != 'darwin'",
-    "flash-attn==2.8.2 ; sys_platform == 'linux'",
+    "flash-attn==2.8.3 ; sys_platform == 'linux'",
 ]
 
 [project.optional-dependencies]
@@ -266,7 +266,7 @@ dev-dependencies = [
 ]
 
 find-links = [
-    "https://github.com/Dao-AILab/flash-attention/releases/expanded_assets/v2.8.2",
+    "https://github.com/Dao-AILab/flash-attention/releases/expanded_assets/v2.8.3",
 ]
 
 # UV custom index for specific packages
