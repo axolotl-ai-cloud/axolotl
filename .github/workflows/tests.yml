@@ -84,10 +84,10 @@ jobs:
       - name: Install dependencies
         run: |
           uv pip show --system torch
-          uv pip install --system --no-build-isolation -U -e .
-          python scripts/unsloth_install.py --uv | sh
-          python scripts/cutcrossentropy_install.py --uv | sh
-          uv pip install --system -e .[dev]
+          uv pip install --system wheel
+          uv pip install --system --no-build-isolation -U -e ".[dev]"
+          python scripts/unsloth_install.py | sh
+          python scripts/cutcrossentropy_install.py | sh
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
@@ -157,8 +157,8 @@ jobs:
           uv pip show --system torch
           uv pip install --system wheel
           uv pip install --system --no-build-isolation -e .
-          python scripts/unsloth_install.py --uv | sh
-          python scripts/cutcrossentropy_install.py --uv | sh
+          python scripts/unsloth_install.py | sh
+          python scripts/cutcrossentropy_install.py | sh
           uv pip install --system -e .[dev]
 
       - name: Make sure PyTorch version wasn't clobbered
@@ -177,7 +177,6 @@ jobs:
           pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
           pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/
-
 
   gate-skip-e2e:
     needs: [pre-commit, pytest, pytest-sdist]

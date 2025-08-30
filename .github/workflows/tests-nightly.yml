@@ -63,10 +63,9 @@ jobs:
       - name: Install dependencies
         run: |
           uv pip show --system torch
-          uv pip install --system --no-build-isolation -U -e .
-          python scripts/unsloth_install.py --uv | sh
-          python scripts/cutcrossentropy_install.py --uv | sh
-          uv pip install --system -e .[dev]
+          uv pip install --system --no-build-isolation -U -e ".[dev]"
+          python scripts/unsloth_install.py | sh
+          python scripts/cutcrossentropy_install.py | sh
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
