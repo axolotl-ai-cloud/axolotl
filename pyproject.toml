@@ -117,7 +117,7 @@ deepspeed = [
 ]
 
 mamba-ssm = [
-    "mamba-ssm>=2.2.0",  # Updated to latest stable version
+    "mamba-ssm>=2.2.0",
     "causal_conv1d>=1.4.0",
 ]
 

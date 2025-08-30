@@ -31,10 +31,7 @@ PRs are **greatly welcome**!
 
 Please run below to setup env
 ```bash
-# Using uv (recommended)
 uv pip install -e .[dev]
-# OR using pip
-pip3 install -e .[dev]
 
 pre-commit install
 
