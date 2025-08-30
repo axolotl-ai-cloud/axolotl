@@ -45,9 +45,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install wheel packaging==23.2
-          uv pip install --no-build-isolation -e .
-          uv pip install -r requirements-dev.txt -r requirements-tests.txt
+          uv pip --system install wheel packaging==23.2
+          uv pip --system install --no-build-isolation -e .
+          uv pip --system install -r requirements-dev.txt -r requirements-tests.txt
 
       - name: Extract tag name
         id: tag
