@@ -101,6 +101,8 @@ dependencies = [
     "torchao==0.12.0 ; sys_platform != 'darwin'",
     "bitsandbytes==0.47.0 ; sys_platform != 'darwin'",
     "flash-attn==2.8.3 ; sys_platform == 'linux'",
+    "deepspeed>=0.17.0 ; sys_platform != 'darwin'",
+    "deepspeed-kernels ; sys_platform != 'darwin'",
 ]
 
 [project.optional-dependencies]
@@ -110,11 +112,6 @@ ring-flash-attn = [
     "yunchang==0.6.0",
 ]
 
-# Deep learning frameworks
-deepspeed = [
-    "deepspeed>=0.17.0",
-    "deepspeed-kernels",
-]
 
 mamba-ssm = [
     "mamba-ssm>=2.2.0",
