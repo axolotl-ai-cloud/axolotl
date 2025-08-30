@@ -62,7 +62,7 @@ jobs:
           version: "latest"
       - name: Install Modal
         run: |
-          uv pip --system install modal==1.0.2 jinja2
+          uv pip install --system modal==1.0.2 jinja2
       - name: Update env vars
         run: |
           echo "BASE_TAG=main-base-uv-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
