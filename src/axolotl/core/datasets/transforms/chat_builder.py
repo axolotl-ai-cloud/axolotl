@@ -8,7 +8,7 @@ from typing import Any, Mapping
 
 def chat_message_transform_builder(
     train_on_inputs=False,
-    conversations_field: str = "conversations",
+    conversations_field: str = "messages",
     message_field_role: str | list[str] | None = None,  # commonly "role"
     message_field_content: str | list[str] | None = None,  # commonly "content"
     message_field_training: str | list[str] | None = None,  # commonly "weight"
