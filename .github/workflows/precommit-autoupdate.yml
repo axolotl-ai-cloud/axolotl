@@ -18,10 +18,15 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
       - name: Update pre-commit hooks
         id: update
         run: |
-          pip install pre-commit
+          uv pip install --system pre-commit
           pre-commit autoupdate
           if [[ -n $(git status --porcelain) ]]; then
             echo "changes=true" >> $GITHUB_OUTPUT
