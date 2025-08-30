@@ -87,6 +87,7 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         base_model_path=cfg.base_model,
         lora_adapter_path=cfg.lora_model_dir,
         output_path=output_path,
+        device="cpu",
         safe_tensors=safe_tensors,
     )
 

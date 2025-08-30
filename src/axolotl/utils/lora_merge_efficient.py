@@ -87,7 +87,7 @@ def merge_lora_sharded_efficient(
     base_model_path: Union[str, Path],
     lora_adapter_path: Union[str, Path],
     output_path: Union[str, Path],
-    device: str = "cuda",
+    device: str = "cpu",
     safe_tensors: bool = True,
 ) -> None:
     """
@@ -129,10 +129,7 @@ def merge_lora_sharded_efficient(
     else:
         lora_state = torch.load(lora_file, map_location="cpu", weights_only=True)
 
-    if device != "cpu":
-        LOG.debug(f"Moving LoRA weights to {device}")
-        for key, value in tqdm(lora_state.items(), desc="Moving LoRA to device"):
-            lora_state[key] = value.to(device)
+    LOG.debug("Keeping LoRA weights on CPU for memory efficiency")
 
     model_shards = get_model_shards(base_model_path)
     if not model_shards:
@@ -149,7 +146,7 @@ def merge_lora_sharded_efficient(
         metadata = {}
 
         if shard_path.suffix == ".safetensors":
-            with safetensors.safe_open(shard_path, framework="pt", device=device) as f:
+            with safetensors.safe_open(shard_path, framework="pt", device="cpu") as f:
                 if hasattr(f, "metadata") and f.metadata():
                     metadata = f.metadata()
 
@@ -166,18 +163,18 @@ def merge_lora_sharded_efficient(
 
                         original_dtype = tensor.dtype
                         tensor_fp32 = tensor.to(torch.float32)
+                        lora_a_fp32 = lora_a.to(torch.float32)
+                        lora_b_fp32 = lora_b.to(torch.float32)
 
-                        delta = scale * (
-                            lora_b.to(torch.float32) @ lora_a.to(torch.float32)
-                        )
-
+                        delta = scale * (lora_b_fp32 @ lora_a_fp32)
                         merged_tensor = (tensor_fp32 + delta).to(original_dtype)
                         merged_tensors[key] = merged_tensor
+                        del tensor_fp32, lora_a_fp32, lora_b_fp32, delta
                     else:
                         merged_tensors[key] = tensor
         else:
             state_dict = torch.load(
-                shard_path, map_location=device
+                shard_path, map_location="cpu"
             )  # nosec B614: loading trusted model weights
             for key, tensor in state_dict.items():
                 total_tensors += 1
@@ -187,10 +184,14 @@ def merge_lora_sharded_efficient(
                     merged_count += 1
                     original_dtype = tensor.dtype
                     tensor_fp32 = tensor.to(torch.float32)
-                    delta = scale * (
-                        lora_b.to(torch.float32) @ lora_a.to(torch.float32)
-                    )
-                    merged_tensors[key] = (tensor_fp32 + delta).to(original_dtype)
+                    lora_a_fp32 = lora_a.to(torch.float32)
+                    lora_b_fp32 = lora_b.to(torch.float32)
+
+                    delta = scale * (lora_b_fp32 @ lora_a_fp32)
+                    merged_tensor = (tensor_fp32 + delta).to(original_dtype)
+                    merged_tensors[key] = merged_tensor
+
+                    del tensor_fp32, lora_a_fp32, lora_b_fp32, delta
                 else:
                     merged_tensors[key] = tensor
 
@@ -205,7 +206,8 @@ def merge_lora_sharded_efficient(
             torch.save(merged_tensors, output_shard_path)
 
         del merged_tensors
-        if device != "cpu":
-            torch.cuda.empty_cache()
+        import gc
+
+        gc.collect()
 
     LOG.info(f"Applied LoRA to {merged_count}/{total_tensors} tensors")
