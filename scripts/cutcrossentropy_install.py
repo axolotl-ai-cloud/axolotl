@@ -21,10 +21,9 @@ cce_spec = importlib.util.find_spec("cut_cross_entropy")
 UNINSTALL_PREFIX = ""
 if cce_spec:
     if not importlib.util.find_spec("cut_cross_entropy.transformers"):
-        uninstall_cmd = "uv pip uninstall" if USE_UV else "pip"
-        UNINSTALL_PREFIX = f"{uninstall_cmd} uninstall -y cut-cross-entropy && "
+        UNINSTALL_PREFIX = "uv pip uninstall -y cut-cross-entropy && "
 
 print(
     UNINSTALL_PREFIX
-    + f'uv pip install --system "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@c6a32c5"'
+    + 'uv pip install --system "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@c6a32c5"'
 )

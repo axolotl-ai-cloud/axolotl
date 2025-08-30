@@ -1,5 +1,4 @@
 # noqa
-import sys
 
 try:
     import torch
