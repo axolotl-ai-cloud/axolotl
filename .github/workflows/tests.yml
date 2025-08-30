@@ -261,7 +261,7 @@ jobs:
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile.jinja'}}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
-          modal run cicd.e2e_tests
+          modal run -m cicd.e2e_tests
 
   docker-e2e-tests:
     if: >
@@ -326,7 +326,7 @@ jobs:
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile.jinja'}}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
-          modal run cicd.e2e_tests
+          modal run -m cicd.e2e_tests
 
   docker-e2e-cleanup:
     runs-on: [self-hosted, modal]
@@ -370,4 +370,4 @@ jobs:
           echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
-          modal run cicd.cleanup
+          modal run -m cicd.cleanup

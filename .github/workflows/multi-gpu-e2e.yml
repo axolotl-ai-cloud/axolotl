@@ -75,4 +75,4 @@ jobs:
           echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
-          modal run cicd.multigpu
+          modal run -m cicd.multigpu

@@ -133,7 +133,7 @@ jobs:
           echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
-          modal run cicd.e2e_tests
+          modal run -m cicd.e2e_tests
   docker-e2e-multigpu-tests:
     if: github.repository_owner == 'axolotl-ai-cloud'
     # this job needs to be run on self-hosted GPU runners...
@@ -178,4 +178,4 @@ jobs:
           echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
-          modal run cicd.multigpu
+          modal run -m cicd.multigpu
