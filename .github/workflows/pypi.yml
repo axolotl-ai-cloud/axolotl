@@ -46,20 +46,16 @@ jobs:
       - name: Install dependencies
         run: |
           uv pip install --system wheel packaging==23.2
-          uv pip install --system --no-build-isolation -e .
-          uv pip install --system -e .[dev]
+          uv pip install --system --no-build-isolation -e .[dev]
 
       - name: Extract tag name
         id: tag
         run: echo ::set-output name=TAG_NAME::$(echo $GITHUB_REF | cut -d / -f 3)
 
-      - name: Update version in setup.py
+      - name: Build package
         run: |
-          sed -i -E 's/version="([0-9.]+)",/version="${{ steps.tag.outputs.TAG_NAME }}",/g' setup.py
-
-      - name: Build a source dist
-        run: |
-          python setup.py sdist
+          uv pip install --system build
+          python -m build
 
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

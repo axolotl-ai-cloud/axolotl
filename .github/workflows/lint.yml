@@ -6,7 +6,7 @@ on:
       types: [opened, synchronize, reopened, ready_for_review]
       paths:
        - '**.py'
-       - 'requirements.txt'
+       - 'pyproject.toml'
        - '.github/workflows/*.yml'
        - "*.[q]md"
        - "examples/**/*.y[a]?ml"
