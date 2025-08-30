@@ -41,7 +41,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: 'pip' # caching pip dependencies
       - uses: pre-commit/action@v3.0.1
         env:
           SKIP: no-commit-to-branch
@@ -72,24 +71,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python_version }}
-          cache: 'pip' # caching pip dependencies
 
       - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
-
-      - name: upgrade pip
-        run: |
-          pip3 install --upgrade pip
-          pip3 install --upgrade packaging==23.2 setuptools==75.8.0 wheel
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
 
       - name: Install PyTorch
         run: |
-          source $HOME/.local/bin/env
           uv pip install torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Install dependencies
         run: |
-          source $HOME/.local/bin/env
           uv pip show torch
           uv pip install --no-build-isolation -U -e .
           python scripts/unsloth_install.py --uv | sh
@@ -123,9 +116,6 @@ jobs:
           flags: unittests,pytorch-${{ matrix.pytorch_version }}
           fail_ci_if_error: false
 
-      - name: cleanup pip cache
-        run: |
-          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
 
   pytest-sdist:
     name: PyTest from Source Dist
@@ -152,25 +142,20 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python_version }}
-          cache: 'pip' # caching pip dependencies
 
       - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
-
-      - name: upgrade pip
-        run: |
-          pip3 install --upgrade pip
-          pip3 install --upgrade packaging==23.2 setuptools==75.8.0 setuptools_scm build wheel
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
 
       - name: Install PyTorch
         run: |
-          source $HOME/.local/bin/env
           uv pip install torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Install dependencies
         run: |
-          source $HOME/.local/bin/env
           uv pip show torch
+          uv pip install build
           python -m build --no-isolation --sdist
           uv pip install --no-build-isolation dist/axolotl*.tar.gz
           python scripts/unsloth_install.py --uv | sh
@@ -194,9 +179,6 @@ jobs:
           pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/
 
-      - name: cleanup pip cache
-        run: |
-          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
 
   gate-skip-e2e:
     needs: [pre-commit, pytest, pytest-sdist]
@@ -261,10 +243,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
       - name: Install Modal
         run: |
-          python -m pip install --upgrade pip
-          pip install modal==1.0.2 jinja2
+          uv pip install modal==1.0.2 jinja2
       - name: Update env vars
         run: |
           echo "BASE_TAG=main-base-uv-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
@@ -322,10 +307,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
       - name: Install Modal
         run: |
-          python -m pip install --upgrade pip
-          pip install modal==1.0.2 jinja2
+          uv pip install modal==1.0.2 jinja2
       - name: Update env vars
         run: |
           echo "BASE_TAG=main-base-uv-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
@@ -365,10 +353,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
       - name: Install Modal
         run: |
-          python -m pip install --upgrade pip
-          pip install modal==1.0.2 jinja2
+          uv pip install modal==1.0.2 jinja2
       - name: Update env vars
         run: |
           echo "BASE_TAG=main-base-uv-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
