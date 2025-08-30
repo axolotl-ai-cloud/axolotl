@@ -1,6 +1,8 @@
 project:
   type: website
-  pre-render: docs/scripts/generate_config_docs.py
+  pre-render:
+   - docs/scripts/generate_config_docs.py
+   - docs/scripts/generate_examples_docs.py
 
 quartodoc:
   dir: docs/api
@@ -285,6 +287,11 @@ website:
             - docs/sequence_parallelism.qmd
             - docs/gradient_checkpointing.qmd
             - docs/nd_parallelism.qmd
+
+        - title: Usage Examples
+          desc: Example YAML files for training different models
+          contents:
+            - docs/examples/*.qmd
 
         - section: "Troubleshooting"
           contents:
