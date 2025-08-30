@@ -56,12 +56,12 @@ dependencies = [
     "einops",
     "colorama",
     "numba",
-    "numpy>=1.24.4,<=2.0.1",
+    "numpy>=1.24.4,<3.0",  # Flexible range for compatibility
     
     # QLora dependencies
     "evaluate==0.4.1",
     "scipy",
-    "scikit-learn>=1.4.2",
+    "scikit-learn>=1.7.0",
     "nvidia-ml-py==12.560.30",
     "art",
     "tensorboard",
@@ -86,8 +86,11 @@ dependencies = [
     # Training optimizers
     "schedulefree==1.4.1",
     
+    # Core training dependencies (platform-specific but essential)
+    "bitsandbytes==0.47.0",
+    
     # Axolotl contribs
-    "axolotl-contribs-lgpl==0.0.6",
+    "axolotl-contribs-lgpl @ git+https://github.com/axolotl-ai-cloud/axolotl-contribs-lgpl.git@numpy",
     "axolotl-contribs-mit==0.0.5",
     
     # Mistral
@@ -97,7 +100,6 @@ dependencies = [
 [project.optional-dependencies]
 # Platform-specific dependencies (Linux only)
 linux = [
-    "bitsandbytes==0.47.0",
     "triton>=3.0.0,<3.4.0",
     "xformers>=0.0.23.post1",
     "autoawq==0.2.7.post3",
