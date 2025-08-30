@@ -8,8 +8,8 @@ on:
     paths:
       - '**.py'
       - 'requirements.txt'
+      - 'pyproject.toml'
       - '.github/workflows/*.yml'
-      - 'requirements-tests.txt'
       - 'cicd/cicd.sh'
       - 'cicd/Dockerfile.jinja'
   pull_request:
@@ -17,8 +17,8 @@ on:
       paths:
        - '**.py'
        - 'requirements.txt'
+       - 'pyproject.toml'
        - '.github/workflows/*.yml'
-       - 'requirements-tests.txt'
        - 'cicd/cicd.sh'
        - 'cicd/Dockerfile.jinja'
   workflow_dispatch:
@@ -87,7 +87,7 @@ jobs:
           uv pip install --system --no-build-isolation -U -e .
           python scripts/unsloth_install.py --uv | sh
           python scripts/cutcrossentropy_install.py --uv | sh
-          uv pip install --system -r requirements-dev.txt -r requirements-tests.txt
+          uv pip install --system -e .[dev]
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
@@ -155,10 +155,11 @@ jobs:
       - name: Install dependencies
         run: |
           uv pip show --system torch
+          uv pip install --system wheel
           uv pip install --system --no-build-isolation -e .
           python scripts/unsloth_install.py --uv | sh
           python scripts/cutcrossentropy_install.py --uv | sh
-          uv pip install --system -r requirements-dev.txt -r requirements-tests.txt
+          uv pip install --system -e .[dev]
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
@@ -233,7 +234,7 @@ jobs:
             pytorch: 2.7.1
             num_gpus: 1
             axolotl_extras:
-            dockerfile: "Dockerfile-uv.jinja"
+            dockerfile: "Dockerfile.jinja"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
