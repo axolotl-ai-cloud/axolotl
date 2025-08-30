@@ -14,10 +14,7 @@ from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 from axolotl.cli.args import InferenceCliArgs
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
-from axolotl.utils.chat_templates import (
-    get_chat_template,
-    get_chat_template_from_config,
-)
+from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
@@ -64,7 +61,9 @@ def do_inference(
             importlib.import_module("axolotl.prompters"), prompter
         )
     elif cfg.chat_template:
-        chat_template_str = get_chat_template(cfg.chat_template, tokenizer=tokenizer)
+        chat_template_str = get_chat_template_from_config(
+            cfg, ds_cfg=None, tokenizer=tokenizer
+        )
     elif cfg.datasets[0].type == "chat_template":
         chat_template_str = get_chat_template_from_config(
             cfg=cfg, ds_cfg=cfg.datasets[0], tokenizer=tokenizer
@@ -159,7 +158,13 @@ def do_inference_gradio(
             importlib.import_module("axolotl.prompters"), prompter
         )
     elif cfg.chat_template:
-        chat_template_str = get_chat_template(cfg.chat_template, tokenizer=tokenizer)
+        chat_template_str = get_chat_template_from_config(
+            cfg, ds_cfg=None, tokenizer=tokenizer
+        )
+    elif cfg.datasets[0].type == "chat_template":
+        chat_template_str = get_chat_template_from_config(
+            cfg=cfg, ds_cfg=cfg.datasets[0], tokenizer=tokenizer
+        )
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
