@@ -26,8 +26,8 @@ jobs:
             version: "latest"
         - name: Install dependencies
           run: |
-            uv pip --system install jupyter quartodoc
-            uv pip --system install -e .
+            uv pip install --system jupyter quartodoc
+            uv pip install --system -e .
         - name: Build autodoc
           run: quartodoc build
         - name: Publish to GitHub Pages (and render)
