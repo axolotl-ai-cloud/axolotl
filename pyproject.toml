@@ -188,6 +188,7 @@ dev = [
     # Utilities
     "blobfile",
     "tiktoken",
+    "wheel",
 ]
 
 [project.scripts]
