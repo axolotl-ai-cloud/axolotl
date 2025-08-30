@@ -1,9 +1,8 @@
 FROM axolotlai/axolotl-cloud:main-py3.11-cu124-2.6.0
 
 COPY .runpod/requirements.txt /requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python3 -m pip install --upgrade pip && \
-    python3 -m pip install --upgrade -r /requirements.txt
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    /root/.local/bin/uv pip install --system -r /requirements.txt
 
 # Environment settings
 ARG BASE_VOLUME="/runpod-volume"
