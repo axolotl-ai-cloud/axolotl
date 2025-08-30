@@ -50,7 +50,7 @@ jobs:
 
       - name: Install PyTorch
         run: |
-          uv pip --system install torch==${{ matrix.pytorch_version }} torchvision
+          uv pip install --system torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Update requirements.txt
         run: |
@@ -62,11 +62,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip --system show torch
-          uv pip --system install --no-build-isolation -U -e .
+          uv pip show --system torch
+          uv pip install --system --no-build-isolation -U -e .
           python scripts/unsloth_install.py --uv | sh
           python scripts/cutcrossentropy_install.py --uv | sh
-          uv pip --system install -r requirements-dev.txt -r requirements-tests.txt
+          uv pip install --system -r requirements-dev.txt -r requirements-tests.txt
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
@@ -115,12 +115,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
       - name: Install Modal
         run: |
-          uv pip --system install modal==1.0.2 jinja2
+          uv pip install --system modal==1.0.2 jinja2
       - name: Update env vars
         run: |
-          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "BASE_TAG=main-base-uv-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
           echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
           echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
@@ -156,12 +160,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
       - name: Install Modal
         run: |
-          uv pip --system install modal==1.0.2 jinja2
+          uv pip install --system modal==1.0.2 jinja2
       - name: Update env vars
         run: |
-          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "BASE_TAG=main-base-uv-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
           echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
           echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
