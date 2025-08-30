@@ -112,12 +112,12 @@ ring-flash-attn = [
 
 # Deep learning frameworks
 deepspeed = [
-    "deepspeed>=0.17.0",  # Allow newer versions
+    "deepspeed>=0.17.0",
     "deepspeed-kernels",
 ]
 
 mamba-ssm = [
-    "mamba-ssm>=2.2.0",  # Updated to latest stable version
+    "mamba-ssm>=2.2.0",
     "causal_conv1d>=1.4.0",
 ]
 
