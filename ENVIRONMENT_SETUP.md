@@ -82,13 +82,14 @@ PLAN_CONFIGS = {
 ## 🎯 Current Project Status
 
 ### Achievements
-✅ **Single-task strategy model**: 94.5% accuracy on strategy selection  
-✅ **Multi-task dataset creation**: Balanced 507-example dataset with task prefixing  
-✅ **Training pipeline optimization**: Realistic timing estimates and checkpoint management  
-✅ **Data quality fixes**: Format standardization and case consistency corrections  
+✅ Single-task strategy model validated (strategy_selection)  
+✅ GPU training and inference verified on Windows (CUDA-enabled PyTorch)  
+✅ Multi-task dataset created: 507-example JSONL with task prefixes  
+✅ Training pipeline: logging, checkpoints, resume support  
+✅ Data quality fixes: format standardization and case consistency  
 
 ### Current Challenge
-❌ **Multi-task learning**: Despite good loss convergence, task recognition fails completely (0% strategy task success)
+⏳ Multi-task learning on GPU: not yet validated. Next step is an ~8-hour training run using the multi-task dataset and a single LoRA adapter.
 
 ### Next Steps for GPU Environment
 1. **Validate faster training times** with GPU acceleration
@@ -107,6 +108,27 @@ python train_lora_bethpage_strat.py --start quick --data-file "data/bethpage_bla
 python train_lora_bethpage_strat.py --start multitask --data-file "data/bethpage_black/train_multitask_case_fixed.jsonl"
 ```
 
+### 8-hour GPU multi-task run (Windows PowerShell)
+```powershell
+# Ensure output folder exists
+if (!(Test-Path "outputs\bethpage-lora")) { New-Item -ItemType Directory -Force -Path "outputs\bethpage-lora" | Out-Null }
+
+# Start ~8-hour multi-task training on GPU
+./axo-env/Scripts/python.exe train_lora_bethpage_strat.py `
+    --start multitask `
+    --data-file "data\bethpage_black\train_multitask_case_fixed.jsonl" `
+    --log-path "outputs\bethpage-lora\train_8hr_gpu.log" `
+    *> "outputs\bethpage-lora\train_8hr_full_output.log"
+
+# Optional: resume (if interrupted)
+./axo-env/Scripts/python.exe train_lora_bethpage_strat.py `
+    --start multitask `
+    --data-file "data\bethpage_black\train_multitask_case_fixed.jsonl" `
+    --resume-from-checkpoint `
+    --log-path "outputs\bethpage-lora\train_8hr_gpu_resume.log" `
+    *> "outputs\bethpage-lora\train_8hr_full_output_resume.log"
+```
+
 ### Inference & Validation
 ```bash
 # Run inference
@@ -114,6 +136,30 @@ python fix_and_infer_lora_v3.py --adapter_dir "outputs/bethpage-lora/checkpoint-
 
 # Validate results
 python check_inference_strategies.py --inference-file "outputs/bethpage-lora/test_results.jsonl" --data-file "data/bethpage_black/train_multitask_case_fixed.jsonl" --log-file "outputs/bethpage-lora/validation_log.txt"
+```
+
+### Strategy-only evaluation flow (recommended)
+For validating strategy prediction, evaluate only the `strategy_selection` entries to avoid mixing with `description_synthesis` examples.
+
+```powershell
+# Create a strategy-only evaluation set
+./axo-env/Scripts/python.exe .\scripts\filter_jsonl_by_task.py `
+    --in "data\bethpage_black\train_multitask_case_fixed.jsonl" `
+    --task "strategy_selection" `
+    --out "outputs\bethpage-lora\strategy_eval.jsonl"
+
+# Run inference using the trained adapter (adjust checkpoint path as needed)
+./axo-env/Scripts/python.exe .\fix_and_infer_lora_v3.py `
+    --adapter_dir "outputs\bethpage-lora\checkpoint-multitask" `
+    --jsonl "outputs\bethpage-lora\strategy_eval.jsonl" `
+    --output "outputs\bethpage-lora\inference_multitask_strategy.jsonl" `
+    *> "outputs\bethpage-lora\inference_multitask_strategy_full_output.log"
+
+# Check strategy accuracy
+./axo-env/Scripts/python.exe .\check_inference_strategies.py `
+    --inference-file "outputs\bethpage-lora\inference_multitask_strategy.jsonl" `
+    --data-file "outputs\bethpage-lora\strategy_eval.jsonl" `
+    --log-file "outputs\bethpage-lora\inference_strategy_check_log_multitask.txt"
 ```
 
 ### Data Processing
@@ -130,10 +176,10 @@ python fix_case_consistency.py
 
 ## 🐛 Known Issues & Solutions
 
-### Issue: Multi-task Learning Failure
-- **Problem**: 0% success rate on strategy tasks despite task prefixing
-- **Attempted Fixes**: Format standardization, case consistency, balanced datasets
-- **Status**: Requires architectural investigation on GPU environment
+### Issue: Multi-task Learning (to be re-evaluated on GPU)
+- Status: Multi-task training has not yet been validated on the new GPU setup.
+- Prior context: Earlier CPU-only experiments struggled with task recognition; we will re-test with the GPU pipeline.
+- Next step: Run the 8-hour multi-task plan and evaluate tasks separately (strategy vs description).
 
 ### Issue: Training Time Estimation
 - **Problem**: Original estimates were too optimistic

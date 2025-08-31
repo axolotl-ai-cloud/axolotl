@@ -101,7 +101,8 @@ def run_inference(adapter_dir, jsonl_file, output_file, model_name="gpt2", max_t
     fixed_adapter = prepare_adapter_folder(adapter_dir)
     print("Using adapter folder:", fixed_adapter)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Force CPU to avoid GPU compatibility issues with RTX 5060 Ti
+    device = torch.device("cpu")
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
@@ -157,7 +158,8 @@ def run_inference(adapter_dir, jsonl_file, output_file, model_name="gpt2", max_t
     with open(output_file, "w", encoding="utf-8") as out_f:
         for rec in records:
             out_f.write(json.dumps(rec) + "\n")
-    print(f"✅ Wrote {len(records)} records to {output_file}")
+    # Avoid Unicode symbols that may fail on Windows cp1252 consoles
+    print(f"Wrote {len(records)} records to {output_file}")
     return records
 
 
