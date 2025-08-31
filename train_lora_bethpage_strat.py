@@ -28,56 +28,24 @@ def _configure_sdp_kernels(force_cpu: bool):
         # Best-effort; continue if backend flags are unavailable
         pass
 
-<<<<<<< Updated upstream
 # Define plan-specific hyperparameters (GPU-calibrated)
 # Notes:
-# - debug: 1 step with tiny model to validate script wiring
-# - debug_training: 20 steps with tiny model to produce a checkpoint for inference and verify loss decreases
-# - 1_hour: ~2,560 steps on GPU (~1 hour at ~1-1.5 s/step)
-# - 8_hour: ~20,480 steps on GPU (~8 hours)
+# - debug: 1 step with tiny model (wiring)
+# - debug_training: 20 steps with tiny model (sanity + checkpoint)
+# - 1_hour: ~2,560 steps on GPU
+# - 8_hour: ~20,480 steps on GPU
 PLAN_CONFIGS = {
-    # Tiny model runs to keep quick checks fast everywhere
     0: {"name": "debug", "max_steps": 1, "save": False, "save_steps": 1, "model_name": "sshleifer/tiny-gpt2"},
     1: {"name": "debug_training", "max_steps": 20, "save": True, "save_steps": 20, "model_name": "sshleifer/tiny-gpt2"},
-    # Full model runs
     2: {"name": "1_hour", "max_steps": 2560, "save": True, "save_steps": 640, "model_name": "gpt2"},
     3: {"name": "8_hour", "max_steps": 20480, "save": True, "save_steps": 2560, "model_name": "gpt2"},
-=======
-# Define plan-specific hyperparameters
-# LEGACY CPU TIME ESTIMATES (earlier baseline ~4.5 minutes/step):
-# - debug (1 step): Pipeline connectivity test only (~5 minutes)
-# - debug_training (20 steps): Sanity check - NOT meaningful validation (~90 minutes)
-# - quick_test (7 steps): Basic training verification (~30 minutes)
-# - 1_hour (13 steps): Light training run (~1 hour)
-# - 8_hour (107 steps): Full training run (~8 hours)
-# - multitask (107 steps): Multi-task learning (~8 hours)
-#
-# UPDATED GPU THROUGHPUT on RTX 5060 Ti with ~250-token sequences (observed ~1.4 sec/step ≈ 0.71 steps/sec):
-# - 1_hour ≈ 2,560 steps
-# - 8_hour ≈ 20,480 steps
-PLAN_CONFIGS = {
-    # Use a tiny model for debug/quick to keep tests fast on CPU-only or incompatible GPUs
-    0: {"name": "debug", "max_steps": 1, "save": False, "save_steps": 1, "model_name": "sshleifer/tiny-gpt2"},
-    1: {"name": "debug_training", "max_steps": 20, "save": True, "save_steps": 20, "model_name": "sshleifer/tiny-gpt2"},  # SANITY CHECK ONLY
-    2: {"name": "quick_test", "max_steps": 7, "save": True, "save_steps": 7, "model_name": "sshleifer/tiny-gpt2"},       # ~minutes
-    # Full model runs
-    3: {"name": "1_hour", "max_steps": 2560, "save": True, "save_steps": 640, "model_name": "gpt2"},        # ~1 hour on current GPU
-    4: {"name": "8_hour", "max_steps": 20480, "save": True, "save_steps": 2560, "model_name": "gpt2"},      # ~8 hours on current GPU
-    5: {"name": "8_hour_enhanced", "max_steps": 107, "save": True, "save_steps": 53, "model_name": "gpt2"},  # ~8 hours (save every ~4 hours)
-    6: {"name": "multitask", "max_steps": 107, "save": True, "save_steps": 53, "model_name": "gpt2"},   # ~8 hours MULTI-TASK LEARNING
-    7: {"name": "fixed_multitask", "max_steps": 60, "save": True, "save_steps": 30, "model_name": "gpt2"},  # ~4.5 hours FIXED DATASET
-    8: {"name": "10_hour", "max_steps": 1565, "save": True, "save_steps": 250, "model_name": "gpt2"},  # ~10 hours on observed GPU throughput
->>>>>>> Stashed changes
 }
 
 
 
-<<<<<<< Updated upstream
-def train_model(plan, data_file="data/bethpage_black/train_multitask_case_fixed.jsonl", resume=False, log_path=None):
-=======
 def train_model(
     plan,
-    data_file="data/bethpage_black/train_multitask_fixed.jsonl",
+    data_file="data/bethpage_black/train_multitask_case_fixed.jsonl",
     resume=False,
     log_path=None,
     force_cpu=False,
@@ -86,7 +54,6 @@ def train_model(
 ):
     # Configure SDP kernels before model init
     _configure_sdp_kernels(force_cpu)
->>>>>>> Stashed changes
     cfg = PLAN_CONFIGS[plan]
     max_steps = max_steps_override if max_steps_override is not None else cfg["max_steps"]
     save_steps = save_steps_override if save_steps_override is not None else cfg["save_steps"]
@@ -417,50 +384,8 @@ def run_pipeline(start_mode, data_file, resume, log_path, force_cpu=False, max_s
     if not success_debug_training:
         print("Debug training failed. Stopping.")
         return
-<<<<<<< Updated upstream
     if start_mode == "short":
-        result_1hr = train_model(2, data_file, resume, log_path)
-=======
-    if start_mode == "test":
-        # Run quick inference test with 20-step model
-        print("Running inference test with 20-step model...")
-        import subprocess
-        try:
-            # Run inference
-            cmd_infer = [
-                sys.executable, "fix_and_infer_lora_v3.py",
-                "--adapter_dir", "outputs/bethpage-lora/checkpoint-debug_training",
-                "--jsonl", data_file,
-                "--output", "outputs/bethpage-lora/inference_debug_training.jsonl"
-            ]
-            subprocess.run(cmd_infer, check=True)
-            
-            # Run validation (use flags)
-            cmd_check = [
-                sys.executable, "check_inference_strategies.py",
-                "--inference-file", "outputs/bethpage-lora/inference_debug_training.jsonl",
-                "--data-file", data_file,
-                "--log-file", "outputs/bethpage-lora/inference_strategy_check_log.txt"
-            ]
-            subprocess.run(cmd_check, check=True)
-            print("20-step inference test completed successfully.")
-        except subprocess.CalledProcessError as e:
-            print(f"20-step inference test failed: {e}")
-        
-        print("Test pipeline complete.")
-        return
-    if start_mode == "quick":
-        result_quick = train_model(2, data_file, resume, log_path, force_cpu)
-        success_quick, ckpt_quick, metrics_quick, grad_norm_quick, lr_quick, losses_quick = result_quick
-        verify_metrics(metrics_quick, grad_norm_quick, lr_quick, losses_quick, "quick_test")
-        if not success_quick:
-            print("Quick test mode failed. Stopping.")
-            return
-        print("Quick test pipeline complete.")
-        return
-    if start_mode == "short":
-        result_1hr = train_model(3, data_file, resume, log_path, force_cpu)
->>>>>>> Stashed changes
+        result_1hr = train_model(2, data_file, resume, log_path, force_cpu, max_steps_override, save_steps_override)
         success_1hr, ckpt_1hr, metrics_1hr, grad_norm_1hr, lr_1hr, losses_1hr = result_1hr
         verify_metrics(metrics_1hr, grad_norm_1hr, lr_1hr, losses_1hr, "1_hour")
         if not success_1hr:
@@ -469,11 +394,7 @@ def run_pipeline(start_mode, data_file, resume, log_path, force_cpu=False, max_s
         print("Short pipeline complete.")
         return
     if start_mode == "long":
-<<<<<<< Updated upstream
-        result_8hr = train_model(3, data_file, resume, log_path)
-=======
-        result_8hr = train_model(4, data_file, resume, log_path, force_cpu)
->>>>>>> Stashed changes
+        result_8hr = train_model(3, data_file, resume, log_path, force_cpu, max_steps_override, save_steps_override)
         success_8hr, ckpt_8hr, metrics_8hr, grad_norm_8hr, lr_8hr, losses_8hr = result_8hr
         verify_metrics(metrics_8hr, grad_norm_8hr, lr_8hr, losses_8hr, "8_hour")
         if not success_8hr:
@@ -481,58 +402,21 @@ def run_pipeline(start_mode, data_file, resume, log_path, force_cpu=False, max_s
             return
         print("Long pipeline complete.")
         return
-<<<<<<< Updated upstream
     # If an unknown mode is passed, default to short
-    result_1hr = train_model(2, data_file, resume, log_path)
+    result_1hr = train_model(2, data_file, resume, log_path, force_cpu, max_steps_override, save_steps_override)
     success_1hr, ckpt_1hr, metrics_1hr, grad_norm_1hr, lr_1hr, losses_1hr = result_1hr
     verify_metrics(metrics_1hr, grad_norm_1hr, lr_1hr, losses_1hr, "1_hour")
     print("Short pipeline complete.")
     return
-=======
-    if start_mode == "enhanced":
-        result_enhanced = train_model(5, data_file, resume, log_path, force_cpu)
-        success_enhanced, ckpt_enhanced, metrics_enhanced, grad_norm_enhanced, lr_enhanced, losses_enhanced = result_enhanced
-        verify_metrics(metrics_enhanced, grad_norm_enhanced, lr_enhanced, losses_enhanced, "8_hour_enhanced")
-        if not success_enhanced:
-            print("8_hour_enhanced mode failed. Stopping.")
-            return
-        print("Enhanced pipeline complete.")
-        return
-    if start_mode in ("10_hour", "10hour"):
-        # Apply overrides only to the requested main phase so debug stages remain fast
-        result_10hr = train_model(8, data_file, resume, log_path, force_cpu, max_steps_override=max_steps_override, save_steps_override=save_steps_override)
-        success_10hr, ckpt_10hr, metrics_10hr, grad_norm_10hr, lr_10hr, losses_10hr = result_10hr
-        verify_metrics(metrics_10hr, grad_norm_10hr, lr_10hr, losses_10hr, "10_hour")
-        if not success_10hr:
-            print("10_hour mode failed. Stopping.")
-            return
-        print("10-hour pipeline complete.")
-        return
-    if start_mode == "multitask":
-        result_multitask = train_model(6, data_file, resume, log_path, force_cpu)
-        success_multitask, ckpt_multitask, metrics_multitask, grad_norm_multitask, lr_multitask, losses_multitask = result_multitask
-        verify_metrics(metrics_multitask, grad_norm_multitask, lr_multitask, losses_multitask, "multitask")
-        if not success_multitask:
-            print("Multitask mode failed. Stopping.")
-            return
-        print("Multi-task pipeline complete. Model can now handle both strategy selection AND description synthesis!")
-        return
->>>>>>> Stashed changes
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--start",
         type=str,
-<<<<<<< Updated upstream
-        choices=["short", "long"],
-        default="short",
-        help="Pipeline start mode: short (~1 hour), long (~8 hours). Debug phases always run first."
-=======
-        choices=["test", "quick", "short", "long", "enhanced", "10_hour", "10hour", "multitask"],
-        default="multitask",
-        help="Pipeline start mode: test, quick, short, long, enhanced, 10_hour, multitask (default: multitask)"
->>>>>>> Stashed changes
+    choices=["short", "long"],
+    default="short",
+    help="Pipeline start mode: short (~1 hour), long (~8 hours). Debug phases always run first."
     )
     parser.add_argument(
         "--data-file",
