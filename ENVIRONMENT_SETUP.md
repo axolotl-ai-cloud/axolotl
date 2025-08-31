@@ -1,6 +1,32 @@
 # Axolotl Multi-Task Golf Strategy Environment Setup
 
 This document explains how to recreate the working environment on a new PC with GPU support.
+## 🚀 Quick Setup Guide
+
+### 2. Initial Setup
+### 2.1 Always use the same virtual environment (axo-env)
+- Inconsistent environments cause mismatched library/CUDA versions and flaky runs.
+- On Windows PowerShell, activate before every session:
+
+```powershell
+ # from repo root
+ C:\git\axolotl\axo-env\Scripts\Activate.ps1
+```
+
+- In VS Code, we pin the interpreter via `.vscode/settings.json`, so terminals and the Python extension use `axo-env` automatically.
+### Consistency checks
+To verify you're using the intended interpreter and CUDA build:
+
+```powershell
+ # System Python (may be different)
+ python -c "import sys; print(sys.executable)"
+
+ # axo-env Python (should be used)
+ .\axo-env\Scripts\python.exe -c "import sys, torch, transformers; print(sys.executable); print('torch', torch.__version__, 'cuda', getattr(torch.version,'cuda',None)); print('transformers', transformers.__version__); print('cuda available', __import__('torch').cuda.is_available())"
+```
+# Axolotl Multi-Task Golf Strategy Environment Setup
+
+This document explains how to recreate the working environment on a new PC with GPU support.
 
 ## 🚀 Quick Setup Guide
 
