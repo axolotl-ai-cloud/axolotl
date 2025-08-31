@@ -338,6 +338,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             if plugin_training_args:
                 training_arguments_kwargs.update(plugin_training_args)
 
+        # Add reward model specific parameters
+        if self.cfg.reward_model and self.cfg.center_rewards_coefficient is not None:
+            training_arguments_kwargs["center_rewards_coefficient"] = self.cfg.center_rewards_coefficient
+
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
         elif self.cfg.process_reward_model:

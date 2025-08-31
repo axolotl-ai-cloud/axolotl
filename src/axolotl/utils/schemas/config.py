@@ -138,6 +138,12 @@ class AxolotlInputConfig(
             "description": "Process reward modelling: `True` or `False`"
         },
     )
+    center_rewards_coefficient: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Coefficient to incentivize the reward model to output mean-zero rewards. Recommended value: `0.01`."
+        },
+    )
     num_labels: int | None = None
     # Whether to use weighting in DPO trainer.
     # If `None`, default is `False` in the trainer.

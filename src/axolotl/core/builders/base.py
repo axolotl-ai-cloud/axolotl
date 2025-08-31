@@ -498,6 +498,8 @@ class TrainerBuilderBase(abc.ABC):
             "dion_momentum",
             "dion_rank_fraction",
             "dion_rank_multiple_of",
+            # reward modeling
+            "center_rewards_coefficient",
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
                 training_args_kwargs[arg] = getattr(self.cfg, arg)
