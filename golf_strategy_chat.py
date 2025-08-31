@@ -4,11 +4,11 @@ Interactive Golf Strategy Chat
 Chat with your trained LoRA model to get golf strategy recommendations and hole descriptions.
 
 Basic usage (interactive):
-    python golf_strategy_chat.py --adapter_dir outputs/bethpage-lora/checkpoint-multitask \
+    python golf_strategy_chat.py --adapter_dir outputs/bethpage-lora/checkpoint-8_hour \
         --data-file data/bethpage_black/train_multitask_case_fixed.jsonl
 
 One-shot example:
-    python golf_strategy_chat.py --adapter_dir outputs/bethpage-lora/checkpoint-multitask \
+    python golf_strategy_chat.py --adapter_dir outputs/bethpage-lora/checkpoint-8_hour \
         --data-file data/bethpage_black/train_multitask_case_fixed.jsonl \
         --prompt "Hole 5, I drive 290 yards, what strategy?"
 """
@@ -342,7 +342,7 @@ class GolfStrategyChat:
 
 def main():
     parser = argparse.ArgumentParser(description="Interactive chat for golf strategies and descriptions")
-    parser.add_argument("--adapter_dir", required=False, default="outputs/bethpage-lora/checkpoint-multitask")
+    parser.add_argument("--adapter_dir", required=False, default="outputs/bethpage-lora/checkpoint-8_hour")
     parser.add_argument("--data-file", required=False, default="data/bethpage_black/train_multitask_case_fixed.jsonl")
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument("--prompt", help="Optional one-shot prompt; if provided, runs once and exits", default=None)
