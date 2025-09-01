@@ -7,7 +7,6 @@ tokenizer_type: AutoTokenizer
 # hub_model_id: username/custom_model_name
 
 reward_model: true
-center_rewards_coefficient: 0.01  # Incentivize mean-zero rewards for improved stability
 chat_template: gemma
 datasets:
   - path: argilla/distilabel-intel-orca-dpo-pairs
