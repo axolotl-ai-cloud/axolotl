@@ -45,9 +45,6 @@ For improved training stability, you can enable reward centering which encourage
 
 ```yaml
 base_model: google/gemma-2-2b
-model_type: AutoModelForSequenceClassification
-num_labels: 1
-tokenizer_type: AutoTokenizer
 
 reward_model: true
 center_rewards_coefficient: 0.01  # Typical values: 0.001 - 0.1
