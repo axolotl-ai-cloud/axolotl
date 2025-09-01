@@ -74,6 +74,11 @@ def get_quantization_config(
         and weight_dtype == TorchAOQuantDType.int4
     ):
         return Float8DynamicActivationInt4WeightConfig()
+    if weight_dtype == TorchAOQuantDType.nvfp4:
+        from torchao.prototype.mx_formats import NVFP4InferenceConfig
+        if group_size is not None and group_size != 16:
+            raise ValueError("NVFP4 quantization must use a group_size of 16")
+        return NVFP4InferenceConfig()
     raise ValueError(
         f"Invalid activation/weight dtype combination: {activation_dtype}/{weight_dtype}"
     )

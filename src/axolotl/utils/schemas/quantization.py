@@ -16,11 +16,11 @@ class QATConfig(BaseModel):
 
     activation_dtype: TorchAOQuantDType | None = Field(
         default=None,
-        description='Fake quantization layout to use for activation quantization. Valid options are "int4" and "int8"',
+        description=f"Fake quantization layout to use for activation quantization.",
     )
     weight_dtype: TorchAOQuantDType = Field(
         default=TorchAOQuantDType.int8,
-        description='Fake quantization layout to use for weight quantization. Valid options are "int4" and "int8"',
+        description=f"Fake quantization layout to use for weight quantization.",
     )
     quantize_embedding: bool | None = Field(
         default=False, description="Quantize embedding"
@@ -54,11 +54,11 @@ class PTQConfig(BaseModel):
 
     weight_dtype: TorchAOQuantDType = Field(
         default=TorchAOQuantDType.int8,
-        description="Fake quantization layout to use for weight quantization. Valid options are uintX for X in [1, 2, 3, 4, 5, 6, 7], or int4, or int8",
+        description=f"Fake quantization layout to use for weight quantization.",
     )
     activation_dtype: TorchAOQuantDType | None = Field(
         default=None,
-        description='Fake quantization layout to use for activation quantization. Valid options are "int4" and "int8"',
+        description=f"Fake quantization layout to use for activation quantization.",
     )
     quantize_embedding: bool | None = Field(
         default=None, description="Whether to quantize the embedding layer."

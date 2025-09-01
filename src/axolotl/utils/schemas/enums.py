@@ -6,14 +6,10 @@ import torch
 
 
 class TorchAOQuantDType(Enum):
-    int4 = getattr(torch, "int4", None)
-    int8 = getattr(torch, "int8", None)
-    float8_e4m3fn = getattr(torch, "float8_e4m3fn", None)
-
-    def __post_init__(self):
-        if self.value is None:
-            raise ValueError(f"Invalid dtype: '{self.name}'. Must be one of: {[e.name for e in TorchAOQuantDType]}.")
-
+    int4 = "int4"
+    int8 = "int8"
+    float8_e4m3fn = "float8_e4m3fn"
+    nvfp4 = "nvfp4"
 
 class RLType(str, Enum):
     """RL trainer type configuration subset"""
