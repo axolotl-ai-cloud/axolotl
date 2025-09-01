@@ -48,10 +48,11 @@ def parse_args():
     p.add_argument("--jsonl", required=True, help="Input JSONL with description_synthesis prompts")
     p.add_argument("--output", required=True, help="Output JSONL path for generated completions")
     p.add_argument("--model_name", default="gpt2", help="Base model name or path (default: gpt2)")
-    p.add_argument("--max_tokens", type=int, default=160, help="Max new tokens to generate per prompt")
-    p.add_argument("--do_sample", action="store_true", help="Enable sampling (otherwise greedy)")
-    p.add_argument("--temperature", type=float, default=0.8, help="Sampling temperature when --do_sample is set")
-    p.add_argument("--top_p", type=float, default=0.9, help="Top-p nucleus when --do_sample is set")
+    p.add_argument("--max_tokens", type=int, default=220, help="Max new tokens to generate per prompt (default: 220)")
+    p.add_argument("--do_sample", action="store_true", default=True, help="Enable sampling (default: on)")
+    p.add_argument("--temperature", type=float, default=0.7, help="Sampling temperature (default: 0.7)")
+    p.add_argument("--top_p", type=float, default=0.9, help="Top-p nucleus (default: 0.9)")
+    p.add_argument("--no_guidance", action="store_true", help="Disable appended guidance in prompts")
     return p.parse_args()
 
 
@@ -61,7 +62,66 @@ def clean_bleed(text: str) -> str:
     return parts[0].strip()
 
 
-def run_inference(adapter_dir: str, jsonl_file: str, output_file: str, model_name: str, max_tokens: int, do_sample: bool, temperature: float, top_p: float):
+GUIDANCE = (
+    "Write one cohesive paragraph (120–180 words). Focus on hazards, wind, elevation, landing zones, and approach angles. "
+    "Use specific details from the prompt. Avoid generic phrases like 'Success depends…' or 'combines strategic positioning'. "
+    "Do not restate the hole number incorrectly; if you mention it, ensure it matches the prompt. Use yards as the unit."
+)
+
+
+def fix_mojibake(s: str) -> str:
+    """Lightweight fixes for common mojibake artifacts from source text."""
+    repl = {
+        "â€™": "’",
+        "â€“": "–",
+        "â€”": "—",
+        "â€œ": "“",
+        "â€": "”",
+        "â€˜": "‘",
+        "â€¦": "…",
+        "Ã©": "é",
+        "Ã": "A",  # coarse; prevents stray Ã
+        "Â": "",
+    }
+    for k, v in repl.items():
+        s = s.replace(k, v)
+    return s
+
+
+HOLE_RE = re.compile(r"\bHole\s*(\d+)\b", flags=re.IGNORECASE)
+
+
+def extract_expected_hole(prompt: str) -> int | None:
+    m = HOLE_RE.search(prompt)
+    return int(m.group(1)) if m else None
+
+
+def sanitize_hole_header(text: str, expected_hole: int | None) -> str:
+    """If the output begins with an incorrect 'Hole N', replace it with 'This hole'."""
+    if expected_hole is None:
+        return text
+    m = re.match(r"^\s*Hole\s*(\d+)\b", text, flags=re.IGNORECASE)
+    if m:
+        num = int(m.group(1))
+        if num != expected_hole:
+            return re.sub(r"^\s*Hole\s*\d+\b\s*[:\-]?\s*", "This hole ", text, count=1, flags=re.IGNORECASE)
+    return text
+
+
+def de_template(text: str) -> str:
+    """Remove a couple of known boilerplate phrases without heavy rewriting."""
+    patterns = [
+        re.compile(r"combines strategic positioning with technical execution", re.IGNORECASE),
+        re.compile(r"\b[Ss]uccess\b[^.!?]{0,180}\bdepends\b[^.!?]*[.!?]"),
+    ]
+    for pat in patterns:
+        text = pat.sub("", text)
+    # Collapse extra spaces from removals
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def run_inference(adapter_dir: str, jsonl_file: str, output_file: str, model_name: str, max_tokens: int, do_sample: bool, temperature: float, top_p: float, use_guidance: bool):
     fixed_adapter = prepare_adapter_folder(adapter_dir)
     print("Using adapter folder:", fixed_adapter)
 
@@ -82,7 +142,11 @@ def run_inference(adapter_dir: str, jsonl_file: str, output_file: str, model_nam
                 continue
             entry = json.loads(line)
             prompt = entry["prompt"]
-            inputs = tokenizer(prompt, return_tensors="pt").to(device)
+            expected_hole = extract_expected_hole(prompt)
+            prompt_plus = prompt
+            if use_guidance:
+                prompt_plus = prompt + "\n\nGuidance: " + GUIDANCE
+            inputs = tokenizer(prompt_plus, return_tensors="pt").to(device)
             gen_kwargs = dict(
                 max_new_tokens=max_tokens,
                 pad_token_id=tokenizer.eos_token_id,
@@ -96,6 +160,9 @@ def run_inference(adapter_dir: str, jsonl_file: str, output_file: str, model_nam
             gen_ids = outputs[0, inputs["input_ids"].shape[-1]:]
             raw = tokenizer.decode(gen_ids, skip_special_tokens=True)
             clean = clean_bleed(raw)
+            clean = fix_mojibake(clean)
+            clean = sanitize_hole_header(clean, expected_hole)
+            clean = de_template(clean)
             rec = {**entry, "raw_completion": raw, "completion": clean}
             records.append(rec)
 
@@ -115,9 +182,10 @@ def main():
         output_file=args.output,
         model_name=args.model_name,
         max_tokens=args.max_tokens,
-        do_sample=args.do_sample,
+    do_sample=args.do_sample,
         temperature=args.temperature,
-        top_p=args.top_p,
+    top_p=args.top_p,
+    use_guidance=(not args.no_guidance),
     )
 
 
