@@ -162,9 +162,6 @@ extras_require = {
     "llmcompressor": [
         "llmcompressor==0.5.1",
     ],
-    "fbgemm": [
-        "fbgemm-gpu-genai>=1.2.0",
-    ],
 }
 install_requires, dependency_links, extras_require_build = parse_requirements(
     extras_require

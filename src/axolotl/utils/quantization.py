@@ -44,7 +44,7 @@ def get_quantization_config(
                 "Int8WeightOnlyConfig is not supported by torchao QAT."
             )
         if weight_dtype == TorchAOQuantDType.int4:
-            return Int4WeightOnlyConfig(group_size=group_size or -1, version=2)
+            return Int4WeightOnlyConfig(group_size=group_size or -1, version=1)
     if (
         activation_dtype == TorchAOQuantDType.int4
         and weight_dtype == TorchAOQuantDType.int4
