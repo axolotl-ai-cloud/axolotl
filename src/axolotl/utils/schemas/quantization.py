@@ -43,7 +43,7 @@ class QATConfig(BaseModel):
         if v == "float8_e4m3fn":
             return TorchAOQuantDType.float8_e4m3fn
         raise ValueError(
-            f"Invalid dtype: '{v}'. Must be one of: {[e.value for e in TorchAOQuantDType]}"
+            f"Invalid dtype: '{v}'. Must be one of: {[e.name for e in TorchAOQuantDType]}"
         )
 
 
@@ -78,5 +78,5 @@ class PTQConfig(BaseModel):
         if v == "float8_e4m3fn":
             return TorchAOQuantDType.float8_e4m3fn
         raise ValueError(
-            f"Invalid dtype: '{v}'. Must be one of: {[e.value for e in TorchAOQuantDType]}"
+            f"Invalid dtype: '{v}'. Must be one of: {[e.name for e in TorchAOQuantDType]}"
         )

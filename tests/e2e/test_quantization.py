@@ -9,6 +9,7 @@ from axolotl.utils.callbacks.qat import QATCallback
 from axolotl.utils.quantization import (
     get_quantization_config,
     prepare_model_for_qat,
+    convert_qat_model
     quantize_model,
 )
 from axolotl.utils.schemas.enums import TorchAOQuantDType
@@ -275,7 +276,7 @@ class TestQuantization:
         assert isinstance(model.lm_head, FakeQuantizedLinear)
 
         # apply conversion
-        prepare_model_for_qat(
+        convert_qat_model(
             model,
             config.quantize_embedding,
         )
