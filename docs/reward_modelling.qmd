@@ -41,8 +41,7 @@ Bradley-Terry chat templates expect single-turn conversations in the following f
 
 #### Centering Rewards
 
-For improved training stability, you can enable reward centering which encourages the model to produce mean-zero outputs by adding an auxiliary loss:
-
+For improved training stability, you can use the `center_rewards_coefficient` parameter to encourage mean-zero reward outputs ([see TRL docs](https://huggingface.co/docs/trl/v0.10.1/en/reward_trainer#centering-rewards)).
 ```yaml
 base_model: google/gemma-2-2b
 
