@@ -11,6 +11,7 @@ We support the reward modelling techniques supported by `trl`.
 ### (Outcome) Reward Models
 
 Outcome reward models are trained using data which contains preference annotations for an entire interaction between the user and model (e.g. rather than per-turn or per-step).
+For improved training stability, you can use the `center_rewards_coefficient` parameter to encourage mean-zero reward outputs ([see TRL docs](https://huggingface.co/docs/trl/v0.10.1/en/reward_trainer#centering-rewards)).
 
 ```yaml
 base_model: google/gemma-2-2b
@@ -38,23 +39,6 @@ Bradley-Terry chat templates expect single-turn conversations in the following f
     "rejected": "..."
 }
 ```
-
-#### Centering Rewards
-
-For improved training stability, you can use the `center_rewards_coefficient` parameter to encourage mean-zero reward outputs ([see TRL docs](https://huggingface.co/docs/trl/v0.10.1/en/reward_trainer#centering-rewards)).
-```yaml
-base_model: google/gemma-2-2b
-
-reward_model: true
-center_rewards_coefficient: 0.01  # Typical values: 0.001 - 0.1
-chat_template: gemma
-datasets:
-  - path: argilla/distilabel-intel-orca-dpo-pairs
-    type: bradley_terry.chat_template
-
-```
-
-The `center_rewards_coefficient` parameter controls the weight of the auxiliary loss that minimizes the squared sum of rewards. This technique, proposed by [Eisenstein et al., 2023](https://huggingface.co/papers/2312.09244) (Eq. 2), helps ensure the reward model naturally produces mean-zero outputs without requiring post-training normalization.
 
 ### Process Reward Models (PRM)
 
