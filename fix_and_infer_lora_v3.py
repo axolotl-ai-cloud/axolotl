@@ -142,8 +142,8 @@ def run_inference(adapter_dir, jsonl_file, output_file, model_name="gpt2", max_t
             if mstd:
                 clean = f"Strategy: {mstd.group(1)} yards"
             else:
-                # Fallback: try to extract any number and coerce
-                mnum = re.search(r"(\d{2,4})\s*-?\s*yard", clean, flags=re.IGNORECASE)
+                # Fallback: accept any 2-4 digit number (unit optional) and coerce to yards for standardized output
+                mnum = re.search(r"(\d{2,4})", clean)
                 if mnum:
                     clean = f"Strategy: {int(mnum.group(1))} yards"
             rec = {

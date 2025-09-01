@@ -15,6 +15,14 @@ os.environ.setdefault("PYTORCH_SDP_KERNEL", "math")
 # Quiet HF datasets progress bars to reduce terminal noise on Windows piping
 os.environ.setdefault("HF_DATASETS_DISABLE_PROGRESS_BARS", "1")
 
+# Constants and module-level state for tokenization (avoid dataset hashing warnings)
+DEFAULT_DATA_FILE = "data/bethpage_black/train_multitask_case_fixed.jsonl"
+FORMAT_INSTR = ""  # task prefixing is already in the prompt
+PROMPT_MAX = 200
+COMPLETION_MAX = 50
+TOTAL_MAX = PROMPT_MAX + COMPLETION_MAX
+_TOKENIZER = None  # initialized in train_model
+
 # Prefer safe attention kernels to avoid architecture-specific crashes on newer GPUs
 def _configure_sdp_kernels(force_cpu: bool):
     try:
@@ -43,9 +51,77 @@ PLAN_CONFIGS = {
 
 
 
+import re
+def extract_drive_from_prompt(prompt: str):
+    patterns = [
+        r"average drive:\s*(\d{2,4})\s*yards",
+        r"drives\s*(\d{2,4})\s*yards",
+        r"with a\s*(\d{2,4})-yard drive",
+        r"drive is exactly\s*(\d{2,4})\s*yards",
+        r"average drive of\s*(\d{2,4})\s*yards",
+        r"drive is\s*(\d{2,4})\s*yards",
+    ]
+    for pat in patterns:
+        m = re.search(pat, prompt, flags=re.IGNORECASE)
+        if m:
+            try:
+                return int(m.group(1))
+            except Exception:
+                pass
+    return None
+
+def choose_cutoff(strategies, drive):
+    if not strategies:
+        return None
+    cutoffs = sorted([s.get("cutoff_distance") for s in strategies if isinstance(s.get("cutoff_distance"), int)])
+    if not cutoffs:
+        return None
+    if drive is None:
+        return cutoffs[0] if len(cutoffs) == 1 else cutoffs[-1]
+    eligible = [c for c in cutoffs if c <= drive]
+    return max(eligible) if eligible else cutoffs[0]
+
+def extract_cutoff_from_completion(text: str):
+    m = re.search(r"(\d{2,4})\s*-?\s*yard", text, flags=re.IGNORECASE)
+    return int(m.group(1)) if m else None
+
+def build_standard_completion(example):
+    task_type = example.get("task_type")
+    if task_type == "description_synthesis":
+        return example.get("completion", "Strategic analysis required.")
+    exp = example.get("expected_cutoff_yards")
+    if isinstance(exp, int):
+        return f"Strategy: {exp} yards"
+    drive = extract_drive_from_prompt(example.get("prompt", ""))
+    cutoff = choose_cutoff(example.get("tee_shot_strategies", []), drive)
+    if cutoff is None:
+        cutoff = extract_cutoff_from_completion(example.get("completion", ""))
+    if cutoff is None:
+        cutoff = 300
+    return f"Strategy: {cutoff} yards"
+
+def tokenize_example(example):
+    # Uses module-level tokenizer and constants; top-level function avoids closure hashing warnings
+    global _TOKENIZER
+    tokenizer = _TOKENIZER
+    prompt_text = example["prompt"] + FORMAT_INSTR
+    std_completion = build_standard_completion(example)
+    enc_prompt = tokenizer(prompt_text, truncation=True, max_length=PROMPT_MAX)
+    enc_completion = tokenizer(std_completion, truncation=True, max_length=COMPLETION_MAX)
+    input_ids = enc_prompt["input_ids"] + enc_completion["input_ids"]
+    attention_mask = [1] * len(input_ids)
+    labels = [-100] * len(enc_prompt["input_ids"]) + enc_completion["input_ids"]
+    input_ids = input_ids[:TOTAL_MAX] + [tokenizer.pad_token_id] * max(0, TOTAL_MAX - len(input_ids))
+    attention_mask = attention_mask[:TOTAL_MAX] + [0] * max(0, TOTAL_MAX - len(attention_mask))
+    labels = labels[:TOTAL_MAX] + [-100] * max(0, TOTAL_MAX - len(labels))
+    if all(l == -100 for l in labels):
+        if len(enc_completion["input_ids"]) > 0:
+            labels[-len(enc_completion["input_ids"])] = enc_completion["input_ids"][0]
+    return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
+
 def train_model(
     plan,
-    data_file="data/bethpage_black/train_multitask_case_fixed.jsonl",
+    data_file=DEFAULT_DATA_FILE,
     resume=False,
     log_path=None,
     force_cpu=False,
@@ -83,103 +159,13 @@ def train_model(
 
     tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left")
     tokenizer.pad_token = tokenizer.eos_token
-
-    # Utilities to lock output format: "Strategy: <N> yards"
-    import re
-    def extract_drive_from_prompt(prompt: str):
-        patterns = [
-            r"average drive:\s*(\d{2,4})\s*yards",
-            r"drives\s*(\d{2,4})\s*yards",
-            r"with a\s*(\d{2,4})-yard drive",
-            r"drive is exactly\s*(\d{2,4})\s*yards",
-            r"average drive of\s*(\d{2,4})\s*yards",
-            r"drive is\s*(\d{2,4})\s*yards",
-        ]
-        for pat in patterns:
-            m = re.search(pat, prompt, flags=re.IGNORECASE)
-            if m:
-                try:
-                    return int(m.group(1))
-                except Exception:
-                    pass
-        return None
-
-    def choose_cutoff(strategies, drive):
-        # strategies: list of {cutoff_distance: int, ...}
-        if not strategies:
-            return None
-        cutoffs = sorted([s.get("cutoff_distance") for s in strategies if isinstance(s.get("cutoff_distance"), int)])
-        if not cutoffs:
-            return None
-        if drive is None:
-            # If only one strategy, use it; else default to max (more aggressive)
-            return cutoffs[0] if len(cutoffs) == 1 else cutoffs[-1]
-        eligible = [c for c in cutoffs if c <= drive]
-        return max(eligible) if eligible else cutoffs[0]
-
-    def extract_cutoff_from_completion(text: str):
-        m = re.search(r"(\d{2,4})\s*-?\s*yard", text, flags=re.IGNORECASE)
-        return int(m.group(1)) if m else None
-
-    def build_standard_completion(example):
-        # Handle multi-task examples with different completion formats
-        task_type = example.get("task_type")
-        
-        if task_type == "description_synthesis":
-            # For description synthesis, use the completion as-is (it's already the synthesized analysis)
-            return example.get("completion", "Strategic analysis required.")
-        
-        # For strategy selection tasks, use the existing logic
-        # Prefer explicit target from dataset when available
-        exp = example.get("expected_cutoff_yards")
-        if isinstance(exp, int):
-            return f"Strategy: {exp} yards"
-        # Determine target cutoff
-        drive = extract_drive_from_prompt(example.get("prompt", ""))
-        cutoff = choose_cutoff(example.get("tee_shot_strategies", []), drive)
-        if cutoff is None:
-            # Fallback: try to derive from original completion if present
-            cutoff = extract_cutoff_from_completion(example.get("completion", ""))
-        if cutoff is None:
-            # Final fallback: 300
-            cutoff = 300
-        return f"Strategy: {cutoff} yards"
-
-    FORMAT_INSTR = ""  # Remove format instruction for multi-task learning (task prefix handles this)
-
-    def tokenize_fn(example):
-        # Unified context windows for multi-task learning
-        # Use the larger dimensions to accommodate both task types
-        prompt_max = 200    # Can handle description synthesis prompts
-        completion_max = 50  # Can handle description synthesis completions
-        total_max = prompt_max + completion_max  # 250 tokens total
-            
-        prompt_text = example["prompt"] + FORMAT_INSTR
-        std_completion = build_standard_completion(example)
-        enc_prompt = tokenizer(
-            prompt_text, truncation=True, max_length=prompt_max)
-        enc_completion = tokenizer(
-            std_completion, truncation=True, max_length=completion_max)
-        input_ids = enc_prompt["input_ids"] + enc_completion["input_ids"]
-        attention_mask = [1] * len(input_ids)
-        labels = [-100] * len(enc_prompt["input_ids"]) + enc_completion["input_ids"]
-        
-        # Pad to unified length for multi-task learning
-        input_ids = input_ids[:total_max] + [tokenizer.pad_token_id] * max(0, total_max - len(input_ids))
-        attention_mask = attention_mask[:total_max] + [0] * max(0, total_max - len(attention_mask))
-        labels = labels[:total_max] + [-100] * max(0, total_max - len(labels))
-        if all(l == -100 for l in labels):
-            if len(enc_completion["input_ids"]) > 0:
-                labels[-len(enc_completion["input_ids"])] = enc_completion["input_ids"][0]
-        return {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-            "labels": labels,
-        }
+    # set module-level tokenizer for top-level tokenize function
+    global _TOKENIZER
+    _TOKENIZER = tokenizer
 
     # Ensure tokenized columns are present and drop raw fields
     original_columns = ds.column_names
-    ds = ds.map(tokenize_fn, remove_columns=original_columns)
+    ds = ds.map(tokenize_example, remove_columns=original_columns)
 
     model = AutoModelForCausalLM.from_pretrained(model_name)
     model.resize_token_embeddings(len(tokenizer))
@@ -412,44 +398,32 @@ def run_pipeline(start_mode, data_file, resume, log_path, force_cpu=False, max_s
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--start",
+        "--mode",
         type=str,
-    choices=["short", "long"],
-    default="short",
-    help="Pipeline start mode: short (~1 hour), long (~8 hours). Debug phases always run first."
-    )
-    parser.add_argument(
-        "--data-file",
-        type=str,
-        default="data/bethpage_black/train_multitask_case_fixed.jsonl",
-        help="Path to JSONL data file"
-    )
-    parser.add_argument(
-        "--log-path",
-        type=str,
-        default="outputs/bethpage-lora/train_log.txt",
-        help="Path to log file"
+        choices=["debug", "debug_training", "1_hour", "8_hour"],
+        default="debug",
+        help="Training mode (default: debug)"
     )
     parser.add_argument(
         "--cpu",
         action="store_true",
-        help="Force CPU training (sets no_cuda=True). Use this on unsupported GPUs or to avoid CUDA kernel issues."
-    )
-    parser.add_argument(
-        "--max-steps",
-        type=int,
-        default=None,
-        help="Override max_steps for the selected main phase only (does not affect debug stages)."
-    )
-    parser.add_argument(
-        "--save-steps",
-        type=int,
-        default=None,
-        help="Override save_steps for the selected main phase only."
+        help="Force CPU training (sets no_cuda=True)."
     )
     args = parser.parse_args()
-    # Always resume from checkpoint by default
-    run_pipeline(args.start, args.data_file, True, args.log_path, args.cpu, args.max_steps, args.save_steps)
+    mode_to_plan = {"debug": 0, "debug_training": 1, "1_hour": 2, "8_hour": 3}
+    plan = mode_to_plan[args.mode]
+    # Auto log path per mode
+    log_path = os.path.join("outputs", "bethpage-lora", f"train_{args.mode}.log")
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    success, ckpt_dir, metrics, grad_norm, learning_rate, losses = train_model(
+        plan,
+        data_file=DEFAULT_DATA_FILE,
+        resume=True,
+        log_path=log_path,
+        force_cpu=args.cpu,
+    )
+    # Basic status to console
+    print({"mode": args.mode, "success": success, "ckpt_dir": ckpt_dir, "metrics": metrics})
 
 if __name__ == "__main__":
     main()

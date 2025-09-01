@@ -11,8 +11,8 @@ def load_jsonl(path):
     with open(path, "r", encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
 
-STD_RE = re.compile(r"^\s*Strategy:\s*(\d{2,4})\s*yards\s*$", re.IGNORECASE)
-NUM_YARD_RE = re.compile(r"(\d{2,4})\s*-?\s*yard", re.IGNORECASE)
+STD_RE = re.compile(r"^\s*Strategy:\s*(\d{2,4})\s*(?:yards?)?\s*$", re.IGNORECASE)
+NUM_YARD_RE = re.compile(r"(\d{2,4})", re.IGNORECASE)
 DRIVE_RE_LIST = [
     re.compile(r"average drive:\s*(\d{2,4})\s*yards", re.IGNORECASE),
     re.compile(r"drives\s*(\d{2,4})\s*yards", re.IGNORECASE),
