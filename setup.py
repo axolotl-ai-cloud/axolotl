@@ -64,7 +64,9 @@ def parse_requirements(extras_require_map):
             else:
                 raise ValueError("Invalid version format")
 
-            if (major, minor) >= (2, 7):
+            if (major, minor) >= (2, 8):
+                pass
+            elif (major, minor) >= (2, 7):
                 _install_requires.pop(_install_requires.index(xformers_version))
                 if patch == 0:
                     _install_requires.append("xformers==0.0.30")
@@ -125,7 +127,7 @@ extras_require = {
         "yunchang==0.6.0",
     ],
     "deepspeed": [
-        "deepspeed==0.17.2",
+        "deepspeed==0.17.5",
         "deepspeed-kernels",
     ],
     "mamba-ssm": [
