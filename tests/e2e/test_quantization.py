@@ -28,6 +28,7 @@ from torchao.quantization.quant_api import (
     Int4WeightOnlyConfig,
     Int8DynamicActivationInt4WeightConfig,
 )
+from torchao.prototype.mx_formats import NVFP4InferenceConfig
 from transformers import AutoModelForCausalLM
 from transformers.trainer_callback import TrainerState
 
@@ -80,6 +81,20 @@ ptq_config_test_cases = [
         Float8DynamicActivationInt4WeightConfig,
         {},
     ),
+    (
+        TorchAOQuantDType.nvfp4,
+        None,
+        None,
+        NVFP4InferenceConfig,
+        {},
+    ),
+    (
+        TorchAOQuantDType.nvfp4,
+        None,
+        16,
+        NVFP4InferenceConfig,
+        {},
+    ),
 ]
 
 ptq_test_cases = [
@@ -98,6 +113,16 @@ ptq_test_cases = [
         TorchAOQuantDType.int4,
         None,
         None,
+        False,
+        ValueError,
+    ),
+    # NVFP4 test cases
+    (TorchAOQuantDType.nvfp4, None, None, False, None),
+    (TorchAOQuantDType.nvfp4, None, 16, False, None),
+    (
+        TorchAOQuantDType.nvfp4,
+        None,
+        8,
         False,
         ValueError,
     ),
@@ -214,6 +239,8 @@ class TestQuantization:
                 False,
             ),
             (TorchAOQuantDType.int4, TorchAOQuantDType.float8_e4m3fn, None, True),
+            (TorchAOQuantDType.nvfp4, None, None, False),
+            (TorchAOQuantDType.nvfp4, None, 16, False),
         ],
     )
     @require_torch_2_6_0

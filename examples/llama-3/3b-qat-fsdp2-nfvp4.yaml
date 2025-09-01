@@ -23,9 +23,9 @@ flex_attn_compile_kwargs:
   mode: max-autotune-no-cudagraphs
 
 qat:
-  activation_dtype: int8
-  weight_dtype: int4
-  group_size: 32
+  activation_dtype: nvfp4
+  weight_dtype: nvfp4
+  group_size: 16 # only group_size of 16 is supported with nvfp4
 
 wandb_project:
 wandb_entity:
