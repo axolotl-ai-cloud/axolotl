@@ -9,7 +9,7 @@ from axolotl.utils.callbacks.qat import QATCallback
 from axolotl.utils.quantization import (
     get_quantization_config,
     prepare_model_for_qat,
-    convert_qat_model
+    convert_qat_model,
     quantize_model,
 )
 from axolotl.utils.schemas.enums import TorchAOQuantDType
@@ -39,7 +39,7 @@ from tests.e2e.utils import require_torch_2_6_0
 def model():
     dummy_model = AutoModelForCausalLM.from_pretrained(
         "HuggingFaceTB/SmolLM2-135M",
-        device_map="cuda",
+        device_map="auto",
         torch_dtype=torch.bfloat16,
     )
     with torch.device(dummy_model.device):

@@ -6,9 +6,9 @@ import torch
 
 
 class TorchAOQuantDType(Enum):
-    int4 = "int4"
-    int8 = "int8"
-    float8_e4m3fn = "float8_e4m3fn"
+    int4 = torch.int4
+    int8 = torch.int8
+    float8_e4m3fn = torch.float8_e4m3fn
     nvfp4 = "nvfp4"
 
 class RLType(str, Enum):
