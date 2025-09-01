@@ -53,8 +53,6 @@ datasets:
   - path: argilla/distilabel-intel-orca-dpo-pairs
     type: bradley_terry.chat_template
 
-val_set_size: 0.1
-eval_steps: 100
 ```
 
 The `center_rewards_coefficient` parameter controls the weight of the auxiliary loss that minimizes the squared sum of rewards. This technique, proposed by [Eisenstein et al., 2023](https://huggingface.co/papers/2312.09244) (Eq. 2), helps ensure the reward model naturally produces mean-zero outputs without requiring post-training normalization.
