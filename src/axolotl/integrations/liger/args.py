@@ -16,7 +16,7 @@
 Module for handling LIGER input arguments.
 """
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from axolotl.utils.logging import get_logger
 
@@ -35,6 +35,15 @@ class LigerArgs(BaseModel):
     liger_glu_activation: bool | None = None
     liger_cross_entropy: bool | None = None
     liger_fused_linear_cross_entropy: bool | None = None
+    liger_use_token_scaling: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Enables use_token_scaling in fused_linear_cross_entropy. "
+                "When True, each token's loss is multiplied by its predicted probability (detached from gradients)."
+            )
+        },
+    )
 
     @model_validator(mode="before")
     @classmethod
