@@ -87,7 +87,7 @@ class TestValidation:
 
         with pytest.raises(
             ValueError,
-            match=r".*`liger_use_token_scaling: true` requires `liger_fused_linear_cross_entropy` enabled.*",
+            match=r"`liger_use_token_scaling: true` requires `liger_fused_linear_cross_entropy` enabled.",
         ):
             prepare_plugins(test_cfg)
             validate_config(test_cfg)
