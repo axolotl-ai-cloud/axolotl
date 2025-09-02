@@ -37,7 +37,7 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
 
 def _do_merge_lora_legacy(*, cfg: DictDefault) -> None:
     """
-    Legacy LoRA merging using `merge_and_unload`.
+    Legacy LoRA merging using merge_and_unload.
     Loads the full model into memory before merging.
     """
     LOG.debug("Using legacy LoRA merging method...")
