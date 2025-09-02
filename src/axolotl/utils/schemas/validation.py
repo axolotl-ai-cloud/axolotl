@@ -360,6 +360,10 @@ class TrainingValidationMixin:
         if data.get("pretrain_multipack_buffer_size") and not data.get(
             "streaming_multipack_buffer_size"
         ):
+            LOG.warning(
+                "`pretrain_multipack_buffer_size` is deprecated in v0.13.0, will be "
+                "removed in v0.14.0. Use `streaming_multipack_buffer_size` instead."
+            )
             data["streaming_multipack_buffer_size"] = data[
                 "pretrain_multipack_buffer_size"
             ]
@@ -368,7 +372,9 @@ class TrainingValidationMixin:
             "streaming_multipack_buffer_size"
         ):
             raise ValueError(
-                "pretrain_multipack_buffer_size is deprecated, use streaming_multipack_buffer_size; both are set, please remove the deprecated pretrain_multipack_buffer_size setting"
+                "pretrain_multipack_buffer_size is deprecated, use "
+                "streaming_multipack_buffer_size; both are set, please remove the "
+                "deprecated pretrain_multipack_buffer_size setting"
             )
         return data
 
