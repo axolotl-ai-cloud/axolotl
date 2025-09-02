@@ -11,14 +11,12 @@ datasets:
 
 val_set_size: 0.0
 output_dir: ./outputs/out
-remove_unused_columns: false
 
 sequence_len: 8192
 sample_packing: false
 eval_sample_packing: false
 pad_to_sequence_len: true
 
-use_safetensors: true
 deepspeed: deepspeed_configs/zero1.json
 
 wandb_project:
@@ -27,7 +25,7 @@ wandb_watch:
 wandb_name:
 wandb_log_model:
 
-gradient_accumulation_steps: 16
+gradient_accumulation_steps: 4
 micro_batch_size: 1
 eval_batch_size: 1
 num_epochs: 3
@@ -41,8 +39,7 @@ tf32: true
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
-warmup_steps: 10
+warmup_ratio: 0.1
 logging_steps: 1
 weight_decay: 0.01
 
-save_strategy: "no"
