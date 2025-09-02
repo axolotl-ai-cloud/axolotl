@@ -17,7 +17,7 @@ def patch_tiled_mlp(model_type, use_original_mlp=True, cfg_num_shards=None):
         TiledMLP as DeepSpeedTiledMLP,
     )
 
-    from axolotl.monkeypatch.tiled_mlp.base import TiledMLP
+    from axolotl.monkeypatch.tiled_mlp.base import DeepSpeedTiledMLPMoE, TiledMLP
 
     try:
         # Dynamically import the module and MLP class
@@ -64,7 +64,10 @@ def patch_tiled_mlp(model_type, use_original_mlp=True, cfg_num_shards=None):
                         for p in self._compute_params
                     )
                 ) or os.environ.get("ACCELERATE_USE_DEEPSPEED", "false") == "true":
-                    self._tiled_mlp_dist_impl = DeepSpeedTiledMLP
+                    if model_type == "gpt_oss":
+                        self._tiled_mlp_dist_impl = DeepSpeedTiledMLPMoE
+                    else:
+                        self._tiled_mlp_dist_impl = DeepSpeedTiledMLP
                 else:
                     self._tiled_mlp_dist_impl = TiledMLP
 
