@@ -84,6 +84,18 @@ class LigerArgs(BaseModel):
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_liger_use_token_scaling_flce(cls, data):
+        if data.get("liger_use_token_scaling") and not data.get(
+            "liger_fused_linear_cross_entropy"
+        ):
+            raise ValueError(
+                "`liger_use_token_scaling: true` requires `liger_fused_linear_cross_entropy` enabled."
+            )
+
+        return data
+
     @model_validator(mode="after")
     def check_tensor_parallel_size_liger_fused_linear_cross_entropy(self):
         # TODO @SalmanMohammadi this is a larger fix - investigate
