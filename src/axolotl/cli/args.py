@@ -17,9 +17,9 @@ class PreprocessCliArgs:
         default=False,
         metadata={
             "help": (
-                "[DEPRECATED] No longer supported. For streaming datasets, use "
-                "'axolotl train' and set 'streaming: true' in your YAML config, or "
-                "pass --streaming instead in the CLI."
+                "Deprecated in v0.13.0, will be removed in v0.14.0. For streaming "
+                "datasets, use 'axolotl train' and set 'streaming: true' in your YAML "
+                "config, or pass --streaming instead in the CLI."
             )
         },
     )

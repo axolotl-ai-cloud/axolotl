@@ -135,28 +135,27 @@ def _prepare_streaming_dataset(
     if cfg.pretraining_dataset:
         dataset_config = _extract_pretraining_config(cfg)
         train_dataset = _load_streaming_dataset(dataset_config, cfg, tokenizer)
+    elif cfg.sample_packing:
+        # TODO(djsaunde): Implement for multiple datasets
+        dataset_config = DictDefault(cfg.datasets[0])
+
+        # Ensure we have a split set - default to 'train' if not specified
+        if not hasattr(dataset_config, "split") or not dataset_config.split:
+            dataset_config.split = "train"
+        train_dataset = _load_streaming_dataset(dataset_config, cfg, tokenizer)
     else:
-        if cfg.sample_packing:
-            # TODO(djsaunde): Implement for multiple datasets
-            dataset_config = DictDefault(cfg.datasets[0])
+        # Use legacy loading function for non-packed streaming datasets
+        train_dataset, eval_dataset, prompters = _load_and_prepare_datasets(
+            tokenizer,
+            cfg,
+            split="train",
+            processor=processor,
+            streaming=True,
+        )
 
-            # Ensure we have a split set - default to 'train' if not specified
-            if not hasattr(dataset_config, "split") or not dataset_config.split:
-                dataset_config.split = "train"
-            train_dataset = _load_streaming_dataset(dataset_config, cfg, tokenizer)
-        else:
-            # Use legacy loading function for non-packed streaming datasets
-            train_dataset, eval_dataset, prompters = _load_and_prepare_datasets(
-                tokenizer,
-                cfg,
-                split="train",
-                processor=processor,
-                streaming=True,
-            )
-
-            # Return early for non-packed streaming datasets
-            total_num_steps = cfg.max_steps if cfg.max_steps else -1
-            return train_dataset, eval_dataset, total_num_steps, prompters
+        # Return early for non-packed streaming datasets
+        total_num_steps = cfg.max_steps if cfg.max_steps else -1
+        return train_dataset, eval_dataset, total_num_steps, prompters
 
     # Load evaluation dataset if specified
     eval_dataset = None
@@ -168,9 +167,6 @@ def _prepare_streaming_dataset(
             processor=processor,
             streaming=False,
         )
-
-    if cfg.dataset_exact_deduplication:
-        LOG.info("Deduplication not available for streaming datasets")
 
     # For streaming, we return max_steps directly from config or -1 if not set
     total_num_steps = cfg.max_steps if cfg.max_steps else -1

@@ -490,7 +490,10 @@ class AxolotlInputConfig(
     pose_num_chunks: int | None = None
 
     # Deprecated: Use streaming_multipack_buffer_size instead
-    pretrain_multipack_buffer_size: int | None = None
+    pretrain_multipack_buffer_size: int | None = Field(
+        default=None,
+        deprecated="Deprecated in v0.13.0, will be removed in v0.14.0. Use streaming_multipack_buffer_size instead",
+    )
     pretrain_multipack_attn: bool | None = Field(
         default=True,
         json_schema_extra={
@@ -504,8 +507,16 @@ class AxolotlInputConfig(
         },
     )
 
-    streaming: bool | None = None
-    streaming_multipack_buffer_size: int | None = 10_000
+    streaming: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Use streaming mode for loading datasets"},
+    )
+    streaming_multipack_buffer_size: int | None = Field(
+        default=10_000,
+        json_schema_extra={
+            "description": "Buffer size for multipack streaming datasets"
+        },
+    )
 
     xformers_attention: bool | None = Field(
         default=None,
@@ -1267,4 +1278,15 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if data.get("dataset_processes") is None:
             data["dataset_processes"] = get_default_process_count()
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_deduplication_with_streaming(cls, data):
+        if data.get("dataset_exact_deduplication") and (
+            data.get("streaming") or data.get("pretraining_dataset")
+        ):
+            raise NotImplementedError(
+                "dataset_exact_deduplication is not available for streaming datasets. "
+            )
         return data
