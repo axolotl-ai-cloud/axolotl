@@ -33,8 +33,8 @@ wandb_watch:
 wandb_name:
 wandb_log_model:
 
-gradient_accumulation_steps: 1
-micro_batch_size: 16
+gradient_accumulation_steps: 2
+micro_batch_size: 32
 num_epochs: 1
 optimizer: adamw_torch_fused
 
@@ -52,20 +52,6 @@ saves_per_epoch: 1
 
 warmup_ratio: 0.1
 weight_decay: 0.0
-fsdp:
-  - full_shard
-  - auto_wrap
-
-fsdp_config:
-  fsdp_version: 2
-  fsdp_offload_params: false
-  fsdp_cpu_ram_efficient_loading: false
-  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
-  fsdp_state_dict_type: FULL_STATE_DICT
-  fsdp_sharding_strategy: FULL_SHARD
-  fsdp_reshard_after_forward: true
-  fsdp_activation_checkpointing: true
 
 special_tokens:
   pad_token: <|finetune_right_pad_id|>
