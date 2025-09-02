@@ -303,7 +303,7 @@ jobs:
             python_version: "3.11"
             pytorch: 2.8.0
             num_gpus: 1
-            gpu_type": "B200"
+            gpu_type: "B200"
             axolotl_extras:
     steps:
       - name: Checkout
