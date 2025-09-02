@@ -57,7 +57,7 @@ VOLUME_CONFIG = {
 }
 
 N_GPUS = int(os.environ.get("N_GPUS", 1))
-GPU_TYPE = int(os.environ.get("GPU_TYPE", "L40S"))
+GPU_TYPE = os.environ.get("GPU_TYPE", "L40S")
 GPU_CONFIG = f"{GPU_TYPE}:{N_GPUS}"
 
 
