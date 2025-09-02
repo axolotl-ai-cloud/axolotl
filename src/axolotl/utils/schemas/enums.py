@@ -11,6 +11,7 @@ class TorchAOQuantDType(Enum):
     float8_e4m3fn = torch.float8_e4m3fn
     nvfp4 = "nvfp4"
 
+
 class RLType(str, Enum):
     """RL trainer type configuration subset"""
 

@@ -28,17 +28,21 @@ from torchao.quantization.quant_api import (
     Int4WeightOnlyConfig,
     Int8DynamicActivationInt4WeightConfig,
 )
-from torchao.prototype.mx_formats import NVFP4InferenceConfig
 from transformers import AutoModelForCausalLM
 from transformers.trainer_callback import TrainerState
 
-from tests.e2e.utils import require_torch_2_6_0
+from tests.e2e.utils import (
+    require_torch_2_6_0,
+    require_torch_2_8_0,
+    requires_sm_ge_100,
+    requires_cuda_ge_8_9,
+)
 
 
 @pytest.fixture()
 def model():
     dummy_model = AutoModelForCausalLM.from_pretrained(
-        "HuggingFaceTB/SmolLM2-135M",
+        "Qwen/Qwen2-0.5B",
         device_map="auto",
         torch_dtype=torch.bfloat16,
     )
@@ -48,7 +52,8 @@ def model():
             dummy_model.model.embed_tokens.weight.shape[1],
             dtype=dummy_model.model.embed_tokens.weight.dtype,
         )
-    return dummy_model
+    yield dummy_model
+    del dummy_model
 
 
 ptq_config_test_cases = [
@@ -81,20 +86,6 @@ ptq_config_test_cases = [
         Float8DynamicActivationInt4WeightConfig,
         {},
     ),
-    (
-        TorchAOQuantDType.nvfp4,
-        None,
-        None,
-        NVFP4InferenceConfig,
-        {},
-    ),
-    (
-        TorchAOQuantDType.nvfp4,
-        None,
-        16,
-        NVFP4InferenceConfig,
-        {},
-    ),
 ]
 
 ptq_test_cases = [
@@ -113,16 +104,6 @@ ptq_test_cases = [
         TorchAOQuantDType.int4,
         None,
         None,
-        False,
-        ValueError,
-    ),
-    # NVFP4 test cases
-    (TorchAOQuantDType.nvfp4, None, None, False, None),
-    (TorchAOQuantDType.nvfp4, None, 16, False, None),
-    (
-        TorchAOQuantDType.nvfp4,
-        None,
-        8,
         False,
         ValueError,
     ),
@@ -160,6 +141,7 @@ class TestQuantization:
         "weight_dtype,activation_dtype,group_size,expected_type,expected_params",
         ptq_config_test_cases,
     )
+    @requires_cuda_ge_8_9
     @require_torch_2_6_0
     def test_get_ptq_config(
         self, weight_dtype, activation_dtype, group_size, expected_type, expected_params
@@ -185,6 +167,7 @@ class TestQuantization:
         "weight_dtype,activation_dtype,group_size,quantize_embedding,expected_exception",
         ptq_test_cases,
     )
+    @requires_cuda_ge_8_9
     @require_torch_2_6_0
     def test_quantize_model_for_ptq(
         self,
@@ -226,6 +209,33 @@ class TestQuantization:
                         )
 
     @pytest.mark.parametrize(
+        "weight_dtype,activation_dtype,group_size,quantize_embedding,expected_exception",
+        ptq_test_cases,
+    )
+    @require_torch_2_8_0
+    @requires_sm_ge_100
+    def test_quantize_model_for_ptq_nvfp4(
+        self,
+        model,
+        weight_dtype,
+        activation_dtype,
+        group_size,
+        quantize_embedding,
+        expected_exception,
+    ):
+        quantize_model(model, TorchAOQuantDType.nvfp4, TorchAOQuantDType.nvfp4)
+        for child in list(model.children()):
+            if isinstance(child, torch.nn.Linear):
+                if activation_dtype:
+                    assert isinstance(child.weight, LinearActivationQuantizedTensor), (
+                        "Linear weight should be quantized with activation quantization"
+                    )
+                else:
+                    assert isinstance(child.weight, AffineQuantizedTensor), (
+                        "Linear weight should be quantized without activation quantization"
+                    )
+
+    @pytest.mark.parametrize(
         "weight_dtype,activation_dtype,group_size,quantize_embedding",
         [
             (TorchAOQuantDType.int4, None, 8, False),
@@ -239,11 +249,10 @@ class TestQuantization:
                 False,
             ),
             (TorchAOQuantDType.int4, TorchAOQuantDType.float8_e4m3fn, None, True),
-            (TorchAOQuantDType.nvfp4, None, None, False),
-            (TorchAOQuantDType.nvfp4, None, 16, False),
         ],
     )
     @require_torch_2_6_0
+    @requires_cuda_ge_8_9
     def test_prepare_model_for_qat(
         self, model, weight_dtype, activation_dtype, group_size, quantize_embedding
     ):
@@ -261,17 +270,19 @@ class TestQuantization:
                 model.model.embed_tokens.weight_fake_quantizer.config.dtype
                 == weight_dtype.value
             )
-            assert (
-                model.model.embed_tokens.weight_fake_quantizer.config.group_size
-                == group_size
-            )
+            if group_size:
+                assert (
+                    model.model.embed_tokens.weight_fake_quantizer.config.group_size
+                    == group_size
+                )
 
         for child in list(model.children()):
             if isinstance(child, torch.nn.Linear):
                 assert isinstance(child, FakeQuantizedLinear)
                 assert hasattr(child, "weight_fake_quantizer")
                 assert child.weight_fake_quantizer.config.dtype == weight_dtype.value
-                assert child.weight_fake_quantizer.config.group_size == group_size
+                if group_size:
+                    assert child.weight_fake_quantizer.config.group_size == group_size
                 if activation_dtype:
                     assert hasattr(child, "activation_fake_quantizer")
                     assert (
@@ -282,6 +293,7 @@ class TestQuantization:
                     assert child.activation_fake_quantizer is None
 
     @require_torch_2_6_0
+    @requires_cuda_ge_8_9
     def test_convert_qat_model(self, model):
         config = QATConfig(
             weight_dtype="int4",

@@ -40,11 +40,9 @@ def get_quantization_config(
     """
     if activation_dtype is None:
         if weight_dtype == TorchAOQuantDType.int8:
-            raise ValueError(
-                "Int8WeightOnlyConfig is not supported by torchao QAT."
-            )
+            raise ValueError("Int8WeightOnlyConfig is not supported by torchao QAT.")
         if weight_dtype == TorchAOQuantDType.int4:
-            return Int4WeightOnlyConfig(group_size=group_size or -1, version=1)
+            return Int4WeightOnlyConfig(group_size=group_size or -1, version=2)
     if (
         activation_dtype == TorchAOQuantDType.int4
         and weight_dtype == TorchAOQuantDType.int4
@@ -76,6 +74,7 @@ def get_quantization_config(
         return Float8DynamicActivationInt4WeightConfig()
     if weight_dtype == TorchAOQuantDType.nvfp4:
         from torchao.prototype.mx_formats import NVFP4InferenceConfig
+
         if group_size is not None and group_size != 16:
             raise ValueError("NVFP4 quantization must use a group_size of 16")
         return NVFP4InferenceConfig()
