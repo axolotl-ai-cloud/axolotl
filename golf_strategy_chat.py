@@ -21,13 +21,122 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
+GUIDANCE = (
+    "Write one cohesive paragraph (120–180 words). Focus on hazards, wind, elevation, landing zones, and approach angles. "
+    "Use specific details from the prompt. Avoid generic phrases and meta language (e.g., 'Success depends…', 'combines strategic positioning'). "
+    "Do not include headings or labels (no 'Hints:', 'Guidance:', bullets, or sections). Do not use words like 'diagram' or 'Zone'. "
+    "Only include distances when they are meaningful and express them as '<number> yards'. Do not list multiple unrelated yardages. "
+    "Do not restate the hole number incorrectly; if you mention it, ensure it matches the prompt."
+)
+
+
+def fix_mojibake(s: str) -> str:
+    repl = {
+        "â€™": "’",
+        "â€“": "–",
+        "â€”": "—",
+        "â€œ": "“",
+        "â€": "”",
+        "â€˜": "‘",
+        "â€¦": "…",
+        "Ã©": "é",
+        "Ã": "A",
+        "Â": "",
+    }
+    for k, v in repl.items():
+        s = s.replace(k, v)
+    return s
+
+
+def clean_bleed(text: str) -> str:
+    parts = re.split(r"\[Hole\s*\d+\]", text, maxsplit=1)
+    return parts[0].strip()
+
+
+HOLE_RE = re.compile(r"\bHole\s*(\d+)\b", flags=re.IGNORECASE)
+
+
+def extract_expected_hole(prompt: str) -> int | None:
+    m = HOLE_RE.search(prompt)
+    return int(m.group(1)) if m else None
+
+
+def sanitize_hole_header(text: str, expected_hole: int | None) -> str:
+    if expected_hole is None:
+        return text
+    m = re.match(r"^\s*Hole\s*(\d+)\b", text, flags=re.IGNORECASE)
+    if m:
+        num = int(m.group(1))
+        if num != expected_hole:
+            return re.sub(r"^\s*Hole\s*\d+\b\s*[:\-]?\s*", "This hole ", text, count=1, flags=re.IGNORECASE)
+    return text
+
+
+def de_template(text: str) -> str:
+    patterns = [
+        re.compile(r"combines strategic positioning with technical execution", re.IGNORECASE),
+        re.compile(r"\b[Ss]uccess\b[^.!?]{0,180}\bdepends\b[^.!?]*[.!?]"),
+    re.compile(r"\b[Ss]uccess\s*On\b[^.!?]*", re.IGNORECASE),
+    re.compile(r"\b[Ss]uccessOn\b[^.!?]*", re.IGNORECASE),
+    re.compile(r"\bdiagram\b[^.!?]*", re.IGNORECASE),
+    re.compile(r"\bZone\s*\d+\b[^.!?]*", re.IGNORECASE),
+    re.compile(r"\bdecision\s+sharing\b[^.!?]*", re.IGNORECASE),
+    re.compile(r"\btechnical\s+execut(ion|ing)\b[^.!?]*", re.IGNORECASE),
+    ]
+    for pat in patterns:
+        text = pat.sub("", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def sentence_boundary_trim(text: str, min_words: int = 90, target_words: int = 160, max_words: int = 220) -> str:
+    """
+    Trim to whole sentences near target word count.
+    - Keep at least min_words.
+    - Prefer not to exceed max_words.
+    - If already shorter than min_words, return as-is.
+    """
+    # Normalize whitespace
+    t = re.sub(r"\s+", " ", text).strip()
+    words = t.split()
+    if len(words) <= min_words:
+        return t
+
+    # Simple sentence split by punctuation followed by space or end.
+    # Keeps delimiters.
+    parts = re.split(r"(?<=[.!?])\s+", t)
+    acc = []
+    wcount = 0
+    for sent in parts:
+        acc.append(sent)
+        wcount += len(sent.split())
+        if wcount >= target_words:
+            break
+    trimmed = " ".join(acc).strip()
+
+    # If we overshot max_words, back off one sentence if possible
+    if len(trimmed.split()) > max_words and len(acc) > 1:
+        trimmed = " ".join(acc[:-1]).strip()
+
+    # Ensure ends with sentence punctuation
+    if not re.search(r"[.!?]$", trimmed):
+        # Try to find last punctuation in original text
+        m = list(re.finditer(r"[.!?]", trimmed))
+        if m:
+            trimmed = trimmed[: m[-1].end()].strip()
+    return trimmed
+
+
 class GolfStrategyChat:
-    def __init__(self, adapter_path: str, data_file: str, device: str = "auto"):
+    def __init__(self, adapter_path: str, data_file: str, device: str = "auto", use_guidance: bool = True, base_model_name: str = "gpt2", base_only: bool = False):
         self.adapter_path = adapter_path
         self.data_file = data_file
         self.hole_data = {}
         self.current_hole = None
         self.device = self._resolve_device(device)
+        self.use_guidance = use_guidance
+        self.base_model_name = base_model_name
+        self.base_only = base_only
         self.load_model()
         self.load_hole_data()
 
@@ -43,23 +152,34 @@ class GolfStrategyChat:
         """Load the trained LoRA model"""
         print("Loading model and tokenizer...")
 
-        if not os.path.isdir(self.adapter_path):
+        if not self.base_only and not os.path.isdir(self.adapter_path):
             raise FileNotFoundError(
                 f"Adapter folder not found: {self.adapter_path}. "
-                "Pass --adapter_dir to point at your trained checkpoint."
+                "Pass --adapter_dir to point at your trained checkpoint, or use --base-only to compare base model output."
             )
 
         # Load base model and tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained("gpt2", padding_side="left")
+        self.tokenizer = AutoTokenizer.from_pretrained(self.base_model_name, padding_side="left")
         self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        base_model = AutoModelForCausalLM.from_pretrained("gpt2")
+        base_model = AutoModelForCausalLM.from_pretrained(self.base_model_name)
         base_model.resize_token_embeddings(len(self.tokenizer))
 
-        # Load LoRA adapter
-        self.model = PeftModel.from_pretrained(base_model, self.adapter_path)
-        self.model.eval()
-        self.model.to(self.device)
+        # Load LoRA adapter unless base-only
+        if self.base_only:
+            self.model = base_model.to(self.device)
+            self.model.eval()
+        else:
+            try:
+                self.model = PeftModel.from_pretrained(base_model, self.adapter_path)
+                self.model.eval()
+                self.model.to(self.device)
+            except Exception as e:
+                # Commonly due to hidden-size mismatch when swapping base models
+                print(f"Warning: failed to load adapter on base '{self.base_model_name}': {e}")
+                print("Falling back to base-only mode. For the trained adapter, use --base-model gpt2 (the training base).")
+                self.model = base_model.to(self.device)
+                self.model.eval()
 
         print("Model loaded.")
         
@@ -69,6 +189,10 @@ class GolfStrategyChat:
             raise FileNotFoundError(
                 f"Data file not found: {self.data_file}. Pass --data-file to point at the dataset."
             )
+
+        from collections import Counter
+        pars = {}
+        yardages = {}
 
         with open(self.data_file, "r", encoding="utf-8") as f:
             for line in f:
@@ -82,11 +206,21 @@ class GolfStrategyChat:
                 # Ensure structure
                 if hole not in self.hole_data:
                     self.hole_data[hole] = {
-                        "par": example.get("par"),
-                        "yardage": example.get("yardage"),
+                        # We'll finalize par/yardage using majority vote
+                        "par": None,
+                        "yardage": None,
                         "descriptions": set(),
+                        "insights": set(),
                         "strategies": [],
                     }
+                    pars[hole] = Counter()
+                    yardages[hole] = Counter()
+
+                # Track par/yardage candidates
+                if isinstance(example.get("par"), int):
+                    pars[hole][example["par"]] += 1
+                if isinstance(example.get("yardage"), int):
+                    yardages[hole][example["yardage"]] += 1
 
                 task_type = example.get("task_type")
                 if task_type == "strategy_selection":
@@ -114,16 +248,42 @@ class GolfStrategyChat:
                     # Use the completion text as a candidate description
                     comp = (example.get("completion") or "").strip()
                     if comp and len(comp) > 20:
-                        self.hole_data[hole]["descriptions"].add(comp)
+                        self.hole_data[hole]["descriptions"].add(fix_mojibake(comp))
+                    # Also parse insights from the prompt bullets for cleaner synthesis
+                    prompt_text = example.get("prompt") or ""
+                    # Extract lines that look like numbered bullets
+                    for bl in re.findall(r"\n\s*\d+\.\s*(.+?)\n", prompt_text + "\n", flags=re.DOTALL):
+                        bl = fix_mojibake(bl.strip())
+                        if len(bl) > 8:
+                            self.hole_data[hole]["insights"].add(bl)
 
                 # Also capture any base description on original records
                 base_desc = (example.get("description") or "").strip()
                 if base_desc and len(base_desc) > 20:
-                    self.hole_data[hole]["descriptions"].add(base_desc)
+                    self.hole_data[hole]["descriptions"].add(fix_mojibake(base_desc))
 
         # Convert description sets to lists for easier handling
-        for hole_data in self.hole_data.values():
+        for h, hole_data in self.hole_data.items():
             hole_data["descriptions"] = list(hole_data["descriptions"])
+            hole_data["insights"] = list(hole_data["insights"])
+            # Finalize par/yardage as most common values seen for this hole
+            if pars.get(h):
+                hole_data["par"] = pars[h].most_common(1)[0][0]
+            if yardages.get(h):
+                hole_data["yardage"] = yardages[h].most_common(1)[0][0]
+
+            # Fill in missing remaining_distance for strategies using hole yardage
+            yd = hole_data.get("yardage")
+            par = hole_data.get("par")
+            if isinstance(yd, int) and hole_data.get("strategies"):
+                for s in hole_data["strategies"]:
+                    cutoff = s.get("cutoff_distance")
+                    if s.get("remaining_distance") in (None, "", "null") and isinstance(cutoff, int):
+                        if par == 3:
+                            s["remaining_distance"] = 0
+                        else:
+                            rem = max(yd - cutoff, 0)
+                            s["remaining_distance"] = rem
 
         print(f"Loaded data for {len(self.hole_data)} holes")
     
@@ -168,8 +328,8 @@ class GolfStrategyChat:
             return f"No data for hole {hole_num}."
         
         hole = self.hole_data[hole_num]
-    info = f"Hole {hole_num} - Bethpage Black\n"
-    info += f"Par {hole['par']}, {hole['yardage']} yards\n"
+        info = f"Hole {hole_num} - Bethpage Black\n"
+        info += f"Par {hole['par']}, {hole['yardage']} yards\n"
         
         # Get model-generated description
         description = self.get_hole_description(hole_num)
@@ -180,7 +340,9 @@ class GolfStrategyChat:
             info += f"\nAvailable Strategies:\n"
             for i, strategy in enumerate(hole['strategies'], 1):
                 cutoff = strategy.get('cutoff_distance')
-                remaining = strategy.get('remaining_distance', 'N/A')
+                remaining = strategy.get('remaining_distance')
+                if remaining in (None, "", "null"):
+                    remaining = 'N/A'
                 advantage = strategy.get('advantage', '')
                 
                 info += f"  {i}. {cutoff} yards - Leaves {remaining} yards to pin"
@@ -197,45 +359,66 @@ class GolfStrategyChat:
         
         hole = self.hole_data[hole_num]
         descriptions = hole.get('descriptions', [])
-        
-        if not descriptions:
-            return f"A challenging hole at Bethpage Black."
-        
-        if len(descriptions) == 1:
-            # If only one description, return it as-is
-            return descriptions[0]
-        
-        # Multiple descriptions - ask model to synthesize them
-        # Use training-like task prefix
+        insights = hole.get('insights', [])
+
+        # Prefer synthesizing from prompt-derived insights when available
+        sources = insights if len(insights) >= 1 else descriptions
+
+        if not sources:
+            return "A challenging hole at Bethpage Black."
+
+        # If only one source, return it as-is (lightly cleaned)
+        if len(sources) == 1:
+            return de_template(sanitize_hole_header(clean_bleed(fix_mojibake(sources[0])), hole_num))
+
+        # Multiple sources - ask model to synthesize them
         prompt = (
             f"TASK: description_synthesis\n"
-            f"Combine these {len(descriptions)} descriptions of Hole {hole_num} at Bethpage Black "
+            f"Combine these {len(sources)} observations for Hole {hole_num} at Bethpage Black "
             f"(Par {hole['par']}, {hole['yardage']} yards) into one cohesive narrative:\n\n"
         )
-        
-        for i, desc in enumerate(descriptions, 1):
+
+        for i, desc in enumerate(sources, 1):
             prompt += f"{i}. {desc}\n\n"
         
         prompt += "Synthesized description:"
-        
-    inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=400).to(self.device)
-        
+        if self.use_guidance:
+            prompt += "\n\nGuidance: " + GUIDANCE
+
+        inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=600).to(self.device)
+        expected_hole = hole_num
+
+        # Build a small banned words list to avoid clunky artifacts
+        banned_words = [
+            "Hints", "Hints:", "Guidance", "Guidance:", "diagram", "Diagram", "Zone", "zone",
+            "SuccessOn", "decision sharing", "technical executing", "Permanent damage"
+        ]
+        bad_words_ids = [self.tokenizer.encode(w, add_special_tokens=False) for w in banned_words]
+
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                max_new_tokens=100,
-                temperature=0.4,
+                max_new_tokens=180,
+                temperature=0.5,
+                top_p=0.9,
                 do_sample=True,
                 pad_token_id=self.tokenizer.eos_token_id,
-                repetition_penalty=1.1
+                repetition_penalty=1.15,
+                no_repeat_ngram_size=3,
+                bad_words_ids=[ids for ids in bad_words_ids if ids],
             )
-        
-    full_response = self.tokenizer.decode(outputs[0].detach().cpu(), skip_special_tokens=True)
-        response = full_response[len(prompt):].strip()
+
+        # Decode only the generated tail, not the prompt
+        gen_ids = outputs[0, inputs["input_ids"].shape[-1]:].detach().cpu()
+        response = self.tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
+        response = clean_bleed(fix_mojibake(response))
+        response = sanitize_hole_header(response, expected_hole)
+        response = de_template(response)
+        response = sentence_boundary_trim(response)
         
         # If model fails to generate good description, fall back to first available
-    if not response or len(response) < 20 or "Strategy:" in response:
-            return descriptions[0]  # Fallback to first description
+        if not response or len(response) < 20 or "Strategy:" in response:
+            return sources[0]  # Fallback to a source snippet
         
         return response
 
@@ -254,7 +437,7 @@ class GolfStrategyChat:
         )
         
         # Tokenize and generate
-    inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=250).to(self.device)
+        inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=250).to(self.device)
         
         with torch.no_grad():
             outputs = self.model.generate(
@@ -266,11 +449,14 @@ class GolfStrategyChat:
             )
         
         # Decode response
-    full_response = self.tokenizer.decode(outputs[0].detach().cpu(), skip_special_tokens=True)
+        full_response = self.tokenizer.decode(outputs[0].detach().cpu(), skip_special_tokens=True)
         response = full_response[len(prompt):].strip()
         
         # Extract strategy number
-        strategy_match = re.search(r"Strategy:\s*(\d{2,3})\s*yards?", response, re.IGNORECASE)
+        strategy_match = re.search(r"Strategy:\s*(\d{2,4})\s*(?:yards?)?", response, re.IGNORECASE)
+        if not strategy_match:
+            # Fallback: any 2–4 digit number
+            strategy_match = re.search(r"(\d{2,4})", response)
         if strategy_match:
             strategy_yards = int(strategy_match.group(1))
             
@@ -346,6 +532,9 @@ def main():
     parser.add_argument("--data-file", required=False, default="data/bethpage_black/train_multitask_case_fixed.jsonl")
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument("--prompt", help="Optional one-shot prompt; if provided, runs once and exits", default=None)
+    parser.add_argument("--no_desc_guidance", action="store_true", help="Disable extra guidance for description synthesis prompts")
+    parser.add_argument("--base-model", default="gpt2", help="Base model name (e.g., gpt2, gpt2-medium). Adapter was trained on gpt2.")
+    parser.add_argument("--base-only", action="store_true", help="Use base model without loading the LoRA adapter (for comparison)")
     args = parser.parse_args()
 
     print("Golf Strategy Chat - Bethpage Black")
@@ -353,7 +542,14 @@ def main():
     print("Loading your trained model...")
 
     try:
-        chat = GolfStrategyChat(adapter_path=args.adapter_dir, data_file=args.data_file, device=args.device)
+        chat = GolfStrategyChat(
+            adapter_path=args.adapter_dir,
+            data_file=args.data_file,
+            device=args.device,
+            use_guidance=(not args.no_desc_guidance),
+            base_model_name=args.base_model,
+            base_only=args.base_only,
+        )
     except Exception as e:
         print(f"Error loading model: {e}")
         print("Ensure --adapter_dir points to your trained adapter and --data-file to the dataset.")
