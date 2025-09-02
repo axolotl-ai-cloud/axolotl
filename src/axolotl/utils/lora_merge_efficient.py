@@ -176,9 +176,7 @@ def merge_lora_sharded_efficient(
                     else:
                         merged_tensors[key] = tensor
         else:
-            state_dict = torch.load(
-                shard_path, map_location=device
-            )  # nosec B614: loading trusted model weights
+            state_dict = torch.load(shard_path, map_location=device)  # nosec B614: loading trusted model weights
             for key, tensor in state_dict.items():
                 total_tensors += 1
                 lora_a, lora_b = find_lora_weights(lora_state, key)
