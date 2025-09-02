@@ -42,4 +42,3 @@ gradient_checkpointing_kwargs:
 warmup_ratio: 0.1
 logging_steps: 1
 weight_decay: 0.01
-
