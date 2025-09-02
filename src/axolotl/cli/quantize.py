@@ -94,6 +94,8 @@ def do_quantize(
         safe_serialization=False,
         progressbar=True,
     )
+    if cfg.hub_model_id:
+        model.push_to_hub(cfg.hub_model_id)
     tokenizer.save_pretrained(
         str(Path(output_dir) / "quantized"),
         safe_serialization=False,
