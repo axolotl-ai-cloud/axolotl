@@ -1,0 +1,120 @@
+---
+title: Streaming Datasets
+description: How to use streaming mode for large-scale datasets and memory-efficient training
+order: 10
+---
+
+Streaming enables memory-efficient training with large datasets by loading data
+incrementally rather than loading the entire dataset into memory at once.
+
+Use streaming when:
+
+- Your dataset is too large to fit in memory (e.g. when you're doing pretraining with massive text corpora)
+- You want to start training immediately without preprocessing the entire dataset
+
+Streaming works with both remote and locally stored datasets!
+
+::: {.callout-note}
+Streaming currently only supports a single dataset. Multi-dataset support will be added soon.
+:::
+
+
+## Configuration
+
+### Basic Streaming
+
+Enable streaming mode by setting the `streaming` flag:
+
+```yaml
+streaming: true
+```
+
+### Pretraining with Streaming
+
+For pretraining tasks, streaming is automatically enabled when using `pretraining_dataset`:
+
+```yaml
+pretraining_dataset:
+  - path: HuggingFaceFW/fineweb-edu
+    type: pretrain
+    text_column: text
+    split: train
+
+# Optionally, enable sample packing
+streaming_multipack_buffer_size: 10000
+sample_packing: true
+```
+
+### SFT with Streaming
+
+For supervised fine-tuning with streaming:
+
+```yaml
+streaming: true
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+    split: train
+
+# Optionally, enable sample packing
+streaming_multipack_buffer_size: 10000
+sample_packing: true
+```
+
+## Configuration Options
+
+### `streaming_multipack_buffer_size`
+
+Controls the buffer size for multipack streaming (default: 10,000). This determines how
+many samples are buffered before packing. Larger buffers can improve packing efficiency
+but use more memory.
+
+### `shuffle_merged_datasets`
+
+When enabled, shuffles the streaming dataset using the buffer. This requires additional
+memory for the shuffle buffer.
+
+## Sample Packing with Streaming
+
+Sample packing is supported for streaming datasets. When enabled, multiple samples are
+packed into a single sequence to maximize GPU utilization:
+
+```yaml
+sample_packing: true
+streaming_multipack_buffer_size: 10000
+
+# For SFT: attention is automatically isolated between packed samples
+# For pretraining: control with pretrain_multipack_attn
+pretrain_multipack_attn: true  # prevent cross-attention between packed samples
+```
+
+For more information, see our [documentation](multipack.qmd) on multipacking.
+
+## Important Considerations
+
+### Memory Usage
+
+While streaming reduces memory usage compared to loading entire datasets, you still need
+to consider:
+
+- You can control the memory usage by adjusting `streaming_multipack_buffer_size`
+- Sample packing requires buffering multiple samples
+- Shuffling requires additional memory for the shuffle buffer
+
+### Performance
+
+- Streaming may have slightly higher latency compared to preprocessed datasets, as samples are processed on-the-fly
+- Network speed and disk read speed are important when streaming from remote sources or a local dataset, respectively
+- Consider using `axolotl preprocess` for smaller or more frequently used datasets
+
+### Evaluation Datasets
+
+Evaluation datasets are not streamed to ensure consistent evaluation metrics. They're
+loaded normally even when training uses streaming.
+
+## Examples
+
+See the `examples/streaming/` directory for complete configuration examples:
+
+- `pretrain.yaml`: Pretraining with streaming dataset
+- `sft.yaml`: Supervised fine-tuning with streaming

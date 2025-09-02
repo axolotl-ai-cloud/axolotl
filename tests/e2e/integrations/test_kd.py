@@ -25,7 +25,7 @@ def min_cfg(temp_dir):
         "liger_rms_norm": True,
         "liger_glu_activation": True,
         "torch_compile": True,
-        "chat_template": "llama3",
+        "chat_template": "qwen3",
         "kd_trainer": True,
         "kd_ce_alpha": 0.1,
         "kd_alpha": 0.9,

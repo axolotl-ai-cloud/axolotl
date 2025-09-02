@@ -475,12 +475,6 @@ class AxolotlInputConfig(
         },
     )
     multipack_real_batches: bool | None = None
-    pretraining_sample_concatenation: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "whether to concatenate samples during pretraining",
-        },
-    )
 
     batch_flattening: Literal["auto"] | bool | None = Field(
         default=None,
@@ -495,11 +489,32 @@ class AxolotlInputConfig(
     pose_max_context_len: int | None = None
     pose_num_chunks: int | None = None
 
-    pretrain_multipack_buffer_size: int | None = 10_000
+    # Deprecated: Use streaming_multipack_buffer_size instead
+    pretrain_multipack_buffer_size: int | None = Field(
+        default=None,
+        deprecated="Deprecated in v0.13.0, will be removed in v0.14.0. Use streaming_multipack_buffer_size instead",
+    )
     pretrain_multipack_attn: bool | None = Field(
         default=True,
         json_schema_extra={
             "description": "whether to prevent cross attention for packed sequences during pretraining",
+        },
+    )
+    pretraining_sample_concatenation: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "whether to concatenate samples during pretraining",
+        },
+    )
+
+    streaming: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Use streaming mode for loading datasets"},
+    )
+    streaming_multipack_buffer_size: int | None = Field(
+        default=10_000,
+        json_schema_extra={
+            "description": "Buffer size for multipack streaming datasets"
         },
     )
 
@@ -1263,4 +1278,15 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if data.get("dataset_processes") is None:
             data["dataset_processes"] = get_default_process_count()
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_deduplication_with_streaming(cls, data):
+        if data.get("dataset_exact_deduplication") and (
+            data.get("streaming") or data.get("pretraining_dataset")
+        ):
+            raise NotImplementedError(
+                "dataset_exact_deduplication is not available for streaming datasets. "
+            )
         return data
