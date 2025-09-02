@@ -381,6 +381,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/streaming.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Streaming Datasets</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/multipack.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multipack (Sample Packing)</span></a>
   </div>
@@ -495,7 +501,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.datasets.ConstantLengthDataset" id="toc-axolotl.datasets.ConstantLengthDataset" class="nav-link" data-scroll-target="#axolotl.datasets.ConstantLengthDataset">ConstantLengthDataset</a></li>
   <li><a href="#axolotl.datasets.TokenizedPromptDataset" id="toc-axolotl.datasets.TokenizedPromptDataset" class="nav-link" data-scroll-target="#axolotl.datasets.TokenizedPromptDataset">TokenizedPromptDataset</a></li>
   </ul></li>
   </ul></li>
@@ -511,7 +516,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.datasets" class="level1">
 <h1>datasets</h1>
 <p><code>datasets</code></p>
-<p>Module containing Dataset functionality</p>
+<p>Module containing dataset functionality.</p>
+<p>We want this to be a wrapper for an existing dataset that we have loaded. Lets use the
+concept of middlewares to wrap each dataset. We’ll use the collators later on to pad the
+datasets.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -523,72 +531,23 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.datasets.ConstantLengthDataset">ConstantLengthDataset</a></td>
-<td>Iterable dataset that returns constant length chunks of tokens from stream of</td>
-</tr>
-<tr class="even">
 <td><a href="#axolotl.datasets.TokenizedPromptDataset">TokenizedPromptDataset</a></td>
 <td>Dataset that returns tokenized prompts from a stream of text files.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.datasets.ConstantLengthDataset" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.datasets.ConstantLengthDataset">ConstantLengthDataset</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>datasets.ConstantLengthDataset(tokenizer, datasets, seq_length<span class="op">=</span><span class="dv">2048</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>Iterable dataset that returns constant length chunks of tokens from stream of
-text files.</p>
-<section id="parameters" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 15%">
-<col style="width: 10%">
-<col style="width: 58%">
-<col style="width: 15%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>tokenizer</td>
-<td></td>
-<td>The processor used for processing the data.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>dataset</td>
-<td></td>
-<td>Dataset with text files.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>seq_length</td>
-<td></td>
-<td>Length of token sequences to return.</td>
-<td><code>2048</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
 <section id="axolotl.datasets.TokenizedPromptDataset" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.datasets.TokenizedPromptDataset">TokenizedPromptDataset</h3>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>datasets.TokenizedPromptDataset(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    prompt_tokenizer,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    dataset,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    process_count<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    keep_in_memory<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>datasets.TokenizedPromptDataset(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    prompt_tokenizer,</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    dataset,</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    process_count<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    keep_in_memory<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Dataset that returns tokenized prompts from a stream of text files.</p>
-<section id="parameters-1" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
+<section id="parameters" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 16%">

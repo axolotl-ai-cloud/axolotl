@@ -381,6 +381,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/streaming.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Streaming Datasets</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/multipack.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multipack (Sample Packing)</span></a>
   </div>
@@ -529,21 +535,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </table>
 <section id="axolotl.utils.data.sft.prepare_datasets" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.data.sft.prepare_datasets">prepare_datasets</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.data.sft.prepare_datasets(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    processor<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    preprocess_iterable<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.data.sft.prepare_datasets(cfg, tokenizer, processor<span class="op">=</span><span class="va">None</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Prepare training and evaluation datasets based on configuration.</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 19%">
-<col style="width: 21%">
-<col style="width: 48%">
-<col style="width: 10%">
+<col style="width: 11%">
+<col style="width: 24%">
+<col style="width: 53%">
+<col style="width: 12%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -571,12 +572,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>ProcessorMixin | None</td>
 <td>Optional processor for multimodal datasets.</td>
 <td><code>None</code></td>
-</tr>
-<tr class="even">
-<td>preprocess_iterable</td>
-<td>bool</td>
-<td>Whether to use iterable preprocessing.</td>
-<td><code>False</code></td>
 </tr>
 </tbody>
 </table>
