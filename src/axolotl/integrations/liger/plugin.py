@@ -48,7 +48,12 @@ class LigerPlugin(BasePlugin):
                 "Cannot have both `liger_cross_entropy` and `liger_fused_linear_cross_entropy` set."
             )
 
-        if cfg.liger_fused_linear_cross_entropy and cfg.liger_use_token_scaling:
+        if cfg.liger_use_token_scaling:
+            if not cfg.liger_fused_linear_cross_entropy:
+                raise ValueError(
+                    "`liger_use_token_scaling: true` requires `liger_fused_linear_cross_entropy` enabled."
+                )
+
             # Patch FLCE to set token_scaling=True for function and class API
             from liger_kernel.transformers import functional
             from liger_kernel.transformers.fused_linear_cross_entropy import (
