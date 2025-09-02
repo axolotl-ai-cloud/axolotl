@@ -119,6 +119,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.use_wandb:
             training_args_kwargs["run_name"] = self.cfg.wandb_name
+        
+        if self.cfg.max_prompt_len:
+            training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
         training_args_cls = None
         blocklist_args_kwargs = []
@@ -131,8 +134,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         elif self.cfg.rl is RLType.ORPO:
             training_args_cls = AxolotlORPOConfig
-            if self.cfg.max_prompt_len:
-                training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
         elif self.cfg.rl is RLType.KTO:
             training_args_cls = AxolotlKTOConfig
@@ -144,16 +145,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 self.cfg.kto_undesirable_weight or 1.0
             )
 
-            if self.cfg.max_prompt_len:
-                training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
-
         elif self.cfg.rl is RLType.GRPO:
             training_args_cls = GRPOStrategy.get_training_args_class()
             training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()
-
-            if self.cfg.max_prompt_len:
-                training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
         elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             training_args_cls = AxolotlDPOConfig
