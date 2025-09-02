@@ -57,7 +57,8 @@ VOLUME_CONFIG = {
 }
 
 N_GPUS = int(os.environ.get("N_GPUS", 1))
-GPU_CONFIG = f"L40S:{N_GPUS}"
+GPU_TYPE = int(os.environ.get("GPU_TYPE", "L40S"))
+GPU_CONFIG = f"{GPU_TYPE}:{N_GPUS}"
 
 
 def run_cmd(cmd: str, run_folder: str):
