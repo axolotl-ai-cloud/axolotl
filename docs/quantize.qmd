@@ -56,6 +56,6 @@ This ensures that an identical quantization configuration is used to quantize th
 ::: {.callout-note}
 
 If you have configured pushing to hub with `hub_model_id`, your model hub name will have the quantization schema appended to it, 
-e.g. `axolotl-ai-cloud/qat-nvfp4-llama3B` will become `axolotl-ai-cloud/qat-nvfp4-llama3B`
+e.g. `axolotl-ai-cloud/qat-nvfp4-llama3B` will become `axolotl-ai-cloud/qat-nvfp4-llama3B-nvfp4w`
 
 :::
