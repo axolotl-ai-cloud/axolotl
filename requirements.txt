@@ -13,7 +13,7 @@ packaging==23.2
 
 huggingface_hub>=0.33.0
 peft>=0.17.0
-transformers==4.55.4
+transformers==4.56.0
 tokenizers>=0.21.1
 accelerate==1.10.0
 datasets==4.0.0
