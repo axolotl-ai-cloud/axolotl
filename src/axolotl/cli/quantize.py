@@ -61,8 +61,9 @@ def do_quantize(
         cli_args.get("quantize_embedding") or quantize_cfg.quantize_embedding
     )
     output_dir = cli_args.get("output_dir") or cfg.output_dir
+    hub_model_id = cli_args.get("hub_model_id") or cfg.hub_model_id
 
-    LOG.info(f"Loading model from {model_path}...")
+    LOG.info(f"Loading model from {model_path}.")
     tokenizer = load_tokenizer(cfg)
     config = AutoConfig.from_pretrained(model_path)
     torch_dtype = config.torch_dtype if hasattr(config, "torch_dtype") else None
@@ -88,7 +89,7 @@ def do_quantize(
     )
     model.quantization_config = quantization_config
 
-    LOG.info(f"Saving quantized model to: {str(Path(output_dir) / 'quantized')}...")
+    LOG.info(f"Saving quantized model to: {str(Path(output_dir) / 'quantized')}.")
     model.save_pretrained(
         str(Path(output_dir) / "quantized"),
         safe_serialization=False,
@@ -101,13 +102,13 @@ def do_quantize(
         save_jinja_files=cfg.tokenizer_save_jinja_files,
     )
 
-    if cfg.hub_model_id:
+    if hub_model_id:
         model.push_to_hub(
-            cfg.hub_model_id, 
+            hub_model_id,
             config=model.config,
             safe_serialization=False
         )
-        tokenizer.push_to_hub(cfg.hub_model_id)
-        LOG.info(f"Quantized model pushed to the hub: {cfg.hub_model_id}...")
+        tokenizer.push_to_hub(hub_model_id)
+        LOG.info(f"Quantized model pushed to the hub: {hub_model_id}.")
 
-    LOG.info(f"Quantized model saved to: {str(Path(output_dir) / 'quantized')}...")
+    LOG.info(f"Quantized model saved to: {str(Path(output_dir) / 'quantized')}.")
