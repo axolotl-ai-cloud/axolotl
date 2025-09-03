@@ -107,7 +107,7 @@ def do_quantize(
     )
 
     if hub_model_id:
-        hub_model_id = hub_model_id.rstrip("/") + f"/{quantization_config_to_str[type(quantization_config)]}"
+        hub_model_id = hub_model_id.rstrip("-") + f"-{quantization_config_to_str[type(quantization_config)]}"
         model.push_to_hub(
             hub_model_id,
             config=model.config,
