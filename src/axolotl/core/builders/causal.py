@@ -7,10 +7,7 @@ from pathlib import Path
 from typing import Type, Union
 
 import transformers
-from transformers import (
-    DataCollatorWithFlattening,
-    EarlyStoppingCallback,
-)
+from transformers import DataCollatorWithFlattening, EarlyStoppingCallback
 from trl.trainer.utils import RewardDataCollatorWithPadding
 
 from axolotl.core.builders.base import TrainerBuilderBase
@@ -26,12 +23,12 @@ from axolotl.monkeypatch.relora import ReLoRACallback
 from axolotl.processing_strategies import get_processing_strategy
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
-    LossWatchDogCallback,
-    SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
     causal_lm_bench_eval_callback_factory,
     colab_inference_post_train_callback,
     log_prediction_callback_factory,
+    LossWatchDogCallback,
+    SaveBetterTransformerModelCallback,
 )
 from axolotl.utils.callbacks.lisa import lisa_callback_factory
 from axolotl.utils.callbacks.qat import QATCallback
@@ -340,6 +337,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
+            if self.cfg.center_rewards_coefficient is not None:
+                training_arguments_kwargs["center_rewards_coefficient"] = (
+                    self.cfg.center_rewards_coefficient
+                )
         elif self.cfg.process_reward_model:
             training_args_cls = AxolotlPRMConfig
         else:
