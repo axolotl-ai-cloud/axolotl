@@ -6,21 +6,25 @@ load_in_8bit: false
 load_in_4bit: false
 strict: false
 
+plugins:
+  - axolotl.integrations.liger.LigerPlugin
+
+liger_rope: true
+liger_rms_norm: true
+liger_glu_activation: true
+liger_layer_norm: true
+liger_fused_linear_cross_entropy: true
+
 datasets:
   - path: yahma/alpaca-cleaned
     type: alpaca
     split: train[:95%]
 
 output_dir: ./outputs/qat_out/
-dataset_prepared_path: ./outputs/qat_out/dataset_prepared
+dataset_prepared_path: ./outputs/dataset_prepared
 
-sample_packing: true
 sequence_len: 8192
-
-flex_attention: true
-flex_attn_compile_kwargs:
-  dynamic: false
-  mode: max-autotune-no-cudagraphs
+flash_attention: true
 
 qat:
   activation_dtype: nvfp4
@@ -33,8 +37,9 @@ wandb_watch:
 wandb_name:
 wandb_log_model:
 
-gradient_accumulation_steps: 2
-micro_batch_size: 32
+gradient_checkpointing: true
+gradient_accumulation_steps: 1
+micro_batch_size: 64
 num_epochs: 1
 optimizer: adamw_torch_fused
 
