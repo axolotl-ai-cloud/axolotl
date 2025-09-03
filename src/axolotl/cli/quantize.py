@@ -108,5 +108,6 @@ def do_quantize(
             safe_serialization=False
         )
         tokenizer.push_to_hub(cfg.hub_model_id)
+        LOG.info(f"Quantized model pushed to the hub: {cfg.hub_model_id}...")
 
     LOG.info(f"Quantized model saved to: {str(Path(output_dir) / 'quantized')}...")
