@@ -8,7 +8,8 @@ import sys
 #   dataset_jsonl: data/bethpage_black/basics.jsonl
 
 def load_jsonl(path):
-    with open(path, "r", encoding="utf-8") as f:
+    # Use utf-8-sig to tolerate BOM at the start of files (common on Windows)
+    with open(path, "r", encoding="utf-8-sig") as f:
         return [json.loads(line) for line in f if line.strip()]
 
 STD_RE = re.compile(r"^\s*Strategy:\s*(\d{2,4})\s*(?:yards?)?\s*$", re.IGNORECASE)

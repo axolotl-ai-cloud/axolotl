@@ -17,9 +17,12 @@ import os
 import json
 import re
 import argparse
+import tempfile
+import shutil
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from peft import PeftModel
+from peft import PeftModel, PeftConfig
+from safetensors.torch import load_file, save_file
 
 GUIDANCE = (
     "Write one cohesive paragraph (120–180 words). Focus on hazards, wind, elevation, landing zones, and approach angles. "
@@ -28,6 +31,35 @@ GUIDANCE = (
     "Only include distances when they are meaningful and express them as '<number> yards'. Do not list multiple unrelated yardages. "
     "Do not restate the hole number incorrectly; if you mention it, ensure it matches the prompt."
 )
+
+
+def prepare_adapter_folder(adapter_dir: str) -> str:
+    """Create a temp folder with inference_mode=True and correctly prefixed LoRA weights."""
+    tmpdir = tempfile.mkdtemp(prefix="fixed_lora_")
+    os.makedirs(tmpdir, exist_ok=True)
+
+    # Copy config and enforce inference_mode
+    cfg_src = os.path.join(adapter_dir, "adapter_config.json")
+    cfg_dst = os.path.join(tmpdir, "adapter_config.json")
+    shutil.copy(cfg_src, cfg_dst)
+    peft_cfg = PeftConfig.from_pretrained(tmpdir)
+    peft_cfg.inference_mode = True
+    peft_cfg.save_pretrained(tmpdir)
+
+    # Load and ensure weights are prefixed as expected by PeftModel
+    st_src = os.path.join(adapter_dir, "adapter_model.safetensors")
+    sd = load_file(st_src, device="cpu")
+    prefix = "base_model.model."
+    needs_prefix = not next(iter(sd)).startswith(prefix)
+    fixed = {}
+    if needs_prefix:
+        for k, v in sd.items():
+            fixed[prefix + k] = v
+    else:
+        fixed = sd
+    save_file(fixed, os.path.join(tmpdir, "adapter_model.safetensors"))
+
+    return tmpdir
 
 
 def fix_mojibake(s: str) -> str:
@@ -127,6 +159,29 @@ def sentence_boundary_trim(text: str, min_words: int = 90, target_words: int = 1
     return trimmed
 
 
+def normalize_user_input(text: str) -> str:
+    """Lightweight normalization to handle common typos and variants."""
+    t = text
+    # Lowercase for predictable replacements, but preserve original casing for numbers
+    lower = t.lower()
+    replacements = {
+        "stratergy": "strategy",
+        "stratery": "strategy",
+        "strategry": "strategy",
+        "maximun": "maximum",
+        "maxium": "maximum",
+        "max": "maximum",
+        "yrds": "yards",
+        "yds": "yards",
+        "yd": "yards",
+        # hole phrasing typos
+        "what hole": "hole",
+    }
+    for wrong, right in replacements.items():
+        lower = re.sub(rf"\b{re.escape(wrong)}\b", right, lower)
+    return lower
+
+
 class GolfStrategyChat:
     def __init__(self, adapter_path: str, data_file: str, device: str = "auto", use_guidance: bool = True, base_model_name: str = "gpt2", base_only: bool = False):
         self.adapter_path = adapter_path
@@ -165,13 +220,14 @@ class GolfStrategyChat:
         base_model = AutoModelForCausalLM.from_pretrained(self.base_model_name)
         base_model.resize_token_embeddings(len(self.tokenizer))
 
-        # Load LoRA adapter unless base-only
+    # Load LoRA adapter unless base-only
         if self.base_only:
             self.model = base_model.to(self.device)
             self.model.eval()
         else:
             try:
-                self.model = PeftModel.from_pretrained(base_model, self.adapter_path)
+                fixed_adapter = prepare_adapter_folder(self.adapter_path)
+                self.model = PeftModel.from_pretrained(base_model, fixed_adapter, local_files_only=True)
                 self.model.eval()
                 self.model.to(self.device)
             except Exception as e:
@@ -194,7 +250,8 @@ class GolfStrategyChat:
         pars = {}
         yardages = {}
 
-        with open(self.data_file, "r", encoding="utf-8") as f:
+        # Use utf-8-sig to tolerate potential BOM on Windows
+        with open(self.data_file, "r", encoding="utf-8-sig") as f:
             for line in f:
                 if not line.strip():
                     continue
@@ -307,10 +364,10 @@ class GolfStrategyChat:
     def extract_drive_distance(self, text):
         """Extract drive distance from user input"""
         patterns = [
-            r"drive\s*(?:it\s*)?(\d{2,3})\s*yards?",
-            r"hit\s*(?:it\s*)?(\d{2,3})\s*yards?",
-            r"(\d{2,3})\s*yard\s*drive",
-            r"(\d{2,3})\s*yards?",
+            r"drive\s*(?:it\s*)?(\d{2,3})\s*(?:yards?|yds?|yrds?)",
+            r"hit\s*(?:it\s*)?(\d{2,3})\s*(?:yards?|yds?|yrds?)",
+            r"(\d{2,3})\s*(?:yard|yd|yds|yrds)\s*drive",
+            r"(\d{2,3})\s*(?:yards?|yds?|yrds?)",
         ]
         
         text_lower = text.lower()
@@ -477,7 +534,8 @@ class GolfStrategyChat:
     
     def process_input(self, user_input):
         """Process user input and generate appropriate response"""
-        user_input = user_input.strip()
+        original = user_input.strip()
+        user_input = normalize_user_input(original)
         
         if not user_input:
             return "Ask me about golf strategies. Try: 'What are the strategies for hole 12?'"

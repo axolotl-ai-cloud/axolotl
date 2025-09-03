@@ -49,7 +49,8 @@ def parse_args():
     p.add_argument("--output", required=True, help="Output JSONL path for generated completions")
     p.add_argument("--model_name", default="gpt2", help="Base model name or path (default: gpt2)")
     p.add_argument("--max_tokens", type=int, default=220, help="Max new tokens to generate per prompt (default: 220)")
-    p.add_argument("--do_sample", action="store_true", default=True, help="Enable sampling (default: on)")
+    # Default to deterministic decoding unless explicitly requested
+    p.add_argument("--do_sample", action="store_true", default=False, help="Enable sampling (default: off)")
     p.add_argument("--temperature", type=float, default=0.7, help="Sampling temperature (default: 0.7)")
     p.add_argument("--top_p", type=float, default=0.9, help="Top-p nucleus (default: 0.9)")
     p.add_argument("--no_guidance", action="store_true", help="Disable appended guidance in prompts")
@@ -64,7 +65,7 @@ def clean_bleed(text: str) -> str:
 
 GUIDANCE = (
     "Write one cohesive paragraph (120–180 words). Focus on hazards, wind, elevation, landing zones, and approach angles. "
-    "Use specific details from the prompt. Avoid generic phrases like 'Success depends…' or 'combines strategic positioning'. "
+    "Use specific details from the prompt; prefer concrete nouns over abstractions. Avoid boilerplate like 'Success depends…', 'multi-layered challenge', or 'combines strategic positioning'. "
     "Do not restate the hole number incorrectly; if you mention it, ensure it matches the prompt. Use yards as the unit."
 )
 
@@ -121,6 +122,14 @@ def de_template(text: str) -> str:
     return text
 
 
+def mention_water(text: str) -> bool:
+    return re.search(r"\b(pond|water|lake)\b", text, flags=re.IGNORECASE) is not None
+
+
+def prompt_mentions_water(prompt: str) -> bool:
+    return re.search(r"\b(pond|water|lake)\b", prompt, flags=re.IGNORECASE) is not None
+
+
 def run_inference(adapter_dir: str, jsonl_file: str, output_file: str, model_name: str, max_tokens: int, do_sample: bool, temperature: float, top_p: float, use_guidance: bool):
     fixed_adapter = prepare_adapter_folder(adapter_dir)
     print("Using adapter folder:", fixed_adapter)
@@ -136,7 +145,8 @@ def run_inference(adapter_dir: str, jsonl_file: str, output_file: str, model_nam
     model.to(device).eval()
 
     records = []
-    with open(jsonl_file, "r", encoding="utf-8") as f:
+    # Use utf-8-sig to tolerate BOM at file start
+    with open(jsonl_file, "r", encoding="utf-8-sig") as f:
         for line in f:
             if not line.strip():
                 continue
@@ -163,6 +173,10 @@ def run_inference(adapter_dir: str, jsonl_file: str, output_file: str, model_nam
             clean = fix_mojibake(clean)
             clean = sanitize_hole_header(clean, expected_hole)
             clean = de_template(clean)
+            # If model invented water hazards not present in prompt bullets, remove the water sentence softly
+            if mention_water(clean) and not prompt_mentions_water(prompt):
+                clean = re.sub(r"[^.?!]*\b(pond|water|lake)\b[^.?!]*[.?!]", "", clean, flags=re.IGNORECASE).strip()
+                clean = re.sub(r"\s+", " ", clean)
             rec = {**entry, "raw_completion": raw, "completion": clean}
             records.append(rec)
 

@@ -114,7 +114,8 @@ def run_inference(adapter_dir, jsonl_file, output_file, model_name="gpt2", max_t
     hole_re = re.compile(r"\[Hole\s*(\d+)\]")
     std_re = re.compile(r"^\s*Strategy:\s*(\d{2,4})\s*yards\s*$", re.IGNORECASE)
     records = []
-    with open(jsonl_file, "r", encoding="utf-8") as f:
+    # Use utf-8-sig to tolerate BOM that can appear from some Windows editors/pipes
+    with open(jsonl_file, "r", encoding="utf-8-sig") as f:
         for line in f:
             entry = json.loads(line)
             prompt = entry["prompt"]

@@ -18,9 +18,11 @@ os.environ.setdefault("HF_DATASETS_DISABLE_PROGRESS_BARS", "1")
 # Constants and module-level state for tokenization (avoid dataset hashing warnings)
 DEFAULT_DATA_FILE = "data/bethpage_black/train_multitask_case_fixed.jsonl"
 FORMAT_INSTR = ""  # task prefixing is already in the prompt
-PROMPT_MAX = 200
-COMPLETION_MAX = 50
-TOTAL_MAX = PROMPT_MAX + COMPLETION_MAX
+# Allow richer description targets during training
+# Keep total length conservative for gpt2/gpt2-medium VRAM on Windows
+PROMPT_MAX = 320
+COMPLETION_MAX = 192
+TOTAL_MAX = 512
 _TOKENIZER = None  # initialized in train_model
 
 # Prefer safe attention kernels to avoid architecture-specific crashes on newer GPUs
@@ -127,6 +129,9 @@ def train_model(
     force_cpu=False,
     max_steps_override: int | None = None,
     save_steps_override: int | None = None,
+    base_model_override: str | None = None,
+    per_device_bs_override: int | None = None,
+    grad_accum_override: int | None = None,
 ):
     # Configure SDP kernels before model init
     _configure_sdp_kernels(force_cpu)
@@ -135,10 +140,13 @@ def train_model(
     save_steps = save_steps_override if save_steps_override is not None else cfg["save_steps"]
     do_save = cfg["save"]
     mode_name = cfg["name"]
-    model_name = cfg.get("model_name", "gpt2")
+    model_name = base_model_override or cfg.get("model_name", "gpt2")
 
     output_base = "outputs/bethpage-lora"
-    ckpt_dir = os.path.join(output_base, f"checkpoint-{mode_name}")
+    def _slug(s: str) -> str:
+        return re.sub(r"[^A-Za-z0-9_.-]+", "-", s)
+    model_suffix = _slug(model_name)
+    ckpt_dir = os.path.join(output_base, f"checkpoint-{mode_name}-{model_suffix}")
     os.makedirs(ckpt_dir, exist_ok=True)
 
     ds_raw = load_dataset("json", data_files=data_file)["train"]
@@ -236,9 +244,16 @@ def train_model(
     except Exception:
         pass
 
-    # Adjust micro-batch if we're on CPU to keep steps shorter
-    per_device_bs = 8 if use_cuda else 2
-    grad_accum = 8 if use_cuda else 2
+    # Adjust micro-batch; allow CLI override, and be more conservative for larger bases
+    if per_device_bs_override is not None:
+        per_device_bs = per_device_bs_override
+    else:
+        # Heuristic: smaller default batch for larger base models
+        if model_name in ("gpt2-medium", "gpt2-large", "gpt2-xl"):
+            per_device_bs = 4 if use_cuda else 2
+        else:
+            per_device_bs = 8 if use_cuda else 2
+    grad_accum = grad_accum_override if grad_accum_override is not None else (8 if use_cuda else 2)
 
     # Only resume if trainer_state.json exists in checkpoint dir
     trainer_state_path = os.path.join(ckpt_dir, "trainer_state.json")
@@ -409,6 +424,30 @@ def main():
         action="store_true",
         help="Force CPU training (sets no_cuda=True)."
     )
+    parser.add_argument(
+        "--base-model",
+        type=str,
+        default=None,
+        help="Override base model name (e.g., gpt2, gpt2-medium)."
+    )
+    parser.add_argument(
+        "--data-file",
+        type=str,
+        default=DEFAULT_DATA_FILE,
+        help="Path to training JSONL dataset."
+    )
+    parser.add_argument(
+        "--per-device-batch",
+        type=int,
+        default=None,
+        help="Override per_device_train_batch_size."
+    )
+    parser.add_argument(
+        "--grad-accum",
+        type=int,
+        default=None,
+        help="Override gradient_accumulation_steps."
+    )
     args = parser.parse_args()
     mode_to_plan = {"debug": 0, "debug_training": 1, "1_hour": 2, "8_hour": 3}
     plan = mode_to_plan[args.mode]
@@ -417,10 +456,13 @@ def main():
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     success, ckpt_dir, metrics, grad_norm, learning_rate, losses = train_model(
         plan,
-        data_file=DEFAULT_DATA_FILE,
+        data_file=args.data_file,
         resume=True,
         log_path=log_path,
         force_cpu=args.cpu,
+        base_model_override=args.base_model,
+        per_device_bs_override=args.per_device_batch,
+        grad_accum_override=args.grad_accum,
     )
     # Basic status to console
     print({"mode": args.mode, "success": success, "ckpt_dir": ckpt_dir, "metrics": metrics})
