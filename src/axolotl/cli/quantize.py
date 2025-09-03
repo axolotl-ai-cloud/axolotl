@@ -112,7 +112,7 @@ def do_quantize(
             hub_model_id.rstrip("-")
             + f"-{quantization_config_to_str[type(quantization_config)]}"
         )
-        model.push_to_hub(hub_model_id, config=model.config, safe_serialization=False)
+        model.push_to_hub(hub_model_id, safe_serialization=False)
         tokenizer.push_to_hub(hub_model_id)
         LOG.info(f"Quantized model pushed to: {hub_model_id}.")
 
