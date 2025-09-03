@@ -94,12 +94,15 @@ def do_quantize(
         safe_serialization=False,
         progressbar=True,
     )
-    if cfg.hub_model_id:
-        model.push_to_hub(cfg.hub_model_id)
     tokenizer.save_pretrained(
         str(Path(output_dir) / "quantized"),
         safe_serialization=False,
         progressbar=True,
         save_jinja_files=cfg.tokenizer_save_jinja_files,
     )
+
+    if cfg.hub_model_id:
+        model.push_to_hub(cfg.hub_model_id, safe_serialization=False)
+        tokenizer.push_to_hub(cfg.hub_model_id)
+        
     LOG.info(f"Quantized model saved to: {str(Path(output_dir) / 'quantized')}...")
