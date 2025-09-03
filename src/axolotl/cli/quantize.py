@@ -102,7 +102,11 @@ def do_quantize(
     )
 
     if cfg.hub_model_id:
-        model.push_to_hub(cfg.hub_model_id, safe_serialization=False)
+        model.push_to_hub(
+            cfg.hub_model_id, 
+            config=model.config,
+            safe_serialization=False
+        )
         tokenizer.push_to_hub(cfg.hub_model_id)
-        
+
     LOG.info(f"Quantized model saved to: {str(Path(output_dir) / 'quantized')}...")
