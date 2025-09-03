@@ -14,6 +14,7 @@ from axolotl.utils.quantization import (
     get_quantization_config,
     quantize_model,
     TorchAOQuantDType,
+    quantization_config_to_str
 )
 
 LOG = get_logger(__name__)
@@ -82,12 +83,15 @@ def do_quantize(
     quantize_model(
         model, weight_dtype, group_size, activation_dtype, quantize_embedding
     )
+    
 
-    quantization_config = TorchAoConfig(
-        get_quantization_config(weight_dtype, activation_dtype, group_size),
+    quantization_config = get_quantization_config(weight_dtype, activation_dtype, group_size)
+
+    ao_config = TorchAoConfig(
+        quantization_config=quantization_config,
         include_input_output_embeddings=quantize_embedding,
     )
-    model.quantization_config = quantization_config
+    model.config.quantization_config = ao_config
 
     LOG.info(f"Saving quantized model to: {str(Path(output_dir) / 'quantized')}.")
     model.save_pretrained(
@@ -103,12 +107,13 @@ def do_quantize(
     )
 
     if hub_model_id:
+        hub_model_id = hub_model_id.rstrip("/") + f"/{quantization_config_to_str[type(quantization_config)]}"
         model.push_to_hub(
             hub_model_id,
             config=model.config,
             safe_serialization=False
         )
         tokenizer.push_to_hub(hub_model_id)
-        LOG.info(f"Quantized model pushed to the hub: {hub_model_id}.")
+        LOG.info(f"Quantized model pushed to: {hub_model_id}.")
 
     LOG.info(f"Quantized model saved to: {str(Path(output_dir) / 'quantized')}.")

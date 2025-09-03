@@ -17,6 +17,18 @@ from torchao.quantization.quant_api import (
 
 from axolotl.utils.schemas.enums import TorchAOQuantDType
 
+quantization_config_to_str = {
+    Int4WeightOnlyConfig: "int4w",
+    Int8DynamicActivationInt4WeightConfig: "int8daint4w",
+    Float8DynamicActivationFloat8WeightConfig: "float8dafloat8w",
+    Float8DynamicActivationInt4WeightConfig: "float8daint4w",
+}
+
+try:
+    from torchao.prototype.mx_formats import NVFP4InferenceConfig
+    quantization_config_to_str[NVFP4InferenceConfig] = "nvfp4w"
+except:
+    pass
 
 def get_quantization_config(
     weight_dtype: TorchAOQuantDType,
