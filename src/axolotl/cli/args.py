@@ -115,6 +115,7 @@ class QuantizeCliArgs:
     quantize_embedding: Optional[bool] = field(default=None)
     group_size: Optional[int] = field(default=None)
     output_dir: Optional[str] = field(default=None)
+    hub_model_id: Optional[str] = field(default=None)
 
 
 @dataclass
