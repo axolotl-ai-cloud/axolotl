@@ -538,7 +538,8 @@ We support the reward modelling techniques supported by <code>trl</code>.</p>
 </section>
 <section id="outcome-reward-models" class="level3">
 <h3 class="anchored" data-anchor-id="outcome-reward-models">(Outcome) Reward Models</h3>
-<p>Outcome reward models are trained using data which contains preference annotations for an entire interaction between the user and model (e.g.&nbsp;rather than per-turn or per-step).</p>
+<p>Outcome reward models are trained using data which contains preference annotations for an entire interaction between the user and model (e.g.&nbsp;rather than per-turn or per-step).
+For improved training stability, you can use the <code>center_rewards_coefficient</code> parameter to encourage mean-zero reward outputs (<a href="https://huggingface.co/docs/trl/v0.10.1/en/reward_trainer#centering-rewards">see TRL docs</a>).</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> google/gemma-2-2b</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">model_type</span><span class="kw">:</span><span class="at"> AutoModelForSequenceClassification</span></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">num_labels</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
