@@ -88,7 +88,7 @@ def do_quantize(
     quantization_config = get_quantization_config(weight_dtype, activation_dtype, group_size)
 
     ao_config = TorchAoConfig(
-        quantization_config=quantization_config,
+        quant_type=quantization_config,
         include_input_output_embeddings=quantize_embedding,
     )
     model.config.quantization_config = ao_config
