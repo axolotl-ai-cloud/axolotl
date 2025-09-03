@@ -947,7 +947,15 @@ class AxolotlInputConfig(
         },
     )
 
-    fix_untrained_tokens: int | list[int] | None = None
+    fix_untrained_tokens: int | list[int] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Token index or indices to adjust embedding weights to the mean of the other tokens. "
+                "This is useful when the model has untrained embeddings."
+            )
+        },
+    )
 
     # INTERNALS - document for now, generally not set externally
     is_preprocess: bool | None = None
@@ -1005,6 +1013,26 @@ class AxolotlInputConfig(
         if ds_configs:
             return [ds_config.model_dump(exclude_none=True) for ds_config in ds_configs]
         return None
+
+    @model_validator(mode="before")
+    @classmethod
+    def warn_peft_trainable_token_to_fix_untrained(cls, data):
+        if (
+            peft_trainable_token_indices := data.get("peft_trainable_token_indices")
+        ) and (fix_untrained_tokens := data.get("fix_untrained_tokens")):
+            if isinstance(fix_untrained_tokens, int):
+                fix_untrained_tokens = (fix_untrained_tokens,)
+
+            if isinstance(peft_trainable_token_indices, int):
+                peft_trainable_token_indices = (peft_trainable_token_indices,)
+
+            for untrained_token_id in fix_untrained_tokens:
+                if untrained_token_id not in peft_trainable_token_indices:
+                    LOG.warning_once(
+                        f"Token {untrained_token_id} is fixed via `fix_untrained_tokens`, yet not in `peft_trainable_token_indices: ` list. "
+                        "Please add it, otherwise the token won't be trained on."
+                    )
+        return data
 
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
