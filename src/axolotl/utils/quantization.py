@@ -26,9 +26,11 @@ quantization_config_to_str = {
 
 try:
     from torchao.prototype.mx_formats import NVFP4InferenceConfig
+
     quantization_config_to_str[NVFP4InferenceConfig] = "nvfp4w"
 except:
     pass
+
 
 def get_quantization_config(
     weight_dtype: TorchAOQuantDType,

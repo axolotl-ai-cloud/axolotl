@@ -14,7 +14,7 @@ from axolotl.utils.quantization import (
     get_quantization_config,
     quantize_model,
     TorchAOQuantDType,
-    quantization_config_to_str
+    quantization_config_to_str,
 )
 
 LOG = get_logger(__name__)
@@ -83,9 +83,10 @@ def do_quantize(
     quantize_model(
         model, weight_dtype, group_size, activation_dtype, quantize_embedding
     )
-    
 
-    quantization_config = get_quantization_config(weight_dtype, activation_dtype, group_size)
+    quantization_config = get_quantization_config(
+        weight_dtype, activation_dtype, group_size
+    )
 
     ao_config = TorchAoConfig(
         quant_type=quantization_config,
@@ -107,12 +108,11 @@ def do_quantize(
     )
 
     if hub_model_id:
-        hub_model_id = hub_model_id.rstrip("-") + f"-{quantization_config_to_str[type(quantization_config)]}"
-        model.push_to_hub(
-            hub_model_id,
-            config=model.config,
-            safe_serialization=False
+        hub_model_id = (
+            hub_model_id.rstrip("-")
+            + f"-{quantization_config_to_str[type(quantization_config)]}"
         )
+        model.push_to_hub(hub_model_id, config=model.config, safe_serialization=False)
         tokenizer.push_to_hub(hub_model_id)
         LOG.info(f"Quantized model pushed to: {hub_model_id}.")
 
