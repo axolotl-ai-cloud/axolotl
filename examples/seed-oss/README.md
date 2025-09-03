@@ -22,15 +22,7 @@ pip3 install --no-build-isolation -e '.[flash-attn]'
 python scripts/cutcrossentropy_install.py | sh
 ```
 
-2. Install Seed-OSS transformers commit:
-
-```bash
-pip3 uninstall -y transformers
-
-pip3 install git+https://github.com/huggingface/transformers.git@56d68c6706ee052b445e1e476056ed92ac5eb383
-```
-
-3. Run the finetuning example:
+2. Run the finetuning example:
 
 ```bash
 axolotl train examples/seed-oss/seed-oss-36b-qlora.yaml
