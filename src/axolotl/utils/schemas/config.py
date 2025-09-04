@@ -230,6 +230,16 @@ class AxolotlInputConfig(
             )
         },
     )
+    dataset_num_proc: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set.\n"
+                "For Runpod VMs, it will default to number of vCPUs via RUNPOD_CPU_COUNT."
+            )
+        },
+    )
+
     dataset_exact_deduplication: bool | None = Field(
         default=None,
         json_schema_extra={
