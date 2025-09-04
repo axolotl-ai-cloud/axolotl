@@ -497,7 +497,7 @@ class TrainerBuilderBase(abc.ABC):
             "dion_momentum",
             "dion_rank_fraction",
             "dion_rank_multiple_of",
-            "dataset_num_proc"
+            "dataset_num_proc",
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
                 training_args_kwargs[arg] = getattr(self.cfg, arg)
