@@ -69,7 +69,7 @@ class TestActivationCheckpointing:
                 "save_safetensors": True,
                 "gradient_checkpointing": gradient_checkpointing,
                 "save_first_step": False,
-                "dataset_processes": 4,
+                "dataset_num_proc": 4,
             }
         )
 

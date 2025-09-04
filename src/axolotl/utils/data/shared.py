@@ -409,7 +409,7 @@ def save_preprocessed_dataset(
 ) -> None:
     """Save preprocessed dataset to disk and optionally push to the HF Hub."""
     prepared_ds_path = get_prepared_dataset_path(cfg, dataset_hash)
-    num_workers = cfg.dataset_processes or get_default_process_count()
+    num_workers = cfg.dataset_num_proc or get_default_process_count()
     if isinstance(dataset, IterableDataset):
         ds_from_iter = Dataset.from_generator(
             functools.partial(_generate_from_iterable_dataset, dataset),
