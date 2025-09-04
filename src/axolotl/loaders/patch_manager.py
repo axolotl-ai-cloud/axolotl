@@ -68,6 +68,7 @@ class PatchManager:
         self._apply_self_attention_lora_patch()
         self._apply_fsdp2_bnb_patches()
         self._apply_patch_deepspeed_zero3()
+        self._apply_patch_transformers_hub_repo_templates()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
@@ -484,3 +485,10 @@ class PatchManager:
                 apply_deepspeed_patches()
         except ImportError as e:
             LOG.warning(f"DeepSpeed patches not applied: {e}")
+
+    def _apply_patch_transformers_hub_repo_templates(self):
+        from axolotl.monkeypatch.transformers.hub_utils import (
+            apply_list_repo_templates_patch,
+        )
+
+        apply_list_repo_templates_patch()
