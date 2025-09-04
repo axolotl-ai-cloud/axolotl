@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import json
 import os
+import shutil
 import signal
 import sys
 import typing
 import weakref
+from collections import OrderedDict
 from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Dict
@@ -38,6 +41,7 @@ from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
+from axolotl.utils.train import determine_last_checkpoint
 from axolotl.utils.trainer import setup_trainer
 
 try:
@@ -46,7 +50,7 @@ except ImportError:
     BetterTransformer = None
 
 if typing.TYPE_CHECKING:
-    from axolotl.core.trainer_builder import HFCausalTrainerBuilder, HFRLTrainerBuilder
+    from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 
 LOG = get_logger(__name__)
 
@@ -122,32 +126,6 @@ def setup_reference_model(
             model_loader = ModelLoader(cfg, tokenizer, reference_model=reference_model)
             model_ref, _ = model_loader.load()
     return model_ref
-
-
-def determine_resume_checkpoint(cfg: DictDefault) -> str | None:
-    """
-    Determine the checkpoint to resume from based on configuration.
-
-    Args:
-        cfg: Dictionary mapping `axolotl` config keys to values.
-
-    Returns:
-        Path to the checkpoint to resume from, or `None` if not resuming.
-    """
-    if cfg.resume_from_checkpoint is None and cfg.auto_resume_from_checkpoints:
-        possible_checkpoints = [
-            str(cp) for cp in Path(cfg.output_dir).glob("checkpoint-*")
-        ]
-        if len(possible_checkpoints) > 0:
-            sorted_paths = sorted(
-                possible_checkpoints,
-                key=lambda path: int(path.split("-")[-1]),
-            )
-            cfg.resume_from_checkpoint = sorted_paths[-1]
-            LOG.info(
-                f"Using Auto-resume functionality to start with checkpoint at {cfg.resume_from_checkpoint}"
-            )
-    return cfg.resume_from_checkpoint
 
 
 def setup_signal_handler(
@@ -252,7 +230,7 @@ def save_trained_model(
     # Post training module hooks
     for name, module in model.named_modules():
         if hasattr(module, "_post_training"):
-            module._post_training(model, name)  # pylint: disable=protected-access
+            module._post_training(model, name)
 
     # handle QAT
     if cfg.qat:
@@ -282,12 +260,51 @@ def save_trained_model(
             else:
                 state_dict_type = cfg.fsdp_config.state_dict_type
             trainer.accelerator.state.fsdp_plugin.set_state_dict_type(state_dict_type)
-        trainer.save_model(cfg.output_dir)
+        trainer.save_model(cfg.output_dir)  # only handles FULL_STATE_DICT
         if state_dict_type == "SHARDED_STATE_DICT":
             LOG.info(
                 "The final model was saved with a sharded state dict. Please ensure you merge "
                 "the sharded weights with `merge-sharded-fsdp-weights`."
             )
+            checkpoint_dir = determine_last_checkpoint(cfg, update=False)
+            if (
+                not (Path(cfg.output_dir) / "model.safetensors.index.json").exists()
+                and checkpoint_dir
+            ):
+                # import here to prevent circular import
+                from axolotl.cli.merge_sharded_fsdp_weights import merge_fsdp_weights
+
+                fsdp_dir = Path(checkpoint_dir) / "pytorch_model_fsdp_0"
+                merged_path = str(Path(cfg.output_dir) / "merged")
+                merge_fsdp_weights(
+                    checkpoint_dir=str(fsdp_dir),
+                    output_path=merged_path,
+                    safe_serialization=True,
+                )
+                trainer.accelerator.wait_for_everyone()
+                if trainer.accelerator.is_main_process:
+                    # move all files in merged_path to cfg.output_dir
+                    for merged_file in Path(merged_path).iterdir():
+                        if (Path(cfg.output_dir) / merged_file.name).exists():
+                            (Path(cfg.output_dir) / merged_file.name).unlink()
+                        shutil.move(str(merged_file), cfg.output_dir)
+                    shutil.rmtree(merged_path)  # remove what should be an empty dir
+        # TODO(wing):see https://github.com/huggingface/transformers/pull/40207
+        # cleanup the FSDP prefix in the model config.json
+        if trainer.accelerator.is_main_process:
+            with open(
+                Path(cfg.output_dir) / "config.json", "r", encoding="utf-8"
+            ) as config_file_io:
+                # read the model config as an OrderedDict
+                config = json.load(config_file_io, object_pairs_hook=OrderedDict)
+                config["architectures"] = [
+                    name.lstrip("FSDP") for name in config["architectures"]
+                ]
+            # write the updated model config back
+            with open(
+                os.path.join(cfg.output_dir, "config.json"), "w", encoding="utf-8"
+            ) as config_file_io:
+                json.dump(config, config_file_io, indent=2)
     elif cfg.deepspeed and is_deepspeed_zero3_enabled():
         # Copied over from: https://github.com/huggingface/accelerate/blob/5ae611118057232f441055f7ef9ba0b0f2b8d533/docs/source/usage_guides/deepspeed.md#saving-and-loading
         trainer.accelerator.wait_for_everyone()
@@ -399,7 +416,9 @@ def save_initial_configs(
 
     # Pre-save the tokenizer and model configs
     LOG.info(f"Pre-saving tokenizer to {cfg.output_dir}...")
-    tokenizer.save_pretrained(str(output_dir))
+    tokenizer.save_pretrained(
+        str(Path(cfg.output_dir)), save_jinja_files=cfg.tokenizer_save_jinja_files
+    )
     if hasattr(model, "config"):
         LOG.info(f"Pre-saving model config to {cfg.output_dir}...")
         model.config.save_pretrained(str(output_dir))
@@ -419,7 +438,7 @@ def setup_model_card(cfg: DictDefault):
     badge_markdown = """[<img src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/image/axolotl-badge-web.png" alt="Built with Axolotl" width="200" height="32"/>](https://github.com/axolotl-ai-cloud/axolotl)"""
     transformers.modelcard.AUTOGENERATED_TRAINER_COMMENT += f"\n{badge_markdown}"
 
-    if getattr(cfg, "axolotl_config_path"):
+    if cfg.axolotl_config_path:
         raw_axolotl_cfg = Path(cfg.axolotl_config_path)
         version = importlib.metadata.version("axolotl")
         if raw_axolotl_cfg.is_file():
@@ -470,7 +489,9 @@ def handle_untrained_tokens_fix(
         )
 
 
-def setup_model_and_trainer(cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> tuple[
+def setup_model_and_trainer(
+    cfg: DictDefault, dataset_meta: TrainDatasetMeta
+) -> tuple[
     "HFRLTrainerBuilder" | "HFCausalTrainerBuilder",
     PeftModel | PreTrainedModel,
     PreTrainedTokenizer,
@@ -564,7 +585,7 @@ def train(
     setup_model_card(cfg)
 
     # Execute the training
-    resume_from_checkpoint = determine_resume_checkpoint(cfg)
+    resume_from_checkpoint = determine_last_checkpoint(cfg)
     execute_training(cfg, trainer, resume_from_checkpoint)
 
     # clear cache
@@ -573,6 +594,9 @@ def train(
 
     # Save the trained model and cleanup
     save_trained_model(cfg, trainer, model, safe_serialization)
+    tokenizer.save_pretrained(
+        str(Path(cfg.output_dir)), save_jinja_files=cfg.tokenizer_save_jinja_files
+    )
     create_model_card(cfg, trainer)
     if not cfg.use_ray:
         cleanup_distributed()

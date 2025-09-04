@@ -23,7 +23,6 @@ class TestFusedLlama(unittest.TestCase):
 
     @with_temp_dir
     def test_fft_packing(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

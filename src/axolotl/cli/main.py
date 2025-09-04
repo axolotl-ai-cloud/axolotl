@@ -1,7 +1,5 @@
 """Click CLI definitions for various axolotl commands."""
 
-# pylint: disable=redefined-outer-name
-
 import os
 import subprocess  # nosec B404
 from typing import Literal, Optional

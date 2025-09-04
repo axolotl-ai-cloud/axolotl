@@ -1,7 +1,5 @@
 """Module with Pydantic models for configuration."""
 
-# pylint: disable=too-many-lines
-
 from typing import Annotated, Any, Literal
 
 from annotated_types import MinLen
@@ -51,7 +49,6 @@ from axolotl.utils.schemas.vllm import VllmConfig
 LOG = get_logger(__name__)
 
 
-# pylint: disable=too-many-ancestors
 class AxolotlInputConfig(
     ModelInputConfig,
     ModelOutputConfig,
@@ -124,10 +121,10 @@ class AxolotlInputConfig(
         },
     )
     trl: TRLConfig | None = Field(
-        default_factory=lambda: TRLConfig(),  # pylint: disable=unnecessary-lambda
+        default_factory=lambda: TRLConfig(),
     )
     vllm: VllmConfig | None = Field(
-        default_factory=lambda: VllmConfig(),  # pylint: disable=unnecessary-lambda
+        default_factory=lambda: VllmConfig(),
     )
     qat: QATConfig | None = None
     quantization: PTQConfig | None = None
@@ -139,6 +136,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Process reward modelling: `True` or `False`"
+        },
+    )
+    center_rewards_coefficient: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Coefficient to incentivize the reward model to output mean-zero rewards (proposed by https://huggingface.co/papers/2312.09244, Eq. 2). Recommended value: `0.01`."
         },
     )
     num_labels: int | None = None
@@ -425,6 +428,12 @@ class AxolotlInputConfig(
             "description": "The maximum length of an input to train with, this should typically be less than 2048 as most models have a token/context limit of 2048"
         },
     )
+    excess_length_strategy: Literal["drop", "truncate"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "What to do when a tokenized row exceeds sequence_len. 'drop' removes the row; 'truncate' slices tensors to sequence_len. Defaults to 'drop' for backward compatibility."
+        },
+    )
     eval_sequence_len: int | None = Field(
         default=None,
         json_schema_extra={
@@ -483,12 +492,6 @@ class AxolotlInputConfig(
         },
     )
     multipack_real_batches: bool | None = None
-    pretraining_sample_concatenation: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "whether to concatenate samples during pretraining",
-        },
-    )
 
     batch_flattening: Literal["auto"] | bool | None = Field(
         default=None,
@@ -503,11 +506,32 @@ class AxolotlInputConfig(
     pose_max_context_len: int | None = None
     pose_num_chunks: int | None = None
 
-    pretrain_multipack_buffer_size: int | None = 10_000
+    # Deprecated: Use streaming_multipack_buffer_size instead
+    pretrain_multipack_buffer_size: int | None = Field(
+        default=None,
+        deprecated="Deprecated in v0.13.0, will be removed in v0.14.0. Use streaming_multipack_buffer_size instead",
+    )
     pretrain_multipack_attn: bool | None = Field(
         default=True,
         json_schema_extra={
             "description": "whether to prevent cross attention for packed sequences during pretraining",
+        },
+    )
+    pretraining_sample_concatenation: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "whether to concatenate samples during pretraining",
+        },
+    )
+
+    streaming: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Use streaming mode for loading datasets"},
+    )
+    streaming_multipack_buffer_size: int | None = Field(
+        default=10_000,
+        json_schema_extra={
+            "description": "Buffer size for multipack streaming datasets"
         },
     )
 
@@ -838,10 +862,15 @@ class AxolotlInputConfig(
     include_tokens_per_second: bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "bool of whether to include tokens trainer per second in the training metrics. This iterates over the entire dataset once, so it takes some time."
+            "description": "bool of whether to report tokens per second at the end of training. This is not supported with pre-training datasets."
         },
     )
-
+    include_tkps: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "bool of whether to report tokens per second during training by measuring throughput of non-padding tokens."
+        },
+    )
     neftune_noise_alpha: float | None = Field(
         default=None,
         json_schema_extra={
@@ -935,7 +964,15 @@ class AxolotlInputConfig(
         },
     )
 
-    fix_untrained_tokens: int | list[int] | None = None
+    fix_untrained_tokens: int | list[int] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Token index or indices to adjust embedding weights to the mean of the other tokens. "
+                "This is useful when the model has untrained embeddings."
+            )
+        },
+    )
 
     # INTERNALS - document for now, generally not set externally
     is_preprocess: bool | None = None
@@ -994,6 +1031,26 @@ class AxolotlInputConfig(
             return [ds_config.model_dump(exclude_none=True) for ds_config in ds_configs]
         return None
 
+    @model_validator(mode="before")
+    @classmethod
+    def warn_peft_trainable_token_to_fix_untrained(cls, data):
+        if (
+            peft_trainable_token_indices := data.get("peft_trainable_token_indices")
+        ) and (fix_untrained_tokens := data.get("fix_untrained_tokens")):
+            if isinstance(fix_untrained_tokens, int):
+                fix_untrained_tokens = (fix_untrained_tokens,)
+
+            if isinstance(peft_trainable_token_indices, int):
+                peft_trainable_token_indices = (peft_trainable_token_indices,)
+
+            for untrained_token_id in fix_untrained_tokens:
+                if untrained_token_id not in peft_trainable_token_indices:
+                    LOG.warning_once(
+                        f"Token {untrained_token_id} is fixed via `fix_untrained_tokens`, yet not in `peft_trainable_token_indices: ` list. "
+                        "Please add it, otherwise the token won't be trained on."
+                    )
+        return data
+
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """wrapper to valdiate GPU capabilities with the configured options"""
@@ -1040,7 +1097,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
         return data
 
-    # pylint: disable=duplicate-code
     @model_validator(mode="before")
     @classmethod
     def check_multigpu_unsloth(cls, data):
@@ -1056,7 +1112,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
         return data
 
-    # pylint: disable=duplicate-code
     @model_validator(mode="before")
     @classmethod
     def check_multigpu_lora_kernels(cls, data):
@@ -1281,4 +1336,15 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if data.get("dataset_num_proc") is None:
             data["dataset_num_proc"] = get_default_process_count()
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_deduplication_with_streaming(cls, data):
+        if data.get("dataset_exact_deduplication") and (
+            data.get("streaming") or data.get("pretraining_dataset")
+        ):
+            raise NotImplementedError(
+                "dataset_exact_deduplication is not available for streaming datasets. "
+            )
         return data

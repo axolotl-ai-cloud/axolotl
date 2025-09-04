@@ -47,7 +47,6 @@ class QuartoGenerator:
         """Check if a type is a Pydantic BaseModel."""
         return inspect.isclass(type_obj) and issubclass(type_obj, BaseModel)
 
-    # pylint: disable=too-many-return-statements
     def _extract_nested_type(self, field_type) -> Any:
         """Extract the actual type from complex type annotations."""
         # Handle Annotated types (Python 3.9+)
@@ -124,7 +123,6 @@ class QuartoGenerator:
 
         return field_type
 
-    # pylint: disable=too-many-return-statements
     def _extract_all_pydantic_models_from_type(
         self, field_type
     ) -> list[type[BaseModel]]:
@@ -318,7 +316,6 @@ class QuartoGenerator:
 
         return all_groups
 
-    # pylint: disable=too-many-return-statements
     def _extract_field_groups_from_source(
         self, model_class: type[BaseModel]
     ) -> list[dict]:
@@ -503,7 +500,7 @@ class QuartoGenerator:
                     nested_schema = nested_model.model_json_schema()
                     nested_properties = nested_schema.get("properties", {})
                     nested_required = nested_schema.get("required", [])
-                except Exception:  # pylint: disable=broad-exception-caught
+                except Exception:
                     # Fallback: use model fields directly
                     nested_properties = {}
                     nested_required = []
@@ -607,7 +604,7 @@ class QuartoGenerator:
             schema = model_class.model_json_schema()
             properties = schema.get("properties", {})
             required = schema.get("required", [])
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except Exception as e:
             print(
                 f"Warning: Could not generate JSON schema ({e}). Using model fields instead."
             )

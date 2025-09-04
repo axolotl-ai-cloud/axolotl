@@ -4,6 +4,7 @@ import os
 import subprocess  # nosec
 import sys
 import tempfile
+from pathlib import Path
 from typing import Any, Iterator, Literal
 
 import yaml
@@ -67,14 +68,12 @@ def build_command(base_cmd: list[str], options: dict[str, Any]) -> list[str]:
 
 def generate_config_files(config: str, sweep: str | None) -> Iterator[tuple[str, bool]]:
     """
-    Generate list of configuration files to process.
+    Generate list of configuration files to process. Yields a tuple of the configuration file name and a boolean indicating
+    whether this is a group of configurations (i.e., a sweep).
 
     Args:
         config: Base configuration file
         sweep: Sweep configuration file
-
-    Yields:
-        Tuple of configuration file name and whether this is a group of configurations
     """
 
     if not sweep:
@@ -90,8 +89,12 @@ def generate_config_files(config: str, sweep: str | None) -> Iterator[tuple[str,
     # Generate all possible configurations
     permutations = generate_sweep_configs(base_config, sweep_config)
     is_group = len(permutations) > 1
-    for permutation in permutations:
-        # pylint: disable=consider-using-with
+    base_output_dir = base_config.get("output_dir", "./model-out")
+    for idx, permutation in enumerate(permutations, start=1):
+        permutation_dir = Path(permutation.get("output_dir", base_output_dir))
+        permutation_id = f"sweep{idx:04d}"
+        permutation["output_dir"] = str(permutation_dir / permutation_id)
+
         temp_file = tempfile.NamedTemporaryFile(
             mode="w",
             suffix=".yaml",

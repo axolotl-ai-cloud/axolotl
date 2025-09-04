@@ -14,9 +14,13 @@ class PreprocessCliArgs:
     prompter: Optional[str] = field(default=None)
     download: Optional[bool] = field(default=True)
     iterable: Optional[bool] = field(
-        default=None,
+        default=False,
         metadata={
-            "help": "Use IterableDataset for streaming processing of large datasets"
+            "help": (
+                "Deprecated in v0.13.0, will be removed in v0.14.0. For streaming "
+                "datasets, use 'axolotl train' and set 'streaming: true' in your YAML "
+                "config, or pass --streaming instead in the CLI."
+            )
         },
     )
 
@@ -39,6 +43,12 @@ class VllmServeCliArgs:
     tensor_parallel_size: Optional[int] = field(
         default=None,
         metadata={"help": "Number of tensor parallel workers to use."},
+    )
+    data_parallel_size: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Number of data parallel workers to use for vLLM serving. This controls how many model replicas are used for parallel inference."
+        },
     )
     host: Optional[str] = field(
         default=None,  # nosec B104

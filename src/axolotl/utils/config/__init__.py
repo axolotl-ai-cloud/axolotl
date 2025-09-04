@@ -37,7 +37,7 @@ def choose_device(cfg):
                 return f"npu:{cfg.local_rank}"
 
             raise SystemError("No CUDA/mps/npu device found")
-        except Exception:  # pylint: disable=broad-exception-caught
+        except Exception:
             return "cpu"
 
     cfg.device = get_device()
@@ -77,7 +77,7 @@ def resolve_dtype(cfg):
     if cfg.device == "mps":
         cfg.load_in_8bit = False
         cfg.tf32 = False
-        if cfg.bf16:
+        if cfg.bf16 and cfg.fp16 is not False:
             cfg.fp16 = True
         cfg.bf16 = False
     else:
@@ -266,8 +266,8 @@ def validate_config(
 
     if cfg.plugins:
         (
-            AxolotlConfigWCapabilities,  # pylint: disable=invalid-name
-            AxolotlInputConfig,  # pylint: disable=invalid-name
+            AxolotlConfigWCapabilities,
+            AxolotlInputConfig,
         ) = merge_input_args()
 
     # Convert datasets to proper format if needed

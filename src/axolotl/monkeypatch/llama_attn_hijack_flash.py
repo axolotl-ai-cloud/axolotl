@@ -2,6 +2,7 @@
 
 # copied from https://github.com/lm-sys/FastChat/blob/main/fastchat/train/llama_flash_attn_monkey_patch.py
 
+import importlib.util
 import warnings
 from typing import Optional, Tuple
 
@@ -19,7 +20,7 @@ from axolotl.monkeypatch.utils import set_module_name
 from axolotl.utils.logging import get_logger
 
 try:
-    from flash_attn.flash_attn_interface import (  # pylint: disable=ungrouped-imports
+    from flash_attn.flash_attn_interface import (
         flash_attn_varlen_qkvpacked_func,
     )
 except ImportError:
@@ -32,12 +33,7 @@ LOG = get_logger(__name__)
 
 
 def is_xformers_available() -> bool:
-    try:
-        import xformers  # pylint: disable=unused-import  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
+    return importlib.util.find_spec("xformers") is not None
 
 
 def is_xformers_swiglu_available() -> bool:
@@ -83,7 +79,7 @@ def patch_fa_llama_cross_entropy():
         num_items_in_batch: int = None,
         ignore_index: int = -100,
         **kwargs,
-    ):  # pylint: disable=unused-argument
+    ):
         reduction = "sum" if num_items_in_batch is not None else "mean"
         loss, _ = flash_attn_cross_entropy_loss(
             source, target, ignore_index=ignore_index
@@ -120,9 +116,7 @@ def replace_llama_attn_with_flash_attn(
     rms_norm: Optional[bool] = False,
     use_shifted_sparse_attn: Optional[bool] = False,
 ):
-    transformers.models.llama.modeling_llama.LlamaModel._prepare_decoder_attention_mask = (  # pylint: disable=protected-access
-        _prepare_decoder_attention_mask
-    )
+    transformers.models.llama.modeling_llama.LlamaModel._prepare_decoder_attention_mask = _prepare_decoder_attention_mask
     if use_shifted_sparse_attn:
         transformers.models.llama.modeling_llama.LlamaAttention.forward = (
             flashattn_forward_with_s2attn
@@ -145,7 +139,7 @@ def _prepare_decoder_attention_mask(
     input_shape,
     inputs_embeds,
     past_key_values_length,
-):  # pylint: disable=unused-argument
+):
     # [bsz, seq_len]
     return attention_mask
 
@@ -161,9 +155,9 @@ def flashattn_forward_with_s2attn(
     past_key_value: Optional[Tuple[torch.Tensor]] = None,
     output_attentions: bool = False,
     use_cache: bool = False,
-    padding_mask: Optional[torch.LongTensor] = None,  # pylint: disable=unused-argument
-    cu_seqlens: Optional[torch.Tensor] = None,  # pylint: disable=unused-argument
-    max_seqlen: Optional[torch.Tensor] = None,  # pylint: disable=unused-argument
+    padding_mask: Optional[torch.LongTensor] = None,
+    cu_seqlens: Optional[torch.Tensor] = None,
+    max_seqlen: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
     """Input shape: Batch x Time x Channel
 
@@ -176,7 +170,8 @@ def flashattn_forward_with_s2attn(
     """
     if output_attentions:
         warnings.warn(
-            "Output attentions is not supported for patched `LlamaAttention`, returning `None` instead."
+            "Output attentions is not supported for patched `LlamaAttention`, returning `None` instead.",
+            stacklevel=2,
         )
 
     bsz, q_len, _ = hidden_states.size()
@@ -198,7 +193,6 @@ def flashattn_forward_with_s2attn(
     )
     # [bsz, q_len, nh, hd]
     # [bsz, nh, q_len, hd]
-    # pylint: disable=duplicate-code
 
     cos, sin = self.rotary_emb(value_states, position_ids=position_ids)
     query_states, key_states = apply_rotary_pos_emb(
@@ -244,9 +238,7 @@ def flashattn_forward_with_s2attn(
         .permute(0, 3, 1, 2, 4, 5)
         .reshape(bsz * 2, q_len, 3, self.num_heads // 2, self.head_dim)
     )
-    x = rearrange(  # pylint: disable=invalid-name
-        qkv, "b s three h d -> b s (three h d)"
-    )
+    x = rearrange(qkv, "b s three h d -> b s (three h d)")
     x_unpad, indices, cu_q_lens, max_s = unpad_input(x, key_padding_mask)
     cu_q_len_tmp = torch.arange(
         0, max_s, group_size, device=key_padding_mask.device, dtype=cu_q_lens.dtype

@@ -144,7 +144,7 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
                 }
 
             for sequence_data, seq_input_ids, seq_labels in zip(
-                api_data, batch_input_ids, labels
+                api_data, batch_input_ids, labels, strict=False
             ):
                 current_target_logprobs = []
                 current_target_token_ids = []
@@ -165,7 +165,7 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
                 assert len(seq_input_ids) == len(input_top_logprobs)
 
                 for i, _, label in zip(
-                    range(len(seq_input_ids)), seq_input_ids, seq_labels
+                    range(len(seq_input_ids)), seq_input_ids, seq_labels, strict=False
                 ):
                     if i < len(input_top_logprobs) and input_top_logprobs[i] is None:
                         # this is always the case for the first token.
@@ -202,7 +202,8 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
 
                         # pos_top_logprobs: list of logprobs, pos_token_ids: list of token_ids
                         pos_logprobs_raw, pos_token_ids, _ = [
-                            list(row) for row in zip(*pos_top_logprobs_data)
+                            list(row)
+                            for row in zip(*pos_top_logprobs_data, strict=False)
                         ]
 
                         # Ensure correct length (top_k)
@@ -317,7 +318,7 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
                 }
 
             for sequence_data, seq_input_ids, seq_labels in zip(
-                choices, batch_input_ids, labels
+                choices, batch_input_ids, labels, strict=False
             ):
                 # seq_input_ids: List[int]
                 # seq_labels: List[int]
@@ -342,7 +343,9 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
 
                 seq_len = len(seq_input_ids)
 
-                for i, _, label in zip(range(seq_len), seq_input_ids, seq_labels):
+                for i, _, label in zip(
+                    range(seq_len), seq_input_ids, seq_labels, strict=False
+                ):
                     if i < len(input_top_logprobs) and input_top_logprobs[i] is None:
                         # this is always the case for the first token.
                         # there is never logprob data for the first token since that's a true input
@@ -424,7 +427,7 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
                             list(range(self.kd_online_topk))
                         )
                         current_target_mask.append([0] * self.kd_online_topk)
-                for i in range(max(0, seq_len - len(current_target_logprobs))):
+                for _ in range(max(0, seq_len - len(current_target_logprobs))):
                     current_target_logprobs.append(
                         [-float("inf")] * self.kd_online_topk
                     )

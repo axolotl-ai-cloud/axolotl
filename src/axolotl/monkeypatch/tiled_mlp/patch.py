@@ -17,7 +17,7 @@ def patch_tiled_mlp(model_type, use_original_mlp=True, cfg_num_shards=None):
         TiledMLP as DeepSpeedTiledMLP,
     )
 
-    from axolotl.monkeypatch.tiled_mlp.base import TiledMLP
+    from axolotl.monkeypatch.tiled_mlp.base import DeepSpeedTiledMLPMoE, TiledMLP
 
     try:
         # Dynamically import the module and MLP class
@@ -40,7 +40,6 @@ def patch_tiled_mlp(model_type, use_original_mlp=True, cfg_num_shards=None):
         is_distributed = int(os.environ.get("WORLD_SIZE", 1)) > 1
 
         def tiled_mlp_forward(self, x):
-            # pylint: disable=protected-access
             input_shape = x.shape
             seqlen = input_shape[-2]
             hidden = input_shape[-1]
@@ -65,7 +64,10 @@ def patch_tiled_mlp(model_type, use_original_mlp=True, cfg_num_shards=None):
                         for p in self._compute_params
                     )
                 ) or os.environ.get("ACCELERATE_USE_DEEPSPEED", "false") == "true":
-                    self._tiled_mlp_dist_impl = DeepSpeedTiledMLP
+                    if model_type == "gpt_oss":
+                        self._tiled_mlp_dist_impl = DeepSpeedTiledMLPMoE
+                    else:
+                        self._tiled_mlp_dist_impl = DeepSpeedTiledMLP
                 else:
                     self._tiled_mlp_dist_impl = TiledMLP
 
@@ -79,14 +81,13 @@ def patch_tiled_mlp(model_type, use_original_mlp=True, cfg_num_shards=None):
             return down_res
 
         mlp_cls.forward = tiled_mlp_forward
-        mlp_cls._compute_params = []  # pylint: disable=protected-access
-        mlp_cls._tiled_mlp_dist_impl = None  # pylint: disable=protected-access
+        mlp_cls._compute_params = []
+        mlp_cls._tiled_mlp_dist_impl = None
         LOG.info(
             f"Successfully monkey-patched TiledMLP for model_type: {model_type}",
             main_process_only=True,
         )
     except (ImportError, AttributeError) as e:
         raise RuntimeError(
-            f"Could not import MLP class for model_type: {model_type}. "
-            f"Error: {str(e)}"
+            f"Could not import MLP class for model_type: {model_type}. Error: {str(e)}"
         ) from e

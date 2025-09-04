@@ -15,6 +15,7 @@
 """
 Module for handling Cut Cross Entropy input arguments.
 """
+
 from typing import Optional
 
 from pydantic import BaseModel, model_validator

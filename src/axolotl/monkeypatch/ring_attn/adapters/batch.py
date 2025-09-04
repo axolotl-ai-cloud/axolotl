@@ -7,8 +7,6 @@ Our implementation closely follows the structure of that module, but we've minif
 somewhat to support only the latest versions of transformers.
 """
 
-# pylint: disable=protected-access,cyclic-import
-
 import os
 from typing import Callable
 
@@ -23,9 +21,12 @@ from transformers.modeling_flash_attention_utils import is_flash_attn_greater_or
 try:
     from transformers.modeling_flash_attention_utils import _flash_supports_window
 except ImportError:
-    from transformers.modeling_flash_attention_utils import (
-        _flash_supports_window_size as _flash_supports_window,
-    )
+    try:
+        from transformers.modeling_flash_attention_utils import (
+            _flash_supports_window_size as _flash_supports_window,
+        )
+    except ImportError:
+        _flash_supports_window = True
 
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
@@ -56,7 +57,7 @@ def create_flash_attn_forward_varlen_llama3(
     """
 
     # transformers 4.48+
-    # pylint: disable=unused-argument
+
     def _flash_attention_forward(
         query_states: torch.Tensor,
         key_states: torch.Tensor,
