@@ -8,9 +8,8 @@ from functools import wraps
 
 from huggingface_hub.utils import reset_sessions
 
-from axolotl.monkeypatch.transformers.hub_utils import apply_list_repo_templates_patch
-
-apply_list_repo_templates_patch()
+# from axolotl.monkeypatch.transformers.hub_utils import apply_list_repo_templates_patch
+# apply_list_repo_templates_patch()
 
 
 def reload_modules(hf_hub_offline):
