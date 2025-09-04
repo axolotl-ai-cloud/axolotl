@@ -6,6 +6,16 @@ load_in_8bit: false
 load_in_4bit: false
 strict: false
 
+plugins:
+  - axolotl.integrations.liger.LigerPlugin
+
+liger_rope: true
+liger_rms_norm: true
+liger_glu_activation: true
+liger_layer_norm: true
+liger_fused_linear_cross_entropy: true
+
+
 datasets:
   - path: yahma/alpaca-cleaned
     type: alpaca
@@ -14,13 +24,9 @@ datasets:
 output_dir: ./outputs/qat_out/
 dataset_prepared_path: ./outputs/qat_out/dataset_prepared
 
-sample_packing: true
+sample_packing: false
 sequence_len: 8192
-
-flex_attention: true
-flex_attn_compile_kwargs:
-  dynamic: false
-  mode: max-autotune-no-cudagraphs
+flash_attention: true
 
 qat:
   activation_dtype: int8

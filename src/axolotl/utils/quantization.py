@@ -18,16 +18,16 @@ from torchao.quantization.quant_api import (
 from axolotl.utils.schemas.enums import TorchAOQuantDType
 
 quantization_config_to_str = {
-    Int4WeightOnlyConfig: "int4w",
-    Int8DynamicActivationInt4WeightConfig: "int8daint4w",
-    Float8DynamicActivationFloat8WeightConfig: "float8dafloat8w",
-    Float8DynamicActivationInt4WeightConfig: "float8daint4w",
+    Int4WeightOnlyConfig: "int4",
+    Int8DynamicActivationInt4WeightConfig: "int8int4",
+    Float8DynamicActivationFloat8WeightConfig: "fp8fp8",
+    Float8DynamicActivationInt4WeightConfig: "fp8int4",
 }
 
 try:
     from torchao.prototype.mx_formats import NVFP4InferenceConfig
 
-    quantization_config_to_str[NVFP4InferenceConfig] = "nvfp4w"
+    quantization_config_to_str[NVFP4InferenceConfig] = "nvfp4"
 except:
     pass
 
@@ -75,12 +75,12 @@ def get_quantization_config(
         activation_dtype == TorchAOQuantDType.int8
         and weight_dtype == TorchAOQuantDType.int4
     ):
-        return Int8DynamicActivationInt4WeightConfig(group_size=group_size or -1)
+        return Int8DynamicActivationInt4WeightConfig(group_size=group_size)
     if (
         activation_dtype == TorchAOQuantDType.float8_e4m3fn
         and weight_dtype == TorchAOQuantDType.float8_e4m3fn
     ):
-        return Float8DynamicActivationFloat8WeightConfig(version=2)
+        return Float8DynamicActivationFloat8WeightConfig()
     if (
         activation_dtype == TorchAOQuantDType.float8_e4m3fn
         and weight_dtype == TorchAOQuantDType.int4
@@ -138,7 +138,7 @@ def quantize_model(
 def prepare_model_for_qat(
     model,
     weight_dtype: TorchAOQuantDType,
-    group_size: int,
+    group_size: int | None = None,
     activation_dtype: TorchAOQuantDType | None = None,
     quantize_embedding: bool = False,
 ):

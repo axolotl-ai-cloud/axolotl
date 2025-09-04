@@ -64,7 +64,7 @@ langdetect==1.0.9
 immutabledict==4.2.0
 antlr4-python3-runtime==4.13.2
 
-torchao @ git+https://github.com/pytorch/torchao.git@13029fb6855bc19ceb8215b6dab204146908464b
+torchao==0.13.0
 schedulefree==1.4.1
 
 axolotl-contribs-lgpl==0.0.6
