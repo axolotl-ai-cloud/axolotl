@@ -25,7 +25,9 @@ def replace_btlm_attn_with_flash_attn(model_name="cerebras/btlm-3b-8k-base"):
         ".configuration_btlm", ".modeling_btlm"
     )
     modeling_btlm = importlib.import_module(module_name)
-    modeling_btlm.BTLMAttention._attn = flashattn_attn
+    modeling_btlm.BTLMAttention._attn = (  # pylint: disable=protected-access
+        flashattn_attn
+    )
 
 
 def flashattn_attn(
@@ -33,9 +35,9 @@ def flashattn_attn(
     query: torch.Tensor,
     key: Optional[torch.Tensor] = None,
     value: Optional[torch.Tensor] = None,
-    attention_mask: Optional[torch.Tensor] = None,
+    attention_mask: Optional[torch.Tensor] = None,  # pylint: disable=unused-argument
     head_mask: Optional[torch.Tensor] = None,
-    position_bias: Optional[torch.Tensor] = None,
+    position_bias: Optional[torch.Tensor] = None,  # pylint: disable=unused-argument
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     softmax_scale = (
         1 / (key.size(-1) ** self.attn_scale_power) if self.scale_attn_weights else None

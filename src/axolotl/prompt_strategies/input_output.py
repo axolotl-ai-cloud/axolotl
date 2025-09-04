@@ -16,6 +16,7 @@ class RawInputOutputStrategy(PromptTokenizingStrategy):
             self.eos_token = self.tokenizer.eos_token
 
     def tokenize_prompt(self, prompt):
+        # pylint: disable=duplicate-code
         input_ids = []
         labels = []
         for label, text in self.prompter.build_prompt(prompt["segments"]):

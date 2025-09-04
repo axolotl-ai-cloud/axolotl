@@ -21,4 +21,4 @@ def fix_mamba_attn_for_loss():
     from .modeling_mamba import MambaLMHeadModel as MambaLMHeadModelFixed
 
     mixer_seq_simple.MambaLMHeadModel = MambaLMHeadModelFixed
-    return mixer_seq_simple.MambaLMHeadModel
+    return mixer_seq_simple.MambaLMHeadModel  # pylint: disable=invalid-name

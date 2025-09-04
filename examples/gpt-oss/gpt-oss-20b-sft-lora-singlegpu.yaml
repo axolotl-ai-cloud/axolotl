@@ -53,7 +53,7 @@ bf16: true
 tf32: true
 
 flash_attention: true
-attn_implementation: kernels-community/vllm-flash-attn3  # this is not needed if using flash_attn >= 2.8.3
+attn_implementation: kernels-community/vllm-flash-attn3
 
 gradient_checkpointing: true
 activation_offloading: true

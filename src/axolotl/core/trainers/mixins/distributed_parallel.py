@@ -26,6 +26,7 @@ class DistributedParallelMixin(Trainer):
             self.accelerator.distributed_type == "FSDP"
             and self.accelerator.state.fsdp_plugin is None
         ):
+            # pylint: disable=protected-access
             # handle Context Parallelism without FSDP
             self.accelerator.state.distributed_type = "MULTI_GPU"
             self.accelerator.state._shared_state["distributed_type"] = "MULTI_GPU"

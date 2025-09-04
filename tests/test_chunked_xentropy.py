@@ -22,7 +22,7 @@ def chunked_fixtures():
     return lm_head, hidden_state, labels, vocab_size
 
 
-def test_chunked_forward(chunked_fixtures):
+def test_chunked_forward(chunked_fixtures):  # pylint: disable=redefined-outer-name
     lm_head, hidden_state, labels, vocab_size = chunked_fixtures
     lm_loss = get_causal_lm_loss()
 

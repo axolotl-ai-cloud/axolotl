@@ -45,6 +45,7 @@ def lce_forward(
     Returns:
     """
 
+    # pylint: disable=duplicate-code
     output_attentions = (
         output_attentions
         if output_attentions is not None
@@ -134,8 +135,9 @@ def apply_liger_kernel_to_qwen3_moe(
     rms_norm: bool = False,
     glu_activation: bool = False,
     layer_norm: bool = False,
-    **kwargs,
+    **kwargs,  # pylint: disable=unused-argument
 ) -> None:
+    # pylint: disable=duplicate-code
     """
     Apply Liger kernels to replace original implementation in HuggingFace Llama models (2 and 3)
 
@@ -150,15 +152,15 @@ def apply_liger_kernel_to_qwen3_moe(
         layer_norm (bool): Whether to apply Liger's LayerNorm. Default is False.
     """
 
-    import transformers.models.qwen3_moe.modeling_qwen3_moe  # noqa: F401
+    import transformers.models.qwen3_moe.modeling_qwen3_moe  # noqa: F401  # pylint: disable=unused-import
     from liger_kernel.transformers.functional import liger_cross_entropy
     from liger_kernel.transformers.layer_norm import LigerLayerNorm
     from liger_kernel.transformers.rms_norm import LigerRMSNorm
     from liger_kernel.transformers.swiglu import LigerSwiGLUMLP
 
-    assert not (cross_entropy and fused_linear_cross_entropy), (
-        "cross_entropy and fused_linear_cross_entropy cannot both be True."
-    )
+    assert not (
+        cross_entropy and fused_linear_cross_entropy
+    ), "cross_entropy and fused_linear_cross_entropy cannot both be True."
 
     modeling_qwen3_moe = sys.modules["transformers.models.qwen3_moe.modeling_qwen3_moe"]
 
@@ -172,7 +174,7 @@ def apply_liger_kernel_to_qwen3_moe(
             # clone config to avoid modifying the original
             config = deepcopy(config)
             if intermediate_size:
-                config.intermediate_size = intermediate_size
+                setattr(config, "intermediate_size", intermediate_size)
             return LigerSwiGLUMLP(config, **kwargs)
 
         modeling_qwen3_moe.Qwen3MoeMLP = _liger_swiglu_mlp_wrapper

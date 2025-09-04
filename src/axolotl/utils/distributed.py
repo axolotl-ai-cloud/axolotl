@@ -15,7 +15,7 @@ from transformers.utils.import_utils import (
     is_torch_npu_available,
 )
 
-distributed_state = None
+distributed_state = None  # pylint: disable=invalid-name
 
 
 def get_device_type() -> torch.device:
@@ -48,7 +48,7 @@ def get_current_device() -> int:
 
 
 def init_distributed_state():
-    global distributed_state
+    global distributed_state  # pylint: disable=global-statement
     if distributed_state is None:
         timeout = int(os.environ.get("AXOLOTL_NCCL_TIMEOUT", 1800))
         try:
@@ -137,7 +137,7 @@ def zero_first(is_main: bool):
         barrier()
 
 
-def gather_scalar_from_all_ranks(fn, world_size=1):
+def gather_scalar_from_all_ranks(fn, world_size=1):  # pylint: disable=invalid-name
     """
     Run a callable 'fn' on all ranks and gather the results on the specified rank.
 
@@ -201,7 +201,7 @@ def broadcast_dict(vals: dict):
     return vals
 
 
-def compute_and_broadcast(fn):
+def compute_and_broadcast(fn):  # pylint: disable=invalid-name
     """
     Compute a value using the function 'fn' only on the specified rank (default is 0).
     The value is then broadcasted to all other ranks.
@@ -234,7 +234,7 @@ def compute_and_broadcast(fn):
     return float(value_tensor.item())
 
 
-def gather_from_all_ranks(fn, world_size=1):
+def gather_from_all_ranks(fn, world_size=1):  # pylint: disable=invalid-name
     """
     Run a callable 'fn' on all ranks and gather the results on the specified rank.
 

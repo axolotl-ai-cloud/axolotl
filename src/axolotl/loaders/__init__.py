@@ -1,5 +1,6 @@
 """Init for axolotl.loaders module"""
 
+# pylint: disable=unused-import
 # flake8: noqa
 
 from .adapter import load_adapter, load_lora

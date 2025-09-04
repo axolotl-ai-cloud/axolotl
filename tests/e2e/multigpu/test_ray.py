@@ -26,6 +26,7 @@ class TestMultiGPURay:
 
     @require_torch_lt_2_6_0
     def test_lora_ddp(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -89,6 +90,7 @@ class TestMultiGPURay:
         [1, 2],
     )
     def test_ds_zero2_packed(self, temp_dir, gradient_accumulation_steps):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -148,6 +150,7 @@ class TestMultiGPURay:
         [1, 2],
     )
     def test_sft_fsdp2_packed(self, temp_dir, gradient_accumulation_steps):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

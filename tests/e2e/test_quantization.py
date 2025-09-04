@@ -131,7 +131,7 @@ class TestQuantization:
     @require_torch_2_6_0
     def test_prepare_model_for_qat(
         self, model, weight_dtype, activation_dtype, group_size, quantize_embedding
-    ):
+    ):  # pylint: disable=redefined-outer-name
         prepare_model_for_qat(
             model, weight_dtype, group_size, activation_dtype, quantize_embedding
         )
@@ -175,7 +175,7 @@ class TestQuantization:
         group_size,
         quantize_embedding,
         expected_exception,
-    ):
+    ):  # pylint: disable=redefined-outer-name
         if expected_exception:
             with pytest.raises(expected_exception):
                 quantize_model_for_ptq(
@@ -198,13 +198,11 @@ class TestQuantization:
                     if activation_dtype:
                         assert isinstance(
                             child.weight, LinearActivationQuantizedTensor
-                        ), (
-                            "Linear weight should be quantized with activation quantization"
-                        )
+                        ), "Linear weight should be quantized with activation quantization"
                     else:
-                        assert isinstance(child.weight, AffineQuantizedTensor), (
-                            "Linear weight should be quantized without activation quantization"
-                        )
+                        assert isinstance(
+                            child.weight, AffineQuantizedTensor
+                        ), "Linear weight should be quantized without activation quantization"
 
 
 class TestQuantizationCallback:
@@ -219,7 +217,9 @@ class TestQuantizationCallback:
         )
 
     @require_torch_2_6_0
-    def test_qat_callback_fake_quant_after_n_steps(self, model, trainer_state):
+    def test_qat_callback_fake_quant_after_n_steps(
+        self, model, trainer_state
+    ):  # pylint: disable=redefined-outer-name
         cfg = QATConfig(
             weight_dtype="int8",
             activation_dtype="int8",
@@ -269,7 +269,9 @@ class TestQuantizationCallback:
         assert model.lm_head.weight_fake_quantizer.enabled
 
     @require_torch_2_6_0
-    def test_qat_callback_fake_quant_after_n_steps_is_none(self, model, trainer_state):
+    def test_qat_callback_fake_quant_after_n_steps_is_none(
+        self, model, trainer_state
+    ):  # pylint: disable=redefined-outer-name
         cfg = QATConfig(
             weight_dtype="int8",
             activation_dtype="int8",
@@ -312,7 +314,9 @@ class TestConvertQATModelForPTQ:
     """
 
     @require_torch_2_6_0
-    def test_convert_qat_model_for_ptq(self, model):
+    def test_convert_qat_model_for_ptq(
+        self, model
+    ):  # pylint: disable=redefined-outer-name
         config = QATConfig(
             weight_dtype="int8",
             activation_dtype="int8",

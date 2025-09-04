@@ -1,5 +1,7 @@
 """Tests for evaluate CLI command."""
 
+# pylint: disable=duplicate-code
+
 from unittest.mock import patch
 
 from axolotl.cli.main import cli
@@ -29,6 +31,7 @@ class TestEvaluateCommand(BaseCliTest):
         config_path = tmp_path / "config.yml"
         config_path.write_text(valid_test_config)
 
+        # pylint: disable=duplicate-code
         with patch("axolotl.cli.evaluate.do_evaluate") as mock_evaluate:
             result = cli_runner.invoke(
                 cli,

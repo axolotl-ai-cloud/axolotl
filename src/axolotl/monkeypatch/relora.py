@@ -91,9 +91,9 @@ class ReLoRACallback(TrainerCallback):
         if not os.path.exists(self.last_full_model):
             self.last_full_model = str(Path(snapshot_download(cfg.base_model)))
 
-        assert os.path.exists(self.last_full_model), (
-            "for ReLORA base_model must be a local path"
-        )
+        assert os.path.exists(
+            self.last_full_model
+        ), "for ReLORA base_model must be a local path"
 
         self.num_lora_restarts = 0
         self.need_full_save = False
@@ -293,6 +293,7 @@ def find_lora_modules(model: peft.LoraModel) -> Dict[str, peft.tuners.lora.LoraL
     key_list = [key for key, _ in model.model.named_modules() if "lora" not in key]
     for key in key_list:
         try:
+            # pylint: disable=protected-access
             _parent, target, _target_name = peft.utils._get_submodules(model.model, key)
         except AttributeError:
             continue
@@ -340,7 +341,7 @@ def merge_and_save(
     modules = find_lora_modules(model)
 
     if not quantized:
-        for _, target in modules.items():
+        for module_name, target in modules.items():
             active_adapter = target.active_adapter
             if isinstance(active_adapter, list):
                 active_adapter = active_adapter[0]

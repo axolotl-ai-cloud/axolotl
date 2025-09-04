@@ -21,6 +21,7 @@ class TestMistral(unittest.TestCase):
 
     @with_temp_dir
     def test_lora(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "trl-internal-testing/tiny-MistralForCausalLM-0.2",
@@ -67,6 +68,7 @@ class TestMistral(unittest.TestCase):
 
     @with_temp_dir
     def test_ft(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "trl-internal-testing/tiny-MistralForCausalLM-0.2",

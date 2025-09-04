@@ -10,6 +10,7 @@ LOG = get_logger(__name__)
 
 
 def load(strategy, tokenizer, cfg, ds_cfg):
+    # pylint: disable=duplicate-code
     try:
         load_fn = "load"
         if strategy.split(".")[-1].startswith("load_"):
@@ -29,6 +30,6 @@ def load(strategy, tokenizer, cfg, ds_cfg):
         return func(tokenizer, cfg, **load_kwargs)
     except ModuleNotFoundError:
         return None
-    except Exception as exc:
+    except Exception as exc:  # pylint: disable=broad-exception-caught
         LOG.error(f"Failed to load prompt strategy `{strategy}`: {str(exc)}")
         return None

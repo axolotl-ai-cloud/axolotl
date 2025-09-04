@@ -29,6 +29,6 @@ def load(strategy, cfg, module_base=None, **kwargs):
         mod = importlib.import_module(strategy, module_base)
         func = getattr(mod, load_fn)
         return func(cfg, **kwargs)
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         LOG.warning(f"unable to load strategy {strategy}")
         return None

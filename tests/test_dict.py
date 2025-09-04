@@ -21,26 +21,26 @@ class DictDefaultTest(unittest.TestCase):
             }
         )
 
-        assert cfg.key_a.key_b == "value_a", (
-            "DictDefault should return value for existing nested keys"
-        )
+        assert (
+            cfg.key_a.key_b == "value_a"
+        ), "DictDefault should return value for existing nested keys"
 
-        assert cfg.key_c == "value_c", (
-            "DictDefault should return value for existing keys"
-        )
+        assert (
+            cfg.key_c == "value_c"
+        ), "DictDefault should return value for existing keys"
 
-        assert cfg.key_d[0] == "value_d", (
-            "DictDefault should return value for existing keys in list"
-        )
+        assert (
+            cfg.key_d[0] == "value_d"
+        ), "DictDefault should return value for existing keys in list"
 
-        assert "value_e" in cfg.key_d, (
-            "DictDefault should support in operator for existing keys in list"
-        )
+        assert (
+            "value_e" in cfg.key_d
+        ), "DictDefault should support in operator for existing keys in list"
 
     def test_dict_or_operator(self):
         cfg = DictDefault({"key_a": {"key_b": "value_b"}, "key_f": "value_g"})
 
-        cfg = cfg | DictDefault(
+        cfg = cfg | DictDefault(  # pylint: disable=unsupported-binary-operation
             {
                 "key_a": {"key_b": "value_a"},
                 "key_c": "value_c",
@@ -49,9 +49,9 @@ class DictDefaultTest(unittest.TestCase):
             }
         )
 
-        assert cfg.key_a.key_b == "value_b", (
-            "DictDefault should support OR operator for existing nested keys"
-        )
+        assert (
+            cfg.key_a.key_b == "value_b"
+        ), "DictDefault should support OR operator for existing nested keys"
 
         assert cfg.key_c == "value_c", "DictDefault should not delete existing key"
 
@@ -60,9 +60,9 @@ class DictDefaultTest(unittest.TestCase):
             "value_e",
         ], "DictDefault should not overwrite existing keys in list"
 
-        assert cfg.key_f == "value_g", (
-            "DictDefault should support OR operator for existing key"
-        )
+        assert (
+            cfg.key_f == "value_g"
+        ), "DictDefault should support OR operator for existing key"
 
     def test_dict_missingkey(self):
         cfg = DictDefault({})
@@ -72,9 +72,9 @@ class DictDefaultTest(unittest.TestCase):
     def test_dict_or(self):
         cfg = DictDefault({}) | DictDefault({})
 
-        assert cfg.random_key is None, (
-            "DictDefault should return None for missing keys after | operation"
-        )
+        assert (
+            cfg.random_key is None
+        ), "DictDefault should return None for missing keys after | operation"
 
     def test_dict_nested_missingparentkey(self):
         """

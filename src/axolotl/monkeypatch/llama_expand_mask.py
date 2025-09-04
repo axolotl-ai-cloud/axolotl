@@ -21,4 +21,6 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
 def hijack_expand_mask():
     import transformers
 
-    transformers.models.llama.modeling_llama._expand_mask = _expand_mask
+    transformers.models.llama.modeling_llama._expand_mask = (  # pylint: disable=protected-access
+        _expand_mask
+    )

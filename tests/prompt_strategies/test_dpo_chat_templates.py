@@ -16,6 +16,7 @@ from tests.hf_offline_utils import enable_hf_offline
 
 @pytest.fixture(name="assistant_dataset")
 def fixture_assistant_dataset():
+    # pylint: disable=duplicate-code
     return Dataset.from_list(
         [
             {
@@ -48,6 +49,7 @@ def fixture_assistant_dataset():
 
 @pytest.fixture(name="custom_assistant_dataset")
 def fixture_custom_assistant_dataset():
+    # pylint: disable=duplicate-code
     return Dataset.from_list(
         [
             {
@@ -100,6 +102,7 @@ class TestAssistantDPOChatTemplateLlama3:
     """
 
     def test_llama3_defaults(self, llama3_tokenizer, assistant_dataset):
+        # pylint: disable=duplicate-code
         transform_fn, _ = default(
             DictDefault(
                 {
@@ -124,6 +127,7 @@ class TestAssistantDPOChatTemplateLlama3:
         assert result["rejected"] == "party on<|eot_id|>"
 
     def test_llama3_configured(self, llama3_tokenizer, custom_assistant_dataset):
+        # pylint: disable=duplicate-code
         transform_fn, _ = default(
             DictDefault(
                 {
@@ -164,6 +168,7 @@ class TestAssistantDPOChatTemplatePhi3:
     """
 
     def test_phi3_defaults(self, phi3_tokenizer, assistant_dataset):
+        # pylint: disable=duplicate-code
         transform_fn, _ = default(
             DictDefault(
                 {
@@ -193,6 +198,7 @@ class TestAssistantDPOChatTemplateGemma:
     """
 
     def test_gemma_defaults(self, gemma_tokenizer, assistant_dataset):
+        # pylint: disable=duplicate-code
         transform_fn, _ = default(
             DictDefault(
                 {

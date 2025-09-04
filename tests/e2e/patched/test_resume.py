@@ -22,6 +22,7 @@ class TestResumeLlama:
 
     @require_torch_2_6_0
     def test_resume_lora_packed(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

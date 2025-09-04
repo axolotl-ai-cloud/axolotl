@@ -10,12 +10,22 @@ repos:
     -   id: trailing-whitespace
     -   id: no-commit-to-branch
         args: ['--branch', 'main']
--   repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.11
+-   repo: https://github.com/psf/black
+    rev: 25.1.0
     hooks:
-    -   id: ruff
-        args: [--fix]
-    -   id: ruff-format
+    -   id: black
+-   repo: https://github.com/pycqa/isort
+    rev: 6.0.1
+    hooks:
+      - id: isort
+-   repo: https://github.com/PyCQA/flake8
+    rev: 7.3.0
+    hooks:
+    - id: flake8
+-   repo: https://github.com/pylint-dev/pylint
+    rev: v3.3.8
+    hooks:
+    - id: pylint
 -   repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.17.1
     hooks:

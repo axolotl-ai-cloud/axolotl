@@ -55,7 +55,9 @@ def lisa_callback_factory(trainer: "AxolotlTrainer"):
                 for param in layer.parameters():
                     param.requires_grad = False
 
-        def on_step_begin(self, args, state, control, **kwargs):
+        def on_step_begin(
+            self, args, state, control, **kwargs
+        ):  # pylint: disable=unused-argument
             # Check if it's time to switch active layers, including at step 0
             if state.global_step % self.step_interval == 0 or state.global_step == 1:
                 self.switch_active_layers()

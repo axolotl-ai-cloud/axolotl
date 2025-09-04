@@ -17,15 +17,15 @@ class DictDefault(Dict):
     def __setitem__(self, name, value):
         # workaround for pickle/unpickle issues and __frozen not being available
         try:
-            isFrozen = hasattr(self, "__frozen") and object.__getattribute__(
+            isFrozen = hasattr(  # pylint: disable=invalid-name
                 self, "__frozen"
-            )
+            ) and object.__getattribute__(self, "__frozen")
         except AttributeError:
-            isFrozen = False
+            isFrozen = False  # pylint: disable=invalid-name
 
         if isFrozen and name not in super().keys():
             raise KeyError(name)
-        super(Dict, self).__setitem__(name, value)
+        super(Dict, self).__setitem__(name, value)  # pylint: disable=bad-super-call
         try:
             p = object.__getattribute__(self, "__parent")
             key = object.__getattribute__(self, "__key")

@@ -1,5 +1,7 @@
 """Test module for FSDP2 multi-GPU functionality."""
 
+# pylint: disable=duplicate-code
+
 import os
 from pathlib import Path
 
@@ -27,9 +29,9 @@ def verify_training_success(temp_dir):
     assert len(model_files) > 0, "No model files found - training may have failed"
 
     checkpoint_files = list(output_path.glob("checkpoint-*"))
-    assert len(checkpoint_files) > 0, (
-        "No checkpoint files found - training may have failed"
-    )
+    assert (
+        len(checkpoint_files) > 0
+    ), "No checkpoint files found - training may have failed"
 
     tb_log_path = most_recent_subdir(temp_dir + "/runs")
     if tb_log_path:
@@ -41,9 +43,9 @@ def verify_training_success(temp_dir):
             train_loss_df = df[df.tag == "train/train_loss"]
             if len(train_loss_df) > 0:
                 final_loss = train_loss_df.value.values[-1]
-                assert not torch.isnan(torch.tensor(final_loss)), (
-                    f"Training loss is NaN: {final_loss}"
-                )
+                assert not torch.isnan(
+                    torch.tensor(final_loss)
+                ), f"Training loss is NaN: {final_loss}"
 
 
 class TestFSDP2:

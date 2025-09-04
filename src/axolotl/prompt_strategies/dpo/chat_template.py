@@ -6,7 +6,9 @@ from axolotl.utils.chat_templates import extract_chat_template_args, get_chat_te
 from axolotl.utils.schemas.utils import handle_legacy_message_fields_logic
 
 
-def default(cfg, dataset_idx=0, **kwargs):
+def default(
+    cfg, dataset_idx=0, **kwargs
+):  # pylint: disable=possibly-unused-variable,unused-argument
     ds_cfg = cfg["datasets"][dataset_idx]
     ds_cfg = handle_legacy_message_fields_logic(ds_cfg)
 

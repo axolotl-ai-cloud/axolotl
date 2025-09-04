@@ -3,7 +3,6 @@
 Applies pre- and post-model load patches for various fixes and optimizations.
 """
 
-import os
 import importlib.util
 from functools import cached_property
 
@@ -67,7 +66,6 @@ class PatchManager:
         self._apply_mistral_cross_entropy_patch()
         self._apply_self_attention_lora_patch()
         self._apply_fsdp2_bnb_patches()
-        self._apply_patch_deepspeed_zero3()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
@@ -149,12 +147,14 @@ class PatchManager:
     def _apply_flex_attention_patches(self):
         """Apply patches for flexible attention."""
         if self.cfg.flex_attention:
-            from axolotl.monkeypatch.attention.flex_attn import (
-                patch_flex_wrapper,
-            )
-
-            flex_attn_compile_kwargs = self.cfg.flex_attn_compile_kwargs or {}
-            patch_flex_wrapper(**flex_attn_compile_kwargs)
+            # from axolotl.monkeypatch.attention.flex_attn import (
+            #     patch_flex_make_mask,
+            #     patch_flex_wrapper,
+            # )
+            #
+            # flex_attn_compile_kwargs = self.cfg.flex_attn_compile_kwargs or {}
+            # patch_flex_wrapper(**flex_attn_compile_kwargs)
+            # patch_flex_make_mask()
             if self.cfg.sample_packing:
                 from axolotl.core.attention.flex_block_mask import (
                     patch_create_causal_mask,
@@ -277,14 +277,6 @@ class PatchManager:
                 has_remote_code=has_remote_code,
             )
 
-        if self.cfg.sample_packing:
-            from axolotl.monkeypatch.data.batch_dataset_fetcher import (
-                apply_multipack_dataloader_patch,
-            )
-
-            LOG.info("Applying multipack dataloader patch for sample packing...")
-            apply_multipack_dataloader_patch()
-
     def _apply_fsdp2_bnb_patches(self):
         """Apply FSDP2 BNB patches."""
         if (
@@ -293,10 +285,12 @@ class PatchManager:
             and self.cfg.adapter == "qlora"
         ):
             from axolotl.monkeypatch.fsdp2_qlora import (
+                apply_bnb_torch_function_patch,
                 apply_init_sharded_param_patch,
                 apply_init_unsharded_param_patch,
             )
 
+            apply_bnb_torch_function_patch()
             apply_init_sharded_param_patch()
             apply_init_unsharded_param_patch()
 
@@ -471,16 +465,3 @@ class PatchManager:
             from axolotl.monkeypatch.lora_kernels import apply_lora_kernel_patches
 
             apply_lora_kernel_patches(model=model, cfg=self.cfg)
-
-    def _apply_patch_deepspeed_zero3(self):
-        try:
-            from axolotl.monkeypatch.deepspeed_utils import apply_deepspeed_patches
-            from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
-
-            if self.cfg.activation_offloading is True and (
-                is_deepspeed_zero3_enabled()
-                or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3"
-            ):
-                apply_deepspeed_patches()
-        except ImportError as e:
-            LOG.warning(f"DeepSpeed patches not applied: {e}")

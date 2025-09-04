@@ -236,9 +236,11 @@ def _load_from_local_path(
         try:
             return load_from_disk(dataset_config.path)
         except FileNotFoundError:
+            load_dataset_kwargs["streaming"] = False
             return load_dataset(dataset_config.path, **load_dataset_kwargs)
     elif local_path.is_file():
         dataset_type = get_dataset_type(dataset_config)
+        load_dataset_kwargs["streaming"] = False
         return load_dataset(
             dataset_type,
             data_files=dataset_config.path,
@@ -335,7 +337,7 @@ def generate_split_fingerprints(
     dataset: Dataset, val_set_size: int | float, seed: int
 ) -> tuple[str, str]:
     """Generate consistent fingerprints for train/test splits."""
-    fingerprint = dataset._fingerprint
+    fingerprint = dataset._fingerprint  # pylint: disable=protected-access
 
     train_hash_input = f"{fingerprint}|{val_set_size}|train|{seed}"
     test_hash_input = f"{fingerprint}|{val_set_size}|test|{seed}"
@@ -495,7 +497,7 @@ def try_load_from_hub(
             token=cfg.hf_use_auth_token,
         )
         return dataset[split]
-    except Exception:
+    except Exception:  # pylint: disable=broad-except # nosec
         LOG.info("Unable to find prepared dataset in HuggingFace Hub")
         return None
 

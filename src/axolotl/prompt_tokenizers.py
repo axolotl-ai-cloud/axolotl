@@ -75,7 +75,7 @@ class PromptTokenizingStrategy(abc.ABC):
     ) -> BatchEncoding:
         empty = BatchEncoding(data={"input_ids": [], "attention_mask": []})
         if not prompt:
-            LOG.warning_once("Empty text requested for tokenization.")
+            LOG.warning("Empty text requested for tokenization.")
             return empty
 
         result = self.tokenizer(
@@ -118,7 +118,7 @@ class InstructionPromptTokenizingStrategy(PromptTokenizingStrategy):
     def tokenize_prompt(self, prompt):
         (
             instruction,
-            input,
+            input,  # pylint: disable=redefined-builtin
             response,
         ) = self.parse_instruction_fields(prompt)
         user_prompt = next(
@@ -144,10 +144,7 @@ class InstructionPromptTokenizingStrategy(PromptTokenizingStrategy):
         return tokenized_prompt
 
     def _build_full_prompt(
-        self,
-        instruction,
-        input,
-        response,
+        self, instruction, input, response  # pylint: disable=redefined-builtin
     ):
         return next(
             iter(
@@ -260,9 +257,10 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
         raise NotImplementedError
 
     def tokenize_prompt(self, prompt):
+        # pylint: disable=duplicate-code
         (
             instruction,
-            input,
+            input,  # pylint: disable=redefined-builtin
             output,
             reflection,
             corrected,
@@ -289,7 +287,9 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
 
         return tokenized_full_prompt
 
-    def _build_full_prompt(self, instruction, input, output, reflection, corrected):
+    def _build_full_prompt(
+        self, instruction, input, output, reflection, corrected
+    ):  # pylint: disable=redefined-builtin
         return next(
             iter(
                 self.prompter.build_prompt(

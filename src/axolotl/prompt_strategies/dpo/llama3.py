@@ -6,8 +6,9 @@ DPO strategies for llama-3 chat template
 def default(
     cfg,
     **kwargs,
-):
+):  # pylint: disable=possibly-unused-variable,unused-argument
     def transform_fn(sample):
+        # pylint: disable=duplicate-code
         if "prompt" in sample.keys():
             prompt_key = "prompt"
         elif "input" in sample.keys():
@@ -46,7 +47,7 @@ def default(
 def argilla_chat(
     cfg,
     **kwargs,
-):
+):  # pylint: disable=possibly-unused-variable,unused-argument
     """
     for argilla/dpo-mix-7k conversations
     """
@@ -65,7 +66,7 @@ def argilla_chat(
 def icr(
     cfg,
     **kwargs,
-):
+):  # pylint: disable=possibly-unused-variable,unused-argument
     """
     chatml transforms for datasets with system, input, chosen, rejected
     ex. https://huggingface.co/datasets/argilla/distilabel-intel-orca-dpo-pairs
@@ -88,7 +89,7 @@ def icr(
     return transform_fn
 
 
-def intel(cfg, **kwargs):
+def intel(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
     """
     For Intel Orca DPO Pairs
     """
@@ -110,7 +111,9 @@ def intel(cfg, **kwargs):
     return transform_fn
 
 
-def prompt_pairs(cfg, **kwargs):
+def prompt_pairs(
+    cfg, **kwargs
+):  # pylint: disable=possibly-unused-variable,unused-argument
     def transform_fn(sample):
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
@@ -128,7 +131,7 @@ def prompt_pairs(cfg, **kwargs):
     return transform_fn
 
 
-def ultra(cfg, **kwargs):
+def ultra(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
     """
     for ultrafeedback binarized conversations
     """

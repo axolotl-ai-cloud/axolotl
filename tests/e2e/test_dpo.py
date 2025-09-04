@@ -21,6 +21,7 @@ class TestDPOLlamaLora(unittest.TestCase):
 
     @with_temp_dir
     def test_dpo_lora(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -69,6 +70,7 @@ class TestDPOLlamaLora(unittest.TestCase):
 
     @with_temp_dir
     def test_dpo_nll_lora(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -118,6 +120,7 @@ class TestDPOLlamaLora(unittest.TestCase):
 
     @with_temp_dir
     def test_dpo_use_weighting(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -168,6 +171,7 @@ class TestDPOLlamaLora(unittest.TestCase):
     @pytest.mark.skip("kto_pair no longer supported in trl")
     @with_temp_dir
     def test_kto_pair_lora(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -216,6 +220,7 @@ class TestDPOLlamaLora(unittest.TestCase):
 
     @with_temp_dir
     def test_ipo_lora(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -264,6 +269,7 @@ class TestDPOLlamaLora(unittest.TestCase):
 
     @with_temp_dir
     def test_orpo_lora(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -316,6 +322,7 @@ class TestDPOLlamaLora(unittest.TestCase):
     @pytest.mark.skip(reason="Fix the implementation")
     @with_temp_dir
     def test_kto_lora(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

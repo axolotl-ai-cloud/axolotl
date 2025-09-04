@@ -80,7 +80,7 @@ def start_vllm(
     cmd_env = env.copy()
     cmd_env.update({"VLLM_LOGGING_CONFIG_PATH": vllm_logging_json})
     # start `trl vllm-serve` command in the background and capture the process id
-    process = subprocess.Popen(
+    process = subprocess.Popen(  # pylint: disable=consider-using-with
         cmd,
         env=cmd_env,
         stdout=subprocess.DEVNULL if quiet else subprocess.PIPE,

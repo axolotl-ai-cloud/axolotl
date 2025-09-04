@@ -49,7 +49,9 @@ def patch_peft_prep_code():
         prep_code = get_peft_prep_code()
     except OSError:
         return
-    peft.utils.other._original_create_accelerator_and_postprocess = prep_code
+    peft.utils.other._original_create_accelerator_and_postprocess = (  # pylint: disable=protected-access
+        prep_code
+    )
     prep_code, _ = detab_code(prep_code)
     if ORIGINAL_PREPARE_CODE not in prep_code:
         return
@@ -66,15 +68,11 @@ def patch_peft_prep_code():
         if item in prep_code:
             items_to_import.append(item)
 
-    exec(
+    exec(  # pylint: disable=exec-used  # nosec B102
         "from peft.utils.other import (" + ", ".join(x for x in items_to_import) + ")",
         globals(),
     )
-    exec(prep_code, globals())
+    exec(prep_code, globals())  # pylint: disable=exec-used  # nosec B102
     LOG.info("patching prepare_model_for_kbit_training to allow for overrides")
-    peft.utils.other.prepare_model_for_kbit_training = (
-        fixed_prepare_model_for_kbit_training
-    )
-    axolotl.loaders.model.prepare_model_for_kbit_training = (
-        fixed_prepare_model_for_kbit_training
-    )
+    peft.utils.other.prepare_model_for_kbit_training = fixed_prepare_model_for_kbit_training  # pylint: disable=protected-access  # pylint: disable=undefined-variable  # noqa: F821
+    axolotl.loaders.model.prepare_model_for_kbit_training = fixed_prepare_model_for_kbit_training  # pylint: disable=protected-access  # pylint: disable=undefined-variable  # noqa: F821

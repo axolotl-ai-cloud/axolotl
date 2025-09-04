@@ -16,8 +16,8 @@
 # This code is based off the following work:
 # https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py
 # https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt_neox/modeling_gpt_neox.py
+# pylint: disable=duplicate-code
 """PyTorch StableLM Epoch model."""
-
 import importlib
 import math
 from typing import Optional, Tuple, Union
@@ -26,7 +26,7 @@ import torch
 import torch.utils.checkpoint
 from accelerate import init_empty_weights
 from einops import rearrange
-from flash_attn.flash_attn_interface import (
+from flash_attn.flash_attn_interface import (  # pylint: disable=ungrouped-imports
     flash_attn_varlen_qkvpacked_func,
 )
 from torch import nn
@@ -49,21 +49,27 @@ def replace_stablelm_attn_with_flash_attn(model_name="stabilityai/stablelm-3b-4e
         ".configuration_stablelm_epoch", ".modeling_stablelm_epoch"
     )
     modeling_stablelm = importlib.import_module(module_name)
-    modeling_stablelm.Attention.forward = flashattn_attn
-    modeling_stablelm.StableLMEpochModel.forward = stablelm_model_forward
-    modeling_stablelm.DecoderLayer.forward = decoder_layer_forward
+    modeling_stablelm.Attention.forward = (  # pylint: disable=protected-access
+        flashattn_attn
+    )
+    modeling_stablelm.StableLMEpochModel.forward = (  # pylint: disable=protected-access
+        stablelm_model_forward
+    )
+    modeling_stablelm.DecoderLayer.forward = (  # pylint: disable=protected-access
+        decoder_layer_forward
+    )
 
 
 def rotate_half(x: torch.Tensor):
     """Rotates half the hidden dims of the input."""
-
+    # pylint: disable=invalid-name
     x1, x2 = torch.chunk(x, 2, dim=-1)
     return torch.cat((-x2, x1), dim=-1)
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids):
     # The first two dimensions of cos and sin are always 1, so we can `squeeze` them.
-
+    # pylint: disable=invalid-name
     cos = cos.squeeze(1).squeeze(0)  # [seq_len, dim]
     sin = sin.squeeze(1).squeeze(0)  # [seq_len, dim]
     cos = cos[position_ids].unsqueeze(1)  # [batch_size, 1, seq_len, dim]
@@ -93,7 +99,7 @@ def flashattn_attn(
     attention_mask: torch.FloatTensor,
     position_ids: torch.LongTensor,
     past_key_value: Optional[Tuple[torch.Tensor]] = None,
-    output_attentions: Optional[bool] = False,
+    output_attentions: Optional[bool] = False,  # pylint: disable=unused-argument
     use_cache: Optional[bool] = False,
     cu_seqlens: Optional[torch.Tensor] = None,
     max_seqlen: Optional[torch.Tensor] = None,
@@ -210,6 +216,7 @@ def decoder_layer_forward(
 ) -> Union[
     Tuple[torch.Tensor], Optional[Tuple[torch.Tensor, Tuple[torch.FloatTensor, ...]]]
 ]:
+    # pylint: disable=duplicate-code
     residual = hidden_states
 
     hidden_states = self.input_layernorm(hidden_states)
@@ -256,6 +263,7 @@ def stablelm_model_forward(
     output_hidden_states: Optional[bool] = None,
     return_dict: Optional[bool] = None,
 ) -> Union[Tuple, BaseModelOutputWithPast]:
+    # pylint: disable=duplicate-code
     output_attentions = (
         output_attentions
         if output_attentions is not None
@@ -318,11 +326,13 @@ def stablelm_model_forward(
             dtype=torch.bool,
             device=inputs_embeds.device,
         )
-    attention_mask = self._prepare_decoder_attention_mask(
-        attention_mask,
-        (batch_size, seq_length),
-        inputs_embeds,
-        past_key_values_length,
+    attention_mask = (
+        self._prepare_decoder_attention_mask(  # pylint: disable=protected-access
+            attention_mask,
+            (batch_size, seq_length),
+            inputs_embeds,
+            past_key_values_length,
+        )
     )
 
     hidden_states = inputs_embeds

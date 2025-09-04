@@ -35,20 +35,10 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
     check_accelerate_default_config()
     check_user_token()
 
-    if cli_args.iterable:
-        LOG.error(
-            "The --iterable CLI argument for 'axolotl preprocess' is no longer "
-            "supported. For training, set 'streaming: true' in your YAML config or "
-            "pass '--streaming' in your 'axolotl train' command for on-the-fly "
-            "preprocessing."
-        )
-        return
-
     for key in ["skip_prepare_dataset", "pretraining_dataset"]:
         if cfg.get(key):
             LOG.error(
-                f"You have set `{key}:`. `preprocess` is not needed. Run the 'axolotl "
-                "train' CLI directly instead."
+                f"You have set `{key}:`. `preprocess` is not needed. Run the `axolotl train` CLI directly instead."
             )
             return
 
@@ -83,7 +73,7 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
                     AutoModelForCausalLM.from_pretrained(
                         model_name, trust_remote_code=True
                     )
-                except Exception:  # nosec B110
+                except Exception as exc:  # pylint: disable=broad-exception-caught,unused-variable  # nosec B110  # noqa F841
                     pass
                 # fmt: on
 
@@ -105,10 +95,9 @@ def do_cli(
         config: Path to `axolotl` config YAML file.
         kwargs: Additional keyword arguments to override config file values.
     """
-
+    # pylint: disable=duplicate-code
     os.environ["AXOLOTL_IS_PREPROCESS"] = "1"
-    is_preprocess = kwargs.pop("is_preprocess", True)
-    parsed_cfg = load_cfg(config, is_preprocess=is_preprocess, **kwargs)
+    parsed_cfg = load_cfg(config, **kwargs)
     parsed_cfg.is_preprocess = True
     parser = transformers.HfArgumentParser(PreprocessCliArgs)
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(

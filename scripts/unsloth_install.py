@@ -1,10 +1,11 @@
 # noqa
+# pylint: skip-file
 import sys
 
 try:
     import torch
-except ImportError as error:
-    raise ImportError("Install torch via `pip install torch`") from error
+except ImportError:
+    raise ImportError("Install torch via `pip install torch`")
 from packaging.version import Version as V
 
 use_uv = "--uv" in sys.argv[1:]

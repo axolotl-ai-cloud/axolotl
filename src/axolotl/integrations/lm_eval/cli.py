@@ -99,6 +99,7 @@ def lm_eval(config: str, cloud: Optional[str] = None):
         with open(config, encoding="utf-8") as file:
             cfg: DictDefault = DictDefault(yaml.safe_load(file))
 
+        # pylint: disable=duplicate-code
         for lm_eval_args in build_lm_eval_command(
             cfg.lm_eval_tasks,
             bfloat16=cfg.bfloat16 or cfg.bf16,

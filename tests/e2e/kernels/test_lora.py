@@ -1,5 +1,7 @@
 """Tests for LoRA custom autograd."""
 
+# pylint: disable=invalid-name,redefined-outer-name
+
 import pytest
 import torch
 from bitsandbytes.functional import QuantState
@@ -331,7 +333,7 @@ def test_lora_qkv(sample_tensors):
     X.requires_grad = True
 
     # Test without LoRA adapters
-
+    # pylint: disable=duplicate-code
     Q1, K1, V1 = LoRA_QKV.apply(
         X,
         q_weight,

@@ -25,7 +25,9 @@ else:
         return False
 
 
-def hf_grad_checkpoint_offload_wrapper(decoder_layer, *args, use_reentrant=None):
+def hf_grad_checkpoint_offload_wrapper(
+    decoder_layer, *args, use_reentrant=None
+):  # pylint: disable=unused-argument
     if uses_gc_layers(decoder_layer):
         return CPU_Offloaded_Gradient_Checkpointer.apply(
             decoder_layer,
@@ -42,7 +44,9 @@ def hf_grad_checkpoint_offload_wrapper(decoder_layer, *args, use_reentrant=None)
     )
 
 
-def hf_grad_checkpoint_disk_offload_wrapper(decoder_layer, *args, use_reentrant=None):
+def hf_grad_checkpoint_disk_offload_wrapper(
+    decoder_layer, *args, use_reentrant=None
+):  # pylint: disable=unused-argument
     if uses_gc_layers(decoder_layer):
         return Disco.apply(
             decoder_layer,

@@ -66,7 +66,7 @@ class StepwiseSupervisedPromptTokenizingStrategy:
         # Create step-wise labels
         labels = [
             [IGNORE_INDEX] * (len(completion) - 1) + [label]  # type: ignore
-            for completion, label in zip(completions_ids, labels, strict=False)
+            for completion, label in zip(completions_ids, labels)
         ]
 
         # Join all steps

@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Type, Union
 
 import transformers
-from transformers import DataCollatorWithFlattening, EarlyStoppingCallback
+from transformers import (
+    DataCollatorWithFlattening,
+    EarlyStoppingCallback,
+)
 from trl.trainer.utils import RewardDataCollatorWithPadding
 
 from axolotl.core.builders.base import TrainerBuilderBase
@@ -23,12 +26,12 @@ from axolotl.monkeypatch.relora import ReLoRACallback
 from axolotl.processing_strategies import get_processing_strategy
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
+    LossWatchDogCallback,
+    SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
     causal_lm_bench_eval_callback_factory,
     colab_inference_post_train_callback,
     log_prediction_callback_factory,
-    LossWatchDogCallback,
-    SaveBetterTransformerModelCallback,
 )
 from axolotl.utils.callbacks.lisa import lisa_callback_factory
 from axolotl.utils.callbacks.qat import QATCallback
@@ -337,22 +340,20 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
-            if self.cfg.center_rewards_coefficient is not None:
-                training_arguments_kwargs["center_rewards_coefficient"] = (
-                    self.cfg.center_rewards_coefficient
-                )
         elif self.cfg.process_reward_model:
             training_args_cls = AxolotlPRMConfig
         else:
             training_args_cls = AxolotlTrainingArguments
-        training_args = training_args_cls(
+        training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
             **training_arguments_kwargs,
         )
         training_args = self.hook_post_create_training_args(training_args)
 
         # unset run_name so wandb sets up experiment names
         if self.cfg.use_wandb and training_args.run_name == training_args.output_dir:
-            training_args.run_name = None
+            training_args.run_name = (  # pylint: disable=attribute-defined-outside-init
+                None
+            )
 
         data_collator_kwargs = {
             "padding": True,  # True/"longest" is the default
@@ -405,9 +406,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             **trainer_kwargs,
         )
         trainer = self.hook_post_create_trainer(trainer)
-        # if the trainer has the `axolotl_cfg` property, set it
-        if hasattr(trainer, "axolotl_cfg"):
-            trainer.axolotl_cfg = self.cfg
         for callback in self.get_post_trainer_create_callbacks(trainer):
             trainer.add_callback(callback)
 

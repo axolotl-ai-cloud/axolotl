@@ -53,7 +53,7 @@ class HFMistralTokenizer(MistralCommonTokenizer):
         """
         # Check if MistralRequestValidator has a _mode attribute.
         # This is a private API and may change in the future.
-
+        # pylint: disable=protected-access
         from mistral_common.protocol.instruct.validator import MistralRequestValidator
 
         if not (
@@ -74,7 +74,7 @@ class HFMistralTokenizer(MistralCommonTokenizer):
     def apply_chat_template(  # type: ignore
         self,
         conversation: list[dict] | list[list[dict]],
-        chat_template: str | None = None,
+        chat_template: str | None = None,  # pylint: disable=unused-argument
         add_generation_prompt: bool = False,
         **kwargs,
     ) -> str | list[int]:

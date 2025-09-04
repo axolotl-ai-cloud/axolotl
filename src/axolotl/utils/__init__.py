@@ -17,6 +17,7 @@ def is_comet_available():
     return importlib.util.find_spec("comet_ml") is not None
 
 
+# pylint: disable=duplicate-code
 def get_pytorch_version() -> tuple[int, int, int]:
     """
     Get Pytorch version as a tuple of (major, minor, patch).

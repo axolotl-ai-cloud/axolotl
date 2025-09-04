@@ -19,6 +19,7 @@ class Test4dMultipackLlama(unittest.TestCase):
 
     @with_temp_dir
     def test_sdp_lora_packing(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -66,6 +67,7 @@ class Test4dMultipackLlama(unittest.TestCase):
 
     @with_temp_dir
     def test_torch_lora_packing(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

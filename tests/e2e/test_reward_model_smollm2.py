@@ -19,6 +19,7 @@ class TestRewardModelLoraSmolLM2(unittest.TestCase):
 
     @with_temp_dir
     def test_rm_lora(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

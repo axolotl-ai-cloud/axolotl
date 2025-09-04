@@ -39,7 +39,7 @@ def do_vllm_serve(
     model = cfg.base_model
 
     serve_module = cli_args.get("serve_module", "trl.scripts.vllm_serve")
-    vllm_serve_main = __import__(serve_module, fromlist=["main"]).main
+    vllm_serve_main = getattr(__import__(serve_module, fromlist=["main"]), "main")
     tensor_parallel_size = 1
     data_parallel_size = 1
 
@@ -68,6 +68,7 @@ def do_vllm_serve(
         cli_args.get("enable_reasoning") or cfg.vllm.enable_reasoning or False
     )
 
+    # pylint: disable=unexpected-keyword-arg
     vllm_script_args = AxolotlScriptArguments(
         model=model,
         tensor_parallel_size=tensor_parallel_size,

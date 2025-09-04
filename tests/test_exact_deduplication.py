@@ -41,9 +41,9 @@ def verify_deduplication(actual_dataset, expected_dataset, dataset_name):
     assert actual_rows == expected_rows, f"Mismatch in {dataset_name} dataset"
 
     # Verify size consistency
-    assert len(actual_rows) == len(actual_dataset), (
-        f"Size mismatch in {dataset_name} dataset after deduplication"
-    )
+    assert len(actual_rows) == len(
+        actual_dataset
+    ), f"Size mismatch in {dataset_name} dataset after deduplication"
 
 
 class TestDeduplicateIndividualFunctions(unittest.TestCase):
@@ -224,6 +224,7 @@ class TestDeduplicateRLDataset:
     ):
         """Verify that loading with deduplication removes duplicates."""
 
+        # pylint: disable=duplicate-code
         with (
             patch(
                 "axolotl.utils.data.rl.load_dataset_with_config"
@@ -250,6 +251,7 @@ class TestDeduplicateRLDataset:
         dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
         tokenizer_huggyllama,
     ):
+        # pylint: disable=duplicate-code
         with (
             patch(
                 "axolotl.utils.data.rl.load_dataset_with_config"
@@ -269,9 +271,9 @@ class TestDeduplicateRLDataset:
             train_dataset, _ = prepare_preference_datasets(cfg, tokenizer)
 
             # Verify that the dataset retains duplicates
-            assert len(train_dataset) == 1800 * 2, (
-                "Dataset deduplication occurred when it should not have"
-            )
+            assert (
+                len(train_dataset) == 1800 * 2
+            ), "Dataset deduplication occurred when it should not have"
 
 
 class TestDeduplicateNonRL(unittest.TestCase):

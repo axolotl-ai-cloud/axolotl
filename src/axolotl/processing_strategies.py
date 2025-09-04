@@ -6,7 +6,7 @@ from typing import Optional
 from PIL import Image, ImageOps
 from PIL.Image import Resampling
 from torch import Tensor, zeros_like
-from transformers import ProcessorMixin, SmolVLMProcessor, VoxtralProcessor
+from transformers import ProcessorMixin, VoxtralProcessor
 from transformers.image_utils import load_image
 
 from axolotl.utils.dict import remove_none_values
@@ -138,7 +138,7 @@ class ProcessingStrategy:
                     image_key = key
                     break
 
-            # if the image key exists, add the image to the first user message
+            # if the image key exists, add the image to the first message
             if image_key is not None and processed_example[image_key] is not None:
                 # TODO: check if it's normal to be single image only for common datasets
                 # From observation, it's usually a list of single image but some datasets may have several columns for images
@@ -156,9 +156,9 @@ class ProcessingStrategy:
                 image_value = load_image(image_value)
 
                 if self.image_size is not None:
-                    assert hasattr(image_value, "resize"), (
-                        "Image does not have a resize method"
-                    )
+                    assert hasattr(
+                        image_value, "resize"
+                    ), "Image does not have a resize method"
 
                     if isinstance(self.image_size, tuple):
                         image_value = image_value.resize(
@@ -179,34 +179,26 @@ class ProcessingStrategy:
 
                 # Look for any image type in the first message
                 # some dataset have an {type: "image"} in the first message
-                msg_ind_to_add = None
                 ind_to_add = None
-                first_user_idx = None
 
-                for msg_idx, msg_content in enumerate(processed_example["messages"]):
-                    if first_user_idx is None and msg_content["role"] == "user":
-                        first_user_idx = msg_idx
-                    for i, content in enumerate(
-                        processed_example["messages"][msg_idx]["content"]
+                for i, content in enumerate(
+                    processed_example["messages"][0]["content"]
+                ):
+                    # Usually datasets created with image columns, don't have it in the messages itself
+                    if content["type"] == "image" and all(
+                        k not in content for k in ["image", "url", "path", "base64"]
                     ):
-                        # Usually datasets created with image columns, don't have it in the messages itself
-                        if content["type"] == "image" and all(
-                            k not in content for k in ["image", "url", "path", "base64"]
-                        ):
-                            msg_ind_to_add = msg_idx
-                            ind_to_add = i
-                            break
+                        ind_to_add = i
+                        break
 
                 # If an image type is found, add the image to that index
-                if ind_to_add is not None and msg_ind_to_add is not None:
-                    processed_example["messages"][msg_ind_to_add]["content"][
-                        ind_to_add
-                    ]["image"] = image_value
+                if ind_to_add is not None:
+                    processed_example["messages"][0]["content"][ind_to_add][
+                        "image"
+                    ] = image_value
                 else:
-                    # if no image type is found, add it to end of the first user message
-                    if first_user_idx is None:
-                        first_user_idx = 0
-                    processed_example["messages"][first_user_idx]["content"].append(
+                    # if no image type is found, add it to end of the first message
+                    processed_example["messages"][0]["content"].append(
                         {
                             "type": "image",
                             "image": image_value,
@@ -403,24 +395,6 @@ class VoxtralProcessingStrategy(ProcessingStrategy):
         return labels
 
 
-class SmolVLM2ProcessingStrategy(ProcessingStrategy):
-    """Processing Strategy class for SmolVLM2"""
-
-    def __init__(
-        self,
-        processor: ProcessorMixin,
-        chat_template: Optional[str] = None,
-        image_size: int | tuple[int, int] | None = None,
-        image_resize_algorithm: Resampling | None = None,
-    ):
-        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
-        self.image_token = "<image>"  # nosec
-
-        self.image_token_id = processor.tokenizer.additional_special_tokens_ids[
-            processor.tokenizer.additional_special_tokens.index(self.image_token)
-        ]
-
-
 def get_processing_strategy(
     processor: ProcessorMixin,
     chat_template,
@@ -428,43 +402,32 @@ def get_processing_strategy(
     image_size: int | tuple[int, int] | None = None,
     image_resize_algorithm: Resampling | None = None,
 ):
-    processing_kwargs = {
-        "processor": processor,
-        "chat_template": chat_template,
-        "image_size": image_size,
-        "image_resize_algorithm": image_resize_algorithm,
-    }
-
-    if chat_template_type in [None, "tokenizer_default"] and hasattr(
-        processor.tokenizer, "chat_template"
-    ):
-        processing_kwargs["chat_template"] = processor.tokenizer.chat_template
-
     if chat_template_type == "qwen2_vl":
         return Qwen2VLProcessingStrategy(
-            **processing_kwargs,
+            processor, chat_template, image_size, image_resize_algorithm
         )
     if chat_template_type == "gemma3":
         return Gemma3ProcessingStrategy(
-            **processing_kwargs,
+            processor, chat_template, image_size, image_resize_algorithm
         )
     if chat_template_type == "gemma3n":
         return Gemma3nProcessingStrategy(
-            **processing_kwargs,
+            processor, chat_template, image_size, image_resize_algorithm
+        )
+    if chat_template_type in [
+        "llama3_2_vision",
+        "llama4",
+        "llava",
+        "mistral_v7_tekken",
+        "pixtral",
+    ]:
+        return ProcessingStrategy(
+            processor, chat_template, image_size, image_resize_algorithm
         )
 
     if isinstance(processor, VoxtralProcessor):
         return VoxtralProcessingStrategy(
-            **processing_kwargs,
+            processor, chat_template, image_size, image_resize_algorithm
         )
 
-    if isinstance(processor, SmolVLMProcessor):
-        return SmolVLM2ProcessingStrategy(
-            **processing_kwargs,
-        )
-
-    # llama3_2_vision, llama4, llava
-    # mistral_v7_tekken, pixtral, lfm2vl
-    return ProcessingStrategy(
-        **processing_kwargs,
-    )
+    raise ValueError(f"Unsupported chat template type: {chat_template_type}")

@@ -268,7 +268,7 @@ class MultipackBatchSampler(BatchSampler):
         num_processes: int | None = None,  # Number of processes for parallel packing
         safe_mode: bool = True,  # Conservative packing to prevent training instability
         mp_start_method: str = "fork",
-        **kwargs,
+        **kwargs,  # pylint: disable=unused-argument
     ):
         super().__init__(sampler, batch_size, drop_last)
         self.batch_size = batch_size
@@ -317,7 +317,9 @@ class MultipackBatchSampler(BatchSampler):
             return self._batches
 
         # Get indices from the sampler
-        indices = [idx for idx in self.sampler]
+        indices = [  # pylint: disable=unnecessary-comprehension
+            idx for idx in self.sampler
+        ]
 
         # Get lengths of the selected sequences
         lengths = self.lengths[indices]
@@ -415,7 +417,7 @@ class MultipackBatchSampler(BatchSampler):
 
         # Gather efficiency from all ranks and apply the calculation function
         sample_packing_actual_eff_all = reduce_and_broadcast(
-            lambda: float(self.efficiency()),
+            lambda: float(self.efficiency()),  # pylint: disable=unnecessary-lambda
             calc_sample_packing_eff_est,
         )
 

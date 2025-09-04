@@ -86,6 +86,7 @@ class ContextV2Prompter(AlpacaPrompter):
     system_no_input_prompt = ""
 
     def match_prompt_style(self):
+        # pylint: disable=duplicate-code
         self.turn_format = "{instruction}\n{input}"
         self.turn_no_input_format = "{instruction}"
         self.system_format = "{system}"

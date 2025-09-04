@@ -84,7 +84,9 @@ def create_causal_mask(
     batch_size, dtype = input_embeds.shape[0], input_embeds.dtype
     if attention_mask is not None:
 
-        def causal_doc_mask_mod(batch_idx, head_idx, q_idx, kv_idx):
+        def causal_doc_mask_mod(
+            batch_idx, head_idx, q_idx, kv_idx
+        ):  # pylint: disable=unused-argument
             """
             Defines the logic of a block causal mask by combining both a standard causal mask
             and a block diagonal document mask.
@@ -101,7 +103,9 @@ def create_causal_mask(
         mask_factory_function = causal_doc_mask_mod
     else:
         mask_factory_function = causal_mask_function
-    mask_interface = ALL_MASK_ATTENTION_FUNCTIONS[config._attn_implementation]
+    mask_interface = ALL_MASK_ATTENTION_FUNCTIONS[
+        config._attn_implementation  # pylint: disable=protected-access
+    ]
 
     # Do not allow skip if we are compiling (this is to match BC)
     allow_is_causal_skip = (

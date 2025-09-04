@@ -18,6 +18,7 @@ class TestQATLlama:
     """
 
     def test_qat(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -67,6 +68,7 @@ class TestQATLlama:
         check_model_output_exists(Path(temp_dir) / "checkpoint-5", cfg)
 
     def test_qat_dpo(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

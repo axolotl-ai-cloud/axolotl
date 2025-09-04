@@ -20,6 +20,7 @@ class TestSaveFirstStepCallback(unittest.TestCase):
 
     @with_temp_dir
     def test_save_first_step(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -60,6 +61,7 @@ class TestSaveFirstStepCallback(unittest.TestCase):
 
     @with_temp_dir
     def test_no_save_first_step(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

@@ -10,6 +10,8 @@ LOG = get_logger(__name__)
 
 IGNORE_TOKEN_ID = -100
 
+# pylint: disable=duplicate-code
+
 
 class MetharmePromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
     """
@@ -64,7 +66,7 @@ class MetharmePrompter(AlpacaPrompter):
     turn_format = "{instruction}"
     turn_no_input_format = "{instruction}"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs):  # pylint: disable=super-init-not-called
         pass
 
 

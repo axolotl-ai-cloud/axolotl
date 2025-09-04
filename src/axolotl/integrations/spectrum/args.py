@@ -15,7 +15,6 @@
 """
 Module for handling Spectrum input arguments.
 """
-
 from typing import Optional
 
 from pydantic import BaseModel, model_validator

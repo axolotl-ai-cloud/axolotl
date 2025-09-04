@@ -11,6 +11,8 @@ from axolotl.utils.dict import DictDefault
 
 from .utils import check_model_output_exists
 
+# pylint: disable=duplicate-code
+
 
 class TestActivationOffloading:
     """
@@ -26,6 +28,7 @@ class TestActivationOffloading:
         temp_dir,
         adapter,
     ):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

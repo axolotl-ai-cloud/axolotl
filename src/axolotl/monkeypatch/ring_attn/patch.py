@@ -18,12 +18,9 @@ from torch.distributed import DeviceMesh
 try:
     from transformers.modeling_flash_attention_utils import _flash_supports_window
 except ImportError:
-    try:
-        from transformers.modeling_flash_attention_utils import (
-            _flash_supports_window_size as _flash_supports_window,
-        )
-    except ImportError:
-        _flash_supports_window = True
+    from transformers.modeling_flash_attention_utils import (
+        _flash_supports_window_size as _flash_supports_window,
+    )
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
 from axolotl.utils.logging import get_logger
@@ -43,7 +40,7 @@ def get_ring_attn_group() -> dist.ProcessGroup:
 
 def set_ring_attn_group(ring_attn_group: dist.ProcessGroup | None):
     """Setter for ring attention group on this rank."""
-    global RING_ATTN_GROUP
+    global RING_ATTN_GROUP  # pylint: disable=global-statement
     RING_ATTN_GROUP = ring_attn_group
 
 
@@ -57,24 +54,29 @@ def create_ring_flash_attention_forward(
         query_states: torch.Tensor,
         key_states: torch.Tensor,
         value_states: torch.Tensor,
-        attention_mask: torch.Tensor,
+        attention_mask: torch.Tensor,  # pylint: disable=unused-argument
         query_length: int,
         is_causal: bool,
         dropout: float = 0.0,
-        position_ids: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,  # pylint: disable=unused-argument
         softmax_scale: Optional[float] = None,
         sliding_window: Optional[int] = None,
         use_top_left_mask: bool = False,
         softcap: Optional[float] = None,
         deterministic: bool = None,
-        cu_seq_lens_q: Optional[torch.LongTensor] = None,
-        cu_seq_lens_k: Optional[torch.LongTensor] = None,
-        max_length_q: Optional[int] = None,
-        max_length_k: Optional[int] = None,
-        target_dtype: Optional[torch.dtype] = None,
-        attn_implementation: Optional[str] = None,
-        **kwargs,
+        cu_seq_lens_q: Optional[
+            torch.LongTensor
+        ] = None,  # pylint: disable=unused-argument
+        cu_seq_lens_k: Optional[
+            torch.LongTensor
+        ] = None,  # pylint: disable=unused-argument
+        max_length_q: Optional[int] = None,  # pylint: disable=unused-argument
+        max_length_k: Optional[int] = None,  # pylint: disable=unused-argument
+        target_dtype: Optional[torch.dtype] = None,  # pylint: disable=unused-argument
+        attn_implementation: Optional[str] = None,  # pylint: disable=unused-argument
+        **kwargs,  # pylint: disable=unused-argument
     ):
+        # pylint: disable=duplicate-code
         if not use_top_left_mask:
             causal = is_causal
         else:
@@ -96,9 +98,9 @@ def create_ring_flash_attention_forward(
         if deterministic is None:
             deterministic = os.environ.get("FLASH_ATTENTION_DETERMINISTIC", "0") == "1"
         flash_kwargs["deterministic"] = deterministic
-        assert softcap is None, (
-            "llama3_flash_attn_varlen_func does not support softcap yet."
-        )
+        assert (
+            softcap is None
+        ), "llama3_flash_attn_varlen_func does not support softcap yet."
         # flash_kwargs["softcap"] = softcap
         flash_kwargs["group"] = process_group
 
@@ -188,7 +190,7 @@ def register_ring_attn_from_device_mesh(
         # fmt: off
         import ring_flash_attn.adapters.hf_adapter
 
-        from ring_flash_attn.adapters.hf_adapter import (  # isort: skip
+        from ring_flash_attn.adapters.hf_adapter import (  # isort: skip  # pylint: disable=unused-import
             create_ring_flash_attention_forward as create_ring_flash_attention_forward_orig,
         )
 

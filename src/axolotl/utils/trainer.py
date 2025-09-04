@@ -475,9 +475,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 train_dataset.remove_columns(["length"]),
                 batch_sampler=sampler,
             )
-            data_loader_len = max(
-                1, len(data_loader) * cfg.micro_batch_size // cfg.batch_size
-            )
+            data_loader_len = len(data_loader) * cfg.micro_batch_size // cfg.batch_size
             LOG.debug(f"data_loader_len: {data_loader_len}")
             # FIXME: is there a bug here somewhere? the total num steps depends
             # on the agreed on value for sample_packing_eff_est
@@ -498,7 +496,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 return max(estimates)
 
             sample_packing_actual_eff_all = reduce_and_broadcast(
-                lambda: sampler.efficiency(),
+                lambda: sampler.efficiency(),  # pylint: disable=unnecessary-lambda
                 calc_sample_packing_eff_est,
             )
             sample_packing_eff_est = (
@@ -548,13 +546,6 @@ def setup_deepspeed_env(cfg, stage=None):
         os.environ["ACCELERATE_DEEPSPEED_ZERO_STAGE"] = str(stage)
         if stage == 3:
             os.environ["ACCELERATE_DEEPSPEED_ZERO3_INIT"] = "true"
-
-    device_count = torch.cuda.device_count()
-    if device_count == 1:
-        os.environ.setdefault("WORLD_SIZE", "1")
-        os.environ.setdefault("LOCAL_RANK", "0")
-        os.environ.setdefault("MASTER_ADDR", "0.0.0.0")  # nosec B104
-        os.environ.setdefault("MASTER_PORT", "29500")
 
     # NOTE(djsaunde): The distribued state cannot be initialized prior to the
     # ACCELERATE_USE_DEEPSPEED assignment, but it must be initialized some time prior

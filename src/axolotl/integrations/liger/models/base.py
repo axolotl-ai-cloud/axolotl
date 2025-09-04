@@ -41,6 +41,7 @@ def lce_forward(
             This is useful when using packed tensor format (single dimension for batch and sequence length).
     """
 
+    # pylint: disable=duplicate-code
     output_attentions = (
         output_attentions
         if output_attentions is not None
@@ -180,7 +181,7 @@ def patch_lce_forward(
         model_cls = getattr(module, f"{model_cls_prefix}ForCausalLM")
 
         model_cls.forward = lce_forward
-
+    # pylint: disable=duplicate-code
     except (ImportError, AttributeError) as e:
         raise RuntimeError(
             f"Could not import ForCausalLM class for model_type: {model_type}. "

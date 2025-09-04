@@ -19,6 +19,7 @@ class TestLlamaVision(unittest.TestCase):
 
     @with_temp_dir
     def test_lora_llama_vision_text_only_dataset(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "axolotl-ai-co/Llama-3.2-39M-Vision",
@@ -66,6 +67,7 @@ class TestLlamaVision(unittest.TestCase):
 
     @with_temp_dir
     def test_lora_llama_vision_multimodal_dataset(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "axolotl-ai-co/Llama-3.2-39M-Vision",

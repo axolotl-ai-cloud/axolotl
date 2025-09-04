@@ -23,6 +23,7 @@ def should_log_artifacts() -> bool:
 
 
 class SaveAxolotlConfigtoMlflowCallback(TrainerCallback):
+    # pylint: disable=duplicate-code
     """Callback to save axolotl config to mlflow"""
 
     def __init__(self, axolotl_config_path):
@@ -30,10 +31,10 @@ class SaveAxolotlConfigtoMlflowCallback(TrainerCallback):
 
     def on_train_begin(
         self,
-        args: "AxolotlTrainingArguments",
-        state: TrainerState,
+        args: "AxolotlTrainingArguments",  # pylint: disable=unused-argument
+        state: TrainerState,  # pylint: disable=unused-argument
         control: TrainerControl,
-        **kwargs,
+        **kwargs,  # pylint: disable=unused-argument
     ):
         if is_main_process():
             try:

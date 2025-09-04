@@ -20,6 +20,7 @@ class TestReLoraLlama(unittest.TestCase):
 
     @with_temp_dir
     def test_relora(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -75,9 +76,9 @@ class TestReLoraLlama(unittest.TestCase):
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(Path(temp_dir) / "checkpoint-100/adapter", cfg)
-        assert (Path(temp_dir) / "checkpoint-100/relora/model.safetensors").exists(), (
-            "Relora model checkpoint not found"
-        )
+        assert (
+            Path(temp_dir) / "checkpoint-100/relora/model.safetensors"
+        ).exists(), "Relora model checkpoint not found"
 
         check_tensorboard(
             temp_dir + "/runs", "train/grad_norm", 0.2, "grad_norm is too high"

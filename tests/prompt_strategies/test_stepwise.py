@@ -20,6 +20,7 @@ class TestStepWiseSupervisedPromptTokenizingStrategy:
 
     @pytest.fixture()
     def stepwise_supervised_dataset(self):
+        # pylint: disable=duplicate-code
         return Dataset.from_list(
             [
                 {

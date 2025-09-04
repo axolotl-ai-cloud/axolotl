@@ -22,6 +22,7 @@ class TestPretrainLlama:
         ],
     )
     def test_pretrain(self, temp_dir, sample_packing, pretrain_multipack_attn):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

@@ -5,6 +5,7 @@ import torch
 from axolotl.core.trainers.base import AxolotlTrainer
 
 
+# pylint: disable=too-many-ancestors
 class AxolotlMambaTrainer(AxolotlTrainer):
     """Mamba specific trainer to handle loss calculation"""
 
@@ -14,8 +15,8 @@ class AxolotlMambaTrainer(AxolotlTrainer):
         self,
         model,
         inputs,
-        return_outputs=False,
-        num_items_in_batch=None,
+        return_outputs=False,  # pylint: disable=unused-argument
+        num_items_in_batch=None,  # pylint: disable=unused-argument
     ):
         input_ids = inputs.pop("input_ids")
         lm_logits = model(input_ids).logits

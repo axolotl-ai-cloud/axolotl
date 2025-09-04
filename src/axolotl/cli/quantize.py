@@ -84,6 +84,5 @@ def do_quantize(
         str(Path(output_dir) / "quantized"),
         safe_serialization=False,
         progressbar=True,
-        save_jinja_files=cfg.tokenizer_save_jinja_files,
     )
     LOG.info(f"Quantized model saved to: {str(Path(output_dir) / 'quantized')}...")

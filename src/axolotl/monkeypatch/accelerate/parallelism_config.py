@@ -2,6 +2,7 @@
 workaround to allow parallelism config for pure CP
 """
 
+# pylint: disable=protected-access
 import os
 import warnings
 
@@ -29,7 +30,7 @@ def _validate_accelerator(self, accelerator):
     allow_parallelism_config = False
 
     if (
-        self.cp_size > 1
+        self.cp_size > 1  # pylint: disable=chained-comparison
         and self.dp_shard_size <= 1
         and os.environ.get("ACCELERATE_ALLOW_CP_STANDALONE", "false").lower() == "true"
     ):
@@ -54,7 +55,6 @@ def _validate_accelerator(self, accelerator):
         warnings.warn(
             "ParallelismConfig has the following warnings:\n" + "\n".join(_warnings),
             UserWarning,
-            stacklevel=2,
         )
 
 

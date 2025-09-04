@@ -6,6 +6,7 @@ Taniguchi, Shohei and Harada, Keno and Minegishi, Gouki and Oshima, Yuta and Jeo
 """
 
 # mypy: ignore-errors
+# pylint: skip-file
 # flake8: noqa
 # mypy: allow-untyped-decorators
 # mypy: allow-untyped-defs
@@ -287,9 +288,7 @@ def _single_tensor_adopt(
             assert (
                 param.device.type == step_t.device.type
                 and param.device.type in capturable_supported_devices
-            ), (
-                f"If capturable=True, params and state_steps must be on supported devices: {capturable_supported_devices}."
-            )
+            ), f"If capturable=True, params and state_steps must be on supported devices: {capturable_supported_devices}."
 
         step = step_t if capturable or differentiable else _get_value(step_t)
 
@@ -366,9 +365,7 @@ def _multi_tensor_adopt(
             p.device.type == step.device.type
             and p.device.type in capturable_supported_devices
             for p, step in zip(params, state_steps)
-        ), (
-            f"If capturable=True, params and state_steps must be on supported devices: {capturable_supported_devices}."
-        )
+        ), f"If capturable=True, params and state_steps must be on supported devices: {capturable_supported_devices}."
 
     assert grad_scale is None and found_inf is None
 

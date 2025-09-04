@@ -255,6 +255,7 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
     return dataset
 
 
+# pylint: disable=duplicate-code
 def _load_or_create_dataset_split(
     cfg: DictDefault, tokenizer: PreTrainedTokenizer, split: Literal["train", "test"]
 ) -> Dataset:

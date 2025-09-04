@@ -2,6 +2,8 @@
 HF Chat Templates prompt strategy
 """
 
+# pylint: disable=too-many-lines
+
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
 
@@ -127,21 +129,13 @@ class ChatTemplatePrompter(Prompter):
                 images=images,
                 return_tensors="pt",
             )
-            if hasattr(batch, "to_dict"):
-                batch = batch.to_dict()
-            else:
-                batch = dict(batch)
-
             # workaround since processor works in batches instead of single examples
-            out = {}
             for k, val in batch.items():
-                if hasattr(val, "tolist"):
-                    out[k] = (
-                        val.tolist() if k == "pixel_values" else val.squeeze(0).tolist()
-                    )
+                if k in ["pixel_values"]:
+                    batch[k] = val.tolist()
                 else:
-                    out[k] = val
-            return out
+                    batch[k] = val.squeeze().tolist()
+            return batch
 
         return self.tokenizer.apply_chat_template(
             conversation,
@@ -400,9 +394,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         feature_names = list(prompt.keys())
 
         # Process each prompt individually
-        for row in zip(*prompt.values(), strict=False):
+        for row in zip(*prompt.values()):
             tokenized_prompt = self._tokenize_single_prompt(
-                dict(zip(feature_names, row, strict=False))
+                dict(zip(feature_names, row))
             )
             for key, val in tokenized_prompt.items():
                 res[key].append(val)
@@ -429,7 +423,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 add_generation_prompt=True,
                 images=images,
             )
-            tokenized_res = self.prompter.build_prompt(turns, images=images)  # type: ignore
+            tokenized_res = self.prompter.build_prompt(
+                turns, images=images
+            )  # type: ignore
             tokenized_prompt = {}
             if isinstance(tokenized_res, list):
                 input_ids = prompt_ids + tokenized_res[len(prompt_ids) :]
@@ -437,13 +433,10 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 tokenized_prompt["attention_mask"] = [1] * len(input_ids)
             else:
                 input_ids = tokenized_res["input_ids"]
-                tokenized_prompt = dict(tokenized_res)
+                tokenized_prompt = tokenized_res
 
             if not self.train_on_inputs:
-                if isinstance(prompt_ids, dict):
-                    user_prompt_len = len(prompt_ids["input_ids"])
-                else:
-                    user_prompt_len = len(prompt_ids)
+                user_prompt_len = len(prompt_ids)
                 labels = [-100] * user_prompt_len + input_ids[user_prompt_len:]
             else:
                 labels = input_ids
@@ -609,6 +602,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         """
         Locate the starting and ending indices of the specified turn in a conversation.
         """
+        # pylint: disable=too-many-return-statements
 
         if turn_idx >= len(turns):
             raise ValueError(f"Turn index {turn_idx} out of range")
@@ -845,7 +839,7 @@ class MistralStrategy(ChatTemplateStrategy):
         split_thinking: bool | None = False,
     ):
         # Call the parent's parent __init__ (PromptTokenizingStrategy) to skip ChatTemplateStrategy's validation
-
+        # pylint: disable=non-parent-init-called,super-init-not-called
         PromptTokenizingStrategy.__init__(
             self, prompter, tokenizer, train_on_inputs, sequence_len
         )

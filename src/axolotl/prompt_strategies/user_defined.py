@@ -83,12 +83,16 @@ def load(tokenizer, cfg, ds_cfg: Optional[UserDefinedDatasetConfig] = None):
         cfg.sequence_len,
     )
 
-    strat.parse_instruction_fields = partial(  # type: ignore[method-assign]
-        parse_instruction_fields,
-        ds_cfg.field_instruction,
-        ds_cfg.field_input,
-        ds_cfg.field_output,
-        ds_cfg.field_system,
-        system_prompt,
+    setattr(
+        strat,
+        "parse_instruction_fields",
+        partial(
+            parse_instruction_fields,
+            ds_cfg.field_instruction,
+            ds_cfg.field_input,
+            ds_cfg.field_output,
+            ds_cfg.field_system,
+            system_prompt,
+        ),
     )
     return strat

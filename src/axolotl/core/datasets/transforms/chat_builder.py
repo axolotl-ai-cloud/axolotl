@@ -1,17 +1,23 @@
 """
-This module contains a function that builds a transform that takes a row from the
-dataset and converts it to a Chat.
+This module contains a function that builds a transform that takes a row from the dataset and converts it to a Chat.
 """
 
-from typing import Any, Mapping
+from typing import Any, Mapping, Union
 
 
-def chat_message_transform_builder(
+def chat_message_transform_builder(  # pylint: disable=dangerous-default-value
     train_on_inputs=False,
     conversations_field: str = "conversations",
-    message_field_role: str | list[str] | None = None,  # commonly "role"
-    message_field_content: str | list[str] | None = None,  # commonly "content"
-    message_field_training: str | list[str] | None = None,  # commonly "weight"
+    message_field_role: Union[str, list[str]] = ["role", "from"],  # commonly "role"
+    message_field_content: Union[str, list[str]] = [
+        "value",
+        "text",
+        "content",
+    ],  # commonly "content"
+    message_field_training: Union[str, list[str]] = [
+        "train",
+        "weight",
+    ],  # commonly "weight"
 ):
     """Builds a transform that takes a row from the dataset and converts it to a Chat
 
@@ -33,12 +39,6 @@ def chat_message_transform_builder(
             A function that takes a list of conversations and returns a list of messages.
     """
 
-    if message_field_training is None:
-        message_field_training = ["train", "weight"]
-    if message_field_content is None:
-        message_field_content = ["value", "text", "content"]
-    if message_field_role is None:
-        message_field_role = ["role", "from"]
     message_field_role = (
         [message_field_role]
         if isinstance(message_field_role, str)

@@ -99,6 +99,7 @@ def _swiglu_bwd_kernel(
     tl.store(up_ptr + offsets, grad_up, mask=mask)  # grad wrt up
 
 
+# pylint: disable=unnecessary-lambda-assignment
 def swiglu_forward(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
     """
     SwiGLU forward pass. Computes SwiGLU activation: `x * sigmoid(x) * up`, where
@@ -127,6 +128,7 @@ def swiglu_forward(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
     return out
 
 
+# pylint: disable=unnecessary-lambda-assignment
 def swiglu_backward(
     grad_output: torch.Tensor, gate: torch.Tensor, up: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

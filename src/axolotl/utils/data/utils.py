@@ -44,7 +44,7 @@ def retry_on_request_exceptions(
 
     def decorator(func):
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args, **kwargs):  # pylint: disable=inconsistent-return-statements
             for attempt in range(max_retries):
                 try:
                     return func(*args, **kwargs)
@@ -148,36 +148,7 @@ def deduplicate_and_log_datasets(
     return dataset, other_dataset
 
 
-def truncate_long_seq(sample, sequence_len=2048, min_sequence_len=2):
-    """
-    Truncate samples whose sequence length is too long (> sequence_len)
-    or drop those too short (< min_sequence_len).
-    """
-    min_sequence_len = min_sequence_len or 2
-
-    input_ids = sample["input_ids"]
-    results = []
-
-    # Batched (input_ids is a list of lists)
-    for i, seq in enumerate(input_ids):
-        length = len(seq)
-        if length < min_sequence_len:
-            results.append(False)
-        elif length > sequence_len:
-            sample["input_ids"][i] = seq[:sequence_len]
-            if "attention_mask" in sample:
-                sample["attention_mask"][i] = sample["attention_mask"][i][:sequence_len]
-            if "labels" in sample:
-                sample["labels"][i] = sample["labels"][i][:sequence_len]
-            if "position_ids" in sample:
-                sample["position_ids"][i] = sample["position_ids"][i][:sequence_len]
-            results.append(True)
-        else:
-            results.append(True)
-    return results
-
-
-def handle_long_seq_in_dataset(
+def drop_long_seq_in_dataset(
     dataset: Dataset, sequence_len: int, cfg: DictDefault
 ) -> Dataset:
     """Remove sequences longer than configured maximum from dataset.
@@ -190,19 +161,10 @@ def handle_long_seq_in_dataset(
     Returns:
         Filtered dataset with long sequences removed.
     """
-    if (
-        hasattr(dataset, "column_names")
-        and dataset.column_names
-        and "input_ids" not in dataset.column_names
-    ):
+    if "input_ids" not in dataset.column_names:
         LOG.warning(
             "Dataset does not contain 'input_ids' column. Skip drop long seq. This is "
             "expected for reward modeling."
-        )
-        return dataset
-    elif not hasattr(dataset, "column_names") or dataset.column_names is None:
-        LOG.info(
-            "Dataset is streaming (IterableDataset), skipping long sequence handling"
         )
         return dataset
 
@@ -230,21 +192,8 @@ def handle_long_seq_in_dataset(
     if filter_map_kwargs:
         drop_long_kwargs["desc"] = f"Dropping Long Sequences (>{sequence_len})"
 
-    excess_length_strategy = (cfg.excess_length_strategy or "drop").lower()
-    if excess_length_strategy == "truncate":
-        process_fn = functools.partial(
-            truncate_long_seq,
-            sequence_len=sequence_len,
-            min_sequence_len=cfg.min_sample_len,
-        )
-        drop_long_kwargs["desc"] = (
-            f"Truncating/Filtering Sequences (target_len={sequence_len})"
-        )
-    else:
-        process_fn = drop_long
-
     dataset = dataset.filter(
-        process_fn,
+        drop_long,
         batched=True,
         **filter_map_kwargs,
         **drop_long_kwargs,
@@ -252,11 +201,6 @@ def handle_long_seq_in_dataset(
     if prior_len:
         dropped = prior_len - len(dataset)
         if dropped:
-            action = (
-                "truncated/filtered"
-                if excess_length_strategy == "truncate"
-                else "dropped"
-            )
-            LOG.warning(f"{action.title()} {dropped} samples from dataset")
+            LOG.warning(f"Dropped {dropped} long samples from dataset")
 
     return dataset

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from datasets import Dataset
 
-import axolotl.monkeypatch.data.batch_dataset_fetcher  # noqa: F401
+import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
 from axolotl.cli.args import PreprocessCliArgs, TrainerCliArgs
 from axolotl.loaders import load_processor, load_tokenizer
 from axolotl.utils.data import prepare_datasets, prepare_preference_datasets
@@ -55,11 +55,13 @@ def load_datasets(
     """
     tokenizer = load_tokenizer(cfg)
     processor = load_processor(cfg, tokenizer=tokenizer) if cfg.processor_type else None
+    preprocess_iterable = getattr(cli_args, "iterable", False)
 
     train_dataset, eval_dataset, total_num_steps, prompters = prepare_datasets(
         cfg,
         tokenizer,
         processor=processor,
+        preprocess_iterable=preprocess_iterable,
     )
 
     if (

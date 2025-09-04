@@ -1,5 +1,7 @@
 """Dequantization utilities for `bitsandbytes` integration."""
 
+# pylint: disable=invalid-name,global-statement
+
 import ctypes
 
 import bitsandbytes as bnb

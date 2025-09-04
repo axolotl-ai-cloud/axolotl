@@ -2,6 +2,8 @@
 DeepseekV2 model with LigerFusedLinearCrossEntropyLoss
 """
 
+# pylint: disable=duplicate-code
+
 from typing import List, Optional, Tuple, Union
 
 import torch

@@ -8,7 +8,7 @@ from transformers import AutoTokenizer
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_strategies.completion import load
 from axolotl.utils.collators import V2BatchSamplerDataCollatorForSeq2Seq
-from axolotl.utils.data.utils import handle_long_seq_in_dataset
+from axolotl.utils.data.utils import drop_long_seq_in_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
@@ -48,13 +48,7 @@ class TestBatchedSamplerPacking:
         max_seq_length,
         sequential,
     ):
-        from axolotl.monkeypatch.data.batch_dataset_fetcher import (
-            apply_multipack_dataloader_patch,
-            remove_multipack_dataloader_patch,
-        )
-
-        # Apply the patch for multipack handling
-        apply_multipack_dataloader_patch()
+        import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
 
         dataset = dataset_winglian_tiny_shakespeare["train"]
 
@@ -76,7 +70,7 @@ class TestBatchedSamplerPacking:
         )
         train_dataset = concatenate_datasets([dataset_wrapper])
 
-        train_dataset = handle_long_seq_in_dataset(train_dataset, cfg.sequence_len, cfg)
+        train_dataset = drop_long_seq_in_dataset(train_dataset, cfg.sequence_len, cfg)
 
         lengths = get_dataset_lengths(train_dataset)
         batch_sampler = MultipackBatchSampler(
@@ -93,7 +87,7 @@ class TestBatchedSamplerPacking:
         loader = DataLoader(
             train_dataset,
             batch_sampler=batch_sampler,
-            collate_fn=V2BatchSamplerDataCollatorForSeq2Seq(
+            collate_fn=V2BatchSamplerDataCollatorForSeq2Seq(  # pylint: disable=unexpected-keyword-arg
                 tokenizer=tokenizer,
                 padding=True,
                 pad_to_multiple_of=max_seq_length,
@@ -107,14 +101,10 @@ class TestBatchedSamplerPacking:
             for pack in batch:
                 batch_idxs.extend(pack)
 
-        try:
-            for batch in loader:
-                assert batch["input_ids"].numel() <= batch_size * max_seq_length
-                assert batch["input_ids"].shape[1] == max_seq_length
+        for batch in loader:
+            assert batch["input_ids"].numel() <= batch_size * max_seq_length
+            assert batch["input_ids"].shape[1] == max_seq_length
 
-            original_idxs = set(range(len(train_dataset)))
-            assert original_idxs == set(batch_idxs)
-            assert len(batch_idxs) == len(set(batch_idxs))
-        finally:
-            # Clean up: remove the patch after the test
-            remove_multipack_dataloader_patch()
+        original_idxs = set(range(len(train_dataset)))
+        assert original_idxs == set(batch_idxs)
+        assert len(batch_idxs) == len(set(batch_idxs))

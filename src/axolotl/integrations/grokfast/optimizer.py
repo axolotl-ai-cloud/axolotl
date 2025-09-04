@@ -1,6 +1,7 @@
 # Copyright: MIT License (c) 2024 Jaerin Lee, Bong Gyun Kang, Kihoon Kim, Kyoung Mu Lee
 # Reference: https://github.com/ironjr/grokfast
 
+# pylint: skip-file
 from collections import deque
 from typing import Dict, Literal, Optional
 

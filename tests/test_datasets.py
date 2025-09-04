@@ -374,6 +374,7 @@ class TestDatasetPreparation:
             }
         )
 
+        # pylint: disable=duplicate-code
         with patch(
             "axolotl.utils.data.rl.load_dataset_with_config"
         ) as mock_load_dataset:

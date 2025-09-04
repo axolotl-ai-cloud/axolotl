@@ -46,6 +46,7 @@ def lce_forward(
     Returns:
     """
 
+    # pylint: disable=duplicate-code
     output_attentions = (
         output_attentions
         if output_attentions is not None
@@ -77,7 +78,9 @@ def lce_forward(
     hidden_states = outputs[0]
 
     if hasattr(self.config, "pretraining_tp") and self.config.pretraining_tp > 1:
-        raise Exception("Liger Kernel does not support pretraining_tp!!")
+        raise Exception(  # pylint: disable=broad-exception-raised
+            "Liger Kernel does not support pretraining_tp!!"
+        )
 
     logits = None
     loss = None
@@ -125,7 +128,7 @@ def apply_liger_kernel_to_llama4(
     rms_norm: bool = False,
     glu_activation: bool = False,
     layer_norm: bool = False,
-    **kwargs,
+    **kwargs,  # pylint: disable=unused-argument
 ) -> None:
     """
     Apply Liger kernels to replace original implementation in HuggingFace Llama models (2 and 3)
@@ -141,15 +144,15 @@ def apply_liger_kernel_to_llama4(
         layer_norm (bool): Whether to apply Liger's LayerNorm. Default is False.
     """
 
-    import transformers.models.llama4.modeling_llama4  # noqa: F401
+    import transformers.models.llama4.modeling_llama4  # noqa: F401  # pylint: disable=unused-import
     from liger_kernel.transformers.functional import liger_cross_entropy
     from liger_kernel.transformers.layer_norm import LigerLayerNorm
     from liger_kernel.transformers.rms_norm import LigerRMSNorm
     from liger_kernel.transformers.swiglu import LigerSwiGLUMLP
 
-    assert not (cross_entropy and fused_linear_cross_entropy), (
-        "cross_entropy and fused_linear_cross_entropy cannot both be True."
-    )
+    assert not (
+        cross_entropy and fused_linear_cross_entropy
+    ), "cross_entropy and fused_linear_cross_entropy cannot both be True."
 
     modeling_llama4 = sys.modules["transformers.models.llama4.modeling_llama4"]
 
@@ -162,7 +165,7 @@ def apply_liger_kernel_to_llama4(
             # clone config to avoid modifying the original
             config = deepcopy(config)
             if intermediate_size:
-                config.intermediate_size = intermediate_size
+                setattr(config, "intermediate_size", intermediate_size)
             return LigerSwiGLUMLP(config, **kwargs)
 
         modeling_llama4.Llama4TextMLP = _liger_swiglu_mlp_wrapper

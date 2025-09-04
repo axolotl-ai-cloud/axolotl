@@ -15,7 +15,7 @@ datasets:
     field_thinking: thinking
     template_thinking_key: thinking
 
-dataset_prepared_path: ./outputs/last_run_prepared
+dataset_prepared_path: last_run_prepared
 val_set_size: 0
 output_dir: ./outputs/gpt-oss-out/
 
@@ -41,7 +41,7 @@ bf16: true
 tf32: true
 
 flash_attention: true
-attn_implementation: kernels-community/vllm-flash-attn3  # this is not needed if using flash_attn >= 2.8.3
+attn_implementation: kernels-community/vllm-flash-attn3
 
 gradient_checkpointing: true
 activation_offloading: true

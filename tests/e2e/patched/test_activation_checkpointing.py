@@ -32,9 +32,10 @@ class TestActivationCheckpointing:
     def test_activation_checkpointing_offload(
         self,
         temp_dir,
-        fix_checkpoint_after_test,
+        fix_checkpoint_after_test,  # pylint: disable=unused-argument,redefined-outer-name
         gradient_checkpointing,
     ):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """Module for testing the validation module"""
 
 import os
@@ -48,6 +49,7 @@ class BaseValidation:
         self._caplog = caplog
 
 
+# pylint: disable=too-many-public-methods
 class TestValidation(BaseValidation):
     """
     Test the validation module
@@ -239,7 +241,7 @@ class TestValidation(BaseValidation):
 
     def test_lr_as_float(self, minimal_cfg):
         cfg = (
-            DictDefault(
+            DictDefault(  # pylint: disable=unsupported-binary-operation
                 {
                     "learning_rate": "5e-5",
                 }
@@ -301,7 +303,7 @@ class TestValidation(BaseValidation):
         )
 
         cfg = (
-            DictDefault(
+            DictDefault(  # pylint: disable=unsupported-binary-operation
                 {
                     "load_in_8bit": True,
                 }
@@ -313,7 +315,7 @@ class TestValidation(BaseValidation):
             validate_config(cfg)
 
         cfg = (
-            DictDefault(
+            DictDefault(  # pylint: disable=unsupported-binary-operation
                 {
                     "gptq": True,
                 }
@@ -325,7 +327,7 @@ class TestValidation(BaseValidation):
             validate_config(cfg)
 
         cfg = (
-            DictDefault(
+            DictDefault(  # pylint: disable=unsupported-binary-operation
                 {
                     "load_in_4bit": False,
                 }
@@ -337,7 +339,7 @@ class TestValidation(BaseValidation):
             validate_config(cfg)
 
         cfg = (
-            DictDefault(
+            DictDefault(  # pylint: disable=unsupported-binary-operation
                 {
                     "load_in_4bit": True,
                 }
@@ -359,7 +361,7 @@ class TestValidation(BaseValidation):
         )
 
         cfg = (
-            DictDefault(
+            DictDefault(  # pylint: disable=unsupported-binary-operation
                 {
                     "load_in_8bit": True,
                 }
@@ -371,7 +373,7 @@ class TestValidation(BaseValidation):
             validate_config(cfg)
 
         cfg = (
-            DictDefault(
+            DictDefault(  # pylint: disable=unsupported-binary-operation
                 {
                     "gptq": True,
                 }
@@ -383,7 +385,7 @@ class TestValidation(BaseValidation):
             validate_config(cfg)
 
         cfg = (
-            DictDefault(
+            DictDefault(  # pylint: disable=unsupported-binary-operation
                 {
                     "load_in_4bit": True,
                 }

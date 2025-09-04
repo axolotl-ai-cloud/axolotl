@@ -1,5 +1,7 @@
 """Tests for SwiGLU activation function Triton kernels."""
 
+# pylint: disable=duplicate-code
+
 import torch
 import torch.nn.functional as F
 
@@ -72,6 +74,6 @@ def test_swiglu_inplace_preservation():
 
     assert not torch.equal(gate, gate_copy), "Gate should be modified in-place"
     assert not torch.equal(up, up_copy), "Up should be modified in-place"
-    assert not torch.equal(grad_output, grad_copy), (
-        "Grad output should be modified in-place"
-    )
+    assert not torch.equal(
+        grad_output, grad_copy
+    ), "Grad output should be modified in-place"

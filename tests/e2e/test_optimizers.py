@@ -25,6 +25,7 @@ class TestCustomOptimizers(unittest.TestCase):
 
     @with_temp_dir
     def test_optimi_adamw(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -70,6 +71,7 @@ class TestCustomOptimizers(unittest.TestCase):
     @with_temp_dir
     @require_torch_2_5_1
     def test_adopt_adamw(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -115,6 +117,7 @@ class TestCustomOptimizers(unittest.TestCase):
     @with_temp_dir
     @require_torch_2_5_1
     def test_muon(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -161,6 +164,7 @@ class TestCustomOptimizers(unittest.TestCase):
     @with_temp_dir
     @require_torch_2_7_0
     def test_dion(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -202,6 +206,7 @@ class TestCustomOptimizers(unittest.TestCase):
 
     @with_temp_dir
     def test_fft_schedule_free_adamw(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -229,6 +234,7 @@ class TestCustomOptimizers(unittest.TestCase):
                 "save_first_step": False,
             }
         )
+        # pylint: disable=duplicate-code
 
         cfg = validate_config(cfg)
         normalize_config(cfg)
@@ -240,6 +246,7 @@ class TestCustomOptimizers(unittest.TestCase):
     @with_temp_dir
     @require_torch_2_6_0
     def test_came_pytorch(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "JackFram/llama-68m",

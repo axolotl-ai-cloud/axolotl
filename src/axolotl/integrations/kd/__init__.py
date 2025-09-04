@@ -15,7 +15,6 @@
 """
 Plugin init to add KD support to Axolotl.
 """
-
 from typing import Any
 
 from transformers import Trainer
@@ -23,7 +22,7 @@ from transformers import Trainer
 from axolotl.integrations.base import BasePlugin
 from axolotl.integrations.kd.callbacks import KDTemperatureSchedulerCallback
 
-from .args import KDArgs as KDArgs
+from .args import KDArgs  # pylint: disable=unused-import. # noqa: F401
 
 
 class KDPlugin(BasePlugin):

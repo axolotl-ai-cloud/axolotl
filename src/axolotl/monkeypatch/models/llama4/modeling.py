@@ -95,12 +95,18 @@ def patch_llama4_linearized_modeling():
 
     old_lamma_4_text_experts = modeling_llama4.Llama4TextExperts
     modeling_llama4.Llama4TextExperts = Llama4TextExperts
-    sys.modules["transformers.models.llama4"].Llama4TextExperts = Llama4TextExperts
+    setattr(
+        sys.modules["transformers.models.llama4"],
+        "Llama4TextExperts",
+        Llama4TextExperts,
+    )
 
     def unpatch():
         modeling_llama4.Llama4TextExperts = old_lamma_4_text_experts
-        sys.modules[
-            "transformers.models.llama4"
-        ].Llama4TextExperts = old_lamma_4_text_experts
+        setattr(
+            sys.modules["transformers.models.llama4"],
+            "Llama4TextExperts",
+            old_lamma_4_text_experts,
+        )
 
     return unpatch

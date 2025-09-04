@@ -31,12 +31,14 @@ def patch_mixtral_moe_forward_zero3() -> None:
         topk_weight = topk_weight.to(hidden_states.dtype)
 
         hidden_states = hidden_states.repeat_interleave(self.top_k, dim=0)
-        y = torch.empty_like(hidden_states)
+        y = torch.empty_like(hidden_states)  # pylint: disable=invalid-name
         flat_topk_idx = topk_idx.view(-1)
         for i in range(self.num_experts):
             expert = self.experts[i]
             y[flat_topk_idx == i] = expert(hidden_states[flat_topk_idx == i])
-        y = (y.view(*topk_weight.shape, -1) * topk_weight.unsqueeze(-1)).sum(dim=1)
+        y = (  # pylint: disable=invalid-name
+            y.view(*topk_weight.shape, -1) * topk_weight.unsqueeze(-1)
+        ).sum(dim=1)
         final_hidden_states = y.reshape(batch_size, sequence_length, hidden_dim)
         return final_hidden_states, router_logits
 

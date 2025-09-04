@@ -1,13 +1,26 @@
 """Shared constants for axolotl.loaders module"""
 
-from transformers import AutoModelForImageTextToText
-from transformers.models.auto.modeling_auto import (
-    MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES,
+from transformers import (
+    Gemma3ForConditionalGeneration,
+    Gemma3nForConditionalGeneration,
+    Llama4ForConditionalGeneration,
+    LlavaForConditionalGeneration,
+    Mistral3ForConditionalGeneration,
+    MllamaForConditionalGeneration,
+    Qwen2_5_VLForConditionalGeneration,
+    Qwen2VLForConditionalGeneration,
 )
 
-MULTIMODAL_AUTO_MODEL_MAPPING = dict(MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES)
-
-MULTIMODAL_AUTO_MODEL_MAPPING["lfm2-vl"] = AutoModelForImageTextToText
+MULTIMODAL_AUTO_MODEL_MAPPING = {
+    "mllama": MllamaForConditionalGeneration,
+    "llama4": Llama4ForConditionalGeneration,
+    "llava": LlavaForConditionalGeneration,
+    "qwen2_vl": Qwen2VLForConditionalGeneration,
+    "qwen2_5_vl": Qwen2_5_VLForConditionalGeneration,
+    "mistral3": Mistral3ForConditionalGeneration,
+    "gemma3": Gemma3ForConditionalGeneration,
+    "gemma3n": Gemma3nForConditionalGeneration,
+}
 
 try:
     from transformers import VoxtralForConditionalGeneration

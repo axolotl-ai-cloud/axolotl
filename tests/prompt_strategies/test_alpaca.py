@@ -30,6 +30,7 @@ def fixture_alpaca_dataset():
 @pytest.fixture(name="tokenizer")
 @enable_hf_offline
 def fixture_tokenizer():
+    # pylint: disable=all
     tokenizer = AutoTokenizer.from_pretrained(
         "casperhansen/mistral-7b-instruct-v0.1-awq"
     )

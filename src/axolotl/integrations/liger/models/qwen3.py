@@ -43,6 +43,7 @@ def lce_forward(
     Returns:
     """
 
+    # pylint: disable=duplicate-code
     output_attentions = (
         output_attentions
         if output_attentions is not None
@@ -112,8 +113,9 @@ def apply_liger_kernel_to_qwen3(
     rms_norm: bool = False,
     glu_activation: bool = False,
     layer_norm: bool = False,
-    **kwargs,
+    **kwargs,  # pylint: disable=unused-argument
 ) -> None:
+    # pylint: disable=duplicate-code
     """
     Apply Liger kernels to replace original implementation in HuggingFace Llama models (2 and 3)
 
@@ -128,15 +130,15 @@ def apply_liger_kernel_to_qwen3(
         layer_norm (bool): Whether to apply Liger's LayerNorm. Default is False.
     """
 
-    import transformers.models.qwen3.modeling_qwen3  # noqa: F401
+    import transformers.models.qwen3.modeling_qwen3  # noqa: F401  # pylint: disable=unused-import
     from liger_kernel.transformers.functional import liger_cross_entropy
     from liger_kernel.transformers.layer_norm import LigerLayerNorm
     from liger_kernel.transformers.rms_norm import LigerRMSNorm
     from liger_kernel.transformers.swiglu import LigerSwiGLUMLP
 
-    assert not (cross_entropy and fused_linear_cross_entropy), (
-        "cross_entropy and fused_linear_cross_entropy cannot both be True."
-    )
+    assert not (
+        cross_entropy and fused_linear_cross_entropy
+    ), "cross_entropy and fused_linear_cross_entropy cannot both be True."
 
     modeling_qwen3 = sys.modules["transformers.models.qwen3.modeling_qwen3"]
 

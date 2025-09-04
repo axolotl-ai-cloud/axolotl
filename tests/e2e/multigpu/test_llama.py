@@ -35,6 +35,7 @@ class TestMultiGPULlama:
     """
 
     def test_lora_ddp(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -98,6 +99,7 @@ class TestMultiGPULlama:
         [1, 2],
     )
     def test_lora_ddp_packed(self, temp_dir, gradient_accumulation_steps):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -160,6 +162,7 @@ class TestMultiGPULlama:
         )
 
     def test_dpo_lora_ddp(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -239,6 +242,7 @@ class TestMultiGPULlama:
         )
 
     def test_dpo_qlora_ddp(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -322,6 +326,7 @@ class TestMultiGPULlama:
         [1, 2],
     )
     def test_fsdp(self, temp_dir, gradient_accumulation_steps):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -397,6 +402,7 @@ class TestMultiGPULlama:
         ],
     )
     def test_fsdp_packed(self, temp_dir, fsdp_state_dict_type):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -478,6 +484,7 @@ class TestMultiGPULlama:
     def test_fsdp2_packed(
         self, temp_dir, attention_backend, fsdp_reshard_after_forward
     ):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -549,6 +556,7 @@ class TestMultiGPULlama:
         )
 
     def test_fsdp_qlora_prequant_packed(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "axolotl-ai-co/SmolLM2-135M-bnb-nf4-bf16",
@@ -648,6 +656,7 @@ class TestMultiGPULlama:
     def test_ds_zero3_packed(
         self, temp_dir, gradient_accumulation_steps, deepspeed, qlora
     ):
+        # pylint: disable=duplicate-code
         if qlora:
             adapter = {
                 "adapter": "qlora",
@@ -723,6 +732,7 @@ class TestMultiGPULlama:
         [True, False],
     )
     def test_ds_zero2_packed(self, temp_dir, gradient_accumulation_steps, qlora):
+        # pylint: disable=duplicate-code
         if qlora:
             adapter = {
                 "adapter": "qlora",
@@ -799,6 +809,7 @@ class TestMultiGPULlama:
         [True, False],
     )
     def test_ds_zero1_packed(self, temp_dir, gradient_accumulation_steps, qlora):
+        # pylint: disable=duplicate-code
         if qlora:
             adapter = {
                 "adapter": "qlora",
@@ -869,6 +880,7 @@ class TestMultiGPULlama:
         reason="fix untrained tokens brittle with lots of edge cases in latest transformers"
     )
     def test_fix_untrained_tokens(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

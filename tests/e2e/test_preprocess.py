@@ -15,7 +15,7 @@ class TestPreprocess:
 
     def test_w_deepspeed(self, temp_dir):
         """make sure preproces doesn't choke when using deepspeed in the config"""
-
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "Qwen/Qwen2.5-0.5B",

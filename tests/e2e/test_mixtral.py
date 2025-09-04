@@ -22,6 +22,7 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_qlora_w_fa2(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
@@ -77,6 +78,7 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_qlora_wo_fa2(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
@@ -132,6 +134,7 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_16bit_lora_w_fa2(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
@@ -190,6 +193,7 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_16bit_lora_wo_fa2(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
@@ -248,6 +252,7 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_ft(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",

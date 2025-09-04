@@ -1,5 +1,7 @@
 """unit tests for perplexity eval callback"""
 
+# pylint: disable=redefined-outer-name
+
 from pytest import fixture
 from transformers.models.auto.modeling_auto import AutoModelForCausalLM
 from transformers.models.auto.tokenization_auto import AutoTokenizer

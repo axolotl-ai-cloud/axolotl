@@ -1,5 +1,7 @@
 """Axolotl GRPO trainers (with and without sequence parallelism handling)"""
 
+# pylint: disable=too-many-lines,duplicate-code,protected-access,no-member
+
 import warnings
 from functools import partial
 from typing import Any
@@ -50,6 +52,7 @@ from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, Optimizer
 from axolotl.monkeypatch.ring_attn import get_ring_attn_group
 
 if is_peft_available():
+    # pylint: disable=unused-import
     from peft import PeftConfig
 
 
@@ -250,7 +253,7 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
     def get_train_dataloader(self) -> DataLoader:
         """Get dataloader for training"""
         train_dataset = self.train_dataset
-
+        # pylint: disable=access-member-before-definition
         data_collator = self.data_collator  # type: ignore
 
         # Handle dataset preprocessing
@@ -263,7 +266,7 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
                     train_dataset, description="training"
                 )
         else:
-            self.data_collator = self._get_collator_with_removed_columns(
+            self.data_collator = self._get_collator_with_removed_columns(  # pylint: disable=attribute-defined-outside-init
                 data_collator,
                 description="training",
             )
@@ -305,10 +308,10 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
         # Generate completions using either vLLM or regular generation
         if self.args.use_vllm:
             # First, have main process load weights if needed
-
+            # pylint: disable=access-member-before-definition
             if self.state.global_step != self._last_loaded_step:  # type: ignore[has-type]
                 self._move_model_to_vllm()
-
+                # pylint: disable=attribute-defined-outside-init
                 self._last_loaded_step = self.state.global_step
 
             # Generate completions using vLLM: gather all prompts and use them in a single call in the main process
@@ -330,9 +333,8 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
                         # Extract prompts from this SP group, accounting for num_generations duplicates
                         # We only need prompts from one rank in each SP group
                         group_prompts = all_prompts_text[
-                            group_leader_rank * len(prompts_text) : (
-                                group_leader_rank + 1
-                            )
+                            group_leader_rank
+                            * len(prompts_text) : (group_leader_rank + 1)
                             * len(prompts_text) : self.num_generations
                         ]
 
@@ -483,7 +485,7 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
         )
         if is_conversational(inputs[0]):
             completions = []
-            for prompt, completion in zip(prompts, completions_text, strict=False):
+            for prompt, completion in zip(prompts, completions_text):
                 bootstrap = (
                     prompt.pop()["content"] if prompt[-1]["role"] == "assistant" else ""
                 )
@@ -501,7 +503,6 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
                 self.reward_funcs,
                 self.reward_processing_classes,
                 self.reward_func_names,
-                strict=False,
             )
         ):
             with profiling_context(self, reward_func_name):
@@ -510,17 +511,14 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
                 ):  # Module instead of PretrainedModel for compat with compiled models
                     if is_conversational(inputs[0]):
                         messages = [
-                            {"messages": p + c}
-                            for p, c in zip(prompts, completions, strict=False)
+                            {"messages": p + c} for p, c in zip(prompts, completions)
                         ]
                         texts = [
                             apply_chat_template(x, reward_processing_class)["text"]
                             for x in messages
                         ]
                     else:
-                        texts = [
-                            p + c for p, c in zip(prompts, completions, strict=False)
-                        ]
+                        texts = [p + c for p, c in zip(prompts, completions)]
                     reward_inputs = reward_processing_class(
                         text=texts,
                         return_tensors="pt",
@@ -566,8 +564,7 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
             row_reward_kwargs["completion"] = completions[nan_row_idx]
             warnings.warn(
                 f"All reward functions returned None for the following kwargs: {row_reward_kwargs}. "
-                "Please ensure that at least one reward function returns a valid reward.",
-                stacklevel=2,
+                "Please ensure that at least one reward function returns a valid reward."
             )
 
         # Gather the reward per function: this part is crucial, because the rewards are normalized per group and the

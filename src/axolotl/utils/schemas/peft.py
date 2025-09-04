@@ -90,16 +90,6 @@ class LoraConfig(BaseModel):
             "description": "How to initialize LoRA weights. Default to True which is MS original implementation."
         },
     )
-    peft_trainable_token_indices: list[int] | dict[str, list[int]] | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": (
-                "A list of token indices to fine-tune on the `embed_tokens` layer.\n"
-                "Otherwise, a dict mapping an embedding layer name to its trainable token indices.\n"
-                "See https://huggingface.co/docs/peft/v0.17.0/en/developer_guides/lora#efficiently-train-tokens-alongside-lora"
-            )
-        },
-    )
 
     qlora_sharded_model_loading: bool | None = Field(
         default=False,

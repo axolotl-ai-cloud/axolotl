@@ -134,7 +134,7 @@ For providers supporting Docker:
 
 ### Google Colab {#sec-colab}
 
-[![](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/axolotl-ai-cloud/axolotl/blob/main/examples/colab-notebooks/colab-axolotl-example.ipynb#scrollTo=msOCO4NRmRLa)
+Use our [example notebook](../examples/colab-notebooks/colab-axolotl-example.ipynb).
 
 ## Platform-Specific Instructions {#sec-platform-specific}
 

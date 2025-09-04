@@ -28,7 +28,7 @@ def do_evaluate(cfg: DictDefault, cli_args: TrainerCliArgs) -> None:
         cfg: Dictionary mapping `axolotl` config keys to values.
         cli_args: CLI arguments.
     """
-
+    # pylint: disable=duplicate-code
     check_accelerate_default_config()
     if int(os.getenv("LOCAL_RANK", "0")) == 0:
         check_user_token()
@@ -49,7 +49,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
         config: Path to `axolotl` config YAML file.
         kwargs: Additional keyword arguments to override config file values.
     """
-
+    # pylint: disable=duplicate-code
     parsed_cfg = load_cfg(config, **kwargs)
     parser = HfArgumentParser(TrainerCliArgs)
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(

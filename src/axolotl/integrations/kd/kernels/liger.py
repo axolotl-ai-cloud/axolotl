@@ -197,7 +197,7 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
         compute_ce_loss: bool = True,
         normalize_topk: bool = True,
     ):
-        CHUNK_SIZE = chunk_size
+        CHUNK_SIZE = chunk_size  # pylint: disable=invalid-name
         grad_weight_acc = torch.zeros_like(student_lm_head_weight)
         grad_inputs_list = []
         grad_bias_acc = (
@@ -298,8 +298,8 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
             accumulate_chunk_grads_compiled = accumulate_chunk_grads
 
         # Use the same chunking logic as LigerFusedLinearDistillationBase.forward
-        B, N, D = student_input.shape
-        K = target_token_ids.shape[-1]
+        B, N, D = student_input.shape  # pylint: disable=invalid-name
+        K = target_token_ids.shape[-1]  # pylint: disable=invalid-name
 
         student_input_flat = student_input.reshape(-1, student_input.shape[-1])
         target_token_ids_flat = target_token_ids.reshape(-1, target_token_ids.shape[-1])

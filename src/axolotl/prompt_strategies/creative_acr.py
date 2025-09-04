@@ -134,7 +134,9 @@ class CreativePrompterBase:
     def build_prompt(
         self,
         instruction: str,
-        input: Union[None, str] = None,
+        input: Union[  # pylint: disable=redefined-builtin, unused-argument
+            None, str
+        ] = None,
         output: Union[None, str] = None,
     ) -> Generator[str, None, None]:
         if self.system_prompt:

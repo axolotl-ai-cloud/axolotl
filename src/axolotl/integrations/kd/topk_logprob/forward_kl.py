@@ -15,7 +15,6 @@
 """
 loss for top_k KL divergence
 """
-
 import torch
 from torch import nn
 
@@ -118,6 +117,7 @@ class ChunkedTopKKDLoss(nn.Module):
         target_mask: torch.Tensor,  # [B, seq_len, K]
         num_items_in_batch: int = -1,  # optional batch size for normalization
     ) -> torch.Tensor:
+
         # 1. Split along the "token" dimension (dim=1).
         student_logits_chunks = student_logits.chunk(self.num_output_chunks, dim=1)
         token_ids_chunks = target_token_ids.chunk(self.num_output_chunks, dim=1)
@@ -131,11 +131,7 @@ class ChunkedTopKKDLoss(nn.Module):
 
         # 2. Loop over each chunk and compute a chunk-specific loss.
         for st_chunk, tid_chunk, lp_chunk, msk_chunk in zip(
-            student_logits_chunks,
-            token_ids_chunks,
-            logprobs_chunks,
-            mask_chunks,
-            strict=False,
+            student_logits_chunks, token_ids_chunks, logprobs_chunks, mask_chunks
         ):
             # We pass num_items_in_batch=-1 so that the kd_loss
             # will average over *this chunk's* valid tokens only.

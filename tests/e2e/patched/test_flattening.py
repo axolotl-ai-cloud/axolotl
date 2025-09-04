@@ -23,6 +23,7 @@ class TestFAFlattening:
         [1, 4],
     )
     def test_lora_packing_flattening(self, temp_dir, gradient_accumulation_steps):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",

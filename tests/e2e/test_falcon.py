@@ -22,6 +22,7 @@ class TestFalcon(unittest.TestCase):
     @pytest.mark.skip(reason="no tiny models for testing with safetensors")
     @with_temp_dir
     def test_lora(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "illuin/tiny-random-FalconForCausalLM",
@@ -73,6 +74,7 @@ class TestFalcon(unittest.TestCase):
     @pytest.mark.skip(reason="no tiny models for testing with safetensors")
     @with_temp_dir
     def test_lora_added_vocab(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "illuin/tiny-random-FalconForCausalLM",
@@ -128,6 +130,7 @@ class TestFalcon(unittest.TestCase):
     @pytest.mark.skip(reason="no tiny models for testing with safetensors")
     @with_temp_dir
     def test_ft(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "illuin/tiny-random-FalconForCausalLM",

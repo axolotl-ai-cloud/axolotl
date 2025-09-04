@@ -25,7 +25,7 @@ class CEWithChunkedOutputLoss(torch.nn.Module):
         self,
         logits: torch.Tensor,
         labels: torch.Tensor,
-        normalize: bool = True,
+        normalize: bool = True,  # pylint: disable=unused-argument
     ) -> torch.Tensor:
         """
         Upcast logits to fp32 and compute cross entropy loss.
@@ -63,7 +63,7 @@ class CEWithChunkedOutputLoss(torch.nn.Module):
 
         # compute one chunk at a time
         total_loss = 0.0
-        for logits_chunk, labels_chunk in zip(logits, labels, strict=False):
+        for logits_chunk, labels_chunk in zip(logits, labels):
             total_loss += self.compute_cross_entropy(logits_chunk, labels_chunk)
 
         if reduction == "sum":
@@ -88,9 +88,9 @@ def get_causal_lm_loss(num_output_chunks: int = 8, ignore_index: int = -100):
         num_items_in_batch: int = None,
         ignore_index: int = -100,
         **kwargs,
-    ):
+    ):  # pylint: disable=unused-argument
         reduction = "sum" if num_items_in_batch is not None else "mean"
-        logit_chunks = [
+        logit_chunks = [  # pylint: disable=unnecessary-comprehension
             chunk for chunk in source.chunk(loss_fn_ce.num_output_chunks, dim=1)
         ]
         loss = loss_fn_ce(logit_chunks, target, reduction=reduction)
@@ -101,7 +101,7 @@ def get_causal_lm_loss(num_output_chunks: int = 8, ignore_index: int = -100):
     def for_causal_lm_chunked_loss(
         logits,
         labels,
-        vocab_size: int = None,
+        vocab_size: int = None,  # pylint: disable=unused-argument
         num_items_in_batch: Optional[int] = None,
         ignore_index: int = -100,
         shift_labels: Optional[torch.Tensor] = None,

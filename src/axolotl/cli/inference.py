@@ -14,7 +14,10 @@ from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 from axolotl.cli.args import InferenceCliArgs
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
-from axolotl.utils.chat_templates import get_chat_template_from_config
+from axolotl.utils.chat_templates import (
+    get_chat_template,
+    get_chat_template_from_config,
+)
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
@@ -32,7 +35,7 @@ def get_multi_line_input() -> str:
 
     instruction = ""
     for line in sys.stdin:
-        instruction += line
+        instruction += line  # pylint: disable=consider-using-join
 
     return instruction
 
@@ -61,9 +64,7 @@ def do_inference(
             importlib.import_module("axolotl.prompters"), prompter
         )
     elif cfg.chat_template:
-        chat_template_str = get_chat_template_from_config(
-            cfg, ds_cfg=None, tokenizer=tokenizer
-        )
+        chat_template_str = get_chat_template(cfg.chat_template)
     elif cfg.datasets[0].type == "chat_template":
         chat_template_str = get_chat_template_from_config(
             cfg=cfg, ds_cfg=cfg.datasets[0], tokenizer=tokenizer
@@ -158,13 +159,7 @@ def do_inference_gradio(
             importlib.import_module("axolotl.prompters"), prompter
         )
     elif cfg.chat_template:
-        chat_template_str = get_chat_template_from_config(
-            cfg, ds_cfg=None, tokenizer=tokenizer
-        )
-    elif cfg.datasets[0].type == "chat_template":
-        chat_template_str = get_chat_template_from_config(
-            cfg=cfg, ds_cfg=cfg.datasets[0], tokenizer=tokenizer
-        )
+        chat_template_str = get_chat_template(cfg.chat_template, tokenizer=tokenizer)
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
@@ -172,6 +167,7 @@ def do_inference_gradio(
         if not instruction:
             return
         if prompter_module:
+            # pylint: disable=stop-iteration-return
             prompt: str = next(
                 prompter_module().build_prompt(instruction=instruction.strip("\n"))
             )
@@ -256,7 +252,7 @@ def do_cli(
         config: Path to `axolotl` config YAML file.
         kwargs: Additional keyword arguments to override config file values.
     """
-
+    # pylint: disable=duplicate-code
     parsed_cfg = load_cfg(config, inference=True, rl=None, **kwargs)
     parsed_cfg.sample_packing = False
     parser = transformers.HfArgumentParser(InferenceCliArgs)

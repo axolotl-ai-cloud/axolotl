@@ -128,7 +128,9 @@ class GRPOStrategy:
         return grpo_args_kwargs
 
     @classmethod
-    def set_trainer_args(cls, cfg: DictDefault) -> list[Any]:
+    def set_trainer_args(
+        cls, cfg: DictDefault
+    ) -> list[Any]:  # pylint: disable=unused-argument
         trainer_args = []
         if cfg.trl and cfg.trl.reward_funcs:
             reward_funcs = []
@@ -149,7 +151,7 @@ class GRPOStrategy:
         return trainer_kwargs
 
     @classmethod
-    def get_collator(cls, *args, **kwargs):
+    def get_collator(cls, *args, **kwargs):  # pylint: disable=unused-argument
         # No data collation is needed in GRPO, handled by trl's trainer __init__
         return None
 

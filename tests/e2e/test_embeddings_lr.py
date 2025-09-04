@@ -19,6 +19,7 @@ class TestEmbeddingsLrScale(unittest.TestCase):
 
     @with_temp_dir
     def test_train_w_embedding_lr_scale(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -64,6 +65,7 @@ class TestEmbeddingsLrScale(unittest.TestCase):
 
     @with_temp_dir
     def test_train_w_embedding_lr(self, temp_dir):
+        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
