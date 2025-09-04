@@ -73,4 +73,6 @@ def _list_repo_templates(
 def apply_list_repo_templates_patch():
     from transformers.utils import hub
 
-    hub.list_repo_templates = _list_repo_templates
+    if not hasattr(hub, "list_repo_templates_axolotl"):
+        hub.list_repo_templates_axolotl = True
+        hub.list_repo_templates = _list_repo_templates
