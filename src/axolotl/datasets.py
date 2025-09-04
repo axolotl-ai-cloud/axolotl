@@ -1,7 +1,10 @@
 """Module containing Dataset functionality"""
 
+from typing import Iterator
+
 import torch
 from datasets import Dataset, IterableDataset
+from transformers import PreTrainedTokenizer
 
 from axolotl.utils.logging import get_logger
 
@@ -42,7 +45,7 @@ class TokenizedPromptDataset(Dataset):
             **kwargs,
         )
 
-    def process(self, dataset):
+    def process(self, dataset: Dataset) -> Dataset:
         features = dataset.features.keys()
 
         map_kwargs = {}
@@ -95,15 +98,15 @@ class ConstantLengthDataset(IterableDataset):
 
     Args:
         tokenizer: The processor used for processing the data.
-        dataset: Dataset with text files.
+        datasets: List of datasets with text files.
         seq_length: Length of token sequences to return.
     """
 
     def __init__(  # pylint: disable=super-init-not-called
         self,
-        tokenizer,
-        datasets,
-        seq_length=2048,
+        tokenizer: PreTrainedTokenizer,
+        datasets: list[IterableDataset],
+        seq_length: int = 2048,
     ):
         self.tokenizer = tokenizer
         self.concat_token_id = tokenizer.eos_token_id
@@ -119,7 +122,7 @@ class ConstantLengthDataset(IterableDataset):
         else:
             self.tokens_dtype = torch.int64
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[dict[str, torch.Tensor]]:
         buffer = {
             "input_ids": [],
             "attention_mask": [],
