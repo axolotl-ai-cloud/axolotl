@@ -220,7 +220,7 @@ class AxolotlInputConfig(
         },
     )
     dataset_processes: int | None = Field(
-       default=None,
+        default=None,
         deprecated="Use `dataset_num_proc` instead. This parameter will be removed in a future version.",
         json_schema_extra={
             "description": (
@@ -229,7 +229,7 @@ class AxolotlInputConfig(
                 "For Runpod VMs, it will default to number of vCPUs via RUNPOD_CPU_COUNT."
             )
         },
-    ) 
+    )
     dataset_exact_deduplication: bool | None = Field(
         default=None,
         json_schema_extra={
