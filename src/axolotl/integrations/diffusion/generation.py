@@ -1,7 +1,8 @@
 """Sample generation utilities for diffusion training."""
 
 import logging
-from typing import Any, List, Optional
+import re
+from typing import Any, List, Optional, Literal
 
 import torch
 
@@ -17,6 +18,9 @@ def generate_samples(
     num_diffusion_steps: int = 128,
     temperature: float = 0.0,
     mask_token_id: int = 32000,
+    mode: Literal["random", "completion"] = "random",
+    completion_tokens: int = 0,
+    target_mask_ratio: Optional[float] = None,
 ) -> List[dict]:
     """
     Generate text samples using the diffusion model by randomly masking sequences from
@@ -53,13 +57,16 @@ def generate_samples(
     # Generate samples using reverse diffusion process
     with torch.no_grad():
         for original_sequence in sampled_sequences:
-            generation_result = _generate(
+            generation_result = generate(
                 unwrapped_model,
                 tokenizer,
                 original_sequence,
                 num_diffusion_steps,
                 temperature,
                 mask_token_id,
+                mode=mode,
+                completion_tokens=completion_tokens,
+                target_mask_ratio=target_mask_ratio,
             )
             generations.append(generation_result)
 
@@ -117,13 +124,17 @@ def _sample_sequences_from_dataloader(
     return sampled_sequences
 
 
-def _generate(
+def generate(
     model: torch.nn.Module,
     tokenizer: Any,
     original_sequence: torch.Tensor,
     num_diffusion_steps: int,
     temperature: float,
     mask_token_id: int,
+    *,
+    mode: Literal["random", "completion"] = "random",
+    completion_tokens: int = 0,
+    target_mask_ratio: Optional[float] = None,
 ) -> dict:
     """Generate a single sample using reverse diffusion."""
     # Get original text for comparison
@@ -131,30 +142,48 @@ def _generate(
         original_sequence[0].cpu(), skip_special_tokens=True
     )
 
-    # Apply custom masking with random ratio (10% to 70%)
-    total_tokens = original_sequence.size(1)
-    min_ratio, max_ratio = 0.1, 0.7
-    target_mask_ratio = torch.rand(1).item() * (max_ratio - min_ratio) + min_ratio
-    target_masked_tokens = int(total_tokens * target_mask_ratio)
+    # Build masked sequence
+    if mode == "completion" and completion_tokens > 0:
+        # Append mask tokens to the right for completion
+        total_tokens = original_sequence.size(1) + int(completion_tokens)
+        masked_indices = torch.zeros(
+            1, total_tokens, dtype=torch.bool, device=original_sequence.device
+        )
+        masked_indices[0, -int(completion_tokens) :] = True
 
-    # Create random mask indices
-    mask_positions = torch.randperm(total_tokens)[:target_masked_tokens]
-    masked_indices = torch.zeros(
-        1, total_tokens, dtype=torch.bool, device=original_sequence.device
-    )
-    masked_indices[0, mask_positions] = True
+        append = torch.full(
+            (1, int(completion_tokens)), mask_token_id, device=original_sequence.device
+        )
+        masked_sequence = torch.cat([original_sequence, append], dim=1)
+        masked_tokens = int(completion_tokens)
+        mask_ratio = masked_tokens / total_tokens
+    else:
+        # Apply random masking with optional fixed ratio
+        total_tokens = original_sequence.size(1)
+        if target_mask_ratio is None:
+            min_ratio, max_ratio = 0.1, 0.7
+            target_mask_ratio = (
+                torch.rand(1).item() * (max_ratio - min_ratio) + min_ratio
+            )
+        target_masked_tokens = max(1, int(total_tokens * float(target_mask_ratio)))
 
-    # Create masked sequence
-    masked_sequence = original_sequence.clone()
-    masked_sequence[masked_indices] = mask_token_id
+        # Create random mask indices
+        mask_positions = torch.randperm(total_tokens)[:target_masked_tokens]
+        masked_indices = torch.zeros(
+            1, total_tokens, dtype=torch.bool, device=original_sequence.device
+        )
+        masked_indices[0, mask_positions] = True
 
-    # Calculate actual mask ratio
-    masked_tokens = masked_indices.sum().item()
-    mask_ratio = masked_tokens / total_tokens
+        # Create masked sequence
+        masked_sequence = original_sequence.clone()
+        masked_sequence[masked_indices] = mask_token_id
+
+        # Calculate actual mask ratio
+        masked_tokens = masked_indices.sum().item()
+        mask_ratio = masked_tokens / total_tokens
 
     # Get masked text for comparison
     masked_text = tokenizer.decode(masked_sequence[0].cpu(), skip_special_tokens=False)
-    # Clean up mask token representation
     masked_text = _clean_masked_text(masked_text, tokenizer, mask_token_id)
 
     # Run reverse diffusion process
@@ -167,6 +196,24 @@ def _generate(
     # Get final generated text
     generated_text = tokenizer.decode(sequence[0].cpu(), skip_special_tokens=True)
 
+    # Collect diagnostic info for richer UIs
+    try:
+        final_ids = sequence[0].detach().cpu().tolist()
+    except Exception:  # pragma: no cover
+        final_ids = None
+
+    try:
+        if masked_indices is not None:
+            masked_positions = (
+                torch.where(masked_indices[0])[0].detach().cpu().tolist()
+                if masked_indices.ndim == 2
+                else []
+            )
+        else:
+            masked_positions = []
+    except Exception:  # pragma: no cover
+        masked_positions = []
+
     return {
         "original": original_text,
         "masked": masked_text,
@@ -174,6 +221,8 @@ def _generate(
         "mask_ratio": mask_ratio,
         "masked_tokens": masked_tokens,
         "total_tokens": total_tokens,
+        "generated_ids": final_ids,
+        "masked_positions": masked_positions,
         "formatted": (
             f"Original: '{original_text}' → Masked: '{masked_text}' "
             f"({mask_ratio:.1%}) → Generated: '{generated_text}'"
@@ -181,18 +230,30 @@ def _generate(
     }
 
 
+# Backwards compatibility for older imports
+_generate = generate
+
+
 def _clean_masked_text(masked_text: str, tokenizer: Any, mask_token_id: int) -> str:
-    """Clean up masked text for display."""
+    """Clean up masked text for display while preserving line breaks.
+
+    - Replaces the actual mask token string with "[MASK]".
+    - Strips other special tokens.
+    - Collapses repeated spaces/tabs while keeping newlines intact.
+    """
     mask_token_repr = tokenizer.decode([mask_token_id], skip_special_tokens=False)
     cleaned = masked_text.replace(mask_token_repr, "[MASK]")
 
+    # Remove literal special token strings
     if hasattr(tokenizer, "special_tokens_map"):
         for token_value in tokenizer.special_tokens_map.values():
             if token_value and isinstance(token_value, str):
                 cleaned = cleaned.replace(token_value, "")
 
-    cleaned = " ".join(cleaned.split()).strip()
-
+    # Normalize whitespace but preserve newlines
+    cleaned = cleaned.replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = "\n".join(line.rstrip() for line in cleaned.split("\n")).strip()
     return cleaned
 
 

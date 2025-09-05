@@ -31,13 +31,14 @@ class DiffusionGenerationCallback(TrainerCallback):
             and state.global_step % self.trainer.config.generation_interval == 0
         ):
             # Use eval dataloader if available, otherwise use train dataloader
-            if (
-                hasattr(self.trainer, "eval_dataset")
-                and self.trainer.eval_dataset is not None
-            ):
-                dataloader = self.trainer.callback_handler.eval_dataloader
-            else:
-                dataloader = self.trainer.callback_handler.train_dataloader
+            dataloader = None
+            try:
+                if getattr(self.trainer, "eval_dataset", None) is not None:
+                    dataloader = self.trainer.get_eval_dataloader()
+            except Exception:  # pragma: no cover - fallback to train dataloader
+                dataloader = None
+            if dataloader is None:
+                dataloader = self.trainer.get_train_dataloader()
 
             # Generate samples
             samples = generate_samples(

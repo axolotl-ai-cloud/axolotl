@@ -67,7 +67,7 @@ class TestDiffusionTrainer:
         assert not masked_indices[special_token_positions].any()
 
         # Check that mask token is applied
-        mask_token_id = diffusion_trainer_instance._config.mask_token_id
+        mask_token_id = diffusion_trainer_instance.config.mask_token_id
         masked_positions = masked_indices
         if masked_positions.any():
             assert (noisy_batch[masked_positions] == mask_token_id).all()
@@ -131,7 +131,7 @@ class TestDiffusionTrainer:
         self, diffusion_trainer_instance
     ):
         """Test bidirectional attention mask with sample packing."""
-        diffusion_trainer_instance._config.sample_packing = True
+        diffusion_trainer_instance.config.sample_packing = True
         input_ids = torch.tensor([[1, 10, 20, 30, 40, 2]], dtype=torch.long)
         # Sample IDs: first sample (1), second sample (2)
         attention_mask = torch.tensor([[1, 1, 1, 2, 2, 2]], dtype=torch.long)

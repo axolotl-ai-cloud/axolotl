@@ -36,6 +36,7 @@ max_mask_ratio: 0.9
 num_diffusion_steps: 128
 eps: 1e-3
 importance_weighting: true
+# For non-Llama tokenizers, set this to a valid id (e.g., pad/eos)
 mask_token_id: 128002
 
 # Sample generation (optional)
@@ -102,6 +103,42 @@ Sample 1:
 ```
 
 Samples are logged to console and wandb (if enabled).
+
+## Inference
+
+After training, you can run lightweight reverse-diffusion on your model using the
+helper script `scripts/diffusion_infer.py`.
+
+Examples:
+
+- Provide your own texts:
+
+```
+python scripts/diffusion_infer.py \
+  --model /path/to/checkpoint \
+  --texts "The quick brown fox" "In a hole in the ground" \
+  --steps 32 --max-length 64 --num-samples 2
+```
+
+- Sample from a dataset:
+
+```
+python scripts/diffusion_infer.py \
+  --model /path/to/checkpoint \
+  --dataset mhenrichsen/alpaca_2k_test \
+  --dataset-field text --steps 32 --num-samples 2
+```
+
+Key options:
+- `--steps`: diffusion steps (lower for faster, e.g., 32)
+- `--num-samples`: number of samples to generate
+- `--mask-token-id`: token used for masking. Defaults to a Llama-3.2 id (128002). For
+  other models, prefer an existing reserved special token (e.g., a token containing
+  "reserved"/"mask"), or `unk_token_id`. Avoid using `pad`/`eos` if possible.
+
+Note: During training, if `mask_token_id` is unset or out-of-range for the tokenizer's
+vocabulary, Axolotl tries to auto-select a suitable id in this order:
+reserved special → other additional special → unk → pad → eos → vocab_size-1 → 0.
 
 ## Metrics and Monitoring
 
