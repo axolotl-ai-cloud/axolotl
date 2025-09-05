@@ -72,13 +72,15 @@ def infer_mask_token_id(tokenizer, cfg: DictDefault) -> int:
                 return tid
         except Exception:  # pragma: no cover
             pass
-    mid = cfg.get("mask_token_id")
-    if isinstance(mid, int):
+
+    mask_token_id = cfg.get("mask_token_id")
+    if isinstance(mask_token_id, int):
         try:
-            if 0 <= mid < len(tokenizer):
-                return mid
+            if 0 <= mask_token_id < len(tokenizer):
+                return mask_token_id
         except Exception:  # pragma: no cover
             pass
+
     specials = (getattr(tokenizer, "all_special_tokens", []) or []) + (
         getattr(tokenizer, "additional_special_tokens", []) or []
     )
