@@ -34,6 +34,7 @@ plugins:
 - arcee
 - cohere
 - cohere2
+- deepseek_v3
 - gemma
 - gemma2
 - gemma3
@@ -42,6 +43,7 @@ plugins:
 - gemma3n_text
 - glm
 - glm4
+- glm4_moe
 - gpt_oss
 - granite
 - granitemoe
@@ -64,6 +66,7 @@ plugins:
 - qwen3
 - qwen3_moe
 - smollm3
+- seed_oss
 - voxtral
 
 ## Citation
