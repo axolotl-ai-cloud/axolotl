@@ -15,6 +15,14 @@ from .callbacks import DiffusionGenerationCallback
 LOG = get_logger(__name__)
 
 
+def _maybe_torch_compile(fn):
+    """Guards environments where compilation is unsupported."""
+    try:
+        return torch.compile(fn)
+    except Exception:
+        return fn
+
+
 class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
     """Custom trainer for diffusion LM training that overrides loss computation."""
 
@@ -27,10 +35,132 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         """Set config for diffusion training."""
         self.config = config
         self._cache_special_token_ids()
+        self._resolve_mask_token_id()
+        # Log the resolved mask token id and string representation (if available)
+        try:
+            tok = getattr(self, "processing_class", None)
+            tid = int(self.config.mask_token_id)
+            token_repr = None
+            if tok is not None:
+                if hasattr(tok, "convert_ids_to_tokens"):
+                    try:
+                        token_repr = tok.convert_ids_to_tokens(tid)
+                    except Exception:  # pragma: no cover
+                        token_repr = None
+                if not token_repr and hasattr(tok, "decode"):
+                    try:
+                        token_repr = tok.decode([tid], skip_special_tokens=False)
+                    except Exception:  # pragma: no cover
+                        token_repr = None
+            LOG.info(
+                "Diffusion: using mask_token_id=%s%s",
+                tid,
+                f" (token={token_repr})" if token_repr else "",
+            )
+        except Exception:  # pragma: no cover
+            pass
 
         if config.generate_samples:
             generation_callback = DiffusionGenerationCallback(self)
             self.add_callback(generation_callback)
+
+    def _resolve_mask_token_id(self) -> None:
+        """Ensure mask_token_id is valid for the current tokenizer."""
+        tokenizer = getattr(self, "processing_class", None)
+        cfg_id = getattr(self.config, "mask_token_id", None)
+
+        # Determine vocab size if available
+        vocab_size = None
+        if tokenizer is not None:
+            if hasattr(tokenizer, "vocab_size") and tokenizer.vocab_size is not None:
+                vocab_size = int(tokenizer.vocab_size)
+            else:
+                try:
+                    vocab_size = int(len(tokenizer))
+                except Exception:
+                    vocab_size = None
+
+        def _ensure_new_special_token() -> int | None:
+            if tokenizer is None:
+                return None
+
+            # Choose desired token string
+            token_str = (
+                getattr(self.config, "mask_token_str", None) or "<|diffusion_mask|>"
+            )
+            try:
+                existing_id = tokenizer.convert_tokens_to_ids(token_str)
+                unk_id = getattr(tokenizer, "unk_token_id", None)
+                is_in_specials = token_str in (
+                    getattr(tokenizer, "all_special_tokens", []) or []
+                ) or token_str in (
+                    getattr(tokenizer, "additional_special_tokens", []) or []
+                )
+                is_real = (
+                    isinstance(existing_id, int)
+                    and existing_id >= 0
+                    and (vocab_size is None or existing_id < vocab_size)
+                    and (unk_id is None or existing_id != unk_id)
+                    and is_in_specials
+                )
+                if is_real:
+                    return existing_id
+            except Exception:
+                pass
+
+            # Otherwise, add as additional special token
+            added = tokenizer.add_special_tokens(
+                {"additional_special_tokens": [token_str]}
+            )
+            new_vocab = len(tokenizer) if hasattr(tokenizer, "__len__") else None
+            if new_vocab is not None and hasattr(self, "model"):
+                self.model.resize_token_embeddings(new_vocab)
+
+            new_id = tokenizer.convert_tokens_to_ids(token_str)
+            if isinstance(new_id, int) and new_id >= 0:
+                LOG.info(
+                    f"Diffusion: added special mask token '{token_str}' with "
+                    f"id={new_id} (added={added})"
+                )
+                return new_id
+
+            return None
+
+        # Validate configured id
+        needs_fallback = (
+            cfg_id is None
+            or (isinstance(cfg_id, int) and cfg_id < 0)
+            or (
+                isinstance(cfg_id, int)
+                and vocab_size is not None
+                and cfg_id >= vocab_size
+            )
+        )
+        if needs_fallback:
+            # Create a dedicated special token and resize embeddings
+            new_id = _ensure_new_special_token()
+            token_repr = None
+
+            try:
+                if tokenizer is not None and hasattr(
+                    tokenizer, "convert_ids_to_tokens"
+                ):
+                    token_repr = tokenizer.convert_ids_to_tokens(new_id)
+                if (
+                    not token_repr
+                    and tokenizer is not None
+                    and hasattr(tokenizer, "decode")
+                ):
+                    token_repr = tokenizer.decode([new_id], skip_special_tokens=False)
+            except Exception:
+                token_repr = None
+
+            LOG.warning(
+                f"Invalid or unset diffusion.mask_token_id={cfg_id} for "
+                f"vocab_size={vocab_size}. Using {new_id} "
+                f"{'(token={token_repr})' if token_repr else ''}",
+            )
+            self.config.mask_token_id = new_id
 
     def compute_loss(
         self,
@@ -73,7 +203,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
 
         self._special_token_ids = special_tokens
 
-    @torch.compile
+    @_maybe_torch_compile
     def _forward_process(
         self,
         input_ids: torch.Tensor,
@@ -134,7 +264,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
 
         return noisy_batch, masked_indices, p_mask
 
-    @torch.compile
+    @_maybe_torch_compile
     def _create_bidirectional_attention_mask(
         self, input_ids: torch.Tensor, attention_mask: torch.Tensor | None = None
     ) -> torch.Tensor:
@@ -270,6 +400,15 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             "avg_p_mask": p_mask[masked_indices].mean().item(),
             "ce_loss": ce_loss.item(),
         }
+        # When SFT labels are provided, also log answer-specific metrics
+        if labels is not None:
+            with torch.no_grad():
+                answer_mask = labels != -100
+                answer_lengths = answer_mask.sum(dim=1).float()  # [batch_size]
+                total_answer_tokens = answer_mask.sum().item()
+                total_tokens = labels.numel()
+                metrics["answer_ratio"] = total_answer_tokens / max(total_tokens, 1)
+                metrics["avg_answer_length"] = answer_lengths.mean().item()
         if self.config.importance_weighting:
             metrics["importance_weight_avg"] = (1.0 / masked_p_mask).mean().item()
 

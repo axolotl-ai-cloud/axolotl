@@ -45,11 +45,18 @@ class TestDiffusion:
                 "save_first_step": False,
                 "logging_steps": 1,
                 "eval_steps": 3,
+                # Enable lightweight sample generation via callback
+                "generate_samples": True,
+                "generation_interval": 1,
+                "num_generation_samples": 1,
+                "generation_steps": 2,
+                "generation_max_length": 32,
+                "generation_temperature": 0.0,
                 # Diffusion-specific config
                 "plugins": ["axolotl.integrations.diffusion.DiffusionPlugin"],
-                "diffusion_mask_token_id": 16,
-                "diffusion_eps": 1e-3,
-                "diffusion_importance_weighting": False,
+                "mask_token_id": 16,
+                "eps": 1e-3,
+                "importance_weighting": False,
             }
         )
 
@@ -91,11 +98,18 @@ class TestDiffusion:
                 "save_first_step": False,
                 "logging_steps": 1,
                 "eval_steps": 2,
+                # Enable lightweight sample generation via callback
+                "generate_samples": True,
+                "generation_interval": 1,
+                "num_generation_samples": 1,
+                "generation_steps": 2,
+                "generation_max_length": 32,
+                "generation_temperature": 0.0,
                 # Diffusion-specific config
                 "plugins": ["axolotl.integrations.diffusion.DiffusionPlugin"],
-                "diffusion_mask_token_id": 16,
-                "diffusion_eps": 1e-3,
-                "diffusion_importance_weighting": True,
+                "mask_token_id": 16,
+                "eps": 1e-3,
+                "importance_weighting": True,
                 # Ensure we have proper SFT labels
                 "train_on_inputs": False,
             }

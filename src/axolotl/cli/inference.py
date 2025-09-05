@@ -10,6 +10,12 @@ import fire
 import torch
 import transformers
 from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
+from colorama import Fore, Style, init as colorama_init
+
+from axolotl.cli.utils.diffusion import (
+    run_diffusion,
+    parse_commands,
+)
 
 from axolotl.cli.args import InferenceCliArgs
 from axolotl.cli.config import load_cfg
@@ -19,6 +25,7 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+colorama_init(autoreset=True)
 
 
 def get_multi_line_input() -> str:
@@ -29,6 +36,7 @@ def get_multi_line_input() -> str:
         Possibly multi-line, possibly empty stdin input as a string.
     """
     print("Give me an instruction (Ctrl + D to submit): ")
+    print("=" * 80)
 
     instruction = ""
     for line in sys.stdin:
@@ -71,9 +79,32 @@ def do_inference(
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
+    # Detect diffusion mode from plugins
+    plugins = cfg.get("plugins") or []
+    is_diffusion = any(
+        isinstance(p, str)
+        and (
+            p == "axolotl.integrations.diffusion.DiffusionPlugin"
+            or p.endswith("diffusion.DiffusionPlugin")
+            or "diffusion" in p
+        )
+        for p in plugins
+    )
+
+    # Print diffusion commands once at startup
+    if is_diffusion:
+        print("Commands:")
+        print(":complete N -> completion mode with N tokens (default 64)")
+        print(":mask R     -> random masking with ratio R (0.0–1.0)")
+
+    if is_diffusion:
+        print("=" * 80)
+        print("Commands:")
+        print(":complete N -> completion mode with N tokens (default 64)")
+        print(":mask R     -> random masking with ratio R (0.0–1.0)")
+
     while True:
         print("=" * 80)
-        # support for multiline inputs
         instruction = get_multi_line_input()
         if not instruction:
             return
@@ -103,9 +134,109 @@ def do_inference(
         else:
             batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
-        print("=" * 40)
+        print("=" * 80)
         model.eval()
         with torch.no_grad():
+            if is_diffusion:
+                # Diffusion interactive generation
+                mode = "random"
+                completion_tokens = 0
+                target_mask_ratio = None
+                mode, completion_tokens, target_mask_ratio, cleaned = parse_commands(
+                    prompt
+                )
+
+                # Use cleaned prompt without command tokens
+                if cleaned:
+                    prompt = cleaned
+                    if chat_template_str:
+                        batch = tokenizer.apply_chat_template(
+                            [
+                                {
+                                    "role": "user",
+                                    "content": prompt,
+                                }
+                            ],
+                            return_tensors="pt",
+                            add_special_tokens=True,
+                            add_generation_prompt=True,
+                            chat_template=chat_template_str,
+                            tokenize=True,
+                            return_dict=True,
+                        )
+                    else:
+                        batch = tokenizer(
+                            prompt, return_tensors="pt", add_special_tokens=True
+                        )
+
+                info = run_diffusion(
+                    model=model,
+                    tokenizer=tokenizer,
+                    cfg=cfg,
+                    prompt=prompt,
+                    chat_template_str=chat_template_str,
+                    mode=mode,
+                    target_mask_ratio=target_mask_ratio,
+                    completion_tokens=completion_tokens,
+                )
+                masked_text = info["masked_text"]
+                mask_ratio = info["mask_ratio"]
+                generated_ids = info["generated_ids"]
+                masked_positions = info["masked_positions"]
+                orig_ids = info["orig_ids"]
+
+                # Display with masked preview and colored diff
+                if masked_text is not None and mask_ratio is not None:
+                    print(f"Masked ({mask_ratio:.1%}):\n{masked_text}\n")
+                if generated_ids is not None:
+                    # Compute style label per position (avoid nested closures for clarity)
+                    styles: list[str] = []
+                    for i, tid in enumerate(generated_ids):
+                        if i in masked_positions:
+                            if i < len(orig_ids) and tid == orig_ids[i]:
+                                styles.append("green")  # correct fill
+                            elif i < len(orig_ids):
+                                styles.append("red")  # incorrect fill
+                            else:
+                                styles.append("normal")  # appended
+                        else:
+                            same = i < len(orig_ids) and tid == orig_ids[i]
+                            styles.append("dim" if same else "normal")
+
+                    # Group contiguous spans by style
+                    styled_spans: list[tuple[str, int, int]] = []
+                    if generated_ids:
+                        current_style = styles[0]
+                        start = 0
+                        for i in range(1, len(generated_ids)):
+                            s = styles[i]
+                            if s != current_style:
+                                styled_spans.append((current_style, start, i))
+                                current_style, start = s, i
+                        styled_spans.append((current_style, start, len(generated_ids)))
+
+                    out_parts = []
+                    for style_name, a, b in styled_spans:
+                        chunk_text = tokenizer.decode(
+                            generated_ids[a:b], skip_special_tokens=False
+                        )
+                        if style_name == "green":
+                            out_parts.append(Fore.GREEN + chunk_text + Style.RESET_ALL)
+                        elif style_name == "red":
+                            out_parts.append(Fore.RED + chunk_text + Style.RESET_ALL)
+                        else:
+                            if style_name == "dim":
+                                out_parts.append(
+                                    Style.DIM + chunk_text + Style.RESET_ALL
+                                )
+                            else:
+                                out_parts.append(chunk_text)
+                    print("Generated:\n" + "".join(out_parts))
+                else:
+                    print("Generated:\n(no output)")
+
+                continue
+
             generation_config = GenerationConfig(
                 repetition_penalty=1.1,
                 max_new_tokens=1024,
@@ -128,7 +259,7 @@ def do_inference(
                 generation_config=generation_config,
                 streamer=streamer,
             )
-        print("=" * 40)
+        print("=" * 80)
         print(tokenizer.decode(generated["sequences"].cpu().tolist()[0]))
 
 
