@@ -32,7 +32,6 @@ from transformers import AutoModelForCausalLM
 from transformers.trainer_callback import TrainerState
 
 from tests.e2e.utils import (
-    require_torch_2_6_0,
     require_torch_2_8_0,
     requires_sm_ge_100,
     requires_cuda_ge_8_9,
@@ -142,7 +141,7 @@ class TestQuantization:
         ptq_config_test_cases,
     )
     @requires_cuda_ge_8_9
-    @require_torch_2_6_0
+    @require_torch_2_8_0
     def test_get_ptq_config(
         self, weight_dtype, activation_dtype, group_size, expected_type, expected_params
     ):
@@ -168,7 +167,7 @@ class TestQuantization:
         ptq_test_cases,
     )
     @requires_cuda_ge_8_9
-    @require_torch_2_6_0
+    @require_torch_2_8_0
     def test_quantize_model_for_ptq(
         self,
         model,
@@ -251,7 +250,7 @@ class TestQuantization:
             (TorchAOQuantDType.int4, TorchAOQuantDType.float8_e4m3fn, None, True),
         ],
     )
-    @require_torch_2_6_0
+    @require_torch_2_8_0
     @requires_cuda_ge_8_9
     def test_prepare_model_for_qat(
         self, model, weight_dtype, activation_dtype, group_size, quantize_embedding
@@ -292,7 +291,7 @@ class TestQuantization:
                 else:
                     assert child.activation_fake_quantizer is None
 
-    @require_torch_2_6_0
+    @require_torch_2_8_0
     @requires_cuda_ge_8_9
     def test_convert_qat_model(self, model):
         config = QATConfig(
@@ -339,7 +338,7 @@ class TestQuantizationCallback:
             global_step=0,
         )
 
-    @require_torch_2_6_0
+    @require_torch_2_8_0
     def test_qat_callback_fake_quant_after_n_steps(self, model, trainer_state):
         cfg = QATConfig(
             weight_dtype="int4",
@@ -389,7 +388,7 @@ class TestQuantizationCallback:
         assert model.model.embed_tokens.weight_fake_quantizer.enabled
         assert model.lm_head.weight_fake_quantizer.enabled
 
-    @require_torch_2_6_0
+    @require_torch_2_8_0
     def test_qat_callback_fake_quant_after_n_steps_is_none(self, model, trainer_state):
         cfg = QATConfig(
             weight_dtype="int4",
