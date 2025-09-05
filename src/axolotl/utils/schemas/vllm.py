@@ -57,3 +57,15 @@ class VllmConfig(BaseModel):
         default=None,
         json_schema_extra={"description": "Reasoning parser for VLLM"},
     )
+    enable_sleep_mode: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable sleep mode for vLLM to offload VRAM when idle"
+        },
+    )
+    sleep_timeout: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Timeout in seconds before entering sleep mode"
+        },
+    )
