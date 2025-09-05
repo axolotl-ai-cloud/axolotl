@@ -50,7 +50,7 @@ class AxolotlTrainingMixins:
         metadata={"help": "Use real batches for efficient training."},
     )
     include_tkps: bool = field(
-        default=None,
+        default=False,
         metadata={
             "help": "Whether to include tokens per second in the training metrics."
         },
