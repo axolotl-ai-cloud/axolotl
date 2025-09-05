@@ -9,17 +9,16 @@ from typing import Union
 import fire
 import torch
 import transformers
-from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 from colorama import Fore, Style, init as colorama_init
-
-from axolotl.cli.utils.diffusion import (
-    run_diffusion,
-    parse_commands,
-)
+from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 
 from axolotl.cli.args import InferenceCliArgs
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
+from axolotl.cli.utils.diffusion import (
+    parse_commands,
+    run_diffusion,
+)
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
