@@ -11,14 +11,12 @@ from torchao.quantization.qat import (
 from torchao.quantization.quant_api import (
     Float8DynamicActivationFloat8WeightConfig,
     Float8DynamicActivationInt4WeightConfig,
-    Int4WeightOnlyConfig,
     Int8DynamicActivationInt4WeightConfig,
 )
 
 from axolotl.utils.schemas.enums import TorchAOQuantDType
 
 quantization_config_to_str = {
-    Int4WeightOnlyConfig: "int4",
     Int8DynamicActivationInt4WeightConfig: "int8int4",
     Float8DynamicActivationFloat8WeightConfig: "fp8fp8",
     Float8DynamicActivationInt4WeightConfig: "fp8int4",
@@ -28,6 +26,15 @@ try:
     from torchao.prototype.mx_formats import NVFP4InferenceConfig
 
     quantization_config_to_str[NVFP4InferenceConfig] = "nvfp4"
+except:
+    pass
+
+# int4 weight config imports will fail on machines with fbgemm-gpu installed
+# without a CUDA runtime available so we do this safely
+try:
+    from torchao.quantization.quant_api import Int4WeightOnlyConfig
+
+    quantization_config_to_str[Int4WeightOnlyConfig] = "int4"
 except:
     pass
 
@@ -56,6 +63,8 @@ def get_quantization_config(
         if weight_dtype == TorchAOQuantDType.int8:
             raise ValueError("Int8WeightOnlyConfig is not supported by torchao QAT.")
         if weight_dtype == TorchAOQuantDType.int4:
+            from torchao.quantization.quant_api import Int4WeightOnlyConfig
+
             return Int4WeightOnlyConfig(group_size=group_size or -1, version=2)
     if (
         activation_dtype == TorchAOQuantDType.int4
