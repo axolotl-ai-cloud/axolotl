@@ -5,18 +5,11 @@ from enum import Enum
 import torch
 
 
-class TorchIntDType(Enum):
-    """Torch integer data types - `getattr` guards against torch < 2.6 which does not support int4"""
-
-    uint1 = getattr(torch, "uint1", None)
-    uint2 = getattr(torch, "uint2", None)
-    uint3 = getattr(torch, "uint3", None)
-    uint4 = getattr(torch, "uint4", None)
-    uint5 = getattr(torch, "uint5", None)
-    uint6 = getattr(torch, "uint6", None)
-    uint7 = getattr(torch, "uint7", None)
-    int4 = getattr(torch, "int4", None)
-    int8 = getattr(torch, "int8", None)
+class TorchAOQuantDType(Enum):
+    int4 = torch.int4
+    int8 = torch.int8
+    float8_e4m3fn = torch.float8_e4m3fn
+    nvfp4 = "nvfp4"
 
 
 class RLType(str, Enum):
