@@ -2,16 +2,8 @@
 
 from __future__ import annotations
 
-
+from axolotl.integrations.diffusion.generation import generate as diffusion_generate
 from axolotl.utils.dict import DictDefault
-
-# Import diffusion generator (backwards compatible alias)
-try:  # pragma: no cover - thin wrapper
-    from axolotl.integrations.diffusion.generation import (
-        generate as diffusion_generate,
-    )
-except Exception:  # pragma: no cover
-    diffusion_generate = None  # type: ignore
 
 
 def parse_commands(text: str):
