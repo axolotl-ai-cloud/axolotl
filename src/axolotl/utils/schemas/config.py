@@ -855,7 +855,7 @@ class AxolotlInputConfig(
         },
     )
     include_tkps: bool | None = Field(
-        default=None,
+        default=True,
         json_schema_extra={
             "description": "bool of whether to report tokens per second during training by measuring throughput of non-padding tokens."
         },
