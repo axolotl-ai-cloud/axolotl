@@ -38,21 +38,33 @@ def check_cuda_p2p_ib_support():
 def check_runpod_p2p_support() -> bool:
     if "RUNPOD_GPU_COUNT" not in os.environ:
         return True
-    gpu_count = int(os.environ.get("RUNPOD_GPU_COUNT", "1"))
+    try:
+        gpu_count = int(os.environ.get("RUNPOD_GPU_COUNT", "1"))
+    except ValueError:
+        return True
     if gpu_count >= 2:
-        # run `nnvidia-smi topo -p2p n | grep GPU0 | tail -n1` as subprocess and check if "OK" string is present
-        output = (
-            subprocess.check_output(["nvidia-smi", "topo", "-p2p", "n"])  # nosec B603 B607
-            .decode("utf-8")
-            .strip()
-        )
-        output_lines = output.split("\n")
-        # filter lines that contain "GPU0"
-        output_lines = [line for line in output_lines if "GPU0" in line]
-        # check if "OK" string is present in the last line
-        if "OK" in output_lines[-1]:
+        # run `nvidia-smi topo -p2p n` and inspect the GPU0 row
+        try:
+            result = subprocess.run(  # nosec B603 B607
+                ["nvidia-smi", "topo", "-p2p", "n"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (
+            subprocess.CalledProcessError,
+            FileNotFoundError,
+            subprocess.TimeoutExpired,
+        ):
+            return True  # fail-open if detection fails
+        output_lines = result.stdout.strip().split("\n")
+        # filter rows that start with "GPU0" (avoid header row)
+        gpu0_rows = [line for line in output_lines if line.lstrip().startswith("GPU0")]
+        if not gpu0_rows:
             return True
-        return False
+        # consider P2P supported if any OK is present in the GPU0 row
+        return "OK" in gpu0_rows[-1]
     return True
 
 
