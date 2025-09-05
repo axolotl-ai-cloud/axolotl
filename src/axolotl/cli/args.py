@@ -103,6 +103,14 @@ class VllmServeCliArgs:
     reasoning_parser: Optional[str] = field(
         default=None,
     )
+    enable_sleep_mode: Optional[bool] = field(
+        default=None,
+        metadata={"help": "Enable sleep mode for vLLM to offload VRAM when idle."},
+    )
+    sleep_timeout: Optional[int] = field(
+        default=None,
+        metadata={"help": "Timeout in seconds before entering sleep mode."},
+    )
 
 
 @dataclass
