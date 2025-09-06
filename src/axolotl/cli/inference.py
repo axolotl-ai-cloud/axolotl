@@ -50,9 +50,9 @@ def do_inference(
     cli_args: InferenceCliArgs,
 ):
     """
-    Runs inference on the command line in a loop. User input is accepted, a chat template
-    is (optionally) applied, and the model specified in the `axolotl` config is used to
-    generate completions according to a default generation config.
+    Runs inference on the command line in a loop. User input is accepted, a chat
+    template is (optionally) applied, and the model specified in the `axolotl` config is
+    used to generate completions according to a default generation config.
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
@@ -89,12 +89,6 @@ def do_inference(
         )
         for p in plugins
     )
-
-    # Print diffusion commands once at startup
-    if is_diffusion:
-        print("Commands:")
-        print(":complete N -> completion mode with N tokens (default 64)")
-        print(":mask R     -> random masking with ratio R (0.0–1.0)")
 
     if is_diffusion:
         print("=" * 80)
@@ -188,7 +182,7 @@ def do_inference(
                 if masked_text is not None and mask_ratio is not None:
                     print(f"Masked ({mask_ratio:.1%}):\n{masked_text}\n")
                 if generated_ids is not None:
-                    # Compute style label per position (avoid nested closures for clarity)
+                    # Compute per-token style
                     styles: list[str] = []
                     for i, tid in enumerate(generated_ids):
                         if i in masked_positions:
@@ -225,9 +219,7 @@ def do_inference(
                             out_parts.append(Fore.RED + chunk_text + Style.RESET_ALL)
                         else:
                             if style_name == "dim":
-                                out_parts.append(
-                                    Style.DIM + chunk_text + Style.RESET_ALL
-                                )
+                                out_parts.append(Style.DIM + chunk_text + Style.RESET_ALL)
                             else:
                                 out_parts.append(chunk_text)
                     print("Generated:\n" + "".join(out_parts))

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from axolotl.integrations.diffusion.generation import generate as diffusion_generate
 from axolotl.utils.dict import DictDefault
+from axolotl.integrations.diffusion.utils import resolve_mask_token_id
 
 
 def parse_commands(text: str):
@@ -54,67 +55,8 @@ def parse_commands(text: str):
 
 
 def infer_mask_token_id(tokenizer, cfg: DictDefault) -> int:
-    """Infer mask token id from tokenizer/config, preferring a saved diffusion token."""
-    mts = cfg.get("mask_token_str")
-    if mts:
-        try:
-            tid = tokenizer.convert_tokens_to_ids(mts)
-            unk_id = getattr(tokenizer, "unk_token_id", None)
-            specials = (getattr(tokenizer, "all_special_tokens", []) or []) + (
-                getattr(tokenizer, "additional_special_tokens", []) or []
-            )
-            if (
-                isinstance(tid, int)
-                and tid >= 0
-                and (unk_id is None or tid != unk_id)
-                and mts in specials
-            ):
-                return tid
-        except Exception:  # pragma: no cover
-            pass
-
-    mask_token_id = cfg.get("mask_token_id")
-    if isinstance(mask_token_id, int):
-        try:
-            if 0 <= mask_token_id < len(tokenizer):
-                return mask_token_id
-        except Exception:  # pragma: no cover
-            pass
-
-    specials = (getattr(tokenizer, "all_special_tokens", []) or []) + (
-        getattr(tokenizer, "additional_special_tokens", []) or []
-    )
-
-    def _ok(s: str) -> bool:
-        low = s.lower()
-        if any(
-            bad in low
-            for bad in [
-                "im_start",
-                "im_end",
-                "bos",
-                "eos",
-                "pad",
-                "system",
-                "assistant",
-                "user",
-            ]
-        ):
-            return False
-        return ("diffusion" in low) or ("mask" in low)
-
-    for s in specials:
-        if _ok(s):
-            token_id = tokenizer.convert_tokens_to_ids(s)
-            unk_id = getattr(tokenizer, "unk_token_id", None)
-            if (
-                isinstance(token_id, int)
-                and token_id >= 0
-                and (unk_id is None or token_id != unk_id)
-            ):
-                return token_id
-
-    return getattr(tokenizer, "unk_token_id", 0) or 0
+    """Resolve mask token id for inference by reusing training logic (no mutation)."""
+    return resolve_mask_token_id(tokenizer, cfg, allow_add=False)
 
 
 def run_diffusion(

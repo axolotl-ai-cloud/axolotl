@@ -26,6 +26,8 @@ class DummyTrainer:
         # Model/tokenizer are passed through to generate_samples; not used here
         self.model = Mock()
         self.tokenizer = Mock()
+        # HF Trainer deprecates .tokenizer in favor of .processing_class
+        self.processing_class = self.tokenizer
 
         # Datasets and loaders
         self.eval_dataset = object() if use_eval else None

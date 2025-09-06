@@ -28,18 +28,18 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.config = None
+        self.cfg = None
         self._special_token_ids = None
 
     def set_config(self, config: DictDefault):
         """Set config for diffusion training."""
-        self.config = config
+        self.cfg = config
         self._cache_special_token_ids()
         self._resolve_mask_token_id()
         # Log the resolved mask token id and string representation (if available)
         try:
             tok = getattr(self, "processing_class", None)
-            tid = int(self.config.mask_token_id)
+            tid = int(self.cfg.mask_token_id)
             token_repr = None
             if tok is not None:
                 if hasattr(tok, "convert_ids_to_tokens"):
@@ -66,101 +66,22 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
 
     def _resolve_mask_token_id(self) -> None:
         """Ensure mask_token_id is valid for the current tokenizer."""
+        from .utils import resolve_mask_token_id
+
         tokenizer = getattr(self, "processing_class", None)
-        cfg_id = getattr(self.config, "mask_token_id", None)
+        if tokenizer is None:
+            return
 
-        # Determine vocab size if available
-        vocab_size = None
-        if tokenizer is not None:
-            if hasattr(tokenizer, "vocab_size") and tokenizer.vocab_size is not None:
-                vocab_size = int(tokenizer.vocab_size)
-            else:
-                try:
-                    vocab_size = int(len(tokenizer))
-                except Exception:
-                    vocab_size = None
-
-        def _ensure_new_special_token() -> int | None:
-            if tokenizer is None:
-                return None
-
-            # Choose desired token string
-            token_str = (
-                getattr(self.config, "mask_token_str", None) or "<|diffusion_mask|>"
-            )
-            try:
-                existing_id = tokenizer.convert_tokens_to_ids(token_str)
-                unk_id = getattr(tokenizer, "unk_token_id", None)
-                is_in_specials = token_str in (
-                    getattr(tokenizer, "all_special_tokens", []) or []
-                ) or token_str in (
-                    getattr(tokenizer, "additional_special_tokens", []) or []
-                )
-                is_real = (
-                    isinstance(existing_id, int)
-                    and existing_id >= 0
-                    and (vocab_size is None or existing_id < vocab_size)
-                    and (unk_id is None or existing_id != unk_id)
-                    and is_in_specials
-                )
-                if is_real:
-                    return existing_id
-            except Exception:
-                pass
-
-            # Otherwise, add as additional special token
-            added = tokenizer.add_special_tokens(
-                {"additional_special_tokens": [token_str]}
-            )
-            new_vocab = len(tokenizer) if hasattr(tokenizer, "__len__") else None
-            if new_vocab is not None and hasattr(self, "model"):
-                self.model.resize_token_embeddings(new_vocab)
-
-            new_id = tokenizer.convert_tokens_to_ids(token_str)
-            if isinstance(new_id, int) and new_id >= 0:
-                LOG.info(
-                    f"Diffusion: added special mask token '{token_str}' with "
-                    f"id={new_id} (added={added})"
-                )
-                return new_id
-
-            return None
-
-        # Validate configured id
-        needs_fallback = (
-            cfg_id is None
-            or (isinstance(cfg_id, int) and cfg_id < 0)
-            or (
-                isinstance(cfg_id, int)
-                and vocab_size is not None
-                and cfg_id >= vocab_size
-            )
+        mid = resolve_mask_token_id(
+            tokenizer,
+            self.cfg,
+            allow_add=True,
+            model=getattr(self, "model", None),
         )
-        if needs_fallback:
-            # Create a dedicated special token and resize embeddings
-            new_id = _ensure_new_special_token()
-            token_repr = None
-
-            try:
-                if tokenizer is not None and hasattr(
-                    tokenizer, "convert_ids_to_tokens"
-                ):
-                    token_repr = tokenizer.convert_ids_to_tokens(new_id)
-                if (
-                    not token_repr
-                    and tokenizer is not None
-                    and hasattr(tokenizer, "decode")
-                ):
-                    token_repr = tokenizer.decode([new_id], skip_special_tokens=False)
-            except Exception:
-                token_repr = None
-
-            LOG.warning(
-                f"Invalid or unset diffusion.mask_token_id={cfg_id} for "
-                f"vocab_size={vocab_size}. Using {new_id} "
-                f"{'(token={token_repr})' if token_repr else ''}",
-            )
-            self.config.mask_token_id = new_id
+        try:
+            self.cfg.mask_token_id = int(mid)
+        except Exception:  # pragma: no cover
+            pass
 
     def compute_loss(
         self,
@@ -259,7 +180,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             masked_indices = masked_indices & answer_mask
 
         # Create masked input
-        mask_token_id = self.config.mask_token_id
+        mask_token_id = self.cfg.mask_token_id
         noisy_batch = torch.where(masked_indices, mask_token_id, input_ids)
 
         return noisy_batch, masked_indices, p_mask
@@ -283,7 +204,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         batch_size, seq_len = input_ids.shape
         device = input_ids.device
 
-        if attention_mask is None or not self.config.sample_packing:
+        if attention_mask is None or not self.cfg.sample_packing:
             return torch.ones(
                 batch_size, 1, seq_len, seq_len, dtype=torch.bool, device=device
             )
@@ -322,7 +243,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         """
         # Apply forward process
         noisy_batch, masked_indices, p_mask = self._forward_process(
-            input_ids, attention_mask, labels, self.config.eps
+            input_ids, attention_mask, labels, self.cfg.eps
         )
 
         # Create bidirectional attention mask
@@ -350,7 +271,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
                 masked_logits.float(), masked_targets, reduction="none"
             )
 
-            if self.config.importance_weighting:
+            if self.cfg.importance_weighting:
                 masked_p_mask = masked_p_mask.float()
                 weighted_loss = token_loss / masked_p_mask
             else:
@@ -409,7 +330,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
                 total_tokens = labels.numel()
                 metrics["answer_ratio"] = total_answer_tokens / max(total_tokens, 1)
                 metrics["avg_answer_length"] = answer_lengths.mean().item()
-        if self.config.importance_weighting:
+        if self.cfg.importance_weighting:
             metrics["importance_weight_avg"] = (1.0 / masked_p_mask).mean().item()
 
         train_eval: Literal["train", "eval"] = "train" if model.training else "eval"

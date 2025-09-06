@@ -28,7 +28,7 @@ class DiffusionGenerationCallback(TrainerCallback):
         """Generate samples at specified intervals."""
         if (
             state.global_step > 0
-            and state.global_step % self.trainer.config.generation_interval == 0
+            and state.global_step % self.trainer.cfg.generation_interval == 0
         ):
             # Use eval dataloader if available, otherwise use train dataloader
             dataloader = None
@@ -43,13 +43,13 @@ class DiffusionGenerationCallback(TrainerCallback):
             # Generate samples
             samples = generate_samples(
                 model=self.trainer.model,
-                tokenizer=self.trainer.tokenizer,
+                tokenizer=self.trainer.processing_class,
                 dataloader=dataloader,
-                num_generation_samples=self.trainer.config.num_generation_samples,
-                max_length=self.trainer.config.generation_max_length,
-                num_diffusion_steps=self.trainer.config.generation_steps,
-                temperature=self.trainer.config.generation_temperature,
-                mask_token_id=self.trainer.config.mask_token_id,
+                num_generation_samples=self.trainer.cfg.num_generation_samples,
+                max_length=self.trainer.cfg.generation_max_length,
+                num_diffusion_steps=self.trainer.cfg.generation_steps,
+                temperature=self.trainer.cfg.generation_temperature,
+                mask_token_id=self.trainer.cfg.mask_token_id,
             )
 
             # Log samples
@@ -78,11 +78,61 @@ class DiffusionGenerationCallback(TrainerCallback):
                 f"\tMasked ({masked_tokens}/{total_tokens} tokens, "
                 f"{mask_ratio:.1%}): {masked}"
             )
-            LOG.info(f"\tGenerated: {generated}")
+            # Colorize per-token diff (same as CLI)
+            try:
+                gen_ids = sample_data.get("generated_ids")
+                orig_ids = sample_data.get("orig_ids")
+                masked_positions = set(sample_data.get("masked_positions") or [])
+                if isinstance(gen_ids, list) and isinstance(orig_ids, list):
+                    styles: list[str] = []
+                    for i, tid in enumerate(gen_ids):
+                        if i in masked_positions:
+                            if i < len(orig_ids) and tid == orig_ids[i]:
+                                styles.append("green")
+                            elif i < len(orig_ids):
+                                styles.append("red")
+                            else:
+                                styles.append("normal")
+                        else:
+                            same = i < len(orig_ids) and tid == orig_ids[i]
+                            styles.append("dim" if same else "normal")
+
+                    spans: list[tuple[str, int, int]] = []
+                    if gen_ids:
+                        cur = styles[0]
+                        start = 0
+                        for i in range(1, len(gen_ids)):
+                            s = styles[i]
+                            if s != cur:
+                                spans.append((cur, start, i))
+                                cur, start = s, i
+                        spans.append((cur, start, len(gen_ids)))
+
+                    from colorama import Fore, Style
+
+                    parts = []
+                    for style_name, a, b in spans:
+                        chunk_text = self.trainer.processing_class.decode(
+                            gen_ids[a:b], skip_special_tokens=False
+                        )
+                        if style_name == "green":
+                            parts.append(Fore.GREEN + chunk_text + Style.RESET_ALL)
+                        elif style_name == "red":
+                            parts.append(Fore.RED + chunk_text + Style.RESET_ALL)
+                        else:
+                            if style_name == "dim":
+                                parts.append(Style.DIM + chunk_text + Style.RESET_ALL)
+                            else:
+                                parts.append(chunk_text)
+                    LOG.info("\tGenerated:\n%s", "".join(parts))
+                else:
+                    LOG.info(f"\tGenerated: {generated}")
+            except Exception:  # pragma: no cover
+                LOG.info(f"\tGenerated: {generated}")
 
         LOG.info("=" * 60)
 
-        if self.trainer.config.use_wandb and self.trainer.state.is_world_process_zero:
+        if self.trainer.cfg.use_wandb and self.trainer.state.is_world_process_zero:
             if wandb.run is not None:
                 wandb.log(
                     {

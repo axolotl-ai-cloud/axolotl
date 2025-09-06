@@ -203,6 +203,11 @@ def generate(
         final_ids = None
 
     try:
+        orig_ids_for_render = original_sequence[0].detach().cpu().tolist()
+    except Exception:  # pragma: no cover
+        orig_ids_for_render = None
+
+    try:
         if masked_indices is not None:
             masked_positions = (
                 torch.where(masked_indices[0])[0].detach().cpu().tolist()
@@ -214,7 +219,7 @@ def generate(
     except Exception:  # pragma: no cover
         masked_positions = []
 
-    return {
+    result = {
         "original": original_text,
         "masked": masked_text,
         "generated": generated_text,
@@ -223,11 +228,14 @@ def generate(
         "total_tokens": total_tokens,
         "generated_ids": final_ids,
         "masked_positions": masked_positions,
+        "orig_ids": orig_ids_for_render,
         "formatted": (
             f"Original: '{original_text}' → Masked: '{masked_text}' "
             f"({mask_ratio:.1%}) → Generated: '{generated_text}'"
         ),
     }
+
+    return result
 
 
 # Backwards compatibility for older imports

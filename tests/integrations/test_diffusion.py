@@ -39,7 +39,7 @@ def diffusion_trainer_instance(mock_tokenizer, diffusion_config):
     """Create a diffusion trainer instance for testing methods directly."""
     # Create a minimal trainer instance just for testing methods
     trainer = object.__new__(DiffusionTrainer)  # Bypass __init__
-    trainer.config = diffusion_config
+    trainer.cfg = diffusion_config
     trainer._special_token_ids = {0, 1, 2}  # pad, bos, eos
     trainer.processing_class = mock_tokenizer
     trainer.store_metrics = Mock()  # Mock metrics storage
