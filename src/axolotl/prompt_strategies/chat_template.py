@@ -802,8 +802,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                     if isinstance(args, str):
                         try:
                             tool_call["function"]["arguments"] = json.loads(args)
-                        except json.JSONDecodeError:
-                            tool_call["function"]["arguments"] = {}
+                        except json.JSONDecodeError as e:
+                            LOG.error(f"Error in tool_calls arguments format, {e}")
+                            raise
 
         return transformed_message
 
