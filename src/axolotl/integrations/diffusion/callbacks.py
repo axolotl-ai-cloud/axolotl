@@ -95,7 +95,7 @@ class DiffusionGenerationCallback(TrainerCallback):
                 f"\tMasked ({masked_tokens}/{total_tokens} tokens, "
                 f"{mask_ratio:.1%}): {masked}"
             )
-            # Colorize per-token diff (same as CLI)
+
             try:
                 gen_ids = sample_data.get("generated_ids")
                 orig_ids = sample_data.get("orig_ids")
@@ -142,7 +142,7 @@ class DiffusionGenerationCallback(TrainerCallback):
                     logger.info("\tGenerated:\n%s", "".join(parts))
                 else:
                     logger.info(f"\tGenerated: {generated}")
-            except Exception:  # pragma: no cover
+            except Exception:
                 logger.info(f"\tGenerated: {generated}")
 
         logger.info("=" * 60)
