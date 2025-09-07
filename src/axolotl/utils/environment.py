@@ -6,8 +6,6 @@ from importlib.metadata import version
 
 from accelerate.utils.environment import (
     check_cuda_p2p_ib_support as accelerate_check_cuda_p2p_ib_support,
-)
-from accelerate.utils.environment import (
     get_gpu_info,
 )
 from packaging.version import Version, parse
