@@ -298,8 +298,15 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
 
                 loss = loss_per_sample.mean()
             else:
-                # Original normalization for non-SFT data
-                loss = weighted_loss.sum() / (input_ids.shape[0] * input_ids.shape[1])
+                # Non-SFT: when importance weighting is enabled, use unbiased estimator
+                # (sum(loss/p) / total_tokens). Otherwise, average over masked tokens
+                # for stable scaling across varying mask ratios.
+                if self.cfg.diffusion_importance_weighting:
+                    loss = weighted_loss.sum() / (
+                        input_ids.shape[0] * input_ids.shape[1]
+                    )
+                else:
+                    loss = weighted_loss.mean()
 
             ce_loss = token_loss.mean()
 
@@ -313,12 +320,15 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             ce_loss = torch.tensor(0.0, device=input_ids.device)
             masked_p_mask = torch.tensor(1.0, device=input_ids.device)
 
+        avg_p_mask = (
+            p_mask[masked_indices].mean().item() if masked_indices.any() else 0.0
+        )
         metrics = {
             "loss": loss.item(),
             "accuracy": accuracy.item(),
             "mask_ratio": masked_indices.float().mean().item(),
             "num_masked_tokens": (masked_indices.sum().item(), "sum"),
-            "avg_p_mask": p_mask[masked_indices].mean().item(),
+            "avg_p_mask": avg_p_mask,
             "ce_loss": ce_loss.item(),
         }
         # When SFT labels are provided, also log answer-specific metrics

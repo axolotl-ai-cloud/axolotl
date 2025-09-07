@@ -4,6 +4,7 @@ import logging
 import sys
 
 import wandb
+from colorama import Fore, Style
 from transformers.trainer_callback import TrainerCallback, TrainerControl, TrainerState
 from transformers.training_args import TrainingArguments
 
@@ -42,12 +43,16 @@ class DiffusionGenerationCallback(TrainerCallback):
             state.global_step > 0
             and state.global_step % self.trainer.cfg.diffusion_generation_interval == 0
         ):
+            # Only the main process generates / logs samples
+            if not getattr(self.trainer.state, "is_world_process_zero", True):
+                return
+
             # Use eval dataloader if available, otherwise use train dataloader
             dataloader = None
             try:
                 if getattr(self.trainer, "eval_dataset", None) is not None:
                     dataloader = self.trainer.get_eval_dataloader()
-            except Exception:  # pragma: no cover - fallback to train dataloader
+            except Exception:
                 dataloader = None
             if dataloader is None:
                 dataloader = self.trainer.get_train_dataloader()
@@ -119,8 +124,6 @@ class DiffusionGenerationCallback(TrainerCallback):
                                 spans.append((cur, start, i))
                                 cur, start = s, i
                         spans.append((cur, start, len(gen_ids)))
-
-                    from colorama import Fore, Style
 
                     parts = []
                     for style_name, a, b in spans:

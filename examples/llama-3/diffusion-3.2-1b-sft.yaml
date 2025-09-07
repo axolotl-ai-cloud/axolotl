@@ -8,7 +8,7 @@ datasets:
 val_set_size: 0.05
 
 plugins:
-  - diffusion.DiffusionPlugin
+  - axolotl.integrations.diffusion.DiffusionPlugin
 diffusion_noise_schedule: cosine
 diffusion_min_mask_ratio: 0.1
 diffusion_max_mask_ratio: 0.9

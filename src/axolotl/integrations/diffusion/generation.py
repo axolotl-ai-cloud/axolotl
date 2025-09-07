@@ -1,12 +1,13 @@
 """Sample generation utilities for diffusion training."""
 
-import logging
 import re
 from typing import Any, List, Literal, Optional
 
 import torch
 
-logger = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 def generate_samples(
@@ -40,11 +41,11 @@ def generate_samples(
         List of dictionaries with original text, masked text, and generated text
     """
     if dataloader is None:
-        logger.warning("No validation dataloader provided, cannot generate samples")
+        LOG.warning("No validation dataloader provided, cannot generate samples")
         return []
 
     unwrapped_model = model.module if hasattr(model, "module") else model
-    was_training = unwrapped_model.training
+    training = unwrapped_model.training
     unwrapped_model.eval()
 
     # Resolve device robustly (some modules don't expose `.device`)
@@ -60,7 +61,7 @@ def generate_samples(
     sampled_sequences = _sample_sequences_from_dataloader(
         dataloader, num_generation_samples, max_length, device
     )
-    logger.info(f"Sampled {len(sampled_sequences)} sequences from validation dataset")
+    LOG.info(f"Sampled {len(sampled_sequences)} sequences from validation dataset")
 
     # Generate samples using reverse diffusion process
     with torch.no_grad():
@@ -79,7 +80,7 @@ def generate_samples(
             generations.append(generation_result)
 
     # Restore prior training state
-    if was_training:
+    if training:
         unwrapped_model.train()
     else:
         unwrapped_model.eval()

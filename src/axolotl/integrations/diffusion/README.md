@@ -1,13 +1,13 @@
 # Diffusion LM Training Plugin for Axolotl
 
-This plugin enables diffusion language model training using the LLaDA (Large Language
-And Diffusion Assistant) approach within the Axolotl framework.
+This plugin enables diffusion language model training using an approach inspired by
+LLaDA (Large Language Diffusion Models) within Axolotl.
 
 ## Overview
 
 LLaDA is a diffusion-based approach to language model training that uses:
 - **Random token masking** during training instead of next-token prediction
-- **Bidirectional attention** to allow the model to see the full context
+- **Bidirectional attention** to allow the model to attend to the full context
 - **Importance weighting** based on masking probabilities for stable training
 
 This approach can lead to more robust language models with better understanding of
@@ -20,24 +20,37 @@ your training config.
 
 ## Quickstart
 
+1. Install Axolotl: [docs](https://docs.axolotl.ai/docs/installation.html)
+2. Train with an example config (Llama‑3.2 1B):
+   - Pretrain: `axolotl train examples/llama-3/diffusion-3.2-1b-pretrain.yaml`
+   - SFT: `axolotl train examples/llama-3/diffusion-3.2-1b-sft.yaml`
+
 ### Basic Configuration
 
-Add the following to your Axolotl configuration YAML:
+You may also modify your existing configs to enable / customize diffusion training.
+
+Add the following to your Axolotl config:
 
 ```yaml
 # Enable diffusion LM training plugin
 plugins:
   - axolotl.integrations.diffusion.DiffusionPlugin
+```
 
-# Diffusion-specific configuration (prefixed)
+And, optionally (though these have good defaults):
+
+```yaml
 diffusion_noise_schedule: linear  # or "cosine"
 diffusion_min_mask_ratio: 0.1
 diffusion_max_mask_ratio: 0.9
 diffusion_num_diffusion_steps: 128
 diffusion_eps: 1e-3
 diffusion_importance_weighting: true
-# For non-Llama tokenizers, set this to a valid id (e.g., pad/eos)
-diffusion_mask_token_id: 128002
+
+# Mask token (training auto-adds if missing, avoid pad/eos)
+diffusion_mask_token_str: "<|diffusion_mask|>"
+# Or use an existing special token id (e.g., 128002 for Llama-3.x)
+# diffusion_mask_token_id: 128002
 
 # Sample generation during training (optional)
 diffusion_generate_samples: true
@@ -46,21 +59,6 @@ diffusion_num_generation_samples: 3
 diffusion_generation_steps: 128
 diffusion_generation_temperature: 0.0
 diffusion_generation_max_length: 100
-
-# Model configuration
-base_model: meta-llama/Llama-3.2-1B
-model_type: llama
-
-# Standard Axolotl configuration
-datasets:
-  - path: your_dataset
-    ...
-
-# Other config
-sequence_len: 1024
-micro_batch_size: 8
-gradient_accumulation_steps: 4
-learning_rate: 3e-4
 ```
 
 ## Supported Models
@@ -72,17 +70,10 @@ create an [issue](https://github.com/axolotl-ai-cloud/axolotl/issues) or open a
 ## How It Works
 
 ### Random Masking
-During training, tokens are randomly masked based on a sampled timestep:
+During training, tokens are randomly masked:
 - Sample timestep `t` uniformly from [0, 1]
 - Calculate masking probability: `p = (1 - eps) * t + eps`
 - Randomly mask tokens with probability `p`
-
-### Bidirectional Attention
-The plugin uses native 4D attention masks to:
-- Enable bidirectional attention without patches
-- Allow all tokens to attend to all other tokens
-- Maintain proper padding masks
-- Work with modern `transformers` models out of the box
 
 ### Diffusion Loss
 
@@ -94,7 +85,7 @@ loss = sum(cross_entropy(pred, target) / p_mask) / total_tokens
 
 ## Sample Generation
 
-When `generate_samples: true`, the plugin generates samples during training:
+When `diffusion_generate_samples: true`, the plugin generates samples during training:
 
 ```
 Sample 1:
@@ -111,8 +102,10 @@ Diffusion inference is integrated into the standard Axolotl CLI. Use the same co
 you trained with and run:
 
 ```
-axolotl inference --config path/to/your-config.yaml
+axolotl inference path/to/your-config.yaml
 ```
+
+Optionally, pass `--gradio` to use a simple web interface.
 
 Interactive controls (prefix the prompt with commands):
 - `:complete N` → completion mode with N new masked tokens appended (default 64)
@@ -134,15 +127,8 @@ Masked (40.0%):
 The [MASK] brown [MASK] jumps over the [MASK] dog
 
 Generated:
-The quick brown fox jumps over the lazy dog
+The quick brown fox jumps over the loud dog
 ```
-
-Notes:
-- The CLI renders per‑token correctness in color (green/red/dim) against the original
-  sequence for masked positions.
-- Inference reuses `diffusion_mask_token_id` from your config. It will not add new
-  tokens or resize embeddings during inference. If the id is missing or invalid, it
-  falls back to the tokenizer's `unk_token_id`.
 
 ## Metrics and Monitoring
 
@@ -165,3 +151,4 @@ The plugin adds (or modifies) several metrics to track diffusion training:
 
 - [LLaDA Paper](https://arxiv.org/abs/2404.10406)
 - [Axolotl Documentation](https://docs.axolotl.ai/)
+- [API reference for plugin](https://docs.axolotl.ai/docs/api/integrations.diffusion.args.html#axolotl.integrations.diffusion.args)

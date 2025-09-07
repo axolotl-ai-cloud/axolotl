@@ -9,7 +9,7 @@ pretraining_dataset:
     field: text
 
 plugins:
-  - diffusion.DiffusionPlugin
+  - axolotl.integrations.diffusion.DiffusionPlugin
 diffusion_noise_schedule: cosine
 diffusion_min_mask_ratio: 0.15
 diffusion_max_mask_ratio: 0.85
