@@ -152,8 +152,6 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
 
         # Sample random timesteps for each sample in batch
         t = torch.rand(batch_size, device=device)
-
-        # Calculate masking probability with epsilon
         p_mask = (1 - eps) * t + eps  # [batch_size]
         p_mask = p_mask[:, None].repeat(1, seq_len)  # [batch_size, seq_len]
 

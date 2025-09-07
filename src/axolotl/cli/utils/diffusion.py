@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from axolotl.integrations.diffusion.generation import generate as diffusion_generate
+from axolotl.integrations.diffusion.generation import generate
 from axolotl.integrations.diffusion.utils import resolve_mask_token_id
 from axolotl.utils.dict import DictDefault
 
@@ -54,11 +54,6 @@ def parse_commands(text: str):
     return mode, completion_tokens, target_mask_ratio, cleaned
 
 
-def infer_mask_token_id(tokenizer, cfg: DictDefault) -> int:
-    """Resolve mask token id for inference by reusing training logic (no mutation)."""
-    return resolve_mask_token_id(tokenizer, cfg, allow_add=False)
-
-
 def run_diffusion(
     *,
     model,
@@ -84,24 +79,18 @@ def run_diffusion(
     else:
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
-    steps = (
-        cfg.get("diffusion_generation_steps")
-        or cfg.get("diffusion_num_diffusion_steps")
-        or 128
-    )
-    temperature = cfg.get("diffusion_generation_temperature", 0.0)
-    mask_token_id = infer_mask_token_id(tokenizer, cfg)
+    mask_token_id = resolve_mask_token_id(tokenizer, cfg, allow_add=False)
 
     seq = batch["input_ids"].to(cfg.device)
     gen_mode = "random" if mode == "mask" else "completion"
     comp_tokens = int(completion_tokens) if gen_mode == "completion" else 0
 
-    result = diffusion_generate(
+    result = generate(
         model,
         tokenizer,
         original_sequence=seq[:1],
-        num_diffusion_steps=int(steps),
-        temperature=float(temperature),
+        num_diffusion_steps=cfg.diffusion_num_diffusion_steps,
+        temperature=cfg.diffusion_generation_temperature,
         mask_token_id=int(mask_token_id),
         mode=gen_mode,  # type: ignore[arg-type]
         completion_tokens=comp_tokens,
@@ -123,60 +112,3 @@ def run_diffusion(
         "masked_positions": masked_positions,
         "orig_ids": orig_ids,
     }
-
-
-def render_html(
-    generated_ids: list[int] | None,
-    orig_ids: list[int],
-    masked_positions: set[int],
-    tokenizer,
-) -> str:
-    """Render HTML with colored spans for diffusion correctness visualization."""
-    if not generated_ids:
-        return "<pre>Generated: (no output)</pre>"
-
-    def _style_for(i: int, tid: int) -> str:
-        if i in masked_positions:
-            if i < len(orig_ids) and tid == orig_ids[i]:
-                return "green"
-            if i < len(orig_ids):
-                return "red"
-            return "normal"
-        same = i < len(orig_ids) and tid == orig_ids[i]
-        return "dim" if same else "normal"
-
-    spans: list[tuple[str, int, int]] = []
-    if generated_ids:
-        cur = _style_for(0, generated_ids[0])
-        start = 0
-        for i in range(1, len(generated_ids)):
-            s = _style_for(i, generated_ids[i])
-            if s != cur:
-                spans.append((cur, start, i))
-                cur, start = s, i
-        spans.append((cur, start, len(generated_ids)))
-
-    html_parts = []
-    for style_name, a, b in spans:
-        txt = tokenizer.decode(generated_ids[a:b], skip_special_tokens=False)
-        if style_name == "green":
-            html_parts.append(f'<span style="color:#2e7d32">{txt}</span>')
-        elif style_name == "red":
-            html_parts.append(f'<span style="color:#c62828">{txt}</span>')
-        elif style_name == "dim":
-            html_parts.append(f'<span style="opacity:0.6">{txt}</span>')
-        else:
-            html_parts.append(txt)
-    legend = (
-        '<div style="font-size:0.9em;margin-bottom:4px">'
-        '<span style="color:#2e7d32">correct</span>, '
-        '<span style="color:#c62828">incorrect</span>, '
-        '<span style="opacity:0.6">unchanged</span>'
-        "</div>"
-    )
-    return (
-        legend
-        + '<pre style="white-space:pre-wrap">Generated:\n'
-        + "".join(html_parts)
-        + "</pre>"
-    )

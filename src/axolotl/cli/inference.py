@@ -81,12 +81,7 @@ def do_inference(
     # Detect diffusion mode from plugins
     plugins = cfg.get("plugins") or []
     is_diffusion = any(
-        isinstance(p, str)
-        and (
-            p == "axolotl.integrations.diffusion.DiffusionPlugin"
-            or p.endswith("diffusion.DiffusionPlugin")
-            or "diffusion" in p
-        )
+        isinstance(p, str) and p == "axolotl.integrations.diffusion.DiffusionPlugin"
         for p in plugins
     )
 
