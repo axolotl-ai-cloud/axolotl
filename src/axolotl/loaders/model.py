@@ -673,11 +673,22 @@ class ModelLoader:
 
         return hf_ds_cfg
 
-    def _load_model_from_config(self) -> PreTrainedModel:
-        """Load model with random initialization using from_config."""
-        if self.auto_model_loader in [AutoModelForCausalLM, AutoModelForVision2Seq]:
-            return self.auto_model_loader.from_config(config=self.model_config)
-        return self.auto_model_loader(config=self.model_config)
+    def _load_model_from_config(self, model_loader_class=None) -> PreTrainedModel:
+        """Load model with random initialization using from_config.
+
+        Uses the selected loader when provided; otherwise falls back to the auto loader.
+        For auto loaders, forward trust_remote_code. Cast to cfg.torch_dtype when set.
+        """
+        loader = model_loader_class or self.auto_model_loader
+        if loader in [AutoModelForCausalLM, AutoModelForVision2Seq]:
+            model = loader.from_config(
+                config=self.model_config,
+                trust_remote_code=self.cfg.trust_remote_code or False,
+            )
+        else:
+            model = loader(config=self.model_config)
+
+        return model
 
     def _load_model_from_pretrained(self, model_loader_class=None) -> PreTrainedModel:
         """Load model from pretrained weights."""
@@ -789,7 +800,7 @@ class ModelLoader:
                 model_loader_class = self.auto_model_loader
 
             if self.cfg.reinit_weights:
-                self.model = self._load_model_from_config()
+                self.model = self._load_model_from_config(model_loader_class)
             else:
                 self.model = self._load_model_from_pretrained(model_loader_class)
 

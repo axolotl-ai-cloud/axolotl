@@ -10,14 +10,14 @@ pretraining_dataset:
 
 plugins:
   - diffusion.DiffusionPlugin
-noise_schedule: cosine
-min_mask_ratio: 0.15
-max_mask_ratio: 0.85
-eps: 5e-4
-importance_weighting: true
-mask_token_id: 128002
-generate_samples: true
-generation_interval: 10
+diffusion_noise_schedule: cosine
+diffusion_min_mask_ratio: 0.15
+diffusion_max_mask_ratio: 0.85
+diffusion_eps: 5e-4
+diffusion_importance_weighting: true
+diffusion_mask_token_id: 128002
+diffusion_generate_samples: true
+diffusion_generation_interval: 10
 
 output_dir: ./outputs/model-out
 

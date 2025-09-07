@@ -36,10 +36,10 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         self.cfg = config
         self._cache_special_token_ids()
         self._resolve_mask_token_id()
-        # Log the resolved mask token id and string representation (if available)
+        # Log resolved mask token id
         try:
             tok = getattr(self, "processing_class", None)
-            tid = int(self.cfg.mask_token_id)
+            tid = int(self.cfg.diffusion_mask_token_id)
             token_repr = None
             if tok is not None:
                 if hasattr(tok, "convert_ids_to_tokens"):
@@ -60,7 +60,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         except Exception:  # pragma: no cover
             pass
 
-        if config.generate_samples:
+        if config.diffusion_generate_samples:
             generation_callback = DiffusionGenerationCallback(self)
             self.add_callback(generation_callback)
 
@@ -79,7 +79,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             model=getattr(self, "model", None),
         )
         try:
-            self.cfg.mask_token_id = int(mid)
+            self.cfg.diffusion_mask_token_id = int(mid)
         except Exception:  # pragma: no cover
             pass
 
@@ -180,7 +180,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             masked_indices = masked_indices & answer_mask
 
         # Create masked input
-        mask_token_id = self.cfg.mask_token_id
+        mask_token_id = self.cfg.diffusion_mask_token_id
         noisy_batch = torch.where(masked_indices, mask_token_id, input_ids)
 
         return noisy_batch, masked_indices, p_mask
@@ -243,7 +243,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         """
         # Apply forward process
         noisy_batch, masked_indices, p_mask = self._forward_process(
-            input_ids, attention_mask, labels, self.cfg.eps
+            input_ids, attention_mask, labels, self.cfg.diffusion_eps
         )
 
         # Create bidirectional attention mask
@@ -271,7 +271,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
                 masked_logits.float(), masked_targets, reduction="none"
             )
 
-            if self.cfg.importance_weighting:
+            if self.cfg.diffusion_importance_weighting:
                 masked_p_mask = masked_p_mask.float()
                 weighted_loss = token_loss / masked_p_mask
             else:
@@ -330,7 +330,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
                 total_tokens = labels.numel()
                 metrics["answer_ratio"] = total_answer_tokens / max(total_tokens, 1)
                 metrics["avg_answer_length"] = answer_lengths.mean().item()
-        if self.cfg.importance_weighting:
+        if self.cfg.diffusion_importance_weighting:
             metrics["importance_weight_avg"] = (1.0 / masked_p_mask).mean().item()
 
         train_eval: Literal["train", "eval"] = "train" if model.training else "eval"

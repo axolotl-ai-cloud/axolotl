@@ -40,7 +40,7 @@ class DiffusionGenerationCallback(TrainerCallback):
         """Generate samples at specified intervals."""
         if (
             state.global_step > 0
-            and state.global_step % self.trainer.cfg.generation_interval == 0
+            and state.global_step % self.trainer.cfg.diffusion_generation_interval == 0
         ):
             # Use eval dataloader if available, otherwise use train dataloader
             dataloader = None
@@ -57,11 +57,11 @@ class DiffusionGenerationCallback(TrainerCallback):
                 model=self.trainer.model,
                 tokenizer=self.trainer.processing_class,
                 dataloader=dataloader,
-                num_generation_samples=self.trainer.cfg.num_generation_samples,
-                max_length=self.trainer.cfg.generation_max_length,
-                num_diffusion_steps=self.trainer.cfg.generation_steps,
-                temperature=self.trainer.cfg.generation_temperature,
-                mask_token_id=self.trainer.cfg.mask_token_id,
+                num_generation_samples=self.trainer.cfg.diffusion_num_generation_samples,
+                max_length=self.trainer.cfg.diffusion_generation_max_length,
+                num_diffusion_steps=self.trainer.cfg.diffusion_generation_steps,
+                temperature=self.trainer.cfg.diffusion_generation_temperature,
+                mask_token_id=self.trainer.cfg.diffusion_mask_token_id,
             )
 
             # Log samples

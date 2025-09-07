@@ -84,8 +84,12 @@ def run_diffusion(
     else:
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
-    steps = cfg.get("generation_steps") or cfg.get("num_diffusion_steps") or 128
-    temperature = cfg.get("generation_temperature", 0.0)
+    steps = (
+        cfg.get("diffusion_generation_steps")
+        or cfg.get("diffusion_num_diffusion_steps")
+        or 128
+    )
+    temperature = cfg.get("diffusion_generation_temperature", 0.0)
     mask_token_id = infer_mask_token_id(tokenizer, cfg)
 
     seq = batch["input_ids"].to(cfg.device)

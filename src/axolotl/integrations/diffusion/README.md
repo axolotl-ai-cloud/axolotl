@@ -29,23 +29,23 @@ Add the following to your Axolotl configuration YAML:
 plugins:
   - axolotl.integrations.diffusion.DiffusionPlugin
 
-# Diffusion-specific configuration
-noise_schedule: linear  # or "cosine"
-min_mask_ratio: 0.1
-max_mask_ratio: 0.9
-num_diffusion_steps: 128
-eps: 1e-3
-importance_weighting: true
+# Diffusion-specific configuration (prefixed)
+diffusion_noise_schedule: linear  # or "cosine"
+diffusion_min_mask_ratio: 0.1
+diffusion_max_mask_ratio: 0.9
+diffusion_num_diffusion_steps: 128
+diffusion_eps: 1e-3
+diffusion_importance_weighting: true
 # For non-Llama tokenizers, set this to a valid id (e.g., pad/eos)
-mask_token_id: 128002
+diffusion_mask_token_id: 128002
 
-# Sample generation (optional)
-generate_samples: true
-generation_interval: 100
-num_generation_samples: 3
-generation_steps: 128
-generation_temperature: 0.0
-generation_max_length: 100
+# Sample generation during training (optional)
+diffusion_generate_samples: true
+diffusion_generation_interval: 100
+diffusion_num_generation_samples: 3
+diffusion_generation_steps: 128
+diffusion_generation_temperature: 0.0
+diffusion_generation_max_length: 100
 
 # Model configuration
 base_model: meta-llama/Llama-3.2-1B
@@ -66,7 +66,8 @@ learning_rate: 3e-4
 ## Supported Models
 
 Any models that support 4D attention masks should work out of the box. If not, please
-create an [issue](https://github.com/axolotl-ai-cloud/axolotl/issues)!
+create an [issue](https://github.com/axolotl-ai-cloud/axolotl/issues) or open a
+[PR](https://github.com/axolotl-ai-cloud/axolotl/compare)!
 
 ## How It Works
 
@@ -106,43 +107,46 @@ Samples are logged to console and wandb (if enabled).
 
 ## Inference
 
-After training, you can run lightweight reverse-diffusion on your model using the
-helper script `scripts/diffusion_infer.py`.
-
-Examples:
-
-- Provide your own texts:
+Diffusion inference is integrated into the standard Axolotl CLI. Use the same config
+you trained with and run:
 
 ```
-python scripts/diffusion_infer.py \
-  --model /path/to/checkpoint \
-  --texts "The quick brown fox" "In a hole in the ground" \
-  --steps 32 --max-length 64 --num-samples 2
+axolotl inference --config path/to/your-config.yaml
 ```
 
-- Sample from a dataset:
+Interactive controls (prefix the prompt with commands):
+- `:complete N` → completion mode with N new masked tokens appended (default 64)
+- `:mask R` → random masking mode with target mask ratio R in [0.0, 1.0]
+
+Example session:
 
 ```
-python scripts/diffusion_infer.py \
-  --model /path/to/checkpoint \
-  --dataset mhenrichsen/alpaca_2k_test \
-  --dataset-field text --steps 32 --num-samples 2
+================================================================================
+Commands:
+:complete N -> completion mode with N tokens (default 64)
+:mask R     -> random masking with ratio R (0.0–1.0)
+================================================================================
+Give me an instruction (Ctrl + D to submit):
+
+:mask 0.4 The quick brown fox jumps over the lazy dog
+
+Masked (40.0%):
+The [MASK] brown [MASK] jumps over the [MASK] dog
+
+Generated:
+The quick brown fox jumps over the lazy dog
 ```
 
-Key options:
-- `--steps`: diffusion steps (lower for faster, e.g., 32)
-- `--num-samples`: number of samples to generate
-- `--mask-token-id`: token used for masking. Defaults to a Llama-3.2 id (128002). For
-  other models, prefer an existing reserved special token (e.g., a token containing
-  "reserved"/"mask"), or `unk_token_id`. Avoid using `pad`/`eos` if possible.
-
-Note: During training, if `mask_token_id` is unset or out-of-range for the tokenizer's
-vocabulary, Axolotl tries to auto-select a suitable id in this order:
-reserved special → other additional special → unk → pad → eos → vocab_size-1 → 0.
+Notes:
+- The CLI renders per‑token correctness in color (green/red/dim) against the original
+  sequence for masked positions.
+- Inference reuses `diffusion_mask_token_id` from your config. It will not add new
+  tokens or resize embeddings during inference. If the id is missing or invalid, it
+  falls back to the tokenizer's `unk_token_id`.
 
 ## Metrics and Monitoring
 
-The plugin adds several metrics to track diffusion training:
+The plugin adds (or modifies) several metrics to track diffusion training:
 
 - `train/loss`: Weighted diffusion loss
 - `train/accuracy`: Accuracy on masked tokens
@@ -155,6 +159,7 @@ The plugin adds several metrics to track diffusion training:
 ## Limitations
 
 - No flash attention support
+- No RL training support
 
 ## References
 

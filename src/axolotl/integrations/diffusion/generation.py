@@ -43,14 +43,22 @@ def generate_samples(
         logger.warning("No validation dataloader provided, cannot generate samples")
         return []
 
-    # Get the actual model (unwrap if needed)
     unwrapped_model = model.module if hasattr(model, "module") else model
+    was_training = unwrapped_model.training
     unwrapped_model.eval()
+
+    # Resolve device robustly (some modules don't expose `.device`)
+    device = getattr(unwrapped_model, "device", None)
+    if device is None:
+        try:
+            device = next(unwrapped_model.parameters()).device
+        except StopIteration:
+            device = torch.device("cpu")
     generations = []
 
     # Sample sequences from validation dataset
     sampled_sequences = _sample_sequences_from_dataloader(
-        dataloader, num_generation_samples, max_length, unwrapped_model.device
+        dataloader, num_generation_samples, max_length, device
     )
     logger.info(f"Sampled {len(sampled_sequences)} sequences from validation dataset")
 
@@ -70,7 +78,12 @@ def generate_samples(
             )
             generations.append(generation_result)
 
-    unwrapped_model.train()
+    # Restore prior training state
+    if was_training:
+        unwrapped_model.train()
+    else:
+        unwrapped_model.eval()
+
     return generations
 
 

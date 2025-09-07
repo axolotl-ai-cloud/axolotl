@@ -30,12 +30,14 @@ def resolve_mask_token_id(
             except Exception:  # pragma: no cover
                 vocab_size = None
 
-    # Use explicit id from config if valid
-    cfg_id = (
-        getattr(cfg, "mask_token_id", None)
-        if hasattr(cfg, "mask_token_id")
-        else cfg.get("mask_token_id")
-    )
+    # Use explicit id from config if valid (prefixed or legacy)
+    cfg_id = None
+    if hasattr(cfg, "diffusion_mask_token_id"):
+        cfg_id = getattr(cfg, "diffusion_mask_token_id")
+    elif hasattr(cfg, "mask_token_id"):
+        cfg_id = getattr(cfg, "mask_token_id")
+    elif hasattr(cfg, "get"):
+        cfg_id = cfg.get("diffusion_mask_token_id") or cfg.get("mask_token_id")
     if isinstance(cfg_id, int) and cfg_id >= 0:
         if vocab_size is None or cfg_id < vocab_size:
             return int(cfg_id)
@@ -62,16 +64,25 @@ def resolve_mask_token_id(
             return None
         return tid
 
-    # Try mask_token_str from config, else the default training token
-    token_str = (
-        getattr(cfg, "mask_token_str", None)
-        if hasattr(cfg, "mask_token_str")
-        else cfg.get("mask_token_str")
-    )
+    # Try mask token string from config (prefixed or legacy), else default
+    token_str = None
+    if hasattr(cfg, "diffusion_mask_token_str"):
+        token_str = getattr(cfg, "diffusion_mask_token_str")
+    elif hasattr(cfg, "mask_token_str"):
+        token_str = getattr(cfg, "mask_token_str")
+    elif hasattr(cfg, "get"):
+        token_str = cfg.get("diffusion_mask_token_str") or cfg.get("mask_token_str")
     for candidate in (token_str, default_token):
         tid = _existing_special_token_id(candidate)
         if isinstance(tid, int):
-            cfg.mask_token_id = int(tid)
+            try:
+                cfg.diffusion_mask_token_id = int(tid)
+            except Exception:
+                pass
+            try:
+                cfg.mask_token_id = int(tid)
+            except Exception:
+                pass
             return int(tid)
 
     # Optionally add and return a dedicated special token during training
@@ -91,7 +102,14 @@ def resolve_mask_token_id(
                     pass
             new_id = tokenizer.convert_tokens_to_ids(token_to_add)
             if isinstance(new_id, int) and new_id >= 0:
-                cfg.mask_token_id = int(new_id)
+                try:
+                    cfg.diffusion_mask_token_id = int(new_id)
+                except Exception:
+                    pass
+                try:
+                    cfg.mask_token_id = int(new_id)
+                except Exception:
+                    pass
                 return int(new_id)
         except Exception:  # pragma: no cover
             pass
