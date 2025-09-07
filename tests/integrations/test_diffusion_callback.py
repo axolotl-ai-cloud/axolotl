@@ -13,7 +13,7 @@ class DummyTrainer:
 
     def __init__(self, use_eval: bool):
         # Config used by callback
-        self.config = SimpleNamespace(
+        self.cfg = SimpleNamespace(
             diffusion_generation_interval=1,
             diffusion_num_generation_samples=1,
             diffusion_generation_max_length=32,
@@ -25,9 +25,7 @@ class DummyTrainer:
 
         # Model/tokenizer are passed through to generate_samples; not used here
         self.model = Mock()
-        self.tokenizer = Mock()
-        # HF Trainer deprecates .tokenizer in favor of .processing_class
-        self.processing_class = self.tokenizer
+        self.processing_class = Mock()
 
         # Datasets and loaders
         self.eval_dataset = object() if use_eval else None

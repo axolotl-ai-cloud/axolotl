@@ -277,7 +277,6 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
             else:
                 weighted_loss = token_loss
 
-            # Final loss: sum weighted losses, normalize
             if labels is not None:
                 # For SFT data: normalize by answer length per sample
                 answer_mask = labels != -100
