@@ -1,5 +1,8 @@
 """Callbacks for diffusion training."""
 
+import logging
+import sys
+
 import wandb
 from transformers.trainer_callback import TrainerCallback, TrainerControl, TrainerState
 from transformers.training_args import TrainingArguments
@@ -9,6 +12,15 @@ from axolotl.utils.logging import get_logger
 from .generation import generate_samples
 
 LOG = get_logger(__name__)
+
+# Simple logger for readable sample generation
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(handler)
+    logger.propagate = False
+logger.setLevel(logging.INFO)
 
 
 class DiffusionGenerationCallback(TrainerCallback):
@@ -60,9 +72,9 @@ class DiffusionGenerationCallback(TrainerCallback):
         if not samples:
             return
 
-        LOG.info("=" * 60)
-        LOG.info("GENERATED SAMPLES")
-        LOG.info("=" * 60)
+        logger.info("=" * 60)
+        logger.info("GENERATED SAMPLES")
+        logger.info("=" * 60)
 
         for i, sample_data in enumerate(samples, 1):
             original = sample_data["original"]
@@ -72,9 +84,9 @@ class DiffusionGenerationCallback(TrainerCallback):
             masked_tokens = sample_data["masked_tokens"]
             total_tokens = sample_data["total_tokens"]
 
-            LOG.info(f"\nSample {i}:")
-            LOG.info(f"\tOriginal ({total_tokens} tokens): {original}")
-            LOG.info(
+            logger.info(f"\nSample {i}:")
+            logger.info(f"\tOriginal ({total_tokens} tokens): {original}")
+            logger.info(
                 f"\tMasked ({masked_tokens}/{total_tokens} tokens, "
                 f"{mask_ratio:.1%}): {masked}"
             )
@@ -124,13 +136,13 @@ class DiffusionGenerationCallback(TrainerCallback):
                                 parts.append(Style.DIM + chunk_text + Style.RESET_ALL)
                             else:
                                 parts.append(chunk_text)
-                    LOG.info("\tGenerated:\n%s", "".join(parts))
+                    logger.info("\tGenerated:\n%s", "".join(parts))
                 else:
-                    LOG.info(f"\tGenerated: {generated}")
+                    logger.info(f"\tGenerated: {generated}")
             except Exception:  # pragma: no cover
-                LOG.info(f"\tGenerated: {generated}")
+                logger.info(f"\tGenerated: {generated}")
 
-        LOG.info("=" * 60)
+        logger.info("=" * 60)
 
         if self.trainer.cfg.use_wandb and self.trainer.state.is_world_process_zero:
             if wandb.run is not None:

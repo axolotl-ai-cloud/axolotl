@@ -219,7 +219,9 @@ def do_inference(
                             out_parts.append(Fore.RED + chunk_text + Style.RESET_ALL)
                         else:
                             if style_name == "dim":
-                                out_parts.append(Style.DIM + chunk_text + Style.RESET_ALL)
+                                out_parts.append(
+                                    Style.DIM + chunk_text + Style.RESET_ALL
+                                )
                             else:
                                 out_parts.append(chunk_text)
                     print("Generated:\n" + "".join(out_parts))

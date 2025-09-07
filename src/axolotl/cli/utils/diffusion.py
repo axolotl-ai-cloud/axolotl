@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from axolotl.integrations.diffusion.generation import generate as diffusion_generate
-from axolotl.utils.dict import DictDefault
 from axolotl.integrations.diffusion.utils import resolve_mask_token_id
+from axolotl.utils.dict import DictDefault
 
 
 def parse_commands(text: str):

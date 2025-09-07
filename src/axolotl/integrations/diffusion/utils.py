@@ -31,7 +31,11 @@ def resolve_mask_token_id(
                 vocab_size = None
 
     # Use explicit id from config if valid
-    cfg_id = getattr(cfg, "mask_token_id", None) if hasattr(cfg, "mask_token_id") else cfg.get("mask_token_id")
+    cfg_id = (
+        getattr(cfg, "mask_token_id", None)
+        if hasattr(cfg, "mask_token_id")
+        else cfg.get("mask_token_id")
+    )
     if isinstance(cfg_id, int) and cfg_id >= 0:
         if vocab_size is None or cfg_id < vocab_size:
             return int(cfg_id)
@@ -59,7 +63,11 @@ def resolve_mask_token_id(
         return tid
 
     # Try mask_token_str from config, else the default training token
-    token_str = getattr(cfg, "mask_token_str", None) if hasattr(cfg, "mask_token_str") else cfg.get("mask_token_str")
+    token_str = (
+        getattr(cfg, "mask_token_str", None)
+        if hasattr(cfg, "mask_token_str")
+        else cfg.get("mask_token_str")
+    )
     for candidate in (token_str, default_token):
         tid = _existing_special_token_id(candidate)
         if isinstance(tid, int):
@@ -72,8 +80,10 @@ def resolve_mask_token_id(
         try:
             tokenizer.add_special_tokens({"additional_special_tokens": [token_to_add]})
             # Resize embeddings if possible
-            if model is not None and hasattr(tokenizer, "__len__") and hasattr(
-                model, "resize_token_embeddings"
+            if (
+                model is not None
+                and hasattr(tokenizer, "__len__")
+                and hasattr(model, "resize_token_embeddings")
             ):
                 try:
                     model.resize_token_embeddings(len(tokenizer))
@@ -89,5 +99,3 @@ def resolve_mask_token_id(
     # Fallback to unk or 0 (do not update cfg)
     fallback = getattr(tokenizer, "unk_token_id", 0) or 0
     return int(fallback)
-
-    

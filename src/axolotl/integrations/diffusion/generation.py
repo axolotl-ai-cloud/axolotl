@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Any, List, Optional, Literal
+from typing import Any, List, Literal, Optional
 
 import torch
 
