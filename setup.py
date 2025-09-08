@@ -9,9 +9,6 @@ from pathlib import Path
 
 from setuptools import find_packages, setup
 
-# todo remove@
-x = 10
-
 
 def parse_requirements(extras_require_map):
     _install_requires = []
