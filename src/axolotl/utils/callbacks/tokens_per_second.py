@@ -59,6 +59,6 @@ class TokensPerSecondCallback(TrainerCallback):
         **kwargs,
     ):  # pylint: disable=unused-argument
         # after logging, clear the running metrics
-        if hasattr(state, "last_tokens_per_second"):
+        if hasattr(state, "num_tokens"):
             state.last_tokens_per_second.zero_()
-            state.num_tokens = 0
+            state.num_tokens = torch.zeros(1)
