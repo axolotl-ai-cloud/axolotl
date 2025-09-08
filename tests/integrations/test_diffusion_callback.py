@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from axolotl.integrations.diffusion.callbacks import DiffusionGenerationCallback
+from axolotl.integrations.diffusion import DiffusionGenerationCallback
 
 
 class DummyTrainer:

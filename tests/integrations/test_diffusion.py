@@ -7,7 +7,7 @@ from unittest.mock import Mock
 import pytest
 import torch
 
-from axolotl.integrations.diffusion.trainer import DiffusionTrainer
+from axolotl.integrations.diffusion import DiffusionTrainer
 from axolotl.utils.dict import DictDefault
 
 
