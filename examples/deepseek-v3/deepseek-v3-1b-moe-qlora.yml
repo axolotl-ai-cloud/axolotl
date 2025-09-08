@@ -1,6 +1,7 @@
 base_model: axolotl-ai-co/deepseek-v3-1b-moe-test
 # Enable custom HF modeling for this repo
 trust_remote_code: true
+moe_kernels: true
 
 # Explicit model/tokenizer autos
 model_type: AutoModelForCausalLM

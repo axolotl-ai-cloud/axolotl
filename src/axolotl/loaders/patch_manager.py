@@ -90,7 +90,9 @@ class PatchManager:
         self._apply_lora_kernel_patch(model)
         # Apply DeepSeek-V3 MoE kernels (torchtitan-style) when applicable
         try:
-            if getattr(self.cfg, "model_config_type", None) == "deepseek_v3":
+            if getattr(
+                self.cfg, "model_config_type", None
+            ) == "deepseek_v3" and getattr(self.cfg, "moe_kernels", False):
                 from axolotl.monkeypatch.deepseek_v3 import (
                     apply_titan_moe_to_deepseek_v3,
                 )

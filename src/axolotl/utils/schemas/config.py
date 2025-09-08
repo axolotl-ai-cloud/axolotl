@@ -608,6 +608,13 @@ class AxolotlInputConfig(
         },
     )
 
+    moe_kernels: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Enable DeepSeek-V3 MoE forward kernels (torchtitan-style) where supported."
+        },
+    )
+
     chunked_cross_entropy: bool | None = Field(
         default=None,
         json_schema_extra={
