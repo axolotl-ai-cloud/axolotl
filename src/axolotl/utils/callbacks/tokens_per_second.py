@@ -58,5 +58,6 @@ class TokensPerSecondCallback(TrainerCallback):
         **kwargs,
     ):  # pylint: disable=unused-argument
         # after logging, clear the running metrics
-        state.last_tokens_per_second.zero_()
-        state.num_tokens = 0
+        if hasattr(state, "last_tokens_per_second"):
+            state.last_tokens_per_second.zero_()
+            state.num_tokens = 0
