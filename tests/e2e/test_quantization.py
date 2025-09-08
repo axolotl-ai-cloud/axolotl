@@ -7,18 +7,15 @@ import torch
 
 from axolotl.utils.callbacks.qat import QATCallback
 from axolotl.utils.quantization import (
+    convert_qat_model,
     get_quantization_config,
     prepare_model_for_qat,
-    convert_qat_model,
     quantize_model,
 )
 from axolotl.utils.schemas.enums import TorchAOQuantDType
 from axolotl.utils.schemas.quantization import QATConfig
 from torch import nn
 from torchao.dtypes.affine_quantized_tensor import AffineQuantizedTensor
-from torchao.quantization.linear_activation_quantized_tensor import (
-    LinearActivationQuantizedTensor,
-)
 from torchao.quantization.qat.embedding import FakeQuantizedEmbedding
 from torchao.quantization.qat.linear import FakeQuantizedLinear
 from torchao.quantization.quant_api import (
@@ -26,14 +23,15 @@ from torchao.quantization.quant_api import (
     Float8DynamicActivationInt4WeightConfig,
     Int8DynamicActivationInt4WeightConfig,
 )
+from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
 from transformers import AutoModelForCausalLM
 from transformers.trainer_callback import TrainerState
 
 from tests.e2e.utils import (
     require_torch_2_8_0,
-    requires_sm_ge_100,
     requires_cuda_ge_8_9,
+    requires_sm_ge_100,
 )
 
 
@@ -55,7 +53,7 @@ def model():
 
 
 ptq_config_test_cases = [
-    # weight_dtype, activation_dtype, group_size, expected_type, expected_params
+    # weight_dtype, activation_dtype, group_size, expected_type
     (
         TorchAOQuantDType.int4,
         TorchAOQuantDType.int8,
@@ -77,24 +75,18 @@ ptq_config_test_cases = [
 ]
 
 ptq_test_cases = [
-    # weight_dtype, activation_dtype, group_size, quantize_embedding, expected_exception
-    (TorchAOQuantDType.int4, None, 4, True, None),
-    (TorchAOQuantDType.int4, TorchAOQuantDType.int8, 8, False, None),
-    (
-        TorchAOQuantDType.float8_e4m3fn,
-        TorchAOQuantDType.float8_e4m3fn,
-        None,
-        False,
-        None,
-    ),
-    (TorchAOQuantDType.int4, TorchAOQuantDType.float8_e4m3fn, None, True, None),
+    # weight_dtype, activation_dtype, group_size, quantize_embedding, expected_exception, expected_tensor_class
+    (TorchAOQuantDType.int4, None, 4, True, None, Int4Tensor),
+    (TorchAOQuantDType.int4, TorchAOQuantDType.int8, 8, False, None, Int4Tensor),
     (
         TorchAOQuantDType.int4,
+        TorchAOQuantDType.float8_e4m3fn,
         None,
+        True,
         None,
-        False,
-        ValueError,
+        Int4Tensor,
     ),
+    (TorchAOQuantDType.int4, None, None, False, None, Int4Tensor),
     # Deprecated configs
     (
         TorchAOQuantDType.int8,
@@ -159,6 +151,7 @@ class TestQuantization:
         group_size,
         quantize_embedding,
         expected_exception,
+        expected_tensor_class,
     ):
         if expected_exception:
             with pytest.raises(expected_exception):
@@ -175,14 +168,12 @@ class TestQuantization:
             )
             if quantize_embedding:
                 assert isinstance(
-                    model.model.embed_tokens.weight, AffineQuantizedTensor
+                    model.model.embed_tokens.weight, expected_tensor_class
                 ), "Embedding weight should be quantized"
             for child in list(model.children()):
                 if isinstance(child, torch.nn.Linear):
                     if activation_dtype:
-                        assert isinstance(
-                            child.weight, LinearActivationQuantizedTensor
-                        ), (
+                        assert isinstance(child.weight, expected_tensor_class), (
                             "Linear weight should be quantized with activation quantization"
                         )
                     else:
@@ -192,13 +183,37 @@ class TestQuantization:
 
     @require_torch_2_8_0
     @requires_sm_ge_100
+    def test_quantize_model_for_ptq_fp8(
+        self,
+        model,
+    ):
+        from torchao.quantization.quantize_.workflows.float8.float8_tensor import (
+            Float8Tensor,
+            QuantizeTensorToFloat8Kwargs,
+        )
+
+        quantize_model(
+            model,
+            TorchAOQuantDType.float8_e4m3fn,
+            None,
+            TorchAOQuantDType.float8_e4m3fn,
+        )
+        for child in list(model.children()):
+            if isinstance(child, torch.nn.Linear):
+                assert isinstance(child.weight, Float8Tensor)
+                assert child.weight.act_quant_kwargs is not None and isinstance(
+                    child.weight.act_quant_kwargs, QuantizeTensorToFloat8Kwargs
+                )
+
+    @require_torch_2_8_0
+    @requires_sm_ge_100
     def test_quantize_model_for_ptq_nvfp4(
         self,
         model,
     ):
         from torchao.prototype.mx_formats.nvfp4_tensor import (
-            QuantizeTensorToNVFP4Kwargs,
             NVFP4Tensor,
+            QuantizeTensorToNVFP4Kwargs,
         )
 
         quantize_model(model, TorchAOQuantDType.nvfp4, 16, TorchAOQuantDType.nvfp4)

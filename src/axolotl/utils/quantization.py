@@ -67,7 +67,7 @@ def get_quantization_config(
         if weight_dtype == TorchAOQuantDType.int4:
             from torchao.quantization.quant_api import Int4WeightOnlyConfig
 
-            return Int4WeightOnlyConfig(group_size=group_size or -1, version=2)
+            return Int4WeightOnlyConfig(group_size=group_size, version=2)
     if (
         activation_dtype == TorchAOQuantDType.int4
         and weight_dtype == TorchAOQuantDType.int4
