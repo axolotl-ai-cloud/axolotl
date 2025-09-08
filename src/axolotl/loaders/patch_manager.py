@@ -88,6 +88,16 @@ class PatchManager:
         self._apply_llama_flash_attn_patches(model)
         self._apply_unsloth_patches(model)
         self._apply_lora_kernel_patch(model)
+        # Apply DeepSeek-V3 MoE kernels (torchtitan-style) when applicable
+        try:
+            if getattr(self.cfg, "model_config_type", None) == "deepseek_v3":
+                from axolotl.monkeypatch.deepseek_v3 import (
+                    apply_titan_moe_to_deepseek_v3,
+                )
+
+                apply_titan_moe_to_deepseek_v3(model)
+        except Exception as e:
+            LOG.warning(f"DeepSeek-V3 MoE kernel patch skipped due to error: {e}")
 
     def _apply_flash_attention_patches(self):
         """Apply patches related to Flash Attention."""
