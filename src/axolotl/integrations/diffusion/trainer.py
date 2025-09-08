@@ -256,7 +256,7 @@ class DiffusionTrainer(AxolotlTrainer):
                 weighted_loss = token_loss
 
             if labels is not None:
-                # For SFT data: normalize by answer length per sample
+                # For SFT data: normalize by answer token count per sample
                 answer_mask = labels != -100
                 answer_lengths = answer_mask.sum(dim=1).float()  # [batch_size]
 
@@ -264,14 +264,14 @@ class DiffusionTrainer(AxolotlTrainer):
                 masked_batch_indices = batch_indices
 
                 # Sum losses per sample and divide by answer length
-                loss_per_sample = torch.zeros(
-                    input_ids.shape[0], device=input_ids.device
-                )
-                for i in range(input_ids.shape[0]):
+                batch_size = input_ids.shape[0]
+                loss_per_sample = torch.zeros(batch_size, device=input_ids.device)
+                for i in range(batch_size):
                     sample_mask = masked_batch_indices == i
                     if sample_mask.sum() > 0:
                         sample_loss = weighted_loss[sample_mask].sum()
-                        loss_per_sample[i] = sample_loss / answer_lengths[i]
+                        denom = answer_lengths[i].clamp(min=1.0)
+                        loss_per_sample[i] = sample_loss / denom
 
                 loss = loss_per_sample.mean()
             else:

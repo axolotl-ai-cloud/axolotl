@@ -19,6 +19,8 @@ from axolotl.cli.utils.diffusion import (
     parse_commands,
     run_diffusion,
 )
+from axolotl.integrations.base import PluginManager
+from axolotl.integrations.diffusion import DiffusionPlugin
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
@@ -78,11 +80,11 @@ def do_inference(
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
-    # Detect diffusion mode from plugins
-    plugins = cfg.get("plugins") or []
+    # Detect diffusion mode
+    plugin_manager = PluginManager.get_instance()
     is_diffusion = any(
-        isinstance(p, str) and p == "axolotl.integrations.diffusion.DiffusionPlugin"
-        for p in plugins
+        isinstance(plugin, DiffusionPlugin)
+        for plugin in plugin_manager.plugins.values()
     )
 
     if is_diffusion:

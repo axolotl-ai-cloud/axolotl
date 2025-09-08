@@ -65,7 +65,13 @@ def generate_samples(
 
     # Generate samples using reverse diffusion process
     with torch.no_grad():
-        for original_sequence in sampled_sequences:
+        for sample in sampled_sequences:
+            if isinstance(sample, dict):
+                original_sequence = sample.get("input_ids")
+                labels_seq = sample.get("labels")
+            else:
+                original_sequence = sample
+                labels_seq = None
             generation_result = generate(
                 unwrapped_model,
                 tokenizer,
@@ -76,6 +82,7 @@ def generate_samples(
                 mode=mode,
                 completion_tokens=completion_tokens,
                 target_mask_ratio=target_mask_ratio,
+                labels=labels_seq,
             )
             generations.append(generation_result)
 
@@ -90,9 +97,9 @@ def generate_samples(
 
 def _sample_sequences_from_dataloader(
     dataloader: Any, num_samples: int, max_length: int, device: torch.device
-) -> List[torch.Tensor]:
+) -> List[Any]:
     """Sample sequences from validation dataloader."""
-    sampled_sequences = []
+    sampled_sequences: list[dict[str, torch.Tensor] | torch.Tensor] = []
     sample_count = 0
 
     # Skip a random number of batches (we could be more clever about this)
@@ -111,6 +118,7 @@ def _sample_sequences_from_dataloader(
         batch_count += 1
         input_ids = batch["input_ids"]
         attention_mask = batch.get("attention_mask")
+        labels = batch.get("labels")
 
         # Randomly sample from sequences in this batch
         batch_indices = torch.randperm(input_ids.size(0)).tolist()
@@ -125,14 +133,16 @@ def _sample_sequences_from_dataloader(
             else:
                 seq_len = input_ids.size(1)
 
-            # Limit sequence length to max_length
-            actual_length = min(seq_len, max_length)
-            if actual_length < 10:
+            if seq_len < 10:
                 continue
 
             # Extract the sequence
-            sequence = input_ids[i][:actual_length].unsqueeze(0).to(device)
-            sampled_sequences.append(sequence)
+            sequence = input_ids[i].unsqueeze(0).to(device)
+            if labels is not None:
+                labels_seq = labels[i].unsqueeze(0).to(device)
+                sampled_sequences.append({"input_ids": sequence, "labels": labels_seq})
+            else:
+                sampled_sequences.append(sequence)
             sample_count += 1
 
     return sampled_sequences
@@ -149,6 +159,7 @@ def generate(
     mode: Literal["random", "completion"] = "random",
     completion_tokens: int = 0,
     target_mask_ratio: Optional[float] = None,
+    labels: Optional[torch.Tensor] = None,
 ) -> dict:
     """Generate a single sample using reverse diffusion."""
     # Get original text for comparison
@@ -157,7 +168,40 @@ def generate(
     )
 
     # Build masked sequence
-    if mode == "completion" and completion_tokens > 0:
+    if (
+        labels is not None
+        and labels.numel() > 0
+        and (labels != -100).any()
+        and (labels == -100).any()
+    ):
+        # SFT case: mask only the contiguous answer suffix (labels != -100)
+        total_tokens = original_sequence.size(1)
+
+        # Convert to 1D boolean mask for convenience
+        label_mask = (labels != -100).to(dtype=torch.bool)[0]
+
+        # Identify the last index that should be trainable
+        true_positions = torch.nonzero(label_mask, as_tuple=False).flatten()
+        if true_positions.numel() > 0:
+            last_true = int(true_positions[-1].item())
+
+            # Walk backward to find the start of the contiguous suffix
+            start_true = last_true
+            while start_true > 0 and bool(label_mask[start_true - 1]):
+                start_true -= 1
+
+            # Build a contiguous suffix mask; ignore stray earlier "True" labels
+            contiguous = torch.zeros_like(label_mask)
+            contiguous[start_true : last_true + 1] = True
+            masked_indices = contiguous.unsqueeze(0)
+        else:
+            masked_indices = torch.zeros_like(labels, dtype=torch.bool)
+
+        masked_sequence = original_sequence.clone()
+        masked_sequence[masked_indices] = mask_token_id
+        masked_tokens = int(masked_indices.sum().item())
+        mask_ratio = masked_tokens / max(int(total_tokens), 1)
+    elif mode == "completion" and completion_tokens > 0:
         # Append mask tokens to the right for completion
         total_tokens = original_sequence.size(1) + int(completion_tokens)
         masked_indices = torch.zeros(
