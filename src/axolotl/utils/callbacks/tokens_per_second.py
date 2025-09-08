@@ -43,11 +43,12 @@ class TokensPerSecondCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,
     ):  # pylint: disable=unused-argument
-        step_time = time.perf_counter() - self.start_time
-        num_tokens_per_device = state.num_tokens.clone()
-        # non data parallel groups have duplicated tokens, so we avoid double-counting
-        num_tokens_per_device = num_tokens_per_device / self.non_data_parallel_size
-        state.last_tokens_per_second = num_tokens_per_device / step_time
+        if hasattr(state, "num_tokens"):
+            step_time = time.perf_counter() - self.start_time
+            num_tokens_per_device = state.num_tokens.clone()
+            # non data parallel groups have duplicated tokens, so we avoid double-counting
+            num_tokens_per_device = num_tokens_per_device / self.non_data_parallel_size
+            state.last_tokens_per_second = num_tokens_per_device / step_time
 
     def on_log(
         self,
