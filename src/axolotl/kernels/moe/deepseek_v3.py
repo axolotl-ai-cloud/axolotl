@@ -1,3 +1,6 @@
+import os
+import sys
+
 import torch
 import torch.nn.functional as F
 
@@ -33,6 +36,54 @@ def _run_experts_for_loop(
     return out
 
 
+def _try_import_cg_grouped_gemm():
+    """Try to import torchtitan's Triton contiguous grouped GEMM.
+
+    Returns the callable `cg_grouped_gemm(inputs, expert_weights, expert_indices, group_size_m=128)`
+    if importable from either an installed `torchtitan` package or a sibling checkout at
+    ../torchtitan/torchtitan/experiments/kernels/triton_contiguous_group_gemm.
+    """
+    # Prefer vendored kernel if present
+    try:
+        from axolotl.kernels.vendor.tt_cg_gemm import cg_grouped_gemm  # type: ignore
+
+        return cg_grouped_gemm
+    except Exception:
+        pass
+    # Attempt import from an installed torchtitan package
+    try:
+        from torchtitan.experiments.kernels.triton_contiguous_group_gemm.cg_backward import (
+            cg_grouped_gemm,  # type: ignore
+        )
+
+        return cg_grouped_gemm
+    except Exception:
+        pass
+
+    # Attempt import from a sibling checkout: ../torchtitan/torchtitan/experiments/kernels/triton_contiguous_group_gemm
+    try:
+        this_dir = os.path.dirname(os.path.abspath(__file__))
+        repo_root = os.path.abspath(os.path.join(this_dir, "../../../.."))
+        tt_kernel_dir = os.path.abspath(
+            os.path.join(
+                repo_root,
+                "../torchtitan/torchtitan/experiments/kernels/triton_contiguous_group_gemm",
+            )
+        )
+        if os.path.isdir(tt_kernel_dir) and tt_kernel_dir not in sys.path:
+            sys.path.insert(0, tt_kernel_dir)
+        # The module does local imports (cg_forward), so we import by filename module name
+        import importlib
+
+        mod = importlib.import_module("cg_backward")
+        if hasattr(mod, "cg_grouped_gemm"):
+            return mod.cg_grouped_gemm
+    except Exception:
+        pass
+
+    return None
+
+
 def _run_experts_grouped_mm(
     w1: torch.Tensor,
     w2: torch.Tensor,
@@ -40,28 +91,59 @@ def _run_experts_grouped_mm(
     x: torch.Tensor,
     num_tokens_per_expert: torch.Tensor,
 ) -> torch.Tensor:
-    # grouped mm between a 2D tensor and a 3D tensor
+    # Prefer torchtitan Triton CG-GEMM if available; otherwise fallback to Python loop.
     assert x.dim() == 2
 
-    # Offsets are cumsum of token counts per expert
-    offsets = torch.cumsum(num_tokens_per_expert, dim=0, dtype=torch.int32)
+    cg_grouped_gemm = _try_import_cg_grouped_gemm()
+    if cg_grouped_gemm is None:
+        return _run_experts_for_loop(w1, w2, w3, x, num_tokens_per_expert)
 
-    # Use bfloat16 for grouped mm to match torch internal API contracts
-    try:
-        h = F.silu(
-            torch._grouped_mm(
-                x.bfloat16(), w1.bfloat16().transpose(-2, -1), offs=offsets
-            )
-        )
-        h = h * torch._grouped_mm(
-            x.bfloat16(), w3.bfloat16().transpose(-2, -1), offs=offsets
-        )
-        out = torch._grouped_mm(
-            h, w2.bfloat16().transpose(-2, -1), offs=offsets
-        ).type_as(x)
-    except AttributeError:
-        # Fallback if torch._grouped_mm is unavailable
-        out = _run_experts_for_loop(w1, w2, w3, x, num_tokens_per_expert)
+    # Build expert index vector corresponding to `x` rows. We rely on caller to have
+    # grouped tokens by expert in ascending expert order; `num_tokens_per_expert` conveys sizes.
+    num_experts = w1.shape[0]
+    counts_i32 = num_tokens_per_expert.to(dtype=torch.int32, device=x.device)
+
+    # CG-GEMM expects contiguous groups of fixed size (group_size_m). We'll pad each expert's
+    # block up to the next multiple of `group_size_m` with zeros, run the kernel, then unpad.
+    group_size_m = 128
+    # total real tokens
+    total_real = int(counts_i32.sum().item())
+    # compute per-expert padded counts
+    padded_counts = ((counts_i32 + (group_size_m - 1)) // group_size_m) * group_size_m
+    pad_total = int(padded_counts.sum().item()) - total_real
+
+    # Create expert indices for padded layout
+    expert_ids = torch.arange(num_experts, device=x.device, dtype=torch.int32)
+    expert_indices = torch.repeat_interleave(expert_ids, padded_counts)
+
+    # Pad inputs with zeros at the tail of each expert block
+    x_padded_parts = []
+    start = 0
+    for e in range(num_experts):
+        cnt = int(counts_i32[e].item())
+        pad = int(padded_counts[e].item() - cnt)
+        if cnt > 0:
+            x_part = x[start : start + cnt]
+            start += cnt
+        else:
+            x_part = x.new_zeros((0, x.shape[-1]))
+        if pad > 0:
+            x_part = torch.vstack((x_part, x.new_zeros((pad, x.shape[-1]))))
+        x_padded_parts.append(x_part)
+    x_padded = torch.cat(x_padded_parts, dim=0).contiguous()
+
+    # Weights expected as [E, N, K]; inputs as [M_total, K]
+    # w1,w3 are [E, hidden, dim]; w2 is [E, dim, hidden]
+    h1 = F.silu(
+        cg_grouped_gemm(x_padded, w1, expert_indices, group_size_m=group_size_m)
+    )
+    h3 = cg_grouped_gemm(x_padded, w3, expert_indices, group_size_m=group_size_m)
+    h = h1 * h3
+    out_padded = cg_grouped_gemm(
+        h, w2, expert_indices, group_size_m=group_size_m
+    ).type_as(x)
+    # Drop padded rows
+    out = out_padded[:total_real]
     return out
 
 
@@ -90,8 +172,10 @@ def _compute_routing(
         top_scores = top_scores / denom
     top_scores = top_scores * route_scale
 
-    num_tokens_per_expert = torch.histc(
-        top_idx.view(-1), bins=num_experts, min=0, max=num_experts
+    # Integer counts per expert for routing; prefer bincount over histc to avoid floats
+    flat_idx = top_idx.reshape(-1)
+    num_tokens_per_expert = torch.bincount(flat_idx, minlength=num_experts).to(
+        dtype=torch.int32
     )
     return top_scores, top_idx, num_tokens_per_expert
 
@@ -105,15 +189,13 @@ class TokenReorderer(torch.nn.Module):
     def forward(
         self, top_scores: torch.Tensor, selected_experts_indices: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        num_tokens_per_expert = torch.histc(
-            selected_experts_indices.view(-1),
-            bins=self.num_experts,
-            min=0,
-            max=self.num_experts,
-        )
+        # counts per expert as int32
+        num_tokens_per_expert = torch.bincount(
+            selected_experts_indices.reshape(-1), minlength=self.num_experts
+        ).to(dtype=torch.int32)
 
         token_indices_sorted = torch.argsort(
-            selected_experts_indices.view(-1), stable=True
+            selected_experts_indices.reshape(-1), stable=True
         )
         top_scores_sorted = top_scores.view(-1)[token_indices_sorted]
         token_indices_sorted = token_indices_sorted // self.top_k
