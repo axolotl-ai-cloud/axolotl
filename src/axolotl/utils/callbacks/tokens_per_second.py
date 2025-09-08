@@ -43,7 +43,7 @@ class TokensPerSecondCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,
     ):  # pylint: disable=unused-argument
-        if hasattr(state, "num_tokens"):
+        if not control.should_evaluate:
             step_time = time.perf_counter() - self.start_time
             num_tokens_per_device = state.num_tokens.clone()
             # non data parallel groups have duplicated tokens, so we avoid double-counting
@@ -59,6 +59,6 @@ class TokensPerSecondCallback(TrainerCallback):
         **kwargs,
     ):  # pylint: disable=unused-argument
         # after logging, clear the running metrics
-        if hasattr(state, "num_tokens"):
+        if not control.should_evaluate:
             state.last_tokens_per_second.zero_()
             state.num_tokens = torch.zeros(1)
