@@ -1,0 +1,64 @@
+base_model: axolotl-ai-co/deepseek-v3-1b-moe-test
+# Enable custom HF modeling for this repo
+trust_remote_code: true
+
+# Explicit model/tokenizer autos
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+
+# Quantization + LoRA (QLoRA) to keep memory light
+load_in_4bit: true
+adapter: qlora
+lora_model_dir:
+
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+
+dataset_prepared_path:
+val_set_size: 0.05
+output_dir: ./outputs/deepseek-v3-1b-moe-qlora
+
+sequence_len: 4096
+sample_packing: true
+
+# LoRA hyperparams (sane defaults)
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_linear: true
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 4
+micro_batch_size: 2
+num_epochs: 3
+optimizer: paged_adamw_32bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: true
+
+gradient_checkpointing: true
+resume_from_checkpoint:
+logging_steps: 5
+
+# Optional: enable if flash-attn is installed; otherwise set to false
+flash_attention: true
+
+warmup_ratio: 0.1
+evals_per_epoch: 4
+saves_per_epoch: 1
+weight_decay: 0.0
+
+# MoE kernels activation:
+# The DeepSeek-V3 MoE kernels are applied automatically by Axolotl when
+# model_config_type == "deepseek_v3" (read from the model's config) and
+# trust_remote_code is enabled. No extra flags are required here.
+
+# save_first_step: true  # uncomment to quickly verify checkpoint saving
