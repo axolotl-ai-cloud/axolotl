@@ -9,7 +9,7 @@ from pathlib import Path
 
 from setuptools import find_packages, setup
 
-x = 10  # force ci - remove before merge
+x = 11  # force ci - remove before merge
 
 
 def parse_requirements(extras_require_map):
