@@ -95,8 +95,8 @@ def _sample_sequences_from_dataloader(
     sampled_sequences = []
     sample_count = 0
 
-    # Add randomness by skipping a random number of batches
-    skip_batches = torch.randint(0, 6, (1,)).item()
+    # Skip a random number of batches (we could be more clever about this)
+    skip_batches = torch.randint(0, 10, (1,)).item()
     batch_count = 0
 
     for batch in dataloader:
@@ -127,7 +127,7 @@ def _sample_sequences_from_dataloader(
 
             # Limit sequence length to max_length
             actual_length = min(seq_len, max_length)
-            if actual_length < 10:  # Skip very short sequences
+            if actual_length < 10:
                 continue
 
             # Extract the sequence
@@ -213,12 +213,12 @@ def generate(
     # Collect diagnostic info for richer UIs
     try:
         final_ids = sequence[0].detach().cpu().tolist()
-    except Exception:  # pragma: no cover
+    except Exception:
         final_ids = None
 
     try:
         orig_ids_for_render = original_sequence[0].detach().cpu().tolist()
-    except Exception:  # pragma: no cover
+    except Exception:
         orig_ids_for_render = None
 
     try:
@@ -230,7 +230,7 @@ def generate(
             )
         else:
             masked_positions = []
-    except Exception:  # pragma: no cover
+    except Exception:
         masked_positions = []
 
     result = {
@@ -252,17 +252,8 @@ def generate(
     return result
 
 
-# Backwards compatibility for older imports
-_generate = generate
-
-
 def _clean_masked_text(masked_text: str, tokenizer: Any, mask_token_id: int) -> str:
-    """Clean up masked text for display while preserving line breaks.
-
-    - Replaces the actual mask token string with "[MASK]".
-    - Strips other special tokens.
-    - Collapses repeated spaces/tabs while keeping newlines intact.
-    """
+    """Clean up masked text for display."""
     mask_token_repr = tokenizer.decode([mask_token_id], skip_special_tokens=False)
     cleaned = masked_text.replace(mask_token_repr, "[MASK]")
 
@@ -293,7 +284,7 @@ def _diffusion_step(
     if not current_mask.any():
         return sequence
 
-    # Create bidirectional attention mask for diffusion
+    # Create attention mask
     batch_size, seq_len = sequence.shape
     attention_mask = torch.ones(
         batch_size, 1, seq_len, seq_len, dtype=torch.bool, device=sequence.device
@@ -316,7 +307,6 @@ def _diffusion_step(
         # Suppress mask token in outputs
         scaled_logits[:, mask_token_id] = -float("inf")
 
-        # Sample predictions
         if temperature > 0:
             # Add Gumbel noise for sampling
             gumbel_noise = -torch.log(
@@ -325,7 +315,6 @@ def _diffusion_step(
             gumbel_logits = scaled_logits + gumbel_noise
             predicted_tokens = torch.argmax(gumbel_logits, dim=-1)
         else:
-            # Deterministic sampling when temperature is 0
             predicted_tokens = torch.argmax(scaled_logits, dim=-1)
 
         # Calculate probabilities for confidence scoring

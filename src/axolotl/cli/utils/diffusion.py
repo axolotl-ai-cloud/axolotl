@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from axolotl.integrations.diffusion.generation import generate
-from axolotl.integrations.diffusion.utils import resolve_mask_token_id
+from axolotl.integrations.diffusion import generate, resolve_mask_token_id
 from axolotl.utils.dict import DictDefault
 
 

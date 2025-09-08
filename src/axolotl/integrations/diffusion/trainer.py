@@ -23,7 +23,7 @@ def _maybe_torch_compile(fn):
         return fn
 
 
-class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
+class DiffusionTrainer(AxolotlTrainer):
     """Custom trainer for diffusion LM training that overrides loss computation."""
 
     def __init__(self, *args, **kwargs):
@@ -36,29 +36,9 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         self.cfg = config
         self._cache_special_token_ids()
         self._resolve_mask_token_id()
-        # Log resolved mask token id
-        try:
-            tok = getattr(self, "processing_class", None)
-            tid = int(self.cfg.diffusion_mask_token_id)
-            token_repr = None
-            if tok is not None:
-                if hasattr(tok, "convert_ids_to_tokens"):
-                    try:
-                        token_repr = tok.convert_ids_to_tokens(tid)
-                    except Exception:  # pragma: no cover
-                        token_repr = None
-                if not token_repr and hasattr(tok, "decode"):
-                    try:
-                        token_repr = tok.decode([tid], skip_special_tokens=False)
-                    except Exception:  # pragma: no cover
-                        token_repr = None
-            LOG.info(
-                "Diffusion: using mask_token_id=%s%s",
-                tid,
-                f" (token={token_repr})" if token_repr else "",
-            )
-        except Exception:  # pragma: no cover
-            pass
+
+        token_id = int(self.cfg.diffusion_mask_token_id)
+        LOG.info(f"Diffusion: using mask_token_id={token_id}")
 
         if config.diffusion_generate_samples:
             generation_callback = DiffusionGenerationCallback(self)
@@ -80,7 +60,7 @@ class DiffusionTrainer(AxolotlTrainer):  # pylint: disable=too-many-ancestors
         )
         try:
             self.cfg.diffusion_mask_token_id = int(mid)
-        except Exception:  # pragma: no cover
+        except Exception:
             pass
 
     def compute_loss(

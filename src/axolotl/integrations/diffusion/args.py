@@ -49,9 +49,9 @@ class DiffusionArgs(BaseModel):
     diffusion_mask_token_str: str | None = Field(
         default=None,
         description=(
-            "Token string to use as a mask. If `mask_token_id` is invalid or unset, "
-            "this token will be ensured to exist as an additional special token and "
-            "used. If absent, a default '<|diffusion_mask|>' will be added."
+            "Token string to use as a mask. If `diffusion_mask_token_id` is invalid "
+            "or unset, this token will be ensured to exist as an additional special "
+            "token and used. If absent, a default '<|diffusion_mask|>' will be added."
         ),
     )
 

@@ -674,10 +674,10 @@ class ModelLoader:
         return hf_ds_cfg
 
     def _load_model_from_config(self, model_loader_class=None) -> PreTrainedModel:
-        """Load model with random initialization using from_config.
+        """
+        Load model with random initialization using from_config.
 
         Uses the selected loader when provided; otherwise falls back to the auto loader.
-        For auto loaders, forward trust_remote_code. Cast to cfg.torch_dtype when set.
         """
         loader = model_loader_class or self.auto_model_loader
         if loader in [AutoModelForCausalLM, AutoModelForVision2Seq]:

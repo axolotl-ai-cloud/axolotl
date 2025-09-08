@@ -8,13 +8,9 @@ from colorama import Fore, Style
 from transformers.trainer_callback import TrainerCallback, TrainerControl, TrainerState
 from transformers.training_args import TrainingArguments
 
-from axolotl.utils.logging import get_logger
-
 from .generation import generate_samples
 
-LOG = get_logger(__name__)
-
-# Simple logger for readable sample generation
+# Simpler logger for more readable sample generation
 logger = logging.getLogger(__name__)
 if not logger.handlers:
     handler = logging.StreamHandler(sys.stdout)
@@ -30,7 +26,6 @@ class DiffusionGenerationCallback(TrainerCallback):
     def __init__(self, trainer):
         self.trainer = trainer
 
-    # pylint: disable=unused-argument
     def on_step_end(
         self,
         args: TrainingArguments,
@@ -147,7 +142,7 @@ class DiffusionGenerationCallback(TrainerCallback):
 
         logger.info("=" * 60)
 
-        if self.trainer.cfg.use_wandb and self.trainer.state.is_world_process_zero:
+        if self.trainer.cfg.use_wandb:
             if wandb.run is not None:
                 wandb.log(
                     {

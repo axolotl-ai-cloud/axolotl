@@ -49,6 +49,13 @@ from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger(__name__)
 
+REDUCTION_FNS = {
+    "mean": torch.mean,
+    "min": torch.min,
+    "max": torch.max,
+    "sum": torch.sum,
+}
+
 
 class AxolotlTrainer(
     PackingMixin,
@@ -588,25 +595,16 @@ class AxolotlTrainer(
         # logs either has 'loss' or 'eval_loss'
         train_eval = "train" if "loss" in logs else "eval"
 
-        # Add reduced stored metrics to logs
         for key, metric_data in self._stored_metrics[train_eval].items():
-            values = torch.tensor(metric_data["values"])
+            values = torch.tensor(metric_data["values"])  # type: ignore[arg-type]
             reduction_type = metric_data["reduction"]
 
-            if reduction_type == "mean":
-                logs[key] = values.mean().item()
-            elif reduction_type == "min":
-                logs[key] = values.min().item()
-            elif reduction_type == "max":
-                logs[key] = values.max().item()
-            elif reduction_type == "sum":
-                logs[key] = values.sum().item()
-            else:
+            fn = REDUCTION_FNS.get(reduction_type)
+            if fn is None:
                 raise NotImplementedError(
                     "Metric reduction must be one of [mean, min, max, sum]"
                 )
-
-            logs[key] = round(logs[key], 4)
+            logs[key] = round(fn(values).item(), 4)
 
         if is_main_process():
             # Add memory usage
@@ -645,12 +643,12 @@ class AxolotlTrainer(
         """
         for key, value in metrics.items():
             if isinstance(value, tuple):
-                metric_value, metric_reduction = value
+                value, reduction = value  # type: ignore[assignment]
             else:
-                metric_value, metric_reduction = value, reduction
+                value, reduction = value, reduction
 
-            self._stored_metrics[train_eval][key]["values"].append(metric_value)
-            self._stored_metrics[train_eval][key]["reduction"] = metric_reduction
+            self._stored_metrics[train_eval][key]["values"].append(value)
+            self._stored_metrics[train_eval][key]["reduction"] = reduction
 
     def _save_checkpoint(self, model, trial, **kwargs):
         # make sure the checkpoint dir exists, since trainer is flakey
