@@ -206,7 +206,7 @@ class TokenReorderer(torch.nn.Module):
 def moe_forward_kernel(
     *,
     hidden_states: torch.Tensor,
-    gate: torch.nn.Linear,
+    gate: torch.nn.Module,
     experts: list,
     shared_expert: object | None,
     top_k: int,

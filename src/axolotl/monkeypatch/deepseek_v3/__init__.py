@@ -11,31 +11,60 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+def _is_router(mod: torch.nn.Module) -> bool:
+    """Return True if module looks like a router (Linear or DeepseekV3TopkRouter)."""
+    if not isinstance(mod, torch.nn.Module):
+        return False
+    if isinstance(mod, torch.nn.Linear):
+        return True
+    cls_name = mod.__class__.__name__
+    return cls_name in {"DeepseekV3TopkRouter", "TopKRouter", "DeepseekV3Router"}
+
+
+def _is_deepseek_v3_mlp(mod: torch.nn.Module) -> bool:
+    """Check that a module exposes expected DeepSeek-V3 MLP projections."""
+    return all(hasattr(mod, n) for n in ("gate_proj", "up_proj", "down_proj"))
+
+
 def _looks_like_deepseek_v3_moe(module: torch.nn.Module) -> bool:
-    # Heuristic: module has gate (Linear), experts (iterable of modules with gate_proj/up_proj/down_proj)
+    """Detect DeepSeek-V3 MoE blocks robustly.
+
+    Supports both:
+    - Official DeepseekV3MoE (with `gate` router module and `experts: ModuleList[DeepseekV3MLP]`)
+    - Axolotl mini variant (with `gate: Linear` and `experts` exposing *_proj)
+    """
+    # Quick positive match by class name
+    cls_name = module.__class__.__name__
+    if cls_name in {"DeepseekV3MoE", "DeepseekV3MiniMoEMLP"}:
+        return True
+
+    # Structural checks
     if not hasattr(module, "gate") or not hasattr(module, "experts"):
         return False
-    gate = module.gate
-    experts = module.experts
-    if not isinstance(gate, torch.nn.Linear):
+    gate = getattr(module, "gate")
+    experts = getattr(module, "experts")
+    if not _is_router(gate):
         return False
     if not isinstance(experts, Iterable):
         return False
-    # Verify at least one expert has expected projections
     try:
         exp0 = next(iter(experts))
     except StopIteration:
         return False
-    needed = all(hasattr(exp0, name) for name in ("gate_proj", "up_proj", "down_proj"))
-    return needed
+    return _is_deepseek_v3_mlp(exp0)
 
 
 def _mk_patched_forward(module: torch.nn.Module):
     # Extract config-like attributes if present
     top_k = getattr(module, "top_k", None)
     if top_k is None:
-        # HF often stores as num_experts_per_tok
-        top_k = getattr(module, "num_experts_per_tok", 2)
+        # HF often stores as num_experts_per_tok on MoE module
+        top_k = getattr(module, "num_experts_per_tok", None)
+    if top_k is None and hasattr(module, "gate"):
+        # Some implementations keep it on the router
+        top_k = getattr(module.gate, "top_k", getattr(module.gate, "k", None))
+    if top_k is None:
+        top_k = 2
 
     # DeepSeek-V3 commonly uses sigmoid routing with normalization
     score_func = getattr(module, "router_score_fn", "sigmoid")
