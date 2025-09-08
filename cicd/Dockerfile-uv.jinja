@@ -35,7 +35,7 @@ RUN uv pip install packaging==23.2 setuptools==75.8.0
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         uv pip install --no-build-isolation -e .[deepspeed,flash-attn,ring-flash-attn,optimizers,ray,fbgemm-gpu,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
     else \
-        uv pip install --no-build-isolation -e .[deepspeed,flash-attn,ring-flash-attn,optimizers,ray,fbgemm-gpu,] $AXOLOTL_ARGS; \
+        uv pip install --no-build-isolation -e .[deepspeed,flash-attn,ring-flash-attn,optimizers,ray,fbgemm-gpu] $AXOLOTL_ARGS; \
     fi
 
 RUN python scripts/unsloth_install.py --uv | sh

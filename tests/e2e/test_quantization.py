@@ -190,32 +190,21 @@ class TestQuantization:
                             "Linear weight should be quantized without activation quantization"
                         )
 
-    @pytest.mark.parametrize(
-        "weight_dtype,activation_dtype,group_size,quantize_embedding,expected_exception",
-        ptq_test_cases,
-    )
     @require_torch_2_8_0
     @requires_sm_ge_100
     def test_quantize_model_for_ptq_nvfp4(
         self,
         model,
-        weight_dtype,
-        activation_dtype,
-        group_size,
-        quantize_embedding,
-        expected_exception,
     ):
         quantize_model(model, TorchAOQuantDType.nvfp4, TorchAOQuantDType.nvfp4)
         for child in list(model.children()):
             if isinstance(child, torch.nn.Linear):
-                if activation_dtype:
-                    assert isinstance(child.weight, LinearActivationQuantizedTensor), (
-                        "Linear weight should be quantized with activation quantization"
-                    )
-                else:
-                    assert isinstance(child.weight, AffineQuantizedTensor), (
-                        "Linear weight should be quantized without activation quantization"
-                    )
+                assert isinstance(child.weight, LinearActivationQuantizedTensor), (
+                    "Linear weight should be quantized with activation quantization"
+                )
+                assert isinstance(child.weight, AffineQuantizedTensor), (
+                    "Linear weight should be quantized without activation quantization"
+                )
 
     @pytest.mark.parametrize(
         "weight_dtype,activation_dtype,group_size,quantize_embedding",
