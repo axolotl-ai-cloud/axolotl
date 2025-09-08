@@ -91,7 +91,9 @@ def main():
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     cfg.save_pretrained(out)
-    model.save_pretrained(out)
+    # Shared weights between `lm_head` and `embed_tokens` can trip the
+    # transformers safetensors shared-tensor check. Use torch serialization.
+    model.save_pretrained(out, safe_serialization=False)
     print(f"Saved randomly initialized model to {out}")
 
 
