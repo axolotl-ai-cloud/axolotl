@@ -44,7 +44,7 @@ jobs:
             cuda_version: 12.8.1
             python_version: "3.11"
             pytorch: 2.8.0
-            axolotl_extras:
+            axolotl_extras: fbgemm-gpu
             num_gpus: 2
             nightly_build: "true"
     runs-on: [self-hosted, modal]
@@ -59,7 +59,7 @@ jobs:
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
-          pip install modal==1.0.2 jinja2 fbgemm-gpu-genai>=1.2.0
+          pip install modal==1.0.2 jinja2
       - name: Update env vars
         run: |
           echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV

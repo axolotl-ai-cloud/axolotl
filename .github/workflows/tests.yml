@@ -254,7 +254,7 @@ jobs:
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
-          pip install modal==1.0.2 jinja2 fbgemm-gpu-genai>=1.2.0
+          pip install modal==1.0.2 jinja2
       - name: Update env vars
         run: |
           echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
@@ -304,7 +304,7 @@ jobs:
             pytorch: 2.8.0
             num_gpus: 1
             gpu_type: "B200"
-            axolotl_extras:
+            axolotl_extras: fbgemm-gpu
     steps:
       - name: Checkout
         uses: actions/checkout@v4
