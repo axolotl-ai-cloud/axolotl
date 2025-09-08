@@ -194,7 +194,16 @@ def generate(
     )
 
     # Build masked sequence
-    if labels is not None and labels.numel() > 0 and (labels != -100).any():
+    # If labels contain a mix of -100 (prompt) and non -100 (answer),
+    # treat as SFT and mask only the answer tokens. For pretraining where
+    # labels are fully populated (no -100), fall back to random/completion
+    # masking instead of masking the entire sequence.
+    if (
+        labels is not None
+        and labels.numel() > 0
+        and (labels == -100).any()
+        and (labels != -100).any()
+    ):
         # SFT case: completely mask all answer tokens (labels != -100)
         total_tokens = original_sequence.size(1)
         masked_indices = (labels != -100).to(dtype=torch.bool)
