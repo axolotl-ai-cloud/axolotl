@@ -26,14 +26,6 @@ from torchao.quantization.quant_api import (
     Float8DynamicActivationInt4WeightConfig,
     Int8DynamicActivationInt4WeightConfig,
 )
-# TODO: fixme
-
-try:
-    from torchao.quantization.quant_api import Int4WeightOnlyConfig
-except:
-    from torchao.quantization.quant_api import AOBaseConfig
-
-    Int4WeightOnlyConfig = AOBaseConfig
 
 from transformers import AutoModelForCausalLM
 from transformers.trainer_callback import TrainerState
@@ -64,12 +56,6 @@ def model():
 
 ptq_config_test_cases = [
     # weight_dtype, activation_dtype, group_size, expected_type, expected_params
-    (
-        TorchAOQuantDType.int4,
-        None,
-        4,
-        Int4WeightOnlyConfig,
-    ),
     (
         TorchAOQuantDType.int4,
         TorchAOQuantDType.int8,
@@ -150,6 +136,14 @@ class TestQuantization:
     ):
         config = get_quantization_config(weight_dtype, activation_dtype, group_size)
         assert isinstance(config, expected_type)
+
+    @requires_cuda_ge_8_9
+    @require_torch_2_8_0
+    def test_get_ptq_config_int4_weight_only(self):
+        from torchao.quantization.quant_api import Int4WeightOnlyConfig
+
+        config = get_quantization_config(TorchAOQuantDType.int4, None, 4)
+        assert isinstance(config, Int4WeightOnlyConfig)
 
     @pytest.mark.parametrize(
         "weight_dtype,activation_dtype,group_size,quantize_embedding,expected_exception",
