@@ -136,10 +136,36 @@ def _sample_sequences_from_dataloader(
             if seq_len < 10:
                 continue
 
-            # Extract the sequence
-            sequence = input_ids[i].unsqueeze(0).to(device)
+            # Determine truncation length. If SFT labels exist, preserve the full
+            # prompt (labels == -100) and truncate only the answer span to fit within
+            # max_length. Ensure at least one answer token is retained; otherwise skip.
+            max_total = min(seq_len, max_length)
             if labels is not None:
-                labels_seq = labels[i].unsqueeze(0).to(device)
+                labels_i = labels[i][:seq_len]
+                answer_mask = labels_i != -100
+                if not answer_mask.any():
+                    # No answer tokens; skip for SFT masking
+                    continue
+                first_ans_idx = int(
+                    torch.nonzero(answer_mask, as_tuple=False)[0].item()
+                )
+                prompt_len = first_ans_idx
+                if prompt_len >= max_total:
+                    # Prompt alone reaches cap; cannot include any answer
+                    continue
+                remaining_answer = int(answer_mask[prompt_len:].sum().item())
+                allowed_answer = max_total - prompt_len
+                take_answer = min(remaining_answer, allowed_answer)
+                if take_answer <= 0:
+                    continue
+                actual_length = prompt_len + take_answer
+            else:
+                actual_length = max_total
+
+            # Extract the (possibly truncated) sequence
+            sequence = input_ids[i][:actual_length].unsqueeze(0).to(device)
+            if labels is not None:
+                labels_seq = labels[i][:actual_length].unsqueeze(0).to(device)
                 sampled_sequences.append({"input_ids": sequence, "labels": labels_seq})
             else:
                 sampled_sequences.append(sequence)
@@ -168,35 +194,10 @@ def generate(
     )
 
     # Build masked sequence
-    if (
-        labels is not None
-        and labels.numel() > 0
-        and (labels != -100).any()
-        and (labels == -100).any()
-    ):
-        # SFT case: mask only the contiguous answer suffix (labels != -100)
+    if labels is not None and labels.numel() > 0 and (labels != -100).any():
+        # SFT case: completely mask all answer tokens (labels != -100)
         total_tokens = original_sequence.size(1)
-
-        # Convert to 1D boolean mask for convenience
-        label_mask = (labels != -100).to(dtype=torch.bool)[0]
-
-        # Identify the last index that should be trainable
-        true_positions = torch.nonzero(label_mask, as_tuple=False).flatten()
-        if true_positions.numel() > 0:
-            last_true = int(true_positions[-1].item())
-
-            # Walk backward to find the start of the contiguous suffix
-            start_true = last_true
-            while start_true > 0 and bool(label_mask[start_true - 1]):
-                start_true -= 1
-
-            # Build a contiguous suffix mask; ignore stray earlier "True" labels
-            contiguous = torch.zeros_like(label_mask)
-            contiguous[start_true : last_true + 1] = True
-            masked_indices = contiguous.unsqueeze(0)
-        else:
-            masked_indices = torch.zeros_like(labels, dtype=torch.bool)
-
+        masked_indices = (labels != -100).to(dtype=torch.bool)
         masked_sequence = original_sequence.clone()
         masked_sequence[masked_indices] = mask_token_id
         masked_tokens = int(masked_indices.sum().item())

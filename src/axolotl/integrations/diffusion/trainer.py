@@ -158,8 +158,9 @@ class DiffusionTrainer(AxolotlTrainer):
             masked_indices = masked_indices & answer_mask
 
         # Create masked input
-        mask_token_id = self.cfg.diffusion_mask_token_id
-        noisy_batch = torch.where(masked_indices, mask_token_id, input_ids)
+        mask_token_id = int(self.cfg.diffusion_mask_token_id)
+        mask_value = torch.full_like(input_ids, mask_token_id)
+        noisy_batch = torch.where(masked_indices, mask_value, input_ids)
 
         return noisy_batch, masked_indices, p_mask
 
@@ -219,6 +220,22 @@ class DiffusionTrainer(AxolotlTrainer):
             loss: Cross-entropy loss.
             metrics: Dictionary of metrics.
         """
+        # Short-circuit empty sequences
+        if input_ids is None or input_ids.numel() == 0 or input_ids.shape[1] == 0:
+            zero = torch.tensor(
+                0.0,
+                device=(input_ids.device if input_ids is not None else None),
+                requires_grad=True,
+            )
+            return zero, {}
+
+        # If an attention_mask is provided and all positions are padding for every
+        # sample in this batch, skip the step.
+        if attention_mask is not None:
+            if attention_mask.dim() == 2 and (attention_mask.sum(dim=1) == 0).all():
+                zero = torch.tensor(0.0, device=input_ids.device, requires_grad=True)
+                return zero, {}
+
         # Apply forward process
         noisy_batch, masked_indices, p_mask = self._forward_process(
             input_ids, attention_mask, labels, self.cfg.diffusion_eps
@@ -231,7 +248,7 @@ class DiffusionTrainer(AxolotlTrainer):
 
         # Forward pass
         outputs = model(
-            input_ids=noisy_batch,
+            input_ids=noisy_batch.long(),
             attention_mask=bidirectional_mask,
         )
         logits = outputs.logits
