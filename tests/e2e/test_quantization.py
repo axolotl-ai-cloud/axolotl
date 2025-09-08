@@ -196,14 +196,17 @@ class TestQuantization:
         self,
         model,
     ):
-        quantize_model(model, TorchAOQuantDType.nvfp4, TorchAOQuantDType.nvfp4)
+        from torchao.prototype.mx_formats.nvfp4_tensor import (
+            QuantizeTensorToNVFP4Kwargs,
+            NVFP4Tensor,
+        )
+
+        quantize_model(model, TorchAOQuantDType.nvfp4, 16, TorchAOQuantDType.nvfp4)
         for child in list(model.children()):
             if isinstance(child, torch.nn.Linear):
-                assert isinstance(child.weight, LinearActivationQuantizedTensor), (
-                    "Linear weight should be quantized with activation quantization"
-                )
-                assert isinstance(child.weight, AffineQuantizedTensor), (
-                    "Linear weight should be quantized without activation quantization"
+                assert isinstance(child.weight, NVFP4Tensor)
+                assert child.weight.act_quant_kwargs is not None and isinstance(
+                    child.weight.act_quant_kwargs, QuantizeTensorToNVFP4Kwargs
                 )
 
     @pytest.mark.parametrize(
