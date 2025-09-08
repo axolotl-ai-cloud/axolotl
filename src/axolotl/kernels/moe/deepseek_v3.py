@@ -149,7 +149,7 @@ def _run_experts_grouped_mm(
 
 def _compute_routing(
     x: torch.Tensor,
-    gate: torch.nn.Linear,
+    gate: torch.nn.Module,
     num_experts: int,
     top_k: int,
     *,
@@ -178,6 +178,147 @@ def _compute_routing(
         dtype=torch.int32
     )
     return top_scores, top_idx, num_tokens_per_expert
+
+
+def _extract_linear_from_router(router: torch.nn.Module) -> torch.nn.Module | None:
+    """Try to find an inner Linear used by router modules (common names)."""
+    for name in ("gate", "router", "proj", "linear"):
+        inner = getattr(router, name, None)
+        if isinstance(inner, torch.nn.Linear):
+            return inner
+    return None
+
+
+def _router_forward_topk(
+    x: torch.Tensor,
+    gate: torch.nn.Module,
+    num_experts: int,
+    top_k: int,
+    *,
+    score_func: str = "sigmoid",
+    route_norm: bool = True,
+    route_scale: float = 1.0,
+) -> tuple[torch.Tensor, torch.Tensor] | None:
+    """Attempt to get (top_scores, top_idx) directly from router forward.
+
+    Supports routers that return:
+      - logits tensor -> we compute topk
+      - (top_scores, top_idx)
+      - dict with keys like 'topk_scores'/'topk_indices' or 'scores'/'indices'
+    Falls back to None if shapes aren't recognizable.
+    """
+    try:
+        out = gate(x)
+    except Exception:
+        return None
+
+    # Tensor logits -> compute
+    if isinstance(out, torch.Tensor):
+        scores = out
+        if score_func == "sigmoid":
+            scores = torch.sigmoid(scores.to(torch.float32))
+        elif score_func == "softmax":
+            scores = F.softmax(scores.to(torch.float32), dim=1)
+        else:
+            return None
+        top_scores, top_idx = torch.topk(scores, k=top_k, dim=1)
+        if score_func == "sigmoid" and route_norm:
+            denom = top_scores.sum(dim=-1, keepdim=True) + 1e-20
+            top_scores = top_scores / denom
+        top_scores = top_scores * route_scale
+        return top_scores, top_idx
+
+    # Tuple/list
+    if isinstance(out, (tuple, list)):
+        tensors = [t for t in out if isinstance(t, torch.Tensor)]
+        if len(tensors) >= 2:
+            a, b = tensors[0], tensors[1]
+            # Identify which is indices
+            if b.dtype in (torch.int32, torch.int64, torch.long) and b.dim() == 2:
+                top_idx = b
+                top_scores = a
+            elif a.dtype in (torch.int32, torch.int64, torch.long) and a.dim() == 2:
+                top_idx = a
+                top_scores = b
+            else:
+                # Not obvious; try treating first as logits
+                scores = tensors[0]
+                if scores.dim() == 2 and scores.shape[1] in (num_experts,):
+                    return _router_forward_topk(
+                        x,
+                        lambda y: scores,
+                        num_experts,
+                        top_k,
+                        score_func=score_func,
+                        route_norm=route_norm,
+                        route_scale=route_scale,
+                    )
+                return None
+
+            # If scores look like probabilities/logits for top-k (N, top_k), accept
+            if top_scores.dim() == 2 and top_scores.shape[1] == top_k:
+                return top_scores, top_idx
+            # If scores are full logits (N, E), compute topk
+            if top_scores.dim() == 2 and top_scores.shape[1] == num_experts:
+                return _router_forward_topk(
+                    x,
+                    lambda y: top_scores,
+                    num_experts,
+                    top_k,
+                    score_func=score_func,
+                    route_norm=route_norm,
+                    route_scale=route_scale,
+                )
+
+    # Dict
+    if isinstance(out, dict):
+        # common key patterns
+        score_keys = [
+            "topk_scores",
+            "scores",
+            "route_scores",
+            "routing_scores",
+            "dispatch_weights",
+            "combine_weights",
+        ]
+        index_keys = [
+            "topk_indices",
+            "indices",
+            "route_indices",
+            "routing_indices",
+            "expert_indices",
+        ]
+        s = next(
+            (
+                out[k]
+                for k in score_keys
+                if k in out and isinstance(out[k], torch.Tensor)
+            ),
+            None,
+        )
+        idx = next(
+            (
+                out[k]
+                for k in index_keys
+                if k in out and isinstance(out[k], torch.Tensor)
+            ),
+            None,
+        )
+        if s is not None and idx is not None:
+            if s.dim() == 2 and idx.dim() == 2:
+                return s, idx
+        if s is not None and s.dim() == 2 and s.shape[1] in (top_k, num_experts):
+            return _router_forward_topk(
+                x,
+                lambda y: s,
+                num_experts,
+                top_k,
+                score_func=score_func,
+                route_norm=route_norm,
+                route_scale=route_scale,
+            )
+
+    return None
 
 
 class TokenReorderer(torch.nn.Module):
@@ -231,8 +372,8 @@ def moe_forward_kernel(
 
     num_experts = len(experts)
 
-    # Compute routing directly from `gate` so gradients flow to gate.weight
-    top_scores, top_idx, _ = _compute_routing(
+    # Compute routing using router if possible, else fall back to inner Linear or generic path
+    routed = _router_forward_topk(
         x,
         gate,
         num_experts,
@@ -241,6 +382,33 @@ def moe_forward_kernel(
         route_norm=route_norm,
         route_scale=route_scale,
     )
+    if routed is not None:
+        top_scores, top_idx = routed
+    else:
+        inner = _extract_linear_from_router(gate)
+        if inner is None:
+            # Last resort: assume gate(x) returned logits-like tensor
+            top_scores, top_idx = _router_forward_topk(
+                x,
+                gate,
+                num_experts,
+                top_k,
+                score_func=score_func,
+                route_norm=route_norm,
+                route_scale=route_scale,
+            ) or (None, None)
+            if top_scores is None:
+                raise RuntimeError("Unable to derive routing from router output format")
+        else:
+            top_scores, top_idx, _ = _compute_routing(
+                x,
+                inner,
+                num_experts,
+                top_k,
+                score_func=score_func,
+                route_norm=route_norm,
+                route_scale=route_scale,
+            )
 
     reorderer = TokenReorderer(num_experts=num_experts, top_k=top_k)
     top_scores_sorted, token_indices_sorted, num_tokens_per_expert = reorderer(
