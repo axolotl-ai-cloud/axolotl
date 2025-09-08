@@ -8,6 +8,7 @@ from torchao.quantization import quantize_
 from torchao.quantization.qat import (
     QATConfig,
 )
+from packaging import version
 from torchao.quantization.quant_api import (
     Float8DynamicActivationFloat8WeightConfig,
     Float8DynamicActivationInt4WeightConfig,
@@ -22,21 +23,22 @@ quantization_config_to_str = {
     Float8DynamicActivationInt4WeightConfig: "fp8int4",
 }
 
-try:
-    from torchao.prototype.mx_formats import NVFP4InferenceConfig
+if version.parse(torch.__version__) >= version.parse("2.8.0"):
+    try:
+        from torchao.prototype.mx_formats import NVFP4InferenceConfig
 
-    quantization_config_to_str[NVFP4InferenceConfig] = "nvfp4"
-except:
-    pass
+        quantization_config_to_str[NVFP4InferenceConfig] = "nvfp4"
+    except:
+        pass
 
-# int4 weight config imports will fail on machines with fbgemm-gpu installed
-# without a CUDA runtime available so we do this safely
-try:
-    from torchao.quantization.quant_api import Int4WeightOnlyConfig
+    # int4 weight config imports will fail on machines with fbgemm-gpu installed
+    # without a CUDA runtime available so we do this safely
+    try:
+        from torchao.quantization.quant_api import Int4WeightOnlyConfig
 
-    quantization_config_to_str[Int4WeightOnlyConfig] = "int4"
-except:
-    pass
+        quantization_config_to_str[Int4WeightOnlyConfig] = "int4"
+    except:
+        pass
 
 
 def get_quantization_config(
