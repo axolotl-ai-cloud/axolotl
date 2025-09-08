@@ -43,7 +43,7 @@ class TokensPerSecondCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,
     ):  # pylint: disable=unused-argument
-        if not control.should_evaluate:
+        if hasattr(state, "num_tokens"):
             step_time = time.perf_counter() - self.start_time
             num_tokens_per_device = state.num_tokens.clone()
             # non data parallel groups have duplicated tokens, so we avoid double-counting
