@@ -88,27 +88,9 @@ ptq_test_cases = [
     ),
     (TorchAOQuantDType.int4, None, None, False, None, Int4Tensor),
     # Deprecated configs
-    (
-        TorchAOQuantDType.int8,
-        None,
-        8,
-        False,
-        ValueError,
-    ),
-    (
-        TorchAOQuantDType.int4,
-        TorchAOQuantDType.int4,
-        8,
-        False,
-        ValueError,
-    ),
-    (
-        TorchAOQuantDType.int8,
-        TorchAOQuantDType.int8,
-        8,
-        True,
-        ValueError,
-    ),
+    (TorchAOQuantDType.int8, None, 8, False, ValueError, None),
+    (TorchAOQuantDType.int4, TorchAOQuantDType.int4, 8, False, ValueError, None),
+    (TorchAOQuantDType.int8, TorchAOQuantDType.int8, 8, True, ValueError, None),
 ]
 
 
