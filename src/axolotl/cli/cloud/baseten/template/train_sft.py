@@ -45,19 +45,12 @@ training_runtime = definitions.Runtime(
     ],
     environment_variables=env_vars,
 )
-if gpu == "h100":
-    accelerator = truss_config.Accelerator.H100
-elif gpu == "b200":
-    accelerator = truss_config.Accelerator.B200
-else:
-    raise ValueError(
-        f"Unsupported GPU type ({gpu}), please use one of 'h100' or 'b200'."
-    )
+
 # 3. Define the Compute Resources for the Training Job
 training_compute = definitions.Compute(
     node_count=node_count,
     accelerator=truss_config.AcceleratorSpec(
-        accelerator=accelerator,
+        accelerator=truss_config.Accelerator.H100,
         count=gpu_count,
     ),
 )

@@ -50,11 +50,11 @@ def do_quantize(
 
     model_path = cli_args.get("base_model") or cfg.output_dir
     if weight_dtype := cli_args.get("weight_dtype"):
-        weight_dtype = TorchAOQuantDType.from_string(weight_dtype)  # type: ignore[attr-defined]
+        weight_dtype = TorchAOQuantDType.from_string(weight_dtype)
     else:
         weight_dtype = quantize_cfg.weight_dtype
     if activation_dtype := cli_args.get("activation_dtype"):
-        activation_dtype = TorchAOQuantDType.from_string(activation_dtype)  # type: ignore[attr-defined]
+        activation_dtype = TorchAOQuantDType.from_string(activation_dtype)
     else:
         activation_dtype = quantize_cfg.activation_dtype
     group_size = cli_args.get("group_size") or quantize_cfg.group_size

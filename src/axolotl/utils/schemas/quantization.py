@@ -10,6 +10,8 @@ from axolotl.utils.schemas.enums import TorchAOQuantDType
 
 
 def validate_ao_dtype(v: Any) -> TorchAOQuantDType | None:
+    if v is None:
+        return None
     if v == "int4":
         return TorchAOQuantDType.int4
     if v == "int8":
@@ -19,7 +21,7 @@ def validate_ao_dtype(v: Any) -> TorchAOQuantDType | None:
     if v == "nvfp4":
         return TorchAOQuantDType.nvfp4
     raise ValueError(
-        f"Invalid dtype: '{v}'. Must be one of: {[e.name for e in TorchAOQuantDType]}"
+        f"Invalid dtype: '{v}'. Must be one of: {[e.name for e in TorchAOQuantDType] + ['fp8', 'float8']}"
     )
 
 
