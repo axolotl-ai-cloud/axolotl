@@ -222,15 +222,16 @@ class TestDiffusionTrainer:
         assert loss.item() == 0.0
         assert loss.requires_grad
 
-    def test_cache_special_token_ids(self, diffusion_trainer_instance):
+    def test_cache_special_token_ids(self, mock_tokenizer):
         """Test caching of special token IDs."""
-        # Should cache BOS, EOS, PAD tokens
-        expected_tokens = {0, 1, 2}  # pad, bos, eos
-        assert diffusion_trainer_instance._special_token_ids == expected_tokens
+        trainer = object.__new__(DiffusionTrainer)
+        trainer.processing_class = mock_tokenizer
+        trainer._cache_special_token_ids()
+        assert trainer._special_token_ids == {0, 1, 2}
 
     def test_cache_special_token_ids_no_tokenizer(self):
         """Test caching when no tokenizer is available."""
-        trainer = object.__new__(DiffusionTrainer)  # Bypass __init__
+        trainer = object.__new__(DiffusionTrainer)
         trainer.processing_class = None
         trainer._cache_special_token_ids()
 

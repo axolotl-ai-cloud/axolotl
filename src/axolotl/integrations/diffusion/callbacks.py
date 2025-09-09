@@ -38,8 +38,7 @@ class DiffusionGenerationCallback(TrainerCallback):
             state.global_step > 0
             and state.global_step % self.trainer.cfg.diffusion_generation_interval == 0
         ):
-            # Only the main process generates / logs samples
-            if not getattr(self.trainer.state, "is_world_process_zero", True):
+            if not self.trainer.state.is_world_process_zero():
                 return
 
             # Use eval dataloader if available, otherwise use train dataloader

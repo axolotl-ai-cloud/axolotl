@@ -694,7 +694,6 @@ class ModelLoader:
         """Load model from pretrained weights."""
         loader = model_loader_class or self.auto_model_loader
         kwargs = {
-            **self.model_kwargs,
             "config": self.model_config,
             "trust_remote_code": self.cfg.trust_remote_code or False,
             **self.model_kwargs,

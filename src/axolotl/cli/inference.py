@@ -9,7 +9,7 @@ from typing import Union
 import fire
 import torch
 import transformers
-from colorama import Fore, Style, init as colorama_init
+from colorama import Fore, Style
 from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 
 from axolotl.cli.args import InferenceCliArgs
@@ -20,13 +20,11 @@ from axolotl.cli.utils.diffusion import (
     run_diffusion,
 )
 from axolotl.integrations.base import PluginManager
-from axolotl.integrations.diffusion import DiffusionPlugin
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
-colorama_init(autoreset=True)
 
 
 def get_multi_line_input() -> str:
@@ -83,7 +81,7 @@ def do_inference(
     # Detect diffusion mode
     plugin_manager = PluginManager.get_instance()
     is_diffusion = any(
-        isinstance(plugin, DiffusionPlugin)
+        plugin.__class__.__name__ == "DiffusionPlugin"
         for plugin in plugin_manager.plugins.values()
     )
 

@@ -39,7 +39,7 @@ resume_from_checkpoint:
 logging_steps: 1
 sdp_attention: true
 
-warmup_steps: 1000
+warmup_steps: 0.1
 
 save_strategy: steps
 eval_strategy: steps

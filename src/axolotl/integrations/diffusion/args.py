@@ -1,8 +1,10 @@
 """Config args for diffusion LM training."""
 
+from __future__ import annotations
+
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class DiffusionArgs(BaseModel):
@@ -76,3 +78,11 @@ class DiffusionArgs(BaseModel):
     diffusion_generation_max_length: int = Field(
         default=100, ge=1, description="Maximum sequence length for generation"
     )
+
+    @model_validator(mode="after")
+    def _validate_mask_ratios(self) -> DiffusionArgs:
+        if self.diffusion_min_mask_ratio > self.diffusion_max_mask_ratio:
+            raise ValueError(
+                "diffusion_min_mask_ratio must be ≤ diffusion_max_mask_ratio"
+            )
+        return self
