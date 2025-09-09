@@ -120,7 +120,7 @@ class TestQuantization:
         assert isinstance(config, Int4WeightOnlyConfig)
 
     @pytest.mark.parametrize(
-        "weight_dtype,activation_dtype,group_size,quantize_embedding,expected_exception",
+        "weight_dtype,activation_dtype,group_size,quantize_embedding,expected_exception,expected_tensor_class",
         ptq_test_cases,
     )
     @requires_cuda_ge_8_9
