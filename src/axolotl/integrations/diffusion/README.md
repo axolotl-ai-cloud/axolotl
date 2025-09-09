@@ -15,19 +15,18 @@ bidirectional context.
 
 ## Installation
 
-The plugin is included with Axolotl. To use it, simply add the plugin configuration to
-your training config.
+The plugin is included with Axolotl. See our
+[installation docs](https://docs.axolotl.ai/docs/installation.html).
 
 ## Quickstart
 
-1. Install Axolotl: [docs](https://docs.axolotl.ai/docs/installation.html)
-2. Train with an example config (Llama‑3.2 1B):
+Train with an example config (Llama‑3.2 1B):
    - Pretrain: `axolotl train examples/llama-3/diffusion-3.2-1b-pretrain.yaml`
    - SFT: `axolotl train examples/llama-3/diffusion-3.2-1b-sft.yaml`
 
 ### Basic Configuration
 
-You may also modify your existing configs to enable / customize diffusion training.
+You can also modify your existing configs to enable / customize diffusion training.
 
 Add the following to your Axolotl config:
 
@@ -37,28 +36,29 @@ plugins:
   - axolotl.integrations.diffusion.DiffusionPlugin
 ```
 
-And, optionally (though these have good defaults):
+And, configure the nested `diffusion` block (defaults shown):
 
 ```yaml
-diffusion_noise_schedule: linear  # or "cosine"
-diffusion_min_mask_ratio: 0.1
-diffusion_max_mask_ratio: 0.9
-diffusion_num_diffusion_steps: 128
-diffusion_eps: 1e-3
-diffusion_importance_weighting: true
+diffusion:
+  noise_schedule: linear  # or "cosine"
+  min_mask_ratio: 0.1
+  max_mask_ratio: 0.9
+  num_diffusion_steps: 128
+  eps: 1e-3
+  importance_weighting: true
 
-# Mask token (training auto-adds if missing, avoid pad/eos)
-diffusion_mask_token_str: "<|diffusion_mask|>"
-# Or use an existing special token id (e.g., 128002 for Llama-3.x)
-# diffusion_mask_token_id: 128002
+  # Mask token (training auto-adds if missing, avoid pad/eos)
+  mask_token_str: "<|diffusion_mask|>"
+  # Or use an existing special token id (e.g., 128002 for Llama-3.x)
+  # mask_token_id: 128002
 
-# Sample generation during training (optional)
-diffusion_generate_samples: true
-diffusion_generation_interval: 100
-diffusion_num_generation_samples: 3
-diffusion_generation_steps: 128
-diffusion_generation_temperature: 0.0
-diffusion_generation_max_length: 100
+  # Sample generation during training (optional)
+  generate_samples: true
+  generation_interval: 100
+  num_generation_samples: 3
+  generation_steps: 128
+  generation_temperature: 0.0
+  generation_max_length: 100
 ```
 
 ## Supported Models
@@ -85,7 +85,7 @@ loss = sum(cross_entropy(pred, target) / p_mask) / total_tokens
 
 ## Sample Generation
 
-When `diffusion_generate_samples: true`, the plugin generates samples during training:
+When `diffusion.generate_samples: true`, the plugin generates samples during training:
 
 ```
 Sample 1:

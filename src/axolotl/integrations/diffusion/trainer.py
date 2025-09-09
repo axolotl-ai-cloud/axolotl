@@ -15,14 +15,6 @@ from .callbacks import DiffusionGenerationCallback
 LOG = get_logger(__name__)
 
 
-def _maybe_torch_compile(fn):
-    """Guards environments where compilation is unsupported."""
-    try:
-        return torch.compile(fn)
-    except Exception:
-        return fn
-
-
 class DiffusionTrainer(AxolotlTrainer):
     """Custom trainer for diffusion LM training that overrides loss computation."""
 
@@ -37,10 +29,10 @@ class DiffusionTrainer(AxolotlTrainer):
         self._cache_special_token_ids()
         self._resolve_mask_token_id()
 
-        token_id = int(self.cfg.diffusion_mask_token_id)
+        token_id = int(getattr(self.cfg.diffusion, "mask_token_id", 0))
         LOG.info(f"Diffusion: using mask_token_id={token_id}")
 
-        if config.diffusion_generate_samples:
+        if getattr(config.diffusion, "generate_samples", True):
             generation_callback = DiffusionGenerationCallback(self)
             self.add_callback(generation_callback)
 
@@ -59,7 +51,7 @@ class DiffusionTrainer(AxolotlTrainer):
             model=getattr(self, "model", None),
         )
         try:
-            self.cfg.diffusion_mask_token_id = int(mid)
+            self.cfg.diffusion.mask_token_id = int(mid)
         except Exception:
             pass
 
@@ -104,7 +96,6 @@ class DiffusionTrainer(AxolotlTrainer):
 
         self._special_token_ids = special_tokens
 
-    @_maybe_torch_compile
     def _forward_process(
         self,
         input_ids: torch.Tensor,
@@ -158,13 +149,12 @@ class DiffusionTrainer(AxolotlTrainer):
             masked_indices = masked_indices & answer_mask
 
         # Create masked input
-        mask_token_id = int(self.cfg.diffusion_mask_token_id)
+        mask_token_id = int(self.cfg.diffusion.mask_token_id)
         mask_value = torch.full_like(input_ids, mask_token_id)
         noisy_batch = torch.where(masked_indices, mask_value, input_ids)
 
         return noisy_batch, masked_indices, p_mask
 
-    @_maybe_torch_compile
     def _create_bidirectional_attention_mask(
         self, input_ids: torch.Tensor, attention_mask: torch.Tensor | None = None
     ) -> torch.Tensor:
@@ -238,7 +228,7 @@ class DiffusionTrainer(AxolotlTrainer):
 
         # Apply forward process
         noisy_batch, masked_indices, p_mask = self._forward_process(
-            input_ids, attention_mask, labels, self.cfg.diffusion_eps
+            input_ids, attention_mask, labels, self.cfg.diffusion.eps
         )
 
         # Create bidirectional attention mask
@@ -266,7 +256,7 @@ class DiffusionTrainer(AxolotlTrainer):
                 masked_logits.float(), masked_targets, reduction="none"
             )
 
-            if self.cfg.diffusion_importance_weighting:
+            if self.cfg.diffusion.importance_weighting:
                 masked_p_mask = masked_p_mask.float()
                 weighted_loss = token_loss / masked_p_mask
             else:
@@ -295,7 +285,7 @@ class DiffusionTrainer(AxolotlTrainer):
                 # Non-SFT: when importance weighting is enabled, use unbiased estimator
                 # (sum(loss/p) / total_tokens). Otherwise, average over masked tokens
                 # for stable scaling across varying mask ratios.
-                if self.cfg.diffusion_importance_weighting:
+                if self.cfg.diffusion.importance_weighting:
                     loss = weighted_loss.sum() / (
                         input_ids.shape[0] * input_ids.shape[1]
                     )
@@ -334,7 +324,7 @@ class DiffusionTrainer(AxolotlTrainer):
                 total_tokens = labels.numel()
                 metrics["answer_ratio"] = total_answer_tokens / max(total_tokens, 1)
                 metrics["avg_answer_length"] = answer_lengths.mean().item()
-        if self.cfg.diffusion_importance_weighting:
+        if self.cfg.diffusion.importance_weighting:
             metrics["importance_weight_avg"] = (1.0 / masked_p_mask).mean().item()
 
         train_eval: Literal["train", "eval"] = "train" if model.training else "eval"

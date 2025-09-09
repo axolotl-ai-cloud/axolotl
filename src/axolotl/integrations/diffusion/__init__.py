@@ -1,6 +1,6 @@
 """Diffusion LM training plugin init."""
 
-from .args import DiffusionArgs
+from .args import DiffusionArgs, DiffusionConfig
 from .callbacks import DiffusionGenerationCallback
 from .generation import generate
 from .plugin import DiffusionPlugin
@@ -14,4 +14,5 @@ __all__ = [
     "generate",
     "resolve_mask_token_id",
     "DiffusionGenerationCallback",
+    "DiffusionConfig",
 ]

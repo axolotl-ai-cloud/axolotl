@@ -14,12 +14,14 @@ class DummyTrainer:
     def __init__(self, use_eval: bool):
         # Config used by callback
         self.cfg = SimpleNamespace(
-            diffusion_generation_interval=1,
-            diffusion_num_generation_samples=1,
-            diffusion_generation_max_length=32,
-            diffusion_generation_steps=4,
-            diffusion_generation_temperature=0.0,
-            diffusion_mask_token_id=16,
+            diffusion=SimpleNamespace(
+                generation_interval=1,
+                num_generation_samples=1,
+                generation_max_length=32,
+                generation_steps=4,
+                generation_temperature=0.0,
+                mask_token_id=16,
+            ),
             use_wandb=False,
         )
 

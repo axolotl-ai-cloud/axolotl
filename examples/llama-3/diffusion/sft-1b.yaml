@@ -9,13 +9,15 @@ val_set_size: 0.05
 
 plugins:
   - axolotl.integrations.diffusion.DiffusionPlugin
-diffusion_noise_schedule: cosine
-diffusion_min_mask_ratio: 0.1
-diffusion_max_mask_ratio: 0.9
-diffusion_num_diffusion_steps: 128
-diffusion_eps: 1e-3
-diffusion_importance_weighting: true
-diffusion_mask_token_id: 128002
+
+diffusion:
+  noise_schedule: cosine
+  min_mask_ratio: 0.1
+  max_mask_ratio: 0.9
+  num_diffusion_steps: 128
+  eps: 1e-3
+  importance_weighting: true
+  mask_token_id: 128002
 
 output_dir: ./outputs/model-out
 

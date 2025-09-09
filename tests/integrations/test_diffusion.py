@@ -26,9 +26,11 @@ def diffusion_config():
     """Create a diffusion config."""
     return DictDefault(
         {
-            "diffusion_mask_token_id": 32000,
-            "diffusion_eps": 1e-3,
-            "diffusion_importance_weighting": False,
+            "diffusion": {
+                "mask_token_id": 32000,
+                "eps": 1e-3,
+                "importance_weighting": False,
+            },
             "sample_packing": False,
         }
     )
@@ -67,7 +69,7 @@ class TestDiffusionTrainer:
         assert not masked_indices[special_token_positions].any()
 
         # Check that mask token is applied
-        mask_token_id = diffusion_trainer_instance.cfg.diffusion_mask_token_id
+        mask_token_id = diffusion_trainer_instance.cfg.diffusion.mask_token_id
         masked_positions = masked_indices
         if masked_positions.any():
             assert (noisy_batch[masked_positions] == mask_token_id).all()

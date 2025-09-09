@@ -31,7 +31,13 @@ def resolve_mask_token_id(
                 vocab_size = None
 
     # Use explicit id from config if provided
-    cfg_id = cfg.diffusion_mask_token_id
+    diffusion_cfg = getattr(cfg, "diffusion", None)
+    # Fallback to top-level attr names only if nested missing (shouldn't happen)
+    cfg_id = (
+        getattr(diffusion_cfg, "mask_token_id", None)
+        if diffusion_cfg is not None
+        else getattr(cfg, "diffusion_mask_token_id", None)
+    )
     if isinstance(cfg_id, int) and cfg_id >= 0:
         if vocab_size is None or cfg_id < vocab_size:
             return int(cfg_id)
@@ -63,12 +69,19 @@ def resolve_mask_token_id(
         return token_id
 
     # Try mask token string if provided
-    token_str = cfg.diffusion_mask_token_str
+    token_str = (
+        getattr(diffusion_cfg, "mask_token_str", None)
+        if diffusion_cfg is not None
+        else getattr(cfg, "diffusion_mask_token_str", None)
+    )
     for candidate in (token_str, default_token):
         token_id = _existing_special_token_id(candidate)
         if isinstance(token_id, int):
             try:
-                cfg.diffusion_mask_token_id = int(token_id)
+                if diffusion_cfg is None:
+                    cfg.diffusion_mask_token_id = int(token_id)  # legacy fallback
+                else:
+                    diffusion_cfg.mask_token_id = int(token_id)
             except Exception:
                 pass
             return int(token_id)
@@ -92,7 +105,10 @@ def resolve_mask_token_id(
             new_id = tokenizer.convert_tokens_to_ids(token_to_add)
             if isinstance(new_id, int) and new_id >= 0:
                 try:
-                    cfg.diffusion_mask_token_id = int(new_id)
+                    if diffusion_cfg is None:
+                        cfg.diffusion_mask_token_id = int(new_id)  # legacy fallback
+                    else:
+                        diffusion_cfg.mask_token_id = int(new_id)
                 except Exception:
                     pass
                 return int(new_id)

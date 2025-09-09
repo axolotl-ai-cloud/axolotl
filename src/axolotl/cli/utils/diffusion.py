@@ -81,15 +81,15 @@ def run_diffusion(
     mask_token_id = resolve_mask_token_id(tokenizer, cfg, allow_add=False)
 
     seq = batch["input_ids"].to(cfg.device)
-    gen_mode = "random" if mode == "mask" else "completion"
+    gen_mode = "completion" if mode == "completion" else "random"
     comp_tokens = int(completion_tokens) if gen_mode == "completion" else 0
 
     result = generate(
         model,
         tokenizer,
         original_sequence=seq[:1],
-        num_diffusion_steps=cfg.diffusion_num_diffusion_steps,
-        temperature=cfg.diffusion_generation_temperature,
+        num_diffusion_steps=cfg.diffusion.num_diffusion_steps,
+        temperature=cfg.diffusion.generation_temperature,
         mask_token_id=int(mask_token_id),
         mode=gen_mode,  # type: ignore[arg-type]
         completion_tokens=comp_tokens,

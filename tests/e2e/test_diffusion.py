@@ -45,18 +45,21 @@ class TestDiffusion:
                 "save_first_step": False,
                 "logging_steps": 1,
                 "eval_steps": 3,
-                # Diffusion sample generation
-                "diffusion_generate_samples": True,
-                "diffusion_generation_interval": 1,
-                "diffusion_num_generation_samples": 1,
-                "diffusion_generation_steps": 2,
-                "diffusion_generation_max_length": 32,
-                "diffusion_generation_temperature": 0.0,
                 # Diffusion-specific config
                 "plugins": ["axolotl.integrations.diffusion.DiffusionPlugin"],
-                "diffusion_mask_token_id": 16,
-                "diffusion_eps": 1e-3,
-                "diffusion_importance_weighting": False,
+                "diffusion": {
+                    # sample generation
+                    "generate_samples": True,
+                    "generation_interval": 1,
+                    "num_generation_samples": 1,
+                    "generation_steps": 2,
+                    "generation_max_length": 32,
+                    "generation_temperature": 0.0,
+                    # training-specific
+                    "mask_token_id": 16,
+                    "eps": 1e-3,
+                    "importance_weighting": False,
+                },
             }
         )
 
@@ -98,18 +101,21 @@ class TestDiffusion:
                 "save_first_step": False,
                 "logging_steps": 1,
                 "eval_steps": 2,
-                # Diffusion sample generation
-                "diffusion_generate_samples": True,
-                "diffusion_generation_interval": 1,
-                "diffusion_num_generation_samples": 1,
-                "diffusion_generation_steps": 2,
-                "diffusion_generation_max_length": 32,
-                "diffusion_generation_temperature": 0.0,
                 # Diffusion-specific config
                 "plugins": ["axolotl.integrations.diffusion.DiffusionPlugin"],
-                "diffusion_mask_token_id": 16,
-                "diffusion_eps": 1e-3,
-                "diffusion_importance_weighting": True,
+                "diffusion": {
+                    # sample generation
+                    "generate_samples": True,
+                    "generation_interval": 1,
+                    "num_generation_samples": 1,
+                    "generation_steps": 2,
+                    "generation_max_length": 32,
+                    "generation_temperature": 0.0,
+                    # training-specific
+                    "mask_token_id": 16,
+                    "eps": 1e-3,
+                    "importance_weighting": True,
+                },
                 # Ensure we have proper SFT labels
                 "train_on_inputs": False,
             }
