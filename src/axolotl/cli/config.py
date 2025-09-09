@@ -23,7 +23,7 @@ from axolotl.utils.config import (
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
-from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
+from axolotl.utils.trainer import prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
 LOG = get_logger(__name__)
@@ -228,7 +228,6 @@ def load_cfg(
     )
 
     prepare_optim_env(cfg)
-    prepare_opinionated_env(cfg)
     normalize_config(cfg)
     normalize_cfg_datasets(cfg)
     setup_wandb_env_vars(cfg)

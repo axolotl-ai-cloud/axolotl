@@ -74,6 +74,8 @@ class ColorfulFormatter(Formatter):
 
     def format(self, record):
         record.rank = int(os.getenv("LOCAL_RANK", "0"))
+        # Optional compact rank segment only when non-zero to cut noise
+        record.rank_fmt = f" [RANK:{record.rank}]" if record.rank != 0 else ""
         log_message = super().format(record)
         return self.COLORS.get(record.levelname, "") + log_message + Fore.RESET
 
@@ -87,32 +89,53 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
         },
         "colorful": {
             "()": ColorfulFormatter,
-            "format": "[%(asctime)s] [%(levelname)s] [%(name)s.%(funcName)s:%(lineno)d] [PID:%(process)d] [RANK:%(rank)d] %(message)s",
+            "format": "[%(asctime)s] [%(levelname)s] [%(name)s.%(funcName)s:%(lineno)d] [PID:%(process)d]%(rank_fmt)s %(message)s",
+        },
+        # Concise (no callsite, no PID) variants
+        "concise": {
+            "format": "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
+        },
+        "concise_color": {
+            "()": ColorfulFormatter,
+            "format": "[%(asctime)s] [%(levelname)s] [%(name)s]%(rank_fmt)s %(message)s",
         },
     },
     "filters": {},
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "formatter": "simple",
+            # formatter set in configure_logging() based on AXOLOTL_LOG_FORMAT
+            "formatter": "concise",
             "filters": [],
             "stream": sys.stdout,
         },
         "color_console": {
             "class": "logging.StreamHandler",
-            "formatter": "colorful",
+            # formatter set in configure_logging() based on AXOLOTL_LOG_FORMAT
+            "formatter": "concise_color",
             "filters": [],
             "stream": sys.stdout,
+        },
+        # Rotating file handler for detailed logs
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": os.getenv("AXOLOTL_LOG_FILE", "axolotl.log"),
+            "maxBytes": int(
+                os.getenv("AXOLOTL_LOG_FILE_MAX_BYTES", str(20 * 1024 * 1024))
+            ),
+            "backupCount": int(os.getenv("AXOLOTL_LOG_FILE_BACKUPS", "3")),
+            "encoding": "utf-8",
+            "formatter": "simple",
         },
     },
     # log level will be superseded by the AxolotlLogger
     "root": {
-        "handlers": ["console"],
+        "handlers": ["console", "file"],
         "level": os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL),
     },
     "loggers": {
         "axolotl": {
-            "handlers": ["color_console"],
+            "handlers": ["color_console", "file"],
             "level": os.getenv("AXOLOTL_LOG_LEVEL", DEFAULT_AXOLOTL_LOG_LEVEL).upper(),
             "propagate": False,
         },
@@ -123,6 +146,7 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
 def configure_logging():
     """Configure with default logging"""
     init()  # Initialize colorama
+
     dictConfig(DEFAULT_LOGGING_CONFIG)
     logging.setLoggerClass(AxolotlLogger)
 
