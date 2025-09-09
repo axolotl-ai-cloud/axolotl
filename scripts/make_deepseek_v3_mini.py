@@ -65,7 +65,7 @@ def build_config(args: argparse.Namespace) -> DeepseekV3MiniConfig:
         experts = args.experts
         topk = args.topk
 
-    return DeepseekV3MiniConfig(
+    cfg = DeepseekV3MiniConfig(
         vocab_size=vocab,
         hidden_size=hidden,
         num_hidden_layers=layers,
@@ -82,6 +82,18 @@ def build_config(args: argparse.Namespace) -> DeepseekV3MiniConfig:
         route_norm=True,
         route_scale=1.0,
     )
+
+    # Make this loadable via Auto* with trust_remote_code by declaring a unique model_type
+    # and auto_map to our in-repo classes.
+    cfg.model_type = "deepseek_v3_mini"
+    cfg.architectures = ["DeepseekV3MiniForCausalLM"]
+    cfg.auto_map = {
+        "AutoConfig": "axolotl.models.deepseek_v3_mini.modeling.DeepseekV3MiniConfig",
+        "AutoModel": "axolotl.models.deepseek_v3_mini.modeling.DeepseekV3MiniModel",
+        "AutoModelForCausalLM": "axolotl.models.deepseek_v3_mini.modeling.DeepseekV3MiniForCausalLM",
+    }
+
+    return cfg
 
 
 def main():

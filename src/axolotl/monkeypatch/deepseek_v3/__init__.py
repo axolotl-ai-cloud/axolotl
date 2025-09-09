@@ -41,8 +41,8 @@ def _looks_like_deepseek_v3_moe(module: torch.nn.Module) -> bool:
     # Structural checks
     if not hasattr(module, "gate") or not hasattr(module, "experts"):
         return False
-    gate = getattr(module, "gate")
-    experts = getattr(module, "experts")
+    gate = module.gate
+    experts = module.experts
     if not _is_router(gate):
         return False
     if not isinstance(experts, Iterable):
