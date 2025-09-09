@@ -17,16 +17,16 @@ sequence_len: 2048
 sample_packing: true
 
 gradient_accumulation_steps: 1
-micro_batch_size: 1
-num_epochs: 1
-optimizer: paged_adamw_32bit
+micro_batch_size: 4
+max_steps: 100
+optimizer: paged_adamw_8bit
 lr_scheduler: cosine
 learning_rate: 0.0001
 
 bf16: auto
 tf32: true
 
-gradient_checkpointing: true
+gradient_checkpointing: false
 logging_steps: 5
 
 flash_attention: true
