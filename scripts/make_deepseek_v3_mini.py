@@ -10,8 +10,10 @@ Examples:
 """
 
 import argparse
+import contextlib
 from pathlib import Path
 
+import torch
 from transformers import AutoTokenizer
 
 from transformers.models.deepseek_v3 import (
@@ -78,8 +80,8 @@ def build_config(args: argparse.Namespace) -> DeepseekV3Config:
         num_shared_experts=args.shared_experts,
         max_position_embeddings=args.max_pos,
         dropout=args.dropout,
-        # Save as safetensors without shared weights between embeddings and lm_head
-        tie_word_embeddings=False,
+        # Tie embeddings by default to reduce memory unless --no_tie is passed
+        tie_word_embeddings=args.tie,
     )
 
     return cfg
@@ -108,15 +110,52 @@ def main():
             "Use a 32k tokenizer (e.g., axolotl-ai-co/DeepSeek-V3-1B or a local path) to match the default vocab_size."
         ),
     )
+    ap.add_argument(
+        "--dtype",
+        type=str,
+        default="bf16",
+        choices=["bf16", "fp16", "fp32"],
+        help="Parameter dtype for initialization to reduce host RAM (default: bf16)",
+    )
+    ap.add_argument(
+        "--max_shard_size",
+        type=str,
+        default="2GB",
+        help="Sharded safetensors max shard size (e.g., '1GB', '2GB').",
+    )
+    ap.add_argument(
+        "--tie",
+        action="store_true",
+        help="Tie lm_head to embed_tokens to reduce memory (recommended)",
+    )
+    ap.add_argument(
+        "--no_tie",
+        dest="tie",
+        action="store_false",
+        help="Do not tie embeddings (uses more memory)",
+    )
+    ap.set_defaults(tie=True)
     args = ap.parse_args()
 
     cfg = build_config(args)
-    model = DeepseekV3ForCausalLM(cfg)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+
+    # Initialize directly in requested dtype to reduce host RAM
+    target_dtype = {
+        "bf16": torch.bfloat16,
+        "fp16": torch.float16,
+        "fp32": torch.float32,
+    }[args.dtype]
+    with _set_default_dtype(target_dtype if target_dtype != torch.float32 else None):
+        model = DeepseekV3ForCausalLM(cfg)
     cfg.save_pretrained(out)
-    # Save weights using safetensors (default) with untied embeddings
-    model.save_pretrained(out, safe_serialization=True)
+    # Save weights using sharded safetensors
+    model.save_pretrained(
+        out,
+        safe_serialization=True,
+        max_shard_size=args.max_shard_size,
+    )
     # Optionally save tokenizer alongside the model
     if args.tokenizer:
         try:
@@ -124,7 +163,23 @@ def main():
             tok.save_pretrained(out)
         except Exception as e:
             print(f"Warning: failed to copy tokenizer from {args.tokenizer}: {e}")
-    print(f"Saved randomly initialized model (safetensors, untied) to {out}")
+    tie_str = "tied" if args.tie else "untied"
+    print(
+        f"Saved randomly initialized DeepSeek-V3 model (safetensors shards up to {args.max_shard_size}, {args.dtype}, {tie_str}) to {out}"
+    )
+
+
+@contextlib.contextmanager
+def _set_default_dtype(dtype: torch.dtype | None):
+    if dtype is None:
+        yield
+        return
+    prev = torch.get_default_dtype()
+    torch.set_default_dtype(dtype)
+    try:
+        yield
+    finally:
+        torch.set_default_dtype(prev)
 
 
 if __name__ == "__main__":
