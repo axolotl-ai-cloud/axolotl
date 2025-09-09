@@ -9,8 +9,6 @@ from pathlib import Path
 
 from setuptools import find_packages, setup
 
-x = 11  # force ci - remove before merge
-
 
 def parse_requirements(extras_require_map):
     _install_requires = []
