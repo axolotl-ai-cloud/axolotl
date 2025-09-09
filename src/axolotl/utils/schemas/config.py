@@ -1323,7 +1323,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                     "Please use dataset_num_proc instead."
                 )
             else:
-                raise ValueError(
+                LOG.warning(
                     "Both dataset_processes and dataset_num_proc are set. "
                     "Using dataset_num_proc and ignoring dataset_processes."
                 )
