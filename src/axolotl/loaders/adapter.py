@@ -182,6 +182,9 @@ def load_adapter(
         if config_only:
             return None, config
 
+        if hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
+
         model = builder.build_model(model, config)
         return model, config
 

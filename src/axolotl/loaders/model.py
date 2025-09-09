@@ -41,6 +41,7 @@ from transformers.integrations.deepspeed import (
 from axolotl.common.architectures import MOE_ARCH_BLOCK
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.adapter import load_adapter, load_lora
+from axolotl.loaders.adapters.builders.factory import AdapterBuilderFactory
 from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
 from axolotl.loaders.patch_manager import PatchManager
 from axolotl.loaders.utils import (
@@ -375,12 +376,21 @@ class ModelLoader:
                 and self.cfg.rl in [RLType.DPO, RLType.IPO, RLType.KTO]
                 and not self.cfg.merge_lora
             ):
-                _, lora_config = load_lora(
-                    self.model, self.cfg, inference=False, config_only=True
-                )
+                try:
+                    builder = AdapterBuilderFactory.create_builder(
+                        self.cfg.adapter, self.cfg
+                    )
+                    lora_config = builder.build_config(self.model)
+                except Exception as e:
+                    LOG.debug(
+                        f"Builder pattern failed for config-only, falling back to legacy: {e}"
+                    )
+                    _, lora_config = load_lora(
+                        self.model, self.cfg, inference=False, config_only=True
+                    )
             else:
                 self.model, lora_config = load_adapter(
-                    self.model, self.cfg, self.cfg.adapter
+                    self.model, self.cfg, self.cfg.adapter, inference=self.inference
                 )
 
         return lora_config
