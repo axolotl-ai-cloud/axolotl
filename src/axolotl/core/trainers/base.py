@@ -342,10 +342,10 @@ class AxolotlTrainer(
             inputs_key = "labels" if "labels" in inputs else "input_ids"
             if hasattr(self.state, "num_tokens"):
                 self.state.num_tokens = (
-                    self.state.num_tokens + (inputs[inputs_key] != -100).sum()
+                    self.state.num_tokens + (inputs[inputs_key] != -100).sum().cpu()
                 )
             else:
-                self.state.num_tokens = (inputs[inputs_key] != -100).sum()
+                self.state.num_tokens = (inputs[inputs_key] != -100).sum().cpu()
 
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
