@@ -39,6 +39,7 @@ from axolotl.utils.collators import (
     MambaDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
+from axolotl.utils.callbacks.tokens_per_second import TokensPerSecondCallback
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.import_helper import get_cls_from_module_str
 from axolotl.utils.logging import get_logger
@@ -71,6 +72,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.qat:
             callbacks.append(QATCallback(self.cfg.qat))
 
+        if self.cfg.include_tkps:
+            callbacks.append(
+                TokensPerSecondCallback(
+                    self.cfg.tensor_parallel_size, self.cfg.context_parallel_size
+                )
+            )
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
