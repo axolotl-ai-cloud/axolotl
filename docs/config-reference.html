@@ -1472,9 +1472,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-947"><a href="#cb1-947" aria-hidden="true" tabindex="-1"></a><span class="co"># bool of whether to report tokens per second at the end of training. This is not</span></span>
 <span id="cb1-948"><a href="#cb1-948" aria-hidden="true" tabindex="-1"></a><span class="co"># supported with pre-training datasets.</span></span>
 <span id="cb1-949"><a href="#cb1-949" aria-hidden="true" tabindex="-1"></a><span class="fu">include_tokens_per_second</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-950"><a href="#cb1-950" aria-hidden="true" tabindex="-1"></a><span class="co"># bool of whether to report tokens per second during training by measuring throughput of</span></span>
-<span id="cb1-951"><a href="#cb1-951" aria-hidden="true" tabindex="-1"></a><span class="co"># non-padding tokens.</span></span>
-<span id="cb1-952"><a href="#cb1-952" aria-hidden="true" tabindex="-1"></a><span class="fu">include_tkps</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-950"><a href="#cb1-950" aria-hidden="true" tabindex="-1"></a><span class="co"># bool of whether to report tokens per second per-gpu during training by measuring</span></span>
+<span id="cb1-951"><a href="#cb1-951" aria-hidden="true" tabindex="-1"></a><span class="co"># throughput of non-padding tokens.</span></span>
+<span id="cb1-952"><a href="#cb1-952" aria-hidden="true" tabindex="-1"></a><span class="fu">include_tkps</span><span class="kw">:</span><span class="at"> bool | None = True</span></span>
 <span id="cb1-953"><a href="#cb1-953" aria-hidden="true" tabindex="-1"></a><span class="co"># NEFT https://arxiv.org/abs/2310.05914, set this to a number (paper default is 5) to</span></span>
 <span id="cb1-954"><a href="#cb1-954" aria-hidden="true" tabindex="-1"></a><span class="co"># add noise to embeddings. Currently only supported on Llama and Mistral</span></span>
 <span id="cb1-955"><a href="#cb1-955" aria-hidden="true" tabindex="-1"></a><span class="fu">neftune_noise_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
