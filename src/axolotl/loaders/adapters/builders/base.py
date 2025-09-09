@@ -2,11 +2,10 @@ import os
 from abc import abstractmethod, ABC
 from typing import Optional, Union, List, Any, Dict
 from transformers import PreTrainedModel
-from peft import PeftConfig, PeftModel, get_peft_model
+from peft import PeftConfig, PeftModel, get_peft_model, LoraConfig
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
-from axolotl.loaders.adapter import find_all_linear_names
 
 LOG = get_logger(__name__)
 
@@ -21,12 +20,35 @@ class BaseAdapterBuilder(ABC):
     @abstractmethod
     def build_config(self, model: PreTrainedModel, **kwargs) -> PeftConfig:
         """Build the PEFT configuration"""
-        pass
+        target_modules = self.prepare_target_modules(model)
+        target_parameters = self.prepare_target_parameters()
+
+        config_kwargs = self.build_common_config_kwargs()
+        config_kwargs.update(kwargs)
+
+        lora_config = LoraConfig(
+            r=self.cfg.lora_r,
+            lora_alpha=self.cfg.lora_alpha,
+            target_modules=target_modules,
+            target_parameters=target_parameters,
+            **config_kwargs,
+        )
+        return lora_config
 
     @abstractmethod
     def build_model(self, model: PreTrainedModel, config: PeftConfig) -> PeftModel:
         """Build the PEFT model"""
-        pass
+        self.setup_quantization_for_training(model)
+
+        if self.cfg.lora_model_dir:
+            model = self.load_pretrained_adapter(model)
+        else:
+            model = self.create_peft_model(model, config)
+
+        self.print_trainable_parameters(model)
+        self.setup_quantization_for_training_post_build(model)
+
+        return model
 
     def prepare_target_modules(
         self,
@@ -49,6 +71,8 @@ class BaseAdapterBuilder(ABC):
         )
 
         if self.cfg.lora_target_linear:
+            from axolotl.loaders.adapter import find_all_linear_names
+
             linear_names = find_all_linear_names(model)
             LOG.info(f"found linear modules: {repr(sorted(linear_names))}")
             lora_target_modules_as_list = (
