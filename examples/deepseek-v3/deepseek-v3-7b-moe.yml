@@ -4,6 +4,7 @@ moe_kernels: true
 
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
+tokenizer_config: axolotl-ai-co/DeepSeek-V3-1B
 
 datasets:
   - path: mhenrichsen/alpaca_2k_test

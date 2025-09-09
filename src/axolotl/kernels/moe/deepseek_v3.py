@@ -167,7 +167,8 @@ def _compute_routing(
 
     top_scores, top_idx = torch.topk(scores, k=top_k, dim=1)
     if score_func == "sigmoid" and route_norm:
-        denom = top_scores.sum(dim=-1, keepdim=True) + 1e-20
+        # match common HF practice epsilon to reduce numeric drift
+        denom = top_scores.sum(dim=-1, keepdim=True) + 1e-9
         top_scores = top_scores / denom
     top_scores = top_scores * route_scale
 
@@ -222,7 +223,7 @@ def _router_forward_topk(
             return None
         top_scores, top_idx = torch.topk(scores, k=top_k, dim=1)
         if score_func == "sigmoid" and route_norm:
-            denom = top_scores.sum(dim=-1, keepdim=True) + 1e-20
+            denom = top_scores.sum(dim=-1, keepdim=True) + 1e-9
             top_scores = top_scores / denom
         top_scores = top_scores * route_scale
         return top_scores, top_idx
@@ -353,6 +354,7 @@ def moe_forward_kernel(
     score_func: str = "sigmoid",
     route_norm: bool = True,
     route_scale: float = 1.0,
+    score_before_experts: bool = True,
 ) -> torch.Tensor:
     """Execute MoE forward using grouped-expert kernels on HF DeepSeek-V3 MLP-like module.
 
@@ -417,10 +419,12 @@ def moe_forward_kernel(
     # Gather routed inputs according to sorted token indices
     gather_index = token_indices_sorted.reshape(-1, 1).expand(-1, dim)
     routed_input = torch.gather(x, dim=0, index=gather_index)
-    # Weight inputs by routing scores (score-before-experts policy)
-    routed_input = (
-        routed_input.to(torch.float32) * top_scores_sorted.reshape(-1, 1)
-    ).to(x.dtype)
+    # Weighting policy
+    if score_before_experts:
+        # Weight inputs by routing scores (score-before-experts policy)
+        routed_input = routed_input * top_scores_sorted.reshape(-1, 1).to(
+            routed_input.dtype
+        )
 
     # Collect expert weights and stack per tensor: w1, w2, w3
     # Shapes: w1: (E, hidden, dim); w3: (E, hidden, dim); w2: (E, dim, hidden)
@@ -432,6 +436,12 @@ def moe_forward_kernel(
     routed_output = _run_experts_grouped_mm(
         w1, w2, w3, routed_input, num_tokens_per_expert
     )
+
+    # If scoring after experts, apply score here
+    if not score_before_experts:
+        routed_output = routed_output * top_scores_sorted.reshape(-1, 1).to(
+            routed_output.dtype
+        )
 
     # Add shared expert path if present
     if shared_expert is not None:

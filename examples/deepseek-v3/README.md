@@ -20,3 +20,4 @@ Notes
 - moe_kernels: true enables the CG‑GEMM MoE kernels; on small batches they may be neutral or slower. Larger per‑expert M (bigger micro_batch_size and/or sequence_len) shows clearer gains.
 - You can reduce padding overhead for small batches by setting `AXOLOTL_MOE_GROUP_SIZE_M=64`.
 - For deeper profiling, set `AXOLOTL_LOG_LEVEL=DEBUG` and optionally `AXOLOTL_MOE_VERBOSE=1`.
+- Tokenizer: Examples reference `tokenizer_config: axolotl-ai-co/DeepSeek-V3-1B`. Ensure network access for the first run, or copy that tokenizer into your local model directory.

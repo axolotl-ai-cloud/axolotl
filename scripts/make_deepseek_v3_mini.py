@@ -11,6 +11,8 @@ Or custom sizes:
 import argparse
 from pathlib import Path
 
+from transformers import AutoTokenizer
+
 from axolotl.models.deepseek_v3_mini import (
     DeepseekV3MiniConfig,
     DeepseekV3MiniForCausalLM,
@@ -96,6 +98,15 @@ def main():
     ap.add_argument("--shared_experts", type=int, default=0)
     ap.add_argument("--max_pos", type=int, default=4096)
     ap.add_argument("--dropout", type=float, default=0.0)
+    ap.add_argument(
+        "--tokenizer",
+        type=str,
+        default=None,
+        help=(
+            "Optional tokenizer name/path to copy into the output directory. "
+            "Use a 32k tokenizer (e.g., axolotl-ai-co/DeepSeek-V3-1B or a local path) to match the default vocab_size."
+        ),
+    )
     args = ap.parse_args()
 
     cfg = build_config(args)
@@ -105,6 +116,13 @@ def main():
     cfg.save_pretrained(out)
     # Save weights using safetensors (default) with untied embeddings
     model.save_pretrained(out, safe_serialization=True)
+    # Optionally save tokenizer alongside the model
+    if args.tokenizer:
+        try:
+            tok = AutoTokenizer.from_pretrained(args.tokenizer, use_fast=True)
+            tok.save_pretrained(out)
+        except Exception as e:
+            print(f"Warning: failed to copy tokenizer from {args.tokenizer}: {e}")
     print(f"Saved randomly initialized model (safetensors, untied) to {out}")
 
 

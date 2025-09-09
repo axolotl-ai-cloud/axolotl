@@ -70,6 +70,7 @@ def _mk_patched_forward(module: torch.nn.Module):
     score_func = getattr(module, "router_score_fn", "sigmoid")
     route_norm = getattr(module, "route_norm", True)
     route_scale = getattr(module, "route_scale", 1.0)
+    score_before_experts = getattr(module, "score_before_experts", True)
 
     def patched_forward(hidden_states: torch.Tensor) -> torch.Tensor:
         return moe_forward_kernel(
@@ -81,6 +82,7 @@ def _mk_patched_forward(module: torch.nn.Module):
             score_func=score_func,
             route_norm=route_norm,
             route_scale=route_scale,
+            score_before_experts=score_before_experts,
         )
 
     return patched_forward
