@@ -31,6 +31,16 @@ PRESETS = {
     "3000m": dict(
         vocab=32000, hidden=2560, layers=28, heads=20, ff=10240, experts=8, topk=2
     ),
+    # aliases and larger presets
+    "3b": dict(
+        vocab=32000, hidden=2560, layers=28, heads=20, ff=10240, experts=8, topk=2
+    ),
+    "7000m": dict(
+        vocab=32000, hidden=4096, layers=32, heads=32, ff=16384, experts=16, topk=2
+    ),
+    "7b": dict(
+        vocab=32000, hidden=4096, layers=32, heads=32, ff=16384, experts=16, topk=2
+    ),
 }
 
 
@@ -64,6 +74,8 @@ def build_config(args: argparse.Namespace) -> DeepseekV3MiniConfig:
         num_shared_experts=args.shared_experts,
         max_position_embeddings=args.max_pos,
         dropout=args.dropout,
+        # Save as safetensors without shared weights between embeddings and lm_head
+        tie_word_embeddings=False,
         router_score_fn="sigmoid",
         route_norm=True,
         route_scale=1.0,
@@ -91,10 +103,9 @@ def main():
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     cfg.save_pretrained(out)
-    # Shared weights between `lm_head` and `embed_tokens` can trip the
-    # transformers safetensors shared-tensor check. Use torch serialization.
-    model.save_pretrained(out, safe_serialization=False)
-    print(f"Saved randomly initialized model to {out}")
+    # Save weights using safetensors (default) with untied embeddings
+    model.save_pretrained(out, safe_serialization=True)
+    print(f"Saved randomly initialized model (safetensors, untied) to {out}")
 
 
 if __name__ == "__main__":

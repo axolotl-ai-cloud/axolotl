@@ -1,0 +1,41 @@
+base_model: ./models/deepseek-v3-mini-3b
+trust_remote_code: true
+moe_kernels: true
+
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+
+dataset_prepared_path: last_run_prepared
+output_dir: ./outputs/deepseek-v3-3b-moe
+
+sequence_len: 2048
+sample_packing: true
+
+gradient_accumulation_steps: 1
+micro_batch_size: 2
+num_epochs: 1
+optimizer: paged_adamw_32bit
+lr_scheduler: cosine
+learning_rate: 0.00015
+
+bf16: auto
+tf32: true
+
+gradient_checkpointing: true
+logging_steps: 5
+
+flash_attention: true
+
+warmup_ratio: 0.1
+saves_per_epoch: 1
+weight_decay: 0.0
+
+wandb_project: moe-kerns
+wandb_entity: axolotl-ai
+wandb_watch:
+wandb_name:
+wandb_log_model:

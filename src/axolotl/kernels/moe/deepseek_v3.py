@@ -110,7 +110,6 @@ def _run_experts_grouped_mm(
     total_real = int(counts_i32.sum().item())
     # compute per-expert padded counts
     padded_counts = ((counts_i32 + (group_size_m - 1)) // group_size_m) * group_size_m
-    pad_total = int(padded_counts.sum().item()) - total_real
 
     # Create expert indices for padded layout
     expert_ids = torch.arange(num_experts, device=x.device, dtype=torch.int32)
