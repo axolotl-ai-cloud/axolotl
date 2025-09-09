@@ -20,6 +20,7 @@ format:
 - [Qwen2.5-VL](#sec-qwen25-vl)
 - [SmolVLM2](#sec-smolvlm2)
 - [LFM2-VL](#sec-lfm2-vl)
+- [Intern-VL](#sec-intern-vl)
 
 ## Usage
 
@@ -174,6 +175,12 @@ Please uninstall `causal-conv1d` via `pip3 uninstall -y causal-conv1d`
 
 ```yaml
 base_model: LiquidAI/LFM2-VL-450M
+```
+
+### Intern-VL {#sec-intern-vl}
+
+```yaml
+base_model: OpenGVLab/InternVL3_5-8B
 ```
 
 ## Dataset Format

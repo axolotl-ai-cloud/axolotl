@@ -47,6 +47,7 @@ plugins:
 - granitemoe
 - hunyuan_v1_dense
 - hunyuan_v1_moe
+- internvl_chat
 - llama
 - llama4
 - llama4_text

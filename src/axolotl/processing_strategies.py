@@ -7,6 +7,12 @@ from PIL import Image, ImageOps
 from PIL.Image import Resampling
 from torch import Tensor, zeros_like
 from transformers import ProcessorMixin, SmolVLMProcessor, VoxtralProcessor
+
+try:
+    from transformers import InternVLProcessor
+except ImportError:
+    InternVLProcessor = None
+
 from transformers.image_utils import load_image
 
 from axolotl.utils.dict import remove_none_values
@@ -421,6 +427,37 @@ class SmolVLM2ProcessingStrategy(ProcessingStrategy):
         ]
 
 
+class InternVLProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for InternVL"""
+
+    def __init__(
+        self,
+        processor: ProcessorMixin,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
+        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+
+        if not hasattr(processor, "image_ids"):
+            raise ValueError("'image_ids' missing from InternVL Processor.")
+
+        self.image_token_ids = processor.image_ids
+
+    def process_labels(self, input_ids):
+        labels = input_ids.clone()
+
+        labels[labels == self.processor.tokenizer.pad_token_id] = -100
+
+        for ids in self.image_token_ids:
+            labels[labels == ids] = -100
+
+        # Note: Check if need to mask 'video_token' as it gets converted to
+        # image patches during media processing
+
+        return labels
+
+
 def get_processing_strategy(
     processor: ProcessorMixin,
     chat_template,
@@ -460,6 +497,11 @@ def get_processing_strategy(
 
     if isinstance(processor, SmolVLMProcessor):
         return SmolVLM2ProcessingStrategy(
+            **processing_kwargs,
+        )
+
+    if InternVLProcessor and isinstance(processor, InternVLProcessor):
+        return InternVLProcessingStrategy(
             **processing_kwargs,
         )
 

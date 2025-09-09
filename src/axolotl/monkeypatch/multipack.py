@@ -38,6 +38,7 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "smollm3",
     "gpt_oss",
     "arcee",
+    "internvl_chat",
 ]
 
 
