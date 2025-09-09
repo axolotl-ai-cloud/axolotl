@@ -1,11 +1,12 @@
 #!/usr/bin/env python
-"""Create a randomly initialized Deepseek-V3-mini model and save to a directory.
+"""Create a randomly initialized Hugging Face DeepSeek-V3 model (smaller sizes) and save it.
 
-Example:
-  python scripts/make_deepseek_v3_mini.py --out ./deepseek-v3-mini-1.3b --params 1300m
+Examples:
+  # preset ~1.3B
+  python scripts/make_deepseek_v3_mini.py --out ./models/deepseek-v3-1_3b --params 1300m --tokenizer axolotl-ai-co/DeepSeek-V3-1B
 
-Or custom sizes:
-  python scripts/make_deepseek_v3_mini.py --out ./custom --vocab 32000 --hidden 2048 --layers 24 --heads 16 --ff 8192 --experts 8 --topk 2
+  # custom small DeepSeek-V3
+  python scripts/make_deepseek_v3_mini.py --out ./models/custom --vocab 32000 --hidden 2560 --layers 28 --heads 20 --ff 10240 --experts 8 --topk 2 --tokenizer axolotl-ai-co/DeepSeek-V3-1B
 """
 
 import argparse
@@ -13,9 +14,9 @@ from pathlib import Path
 
 from transformers import AutoTokenizer
 
-from axolotl.models.deepseek_v3_mini import (
-    DeepseekV3MiniConfig,
-    DeepseekV3MiniForCausalLM,
+from transformers.models.deepseek_v3 import (
+    DeepseekV3Config,
+    DeepseekV3ForCausalLM,
 )
 
 
@@ -46,7 +47,7 @@ PRESETS = {
 }
 
 
-def build_config(args: argparse.Namespace) -> DeepseekV3MiniConfig:
+def build_config(args: argparse.Namespace) -> DeepseekV3Config:
     if args.params:
         spec = PRESETS[args.params.lower()]
         vocab = spec["vocab"]
@@ -65,33 +66,21 @@ def build_config(args: argparse.Namespace) -> DeepseekV3MiniConfig:
         experts = args.experts
         topk = args.topk
 
-    cfg = DeepseekV3MiniConfig(
+    cfg = DeepseekV3Config(
         vocab_size=vocab,
         hidden_size=hidden,
         num_hidden_layers=layers,
         num_attention_heads=heads,
         intermediate_size=ff,
+        # MoE
         num_experts=experts,
-        top_k=topk,
+        num_experts_per_tok=topk,
         num_shared_experts=args.shared_experts,
         max_position_embeddings=args.max_pos,
         dropout=args.dropout,
         # Save as safetensors without shared weights between embeddings and lm_head
         tie_word_embeddings=False,
-        router_score_fn="sigmoid",
-        route_norm=True,
-        route_scale=1.0,
     )
-
-    # Make this loadable via Auto* with trust_remote_code by declaring a unique model_type
-    # and auto_map to our in-repo classes.
-    cfg.model_type = "deepseek_v3_mini"
-    cfg.architectures = ["DeepseekV3MiniForCausalLM"]
-    cfg.auto_map = {
-        "AutoConfig": "axolotl.models.deepseek_v3_mini.modeling.DeepseekV3MiniConfig",
-        "AutoModel": "axolotl.models.deepseek_v3_mini.modeling.DeepseekV3MiniModel",
-        "AutoModelForCausalLM": "axolotl.models.deepseek_v3_mini.modeling.DeepseekV3MiniForCausalLM",
-    }
 
     return cfg
 
@@ -122,7 +111,7 @@ def main():
     args = ap.parse_args()
 
     cfg = build_config(args)
-    model = DeepseekV3MiniForCausalLM(cfg)
+    model = DeepseekV3ForCausalLM(cfg)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     cfg.save_pretrained(out)
