@@ -174,7 +174,7 @@ class TestDiffusionTrainer:
         # Check that metrics were stored
         diffusion_trainer_instance.store_metrics.assert_called_once()
 
-    def test_compute_loss_with_labels(self, diffusion_trainer_instance):
+    def test_compute_loss_sft(self, diffusion_trainer_instance):
         """Test loss computation with SFT labels."""
         # Mock model
         mock_model = Mock()
@@ -184,6 +184,7 @@ class TestDiffusionTrainer:
         mock_outputs.logits = torch.randn(1, seq_len, vocab_size, requires_grad=True)
         mock_model.return_value = mock_outputs
         mock_model.training = True
+        diffusion_trainer_instance.cfg.datasets = Mock()
 
         input_ids = torch.tensor([[1, 10, 20, 30, 2]], dtype=torch.long)
         labels = torch.tensor([[-100, -100, 20, 30, 2]], dtype=torch.long)
