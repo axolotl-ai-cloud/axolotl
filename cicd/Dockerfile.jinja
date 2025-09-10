@@ -1,5 +1,7 @@
 FROM axolotlai/axolotl-base-uv:{{ BASE_TAG }}
 
+SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
+
 ENV TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
 ENV AXOLOTL_EXTRAS="{{ AXOLOTL_EXTRAS }}"
 ENV AXOLOTL_ARGS="{{ AXOLOTL_ARGS }}"
