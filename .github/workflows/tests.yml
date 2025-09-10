@@ -84,8 +84,9 @@ jobs:
           uv pip show --system torch
           uv pip install --system wheel
           uv pip install --system --no-build-isolation -e ".[dev]"
-          python scripts/unsloth_install.py | sh
-          python scripts/cutcrossentropy_install.py | sh
+          set -o pipefail
+          python scripts/unsloth_install.py | bash
+          python scripts/cutcrossentropy_install.py | bash
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
@@ -154,10 +155,12 @@ jobs:
         run: |
           uv pip show --system torch
           uv pip install --system wheel
-          uv pip install --system --no-build-isolation -e .
+          uv pip install --system build
+          python -m build --sdist
+          uv pip install --system dist/*.tar.gz
           python scripts/unsloth_install.py | sh
           python scripts/cutcrossentropy_install.py | sh
-          uv pip install --system -e .[dev]
+          uv pip install --system ".[dev]"
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
