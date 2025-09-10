@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
+
+import torch
 
 from axolotl.utils.dict import DictDefault
 
@@ -118,3 +120,40 @@ def resolve_mask_token_id(
     # Fallback to unk or 0 (do not update cfg)
     fallback = getattr(tokenizer, "unk_token_id", 0) or 0
     return int(fallback)
+
+
+def create_bidirectional_attention_mask(
+    input_ids: torch.Tensor,
+    attention_mask: Optional[torch.Tensor] = None,
+    sample_packing: bool = False,
+) -> torch.Tensor:
+    """
+    Create bidirectional attention mask to override default causal masking.
+    Handles sample-packed sequences where different samples are identified
+    by different attention mask values.
+
+    Args:
+        input_ids: Input token ids [batch_size, seq_len]
+        attention_mask: Attention mask [batch_size, seq_len]
+        sample_packing: Whether sample packing is enabled
+
+    Returns:
+        bidirectional_mask: 4D attention mask [batch_size, 1, seq_len, seq_len]
+    """
+    batch_size, seq_len = input_ids.shape
+    device = input_ids.device
+
+    if attention_mask is None or not sample_packing:
+        return torch.ones(
+            batch_size, 1, seq_len, seq_len, dtype=torch.bool, device=device
+        )
+
+    # Handle sample packing: tokens can only attend within their sample
+    mask_i = attention_mask.unsqueeze(2)  # [batch_size, seq_len, 1]
+    mask_j = attention_mask.unsqueeze(1)  # [batch_size, 1, seq_len]
+
+    # Tokens can attend to each other if they have the same non-zero sample ID
+    bidirectional_mask = (mask_i == mask_j) & (mask_i > 0)
+
+    # Add head dimension: [batch_size, 1, seq_len, seq_len]
+    return bidirectional_mask.unsqueeze(1)

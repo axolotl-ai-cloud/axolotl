@@ -8,6 +8,7 @@ import pytest
 import torch
 
 from axolotl.integrations.diffusion import DiffusionTrainer
+from axolotl.integrations.diffusion.utils import create_bidirectional_attention_mask
 from axolotl.utils.dict import DictDefault
 
 
@@ -120,9 +121,7 @@ class TestDiffusionTrainer:
         """Test bidirectional attention mask without sample packing."""
         input_ids = torch.tensor([[1, 10, 20, 2]], dtype=torch.long)
 
-        mask = diffusion_trainer_instance._create_bidirectional_attention_mask(
-            input_ids
-        )
+        mask = create_bidirectional_attention_mask(input_ids)
 
         # Should be all-to-all attention
         expected_shape = (1, 1, 4, 4)
@@ -138,9 +137,7 @@ class TestDiffusionTrainer:
         # Sample IDs: first sample (1), second sample (2)
         attention_mask = torch.tensor([[1, 1, 1, 2, 2, 2]], dtype=torch.long)
 
-        mask = diffusion_trainer_instance._create_bidirectional_attention_mask(
-            input_ids, attention_mask
-        )
+        mask = create_bidirectional_attention_mask(input_ids, attention_mask)
 
         # Check that tokens within same sample can attend to each other
         # but not across samples

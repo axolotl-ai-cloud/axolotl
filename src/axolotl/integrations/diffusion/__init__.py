@@ -5,7 +5,7 @@ from .callbacks import DiffusionGenerationCallback
 from .generation import generate
 from .plugin import DiffusionPlugin
 from .trainer import DiffusionTrainer
-from .utils import resolve_mask_token_id
+from .utils import create_bidirectional_attention_mask, resolve_mask_token_id
 
 __all__ = [
     "DiffusionArgs",
@@ -13,6 +13,7 @@ __all__ = [
     "DiffusionTrainer",
     "generate",
     "resolve_mask_token_id",
+    "create_bidirectional_attention_mask",
     "DiffusionGenerationCallback",
     "DiffusionConfig",
 ]

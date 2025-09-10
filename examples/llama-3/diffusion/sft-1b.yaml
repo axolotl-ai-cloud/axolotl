@@ -29,7 +29,8 @@ eval_sample_packing: true
 
 gradient_accumulation_steps: 4
 micro_batch_size: 4
-max_steps: 10000
+num_epochs: 1
+warmup_steps: 0.1
 
 optimizer: adamw_8bit
 lr_scheduler: cosine
@@ -40,15 +41,11 @@ tf32: true
 
 gradient_checkpointing: true
 resume_from_checkpoint:
-logging_steps: 1
 sdp_attention: true
 
-warmup_steps: 0.1
-
-save_strategy: steps
-eval_strategy: steps
-save_steps: 500
-eval_steps: 500
+logging_steps: 1
+save_strategy: best
+eval_strategy: epoch
 
 special_tokens:
   pad_token: "<|end_of_text|>"

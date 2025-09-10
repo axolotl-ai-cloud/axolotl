@@ -30,21 +30,17 @@ sample_packing: true
 gradient_accumulation_steps: 8
 micro_batch_size: 4
 max_steps: 10000
+warmup_ratio: 0.1
 
 optimizer: adamw_8bit
 lr_scheduler: cosine
 learning_rate: 3e-4
+sdp_attention: true
 
 bf16: auto
 tf32: true
 
-gradient_checkpointing: true
-resume_from_checkpoint:
 logging_steps: 1
-sdp_attention: true
-
-warmup_ratio: 0.1
-
 save_strategy: steps
 save_steps: 1000
 

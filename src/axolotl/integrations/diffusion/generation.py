@@ -7,6 +7,8 @@ import torch
 
 from axolotl.utils.logging import get_logger
 
+from .utils import create_bidirectional_attention_mask
+
 LOG = get_logger(__name__)
 
 
@@ -69,9 +71,11 @@ def generate_samples(
             if isinstance(sample, dict):
                 original_sequence = sample.get("input_ids")
                 labels_seq = sample.get("labels")
+                attn_seq = sample.get("attention_mask")
             else:
                 original_sequence = sample
                 labels_seq = None
+                attn_seq = None
             generation_result = generate(
                 unwrapped_model,
                 tokenizer,
@@ -83,6 +87,7 @@ def generate_samples(
                 completion_tokens=completion_tokens,
                 target_mask_ratio=target_mask_ratio,
                 labels=labels_seq,
+                attention_mask=attn_seq,
             )
             generations.append(generation_result)
 
@@ -136,9 +141,7 @@ def _sample_sequences_from_dataloader(
             if seq_len < 10:
                 continue
 
-            # Determine truncation length. If SFT labels exist, preserve the full
-            # prompt (labels == -100) and truncate only the answer span to fit within
-            # max_length. Ensure at least one answer token is retained; otherwise skip.
+            # Determine truncation length
             max_total = min(seq_len, max_length)
             if labels is not None:
                 labels_i = labels[i][:seq_len]
@@ -164,11 +167,27 @@ def _sample_sequences_from_dataloader(
 
             # Extract the (possibly truncated) sequence
             sequence = input_ids[i][:actual_length].unsqueeze(0).to(device)
+            attn_seq = (
+                attention_mask[i][:actual_length].unsqueeze(0).to(device)
+                if attention_mask is not None
+                else None
+            )
             if labels is not None:
                 labels_seq = labels[i][:actual_length].unsqueeze(0).to(device)
-                sampled_sequences.append({"input_ids": sequence, "labels": labels_seq})
+                sampled_sequences.append(
+                    {
+                        "input_ids": sequence,
+                        "labels": labels_seq,
+                        "attention_mask": attn_seq,
+                    }
+                )
             else:
-                sampled_sequences.append(sequence)
+                if attn_seq is not None:
+                    sampled_sequences.append(
+                        {"input_ids": sequence, "attention_mask": attn_seq}
+                    )
+                else:
+                    sampled_sequences.append(sequence)
             sample_count += 1
 
     return sampled_sequences
@@ -186,6 +205,7 @@ def generate(
     completion_tokens: int = 0,
     target_mask_ratio: Optional[float] = None,
     labels: Optional[torch.Tensor] = None,
+    attention_mask: Optional[torch.Tensor] = None,
 ) -> dict:
     """Generate a single sample using reverse diffusion."""
     # Get original text for comparison
@@ -194,10 +214,6 @@ def generate(
     )
 
     # Build masked sequence
-    # If labels contain a mix of -100 (prompt) and non -100 (answer),
-    # treat as SFT and mask only the answer tokens. For pretraining where
-    # labels are fully populated (no -100), fall back to random/completion
-    # masking instead of masking the entire sequence.
     if (
         labels is not None
         and labels.numel() > 0
@@ -256,9 +272,18 @@ def generate(
 
     # Run reverse diffusion process
     sequence = masked_sequence.clone()
+    attention_mask = create_bidirectional_attention_mask(
+        sequence, attention_mask, sample_packing=attention_mask is not None
+    )
     for step in range(num_diffusion_steps):
         sequence = _diffusion_step(
-            model, sequence, step, num_diffusion_steps, temperature, mask_token_id
+            model,
+            sequence,
+            step,
+            num_diffusion_steps,
+            temperature,
+            mask_token_id,
+            attention_mask,
         )
 
     # Get final generated text
@@ -331,6 +356,7 @@ def _diffusion_step(
     num_diffusion_steps: int,
     temperature: float,
     mask_token_id: int,
+    attention_mask: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """Perform a single diffusion step with remasking."""
     # Only process if there are masked tokens remaining
@@ -338,11 +364,12 @@ def _diffusion_step(
     if not current_mask.any():
         return sequence
 
-    # Create attention mask
-    batch_size, seq_len = sequence.shape
-    attention_mask = torch.ones(
-        batch_size, 1, seq_len, seq_len, dtype=torch.bool, device=sequence.device
-    )
+    # Create or use provided attention mask
+    if attention_mask is None:
+        batch_size, seq_len = sequence.shape
+        attention_mask = torch.ones(
+            batch_size, 1, seq_len, seq_len, dtype=torch.bool, device=sequence.device
+        )
 
     # Forward pass
     outputs = model(input_ids=sequence, attention_mask=attention_mask)

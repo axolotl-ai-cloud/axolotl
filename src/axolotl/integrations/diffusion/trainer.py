@@ -11,6 +11,7 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 from .callbacks import DiffusionGenerationCallback
+from .utils import create_bidirectional_attention_mask
 
 LOG = get_logger(__name__)
 
@@ -155,41 +156,6 @@ class DiffusionTrainer(AxolotlTrainer):
 
         return noisy_batch, masked_indices, p_mask
 
-    def _create_bidirectional_attention_mask(
-        self, input_ids: torch.Tensor, attention_mask: torch.Tensor | None = None
-    ) -> torch.Tensor:
-        """
-        Create bidirectional attention mask to override default causal masking. Handles
-        sample-packed sequences where different samples are identified by different
-        attention mask values.
-
-        Args:
-            input_ids: Input token ids [batch_size, seq_len].
-            attention_mask: Attention mask [batch_size, seq_len]
-
-        Returns:
-            bidirectional_mask: 4D attention mask [batch_size, 1, seq_len, seq_len].
-        """
-        batch_size, seq_len = input_ids.shape
-        device = input_ids.device
-
-        if attention_mask is None or not self.cfg.sample_packing:
-            return torch.ones(
-                batch_size, 1, seq_len, seq_len, dtype=torch.bool, device=device
-            )
-
-        # Create attention mask by comparing sample IDs element-wise
-        mask_i = attention_mask.unsqueeze(2)  # [batch_size, seq_len, 1]
-        mask_j = attention_mask.unsqueeze(1)  # [batch_size, 1, seq_len]
-
-        # Tokens can attend to each other if they have the same non-zero sample ID
-        bidirectional_mask = (mask_i == mask_j) & (mask_i > 0)
-
-        # Add head dimension: [batch_size, 1, seq_len, seq_len]
-        bidirectional_mask = bidirectional_mask.unsqueeze(1)
-
-        return bidirectional_mask
-
     def _compute_diffusion_loss(
         self,
         model: nn.Module,
@@ -232,8 +198,8 @@ class DiffusionTrainer(AxolotlTrainer):
         )
 
         # Create bidirectional attention mask
-        bidirectional_mask = self._create_bidirectional_attention_mask(
-            input_ids, attention_mask
+        bidirectional_mask = create_bidirectional_attention_mask(
+            input_ids, attention_mask, sample_packing=self.cfg.sample_packing
         )
 
         # Forward pass
