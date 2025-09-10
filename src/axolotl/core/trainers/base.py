@@ -643,12 +643,12 @@ class AxolotlTrainer(
         """
         for key, value in metrics.items():
             if isinstance(value, tuple):
-                value, reduction = value  # type: ignore[assignment]
+                value, _reduction = value  # type: ignore[assignment]
             else:
-                value, reduction = value, reduction
+                value, _reduction = value, reduction
 
             self._stored_metrics[train_eval][key]["values"].append(value)
-            self._stored_metrics[train_eval][key]["reduction"] = reduction
+            self._stored_metrics[train_eval][key]["reduction"] = _reduction
 
     def _save_checkpoint(self, model, trial, **kwargs):
         # make sure the checkpoint dir exists, since trainer is flakey

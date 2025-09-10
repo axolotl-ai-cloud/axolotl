@@ -281,15 +281,17 @@ class DiffusionTrainer(AxolotlTrainer):
             "avg_p_mask": avg_p_mask,
             "ce_loss": ce_loss.item(),
         }
-        # When SFT labels are provided, also log answer-specific metrics
-        if labels is not None:
+
+        # If doing SFT training, log answer-specific metrics
+        if self.cfg.datasets is not None:
             with torch.no_grad():
                 answer_mask = labels != -100
-                answer_lengths = answer_mask.sum(dim=1).float()  # [batch_size]
-                total_answer_tokens = answer_mask.sum().item()
-                total_tokens = labels.numel()
+                answer_lengths = answer_mask.sum(dim=1).float()  # type: ignore
+                total_answer_tokens = answer_mask.sum().item()  # type: ignore
+                total_tokens = labels.numel()  # type: ignore
                 metrics["answer_ratio"] = total_answer_tokens / max(total_tokens, 1)
                 metrics["avg_answer_length"] = answer_lengths.mean().item()
+
         if self.cfg.diffusion.importance_weighting:
             metrics["importance_weight_avg"] = (1.0 / masked_p_mask).mean().item()
 
