@@ -28,7 +28,7 @@ python scripts/cutcrossentropy_install.py | sh
 axolotl train examples/apertus/apertus-8b-qlora.yaml
 ```
 
-This config uses about (-) GiB VRAM.
+This config uses about 11.8 GiB VRAM.
 
 Let us know how it goes. Happy finetuning! 🚀
 
