@@ -205,6 +205,10 @@ base_model: LiquidAI/LFM2-VL-450M
 
 ### Intern-VL {#sec-intern-vl}
 
+::: {.callout-tip}
+Please make sure to install `timm` via `pip3 install timm==1.0.19`
+:::
+
 ```yaml
 base_model: OpenGVLab/InternVL3_5-8B
 ```

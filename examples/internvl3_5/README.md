@@ -6,6 +6,8 @@
 
 2. Install Cut Cross Entropy following [docs](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy).
 
+3. Install timm
+
 2. Run the below
 
 ```bash
