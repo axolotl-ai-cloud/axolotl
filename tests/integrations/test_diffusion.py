@@ -137,7 +137,9 @@ class TestDiffusionTrainer:
         # Sample IDs: first sample (1), second sample (2)
         attention_mask = torch.tensor([[1, 1, 1, 2, 2, 2]], dtype=torch.long)
 
-        mask = create_bidirectional_attention_mask(input_ids, attention_mask)
+        mask = create_bidirectional_attention_mask(
+            input_ids, attention_mask, sample_packing=True
+        )
 
         # Check that tokens within same sample can attend to each other
         # but not across samples
