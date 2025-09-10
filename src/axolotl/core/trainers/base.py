@@ -362,6 +362,11 @@ class AxolotlTrainer(
             num_items_in_batch=num_items_in_batch,
         )
 
+    @override
+    def evaluate(self, *args, **kwargs):
+        LOG.info("Running evaluation step...")
+        return super().evaluate(*args, **kwargs)
+
     @staticmethod
     def orpo_concatenate_inputs(inputs, label_pad_token=-100, pad_token=0, device=None):
         concatenated_batch = {}
