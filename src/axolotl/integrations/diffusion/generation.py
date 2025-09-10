@@ -285,31 +285,18 @@ def generate(
             mask_token_id,
             attention_mask,
         )
-
-    # Get final generated text
     generated_text = tokenizer.decode(sequence[0].cpu(), skip_special_tokens=True)
 
-    # Collect diagnostic info for richer UIs
-    try:
-        final_ids = sequence[0].detach().cpu().tolist()
-    except Exception:
-        final_ids = None
-
-    try:
-        orig_ids_for_render = original_sequence[0].detach().cpu().tolist()
-    except Exception:
-        orig_ids_for_render = None
-
-    try:
-        if masked_indices is not None:
-            masked_positions = (
-                torch.where(masked_indices[0])[0].detach().cpu().tolist()
-                if masked_indices.ndim == 2
-                else []
-            )
-        else:
-            masked_positions = []
-    except Exception:
+    # Collect diagnostic info
+    final_ids = sequence[0].detach().cpu().tolist()
+    orig_ids_for_render = original_sequence[0].detach().cpu().tolist()
+    if masked_indices is not None:
+        masked_positions = (
+            torch.where(masked_indices[0])[0].detach().cpu().tolist()
+            if masked_indices.ndim == 2
+            else []
+        )
+    else:
         masked_positions = []
 
     result = {
@@ -356,7 +343,7 @@ def _diffusion_step(
     num_diffusion_steps: int,
     temperature: float,
     mask_token_id: int,
-    attention_mask: Optional[torch.Tensor] = None,
+    attention_mask: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Perform a single diffusion step with remasking."""
     # Only process if there are masked tokens remaining
