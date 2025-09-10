@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gradio as gr
 from colorama import Fore, Style
 
 from axolotl.integrations.diffusion import generate, resolve_mask_token_id
@@ -24,7 +25,7 @@ def diffusion_inference(
     if cleaned:
         prompt = cleaned
 
-    info = _run_diffusion(
+    info = run_diffusion(
         model=model,
         tokenizer=tokenizer,
         cfg=cfg,
@@ -131,10 +132,11 @@ def _parse_commands(text: str):
             break
 
     cleaned = " ".join(tokens[consumed:])
+
     return mode, completion_tokens, target_mask_ratio, cleaned
 
 
-def _run_diffusion(
+def run_diffusion(
     *,
     model,
     tokenizer,
@@ -192,3 +194,181 @@ def _run_diffusion(
         "masked_positions": masked_positions,
         "orig_ids": orig_ids,
     }
+
+
+def render_html(
+    *,
+    generated_ids: list[int] | None,
+    orig_ids: list[int],
+    masked_positions: set[int],
+    tokenizer,
+) -> str:
+    """Render HTML visualizing diffusion outputs."""
+    if not generated_ids:
+        return "<pre>Generated:\n(no output)</pre>"
+
+    def _style_for(i: int, tid: int) -> str:
+        if i in masked_positions:
+            if i < len(orig_ids) and tid == orig_ids[i]:
+                return "green"
+            if i < len(orig_ids):
+                return "red"
+            return "normal"
+        same = i < len(orig_ids) and tid == orig_ids[i]
+        return "dim" if same else "normal"
+
+    # Group contiguous spans by style to reduce HTML size
+    spans: list[tuple[str, int, int]] = []
+    if generated_ids:
+        cur = _style_for(0, generated_ids[0])
+        start = 0
+        for i in range(1, len(generated_ids)):
+            s = _style_for(i, generated_ids[i])
+            if s != cur:
+                spans.append((cur, start, i))
+                cur, start = s, i
+        spans.append((cur, start, len(generated_ids)))
+
+    html_parts = []
+    for style_name, a, b in spans:
+        txt = tokenizer.decode(generated_ids[a:b], skip_special_tokens=False)
+        if style_name == "green":
+            html_parts.append(f'<span style="color:#2e7d32">{txt}</span>')
+        elif style_name == "red":
+            html_parts.append(f'<span style="color:#c62828">{txt}</span>')
+        elif style_name == "dim":
+            html_parts.append(f'<span style="opacity:0.6">{txt}</span>')
+        else:
+            html_parts.append(txt)
+
+    legend = (
+        '<div style="font-size:0.9em;margin-bottom:4px">'
+        '<span style="color:#2e7d32">correct</span>, '
+        '<span style="color:#c62828">incorrect</span>, '
+        '<span style="opacity:0.6">unchanged</span>'
+        "</div>"
+    )
+
+    return (
+        legend
+        + '<pre style="white-space:pre-wrap">Generated:\n'
+        + "".join(html_parts)
+        + "</pre>"
+    )
+
+
+def launch_diffusion_gradio_ui(
+    *,
+    model,
+    tokenizer,
+    cfg: DictDefault,
+    prompter_module=None,
+    chat_template_str: str | None = None,
+):
+    """Build and launch a simple Gradio UI for diffusion inference."""
+    with gr.Blocks(
+        title=cfg.get("gradio_title", "Axolotl Diffusion Interface")
+    ) as demo:
+        gr.Markdown(
+            """
+            ## Axolotl Diffusion Inference
+            - Mode "Random" masks tokens at a target ratio and fills them.
+            - Mode "Completion" appends N masked tokens at the end and fills them.
+            """
+        )
+
+        with gr.Row():
+            mode = gr.Radio(
+                choices=["random", "completion"],
+                value="random",
+                label="Mode",
+            )
+            mask_ratio = gr.Slider(
+                minimum=0.0,
+                maximum=1.0,
+                step=0.05,
+                value=0.4,
+                label="Mask ratio (random mode)",
+                interactive=True,
+            )
+            completion_tokens = gr.Number(
+                value=64,
+                precision=0,
+                label="Completion tokens (completion mode)",
+                interactive=True,
+                visible=False,
+            )
+
+        instruction = gr.Textbox(label="Instruction", lines=6)
+        run_btn = gr.Button("Generate")
+
+        masked_preview = gr.Textbox(label="Masked preview", lines=6)
+        html_out = gr.HTML(label="Generated")
+
+        def _toggle_controls(selected_mode: str):
+            return (
+                gr.update(visible=(selected_mode == "random")),
+                gr.update(visible=(selected_mode == "completion")),
+            )
+
+        mode.change(
+            _toggle_controls,
+            inputs=[mode],
+            outputs=[mask_ratio, completion_tokens],
+        )
+
+        def _gen(instruction_text: str, selected_mode: str, mratio: float, ctoks: int):
+            if not instruction_text:
+                return "", "<pre>Generated:\n(no output)</pre>"
+
+            if prompter_module:
+                prompt: str = next(
+                    prompter_module().build_prompt(
+                        instruction=instruction_text.strip("\n")
+                    )
+                )
+            else:
+                prompt = instruction_text.strip()
+
+            info = run_diffusion(
+                model=model,
+                tokenizer=tokenizer,
+                cfg=cfg,
+                prompt=prompt,
+                chat_template_str=chat_template_str,
+                mode=selected_mode,
+                target_mask_ratio=mratio if selected_mode == "random" else None,
+                completion_tokens=int(ctoks) if selected_mode == "completion" else 0,
+            )
+
+            masked_text = info.get("masked_text")
+            mask_ratio_val = info.get("mask_ratio")
+            generated_ids = info.get("generated_ids")
+            masked_positions = info.get("masked_positions") or set()
+            orig_ids = info.get("orig_ids") or []
+
+            preview = (
+                f"Masked ({mask_ratio_val:.1%}):\n{masked_text}"
+                if masked_text is not None and mask_ratio_val is not None
+                else ""
+            )
+            html = render_html(
+                generated_ids=generated_ids,
+                orig_ids=orig_ids,
+                masked_positions=masked_positions,
+                tokenizer=tokenizer,
+            )
+            return preview, html
+
+        run_btn.click(
+            _gen,
+            inputs=[instruction, mode, mask_ratio, completion_tokens],
+            outputs=[masked_preview, html_out],
+        )
+
+        demo.queue().launch(
+            show_api=False,
+            share=cfg.get("gradio_share", True),
+            server_name=cfg.get("gradio_server_name", "127.0.0.1"),
+            server_port=cfg.get("gradio_server_port", None),
+        )

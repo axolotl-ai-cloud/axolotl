@@ -14,7 +14,12 @@ from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 from axolotl.cli.args import InferenceCliArgs
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
-from axolotl.cli.utils.diffusion import diffusion_inference
+from axolotl.cli.utils.diffusion import (
+    diffusion_inference,
+    launch_diffusion_gradio_ui,
+    render_html,
+    run_diffusion,
+)
 from axolotl.integrations.base import PluginManager
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.dict import DictDefault
@@ -192,6 +197,23 @@ def do_inference_gradio(
         )
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
+
+    # Detect diffusion mode
+    plugin_manager = PluginManager.get_instance()
+    is_diffusion = any(
+        plugin.__class__.__name__ == "DiffusionPlugin"
+        for plugin in plugin_manager.plugins.values()
+    )
+
+    if is_diffusion:
+        launch_diffusion_gradio_ui(
+            model=model,
+            tokenizer=tokenizer,
+            cfg=cfg,
+            prompter_module=prompter_module,
+            chat_template_str=chat_template_str,
+        )
+        return
 
     def generate(instruction):
         if not instruction:
