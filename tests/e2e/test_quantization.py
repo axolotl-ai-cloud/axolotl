@@ -15,7 +15,7 @@ from axolotl.utils.quantization import (
 from axolotl.utils.schemas.enums import TorchAOQuantDType
 from axolotl.utils.schemas.quantization import QATConfig
 from torch import nn
-from torchao.dtypes.affine_quantized_tensor import AffineQuantizedTensor
+from torchao.quantization import LinearActivationQuantizedTensor
 from torchao.quantization.qat.embedding import FakeQuantizedEmbedding
 from torchao.quantization.qat.linear import FakeQuantizedLinear
 from torchao.quantization.quant_api import (
@@ -77,12 +77,19 @@ ptq_config_test_cases = [
 ptq_test_cases = [
     # weight_dtype, activation_dtype, group_size, quantize_embedding, expected_exception, expected_tensor_class
     (TorchAOQuantDType.int4, None, 4, True, None, Int4Tensor),
-    (TorchAOQuantDType.int4, TorchAOQuantDType.int8, 8, False, None, Int4Tensor),
+    (
+        TorchAOQuantDType.int4,
+        TorchAOQuantDType.int8,
+        8,
+        False,
+        None,
+        LinearActivationQuantizedTensor,
+    ),
     (
         TorchAOQuantDType.int4,
         TorchAOQuantDType.float8_e4m3fn,
         None,
-        True,
+        False,
         None,
         Int4Tensor,
     ),
@@ -154,14 +161,7 @@ class TestQuantization:
                 ), "Embedding weight should be quantized"
             for child in list(model.children()):
                 if isinstance(child, torch.nn.Linear):
-                    if activation_dtype:
-                        assert isinstance(child.weight, expected_tensor_class), (
-                            "Linear weight should be quantized with activation quantization"
-                        )
-                    else:
-                        assert isinstance(child.weight, AffineQuantizedTensor), (
-                            "Linear weight should be quantized without activation quantization"
-                        )
+                    assert isinstance(child.weight, expected_tensor_class)
 
     @require_torch_2_8_0
     @requires_sm_ge_100
