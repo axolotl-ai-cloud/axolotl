@@ -67,7 +67,10 @@ def get_quantization_config(
         if weight_dtype == TorchAOQuantDType.int4:
             from torchao.quantization.quant_api import Int4WeightOnlyConfig
 
-            return Int4WeightOnlyConfig(group_size=group_size, version=2)
+            if group_size is not None:
+                return Int4WeightOnlyConfig(group_size=group_size, version=2)
+            else:
+                return Int4WeightOnlyConfig(version=2)
     if (
         activation_dtype == TorchAOQuantDType.int4
         and weight_dtype == TorchAOQuantDType.int4
@@ -86,7 +89,10 @@ def get_quantization_config(
         activation_dtype == TorchAOQuantDType.int8
         and weight_dtype == TorchAOQuantDType.int4
     ):
-        return Int8DynamicActivationInt4WeightConfig(group_size=group_size)
+        if group_size is not None:
+            return Int8DynamicActivationInt4WeightConfig(group_size=group_size)
+        else:
+            return Int8DynamicActivationInt4WeightConfig()
     if (
         activation_dtype == TorchAOQuantDType.float8_e4m3fn
         and weight_dtype == TorchAOQuantDType.float8_e4m3fn
