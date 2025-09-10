@@ -24,11 +24,11 @@ RUN git fetch origin +$GITHUB_REF && \
 
 # If AXOLOTL_EXTRAS is set, append it in brackets
 RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
-        sed -i 's#"transformers==.*"#"transformers @ git+https://github.com/huggingface/transformers.git@main"#' pyproject.toml; \
-        sed -i 's#"peft==.*"#"peft @ git+https://github.com/huggingface/peft.git@main"#' pyproject.toml; \
-        sed -i 's#"accelerate==.*"#"accelerate @ git+https://github.com/huggingface/accelerate.git@main"#' pyproject.toml; \
-        sed -i 's#"trl==.*"#"trl @ git+https://github.com/huggingface/trl.git@main"#' pyproject.toml; \
-        sed -i 's#"datasets==.*"#"datasets @ git+https://github.com/huggingface/datasets.git@main"#' pyproject.toml; \
+        sed -i 's#"transformers[^"]*"#"transformers @ git+https://github.com/huggingface/transformers.git@main"#' pyproject.toml; \
+        sed -i 's#"peft[^"]*"#"peft @ git+https://github.com/huggingface/peft.git@main"#' pyproject.toml; \
+        sed -i 's#"accelerate[^"]*"#"accelerate @ git+https://github.com/huggingface/accelerate.git@main"#' pyproject.toml; \
+        sed -i 's#"trl[^"]*"#"trl @ git+https://github.com/huggingface/trl.git@main"#' pyproject.toml; \
+        sed -i 's#"datasets[^"]*"#"datasets @ git+https://github.com/huggingface/datasets.git@main"#' pyproject.toml; \
     fi
 
 RUN uv pip install packaging==23.2 setuptools==75.8.0
