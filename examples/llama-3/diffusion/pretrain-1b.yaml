@@ -20,7 +20,7 @@ diffusion:
   importance_weighting: true
   mask_token_id: 128002
   generate_samples: true
-  generation_interval: 10
+  generation_interval: 250
 
 output_dir: ./outputs/model-out
 

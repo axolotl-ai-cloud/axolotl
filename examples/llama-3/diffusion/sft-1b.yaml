@@ -19,7 +19,7 @@ diffusion:
   importance_weighting: true
   mask_token_id: 128002
   generate_samples: true
-  generation_interval: 10
+  generation_interval: 250
 
 output_dir: ./outputs/model-out
 
@@ -29,7 +29,7 @@ eval_sample_packing: true
 
 gradient_accumulation_steps: 4
 micro_batch_size: 4
-num_epochs: 1
+max_steps: 10000
 
 optimizer: adamw_8bit
 lr_scheduler: cosine
