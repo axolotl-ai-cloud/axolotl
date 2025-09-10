@@ -9,16 +9,12 @@ from typing import Union
 import fire
 import torch
 import transformers
-from colorama import Fore, Style
 from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 
 from axolotl.cli.args import InferenceCliArgs
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
-from axolotl.cli.utils.diffusion import (
-    parse_commands,
-    run_diffusion,
-)
+from axolotl.cli.utils.diffusion import diffusion_inference
 from axolotl.integrations.base import PluginManager
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.dict import DictDefault
@@ -71,7 +67,7 @@ def do_inference(
         chat_template_str = get_chat_template_from_config(
             cfg, ds_cfg=None, tokenizer=tokenizer
         )
-    elif cfg.datasets[0].type == "chat_template":
+    elif cfg.datasets and cfg.datasets[0].type == "chat_template":
         chat_template_str = get_chat_template_from_config(
             cfg=cfg, ds_cfg=cfg.datasets[0], tokenizer=tokenizer
         )
@@ -126,103 +122,13 @@ def do_inference(
         model.eval()
         with torch.no_grad():
             if is_diffusion:
-                # Diffusion interactive generation
-                mode = "random"
-                completion_tokens = 0
-                target_mask_ratio = None
-                mode, completion_tokens, target_mask_ratio, cleaned = parse_commands(
-                    prompt
-                )
-
-                # Use cleaned prompt without command tokens
-                if cleaned:
-                    prompt = cleaned
-                    if chat_template_str:
-                        batch = tokenizer.apply_chat_template(
-                            [
-                                {
-                                    "role": "user",
-                                    "content": prompt,
-                                }
-                            ],
-                            return_tensors="pt",
-                            add_special_tokens=True,
-                            add_generation_prompt=True,
-                            chat_template=chat_template_str,
-                            tokenize=True,
-                            return_dict=True,
-                        )
-                    else:
-                        batch = tokenizer(
-                            prompt, return_tensors="pt", add_special_tokens=True
-                        )
-
-                info = run_diffusion(
+                diffusion_inference(
                     model=model,
                     tokenizer=tokenizer,
                     cfg=cfg,
                     prompt=prompt,
                     chat_template_str=chat_template_str,
-                    mode=mode,
-                    target_mask_ratio=target_mask_ratio,
-                    completion_tokens=completion_tokens,
                 )
-                masked_text = info["masked_text"]
-                mask_ratio = info["mask_ratio"]
-                generated_ids = info["generated_ids"]
-                masked_positions = info["masked_positions"]
-                orig_ids = info["orig_ids"]
-
-                # Display with masked preview and colored diff
-                if masked_text is not None and mask_ratio is not None:
-                    print(f"Masked ({mask_ratio:.1%}):\n{masked_text}\n")
-                if generated_ids is not None:
-                    # Compute per-token style
-                    styles: list[str] = []
-                    for i, tid in enumerate(generated_ids):
-                        if i in masked_positions:
-                            if i < len(orig_ids) and tid == orig_ids[i]:
-                                styles.append("green")  # correct fill
-                            elif i < len(orig_ids):
-                                styles.append("red")  # incorrect fill
-                            else:
-                                styles.append("normal")  # appended
-                        else:
-                            same = i < len(orig_ids) and tid == orig_ids[i]
-                            styles.append("dim" if same else "normal")
-
-                    # Group contiguous spans by style
-                    styled_spans: list[tuple[str, int, int]] = []
-                    if generated_ids:
-                        current_style = styles[0]
-                        start = 0
-                        for i in range(1, len(generated_ids)):
-                            s = styles[i]
-                            if s != current_style:
-                                styled_spans.append((current_style, start, i))
-                                current_style, start = s, i
-                        styled_spans.append((current_style, start, len(generated_ids)))
-
-                    out_parts = []
-                    for style_name, a, b in styled_spans:
-                        chunk_text = tokenizer.decode(
-                            generated_ids[a:b], skip_special_tokens=False
-                        )
-                        if style_name == "green":
-                            out_parts.append(Fore.GREEN + chunk_text + Style.RESET_ALL)
-                        elif style_name == "red":
-                            out_parts.append(Fore.RED + chunk_text + Style.RESET_ALL)
-                        else:
-                            if style_name == "dim":
-                                out_parts.append(
-                                    Style.DIM + chunk_text + Style.RESET_ALL
-                                )
-                            else:
-                                out_parts.append(chunk_text)
-                    print("Generated:\n" + "".join(out_parts))
-                else:
-                    print("Generated:\n(no output)")
-
                 continue
 
             generation_config = GenerationConfig(
@@ -280,7 +186,7 @@ def do_inference_gradio(
         chat_template_str = get_chat_template_from_config(
             cfg, ds_cfg=None, tokenizer=tokenizer
         )
-    elif cfg.datasets[0].type == "chat_template":
+    elif cfg.datasets and cfg.datasets[0].type == "chat_template":
         chat_template_str = get_chat_template_from_config(
             cfg=cfg, ds_cfg=cfg.datasets[0], tokenizer=tokenizer
         )
