@@ -15,6 +15,7 @@ diffusion:
   noise_schedule: cosine
   min_mask_ratio: 0.15
   max_mask_ratio: 0.85
+  num_diffusion_steps: 128
   eps: 5e-4
   importance_weighting: true
   mask_token_id: 128002
