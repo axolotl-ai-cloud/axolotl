@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "axolotl"
-version = "0.13.0.dev"
+dynamic = ["version"]
 description = "LLM Trainer"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,7 +27,7 @@ classifiers = [
 dependencies = [
     # Core dependencies
     "torch>=2.6.0",
-    "packaging==23.2",
+    "packaging>=23.2",
     "huggingface_hub>=0.33.0",
     "peft==0.17.0",
     "transformers==4.55.2",
@@ -260,7 +260,6 @@ dev-dependencies = [
     "ruff",
     "mypy",
 ]
-
 find-links = [
     "https://github.com/Dao-AILab/flash-attention/releases/expanded_assets/v2.8.3",
 ]
@@ -273,7 +272,12 @@ url = "https://huggingface.github.io/autogptq-index/whl/"
 # Build dependencies for packages that don't declare them properly
 [tool.uv.extra-build-dependencies]
 mamba-ssm = ["torch", "causal_conv1d"]
-flash-attn = ["torch", "packaging", "wheel", "setuptools"]
+flash-attn = [
+    "packaging",
+    "wheel",
+    "setuptools",
+    { requirement = "torch", match-runtime = true },
+]
 autoawq = ["torch"]
 triton = ["torch"]
 bitsandbytes = ["torch"]
