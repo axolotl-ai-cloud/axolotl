@@ -42,10 +42,6 @@ class TestLoRAConfigValidation:
             )
             validate_config(invalid_config)
 
-    def test_parameter_freezing_validation(self):
-        """Test parameter freezing configuration validation"""
-        pass
-
     def test_qlora_4bit_validation(self):
         """Test QLoRA 4-bit configuration validation"""
         valid_config = DictDefault(
