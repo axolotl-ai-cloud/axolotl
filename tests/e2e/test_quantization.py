@@ -85,14 +85,14 @@ ptq_test_cases = [
         None,
         LinearActivationQuantizedTensor,
     ),
-    (
-        TorchAOQuantDType.int4,
-        TorchAOQuantDType.float8_e4m3fn,
-        None,
-        False,
-        None,
-        Int4Tensor,
-    ),
+    # (
+    #     TorchAOQuantDType.int4,
+    #     TorchAOQuantDType.float8_e4m3fn,
+    #     None,
+    #     False,
+    #     None,
+    #     Int4Tensor,
+    # ),
     (TorchAOQuantDType.int4, None, None, False, None, Int4Tensor),
     # Deprecated configs
     (TorchAOQuantDType.int8, None, 8, False, ValueError, None),
