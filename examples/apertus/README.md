@@ -64,27 +64,13 @@ Please check these one by one:
 
 If those didn't help, please try the below solutions:
 
-1. Export args for CMAKE and try install again:
+1. Pass env for CMAKE and try install again:
 
     ```bash
-    CONDA_PYTHON=$(which python)
-
-    # Check correct path
-    echo "Using Python: ${CONDA_PYTHON}"
-
-    # Help CMAKE find correct python
-    export CMAKE_ARGS="-DPython_EXECUTABLE=${CONDA_PYTHON} -DPython_ROOT_DIR=${CONDA_PREFIX} -DPython_FIND_STRATEGY=LOCATION"
-
-    export Python3_EXECUTABLE=${CONDA_PYTHON}
-    export Python_EXECUTABLE=${CONDA_PYTHON}
-
-    # Lastly, verify this runs fine
-    ${CONDA_PYTHON} -c "import torch; print('Torch version:', torch.__version__); print('CMAKE paths:', torch.utils.cmake_prefix_path)"
-
-    pip3 install git+https://github.com/nickjbrowning/XIELU --no-build-isolation --no-deps
+    Python_EXECUTABLE=$(which python) pip3 install git+https://github.com/nickjbrowning/XIELU --no-build-isolation --no-deps
     ```
 
-2. Git clone the repo and manually hardcode python path
+2. Git clone the repo and manually hardcode python path:
 
     ```bash
     git clone https://github.com/nickjbrowning/XIELU
