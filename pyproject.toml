@@ -106,8 +106,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Specific hardware acceleration
+# Flash attention context parallelism
 ring-flash-attn = [
+    "flash-attn==2.8.3 ; sys_platform == 'linux'",
     "ring-flash-attn>=0.1.7",
     "yunchang==0.6.0",
 ]
