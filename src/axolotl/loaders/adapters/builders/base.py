@@ -36,12 +36,14 @@ class BaseAdapterBuilder(ABC):
         return lora_config
 
     @abstractmethod
-    def build_model(self, model: PreTrainedModel, config: PeftConfig) -> PeftModel:
+    def build_model(
+        self, model: PreTrainedModel, config: PeftConfig, *, inference: bool = False
+    ) -> PeftModel:
         """Build the PEFT model"""
         self.setup_quantization_for_training(model)
 
         if self.cfg.lora_model_dir:
-            model = self.load_pretrained_adapter(model)
+            model = self.load_pretrained_adapter(model, inference)
         else:
             model = self.create_peft_model(model, config)
 

@@ -381,13 +381,24 @@ class ModelLoader:
                         self.cfg.adapter, self.cfg
                     )
                     lora_config = builder.build_config(self.model)
-                except Exception as e:
-                    LOG.debug(
-                        f"Builder pattern failed for config-only, falling back to legacy: {e}"
-                    )
-                    _, lora_config = load_lora(
-                        self.model, self.cfg, inference=False, config_only=True
-                    )
+                except (
+                    ValueError,
+                    ImportError,
+                    TypeError,
+                    AttributeError,
+                    RuntimeError,
+                ) as e:
+                    if self.cfg.adapter in ["lora", "qlora"]:
+                        # Fallback to legacy method
+                        LOG.debug(
+                            f"Builder pattern failed for config-only, falling back to legacy: {e}"
+                        )
+                        _, lora_config = load_lora(
+                            self.model, self.cfg, inference=False, config_only=True
+                        )
+                    else:
+                        # Re-raise the original exception for non-LoRA adapters
+                        raise
             else:
                 self.model, lora_config = load_adapter(
                     self.model, self.cfg, self.cfg.adapter, inference=self.inference

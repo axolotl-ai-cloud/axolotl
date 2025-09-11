@@ -167,15 +167,11 @@ def load_adapter(
     adapter: str | None,
     inference: bool = False,
     config_only: bool = False,
-) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel, PeftConfig | None]:
+) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]:
     try:
         if adapter is None:
             return model, None
         builder = AdapterBuilderFactory.create_builder(adapter, cfg)
-
-        if not builder:
-            LOG.warning(f"No builder found for adapter type '{adapter}'")
-            return model, None
 
         config = builder.build_config(model)
 
@@ -185,10 +181,10 @@ def load_adapter(
         if hasattr(model, "enable_input_require_grads"):
             model.enable_input_require_grads()
 
-        model = builder.build_model(model, config)
+        model = builder.build_model(model, config, inference=inference)
         return model, config
 
-    except Exception as e:
+    except ValueError as e:
         LOG.debug(
             f"Builder pattern failed, falling back to legacy adapter loading: {e}"
         )

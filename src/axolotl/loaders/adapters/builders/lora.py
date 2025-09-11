@@ -46,7 +46,9 @@ class LoraAdapterBuilder(BaseAdapterBuilder):
         )
         return lora_config
 
-    def build_model(self, model: PreTrainedModel, config: LoraConfig) -> PeftModel:
+    def build_model(
+        self, model: PreTrainedModel, config: LoraConfig, *, inference: bool = False
+    ) -> PeftModel:
         """
         Build LoRA model.
 
@@ -61,7 +63,7 @@ class LoraAdapterBuilder(BaseAdapterBuilder):
 
         if self.cfg.lora_model_dir:
             LOG.debug("Loading pretrained PEFT - LoRA")
-            model = self.load_pretrained_adapter(model)
+            model = self.load_pretrained_adapter(model, inference)
         else:
             model = self.create_peft_model(model, config)
 
