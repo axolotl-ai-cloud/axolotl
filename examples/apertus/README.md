@@ -22,6 +22,14 @@ pip3 install --no-build-isolation -e '.[flash-attn]'
 python scripts/cutcrossentropy_install.py | sh
 ```
 
+2. Install XIELU for CUDA kernels for activation
+
+TODO; build error
+
+```bash
+pip3 install git+https://github.com/nickjbrowning/XIELU --no-build-isolation --no-deps
+```
+
 2. Run the finetuning example:
 
 ```bash
