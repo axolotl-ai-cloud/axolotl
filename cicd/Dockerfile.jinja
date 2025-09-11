@@ -35,16 +35,16 @@ RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
 
 RUN uv pip install packaging==23.2 setuptools==75.8.0
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
-        uv pip install --no-build-isolation -e .[ring-flash-attn,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
+        uv sync --frozen -E ring-flash-attn -E optimizers -E ray $(printf ' -E %s' "${AXOLOTL_EXTRAS//,/ }") $AXOLOTL_ARGS; \
     else \
-        uv pip install --no-build-isolation -e .[ring-flash-attn,optimizers,ray] $AXOLOTL_ARGS; \
+        uv sync --frozen -E ring-flash-attn -E optimizers -E ray $AXOLOTL_ARGS; \
     fi
 
 RUN python scripts/unsloth_install.py | sh
 RUN python scripts/cutcrossentropy_install.py | sh
 
 # So we can test the Docker image
-RUN uv pip install -e .[dev]
+RUN uv pip install -e ".[dev]"
 
 # fix so that git fetch/pull from remote works
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
