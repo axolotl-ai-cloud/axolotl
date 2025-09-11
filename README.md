@@ -6,7 +6,7 @@
     </picture>
 </p>
   <p align="center">
-      <strong>Free and Open Source LLM Fine-tuning Framework</strong><br>
+      <strong>A Free and Open Source LLM Fine-tuning Framework</strong><br>
   </p>
 
 <p align="center">
