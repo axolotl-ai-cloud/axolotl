@@ -19,10 +19,10 @@ from peft import (
 )
 from transformers import PreTrainedModel
 
+from axolotl.loaders.adapters.builders.factory import AdapterBuilderFactory
 from axolotl.loaders.utils import get_linear_embedding_layers
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
-from axolotl.loaders.adapters.builders.factory import AdapterBuilderFactory
 
 LOG = get_logger(__name__)
 
