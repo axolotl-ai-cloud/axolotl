@@ -7,7 +7,11 @@ from pathlib import Path
 from typing import Type, Union
 
 import transformers
-from transformers import DataCollatorWithFlattening, EarlyStoppingCallback
+from transformers import (
+    DataCollatorWithFlattening,
+    EarlyStoppingCallback,
+    Trainer,
+)
 from trl.trainer.utils import RewardDataCollatorWithPadding
 
 from axolotl.core.builders.base import TrainerBuilderBase
@@ -23,15 +27,16 @@ from axolotl.monkeypatch.relora import ReLoRACallback
 from axolotl.processing_strategies import get_processing_strategy
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
+    LossWatchDogCallback,
+    SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
     causal_lm_bench_eval_callback_factory,
     colab_inference_post_train_callback,
     log_prediction_callback_factory,
-    LossWatchDogCallback,
-    SaveBetterTransformerModelCallback,
 )
 from axolotl.utils.callbacks.lisa import lisa_callback_factory
 from axolotl.utils.callbacks.qat import QATCallback
+from axolotl.utils.callbacks.tokens_per_second import TokensPerSecondCallback
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
@@ -39,7 +44,6 @@ from axolotl.utils.collators import (
     MambaDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
-from axolotl.utils.callbacks.tokens_per_second import TokensPerSecondCallback
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.import_helper import get_cls_from_module_str
 from axolotl.utils.logging import get_logger
@@ -391,10 +395,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 **data_collator_kwargs,
             )
         sig = inspect.signature(trainer_cls)
-        if "processing_class" in sig.parameters:
+        if "processing_class" in sig.parameters or issubclass(trainer_cls, Trainer):
             trainer_kwargs["processing_class"] = self.tokenizer
         elif "tokenizer" in sig.parameters:
             trainer_kwargs["tokenizer"] = self.tokenizer
+
         if (
             trainer_cls not in [AxolotlRewardTrainer, AxolotlPRMTrainer]
             and self.cfg.datasets is not None
