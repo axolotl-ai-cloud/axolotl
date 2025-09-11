@@ -5,6 +5,9 @@
         <img alt="Axolotl" src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/887513285d98132142bf5db2a74eb5e0928787f1/image/axolotl_logo_digital_black.svg" width="400" height="104" style="max-width: 100%;">
     </picture>
 </p>
+  <p align="center">
+      <strong>Free and Open Source LLM Fine-tuning Framework</strong><br>
+  </p>
 
 <p align="center">
     <img src="https://img.shields.io/github/license/axolotl-ai-cloud/axolotl.svg?color=blue" alt="GitHub License">
@@ -160,7 +163,7 @@ If you use Axolotl in your research or projects, please cite it as follows:
 
 ```bibtex
 @software{axolotl,
-  title = {Axolotl: Post-Training for AI Models},
+  title = {Axolotl: Open Source LLM Post-Training},
   author = {{Axolotl maintainers and contributors}},
   url = {https://github.com/axolotl-ai-cloud/axolotl},
   license = {Apache-2.0},
