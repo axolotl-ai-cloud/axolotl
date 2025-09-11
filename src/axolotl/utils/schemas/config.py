@@ -12,7 +12,6 @@ from pydantic import (
     model_validator,
 )
 
-from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
@@ -1316,20 +1315,18 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @classmethod
     def default_dataset_num_proc(cls, data):
         if data.get("dataset_processes") is not None:
-            if data.get("dataset_num_proc") is None:
+            if data.get("dataset_num_proc") is not None:
                 data["dataset_num_proc"] = data["dataset_processes"]
                 LOG.warning(
                     "dataset_processes is deprecated and will be removed in a future version. "
                     "Please use dataset_num_proc instead."
                 )
             else:
+                data["dataset_num_proc"] = data["dataset_processes"]
                 LOG.warning(
                     "Both dataset_processes and dataset_num_proc are set. "
                     "Using dataset_num_proc and ignoring dataset_processes."
                 )
-        else:
-            if data.get("dataset_num_proc") is None:
-                data["dataset_num_proc"] = get_default_process_count()
 
         return data
 
