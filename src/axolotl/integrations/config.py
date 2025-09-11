@@ -20,8 +20,8 @@ from typing import Any, Dict, List, Type
 
 from axolotl.utils.schemas.config import (
     AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
+    AxolotlInputConfig as AxolotlInputConfigBase,
 )
-from axolotl.utils.schemas.config import AxolotlInputConfig as AxolotlInputConfigBase
 
 
 def merge_input_args():
