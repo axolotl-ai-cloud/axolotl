@@ -561,6 +561,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.core.trainers.base.AxolotlTrainer.push_to_hub">push_to_hub</a></td>
 <td>Overwrite the <code>push_to_hub</code> method in order to force-add the tags when pushing the</td>
 </tr>
+<tr class="odd">
+<td><a href="#axolotl.core.trainers.base.AxolotlTrainer.store_metrics">store_metrics</a></td>
+<td>Store metrics with specified reduction type.</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.core.trainers.base.AxolotlTrainer.log" class="level5">
@@ -606,8 +610,50 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.AxolotlTrainer.push_to_hub(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>Overwrite the <code>push_to_hub</code> method in order to force-add the tags when pushing the
 model on the Hub. Please refer to <code>~transformers.Trainer.push_to_hub</code> for more details.</p>
+</section>
+<section id="axolotl.core.trainers.base.AxolotlTrainer.store_metrics" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.core.trainers.base.AxolotlTrainer.store_metrics">store_metrics</h5>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.AxolotlTrainer.store_metrics(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    metrics,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    train_eval<span class="op">=</span><span class="st">'train'</span>,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    reduction<span class="op">=</span><span class="st">'mean'</span>,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Store metrics with specified reduction type.</p>
+<section id="parameters-1" class="level6 doc-section doc-section-parameters">
+<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h6>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 6%">
+<col style="width: 35%">
+<col style="width: 50%">
+<col style="width: 6%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>metrics</td>
+<td>dict[str, float] | dict[str, tuple[int | float, str]]</td>
+<td>Dictionary of metric names to values, or metric names to (value, reduction_type) tuples.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>train_eval</td>
+<td>Literal['train', 'eval']</td>
+<td>Whether this is for training or evaluation.</td>
+<td><code>'train'</code></td>
+</tr>
+</tbody>
+</table>
 
 
+</section>
 </section>
 </section>
 </section>
