@@ -4,16 +4,6 @@ Tests for axolotl.utils.quantization
 
 import pytest
 import torch
-
-from axolotl.utils.callbacks.qat import QATCallback
-from axolotl.utils.quantization import (
-    convert_qat_model,
-    get_quantization_config,
-    prepare_model_for_qat,
-    quantize_model,
-)
-from axolotl.utils.schemas.enums import TorchAOQuantDType
-from axolotl.utils.schemas.quantization import QATConfig
 from torch import nn
 from torchao.quantization import LinearActivationQuantizedTensor
 from torchao.quantization.qat.embedding import FakeQuantizedEmbedding
@@ -24,9 +14,18 @@ from torchao.quantization.quant_api import (
     Int8DynamicActivationInt4WeightConfig,
 )
 from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
-
 from transformers import AutoModelForCausalLM
 from transformers.trainer_callback import TrainerState
+
+from axolotl.utils.callbacks.qat import QATCallback
+from axolotl.utils.quantization import (
+    convert_qat_model,
+    get_quantization_config,
+    prepare_model_for_qat,
+    quantize_model,
+)
+from axolotl.utils.schemas.enums import TorchAOQuantDType
+from axolotl.utils.schemas.quantization import QATConfig
 
 from tests.e2e.utils import (
     require_torch_2_8_0,

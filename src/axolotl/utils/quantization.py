@@ -3,12 +3,12 @@ Utilities for quantization including QAT and PTQ using torchao.
 """
 
 import torch
+from packaging import version
 from torchao.core.config import AOBaseConfig
 from torchao.quantization import quantize_
 from torchao.quantization.qat import (
     QATConfig,
 )
-from packaging import version
 from torchao.quantization.quant_api import (
     Float8DynamicActivationFloat8WeightConfig,
     Float8DynamicActivationInt4WeightConfig,

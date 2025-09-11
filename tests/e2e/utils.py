@@ -11,10 +11,10 @@ from functools import wraps
 from pathlib import Path
 
 import torch
-
-from axolotl.utils.dict import DictDefault
 from packaging import version
 from tbparse import SummaryReader
+
+from axolotl.utils.dict import DictDefault
 
 
 def with_temp_dir(test_func):

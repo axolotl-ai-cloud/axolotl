@@ -5,16 +5,16 @@ CLI to post-training quantize a model using torchao
 from pathlib import Path
 from typing import Union
 
-from transformers import AutoModelForCausalLM, TorchAoConfig, AutoConfig
+from transformers import AutoConfig, AutoModelForCausalLM, TorchAoConfig
 
 from axolotl.cli.config import load_cfg
 from axolotl.loaders import load_tokenizer
 from axolotl.utils.logging import get_logger
 from axolotl.utils.quantization import (
-    get_quantization_config,
-    quantize_model,
     TorchAOQuantDType,
+    get_quantization_config,
     quantization_config_to_str,
+    quantize_model,
 )
 
 LOG = get_logger(__name__)

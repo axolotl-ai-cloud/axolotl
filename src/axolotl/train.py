@@ -30,7 +30,7 @@ from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
 from axolotl.integrations.base import PluginManager
-from axolotl.loaders import load_processor, load_tokenizer, ModelLoader
+from axolotl.loaders import ModelLoader, load_processor, load_tokenizer
 from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
