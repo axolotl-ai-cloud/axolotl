@@ -100,14 +100,19 @@ dependencies = [
     "liger-kernel==0.6.1 ; sys_platform != 'darwin'",
     "torchao==0.12.0 ; sys_platform != 'darwin'",
     "bitsandbytes==0.47.0 ; sys_platform != 'darwin'",
-    "flash-attn==2.8.3 ; sys_platform == 'linux'",
     "deepspeed>=0.17.0 ; sys_platform != 'darwin'",
     "deepspeed-kernels ; sys_platform != 'darwin'",
 ]
 
 [project.optional-dependencies]
-# Specific hardware acceleration
+# Flash attention (optional)
+flash-attn = [
+    "flash-attn==2.8.3 ; sys_platform == 'linux'",
+]
+
+# Flash attention context parallelism
 ring-flash-attn = [
+    "flash-attn==2.8.3 ; sys_platform == 'linux'",
     "ring-flash-attn>=0.1.7",
     "yunchang==0.6.0",
 ]
