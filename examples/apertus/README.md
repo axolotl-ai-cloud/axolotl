@@ -22,21 +22,27 @@ pip3 install --no-build-isolation -e '.[flash-attn]'
 python scripts/cutcrossentropy_install.py | sh
 ```
 
-2. Install XIELU for CUDA kernels for activation
-
-TODO; build error
+2. (Optional, highly recommended) Install XIELU CUDA
 
 ```bash
+## Recommended for reduced VRAM and faster speeds
+
+# Point to CUDA toolkit directory
+# For those using our Docker image, use the below path.
+export CUDA_HOME=/usr/local/cuda
+
 pip3 install git+https://github.com/nickjbrowning/XIELU --no-build-isolation --no-deps
 ```
 
-2. Run the finetuning example:
+For any installation errors, see [XIELU Installation Issues](#xielu-installation-issues)
+
+3. Run the finetuning example:
 
 ```bash
 axolotl train examples/apertus/apertus-8b-qlora.yaml
 ```
 
-This config uses about 11.8 GiB VRAM.
+This config uses about 8.7 GiB VRAM.
 
 Let us know how it goes. Happy finetuning! 🚀
 
@@ -46,6 +52,60 @@ Let us know how it goes. Happy finetuning! 🚀
 - You can run a full finetuning by removing the `adapter: qlora` and `load_in_4bit: true` from the config.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
+
+### XIELU Installation Issues
+
+#### `ModuleNotFoundError: No module named 'torch'`
+
+Please check these one by one:
+- Running in correct environment
+- Env has PyTorch installed
+- CUDA toolkit is at `CUDA_HOME`
+
+If those didn't help, please try the below solutions:
+
+1. Export args for CMAKE and try install again:
+
+    ```bash
+    CONDA_PYTHON=$(which python)
+
+    # Check correct path
+    echo "Using Python: ${CONDA_PYTHON}"
+
+    # Help CMAKE find correct python
+    export CMAKE_ARGS="-DPython_EXECUTABLE=${CONDA_PYTHON} -DPython_ROOT_DIR=${CONDA_PREFIX} -DPython_FIND_STRATEGY=LOCATION"
+
+    export Python3_EXECUTABLE=${CONDA_PYTHON}
+    export Python_EXECUTABLE=${CONDA_PYTHON}
+
+    # Lastly, verify this runs fine
+    ${CONDA_PYTHON} -c "import torch; print('Torch version:', torch.__version__); print('CMAKE paths:', torch.utils.cmake_prefix_path)"
+
+    pip3 install git+https://github.com/nickjbrowning/XIELU --no-build-isolation --no-deps
+    ```
+
+2. Git clone the repo and manually hardcode python path
+
+    ```bash
+    git clone https://github.com/nickjbrowning/XIELU
+    cd xielu/xielu
+
+    nano CMakeLists.txt  # or vi depending on your preference
+    ```
+
+    ```diff
+    execute_process(
+    -    COMMAND ${Python_EXECUTABLE} -c "import torch.utils; print(torch.utils.cmake_prefix_path)"
+    +    COMMAND /root/miniconda3/envs/py3.11/bin/python -c "import torch.utils; print(torch.utils.cmake_prefix_path)"
+        RESULT_VARIABLE TORCH_CMAKE_PATH_RESULT
+        OUTPUT_VARIABLE TORCH_CMAKE_PATH_OUTPUT
+        ERROR_VARIABLE TORCH_CMAKE_PATH_ERROR
+    )
+    ```
+
+    ```bash
+    pip3 install . --no-build-isolation --no-deps
+    ```
 
 ## Optimization Guides
 
