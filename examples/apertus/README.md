@@ -31,7 +31,7 @@ python scripts/cutcrossentropy_install.py | sh
 # For those using our Docker image, use the below path.
 export CUDA_HOME=/usr/local/cuda
 
-pip3 install git+https://github.com/nickjbrowning/XIELU --no-build-isolation --no-deps
+pip3 install git+https://github.com/nickjbrowning/XIELU@59d6031 --no-build-isolation --no-deps
 ```
 
 For any installation errors, see [XIELU Installation Issues](#xielu-installation-issues)
@@ -67,15 +67,17 @@ If those didn't help, please try the below solutions:
 1. Pass env for CMAKE and try install again:
 
     ```bash
-    Python_EXECUTABLE=$(which python) pip3 install git+https://github.com/nickjbrowning/XIELU --no-build-isolation --no-deps
+    Python_EXECUTABLE=$(which python) pip3 install git+https://github.com/nickjbrowning/XIELU@59d6031 --no-build-isolation --no-deps
     ```
 
 2. Git clone the repo and manually hardcode python path:
 
     ```bash
     git clone https://github.com/nickjbrowning/XIELU
-    cd xielu/xielu
+    cd xielu
+    git checkout 59d6031
 
+    cd xielu
     nano CMakeLists.txt  # or vi depending on your preference
     ```
 
