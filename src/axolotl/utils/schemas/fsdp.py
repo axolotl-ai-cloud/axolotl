@@ -49,7 +49,7 @@ class FSDPConfig(BaseModel):
     auto_wrap_policy: Literal["TRANSFORMER_BASED_WRAP"] | None = Field(
         default=None, description="Auto wrap policy for FSDP."
     )
-    transformer_layer_cls_to_wrap: list[str] | None = Field(
+    transformer_layer_cls_to_wrap: str | None = Field(
         default=None, description="List of transformer layer classes to wrap with FSDP."
     )
 
