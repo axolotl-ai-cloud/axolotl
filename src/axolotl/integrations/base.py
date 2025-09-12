@@ -142,7 +142,7 @@ class BasePlugin:
             model: The loaded model.
         """
 
-    def get_trainer_cls(self, cfg: DictDefault) -> Trainer | None:
+    def get_trainer_cls(self, cfg: DictDefault) -> type[Trainer] | None:
         """Returns a custom class for the trainer.
 
         Args:

@@ -1,0 +1,64 @@
+base_model: meta-llama/Llama-3.2-3B
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+plugins:
+  - axolotl.integrations.liger.LigerPlugin
+
+liger_rope: true
+liger_rms_norm: true
+liger_glu_activation: true
+liger_layer_norm: true
+liger_fused_linear_cross_entropy: true
+
+datasets:
+  - path: yahma/alpaca-cleaned
+    type: alpaca
+    split: train[:95%]
+
+output_dir: ./outputs/qat_out/
+dataset_prepared_path: ./outputs/dataset_prepared
+
+sequence_len: 8192
+flash_attention: true
+
+qat:
+  activation_dtype: nvfp4
+  weight_dtype: nvfp4
+  group_size: 16 # only group_size of 16 is supported with nvfp4
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_checkpointing: true
+gradient_accumulation_steps: 1
+micro_batch_size: 64
+num_epochs: 1
+optimizer: adamw_torch_fused
+
+cosine_constant_lr_ratio: 0
+cosine_min_lr_ratio: 1.0
+learning_rate: 2e-5
+save_only_model: true
+bf16: true
+
+resume_from_checkpoint:
+logging_steps: 1
+
+evals_per_epoch: 1
+saves_per_epoch: 1
+
+warmup_ratio: 0.1
+weight_decay: 0.0
+
+special_tokens:
+  pad_token: <|finetune_right_pad_id|>
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config
