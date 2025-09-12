@@ -49,6 +49,13 @@ from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger(__name__)
 
+REDUCTION_FNS = {
+    "mean": torch.mean,
+    "min": torch.min,
+    "max": torch.max,
+    "sum": torch.sum,
+}
+
 
 class AxolotlTrainer(
     PackingMixin,
@@ -89,7 +96,9 @@ class AxolotlTrainer(
 
         super().__init__(*_args, **kwargs)
         self.train_data_collator = self.data_collator
-        self._stored_metrics = defaultdict(lambda: defaultdict(list))
+        self._stored_metrics = defaultdict(
+            lambda: defaultdict(lambda: {"values": [], "reduction": "mean"})
+        )
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
 
@@ -342,10 +351,10 @@ class AxolotlTrainer(
             inputs_key = "labels" if "labels" in inputs else "input_ids"
             if hasattr(self.state, "num_tokens"):
                 self.state.num_tokens = (
-                    self.state.num_tokens + (inputs[inputs_key] != -100).sum()
+                    self.state.num_tokens + (inputs[inputs_key] != -100).sum().cpu()
                 )
             else:
-                self.state.num_tokens = (inputs[inputs_key] != -100).sum()
+                self.state.num_tokens = (inputs[inputs_key] != -100).sum().cpu()
 
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
@@ -361,6 +370,11 @@ class AxolotlTrainer(
             return_outputs=return_outputs,
             num_items_in_batch=num_items_in_batch,
         )
+
+    @override
+    def evaluate(self, *args, **kwargs):
+        LOG.info("Running evaluation step...")
+        return super().evaluate(*args, **kwargs)
 
     @staticmethod
     def orpo_concatenate_inputs(inputs, label_pad_token=-100, pad_token=0, device=None):
@@ -585,9 +599,17 @@ class AxolotlTrainer(
         """
         # logs either has 'loss' or 'eval_loss'
         train_eval = "train" if "loss" in logs else "eval"
-        # Add averaged stored metrics to logs
-        for key, metrics in self._stored_metrics[train_eval].items():
-            logs[key] = torch.tensor(metrics).mean().item()
+
+        for key, metric_data in self._stored_metrics[train_eval].items():
+            values = torch.tensor(metric_data["values"])  # type: ignore[arg-type]
+            reduction_type = metric_data["reduction"]
+
+            fn = REDUCTION_FNS.get(reduction_type)
+            if fn is None:
+                raise NotImplementedError(
+                    "Metric reduction must be one of [mean, min, max, sum]"
+                )
+            logs[key] = round(fn(values).item(), 4)
 
         if is_main_process():
             # Add memory usage
@@ -611,10 +633,27 @@ class AxolotlTrainer(
         return super().log(logs, start_time)
 
     def store_metrics(
-        self, metrics: dict[str, float], train_eval: Literal["train", "eval"] = "train"
+        self,
+        metrics: dict[str, float] | dict[str, tuple[int | float, str]],
+        train_eval: Literal["train", "eval"] = "train",
+        reduction: Literal["mean", "min", "max", "sum"] = "mean",
     ) -> None:
+        """
+        Store metrics with specified reduction type.
+
+        Args:
+            metrics: Dictionary of metric names to values, or metric names to (value,
+                reduction_type) tuples.
+            train_eval: Whether this is for training or evaluation.
+        """
         for key, value in metrics.items():
-            self._stored_metrics[train_eval][key].append(value)
+            if isinstance(value, tuple):
+                value, _reduction = value  # type: ignore[assignment]
+            else:
+                value, _reduction = value, reduction
+
+            self._stored_metrics[train_eval][key]["values"].append(value)
+            self._stored_metrics[train_eval][key]["reduction"] = _reduction
 
     def _save_checkpoint(self, model, trial, **kwargs):
         # make sure the checkpoint dir exists, since trainer is flakey

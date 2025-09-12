@@ -160,9 +160,11 @@ def get_state_dict(self, model, unwrap=True):
                 state_dict[param_name] = param.cpu()
             torch.distributed.barrier()
     elif self.distributed_type == DistributedType.FSDP:
-        from torch.distributed.fsdp import FullStateDictConfig
-        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-        from torch.distributed.fsdp import StateDictType
+        from torch.distributed.fsdp import (
+            FullStateDictConfig,
+            FullyShardedDataParallel as FSDP,
+            StateDictType,
+        )
 
         full_state_dict_config = FullStateDictConfig(
             offload_to_cpu=True, rank0_only=True
