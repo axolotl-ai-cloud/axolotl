@@ -12,15 +12,6 @@ chat_template: phi_3
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_test
     type: chat_template
-    field_messages: messages
-    message_property_mappings:
-      role: role
-      content: content
-    roles:
-      user:
-        - user
-      assistant:
-        - assistant
 
 dataset_prepared_path:
 val_set_size: 0.05
