@@ -499,7 +499,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul>
   <li><a href="#latest-updates" id="toc-latest-updates" class="nav-link active" data-scroll-target="#latest-updates">🎉 Latest Updates</a></li>
   <li><a href="#overview" id="toc-overview" class="nav-link" data-scroll-target="#overview">✨ Overview</a></li>
-  <li><a href="#quick-start" id="toc-quick-start" class="nav-link" data-scroll-target="#quick-start">🚀 Quick Start</a>
+  <li><a href="#quick-start---llm-fine-tuning-in-minutes" id="toc-quick-start---llm-fine-tuning-in-minutes" class="nav-link" data-scroll-target="#quick-start---llm-fine-tuning-in-minutes">🚀 Quick Start - LLM Fine-tuning in Minutes</a>
   <ul class="collapse">
   <li><a href="#google-colab" id="toc-google-colab" class="nav-link" data-scroll-target="#google-colab">Google Colab</a></li>
   <li><a href="#installation" id="toc-installation" class="nav-link" data-scroll-target="#installation">Installation</a></li>
@@ -526,6 +526,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/887513285d98132142bf5db2a74eb5e0928787f1/image/axolotl_logo_digital_black.svg">
 <img alt="Axolotl" src="https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/887513285d98132142bf5db2a74eb5e0928787f1/image/axolotl_logo_digital_black.svg" width="400" height="104" style="max-width: 100%;">
 </picture>
+</p>
+<p align="center">
+<strong>A Free and Open Source LLM Fine-tuning Framework</strong><br>
 </p>
 <p align="center">
 <img src="https://img.shields.io/github/license/axolotl-ai-cloud/axolotl.svg?color=blue" alt="GitHub License">
@@ -573,19 +576,20 @@ Expand older updates
 </section>
 <section id="overview" class="level2">
 <h2 class="anchored" data-anchor-id="overview">✨ Overview</h2>
-<p>Axolotl is a tool designed to streamline post-training for various AI models.</p>
+<p>Axolotl is a free and open-source tool designed to streamline post-training and fine-tuning for the latest large language models (LLMs).</p>
 <p>Features:</p>
 <ul>
-<li><strong>Multiple Model Support</strong>: Train various models like LLaMA, Mistral, Mixtral, Pythia, and more. We are compatible with HuggingFace transformers causal language models.</li>
-<li><strong>Training Methods</strong>: Full fine-tuning, LoRA, QLoRA, GPTQ, QAT, Preference Tuning (DPO, IPO, KTO, ORPO), RL (GRPO), Multimodal, and Reward Modelling (RM) / Process Reward Modelling (PRM).</li>
-<li><strong>Easy Configuration</strong>: Re-use a single YAML file between dataset preprocess, training, evaluation, quantization, and inference.</li>
+<li><strong>Multiple Model Support</strong>: Train various models like GPT-OSS, LLaMA, Mistral, Mixtral, Pythia, and many more models available on the Hugging Face Hub.</li>
+<li><strong>Multimodal Training</strong>: Fine-tune vision-language models (VLMs) including LLaMA-Vision, Qwen2-VL, Pixtral, LLaVA, SmolVLM2, and audio models like Voxtral with image, video, and audio support.</li>
+<li><strong>Training Methods</strong>: Full fine-tuning, LoRA, QLoRA, GPTQ, QAT, Preference Tuning (DPO, IPO, KTO, ORPO), RL (GRPO), and Reward Modelling (RM) / Process Reward Modelling (PRM).</li>
+<li><strong>Easy Configuration</strong>: Re-use a single YAML configuration file across the full fine-tuning pipeline: dataset preprocessing, training, evaluation, quantization, and inference.</li>
 <li><strong>Performance Optimizations</strong>: <a href="https://docs.axolotl.ai/docs/multipack.html">Multipacking</a>, <a href="https://github.com/Dao-AILab/flash-attention">Flash Attention</a>, <a href="https://github.com/facebookresearch/xformers">Xformers</a>, <a href="https://pytorch.org/blog/flexattention/">Flex Attention</a>, <a href="https://github.com/linkedin/Liger-Kernel">Liger Kernel</a>, <a href="https://github.com/apple/ml-cross-entropy/tree/main">Cut Cross Entropy</a>, <a href="https://docs.axolotl.ai/docs/sequence_parallelism.html">Sequence Parallelism (SP)</a>, <a href="https://docs.axolotl.ai/docs/lora_optims.html">LoRA optimizations</a>, <a href="https://docs.axolotl.ai/docs/multi-gpu.html">Multi-GPU training (FSDP1, FSDP2, DeepSpeed)</a>, <a href="https://docs.axolotl.ai/docs/multi-node.html">Multi-node training (Torchrun, Ray)</a>, and many more!</li>
 <li><strong>Flexible Dataset Handling</strong>: Load from local, HuggingFace, and cloud (S3, Azure, GCP, OCI) datasets.</li>
 <li><strong>Cloud Ready</strong>: We ship <a href="https://hub.docker.com/u/axolotlai">Docker images</a> and also <a href="https://pypi.org/project/axolotl/">PyPI packages</a> for use on cloud platforms and local hardware.</li>
 </ul>
 </section>
-<section id="quick-start" class="level2">
-<h2 class="anchored" data-anchor-id="quick-start">🚀 Quick Start</h2>
+<section id="quick-start---llm-fine-tuning-in-minutes" class="level2">
+<h2 class="anchored" data-anchor-id="quick-start---llm-fine-tuning-in-minutes">🚀 Quick Start - LLM Fine-tuning in Minutes</h2>
 <p><strong>Requirements</strong>:</p>
 <ul>
 <li>NVIDIA GPU (Ampere or newer for <code>bf16</code> and Flash Attention) or AMD GPU</li>
@@ -681,7 +685,7 @@ Expand older updates
 <h2 class="anchored" data-anchor-id="citing-axolotl">📝 Citing Axolotl</h2>
 <p>If you use Axolotl in your research or projects, please cite it as follows:</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode bibtex code-with-copy"><code class="sourceCode bibtex"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co">@software{axolotl,</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co">  title = {Axolotl: Post-Training for AI Models},</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co">  title = {Axolotl: Open Source LLM Post-Training},</span></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="co">  author = {{Axolotl maintainers and contributors}},</span></span>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co">  url = {https://github.com/axolotl-ai-cloud/axolotl},</span></span>
 <span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="co">  license = {Apache-2.0},</span></span>

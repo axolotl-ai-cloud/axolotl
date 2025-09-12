@@ -561,6 +561,20 @@ you used to train the model:</p>
 <span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="co"> # The path to the output directory used during training where the final checkpoint has been saved.</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> quantize qat.yml</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>This ensures that an identical quantization configuration is used to quantize the model as was used to train it.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>If you have configured pushing to hub with <code>hub_model_id</code>, your model hub name will have the quantization schema appended to it,
+e.g.&nbsp;<code>axolotl-ai-cloud/qat-nvfp4-llama3B</code> will become <code>axolotl-ai-cloud/qat-nvfp4-llama3B-nvfp4w</code></p>
+</div>
+</div>
 
 
 </section>

@@ -501,10 +501,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
-  <li><a href="#axolotl.utils.quantization.convert_qat_model_for_ptq" id="toc-axolotl.utils.quantization.convert_qat_model_for_ptq" class="nav-link" data-scroll-target="#axolotl.utils.quantization.convert_qat_model_for_ptq">convert_qat_model_for_ptq</a></li>
-  <li><a href="#axolotl.utils.quantization.get_ptq_config" id="toc-axolotl.utils.quantization.get_ptq_config" class="nav-link" data-scroll-target="#axolotl.utils.quantization.get_ptq_config">get_ptq_config</a></li>
+  <li><a href="#axolotl.utils.quantization.convert_qat_model" id="toc-axolotl.utils.quantization.convert_qat_model" class="nav-link" data-scroll-target="#axolotl.utils.quantization.convert_qat_model">convert_qat_model</a></li>
+  <li><a href="#axolotl.utils.quantization.get_quantization_config" id="toc-axolotl.utils.quantization.get_quantization_config" class="nav-link" data-scroll-target="#axolotl.utils.quantization.get_quantization_config">get_quantization_config</a></li>
   <li><a href="#axolotl.utils.quantization.prepare_model_for_qat" id="toc-axolotl.utils.quantization.prepare_model_for_qat" class="nav-link" data-scroll-target="#axolotl.utils.quantization.prepare_model_for_qat">prepare_model_for_qat</a></li>
-  <li><a href="#axolotl.utils.quantization.quantize_model_for_ptq" id="toc-axolotl.utils.quantization.quantize_model_for_ptq" class="nav-link" data-scroll-target="#axolotl.utils.quantization.quantize_model_for_ptq">quantize_model_for_ptq</a></li>
+  <li><a href="#axolotl.utils.quantization.quantize_model" id="toc-axolotl.utils.quantization.quantize_model" class="nav-link" data-scroll-target="#axolotl.utils.quantization.quantize_model">quantize_model</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -531,11 +531,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.utils.quantization.convert_qat_model_for_ptq">convert_qat_model_for_ptq</a></td>
-<td>This function is used to convert a swap fake-quantized modules in a model</td>
+<td><a href="#axolotl.utils.quantization.convert_qat_model">convert_qat_model</a></td>
+<td>This function converts a QAT model which has fake quantized layers back to the original model.</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.utils.quantization.get_ptq_config">get_ptq_config</a></td>
+<td><a href="#axolotl.utils.quantization.get_quantization_config">get_quantization_config</a></td>
 <td>This function is used to build a post-training quantization config.</td>
 </tr>
 <tr class="odd">
@@ -543,65 +543,31 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>This function is used to prepare a model for QAT by swapping the model’s linear</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.utils.quantization.quantize_model_for_ptq">quantize_model_for_ptq</a></td>
-<td>This function is used to quantize a model for post-training quantization.</td>
+<td><a href="#axolotl.utils.quantization.quantize_model">quantize_model</a></td>
+<td>This function is used to quantize a model.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.utils.quantization.convert_qat_model_for_ptq" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.quantization.convert_qat_model_for_ptq">convert_qat_model_for_ptq</h3>
-<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.quantization.convert_qat_model_for_ptq(model, <span class="op">*</span>, quantize_embedding<span class="op">=</span><span class="va">None</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>This function is used to convert a swap fake-quantized modules in a model
-which has been trained with QAT back to the original modules, ready for PTQ.</p>
-<section id="parameters" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 20%">
-<col style="width: 14%">
-<col style="width: 53%">
-<col style="width: 12%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>model</td>
-<td></td>
-<td>The model to convert.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>quantize_embedding</td>
-<td>bool | None</td>
-<td>Whether to quantize the model’s embedding weights.</td>
-<td><code>None</code></td>
-</tr>
-</tbody>
-</table>
+<section id="axolotl.utils.quantization.convert_qat_model" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.quantization.convert_qat_model">convert_qat_model</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.quantization.convert_qat_model(model, quantize_embedding<span class="op">=</span><span class="va">False</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>This function converts a QAT model which has fake quantized layers back to the original model.</p>
 </section>
-</section>
-<section id="axolotl.utils.quantization.get_ptq_config" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.quantization.get_ptq_config">get_ptq_config</h3>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.quantization.get_ptq_config(</span>
+<section id="axolotl.utils.quantization.get_quantization_config" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.quantization.get_quantization_config">get_quantization_config</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.quantization.get_quantization_config(</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    weight_dtype,</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    activation_dtype<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    group_size<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>This function is used to build a post-training quantization config.</p>
-<section id="parameters-1" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
+<section id="parameters" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 17%">
-<col style="width: 22%">
-<col style="width: 47%">
+<col style="width: 25%">
+<col style="width: 45%">
 <col style="width: 11%">
 </colgroup>
 <thead>
@@ -615,13 +581,13 @@ which has been trained with QAT back to the original modules, ready for PTQ.</p>
 <tbody>
 <tr class="odd">
 <td>weight_dtype</td>
-<td>TorchIntDType</td>
+<td>TorchAOQuantDType</td>
 <td>The dtype to use for weight quantization.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>activation_dtype</td>
-<td>TorchIntDType | None</td>
+<td>TorchAOQuantDType | None</td>
 <td>The dtype to use for activation quantization.</td>
 <td><code>None</code></td>
 </tr>
@@ -683,21 +649,21 @@ which has been trained with QAT back to the original modules, ready for PTQ.</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.quantization.prepare_model_for_qat(</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    weight_dtype,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    group_size,</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    group_size<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    activation_dtype<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    quantize_embedding<span class="op">=</span><span class="va">False</span>,</span>
 <span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>This function is used to prepare a model for QAT by swapping the model’s linear
 layers with fake quantized linear layers, and optionally the embedding weights with
 fake quantized embedding weights.</p>
-<section id="parameters-2" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-2">Parameters</h4>
+<section id="parameters-1" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 18%">
-<col style="width: 21%">
-<col style="width: 48%">
-<col style="width: 11%">
+<col style="width: 24%">
+<col style="width: 46%">
+<col style="width: 10%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -716,19 +682,19 @@ fake quantized embedding weights.</p>
 </tr>
 <tr class="even">
 <td>weight_dtype</td>
-<td>TorchIntDType</td>
+<td>TorchAOQuantDType</td>
 <td>The dtype to use for weight quantization.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
 <td>group_size</td>
-<td>int</td>
+<td>int | None</td>
 <td>The group size to use for weight quantization.</td>
-<td><em>required</em></td>
+<td><code>None</code></td>
 </tr>
 <tr class="even">
 <td>activation_dtype</td>
-<td>TorchIntDType | None</td>
+<td>TorchAOQuantDType | None</td>
 <td>The dtype to use for activation quantization.</td>
 <td><code>None</code></td>
 </tr>
@@ -766,26 +732,24 @@ fake quantized embedding weights.</p>
 </table>
 </section>
 </section>
-<section id="axolotl.utils.quantization.quantize_model_for_ptq" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.quantization.quantize_model_for_ptq">quantize_model_for_ptq</h3>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.quantization.quantize_model_for_ptq(</span>
+<section id="axolotl.utils.quantization.quantize_model" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.quantization.quantize_model">quantize_model</h3>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.quantization.quantize_model(</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    weight_dtype,</span>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    group_size<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    activation_dtype<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    quantize_embedding<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<p>This function is used to quantize a model for post-training quantization.
-It swaps the model’s linear layers with fake quantized linear layers.
-If <code>quantize_embedding</code> is True, it will also swap the model’s embedding weights with fake quantized embedding weights.</p>
-<section id="parameters-3" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-3">Parameters</h4>
+<p>This function is used to quantize a model.</p>
+<section id="parameters-2" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-2">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 18%">
-<col style="width: 21%">
-<col style="width: 48%">
-<col style="width: 11%">
+<col style="width: 24%">
+<col style="width: 46%">
+<col style="width: 10%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -804,7 +768,7 @@ If <code>quantize_embedding</code> is True, it will also swap the model’s embe
 </tr>
 <tr class="even">
 <td>weight_dtype</td>
-<td>TorchIntDType</td>
+<td>TorchAOQuantDType</td>
 <td>The dtype to use for weight quantization.</td>
 <td><em>required</em></td>
 </tr>
@@ -816,7 +780,7 @@ If <code>quantize_embedding</code> is True, it will also swap the model’s embe
 </tr>
 <tr class="even">
 <td>activation_dtype</td>
-<td>TorchIntDType | None</td>
+<td>TorchAOQuantDType | None</td>
 <td>The dtype to use for activation quantization.</td>
 <td><code>None</code></td>
 </tr>
