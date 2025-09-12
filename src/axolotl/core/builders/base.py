@@ -491,6 +491,7 @@ class TrainerBuilderBase(abc.ABC):
             "dion_momentum",
             "dion_rank_fraction",
             "dion_rank_multiple_of",
+            "dataset_num_proc",
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
                 training_args_kwargs[arg] = getattr(self.cfg, arg)
@@ -513,9 +514,6 @@ class TrainerBuilderBase(abc.ABC):
         training_args_kwargs["include_tkps"] = self.cfg.include_tkps
         training_args_kwargs["max_steps"] = self.cfg.max_steps or total_num_steps or -1
         training_args_kwargs["num_train_epochs"] = self.cfg.num_epochs
-
-        if self.cfg.dataset_processes:
-            training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
 
         # max_length is not used in CausalTrainer
         if self.cfg.reward_model or self.cfg.rl:

@@ -29,7 +29,7 @@ While debugging it's helpful to simplify your test scenario as much as possible.
 1. **Make sure you are using the latest version of axolotl**:  This project changes often and bugs get fixed fast.  Check your git branch and make sure you have pulled the latest changes from `main`.
 1. **Eliminate concurrency**: Restrict the number of processes to 1 for both training and data preprocessing:
     - Set `CUDA_VISIBLE_DEVICES` to a single GPU, ex: `export CUDA_VISIBLE_DEVICES=0`.
-    - Set `dataset_processes: 1` in your axolotl config or run the training command with `--dataset_processes=1`.
+    - Set `dataset_num_proc: 1` in your axolotl config or run the training command with `--dataset_num_proc=1`.
 2. **Use a small dataset**: Construct or use a small dataset from HF Hub. When using a small dataset, you will often have to make sure `sample_packing: False` and `eval_sample_packing: False` to avoid errors.  If you are in a pinch and don't have time to construct a small dataset but want to use from the HF Hub, you can shard the data (this will still tokenize the entire dataset, but will only use a fraction of the data for training.  For example, to shard the dataset into 20 pieces, add the following to your axolotl config):
 
     ```yaml
@@ -101,7 +101,7 @@ For example, to mimic the command `cd devtools && CUDA_VISIBLE_DEVICES=0 acceler
                 "-m", "axolotl.cli.train", "dev_chat_template.yml",
                 // The flags below simplify debugging by overriding the axolotl config
                 // with the debugging tips above.  Modify as needed.
-                "--dataset_processes=1",      // limits data preprocessing to one process
+                "--dataset_num_proc=1",      // limits data preprocessing to one process
                 "--max_steps=1",              // limits training to just one step
                 "--batch_size=1",             // minimizes batch size
                 "--micro_batch_size=1",       // minimizes batch size

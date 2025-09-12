@@ -440,7 +440,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
             ]
         else:
             raise ValueError(f"Unhandled cfg_string: {cfg_string}")
-        cfg["dataset_processes"] = 4
+        cfg["dataset_num_proc"] = 4
 
         if cfg_string == "grpo_cfg":
             rewards_dir = tmp_path / "rewards_test"
