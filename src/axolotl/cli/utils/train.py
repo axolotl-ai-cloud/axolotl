@@ -5,7 +5,7 @@ import subprocess  # nosec
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Iterator, Literal, Tuple
+from typing import Any, Iterator, Literal
 
 import yaml
 
@@ -66,9 +66,7 @@ def build_command(base_cmd: list[str], options: dict[str, Any]) -> list[str]:
     return cmd
 
 
-def generate_config_files(
-    config: str, sweep: str | None
-) -> Iterator[tuple[str, bool, str]]:
+def generate_config_files(config: str, sweep: str | None) -> Iterator[tuple[str, bool]]:
     """
     Generate list of configuration files to process. Yields a tuple of the configuration file name and a boolean indicating
     whether this is a group of configurations (i.e., a sweep).
@@ -79,15 +77,7 @@ def generate_config_files(
     """
 
     if not sweep:
-        # For non-sweep, read base config to determine output_dir (fallback to ./model-out)
-        try:
-            with open(config, "r", encoding="utf-8") as fin:
-                _base_config: dict[str, Any] = yaml.safe_load(fin) or {}
-        except Exception:
-            _base_config = {}
-
-        base_output_dir = _base_config.get("output_dir", "./model-out")
-        yield config, False, str(base_output_dir)
+        yield config, False
         return
 
     # Load sweep and base configurations
@@ -113,20 +103,7 @@ def generate_config_files(
         )
         yaml.dump(permutation, temp_file)
         temp_file.close()
-        yield temp_file.name, is_group, permutation["output_dir"]
-
-
-def read_output_dir_from_config(config: str) -> str:
-    """Best-effort read of output_dir from a YAML config path.
-
-    Returns a default of './model-out' if unavailable.
-    """
-    try:
-        with open(config, "r", encoding="utf-8") as fin:
-            data = yaml.safe_load(fin) or {}
-        return str(data.get("output_dir", "./model-out"))
-    except Exception:
-        return "./model-out"
+        yield temp_file.name, is_group
 
 
 def launch_training(

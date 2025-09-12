@@ -204,5 +204,3 @@ def configure_logging():
         os.environ["ACCELERATE_LOG_LEVEL"] = os.getenv(
             "LOG_LEVEL", DEFAULT_LOG_LEVEL
         ).upper()
-
-    # Handlers configured via dictConfig; nothing else to do here

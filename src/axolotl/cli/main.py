@@ -29,7 +29,6 @@ from axolotl.integrations.lm_eval.cli import lm_eval
 from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.config import AxolotlInputConfig
-from axolotl.utils.tee import finalize_output_logging
 
 LOG = get_logger(__name__)
 
@@ -122,15 +121,8 @@ def train(
     _launcher = None if kwargs.get("use_ray") else launcher
 
     # Process each configuration
-    for cfg_file, is_group, out_dir in generate_config_files(config, sweep):
+    for cfg_file, is_group in generate_config_files(config, sweep):
         try:
-            # Ensure wrapper process logs are written into target debug.log too
-            eff_out_dir = kwargs.get("output_dir", out_dir)
-            if eff_out_dir:
-                try:
-                    finalize_output_logging(eff_out_dir)
-                except Exception:
-                    pass
             use_exec = is_group is not True
             launch_training(cfg_file, _launcher, cloud, kwargs, launcher_args, use_exec)
         except subprocess.CalledProcessError as exc:
@@ -180,16 +172,6 @@ def evaluate(ctx: click.Context, config: str, launcher: str, **kwargs):
         if config:
             base_cmd.append(config)
         cmd = build_command(base_cmd, kwargs)
-        # Finalize wrapper logs for evaluate into target debug.log
-        try:
-            from axolotl.cli.utils.train import read_output_dir_from_config
-
-            eff_out_dir = kwargs.get("output_dir") or read_output_dir_from_config(
-                config
-            )
-            finalize_output_logging(eff_out_dir)
-        except Exception:
-            pass
         subprocess.run(cmd, check=True)  # nosec B603
     else:
         from axolotl.cli.evaluate import do_cli
@@ -238,16 +220,6 @@ def inference(ctx: click.Context, config: str, launcher: str, gradio: bool, **kw
         if gradio:
             base_cmd.append("--gradio")
         cmd = build_command(base_cmd, kwargs)
-        # Finalize wrapper logs for inference into target debug.log
-        try:
-            from axolotl.cli.utils.train import read_output_dir_from_config
-
-            eff_out_dir = kwargs.get("output_dir") or read_output_dir_from_config(
-                config
-            )
-            finalize_output_logging(eff_out_dir)
-        except Exception:
-            pass
         subprocess.run(cmd, check=True)  # nosec B603
     else:
         from axolotl.cli.inference import do_cli
@@ -294,16 +266,6 @@ def merge_sharded_fsdp_weights(
         if config:
             base_cmd.append(config)
         cmd = build_command(base_cmd, kwargs)
-        # Finalize wrapper logs for merge into target debug.log
-        try:
-            from axolotl.cli.utils.train import read_output_dir_from_config
-
-            eff_out_dir = kwargs.get("output_dir") or read_output_dir_from_config(
-                config
-            )
-            finalize_output_logging(eff_out_dir)
-        except Exception:
-            pass
         subprocess.run(cmd, check=True)  # nosec B603
     else:
         from axolotl.cli.merge_sharded_fsdp_weights import do_cli
