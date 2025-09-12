@@ -38,6 +38,8 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "smollm3",
     "granite",
     "granitemoe",
+    "granitemoeshared",
+    "granitemoehybrid",
     "hunyuan_v1_dense",
     "hunyuan_v1_moe",
     "gpt_oss",
