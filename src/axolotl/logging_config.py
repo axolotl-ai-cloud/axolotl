@@ -74,7 +74,6 @@ class ColorfulFormatter(Formatter):
 
     def format(self, record):
         record.rank = int(os.getenv("LOCAL_RANK", "0"))
-        # Optional compact rank segment only when non-zero to cut noise
         record.rank_fmt = f" [RANK:{record.rank}]" if record.rank != 0 else ""
         log_message = super().format(record)
         return self.COLORS.get(record.levelname, "") + log_message + Fore.RESET
