@@ -24,6 +24,7 @@ from axolotl.utils.schemas.datasets import (
 )
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
 from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
+from axolotl.utils.schemas.fsdp import FSDPConfig
 from axolotl.utils.schemas.integrations import (
     CometConfig,
     GradioConfig,
@@ -33,7 +34,6 @@ from axolotl.utils.schemas.integrations import (
     WandbConfig,
 )
 from axolotl.utils.schemas.internal import EnvCapabilities, GPUCapabilities
-from axolotl.utils.schemas.fsdp import FSDPConfig
 from axolotl.utils.schemas.model import (
     ModelInputConfig,
     ModelOutputConfig,
