@@ -82,6 +82,50 @@ class _StreamTee(io.TextIOBase):
         raise OSError("Underlying stream has no fileno")
 
 
+class _FileOnlyWriter(io.TextIOBase):
+    """A stream-like object that writes only to the tee file/buffer.
+
+    It does not write to the underlying stdout/stderr, so it avoids duplicating
+    console-visible messages in the debug log when used by a logging handler.
+    """
+
+    def write(self, s: str) -> int:  # type: ignore[override]
+        with _lock:
+            if _file_handle is not None:
+                _file_handle.write(s)
+                _file_handle.flush()
+                return len(s)
+            if _spool is not None:
+                _spool.write(s)
+                _spool.flush()
+                return len(s)
+            return len(s)
+
+    def flush(self) -> None:  # type: ignore[override]
+        with _lock:
+            if _file_handle is not None:
+                try:
+                    _file_handle.flush()
+                except Exception:
+                    pass
+            elif _spool is not None:
+                try:
+                    _spool.flush()
+                except Exception:
+                    pass
+
+
+_file_only_writer_singleton: Optional[_FileOnlyWriter] = None
+
+
+def get_file_only_stream() -> io.TextIOBase:
+    """Return a stream that writes only to the tee's file/buffer."""
+    global _file_only_writer_singleton
+    if _file_only_writer_singleton is None:
+        _file_only_writer_singleton = _FileOnlyWriter()
+    return _file_only_writer_singleton
+
+
 def start_output_buffering() -> None:
     """Install tees on stdout/stderr and start buffering output.
 

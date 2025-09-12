@@ -40,10 +40,11 @@ class MultiProcessAdapter(logging.LoggerAdapter):
 
 
 def get_logger(name: str, log_level: str | None = None) -> MultiProcessAdapter:
-    if log_level is None:
-        log_level = os.environ.get("AXOLOTL_LOG_LEVEL", None)
+    # Always allow DEBUG records to be created; console visibility is controlled
+    # via handler-level filters. This ensures the file log captures full DEBUG.
     logger = logging.getLogger(name)
-    if log_level is not None:
-        logger.setLevel(log_level.upper())
-        logger.root.setLevel(log_level.upper())
+    try:
+        logger.setLevel(logging.DEBUG)
+    except Exception:
+        pass
     return MultiProcessAdapter(logger, extra={})
