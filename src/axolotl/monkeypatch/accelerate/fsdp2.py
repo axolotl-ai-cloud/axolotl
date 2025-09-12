@@ -371,6 +371,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             model.tie_weights()
 
     is_peft_model = isinstance(model, PeftModel)
+    # TODO - this doesn't actually do anything
     for name, module in model.named_children():
         if name == "experts":
             # torch.distributed.breakpoint()
