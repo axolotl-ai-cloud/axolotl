@@ -5,13 +5,11 @@ Common logging module for axolotl
 import logging
 import os
 import sys
-from logging import Formatter, Logger, LogRecord
+from logging import Formatter, LogRecord
 from logging.config import dictConfig
 from typing import Any, Dict
 
 from colorama import Fore, Style, init
-
-from axolotl.utils.tee import get_file_only_stream
 
 DEFAULT_AXOLOTL_LOG_LEVEL = "INFO"
 DEFAULT_LOG_LEVEL = "WARNING"
@@ -53,16 +51,6 @@ class AxolotlOrWarnErrorFilter(logging.Filter):
         )
 
 
-class AxolotlLogger(Logger):
-    """A Logger class placeholder (no global filters added).
-
-    Filtering is applied at handler level to allow separate console/file behavior.
-    """
-
-    def __init__(self, name: str, level: int = logging.NOTSET):
-        super().__init__(name, level)
-
-
 class ColorfulFormatter(Formatter):
     """
     Formatter to add coloring to log messages by log type
@@ -79,6 +67,40 @@ class ColorfulFormatter(Formatter):
         record.rank_fmt = f" [RANK:{record.rank}]" if record.rank != 0 else ""
         log_message = super().format(record)
         return self.COLORS.get(record.levelname, "") + log_message + Fore.RESET
+
+
+class BelowAxConsoleFilter(logging.Filter):
+    """Allow records strictly below AXOLOTL console level."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        axolotl_log_level = os.getenv(
+            "AXOLOTL_LOG_LEVEL", DEFAULT_AXOLOTL_LOG_LEVEL
+        ).upper()
+        try:
+            level_mapping = logging.getLevelNamesMapping()
+            self.threshold = level_mapping[axolotl_log_level]
+        except AttributeError:
+            self.threshold = logging.getLevelName(axolotl_log_level)
+
+    def filter(self, record: LogRecord) -> bool:
+        return record.levelno < self.threshold
+
+
+class BelowRootConsoleFilter(logging.Filter):
+    """Allow records strictly below root console level."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        other_log_level = os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL).upper()
+        try:
+            level_mapping = logging.getLevelNamesMapping()
+            self.threshold = level_mapping[other_log_level]
+        except AttributeError:
+            self.threshold = logging.getLevelName(other_log_level)
+
+    def filter(self, record: LogRecord) -> bool:
+        return record.levelno < self.threshold
 
 
 DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
@@ -104,7 +126,13 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
     "filters": {
         "ax_or_warn": {
             "()": "axolotl.logging_config.AxolotlOrWarnErrorFilter",
-        }
+        },
+        "below_ax_console": {
+            "()": "axolotl.logging_config.BelowAxConsoleFilter",
+        },
+        "below_root_console": {
+            "()": "axolotl.logging_config.BelowRootConsoleFilter",
+        },
     },
     "handlers": {
         "console": {
@@ -121,15 +149,28 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
             "filters": ["ax_or_warn"],
             "stream": "ext://sys.stdout",
         },
+        "ax_file_only": {
+            "class": "logging.StreamHandler",
+            "level": "DEBUG",
+            "formatter": "simple",
+            "filters": ["below_ax_console"],
+            "stream": "ext://axolotl.utils.tee.file_only_stream",
+        },
+        "root_file_only": {
+            "class": "logging.StreamHandler",
+            "level": "DEBUG",
+            "formatter": "simple",
+            "filters": ["below_root_console"],
+            "stream": "ext://axolotl.utils.tee.file_only_stream",
+        },
     },
-    # log level will be superseded by the AxolotlLogger
     "root": {
-        "handlers": ["console"],
+        "handlers": ["console", "root_file_only"],
         "level": os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL),
     },
     "loggers": {
         "axolotl": {
-            "handlers": ["color_console"],
+            "handlers": ["color_console", "ax_file_only"],
             "level": os.getenv("AXOLOTL_LOG_LEVEL", DEFAULT_AXOLOTL_LOG_LEVEL).upper(),
             "propagate": False,
         },
@@ -142,59 +183,9 @@ def configure_logging():
     init()  # Initialize colorama
 
     dictConfig(DEFAULT_LOGGING_CONFIG)
-    logging.setLoggerClass(AxolotlLogger)
 
     # set default `ACCELERATE_LOG_LEVEL` to `LOG_LEVEL` if available and not set
     if "ACCELERATE_LOG_LEVEL" not in os.environ:
         os.environ["ACCELERATE_LOG_LEVEL"] = os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL)
 
-    # Add a DEBUG-level file-only handler that writes all records below the console
-    # threshold into the tee file, to avoid duplication while capturing full DEBUG logs.
-    class BelowLevelFilter(logging.Filter):
-        def __init__(self, threshold: int):
-            super().__init__()
-            self.threshold = threshold
-
-        def filter(self, record: LogRecord) -> bool:
-            return record.levelno < self.threshold
-
-    # Determine thresholds
-    level_names = (
-        logging.getLevelNamesMapping()
-        if hasattr(logging, "getLevelNamesMapping")
-        else None
-    )
-
-    def to_level(name: str, default: int) -> int:
-        if level_names:
-            return level_names.get(name.upper(), default)
-        return (
-            logging.getLevelName(name.upper())
-            if isinstance(logging.getLevelName(name.upper()), int)
-            else default
-        )
-
-    root_console_level = to_level(
-        os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL), logging.WARNING
-    )
-    ax_console_level = to_level(
-        os.getenv("AXOLOTL_LOG_LEVEL", DEFAULT_AXOLOTL_LOG_LEVEL), logging.INFO
-    )
-
-    # Create a file-only stream handler for axolotl logs below console level
-    ax_file_only_handler = logging.StreamHandler(get_file_only_stream())
-    ax_file_only_handler.setLevel(logging.DEBUG)
-    ax_file_only_handler.addFilter(BelowLevelFilter(ax_console_level))
-    ax_file_only_handler.setFormatter(
-        logging.Formatter("[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s")
-    )
-    logging.getLogger("axolotl").addHandler(ax_file_only_handler)
-
-    # And another for non-axolotl logs below root console level
-    root_file_only_handler = logging.StreamHandler(get_file_only_stream())
-    root_file_only_handler.setLevel(logging.DEBUG)
-    root_file_only_handler.addFilter(BelowLevelFilter(root_console_level))
-    root_file_only_handler.setFormatter(
-        logging.Formatter("[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s")
-    )
-    logging.getLogger().addHandler(root_file_only_handler)
+    # Handlers configured via dictConfig; nothing else to do here

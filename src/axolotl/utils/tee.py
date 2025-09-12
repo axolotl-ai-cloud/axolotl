@@ -115,15 +115,9 @@ class _FileOnlyWriter(io.TextIOBase):
                     pass
 
 
-_file_only_writer_singleton: Optional[_FileOnlyWriter] = None
-
-
-def get_file_only_stream() -> io.TextIOBase:
-    """Return a stream that writes only to the tee's file/buffer."""
-    global _file_only_writer_singleton
-    if _file_only_writer_singleton is None:
-        _file_only_writer_singleton = _FileOnlyWriter()
-    return _file_only_writer_singleton
+# A stream-like object that writes only to the tee's file/buffer; useful for
+# logging handlers that shouldn't echo to the console.
+file_only_stream: io.TextIOBase = _FileOnlyWriter()
 
 
 def start_output_buffering() -> None:
