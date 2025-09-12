@@ -106,35 +106,24 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
             # formatter set in configure_logging() based on AXOLOTL_LOG_FORMAT
             "formatter": "concise",
             "filters": [],
-            "stream": sys.stdout,
+            "stream": "ext://sys.stdout",
         },
         "color_console": {
             "class": "logging.StreamHandler",
             # formatter set in configure_logging() based on AXOLOTL_LOG_FORMAT
             "formatter": "concise_color",
             "filters": [],
-            "stream": sys.stdout,
-        },
-        # Rotating file handler for detailed logs
-        "file": {
-            "class": "logging.handlers.RotatingFileHandler",
-            "filename": os.getenv("AXOLOTL_LOG_FILE", "axolotl.log"),
-            "maxBytes": int(
-                os.getenv("AXOLOTL_LOG_FILE_MAX_BYTES", str(20 * 1024 * 1024))
-            ),
-            "backupCount": int(os.getenv("AXOLOTL_LOG_FILE_BACKUPS", "3")),
-            "encoding": "utf-8",
-            "formatter": "simple",
+            "stream": "ext://sys.stdout",
         },
     },
     # log level will be superseded by the AxolotlLogger
     "root": {
-        "handlers": ["console", "file"],
+        "handlers": ["console"],
         "level": os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL),
     },
     "loggers": {
         "axolotl": {
-            "handlers": ["color_console", "file"],
+            "handlers": ["color_console"],
             "level": os.getenv("AXOLOTL_LOG_LEVEL", DEFAULT_AXOLOTL_LOG_LEVEL).upper(),
             "propagate": False,
         },

@@ -23,6 +23,7 @@ from axolotl.utils.config import (
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
+from axolotl.utils.tee import finalize_output_logging
 from axolotl.utils.trainer import prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
@@ -245,5 +246,13 @@ def load_cfg(
         "config:\n%s",
         json.dumps(cfg_to_log, indent=2, default=str, sort_keys=True),
     )
+
+    # Now that we know output_dir, finalize terminal log tee to debug.log
+    try:
+        if cfg.get("output_dir"):
+            finalize_output_logging(cfg.output_dir)
+    except Exception as _:
+        # Do not fail config loading if file tee fails; logging still goes to console
+        pass
 
     return cfg
