@@ -5,7 +5,7 @@ Common logging module for axolotl
 import logging
 import os
 import sys
-from logging import Formatter, LogRecord
+from logging import Formatter, Logger, LogRecord
 from logging.config import dictConfig
 from typing import Any, Dict
 
@@ -49,6 +49,20 @@ class AxolotlOrWarnErrorFilter(logging.Filter):
         return (
             record.name.startswith("axolotl") and record.levelno >= self.axolotl_level
         )
+
+
+class AxolotlLogger(Logger):
+    """Logger that applies ax_or_warn filtering to non-axolotl loggers.
+
+    This suppresses third-party INFO/DEBUG at the source (even if they attach
+    their own handlers), while leaving axolotl loggers unfiltered so their DEBUG
+    can still be captured by file handlers.
+    """
+
+    def __init__(self, name: str, level: int = logging.NOTSET):
+        super().__init__(name, level)
+        if not name.startswith("axolotl"):
+            self.addFilter(AxolotlOrWarnErrorFilter())
 
 
 class ColorfulFormatter(Formatter):
@@ -166,7 +180,7 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
     },
     "root": {
         "handlers": ["console", "root_file_only"],
-        "level": os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL),
+        "level": os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL).upper(),
     },
     "loggers": {
         "axolotl": {
@@ -183,9 +197,12 @@ def configure_logging():
     init()  # Initialize colorama
 
     dictConfig(DEFAULT_LOGGING_CONFIG)
+    logging.setLoggerClass(AxolotlLogger)
 
     # set default `ACCELERATE_LOG_LEVEL` to `LOG_LEVEL` if available and not set
     if "ACCELERATE_LOG_LEVEL" not in os.environ:
-        os.environ["ACCELERATE_LOG_LEVEL"] = os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL)
+        os.environ["ACCELERATE_LOG_LEVEL"] = os.getenv(
+            "LOG_LEVEL", DEFAULT_LOG_LEVEL
+        ).upper()
 
     # Handlers configured via dictConfig; nothing else to do here
