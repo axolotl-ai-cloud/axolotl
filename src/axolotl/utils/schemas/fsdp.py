@@ -69,7 +69,7 @@ class FSDPConfig(BaseModel):
                 raise ValueError("FSDP2 is not supported on torch version < 2.7.0")
 
         return data
-    
+
     @model_validator(mode="before")
     @classmethod
     def check_fsdp_config_kwargs_prefix(cls, data):
