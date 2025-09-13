@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Union
 
 import fire
+import torch
 
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
@@ -21,17 +22,18 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
-    merge_method = getattr(cfg, "merge_method", "memory_efficient")
-    LOG.info(f"Using {merge_method} LoRA merge method")
-
-    if merge_method == "legacy":
+    merge_method = (
+        str(getattr(cfg, "merge_method", "")).strip().lower().replace("-", "_")
+    )
+    if merge_method in {"legacy", "standard"}:
+        LOG.debug("Using legacy LoRA merging method...")
         _do_merge_lora_legacy(cfg=cfg)
     else:
+        LOG.debug("Using memory-efficient LoRA merging method...")
         try:
             _do_merge_lora_efficient(cfg=cfg)
-        except RuntimeError as e:
-            LOG.error(f"Memory-efficient merge failed: {e}")
-            LOG.info("Falling back to legacy merge method...")
+        except Exception:  # pylint: disable=broad-exception-caught
+            LOG.exception("Memory-efficient merge failed; falling back to legacy.")
             _do_merge_lora_legacy(cfg=cfg)
 
 
@@ -77,10 +79,11 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
     Note: Currently only supports standard LoRA, not advanced methods like DoRA or RSLoRA.
     Will automatically fall back to legacy method for unsupported configurations.
     """
-    LOG.info("Using memory-efficient LoRA merging method...")
+    LOG.debug("Using memory-efficient LoRA merging method...")
 
     output_path = Path(cfg.output_dir) / "merged"
     safe_tensors = getattr(cfg, "save_safetensors", True)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Perform memory-efficient merge
     merge_lora_sharded_efficient(
@@ -88,6 +91,7 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         lora_adapter_path=cfg.lora_model_dir,
         output_path=output_path,
         safe_tensors=safe_tensors,
+        device=device,
     )
 
     LOG.debug("Memory-efficient LoRA merge completed successfully!")
@@ -124,7 +128,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
         parsed_cfg.lora_model_dir = parsed_cfg.output_dir
     if not Path(parsed_cfg.lora_model_dir).exists():
         raise ValueError(
-            f"Target directory for LoRA merged model does not exist: `{parsed_cfg.lora_model_dir}`"
+            f"Target directory for LoRA adapter weights does not exist: `{parsed_cfg.lora_model_dir}`"
         )
 
     do_merge_lora(cfg=parsed_cfg)
