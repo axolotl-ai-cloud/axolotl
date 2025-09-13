@@ -1,10 +1,7 @@
-"""
-Common logging module for axolotl
-"""
+"""Common logging module for axolotl."""
 
 import logging
 import os
-import sys
 from logging import Formatter, Logger, LogRecord
 from logging.config import dictConfig
 from typing import Any, Dict

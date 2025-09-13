@@ -2,7 +2,6 @@
 
 import functools
 import logging
-import os
 
 from axolotl.utils.distributed import is_main_process
 

@@ -10,7 +10,7 @@ import os
 import sys
 import threading
 from pathlib import Path
-from typing import Optional, TextIO, cast
+from typing import TextIO, cast
 
 _lock = threading.Lock()
 _file_handle: io.TextIOWrapper | None = None

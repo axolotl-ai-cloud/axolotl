@@ -1,9 +1,5 @@
-import io
 import os
 import tempfile
-import warnings
-
-import pytest
 
 
 def _dummy_cfg(output_dir: str, append: bool = False):
@@ -81,7 +77,7 @@ def test_truncate_vs_append_behavior(monkeypatch):
         monkeypatch.setenv("AXOLOTL_TEE_STDOUT", "0")
         # First run creates file with A
         cfg = _dummy_cfg(td, append=False)
-        path = tee.prepare_debug_log(cfg)
+        _ = tee.prepare_debug_log(cfg)
         try:
             tee.file_only_stream.write("A\n")
             tee.file_only_stream.flush()
