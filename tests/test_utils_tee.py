@@ -59,7 +59,7 @@ def test_stdout_is_mirrored_after_prepare(capsys, monkeypatch):
                 path = tee.prepare_debug_log(cfg)
                 import sys
 
-                print("printed-line")  # noqa: T201
+                print("printed-line")
                 sys.stdout.flush()
 
             # Now verify file contains the line
