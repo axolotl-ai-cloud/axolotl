@@ -228,6 +228,9 @@ def load_cfg(
         },
     )
 
+    # NOTE(djsaunde): We start outputting to output_dir/debug.log at this point since we
+    # have to wait for cfg.output to be resolved. We could call this earlier if we write
+    # to a temporary file, and then move it later.
     prepare_debug_log(cfg)
     prepare_optim_env(cfg)
     normalize_config(cfg)
