@@ -1,7 +1,7 @@
 from typing import Literal
 
 from packaging import version
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from axolotl.utils.logging import get_logger
 
@@ -9,6 +9,7 @@ LOG = get_logger(__name__)
 
 
 class FSDPConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
     fsdp: list[str] | None = Field(
         default=None,
         json_schema_extra={"description": "FSDP configuration"},
