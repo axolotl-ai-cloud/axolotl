@@ -39,11 +39,6 @@ class MultiProcessAdapter(logging.LoggerAdapter):
 
 
 def get_logger(name: str, log_level: str | None = None) -> MultiProcessAdapter:
-    # Always allow DEBUG records to be created; console visibility is controlled
-    # via handler-level filters. This ensures the file log captures full DEBUG.
     logger = logging.getLogger(name)
-    try:
-        logger.setLevel(logging.DEBUG)
-    except Exception:
-        pass
+    logger.setLevel(logging.DEBUG)
     return MultiProcessAdapter(logger, extra={})

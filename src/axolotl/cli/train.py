@@ -63,15 +63,6 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
         kwargs: Additional keyword arguments to override config file values.
     """
     parsed_cfg = load_cfg(config, **kwargs)
-
-    resume_from_checkpoint = parsed_cfg.get("resume_from_checkpoint")
-    auto_resume = bool(parsed_cfg.get("auto_resume_from_checkpoints"))
-    if resume_from_checkpoint or auto_resume:
-        if resume_from_checkpoint:
-            LOG.info("Resuming training from checkpoint: %s", resume_from_checkpoint)
-        else:
-            LOG.info("Resuming training (auto-resume enabled)")
-
     parser = HfArgumentParser(TrainerCliArgs)
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(
         return_remaining_strings=True

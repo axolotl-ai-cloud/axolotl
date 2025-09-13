@@ -196,7 +196,19 @@ def execute_training(
                 )
             )
 
+        resume_from_checkpoint = cfg.resume_from_checkpoint
+        auto_resume = bool(cfg.auto_resume_from_checkpoints)
+
+        if resume_from_checkpoint or auto_resume:
+            if resume_from_checkpoint:
+                LOG.info(
+                    "Resuming training from checkpoint: %s", resume_from_checkpoint
+                )
+            else:
+                LOG.info("Resuming training (auto-resume enabled)")
+
         LOG.info("Starting trainer...")
+
         # TODO: disabling for now as not compatible with FSDP2 + torchao low bit optimizers
         # if cfg.bf16:
         #     torch.set_default_dtype(torch.bfloat16)

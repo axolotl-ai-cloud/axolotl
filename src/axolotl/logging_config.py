@@ -14,9 +14,9 @@ DEFAULT_LOG_LEVEL = "WARNING"
 
 class AxolotlOrWarnErrorFilter(logging.Filter):
     """
-    Allows ANY WARNING or higher (unless overridden by LOG_LEVEL)
-    Allows axolotl.* at INFO or higher (unless overridden by AXOLOTL_LOG_LEVEL)
-    Drops all other records (i.e. non-axolotl.INFO, DEBUG, etc. by default)
+    Allows ANY WARNING or higher (unless overridden by LOG_LEVEL). Allows axolotl.* at
+    INFO or higher (unless overridden by AXOLOTL_LOG_LEVEL). Drops all other records
+    (i.e. non-axolotl.INFO, DEBUG, etc. by default).
     """
 
     def __init__(self, **kwargs):
@@ -49,12 +49,7 @@ class AxolotlOrWarnErrorFilter(logging.Filter):
 
 
 class AxolotlLogger(Logger):
-    """Logger that applies ax_or_warn filtering to non-axolotl loggers.
-
-    This suppresses third-party INFO/DEBUG at the source (even if they attach
-    their own handlers), while leaving axolotl loggers unfiltered so their DEBUG
-    can still be captured by file handlers.
-    """
+    """Logger that applies filtering to non-axolotl loggers."""
 
     def __init__(self, name: str, level: int = logging.NOTSET):
         super().__init__(name, level)
