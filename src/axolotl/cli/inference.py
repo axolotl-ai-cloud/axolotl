@@ -17,8 +17,6 @@ from axolotl.cli.utils import load_model_and_tokenizer
 from axolotl.cli.utils.diffusion import (
     diffusion_inference,
     launch_diffusion_gradio_ui,
-    render_html,
-    run_diffusion,
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.utils.chat_templates import get_chat_template_from_config

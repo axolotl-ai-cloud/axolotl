@@ -41,7 +41,7 @@ def patch_evaluation_loop():
     """Patch the evaluation_loop method."""
     # Check if already patched
     if hasattr(Trainer, "_original_evaluation_loop"):
-        LOG.info("Trainer.evaluation_loop already patched")
+        LOG.debug("Trainer.evaluation_loop already patched")
         return
 
     # Check if the patterns exist
@@ -84,7 +84,7 @@ def patch_evaluation_loop():
     )
     exec(evaluation_loop_source, globals())
 
-    LOG.info("Patched Trainer.evaluation_loop with nanmean loss calculation")
+    LOG.debug("Patched Trainer.evaluation_loop with nanmean loss calculation")
     Trainer.evaluation_loop = axolotl_evaluation_loop
 
 
@@ -135,5 +135,5 @@ def patch_maybe_log_save_evaluate():
     )
     exec(maybe_log_source, globals())
 
-    LOG.info("Patched Trainer._maybe_log_save_evaluate with nanmean loss calculation")
+    LOG.debug("Patched Trainer._maybe_log_save_evaluate with nanmean loss calculation")
     Trainer._maybe_log_save_evaluate = axolotl_maybe_log_save_evaluate

@@ -32,7 +32,7 @@ line-length = 88
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "C90", "B"]
+select = ["E", "F", "W", "C90", "B", "I"]
 ignore = [
     "E203",  # Whitespace before ':'
     "E501",  # Line too long

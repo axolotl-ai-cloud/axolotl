@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import gradio as gr
-import torch
 from colorama import Fore, Style
 
 from axolotl.integrations.diffusion import generate, resolve_mask_token_id
