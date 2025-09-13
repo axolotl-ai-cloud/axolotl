@@ -198,7 +198,6 @@ def execute_training(
 
         resume_from_checkpoint = cfg.resume_from_checkpoint
         auto_resume = bool(cfg.auto_resume_from_checkpoints)
-
         if resume_from_checkpoint or auto_resume:
             if resume_from_checkpoint:
                 LOG.info(
