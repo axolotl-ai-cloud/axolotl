@@ -182,9 +182,7 @@ def merge_lora_sharded_efficient(
         lora_state = safetensors.torch.load_file(lora_file)
     else:
         try:
-            lora_state = torch.load(
-                lora_file, map_location="cpu", weights_only=True
-            )  # nosec B614
+            lora_state = torch.load(lora_file, map_location="cpu", weights_only=True)  # nosec B614
         except TypeError:
             lora_state = torch.load(lora_file, map_location="cpu")  # nosec B614
     LOG.debug("Keeping LoRA weights on CPU; will move per-tensor during merge")
