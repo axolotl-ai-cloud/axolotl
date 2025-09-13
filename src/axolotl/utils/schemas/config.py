@@ -661,6 +661,10 @@ class AxolotlInputConfig(
         default=None, json_schema_extra={"description": "FSDP configuration options"}
     )
 
+    fsdp_version: Literal[1, 2] | None = Field(
+        default=None, json_schema_extra={"description": "FSDP version (1 or 2)"}
+    )
+
     val_set_size: float | None = Field(
         default=0.0,
         json_schema_extra={

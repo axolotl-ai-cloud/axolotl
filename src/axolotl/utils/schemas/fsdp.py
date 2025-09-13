@@ -14,7 +14,7 @@ class FSDPConfig(BaseModel):
         json_schema_extra={"description": "FSDP configuration"},
         deprecated="Configuring FSDP using `fsdp` is deprecated. Please use `fsdp_config` instead. ",
     )
-    fsdp_version: int | None = Field(
+    fsdp_version: Literal[1, 2] | None = Field(
         default=None,
         json_schema_extra={"description": "FSDP version"},
     )
@@ -52,42 +52,53 @@ class FSDPConfig(BaseModel):
     transformer_layer_cls_to_wrap: str | None = Field(
         default=None, description="List of transformer layer classes to wrap with FSDP."
     )
+    cpu_ram_efficient_loading: bool | None = Field(
+        default=None, description="Enable CPU RAM efficient loading for FSDP."
+    )
+    reshard_after_forward: bool | None = Field(
+        default=None, description="Reshard parameters after forward pass in FSDP."
+    )
 
     @model_validator(mode="before")
     @classmethod
     def check_fsdp_torch_version(cls, data):
-        env_capabilities = data.get("env_capabilities", {})
-        torch_version = env_capabilities.get("torch_version")
+        if not isinstance(data, dict):
+            return data
 
-        if torch_version is None:
-            import torch
+        fsdp_version = data.get("fsdp_version")
+        if fsdp_version == 2 or str(fsdp_version) == "2":
+            try:
+                import torch
 
-            torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
-
-        if data.get("fsdp_config") and str(data.get("fsdp_version")) == "2":
-            if version.parse(torch_version) < version.parse("2.7.0"):
-                raise ValueError("FSDP2 is not supported on torch version < 2.7.0")
+                torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+                if version.parse(torch_version) < version.parse("2.7.0"):
+                    raise ValueError("FSDP2 is not supported on torch version < 2.7.0")
+            except ImportError:
+                pass
 
         return data
 
     @model_validator(mode="before")
     @classmethod
     def check_fsdp_config_kwargs_prefix(cls, data):
-        if fsdp_config := data.get("fsdp_config"):
-            should_fix = False
-            for key, _ in fsdp_config.items():
-                if key.startswith("fsdp_"):
-                    should_fix = True
-                    LOG.warning_once(
-                        "Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
-                        "Please omit the `fsdp_` prefix from the any fields in `fsdp_config`."
-                    )
-            if should_fix:
-                update_fsdp_config = {}
-                for key, value in fsdp_config.items():
-                    if key.startswith("fsdp_") and key != "fsdp_version":
-                        update_fsdp_config[key.replace("fsdp_", "")] = value
-                    else:
-                        update_fsdp_config[key] = value
-                data["fsdp_config"] = update_fsdp_config
+        if not isinstance(data, dict):
+            return data
+        should_fix = False
+        for key, _ in data.items():
+            if key.startswith("fsdp_"):
+                should_fix = True
+                LOG.warning_once(
+                    "Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
+                    "Please omit the `fsdp_` prefix from the any fields in `fsdp_config`."
+                )
+                break
+        if should_fix:
+            update_fsdp_config = {}
+            for key, value in data.items():
+                if key.startswith("fsdp_") and key != "fsdp_version":
+                    update_fsdp_config[key.replace("fsdp_", "")] = value
+                else:
+                    update_fsdp_config[key] = value
+            data.clear()
+            data.update(update_fsdp_config)
         return data
