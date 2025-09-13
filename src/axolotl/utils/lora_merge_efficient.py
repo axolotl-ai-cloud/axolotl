@@ -3,11 +3,13 @@ Memory-efficient LoRA merging implementation inspired by qlora-pipe.
 Processes model shards individually without loading the full model into memory.
 """
 
+import gc
 import os
 import shutil
 from pathlib import Path
 from typing import Dict, Optional, Union
 
+import safetensors
 import safetensors.torch
 import torch
 from peft import LoraConfig
@@ -24,16 +26,13 @@ def find_lora_weights(
     """
     Find corresponding LoRA A and B weights for a given key.
     """
-    clean_key = key.rstrip(".weight")
+    clean_key = key[:-7] if key.endswith(".weight") else key
 
-    lora_a = None
-    lora_b = None
+    a_key = f"base_model.model.{clean_key}.lora_A.weight"
+    b_key = f"base_model.model.{clean_key}.lora_B.weight"
 
-    for lora_key, lora_weight in lora_state.items():
-        if lora_key.endswith(f"{clean_key}.lora_A.weight"):
-            lora_a = lora_weight
-        elif lora_key.endswith(f"{clean_key}.lora_B.weight"):
-            lora_b = lora_weight
+    lora_a = lora_state.get(a_key)
+    lora_b = lora_state.get(b_key)
 
     if lora_a is not None and lora_b is not None:
         return lora_a, lora_b
@@ -42,7 +41,7 @@ def find_lora_weights(
 
 def get_model_shards(model_path: Path) -> list[Path]:
     """Find all model shards in the given path."""
-    shards = list[Path]()
+    shards: list[Path] = []
 
     patterns = ["model*.safetensors", "pytorch_model*.bin"]
 
@@ -74,20 +73,22 @@ def copy_non_model_files(
             continue
         if filepath.name in shard_names:
             continue
-        if filepath.suffix == ".gguf":
+        if (
+            filepath.name.startswith("model") and filepath.suffix == ".safetensors"
+        ) or (filepath.name.startswith("pytorch_model") and filepath.suffix == ".bin"):
             continue
-        if filepath.name.startswith("model") and filepath.suffix == ".safetensors":
+        if filepath.suffix == ".gguf":
             continue
 
         LOG.debug(f"Copying {filepath.name} to output")
-        shutil.copy(filepath, output_path)
+        shutil.copy2(filepath, output_path)
 
 
 def merge_lora_sharded_efficient(
     base_model_path: Union[str, Path],
     lora_adapter_path: Union[str, Path],
     output_path: Union[str, Path],
-    device: str = "cuda",
+    device: str = "cpu",
     safe_tensors: bool = True,
 ) -> None:
     """
@@ -109,8 +110,61 @@ def merge_lora_sharded_efficient(
     if not config_file.exists():
         raise FileNotFoundError(f"LoRA config not found: {config_file}")
 
-    lora_config = LoraConfig.from_json_file(config_file)
-    scale = lora_config["lora_alpha"] / lora_config["r"]
+    lora_config_dict = LoraConfig.from_json_file(str(config_file))
+    if not lora_config_dict.get("r") or lora_config_dict["r"] <= 0:
+        raise ValueError("LoRA config 'r' must be > 0")
+
+    unsupported_methods = []
+
+    # Check for DoRA (Weight-Decomposed LoRA)
+    if lora_config_dict.get("use_dora", False):
+        unsupported_methods.append("DoRA (Weight-Decomposed LoRA)")
+
+    # Check for AdaLoRA (Adaptive LoRA)
+    if lora_config_dict.get("use_adalora", False):
+        unsupported_methods.append("AdaLoRA (Adaptive LoRA)")
+
+    # Check for VeRA (Vector-based Random Matrix Adaptation)
+    if lora_config_dict.get("use_vera", False):
+        unsupported_methods.append("VeRA (Vector-based Random Matrix Adaptation)")
+
+    # Check for other advanced LoRA variants by task_type
+    task_type = lora_config_dict.get("task_type", "")
+    if task_type and task_type not in [
+        "CAUSAL_LM",
+        "SEQ_2_SEQ_LM",
+        "TOKEN_CLS",
+        "SEQ_CLS",
+        "QUESTION_ANS",
+    ]:
+        unsupported_methods.append(f"Task type: {task_type}")
+
+    # Check for rank adaptation patterns (AdaLoRA indicators)
+    if any(
+        key in lora_config_dict
+        for key in ["rank_pattern", "alpha_pattern", "target_rank"]
+    ):
+        unsupported_methods.append("AdaLoRA (rank adaptation detected)")
+
+    # Check for advanced initialization methods
+    init_lora_weights = lora_config_dict.get("init_lora_weights", "")
+    if init_lora_weights and init_lora_weights not in [
+        "gaussian",
+        "loftq",
+        True,
+        False,
+    ]:
+        unsupported_methods.append(f"Advanced initialization: {init_lora_weights}")
+
+    if unsupported_methods:
+        methods_str = ", ".join(unsupported_methods)
+        raise NotImplementedError(
+            f"Memory-efficient LoRA merge only supports standard LoRA. "
+            f"Detected unsupported methods: {methods_str}. "
+            f"Please use the legacy merge method for advanced LoRA variants."
+        )
+
+    scale = float(lora_config_dict["lora_alpha"]) / float(lora_config_dict["r"])
 
     LOG.debug(f"LoRA scale factor: {scale}")
 
@@ -127,18 +181,19 @@ def merge_lora_sharded_efficient(
     if lora_file.suffix == ".safetensors":
         lora_state = safetensors.torch.load_file(lora_file)
     else:
-        lora_state = torch.load(lora_file, map_location="cpu", weights_only=True)
-
-    if device != "cpu":
-        LOG.debug(f"Moving LoRA weights to {device}")
-        for key, value in tqdm(lora_state.items(), desc="Moving LoRA to device"):
-            lora_state[key] = value.to(device)
+        try:
+            lora_state = torch.load(
+                lora_file, map_location="cpu", weights_only=True
+            )  # nosec B614
+        except TypeError:
+            lora_state = torch.load(lora_file, map_location="cpu")  # nosec B614
+    LOG.debug("Keeping LoRA weights on CPU; will move per-tensor during merge")
 
     model_shards = get_model_shards(base_model_path)
     if not model_shards:
         raise FileNotFoundError(f"No model shards found in {base_model_path}")
 
-    LOG.debug(f"Found {len(model_shards)} model shards")
+    LOG.debug(f"Found {len(model_shards)} model shards in {base_model_path}")
     copy_non_model_files(base_model_path, output_path, model_shards)
 
     merged_count = 0
@@ -149,7 +204,7 @@ def merge_lora_sharded_efficient(
         metadata = {}
 
         if shard_path.suffix == ".safetensors":
-            with safetensors.safe_open(shard_path, framework="pt", device=device) as f:
+            with safetensors.safe_open(shard_path, framework="pt", device="cpu") as f:
                 if hasattr(f, "metadata") and f.metadata():
                     metadata = f.metadata()
 
@@ -165,18 +220,25 @@ def merge_lora_sharded_efficient(
                         )
 
                         original_dtype = tensor.dtype
-                        tensor_fp32 = tensor.to(torch.float32)
-
-                        delta = scale * (
-                            lora_b.to(torch.float32) @ lora_a.to(torch.float32)
+                        base_fp32 = tensor.to(device).to(torch.float32)
+                        a_fp32 = lora_a.to(device).to(torch.float32)
+                        b_fp32 = lora_b.to(device).to(torch.float32)
+                        delta = scale * (b_fp32 @ a_fp32)
+                        if bool(
+                            lora_config_dict.get("fan_in_fan_out", False)
+                            or lora_config_dict.get("lora_fan_in_fan_out", False)
+                        ):
+                            delta = delta.T
+                        merged_tensors[key] = (
+                            (base_fp32 + delta).to(original_dtype).detach().cpu()
                         )
-
-                        merged_tensor = (tensor_fp32 + delta).to(original_dtype)
-                        merged_tensors[key] = merged_tensor
+                        del base_fp32, a_fp32, b_fp32, delta
                     else:
-                        merged_tensors[key] = tensor
+                        merged_tensors[key] = tensor.detach().cpu()
         else:
-            state_dict = torch.load(shard_path, map_location=device)  # nosec B614: loading trusted model weights
+            state_dict = torch.load(  # nosec B614: loading trusted model weights
+                shard_path, map_location="cpu", weights_only=True
+            )
             for key, tensor in state_dict.items():
                 total_tensors += 1
                 lora_a, lora_b = find_lora_weights(lora_state, key)
@@ -184,26 +246,39 @@ def merge_lora_sharded_efficient(
                 if lora_a is not None and lora_b is not None:
                     merged_count += 1
                     original_dtype = tensor.dtype
-                    tensor_fp32 = tensor.to(torch.float32)
-                    delta = scale * (
-                        lora_b.to(torch.float32) @ lora_a.to(torch.float32)
+                    base_fp32 = tensor.to(device).to(torch.float32)
+                    a_fp32 = lora_a.to(device).to(torch.float32)
+                    b_fp32 = lora_b.to(device).to(torch.float32)
+                    delta = scale * (b_fp32 @ a_fp32)
+                    if bool(
+                        lora_config_dict.get("fan_in_fan_out", False)
+                        or lora_config_dict.get("lora_fan_in_fan_out", False)
+                    ):
+                        delta = delta.T
+                    merged_tensors[key] = (
+                        (base_fp32 + delta).to(original_dtype).detach().cpu()
                     )
-                    merged_tensors[key] = (tensor_fp32 + delta).to(original_dtype)
+                    del base_fp32, a_fp32, b_fp32, delta
                 else:
-                    merged_tensors[key] = tensor
+                    merged_tensors[key] = tensor.detach().cpu()
 
         output_shard_path = output_path / shard_path.name
-        if safe_tensors and shard_path.suffix == ".safetensors":
+        merged_tensors = {k: v.detach().cpu() for k, v in merged_tensors.items()}
+        if shard_path.suffix == ".safetensors":
             safetensors.torch.save_file(
                 merged_tensors, output_shard_path, metadata=metadata
             )
         else:
             if safe_tensors:
-                output_shard_path = output_shard_path.with_suffix(".safetensors")
+                LOG.warning(
+                    "safe_tensors=True requested but input shards are .bin; preserving .bin format "
+                    "to avoid index mismatches."
+                )
             torch.save(merged_tensors, output_shard_path)
 
         del merged_tensors
-        if device != "cpu":
+        if device != "cpu" and torch.cuda.is_available():
             torch.cuda.empty_cache()
+        gc.collect()
 
     LOG.info(f"Applied LoRA to {merged_count}/{total_tensors} tensors")
