@@ -83,40 +83,6 @@ class ColorfulFormatter(Formatter):
         return self.COLORS.get(record.levelname, "") + log_message + Fore.RESET
 
 
-class BelowAxConsoleFilter(logging.Filter):
-    """Allow records strictly below AXOLOTL console level."""
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        axolotl_log_level = os.getenv(
-            "AXOLOTL_LOG_LEVEL", DEFAULT_AXOLOTL_LOG_LEVEL
-        ).upper()
-        try:
-            level_mapping = logging.getLevelNamesMapping()
-            self.threshold = level_mapping[axolotl_log_level]
-        except AttributeError:
-            self.threshold = logging.getLevelName(axolotl_log_level)
-
-    def filter(self, record: LogRecord) -> bool:
-        return record.levelno < self.threshold
-
-
-class BelowRootConsoleFilter(logging.Filter):
-    """Allow records strictly below root console level."""
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        other_log_level = os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL).upper()
-        try:
-            level_mapping = logging.getLevelNamesMapping()
-            self.threshold = level_mapping[other_log_level]
-        except AttributeError:
-            self.threshold = logging.getLevelName(other_log_level)
-
-    def filter(self, record: LogRecord) -> bool:
-        return record.levelno < self.threshold
-
-
 DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -140,12 +106,6 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
     "filters": {
         "ax_or_warn": {
             "()": "axolotl.logging_config.AxolotlOrWarnErrorFilter",
-        },
-        "below_ax_console": {
-            "()": "axolotl.logging_config.BelowAxConsoleFilter",
-        },
-        "below_root_console": {
-            "()": "axolotl.logging_config.BelowRootConsoleFilter",
         },
     },
     "handlers": {
@@ -196,6 +156,9 @@ def configure_logging():
 
     dictConfig(DEFAULT_LOGGING_CONFIG)
     logging.setLoggerClass(AxolotlLogger)
+
+    # Route Python warnings through logging so they reach file handlers
+    logging.captureWarnings(True)
 
     # set default `ACCELERATE_LOG_LEVEL` to `LOG_LEVEL` if available and not set
     if "ACCELERATE_LOG_LEVEL" not in os.environ:
