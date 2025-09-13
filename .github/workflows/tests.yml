@@ -55,7 +55,7 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.11"]
-        pytorch_version: ["2.6.0", "2.7.0", "2.7.1"]
+        pytorch_version: ["2.6.0", "2.7.1", "2.8.0"]
     timeout-minutes: 20
 
     steps:
@@ -130,7 +130,7 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.11"]
-        pytorch_version: ["2.6.0", "2.7.0", "2.7.1"]
+        pytorch_version: ["2.6.0", "2.7.1", "2.8.0"]
     timeout-minutes: 20
 
     steps:
@@ -240,7 +240,7 @@ jobs:
           - cuda: 126
             cuda_version: 12.6.3
             python_version: "3.11"
-            pytorch: 2.6.0
+            pytorch: 2.7.1
             num_gpus: 1
             axolotl_extras:
             dockerfile: "Dockerfile-uv.jinja"
@@ -298,6 +298,13 @@ jobs:
             pytorch: 2.7.1
             num_gpus: 1
             axolotl_extras:
+          - cuda: 128
+            cuda_version: 12.8.1
+            python_version: "3.11"
+            pytorch: 2.8.0
+            num_gpus: 1
+            gpu_type: "B200"
+            axolotl_extras: fbgemm-gpu
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -318,6 +325,7 @@ jobs:
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
           echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "GPU_TYPE=${{ matrix.gpu_type || 'L40S'}}" >> $GITHUB_ENV
           echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile.jinja'}}" >> $GITHUB_ENV
       - name: Run tests job on Modal
@@ -334,10 +342,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 124
-            cuda_version: 12.4.1
+          - cuda: 126
+            cuda_version: 12.6.3
             python_version: "3.11"
-            pytorch: 2.6.0
+            pytorch: 2.7.1
             num_gpus: 1
             axolotl_extras:
     steps:

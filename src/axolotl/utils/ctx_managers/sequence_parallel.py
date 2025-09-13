@@ -26,7 +26,7 @@ def apply_sequence_parallelism(
     local_rank: int,
     local_world_size: int,
     gradient_accumulation_steps: int,
-    ring_attn_func: RingAttnFunc,  # pylint: disable=unused-argument
+    ring_attn_func: RingAttnFunc,
 ) -> tuple[dict[str, torch.Tensor], int, int]:
     """
     Apply sequence parallelism slicing to a batch.
@@ -48,10 +48,10 @@ def apply_sequence_parallelism(
             - The original sequence length before padding.
             - The number of padding tokens added.
     """
-    original_seq_len = batch["input_ids"].size(1)
+    batch_size, original_seq_len = batch["input_ids"].shape
 
     # Update ring attention params if needed
-    if batch.get("position_ids") is not None:
+    if batch.get("position_ids") is not None and batch_size == 1:
         update_ring_attn_params(position_ids=batch["position_ids"])
     else:
         # If position_ids aren't already in the batch, create them

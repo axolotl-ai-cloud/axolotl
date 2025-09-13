@@ -1,6 +1,5 @@
 """Init for ring attention monkeypatch module"""
 
-# pylint: disable=unused-import
 # flake8: noqa
 
 from .patch import (

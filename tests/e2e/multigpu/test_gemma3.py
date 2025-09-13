@@ -29,7 +29,6 @@ class TestMultiGPUGemma3:
     """
 
     def test_lora_ddp_packed(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "axolotl-mirrors/gemma-3-4b-pt",

@@ -64,7 +64,9 @@ def parse_requirements(extras_require_map):
             else:
                 raise ValueError("Invalid version format")
 
-            if (major, minor) >= (2, 7):
+            if (major, minor) >= (2, 8):
+                pass
+            elif (major, minor) >= (2, 7):
                 _install_requires.pop(_install_requires.index(xformers_version))
                 if patch == 0:
                     _install_requires.append("xformers==0.0.30")
@@ -118,14 +120,14 @@ def get_package_version():
 
 
 extras_require = {
-    "flash-attn": ["flash-attn==2.8.2"],
+    "flash-attn": ["flash-attn==2.8.3"],
     "ring-flash-attn": [
-        "flash-attn==2.8.2",
+        "flash-attn==2.8.3",
         "ring-flash-attn>=0.1.7",
         "yunchang==0.6.0",
     ],
     "deepspeed": [
-        "deepspeed==0.17.2",
+        "deepspeed==0.17.5",
         "deepspeed-kernels",
     ],
     "mamba-ssm": [
@@ -160,6 +162,7 @@ extras_require = {
     "llmcompressor": [
         "llmcompressor==0.5.1",
     ],
+    "fbgemm-gpu": ["fbgemm-gpu-genai>=1.2.0"],
 }
 install_requires, dependency_links, extras_require_build = parse_requirements(
     extras_require

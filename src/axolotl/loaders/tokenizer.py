@@ -50,7 +50,7 @@ def modify_tokenizer_files(
     tokenizer_dir = os.path.join(output_dir, "tokenizer")
     os.makedirs(tokenizer_dir, exist_ok=True)
 
-    if is_local_main_process():  # pylint: disable=too-many-nested-blocks
+    if is_local_main_process():
         # Load the tokenizer
         temp_tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, use_fast=True)
 
@@ -73,9 +73,9 @@ def modify_tokenizer_files(
                 for token_id, new_value in token_id_mappings.items():
                     token_id_str = str(token_id)
                     if token_id_str in config_data["added_tokens_decoder"]:
-                        config_data["added_tokens_decoder"][token_id_str][
-                            "content"
-                        ] = new_value
+                        config_data["added_tokens_decoder"][token_id_str]["content"] = (
+                            new_value
+                        )
                     else:
                         raise ValueError(
                             f"Token ID {token_id_str} not found in added_tokens_decoder"
@@ -215,7 +215,7 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
         for k, val in special_tokens.items():
             # check if new special token is not already in tokenizer and
             # is adapter training to make sure lora_modules_to_save is set
-            # pylint: disable=too-many-boolean-expressions
+
             if (
                 (getattr(tokenizer, k) is None or getattr(tokenizer, k) != val)
                 and (len(tokenizer.encode(val, add_special_tokens=False)) > 2)
@@ -296,7 +296,7 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
             )
 
         tokenizer.chat_template = chat_template_string
-    else:
+    elif getattr(tokenizer, "chat_template", None) is None:
         LOG.info(
             "No Chat template selected. Consider adding a chat template for easier inference."
         )

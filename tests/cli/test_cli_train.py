@@ -1,7 +1,5 @@
 """Tests for train CLI command."""
 
-# pylint: disable=duplicate-code
-
 from unittest.mock import MagicMock, patch
 
 from axolotl.cli.main import cli

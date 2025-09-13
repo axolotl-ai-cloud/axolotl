@@ -22,7 +22,6 @@ class TestGemma2:
         [True, False],
     )
     def test_lora_gemma2(self, temp_dir, sample_packing):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "axolotl-ai-co/gemma-2-33M",
@@ -78,7 +77,6 @@ class TestGemma2:
         [True, False],
     )
     def test_fft_gemma2(self, temp_dir, sample_packing):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "axolotl-ai-co/gemma-2-33M",

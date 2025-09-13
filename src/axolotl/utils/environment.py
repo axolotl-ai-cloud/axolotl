@@ -6,8 +6,6 @@ from importlib.metadata import version
 
 from accelerate.utils.environment import (
     check_cuda_p2p_ib_support as accelerate_check_cuda_p2p_ib_support,
-)
-from accelerate.utils.environment import (
     get_gpu_info,
 )
 from packaging.version import Version, parse
@@ -26,7 +24,7 @@ def check_cuda_p2p_ib_support():
                 for unsupported_device in unsupported_devices
             ):
                 return False
-    except Exception:  # pylint: disable=broad-except # nosec
+    except Exception:  # nosec B110
         pass
     return True
 

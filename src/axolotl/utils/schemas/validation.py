@@ -1,7 +1,5 @@
 """Module with validation methods for config pydantic model."""
 
-# pylint: disable=too-many-boolean-expressions
-
 import json
 import sys
 import tempfile
@@ -15,8 +13,6 @@ from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
-
-# pylint: disable=too-many-lines
 
 LOG = get_logger(__name__)
 
@@ -61,6 +57,20 @@ class DatasetValidationMixin:
     def check_dataset_or_pretraining_dataset(cls, data):
         if data.get("datasets") is None and data.get("pretraining_dataset") is None:
             raise ValueError("either datasets or pretraining_dataset is required")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_pretraining_streaming_deprecation(cls, data):
+        # TODO(djsaunde): remove this check + implement change for 0.13.0 release
+        if data.get("pretraining_dataset") and not data.get("streaming"):
+            LOG.warning(
+                "Setting `pretraining_dataset` without explicitly setting `streaming: "
+                "true` is deprecated. In a future release, streaming will not be "
+                "automatically enabled when using pretraining_dataset. Please "
+                "explicitly set `streaming: true` in your configuration to maintain "
+                "current behavior."
+            )
         return data
 
     @model_validator(mode="before")
@@ -343,10 +353,33 @@ class TrainingValidationMixin:
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_multipack_buffer_size(cls, data):
+        if data.get("pretrain_multipack_buffer_size") and not data.get(
+            "streaming_multipack_buffer_size"
+        ):
+            LOG.warning(
+                "`pretrain_multipack_buffer_size` is deprecated in v0.13.0, will be "
+                "removed in v0.14.0. Use `streaming_multipack_buffer_size` instead."
+            )
+            data["streaming_multipack_buffer_size"] = data[
+                "pretrain_multipack_buffer_size"
+            ]
+            del data["pretrain_multipack_buffer_size"]
+        elif data.get("pretrain_multipack_buffer_size") and data.get(
+            "streaming_multipack_buffer_size"
+        ):
+            raise ValueError(
+                "pretrain_multipack_buffer_size is deprecated, use "
+                "streaming_multipack_buffer_size; both are set, please remove the "
+                "deprecated pretrain_multipack_buffer_size setting"
+            )
+        return data
+
     @model_validator(mode="after")
     def check_fft_possible_bad_config(self):
         if (
-            # pylint: disable=too-many-boolean-expressions
             not (self.bf16 or self.bfloat16)
             and (self.fp16 or self.float16)
             and not self.adapter
@@ -460,12 +493,12 @@ class TrainingValidationMixin:
     @classmethod
     def check_mistral_common_import(cls, tokenizer_use_mistral_common):
         if tokenizer_use_mistral_common:
-            try:
-                import mistral_common  # noqa: F401 # pylint:disable=unused-import
-            except ImportError as exception:
+            import importlib.util
+
+            if importlib.util.find_spec("mistral_common") is None:
                 raise ImportError(
                     "mistral-common is required for mistral models. Please install it with `pip install axolotl` or `pip install -e .`."
-                ) from exception
+                )
 
         return tokenizer_use_mistral_common
 
@@ -685,7 +718,7 @@ class RLValidationMixin:
         # TODO: SalmanMohammadi
         # Distributed RL with QLoRA + gradient checkpointing
         # and use_reentrant = True is broken upstream in TRL
-        # pylint: disable=too-many-boolean-expressions
+
         if (
             data.get("rl")
             and data.get("gradient_checkpointing")
@@ -1078,6 +1111,50 @@ class PretrainingValidationMixin:
                     data["accelerator_config"]["dispatch_batches"] = False
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_pretraining_w_val_set_size(cls, data):
+        if data.get("pretraining_dataset") and data.get("val_set_size"):
+            raise ValueError(
+                "val_set_size is not supported with pretraining_dataset. "
+                "Use test_datasets to specify evaluation datasets for pretraining."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_streaming_w_val_set_size(cls, data):
+        if data.get("streaming") and data.get("val_set_size"):
+            raise ValueError(
+                "val_set_size is not supported with streaming datasets. "
+                "Use test_datasets to specify evaluation datasets when streaming is enabled."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_streaming_w_max_steps(cls, data):
+        if data.get("streaming") and not data.get("max_steps"):
+            raise ValueError(
+                "max_steps must be set when using streaming datasets. "
+                "Trainer cannot infer dataset length for iterable datasets."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_streaming_w_multiple_datasets(cls, data):
+        if (
+            data.get("streaming")
+            and data.get("sample_packing")
+            and data.get("datasets")
+            and len(data.get("datasets")) > 1
+        ):
+            raise NotImplementedError(
+                "Sample packing with multiple streaming datasets is not yet supported"
+            )
+        return data
+
 
 class ModelCompatibilityValidationMixin:
     """Validation methods for specific model compatibility."""
@@ -1252,26 +1329,19 @@ class ComplexValidationMixin:
                 import transformers.modeling_flash_attention_utils
                 from transformers.utils import is_flash_attn_greater_or_equal
 
-                # pylint: disable=protected-access
                 transformers.modeling_flash_attention_utils._flash_supports_window = (
                     True
                 )
-                setattr(
-                    sys.modules["transformers.modeling_flash_attention_utils"],
-                    "_flash_supports_window",
-                    True,
-                )
-                setattr(
-                    sys.modules["transformers.modeling_flash_attention_utils"],
-                    "_flash_supports_window_size",
-                    True,
-                )
-                setattr(
-                    sys.modules["transformers.modeling_flash_attention_utils"],
-                    "is_flash_attn_greater_or_equal",
-                    is_flash_attn_greater_or_equal,
-                )
-                import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
+                sys.modules[
+                    "transformers.modeling_flash_attention_utils"
+                ]._flash_supports_window = True
+                sys.modules[
+                    "transformers.modeling_flash_attention_utils"
+                ]._flash_supports_window_size = True
+                sys.modules[
+                    "transformers.modeling_flash_attention_utils"
+                ].is_flash_attn_greater_or_equal = is_flash_attn_greater_or_equal
+                import ring_flash_attn  # noqa: F401  # Required after monkey-patching
             except ImportError as exception:
                 raise ImportError(
                     "context_parallel_size > 1 but ring_flash_attn is not installed. "
@@ -1336,7 +1406,6 @@ class GRPOVllmValidationMixin:
         return self
 
 
-# pylint: disable=too-many-ancestors
 class ValidationMixin(
     DatasetValidationMixin,
     AttentionValidationMixin,

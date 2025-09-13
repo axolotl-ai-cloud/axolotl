@@ -102,7 +102,7 @@ class ModelLoader:
         *,
         inference: bool = False,
         reference_model: bool = False,
-        **kwargs,  # pylint: disable=unused-argument
+        **kwargs,
     ):
         """Initializes the ModelLoader.
 
@@ -134,7 +134,7 @@ class ModelLoader:
 
         # Init model config
         self.model_config = load_model_config(cfg)
-        self.auto_model_loader = AutoModelForCausalLM  # pylint: disable=invalid-name
+        self.auto_model_loader = AutoModelForCausalLM
 
         # Initialize the patch manager
         self.patch_manager = PatchManager(
@@ -607,27 +607,19 @@ class ModelLoader:
             self.model_kwargs["attn_implementation"] = self.cfg.attn_implementation
         elif self.cfg.flex_attention:
             self.model_kwargs["attn_implementation"] = "flex_attention"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "flex_attention"
-            )
+            self.model_config._attn_implementation = "flex_attention"
 
         elif self.cfg.flash_attention:
             if not self.cfg.sample_packing and self.cfg.s2_attention:
                 pass
             self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "flash_attention_2"
-            )
+            self.model_config._attn_implementation = "flash_attention_2"
         elif self.cfg.sdp_attention:
             self.model_kwargs["attn_implementation"] = "sdpa"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "sdpa"
-            )
+            self.model_config._attn_implementation = "sdpa"
         elif self.cfg.eager_attention:
             self.model_kwargs["attn_implementation"] = "eager"
-            self.model_config._attn_implementation = (  # pylint: disable=protected-access
-                "eager"
-            )
+            self.model_config._attn_implementation = "eager"
 
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True
@@ -681,6 +673,33 @@ class ModelLoader:
 
         return hf_ds_cfg
 
+    def _load_model_from_config(self, model_loader_class=None) -> PreTrainedModel:
+        """
+        Load model with random initialization using from_config.
+
+        Uses the selected loader when provided; otherwise falls back to the auto loader.
+        """
+        loader = model_loader_class or self.auto_model_loader
+        if loader in [AutoModelForCausalLM, AutoModelForVision2Seq]:
+            model = loader.from_config(
+                config=self.model_config,
+                trust_remote_code=self.cfg.trust_remote_code or False,
+            )
+        else:
+            model = loader(config=self.model_config)
+
+        return model
+
+    def _load_model_from_pretrained(self, model_loader_class=None) -> PreTrainedModel:
+        """Load model from pretrained weights."""
+        loader = model_loader_class or self.auto_model_loader
+        kwargs = {
+            "config": self.model_config,
+            "trust_remote_code": self.cfg.trust_remote_code or False,
+            **self.model_kwargs,
+        }
+        return loader.from_pretrained(self.base_model, **kwargs)
+
     def _build_model(self) -> bool:
         """Load model, with load strategy depending on config."""
         skip_move_to_device = False
@@ -695,7 +714,8 @@ class ModelLoader:
         if self.is_fsdp_enabled:
             if self.cfg.fsdp_config.cpu_ram_efficient_loading:
                 skip_move_to_device = True
-                # Don't delete device_map for QLoRA + FSDP - it was set correctly in _set_device_map
+                # Don't delete device_map for QLoRA + FSDP - it was set correctly in
+                # _set_device_map
                 if (
                     "device_map" in self.model_kwargs
                     and not self.is_qlora_and_fsdp_enabled
@@ -724,6 +744,11 @@ class ModelLoader:
                 or self.cfg.qlora_sharded_model_loading
             )
         ):
+            if self.cfg.reinit_weights:
+                LOG.warning(
+                    "reinit_weights is not supported with sharded quantized loading. "
+                    "Loading from pretrained weights instead."
+                )
             quant_storage = self.cfg.torch_dtype
             quantization_config = getattr(
                 self.model_config, "quantization_config", None
@@ -739,35 +764,14 @@ class ModelLoader:
                 quantization_config=quantization_config,
             )
             skip_move_to_device = True
-        elif (
-            self.model_config.model_type in ["llama", "llama4"]
-            and not self.cfg.trust_remote_code
-            and not self.cfg.gptq
-        ):
-            # Please don't remove underscore binding without reading the fn docstring.
-            _ = self._configure_zero3_memory_efficient_loading()
-
-            # Load model with random initialization if specified
-            if self.cfg.random_init_weights:
-                # AutoModel classes support the from_config method
-                if self.auto_model_loader in [
-                    AutoModelForCausalLM,
-                    AutoModelForVision2Seq,
-                ]:
-                    self.model = self.auto_model_loader.from_config(
-                        config=self.model_config,
-                    )
-                else:
-                    self.model = self.auto_model_loader(config=self.model_config)
-            else:
-                self.model = self.auto_model_loader.from_pretrained(
-                    self.base_model,
-                    config=self.model_config,
-                    **self.model_kwargs,
-                )
         elif self.model_type == "MambaLMHeadModel":
+            if self.cfg.reinit_weights:
+                LOG.warning(
+                    "reinit_weights is not supported with MambaLMHeadModel. "
+                    "Loading from pretrained weights instead."
+                )
             # FIXME this is janky at best and hacked together to make it work
-            MambaLMHeadModel = fix_mamba_attn_for_loss()  # pylint: disable=invalid-name
+            MambaLMHeadModel = fix_mamba_attn_for_loss()
 
             self.model_kwargs["dtype"] = self.model_kwargs["torch_dtype"]
             self.model_kwargs["device"] = torch.cuda.current_device()
@@ -778,45 +782,30 @@ class ModelLoader:
                 self.base_model,
                 **self.model_kwargs,
             )
-        elif (
-            self.model_type
-            and self.model_type != "AutoModelForCausalLM"
-            and not self.cfg.trust_remote_code
-        ):
-            if self.cfg.gptq:
-                self.model = self.auto_model_loader.from_pretrained(
-                    self.base_model,
-                    config=self.model_config,
-                    trust_remote_code=self.cfg.trust_remote_code or False,
-                    **self.model_kwargs,
-                )
-            else:
-                self.model = getattr(transformers, self.model_type).from_pretrained(
-                    self.base_model,
-                    config=self.model_config,
-                    trust_remote_code=self.cfg.trust_remote_code or False,
-                    **self.model_kwargs,
-                )
-        elif self.cfg.gptq:
-            self.model = self.auto_model_loader.from_pretrained(
-                self.base_model,
-                config=self.model_config,
-                trust_remote_code=self.cfg.trust_remote_code or False,
-                **self.model_kwargs,
-            )
         else:
-            # Please don't remove underscore binding without reading the fn docstring.
+            # Please don't remove underscore binding without reading the fn docstring
             _ = self._configure_zero3_memory_efficient_loading()
-            self.model = self.auto_model_loader.from_pretrained(
-                self.base_model,
-                config=self.model_config,
-                trust_remote_code=self.cfg.trust_remote_code or False,
-                **self.model_kwargs,
-            )
+
+            if (
+                self.model_type
+                and self.model_type != "AutoModelForCausalLM"
+                and not self.cfg.trust_remote_code
+                and not self.cfg.gptq
+            ):
+                # Use model type from transformers
+                model_loader_class = getattr(transformers, self.model_type)
+            else:
+                # Use auto model loader (handles gptq and default cases)
+                model_loader_class = self.auto_model_loader
+
+            if self.cfg.reinit_weights:
+                self.model = self._load_model_from_config(model_loader_class)
+            else:
+                self.model = self._load_model_from_pretrained(model_loader_class)
+
         if is_deepspeed_zero3_enabled():
             skip_move_to_device = True
 
-        # pylint: disable=protected-access
         if self.cfg.tensor_parallel_size > 1:
             # workaround for upstream 4.54.0 not setting _tp_size or _device_mesh
             # TODO(wing): remove once 4.54.1 is released

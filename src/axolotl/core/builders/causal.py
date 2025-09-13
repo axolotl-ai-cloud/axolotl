@@ -10,6 +10,7 @@ import transformers
 from transformers import (
     DataCollatorWithFlattening,
     EarlyStoppingCallback,
+    Trainer,
 )
 from trl.trainer.utils import RewardDataCollatorWithPadding
 
@@ -35,6 +36,7 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.callbacks.lisa import lisa_callback_factory
 from axolotl.utils.callbacks.qat import QATCallback
+from axolotl.utils.callbacks.tokens_per_second import TokensPerSecondCallback
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
@@ -74,6 +76,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.qat:
             callbacks.append(QATCallback(self.cfg.qat))
 
+        if self.cfg.include_tkps:
+            callbacks.append(
+                TokensPerSecondCallback(
+                    self.cfg.tensor_parallel_size, self.cfg.context_parallel_size
+                )
+            )
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
@@ -340,20 +348,22 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
+            if self.cfg.center_rewards_coefficient is not None:
+                training_arguments_kwargs["center_rewards_coefficient"] = (
+                    self.cfg.center_rewards_coefficient
+                )
         elif self.cfg.process_reward_model:
             training_args_cls = AxolotlPRMConfig
         else:
             training_args_cls = AxolotlTrainingArguments
-        training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
+        training_args = training_args_cls(
             **training_arguments_kwargs,
         )
         training_args = self.hook_post_create_training_args(training_args)
 
         # unset run_name so wandb sets up experiment names
         if self.cfg.use_wandb and training_args.run_name == training_args.output_dir:
-            training_args.run_name = (  # pylint: disable=attribute-defined-outside-init
-                None
-            )
+            training_args.run_name = None
 
         data_collator_kwargs = {
             "padding": True,  # True/"longest" is the default
@@ -385,10 +395,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 **data_collator_kwargs,
             )
         sig = inspect.signature(trainer_cls)
-        if "processing_class" in sig.parameters:
+        if "processing_class" in sig.parameters or issubclass(trainer_cls, Trainer):
             trainer_kwargs["processing_class"] = self.tokenizer
         elif "tokenizer" in sig.parameters:
             trainer_kwargs["tokenizer"] = self.tokenizer
+
         if (
             trainer_cls not in [AxolotlRewardTrainer, AxolotlPRMTrainer]
             and self.cfg.datasets is not None
@@ -406,6 +417,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             **trainer_kwargs,
         )
         trainer = self.hook_post_create_trainer(trainer)
+        # if the trainer has the `axolotl_cfg` property, set it
+        if hasattr(trainer, "axolotl_cfg"):
+            trainer.axolotl_cfg = self.cfg
         for callback in self.get_post_trainer_create_callbacks(trainer):
             trainer.add_callback(callback)
 

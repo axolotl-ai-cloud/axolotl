@@ -64,7 +64,7 @@ class TestPromptTokenizationStrategies:
         tests the interface between the user and assistant parts
         """
         prompter = NoSystemPrompter()
-        # pylint: disable=duplicate-code
+
         strat = AlpacaPromptTokenizingStrategy(
             prompter,
             tokenizer_huggyllama_w_special_tokens,
@@ -85,7 +85,7 @@ class TestPromptTokenizationStrategies:
         """
         tests the interface between the user and assistant parts
         """
-        # pylint: disable=duplicate-code
+
         prompter = AlpacaPrompter()
         strat = AlpacaPromptTokenizingStrategy(
             prompter,
@@ -171,7 +171,7 @@ class Llama2ChatTokenizationTest:
         # from transformers.models.llama.tokenization_llama import DEFAULT_SYSTEM_PROMPT
         # broken as of 23/7/20
         # see https://github.com/huggingface/transformers/pull/24935
-        # pylint: disable=C0103
+
         DEFAULT_SYSTEM_PROMPT = """\
 You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.
 
@@ -201,7 +201,7 @@ If a question does not make any sense, or is not factually coherent, explain why
             + user_input[1:-1],
             generated_responses=answers,
         )
-        # pylint: disable=W0212
+
         hf_tokens = tokenizer_llama2_7b._build_conversation_input_ids(hf_conf)
 
         assert hf_tokens == tokenized_conversation["input_ids"][: len(hf_tokens)]

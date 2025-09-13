@@ -44,7 +44,7 @@ def retry_on_request_exceptions(
 
     def decorator(func):
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):  # pylint: disable=inconsistent-return-statements
+        def wrapper(*args, **kwargs):
             for attempt in range(max_retries):
                 try:
                     return func(*args, **kwargs)
@@ -190,10 +190,19 @@ def handle_long_seq_in_dataset(
     Returns:
         Filtered dataset with long sequences removed.
     """
-    if "input_ids" not in dataset.column_names:
+    if (
+        hasattr(dataset, "column_names")
+        and dataset.column_names
+        and "input_ids" not in dataset.column_names
+    ):
         LOG.warning(
             "Dataset does not contain 'input_ids' column. Skip drop long seq. This is "
             "expected for reward modeling."
+        )
+        return dataset
+    elif not hasattr(dataset, "column_names") or dataset.column_names is None:
+        LOG.info(
+            "Dataset is streaming (IterableDataset), skipping long sequence handling"
         )
         return dataset
 

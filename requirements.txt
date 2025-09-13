@@ -2,8 +2,7 @@
 
 # START section of dependencies that don't install on Darwin/MacOS
 bitsandbytes==0.47.0
-# triton 3.4.0 is not compatible with CCE
-triton>=3.0.0,<3.4.0
+triton>=3.0.0
 mamba-ssm==1.2.0.post1
 xformers>=0.0.23.post1
 autoawq==0.2.7.post3
@@ -13,8 +12,8 @@ liger-kernel==0.6.1
 packaging==23.2
 
 huggingface_hub>=0.33.0
-peft==0.17.0
-transformers==4.55.2
+peft>=0.17.0
+transformers==4.56.1
 tokenizers>=0.21.1
 accelerate==1.10.0
 datasets==4.0.0
@@ -65,7 +64,7 @@ langdetect==1.0.9
 immutabledict==4.2.0
 antlr4-python3-runtime==4.13.2
 
-torchao==0.12.0
+torchao==0.13.0
 schedulefree==1.4.1
 
 axolotl-contribs-lgpl==0.0.6
