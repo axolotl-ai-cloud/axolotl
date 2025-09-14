@@ -3,11 +3,14 @@ Trainer mixin for activation checkpointing w offloading
 """
 
 import contextlib
+from functools import partial
 
 from peft import PeftModel
 from torch import nn
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     apply_activation_checkpointing,
+    checkpoint_wrapper,
+    CheckpointImpl,
 )
 from torch.distributed.fsdp.wrap import ModuleWrapPolicy
 from transformers import GradientCheckpointingLayer, Trainer
@@ -46,9 +49,20 @@ class ActivationOffloadingMixin(Trainer):
             return super().training_step(*args, **kwargs)
 
 
-def ac_wrap_hf_model(model: nn.Module, **kwargs):
+def ac_wrap_hf_model(model: nn.Module, use_reentrant=None, **kwargs):
     auto_wrap_policy = ModuleWrapPolicy(set((GradientCheckpointingLayer,)))
-    apply_activation_checkpointing(model, auto_wrap_policy=auto_wrap_policy, **kwargs)
+    if use_reentrant:
+        checkpoint_wrapper_fn = partial(
+            checkpoint_wrapper, checkpoint_impl=CheckpointImpl.REENTRANT
+        )
+    else:
+        checkpoint_wrapper_fn = checkpoint_wrapper
+    apply_activation_checkpointing(
+        model,
+        checkpoint_wrapper_fn=checkpoint_wrapper_fn,
+        auto_wrap_policy=auto_wrap_policy,
+        **kwargs,
+    )
 
 
 def get_lora_act_offloading_ctx_manager(

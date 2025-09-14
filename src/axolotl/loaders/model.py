@@ -224,21 +224,27 @@ class ModelLoader:
         ):
             self.model = self.model.merge_and_unload()
 
-        self._apply_activation_checkpointing()
+        use_reentrant = None
+        if (
+            self.cfg.gradient_checkpointing_kwargs
+            and self.cfg.gradient_checkpointing_kwargs.get("use_reentrant", True)
+        ):
+            use_reentrant = True
+        self._apply_activation_checkpointing(use_reentrant=use_reentrant)
         self._resize_token_embeddings()
         self._adjust_model_config()
         self._configure_embedding_dtypes()
         self._configure_qat()
         log_gpu_memory_usage(LOG, "Memory usage after model load", 0)
 
-    def _apply_activation_checkpointing(self):
+    def _apply_activation_checkpointing(self, use_reentrant: bool | None = None):
         if self.cfg.activation_offloading is True:
             from axolotl.core.trainers.mixins.activation_checkpointing import (
                 ac_wrap_hf_model,
             )
 
             # ^^ importing this at the module level breaks plugins
-            ac_wrap_hf_model(self.model)
+            ac_wrap_hf_model(self.model, use_reentrant=use_reentrant)
 
     def _resize_token_embeddings(self):
         """Resize token embeddings if needed."""
