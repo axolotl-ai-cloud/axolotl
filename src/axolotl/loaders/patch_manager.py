@@ -269,6 +269,7 @@ class PatchManager:
                 self.cfg.model_config_type,
                 model_name=self.cfg.base_model,
                 has_remote_code=has_remote_code,
+                cfg=self.cfg,
             )
 
         if self.cfg.sample_packing:

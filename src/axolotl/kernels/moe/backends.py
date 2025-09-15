@@ -1,4 +1,3 @@
-import os
 import warnings
 from enum import Enum
 
@@ -35,11 +34,10 @@ def _probe_hf_triton() -> bool:
 def get_moe_backend_name(preferred: str | None = None) -> MOEBackend:
     """
     Resolve the desired MoE backend using, in order of precedence:
-    - explicit preferred argument
-    - environment variable AXOLOTL_MOE_BACKEND
+    - explicit preferred argument (e.g., from config)
     - auto detection
     """
-    choice = (preferred or os.getenv("AXOLOTL_MOE_BACKEND") or "auto").lower()
+    choice = (preferred or "auto").lower()
     try:
         selected = MOEBackend(choice)
     except ValueError:

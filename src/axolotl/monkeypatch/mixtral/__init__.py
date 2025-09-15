@@ -5,7 +5,7 @@ Patches to support multipack for mixtral
 import torch
 
 
-def patch_mixtral_moe_forward_zero3() -> None:
+def patch_mixtral_moe_forward_zero3(cfg=None) -> None:
     import warnings
 
     import torch.nn.functional as F
@@ -26,7 +26,8 @@ def patch_mixtral_moe_forward_zero3() -> None:
         hidden_states = hidden_states.view(-1, hidden_dim)
         # router_logits: (batch * sequence_length, n_experts)
         router_logits = self.gate(hidden_states)
-        backend = get_moe_backend_name()
+        preferred = getattr(cfg, "moe_backend", None) if cfg is not None else None
+        backend = get_moe_backend_name(preferred)
         if backend == MOEBackend.HF_TRITON and _hf_triton.available():
             # Stub path: use kernels hub routing and fallback per-expert compute
             try:

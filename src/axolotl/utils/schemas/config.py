@@ -132,6 +132,12 @@ class AxolotlInputConfig(
     vllm: VllmConfig | None = Field(
         default_factory=lambda: VllmConfig(),
     )
+    moe_backend: Literal["auto", "hf_triton", "torch_grouped", "naive"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Mixture-of-Experts backend to use: 'auto', 'hf_triton', 'torch_grouped', or 'naive'. If not set, defaults to 'auto'.",
+        },
+    )
     qat: QATConfig | None = None
     quantization: PTQConfig | None = None
     reward_model: bool | None = Field(

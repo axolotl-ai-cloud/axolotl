@@ -156,7 +156,6 @@ def main():
     )
 
     # HF Triton (stub compute for now)
-    os.environ.setdefault("AXOLOTL_MOE_BACKEND", "hf_triton")
     t_hf = forward_hf_triton
     y = t_hf(x, gate, experts, args.top_k)
     if y is not None:

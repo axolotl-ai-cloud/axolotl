@@ -79,9 +79,66 @@ def moe_ffn_forward_stub(
     bsz, seqlen, hdim = hidden_states.shape
     flat = hidden_states.view(-1, hdim)
     router_logits = gate_linear(flat)
-    # For now, do not call routing to avoid extra overhead until
-    # grouped GEMM integration is complete. Use the naive compute path
-    # for correctness and baseline performance.
+    # Fast path via kernels hub: route tokens, do grouped GEMMs for up, gate, and down.
+    handles = load()
+    if handles is not None:
+        try:
+            routing_data, gather_idx, scatter_idx = handles.routing.routing_torch(
+                router_logits, n_expts_act=top_k
+            )
+            # Prepare expert weights: shapes [E, K, N]
+            E = experts_module.num_experts
+            K = hdim
+            # up projections
+            W1 = []
+            W3 = []
+            for i in range(E):
+                exp = experts_module[i]
+                # Linear weight is [out, in]; need [in, out]
+                W1.append(exp.w1.weight.t())
+                W3.append(exp.w3.weight.t())
+            W1 = torch.stack(W1, dim=0).to(device=flat.device, dtype=flat.dtype)
+            W3 = torch.stack(W3, dim=0).to(device=flat.device, dtype=flat.dtype)
+            # compute gathered inputs X_g according to gather_idx via matmul_ogs gather
+            # First matmul for w1: gather happens inside kernel using gather_indx
+            Y1 = handles.matmul_ogs.matmul_ogs(
+                flat,
+                W1,
+                None,
+                routing_data=routing_data,
+                gather_indx=gather_idx,
+                scatter_indx=None,
+                precision_config=handles.matmul_ogs.PrecisionConfig(),
+            )
+            # Second matmul for w3 on the same gathered order
+            Y3 = handles.matmul_ogs.matmul_ogs(
+                flat,
+                W3,
+                None,
+                routing_data=routing_data,
+                gather_indx=gather_idx,
+                scatter_indx=None,
+                precision_config=handles.matmul_ogs.PrecisionConfig(),
+            )
+            # SwiGLU: silu(Y1) * Y3
+            Hidden = F.silu(Y1) * Y3
+            # Down projection weights [E, inter, hidden]
+            W2 = [experts_module[i].w2.weight.t() for i in range(E)]
+            W2 = torch.stack(W2, dim=0).to(device=flat.device, dtype=flat.dtype)
+            # Down matmul with fused scatter back using scatter_indx
+            Out = handles.matmul_ogs.matmul_ogs(
+                Hidden,
+                W2,
+                None,
+                routing_data=routing_data,
+                gather_indx=None,
+                scatter_indx=scatter_idx,
+                precision_config=handles.matmul_ogs.PrecisionConfig(),
+            )
+            return Out.view(bsz, seqlen, hdim), router_logits
+        except Exception:
+            pass
+    # Fallback naive path for correctness
     routing_weights = F.softmax(router_logits, dim=1, dtype=torch.float)
     topk_weight, topk_idx = torch.topk(routing_weights, top_k, dim=-1, sorted=False)
     topk_weight /= topk_weight.sum(dim=-1, keepdim=True)

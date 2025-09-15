@@ -46,7 +46,7 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
 ]
 
 
-def patch_for_multipack(model_type, model_name=None, has_remote_code=False):
+def patch_for_multipack(model_type, model_name=None, has_remote_code=False, cfg=None):
     if has_remote_code:
         patch_remote(model_name)
     elif hasattr(transformers, "modeling_flash_attention_utils"):
@@ -57,7 +57,7 @@ def patch_for_multipack(model_type, model_name=None, has_remote_code=False):
         transformers.modeling_flash_attention_utils._get_unpad_data = get_unpad_data
 
     if model_type == "mixtral" and is_deepspeed_zero3_enabled():
-        patch_mixtral_moe_forward_zero3()
+        patch_mixtral_moe_forward_zero3(cfg)
 
 
 def patch_remote(model_name):
