@@ -15,20 +15,18 @@ liger_glu_activation: true
 liger_layer_norm: true
 liger_fused_linear_cross_entropy: true
 
+
 datasets:
   - path: yahma/alpaca-cleaned
     type: alpaca
+    split: train[:95%]
 
 output_dir: ./outputs/qat_out/
+dataset_prepared_path: ./outputs/qat_out/dataset_prepared
 
-sample_packing: true
-
-sequence_len: 512
-
-flex_attention: true
-flex_attn_compile_kwargs:
-  dynamic: false
-  mode: max-autotune-no-cudagraphs
+sample_packing: false
+sequence_len: 8192
+flash_attention: true
 
 qat:
   activation_dtype: int8
@@ -67,7 +65,7 @@ fsdp:
 fsdp_config:
   fsdp_version: 2
   fsdp_offload_params: false
-  fsdp_cpu_ram_efficient_loading: true
+  fsdp_cpu_ram_efficient_loading: false
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
   fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
   fsdp_state_dict_type: FULL_STATE_DICT
@@ -76,6 +74,6 @@ fsdp_config:
   fsdp_activation_checkpointing: true
 
 special_tokens:
-  pad_token: <|end_of_text|>
+  pad_token: <|finetune_right_pad_id|>
 
 # save_first_step: true  # uncomment this to validate checkpoint saving works with your config

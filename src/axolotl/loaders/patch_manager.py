@@ -3,8 +3,8 @@
 Applies pre- and post-model load patches for various fixes and optimizations.
 """
 
-import os
 import importlib.util
+import os
 from functools import cached_property
 
 import addict
@@ -80,13 +80,7 @@ class PatchManager:
             patch_maybe_log_save_evaluate,
         )
 
-        patch_fsdp2 = (
-            self.cfg.torch_compile
-            and self.cfg.fsdp_config
-            and self.cfg.fsdp_version == 2
-        )
-
-        patch_evaluation_loop(patch_fsdp2)
+        patch_evaluation_loop()
         patch_maybe_log_save_evaluate()
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
@@ -474,8 +468,9 @@ class PatchManager:
 
     def _apply_patch_deepspeed_zero3(self):
         try:
-            from axolotl.monkeypatch.deepspeed_utils import apply_deepspeed_patches
             from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
+
+            from axolotl.monkeypatch.deepspeed_utils import apply_deepspeed_patches
 
             if self.cfg.activation_offloading is True and (
                 is_deepspeed_zero3_enabled()

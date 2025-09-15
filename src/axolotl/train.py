@@ -30,11 +30,7 @@ from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
 from axolotl.integrations.base import PluginManager
-from axolotl.loaders import (
-    ModelLoader,
-    load_processor,
-    load_tokenizer,
-)
+from axolotl.loaders import ModelLoader, load_processor, load_tokenizer
 from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
@@ -234,16 +230,15 @@ def save_trained_model(
 
     # handle QAT
     if cfg.qat:
-        from axolotl.utils.quantization import convert_qat_model_for_ptq
+        from axolotl.utils.quantization import convert_qat_model
 
-        LOG.info("Processing QAT model for saving...")
-        convert_qat_model_for_ptq(
+        convert_qat_model(
             model,
             quantize_embedding=cfg.qat.quantize_embedding,
         )
         LOG.info(
-            "QAT modules have been converted for PTQ. Please ensure you quantize "
-            "your model weights with `axolotl quantize`."
+            "QAT usage note: please ensure you quantize your model fine-tuned using QAT by running `axolotl quantize`"
+            " with the same config which you used for training."
         )
     # Handle ReLoRA early return case
     if cfg.relora:
@@ -337,9 +332,7 @@ def save_trained_model(
 
     if hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
         # TODO: add integration support so this can be implemented completely within the plugin
-        from axolotl.integrations.llm_compressor.utils import (
-            save_compressed_model,
-        )
+        from axolotl.integrations.llm_compressor.utils import save_compressed_model
 
         save_compressed_model(
             model=model,

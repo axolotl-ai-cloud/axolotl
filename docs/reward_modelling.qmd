@@ -11,6 +11,7 @@ We support the reward modelling techniques supported by `trl`.
 ### (Outcome) Reward Models
 
 Outcome reward models are trained using data which contains preference annotations for an entire interaction between the user and model (e.g. rather than per-turn or per-step).
+For improved training stability, you can use the `center_rewards_coefficient` parameter to encourage mean-zero reward outputs ([see TRL docs](https://huggingface.co/docs/trl/v0.10.1/en/reward_trainer#centering-rewards)).
 
 ```yaml
 base_model: google/gemma-2-2b
