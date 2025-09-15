@@ -210,7 +210,12 @@ def main():
                 f"torch_grouped\t{t_ms:.2f} ms\t{tokens / (t_ms / 1000):.1f} tok/s\t{tflops:.2f} TFLOP/s\t{speedup:.2f}×"
             )
         else:
-            print("torch_grouped\tN/A (op not callable)")
+            try:
+                from axolotl.kernels.moe.torch_grouped import LAST_ERROR as _TG_ERR
+            except Exception:
+                _TG_ERR = None
+            reason = f" (reason: {_TG_ERR})" if _TG_ERR else ""
+            print(f"torch_grouped\tN/A (op not callable){reason}")
     else:
         print("torch_grouped\tN/A (unavailable)")
 
