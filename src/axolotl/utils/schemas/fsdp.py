@@ -47,8 +47,8 @@ class FSDPConfig(BaseModel):
     state_dict_type: (
         Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None
     ) = Field(default=None, description="Type of state dict to use for FSDP.")
-    auto_wrap_policy: Literal["TRANSFORMER_BASED_WRAP"] | None = Field(
-        default=None, description="Auto wrap policy for FSDP."
+    auto_wrap_policy: Literal["TRANSFORMER_BASED_WRAP", "SIZE_BASED_WRAP"] | None = (
+        Field(default=None, description="Auto wrap policy for FSDP.")
     )
     transformer_layer_cls_to_wrap: str | None = Field(
         default=None, description="List of transformer layer classes to wrap with FSDP."
