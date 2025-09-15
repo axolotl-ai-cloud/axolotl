@@ -25,15 +25,29 @@ def available() -> bool:
         return False
 
 
+# Cache loaded handles so we don't trigger repeated hub fetches
+_CACHED_HANDLES: Optional[HFTritonHandles] = None
+_LOAD_ATTEMPTED: bool = False
+
+
 def load() -> Optional[HFTritonHandles]:
+    global _CACHED_HANDLES, _LOAD_ATTEMPTED
+    if _CACHED_HANDLES is not None:
+        return _CACHED_HANDLES
+    if _LOAD_ATTEMPTED:
+        # Previously failed; avoid spamming retries per call
+        return None
+    _LOAD_ATTEMPTED = True
     try:
         from kernels import get_kernel
 
         tk = get_kernel("kernels-community/triton_kernels")
-        return HFTritonHandles(
+        _CACHED_HANDLES = HFTritonHandles(
             routing=tk.routing, matmul_ogs=tk.matmul_ogs, swiglu=tk.swiglu
         )
+        return _CACHED_HANDLES
     except Exception:
+        # Keep None in cache state to prevent repeated fetch attempts
         return None
 
 

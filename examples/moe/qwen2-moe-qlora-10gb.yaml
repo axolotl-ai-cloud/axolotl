@@ -1,0 +1,57 @@
+base_model: Qwen/Qwen1.5-MoE-A2.7B
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+trust_remote_code: true
+
+# Keep VRAM low
+load_in_8bit: false
+load_in_4bit: true
+
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.05
+output_dir: ./outputs/qwen2-moe-qlora-10gb
+
+# Train small to fit 10GB
+sequence_len: 512
+sample_packing: false
+pad_to_sequence_len: false
+
+adapter: qlora
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_linear: true
+
+gradient_accumulation_steps: 8
+micro_batch_size: 1
+num_epochs: 1
+optimizer: paged_adamw_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+resume_from_checkpoint:
+logging_steps: 5
+flash_attention: true
+
+warmup_ratio: 0.03
+evals_per_epoch: 2
+saves_per_epoch: 1
+weight_decay: 0.0
+
+# Enable router logits if you want aux loss/analysis
+model_config:
+  output_router_logits: true
+
+# ZeRO-3 with CPU offload keeps VRAM within ~10GB
+deepspeed: deepspeed_configs/zero3_bf16_cpuoffload_params.json
+
+special_tokens:
