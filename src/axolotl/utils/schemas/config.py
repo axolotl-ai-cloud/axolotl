@@ -656,7 +656,11 @@ class AxolotlInputConfig(
             "description": "Whether to use deepcompile for faster training with deepspeed"
         },
     )
-
+    fsdp: list[str] | None = Field(
+        default=None,
+        json_schema_extra={"description": "FSDP configuration"},
+        deprecated="Configuring FSDP using `fsdp` is deprecated. Please use `fsdp_config` instead. ",
+    )
     fsdp_config: FSDPConfig | None = Field(
         default=None, json_schema_extra={"description": "FSDP configuration options"}
     )
