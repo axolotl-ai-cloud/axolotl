@@ -81,7 +81,7 @@ dependencies = [
     "xformers>=0.0.23.post1 ; sys_platform != 'darwin'",
     "autoawq==0.2.7.post3 ; sys_platform != 'darwin'",
     "liger-kernel==0.6.1 ; sys_platform != 'darwin'",
-    "torchao==0.12.0 ; sys_platform != 'darwin'",
+    "torchao==0.13.0 ; sys_platform != 'darwin'",
     "bitsandbytes==0.47.0 ; sys_platform != 'darwin'",
     "flash-attn==2.8.3 ; sys_platform == 'linux'",
     "deepspeed>=0.17.5 ; sys_platform != 'darwin'",
@@ -89,7 +89,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Flash attention context parallelism
 ring-flash-attn = [
     "flash-attn==2.8.3 ; sys_platform == 'linux'",
     "ring-flash-attn>=0.1.7",
