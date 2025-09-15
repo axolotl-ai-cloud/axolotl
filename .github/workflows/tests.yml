@@ -304,7 +304,7 @@ jobs:
             pytorch: 2.8.0
             num_gpus: 1
             gpu_type: "B200"
-            axolotl_extras:
+            axolotl_extras: fbgemm-gpu
     steps:
       - name: Checkout
         uses: actions/checkout@v4

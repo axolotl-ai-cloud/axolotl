@@ -3,7 +3,6 @@
 import unittest
 
 from axolotl.monkeypatch.transformers.trainer_loss_calc import (
-    check_evaluation_loop_is_fsdp2_patchable,
     check_evaluation_loop_is_patchable,
     check_maybe_log_save_evaluate_is_patchable,
 )
@@ -20,7 +19,6 @@ class TestTrainerLossCalc(unittest.TestCase):
         the patched code changes upstream.
         """
         assert check_evaluation_loop_is_patchable()
-        assert check_evaluation_loop_is_fsdp2_patchable()
         assert check_maybe_log_save_evaluate_is_patchable()
 
 

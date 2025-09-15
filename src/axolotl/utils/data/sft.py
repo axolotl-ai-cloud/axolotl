@@ -16,7 +16,6 @@ from transformers import PreTrainedTokenizer, ProcessorMixin
 
 from axolotl.prompters import Prompter
 from axolotl.utils.data.lock import FileLockLoader
-from axolotl.utils.data.streaming import wrap_streaming_dataset
 from axolotl.utils.data.shared import (
     create_train_validation_split,
     datasets_with_name_generator,
@@ -27,6 +26,7 @@ from axolotl.utils.data.shared import (
     save_preprocessed_dataset,
     try_load_from_hub,
 )
+from axolotl.utils.data.streaming import wrap_streaming_dataset
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
     handle_long_seq_in_dataset,
