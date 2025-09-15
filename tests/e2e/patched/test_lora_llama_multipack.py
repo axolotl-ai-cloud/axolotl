@@ -5,7 +5,7 @@ E2E tests for lora llama
 import unittest
 
 import pytest
-from transformers.utils import is_auto_gptq_available, is_torch_bf16_gpu_available
+from transformers.utils import is_gptqmodel_available, is_torch_bf16_gpu_available
 
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
@@ -69,7 +69,7 @@ class TestLoraLlama(unittest.TestCase):
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
 
-    @pytest.mark.skipif(not is_auto_gptq_available(), reason="auto-gptq not available")
+    @pytest.mark.skipif(not is_gptqmodel_available(), reason="gptqmodel not installed")
     @with_temp_dir
     def test_lora_gptq_packed(self, temp_dir):
         cfg = DictDefault(

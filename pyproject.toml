@@ -96,7 +96,7 @@ ring-flash-attn = [
     "yunchang==0.6.0",
 ]
 mamba-ssm = ["mamba-ssm>=2.2.0", "causal_conv1d>=1.4.0",]
-auto-gptq = ["auto-gptq==0.5.1"]
+gptqmodel = ["gptqmodel>=4.0.0"]
 mlflow = ["mlflow"]
 galore = ["galore_torch"]
 apollo = ["apollo-torch"]
@@ -119,7 +119,6 @@ dev = [
     "codecov",
     "codecov-cli",
     "tbparse",
-    "black",
     "ruff",
     "mypy",
     "pre-commit",
