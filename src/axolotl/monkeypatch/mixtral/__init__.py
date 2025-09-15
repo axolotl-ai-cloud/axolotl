@@ -6,7 +6,12 @@ import torch
 
 
 def patch_mixtral_moe_forward_zero3() -> None:
+    import warnings
+
     import torch.nn.functional as F
+
+    from axolotl.kernels.moe import backends as _moe_backends, hf_triton as _hf_triton
+    from axolotl.kernels.moe.backends import MOEBackend, get_moe_backend_name
 
     def mlp_forward(self, hidden_states):
         current_hidden_states = self.act_fn(self.w1(hidden_states)) * self.w3(
@@ -21,21 +26,42 @@ def patch_mixtral_moe_forward_zero3() -> None:
         hidden_states = hidden_states.view(-1, hidden_dim)
         # router_logits: (batch * sequence_length, n_experts)
         router_logits = self.gate(hidden_states)
+        backend = get_moe_backend_name()
+        if backend == MOEBackend.HF_TRITON and _hf_triton.available():
+            # Stub path: use kernels hub routing and fallback per-expert compute
+            try:
+                final_hidden_states, router_logits = _hf_triton.moe_ffn_forward_stub(
+                    hidden_states.view(batch_size, sequence_length, hidden_dim),
+                    self.gate,
+                    self.experts,
+                    self.top_k,
+                )
+                return final_hidden_states, router_logits
+            except Exception as e:
+                warnings.warn(f"hf_triton backend failed, falling back to naive: {e}")
+        elif (
+            backend == MOEBackend.TORCH_GROUPED
+            and not _moe_backends._probe_torch_grouped()
+        ):
+            warnings.warn(
+                "torch_grouped selected but not available; falling back to naive"
+            )
 
         routing_weights = F.softmax(router_logits, dim=1, dtype=torch.float)
         topk_weight, topk_idx = torch.topk(
             routing_weights, self.top_k, dim=-1, sorted=False
         )
         topk_weight /= topk_weight.sum(dim=-1, keepdim=True)
-        # we cast back to the input dtype
         topk_weight = topk_weight.to(hidden_states.dtype)
 
-        hidden_states = hidden_states.repeat_interleave(self.top_k, dim=0)
-        y = torch.empty_like(hidden_states)
+        hidden_states_rep = hidden_states.repeat_interleave(self.top_k, dim=0)
+        y = torch.empty_like(hidden_states_rep)
         flat_topk_idx = topk_idx.view(-1)
         for i in range(self.num_experts):
             expert = self.experts[i]
-            y[flat_topk_idx == i] = expert(hidden_states[flat_topk_idx == i])
+            sel = flat_topk_idx == i
+            if sel.any():
+                y[sel] = expert(hidden_states_rep[sel])
         y = (y.view(*topk_weight.shape, -1) * topk_weight.unsqueeze(-1)).sum(dim=1)
         final_hidden_states = y.reshape(batch_size, sequence_length, hidden_dim)
         return final_hidden_states, router_logits
