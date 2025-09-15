@@ -9,6 +9,7 @@ from pydantic import (
     Field,
     StringConstraints,
     field_serializer,
+    field_validator,
     model_validator,
 )
 
@@ -138,6 +139,8 @@ class AxolotlInputConfig(
             "description": "Mixture-of-Experts backend to use: 'auto', 'hf_triton', 'torch_grouped', or 'naive'. If not set, defaults to 'auto'.",
         },
     )
+
+    # Value is constrained by the Literal type; no normalization needed.
     qat: QATConfig | None = None
     quantization: PTQConfig | None = None
     reward_model: bool | None = Field(
