@@ -7,7 +7,7 @@ name = "axolotl"
 dynamic = ["version"]
 description = "LLM Trainer"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 license = {text = "Apache-2.0"}
 authors = [
     {name = "Axolotl AI"},
@@ -25,7 +25,6 @@ classifiers = [
 ]
 
 dependencies = [
-    # Core dependencies
     "torch>=2.6.0",
     "packaging>=23.2",
     "huggingface_hub>=0.33.0",
@@ -38,16 +37,12 @@ dependencies = [
     "hf_xet==1.1.5",
     "kernels==0.9.0",
     "trackio",
-
-    # Optimization and training
     "optimum==1.16.2",
     "hf_transfer",
     "sentencepiece",
     "gradio==5.41.1",
-
-    # Infrastructure
     "modal==1.0.2",
-    "pydantic==2.10.6",
+    "pydantic>=2.10.6",
     "addict",
     "fire",
     "PyYAML>=6.0",
@@ -57,8 +52,6 @@ dependencies = [
     "colorama",
     "numba",
     "numpy>=1.24.4,<3.0",
-
-    # QLora dependencies
     "evaluate==0.4.1",
     "scipy",
     "scikit-learn>=1.7.0",
@@ -66,32 +59,22 @@ dependencies = [
     "art",
     "tensorboard",
     "python-dotenv==1.0.1",
-
-    # Remote filesystems
     "s3fs>=2024.5.0",
     "gcsfs>=2024.5.0",
     "adlfs>=2024.5.0",
     "ocifs==1.3.2",
-
-    # Other utilities
     "zstandard>=0.23.0",
     "fastcore",
-
-    # LM eval harness
     "lm_eval==0.4.7",
     "langdetect==1.0.9",
     "immutabledict==4.2.0",
     "antlr4-python3-runtime==4.13.2",
-
-    # Training optimizers
     "schedulefree==1.4.1",
+    "mistral-common==1.8.3",
 
     # Axolotl contribs
     "axolotl-contribs-lgpl @ git+https://github.com/axolotl-ai-cloud/axolotl-contribs-lgpl.git@numpy",
     "axolotl-contribs-mit==0.0.5",
-
-    # Mistral
-    "mistral-common==1.8.3",
 
     # Platform-specific dependencies (Linux by default, excluded on macOS)
     "triton>=3.0.0 ; sys_platform != 'darwin'",
@@ -112,31 +95,11 @@ ring-flash-attn = [
     "ring-flash-attn>=0.1.7",
     "yunchang==0.6.0",
 ]
-
-mamba-ssm = [
-    "mamba-ssm>=2.2.0",
-    "causal_conv1d>=1.4.0",
-]
-
-# Quantization
-auto-gptq = [
-    "auto-gptq==0.5.1",
-]
-
-# Experiment tracking
-mlflow = [
-    "mlflow",
-]
-
-# Optimizers
-galore = [
-    "galore_torch",
-]
-
-apollo = [
-    "apollo-torch",
-]
-
+mamba-ssm = ["mamba-ssm>=2.2.0", "causal_conv1d>=1.4.0",]
+auto-gptq = ["auto-gptq==0.5.1"]
+mlflow = ["mlflow"]
+galore = ["galore_torch"]
+apollo = ["apollo-torch"]
 optimizers = [
     "galore_torch",
     "apollo-torch",
@@ -144,24 +107,10 @@ optimizers = [
     "torch-optimi==0.2.1",
     "came_pytorch==0.1.3",
 ]
-
-# Distributed training
-ray = [
-    "ray[train]",
-]
-
-# Inference (Note: vllm and llmcompressor have conflicting dependencies, install separately)
-vllm = [
-    "vllm>=0.10.0",
-]
-
-llmcompressor = [
-    "llmcompressor>=0.5.1",
-]
-
-# Development dependencies
+ray = ["ray[train]"]
+vllm = ["vllm>=0.10.0"]
+llmcompressor = ["llmcompressor>=0.5.1"]
 dev = [
-    # Testing
     "pytest",
     "pytest-cov",
     "pytest-retry",
@@ -170,19 +119,13 @@ dev = [
     "codecov",
     "codecov-cli",
     "tbparse",
-
-    # Code quality
     "black",
     "ruff",
     "mypy",
     "pre-commit",
     "types-requests",
-
-    # Documentation
     "quartodoc",
     "jupyter",
-
-    # Utilities
     "blobfile",
     "tiktoken",
 ]
@@ -214,7 +157,7 @@ line-length = 88
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "C90", "B"]
+select = ["E", "F", "W", "C90", "B", "I"]
 ignore = [
     "E203",  # Whitespace before ':'
     "E501",  # Line too long
@@ -277,6 +220,9 @@ flash-attn = [
     "packaging",
     "wheel",
     "setuptools",
+    { requirement = "torch", match-runtime = true },
+]
+auto-gptq = [
     { requirement = "torch", match-runtime = true },
 ]
 autoawq = ["torch"]
