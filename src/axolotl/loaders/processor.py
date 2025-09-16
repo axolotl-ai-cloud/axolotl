@@ -21,6 +21,11 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
     if cfg.processor_type:
         processor_cls = getattr(transformers, cfg.processor_type)
 
+    if cfg.tokenizer_use_mistral_common:
+        from axolotl.utils.mistral import Mistral3Processor
+
+        processor_cls = Mistral3Processor
+
     processor = processor_cls.from_pretrained(
         cfg.processor_config,
         trust_remote_code=cfg.trust_remote_code or False,
