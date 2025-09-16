@@ -315,10 +315,3 @@ def patch_qwen3_next_modeling_packing():
     patch_qwen3_next_gateddelta_layer()
 
     LOG.info("Applied Qwen3Next patch for packing")
-
-
-def patch_qwen3_next_modeling_standard():
-    """Apply obly Qwen3Next model import patches."""
-    patch_qwen3_next_imports()
-
-    LOG.info("Applied Qwen3Next patch for fla imports")
