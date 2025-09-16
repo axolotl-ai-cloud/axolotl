@@ -203,7 +203,8 @@ dev-dependencies = [
     "mypy",
 ]
 find-links = [
-    "https://github.com/Dao-AILab/flash-attention/releases/expanded_assets/v2.8.3",
+    "https://github.com/Dao-AILab/flash-attention/releases",
+    "https://github.com/Dao-AILab/causal-conv1d/releases",
     "https://github.com/ModelCloud/GPTQModel/releases",
 ]
 prerelease = "allow"
