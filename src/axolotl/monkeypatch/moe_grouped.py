@@ -78,6 +78,17 @@ def apply_grouped_to_moe_blocks(cfg=None) -> None:
             y, router_logits = _tg.moe_ffn_forward_grouped(
                 hidden_states, self.gate, self.experts, self.top_k
             )
+            # One-time log per block instance indicating whether grouped engaged or fallback occurred
+            if not getattr(self, "_ax_grouped_wrapper_logged", False):
+                if y is None:
+                    _LOG.warning(
+                        f"Grouped wrapper active but fell back to naive for {self.__class__.__name__}"
+                    )
+                else:
+                    _LOG.info(
+                        f"Grouped wrapper engaged for {self.__class__.__name__} (top_k={self.top_k})"
+                    )
+                self._ax_grouped_wrapper_logged = True
             if y is None:
                 return orig_forward(self, hidden_states)
             return y, router_logits
