@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.7.34">
+<meta name="generator" content="quarto-1.8.24">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -58,7 +58,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </style>
 
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js" integrity="sha512-bLT0Qm9VnAYZDflyKcBaQ2gg0hSYNQrJ8RilYldYQ1FxQYoCLtUjuuRuZo+fjqhx/qtq/1itJ0C2ejDxltZVFg==" crossorigin="anonymous"></script><script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2" crossorigin="anonymous"></script><script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
 <script src="../../site_libs/clipboard/clipboard.min.js"></script>
 <script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
 <script src="../../site_libs/quarto-search/fuse.min.js"></script>
@@ -67,14 +67,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../favicon.jpg" rel="icon" type="image/jpeg">
 <script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
 <script src="../../site_libs/quarto-html/popper.min.js"></script>
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-befe23ebd2f54d8af2c8a89d1a1611f1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b651517ce65839d647a86e2780455cfb.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-e9895ec3143e9833a687747e8d39d226.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-f9d679a32da2b248d4ca48a0e58e089e.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -111,10 +112,10 @@ function gtag(){dataLayer.push(arguments);}
 gtag('js', new Date());
 gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" integrity="sha512-c3Nl8+7g4LMSTdrm621y7kf9v3SDPnhxLNhcjFJbKECVnmZHTdo+IRO05sNLTH/D3vA6u1X32ehoLC7WFVdheg==" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/requirejs@2.3.6/require.min.js" integrity="sha384-c9c+LnTbwQ3aujuU7ULEPVvgLs+Fn6fJUvIGTsuu1ZcCf11fiEubah0ttpca4ntM sha384-6V1/AdqZRWk1KAlWbKBlGhN7VG4iE/yAZcO6NZPMF8od0vukrvr0tg4qY6NSrItx" crossorigin="anonymous"></script>
 
 <script type="application/javascript">define('jquery', [],function() {return window.jQuery;})</script>
-<script src="https://unpkg.com/@jupyter-widgets/html-manager@*/dist/embed-amd.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@jupyter-widgets/html-manager@*/dist/embed-amd.js" crossorigin="anonymous"></script>
 
 
 <link rel="stylesheet" href="../../styles.css">
@@ -128,7 +129,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
     <a href="../../index.html" class="navbar-brand navbar-brand-logo">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo">
+    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
+    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
     </a>
   </div>
         <div class="quarto-navbar-tools tools-wide tools-end">
@@ -154,6 +156,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
 <!-- sidebar -->
   <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header">
+      <a href="../../index.html" class="sidebar-logo-link">
+      </a>
+      </div>
     <div class="sidebar-menu-container"> 
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item">
@@ -550,10 +556,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h1>Installation</h1>
 <p>Axolotl is easy to install from <a href="https://pypi.org/project/axolotl/">pip</a>, or use our <a href="http://docs.axolotl.ai/docs/docker.html">pre-built Docker images</a> for a hassle free dependency experience. See our <a href="http://docs.axolotl.ai/docs/installation.html">docs</a> for more information.</p>
 <div id="cell-3" class="cell">
-<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>capture</span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>capture</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="co"># This step can take ~5-10 minutes to install dependencies</span></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>pip install <span class="op">--</span>no<span class="op">-</span>build<span class="op">-</span>isolation axolotl[flash<span class="op">-</span>attn]<span class="op">&gt;=</span><span class="fl">0.9.1</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>pip install <span class="st">"cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@c6a32c5"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>pip install <span class="st">"cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@c6a32c5"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <section id="demo-talk-like-a-pirate" class="level2">
 <h2 class="anchored" data-anchor-id="demo-talk-like-a-pirate">Demo: Talk Like a Pirate</h2>
@@ -563,12 +569,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <p>You can choose to use your own JSONL file from your own <a href="https://drive.google.com/drive/home">Google Drive</a>; for example downloading the <a href="https://huggingface.co/datasets/winglian/pirate-ultrachat-10k/blob/main/train.jsonl">Pirate-Ultrachat JSONL</a> to your Google Drive. JSONL datasets should be formatted similar to the <a href="https://cookbook.openai.com/examples/chat_finetuning_data_prep">OpenAI dataset format</a>.</p>
 <p>You can also simply use the <a href="https://huggingface.co/datasets/winglian/pirate-ultrachat-10k"><code>winglian/pirate-ultrachat-10k</code></a> dataset directly.</p>
 <div id="cell-6" class="cell">
-<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Default to HF dataset location</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Default to HF dataset location</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>dataset_id <span class="op">=</span> <span class="st">"winglian/pirate-ultrachat-10k"</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>uploaded <span class="op">=</span> {}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>uploaded <span class="op">=</span> {}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <div id="cell-7" class="cell">
-<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Optionally, upload your own JSONL to your Google Drive</span></span>
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>GOOGLE_DRIVE_PATH <span class="op">=</span> <span class="st">""</span>  <span class="co"># ex: "MyDrive/Colab\ Notebooks/train.jsonl"</span></span>
@@ -585,7 +591,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    <span class="co"># make sure file exists</span></span>
 <span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="kw">not</span> os.path.isfile(tmp_path):</span>
 <span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>        <span class="cf">raise</span> <span class="pp">ValueError</span>(<span class="ss">f"File </span><span class="sc">{</span>tmp_path<span class="sc">}</span><span class="ss"> does not exist"</span>)</span>
-<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    dataset_id <span class="op">=</span> tmp_path</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    dataset_id <span class="op">=</span> tmp_path</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </section>
 </section>
@@ -593,7 +599,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="configure-for-supervised-fine-tuning-sft" class="level1">
 <h1>Configure for Supervised Fine-Tuning (SFT)</h1>
 <div id="cell-9" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;colab&quot;,&quot;value&quot;:{&quot;base_uri&quot;:&quot;https://localhost:8080/&quot;,&quot;height&quot;:151,&quot;referenced_widgets&quot;:[&quot;388f618924274d21a066f098f4f1e744&quot;,&quot;7c95f85a2b1f47a1bd846d110c47bb3c&quot;,&quot;083f9cda8d754c168beee10d2f8955a2&quot;,&quot;62e1a65582f446a78612eaa804e08a7d&quot;,&quot;487a177d020f4605834878b2fdc7afa3&quot;,&quot;7fd44cf9ca6e4726bfd7ac21846d6a14&quot;,&quot;366a343b62fa47d8985a3bd464d99f9e&quot;,&quot;a0a11e929edd4189b79723d618522c33&quot;,&quot;e87ea87fcff247b5bbcc331ba79a8dc2&quot;,&quot;5e18768f7ad6434ba8b8b8a2e853e204&quot;,&quot;bb33aec33a6447078c31bfd728942994&quot;]}}" data-outputid="f0acdcec-4b41-4a3f-ffed-c2d2d929158e">
-<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.cli.config <span class="im">import</span> load_cfg</span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.cli.config <span class="im">import</span> load_cfg</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.utils.<span class="bu">dict</span> <span class="im">import</span> DictDefault</span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Axolotl provides full control and transparency over model and training configuration</span></span>
@@ -657,7 +663,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb4-62"><a href="#cb4-62" aria-hidden="true" tabindex="-1"></a>)</span>
 <span id="cb4-63"><a href="#cb4-63" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb4-64"><a href="#cb4-64" aria-hidden="true" tabindex="-1"></a><span class="co"># validates the configuration</span></span>
-<span id="cb4-65"><a href="#cb4-65" aria-hidden="true" tabindex="-1"></a>cfg <span class="op">=</span> load_cfg(config)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb4-65"><a href="#cb4-65" aria-hidden="true" tabindex="-1"></a>cfg <span class="op">=</span> load_cfg(config)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <div class="ansi-escaped-output">
 <pre>[2025-05-08 13:40:27,488] [INFO] [root.register:348] [PID:174] Attempting to load plugin: axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
@@ -685,21 +691,21 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </div>
 </div>
 <div id="cell-10" class="cell">
-<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.utils <span class="im">import</span> patch_optimized_env</span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.utils <span class="im">import</span> patch_optimized_env</span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="co"># speedup downloads from HF 🤗 and set "PYTORCH_CUDA_ALLOC_CONF" env to save memory</span></span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>patch_optimized_env()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>patch_optimized_env()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </section>
 <section id="datasets" class="level1">
 <h1>Datasets</h1>
 <p>Axolotl has a robust suite of loaders and transforms to parse most open datasets of any format into the appropriate chat template for your model. Axolotl will mask input tokens from the user’s prompt so that the train loss is only calculated against the model’s response. For more information, <a href="http://docs.axolotl.ai/docs/dataset-formats/conversation.html">see our documentation</a> on dataset preparation.</p>
 <div id="cell-12" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;colab&quot;,&quot;value&quot;:{&quot;base_uri&quot;:&quot;https://localhost:8080/&quot;,&quot;height&quot;:1000,&quot;referenced_widgets&quot;:[&quot;b82aa8c57f7c422a9a9c90f333ed2a99&quot;,&quot;c0991cf63ee6458b96e9a75e7a88b61a&quot;,&quot;71c8af139cd248b1b51101fd46a93f35&quot;,&quot;1d5117195d4b49eb8f1a73b18419f7ce&quot;,&quot;3c21e4a511b4441192c03b7f1d0976e9&quot;,&quot;ed28e2e0410d4e0b855467e798e53d66&quot;,&quot;d93f134f802b4b69b575bdaf07dbd27c&quot;,&quot;d0e9dce55cec4c1ca619a0ccf209d924&quot;,&quot;4c727d40ef0443449afc31724ee79f0c&quot;,&quot;0dea5caa27384f5689e3cab51f558727&quot;,&quot;a6f48410b9964fefba0c3009a77dc838&quot;,&quot;95caff42f08a4c2aa14c867b8f37f231&quot;,&quot;de7c37ee83e24f0c889e84d07279c2ec&quot;,&quot;9d4897eefb5f48259ffb2d23e332f752&quot;,&quot;253017b0d0534e54ab44e181f6d7c82d&quot;,&quot;27beaf06e41b472abdb544a43c720c5a&quot;,&quot;34cf3df51fbc41cabfdbba153c007f0e&quot;,&quot;ac764024cf1c4e08ba7749afd2cd20ac&quot;,&quot;30a81da86f8043eca301e86a8651201a&quot;,&quot;e8b7a81040904c1e89e58978223b1737&quot;,&quot;1c6f1f10667545aaab958016ba7e2c94&quot;,&quot;e6e969610738449887259063967f82b0&quot;,&quot;a138859f19b74fc0928dc236ab5359db&quot;,&quot;9b42e08b3c9548818488268768a118b1&quot;,&quot;12b56912736849fea2ad8124456fdc5c&quot;,&quot;879c8ab5873847a8833bd74123be90a4&quot;,&quot;20352e5f58d24bb8b1f3940efd14fe4a&quot;,&quot;d955dcaa0e944e719f3a06139dd54a03&quot;,&quot;d3de2662c7964f1ba96e58da382af720&quot;,&quot;97e36007e1304e1583fd81bfb13f0edd&quot;,&quot;c65dc74c7d6f4bab8f7dd28455161dd8&quot;,&quot;ef223e8504b64e3592589880326aaf41&quot;,&quot;598da69727bd4fb8b1caf465ac736d7a&quot;,&quot;5f86cd894de94c3280fadc1e2fd0ee13&quot;,&quot;a20927bf5f2c41f58c1e31ac858ab36c&quot;,&quot;0a46ad75c198463d843fb35e813642cb&quot;,&quot;09007681cf8d42aeb8c1d2f6a74e470a&quot;,&quot;ebc80d1a55fa47f4a5ea2756588569ec&quot;,&quot;1811cda0644e4190a9469d1774435d82&quot;,&quot;35c811d2ae8e43f3b5cecbdd3cfa857f&quot;,&quot;b8e39e4dddc3497fbc29ae45c66da759&quot;,&quot;63b4e563e85c4f03b1b72beda9577bcc&quot;,&quot;b195f160ca20442fadd8b5aed0ee41af&quot;,&quot;ca65e32eb52f48c09a84b33cb18f22cd&quot;,&quot;7cd0b85ebd204b7aba908417811ce4e0&quot;,&quot;7baeab52d6694c32b1efd1ea1a0a7782&quot;,&quot;519a7b154022443db6703f04a9142bae&quot;,&quot;d4183e9715f34d249942b8271cca3bdf&quot;,&quot;da2347ac94764a3fa2743343cf0d3cd2&quot;,&quot;93a44a11aa4846fa8efc6c1413ef1627&quot;,&quot;a55060adc3564407ac81ad7297d34aaa&quot;,&quot;d02274afd47b462291c745f261209d42&quot;,&quot;0f417447a7bd4a33acca96fa37aec877&quot;,&quot;63580b6fb30642479fe3000915bf551a&quot;,&quot;8f726dbfb45d4528afa33e36a6313267&quot;,&quot;03b093d592ba4386aa61f7b8483da660&quot;,&quot;b8766a88716948cf968f4563531a76d9&quot;,&quot;6f3a28b912714c6e931003549664bfa3&quot;,&quot;16d1283741404b7bb319094c992fce01&quot;,&quot;2a5bb0e818ab47be8cf6465988328503&quot;,&quot;2b3a2659b12244bd8548320320016dbf&quot;,&quot;0cd7efffbb3c4c4b972e63749f61ab97&quot;,&quot;5ca240f31e6b44e3882c5eb37cd5a309&quot;,&quot;5eb06edeb58e4930b1affef2a59eae81&quot;,&quot;a4e5789584564049b83df7c6c54a3e08&quot;,&quot;ff3a94b146a948b6907f5d80c7157f99&quot;,&quot;258b7c635c1045329d4669e48c46ccd5&quot;,&quot;6f68ed9889f54ad2ae8a3b95ac263a83&quot;,&quot;80366349d81e4dcc892db6cd56e384f3&quot;,&quot;c73055099c084dca996159e23e162d0b&quot;,&quot;977f799afaac4a55b2dc1cffa7d5b63b&quot;,&quot;41f3b32c2f6b4034ae7a3b9124e28bc7&quot;,&quot;a10d0a76010f4e508c65a9b69ebc5156&quot;,&quot;f8ef805b776145c3bfa9ba8d90972058&quot;,&quot;cc587493c33c4f118d1b1170f85be24c&quot;,&quot;e40d1c1ac9494b3bade9858324e7ffdf&quot;,&quot;d65b6b060d9845779299491ac5599c31&quot;,&quot;0f6907ebbc6242c8bde059cef1e1bd29&quot;,&quot;5bdfd87fc6cd4f9dabef7cfee29c8060&quot;,&quot;64f54d4a744a4627a07c3c0120276f3b&quot;,&quot;65b75b9b8bc143cf997796af68ff6668&quot;,&quot;d6fe74e4255444368f8f90a62157d869&quot;,&quot;4d468f96ec924681ad65eb671674b93e&quot;,&quot;ad7599de524549c48bf2d3124ad4b299&quot;,&quot;0546d04aae644dde846c58a4afb598a6&quot;,&quot;897b77a56c09479bb11d7f2a30997e55&quot;,&quot;81c3db71ac704280ad030072655f1537&quot;,&quot;042e091f75694c47aee761e760e76773&quot;,&quot;ef0a3c7a6f14460fb4da096928ae249e&quot;,&quot;07fb3a2c8315494e97b447e672dfae06&quot;,&quot;ec030fc3c346426f9abc3a89892258d3&quot;,&quot;e3fb3fc6afe04b3c9b7ac61809ce78fa&quot;,&quot;c3be9109d63c485d9c0ef4f9bc0f9218&quot;,&quot;12815f401eba44658caa7b2e490137a8&quot;,&quot;30e02aa2d0d241979369e598287f2639&quot;,&quot;dfd2a2649b8341ef913207526708aff1&quot;,&quot;4f1977d7e4824ef1a14b65f0f42bba10&quot;,&quot;c6164e05a1914ae48083db9ad7f4ef7c&quot;,&quot;813621384dc748b0ad06775e22761c0b&quot;,&quot;dc892a596f6942d7973c616c38f0eebb&quot;,&quot;c84cc07789be48aebb322c23d355289e&quot;,&quot;bed8726b8069434687c75452e21f19e5&quot;,&quot;16a188a0b06d45f980dcf3933509fe0a&quot;,&quot;60c1a0d765c14a1d888317e6a507e4ea&quot;,&quot;0077aedc3d174560bce924ee89e9c006&quot;,&quot;00321cce58884f6f9b3855a21fcd9187&quot;,&quot;fa864b41586f4a7aa56aeafd1d84eb75&quot;,&quot;3225603166b54e7aab766b9964a2f660&quot;,&quot;349eee9f56d64f0cba6fc24ff2c50c9b&quot;,&quot;7e5d3774060e4589aa65982da5ea4ef4&quot;,&quot;7c2485c6cdfe463da6fdb35982a1070d&quot;,&quot;ad1236893754446881e153adc9d5c962&quot;,&quot;daee63fd167e4441a32324b51b00ad2b&quot;,&quot;fe41858c6bd04c58840112b67c19a336&quot;,&quot;d262c82138024169b9f3aa034ca756fa&quot;,&quot;62e302ebdad64aada0ffe64ae1c873f3&quot;,&quot;bd1b0dfed6d34d16af33a4a58330f5ec&quot;,&quot;d07c8b97d3314f1c852e44bdd40f61ed&quot;,&quot;ebb69a2c3d0a4299a484698287b3087c&quot;,&quot;e5a82df528bb4e408797a3b6c2758f4a&quot;,&quot;f113ebd8c1c34806bea4dd7ed3035173&quot;]}}" data-outputid="f69441d8-95f9-4885-c306-6c8709090ff6">
-<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.common.datasets <span class="im">import</span> load_datasets</span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.common.datasets <span class="im">import</span> load_datasets</span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Load, parse and tokenize the datasets to be formatted with qwen3 chat template</span></span>
 <span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Drop long samples from the dataset that overflow the max sequence length</span></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>dataset_meta <span class="op">=</span> load_datasets(cfg<span class="op">=</span>cfg)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>dataset_meta <span class="op">=</span> load_datasets(cfg<span class="op">=</span>cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display">
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id":"b82aa8c57f7c422a9a9c90f333ed2a99","version_major":2,"version_minor":0,"quarto_mimetype":"application/vnd.jupyter.widget-view+json"}
@@ -984,12 +990,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="training" class="level1">
 <h1>Training</h1>
 <div id="cell-14" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;colab&quot;,&quot;value&quot;:{&quot;base_uri&quot;:&quot;https://localhost:8080/&quot;,&quot;height&quot;:1000,&quot;referenced_widgets&quot;:[&quot;004d9177a6a14118a5930dc3cc13147b&quot;,&quot;a80410b919e442c49aea15acc1ce1a72&quot;,&quot;c6e00f5224364822bc4239b176686919&quot;,&quot;ec11d1e5ae7b42c883d9b1f38a65356e&quot;,&quot;734185351eb543fa9a00a881dcbb9fe7&quot;,&quot;fa1282ccc7544e4f818e2f03ccffe4a5&quot;,&quot;bbbf575d2a4b4c6ea8389be79b2a6039&quot;,&quot;2a51b36be41745468e4c2d7a21b1c0d2&quot;,&quot;4fd114abe9f5494ab59858949f5055f1&quot;,&quot;936d04b5fe1b4c63bf0b080e423d051b&quot;,&quot;f1cef8e8dc2646fb9fd09f3b09081074&quot;,&quot;cdebbc55a1164c018546c2ac6f8c620c&quot;,&quot;a44f630e099e43899f20a77084ae60cd&quot;,&quot;c3725c7f79fe415fbd1ea336f0cc9cf1&quot;,&quot;0e50870ed0c643e0b6c18cc5d7ddae7f&quot;,&quot;c33ced495f70464aa4a3a91922090853&quot;,&quot;ed5ca967ad5342929e578ac6aa4dc4c0&quot;,&quot;af401d117d5047629d3a6e2361757b62&quot;,&quot;b191ac001a2e4962bc9a245fcdf26e6b&quot;,&quot;054c8dffadba48c6b895a6cc62448ecc&quot;,&quot;bfcdbba993b74972a9e3e575f86908ff&quot;,&quot;6ebb2ec171414e47a14765505f64bb3c&quot;,&quot;500e272208a246089613bf788a165271&quot;,&quot;200df5e79b9244849e589ecb0250a520&quot;,&quot;cc94432d08464affa3e58b560bdad194&quot;,&quot;3036608c71904ce9ae4bb2a9fa8802d9&quot;,&quot;adacfdcc1b0140efac56918e9ccf064e&quot;,&quot;f4a1795dc7514a718f478245f521f0ba&quot;,&quot;5e746eb25bbe416fb585fa24e79f5177&quot;,&quot;b5b65414154544aa8a71b1a39164aad7&quot;,&quot;f0a58fbd0fca4340890041f99fa2f8c8&quot;,&quot;5ca6be24acb548cea130bd58e9954c7c&quot;,&quot;5cfb02ee044b4011a378efa8b54a370f&quot;,&quot;4d05314858354e729d76094b3b0ce761&quot;,&quot;c42acf646f344a88b8c11f81e67f7206&quot;,&quot;7be6f04c284e4326bb4ff3d301e7b3c6&quot;,&quot;ffdbb12a2f2c4d14911685e7683e0ef0&quot;,&quot;bee3501b2a17427784a717e50a85e7fa&quot;,&quot;8bc9d8ba866c442b9118d9630009939c&quot;,&quot;9f56a2d9979c4bd8928c644c22c3ecdf&quot;,&quot;9503a45960984adc97b58e16c50662e0&quot;,&quot;da6e93f3e4984780b930fe7a706983ea&quot;,&quot;ab93eabd7cea4b94b4b7a387f101e8a1&quot;,&quot;704f2f5a9b1c49d5a75a0025a5dda11b&quot;,&quot;dd0e646fad3f4a89ba23b39d162bd8d9&quot;,&quot;d43c6df07ddb466587807d6dbe1ff614&quot;,&quot;e0e8b840b8ea4d0d9db09afe99fa287d&quot;,&quot;9327977822be4b1294f80e876552e305&quot;,&quot;77304d1a46b3468a98483e02ec0ac4a4&quot;,&quot;8c4d4fc5a30f4e7cb3be53fe2adda33d&quot;,&quot;e90658f4bcb642baa78426012f863152&quot;,&quot;f7434f3e03124a1c938a39af79d7fa59&quot;,&quot;c1314f241a434c41b45d84dc4d3b30f8&quot;,&quot;37de928300e34184881039378bd75e7f&quot;,&quot;0e936d9dbf9c4fdd86bbfe9730dedc47&quot;,&quot;e21e180307e5485cbbe908672fd6639a&quot;,&quot;2e2b0c1599c341a198f632f46a40c90e&quot;,&quot;bff139df987d4a62abec6456cb27f3d4&quot;,&quot;ebe1cc366d324ad59b264c8b3c431441&quot;,&quot;114dece49dba437c8572ef94b23c3b1e&quot;,&quot;be724f04b03942b2a033a7e8898bb4fd&quot;,&quot;fcbab4d8dced41a18dfccce81e3a45a0&quot;,&quot;c1f9c267ba3f40039cdb5eb3267e8043&quot;,&quot;33b3b1d0295646edaac7b4822761aeb0&quot;,&quot;fba7aa824b38467ab3061b226114cdec&quot;,&quot;f3075dccbd2747b4a7913b66f44f2596&quot;,&quot;fe18bba7f3fb4c31bf840541f36b3425&quot;,&quot;fd4f333f7ece4450b04e1a9af1f9d2f6&quot;,&quot;f60a2bdb6b6b4e0e8c3508580e247132&quot;,&quot;c0892a1881de4eb4bfabc6a68f87ae99&quot;,&quot;1bec6297c90242a88672d195bc09d429&quot;,&quot;d1f9b10c130542f094c8fd3d1e23b5e9&quot;,&quot;e575d87a7efe4ec7b1efde489839d4a6&quot;,&quot;edc99591b9c747b689b94d0052fec14c&quot;,&quot;35cc989ca3374e7dba0cb166febc4bde&quot;,&quot;158c8b85dbf34de6a94b4e35e2fc7d5a&quot;,&quot;0b4c9753a7cb4354b8e5f187e6e1ad7c&quot;,&quot;4471ff62258549fba9514bb67050f965&quot;,&quot;9cd5211b5d8b457aa0002f1d17b80028&quot;,&quot;19127c7bb1554ccbac877059f9a82db0&quot;,&quot;f4667818b9d34a09891cd727a429a610&quot;,&quot;9ed02dc43412471a9ab47f3620ccf3a5&quot;,&quot;6932489232ec4ab18a160b1e7fbcdfe1&quot;,&quot;4540927d98f54466b434ba4c0edf045d&quot;,&quot;e400cbf14bcc446a9d33b210cd93550b&quot;,&quot;71002199df6b40c9a1ac40df5fb27a1b&quot;,&quot;4b27c267393640f28f6eae0875bd2ed9&quot;,&quot;9858cb74a09748a39e8149baac96702c&quot;,&quot;eb1c9535e6a546098b760528b2ea387c&quot;,&quot;18357b321ce44d7b8bd9d1c886f69275&quot;,&quot;279937fe03bc4e4eb25b472d7e9df163&quot;,&quot;bca2c7185b6749fd899c06a2ba4c5e46&quot;,&quot;1f7d30f71bbd4547a9150d21da071055&quot;,&quot;e366ae3fceec4566b9ed303d6c5f90af&quot;,&quot;5dd7d150dbe04f08b165ce7f2c27cd11&quot;,&quot;b634bb73cfa743d09a5999101b840976&quot;,&quot;742b1030acfd414bbd9d5327b7e3826d&quot;,&quot;0f480e3a0b0a45d2a2d2dec3cad923f3&quot;,&quot;fcb30372e7404c5d8a1ad4df91e6c7b2&quot;,&quot;2860e3bb3baf4f7da058465850e800c5&quot;,&quot;3efd18ea8eaa41918894883da9541bfa&quot;,&quot;e09f1bcbb9d94c09be53e5e1303642c2&quot;,&quot;82177df57a494de8900c14c2f5185175&quot;,&quot;ccfcdc95baf646f8aeb3d516742383f2&quot;,&quot;8f5bd719974e41c3a8dd9a5b0d3d71e6&quot;,&quot;b87c84de30e84b3abf4871461fb9cbd3&quot;,&quot;e7d8e4fe58384e93a106de546068c65e&quot;,&quot;0aa8ab56b85f4171a79c3bc210594025&quot;,&quot;67da6c4260574869aa24c3cbc1bc1654&quot;,&quot;94b9088614464f60a203de39dbcae853&quot;,&quot;fea1b70fb46745feb5111b3929175b5d&quot;,&quot;f365820a3d3c42b2948abfe32065de14&quot;,&quot;823f1c78f15043e38bbd4dca3932a86a&quot;,&quot;a1959759c5424da9961fb2a308d4dee4&quot;,&quot;34c9c0137b504cd799c6bd6de69507c2&quot;,&quot;735d4f225b24414294fc1b213c61223c&quot;,&quot;5e5e15b0569b474c9620083b3ec6af55&quot;,&quot;03a3c744d716431488163b4358b80f92&quot;,&quot;a5434ee714f9498d83870544b67c0cb7&quot;,&quot;3aaecbf540f54a2db9ab0931e3b1fe57&quot;,&quot;9e333ed3b5014069ac1dd969255dd591&quot;]}}" data-outputid="84fa167f-ba27-4255-d508-dc9df56ad39b">
-<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.train <span class="im">import</span> train</span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.train <span class="im">import</span> train</span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="co"># just train the first 25 steps for demo.</span></span>
 <span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="co"># This is sufficient to align the model as we've used packing to maximize the trainable samples per step.</span></span>
 <span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>cfg.max_steps <span class="op">=</span> <span class="dv">25</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>model, tokenizer, trainer <span class="op">=</span> train(cfg<span class="op">=</span>cfg, dataset_meta<span class="op">=</span>dataset_meta)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>model, tokenizer, trainer <span class="op">=</span> train(cfg<span class="op">=</span>cfg, dataset_meta<span class="op">=</span>dataset_meta)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <div class="ansi-escaped-output">
 <pre>     #@@ #@@      @@# @@#
@@ -1124,7 +1130,7 @@ You're using a Qwen2TokenizerFast tokenizer. Please note that with a fast tokeni
       [25/25 09:25, Epoch 0/1]
     </div>
     
-<table class="dataframe caption-top table table-sm table-striped small" data-quarto-postprocess="true" data-border="1">
+<table class="dataframe caption-top table table-sm table-striped small" data-border="1">
 <thead>
 <tr class="header">
 <th data-quarto-table-cell-role="th">Step</th>
@@ -1249,7 +1255,7 @@ You're using a Qwen2TokenizerFast tokenizer. Please note that with a fast tokeni
 <section id="inferencing-the-trained-model" class="level1">
 <h1>Inferencing the trained model</h1>
 <div id="cell-16" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;colab&quot;,&quot;value&quot;:{&quot;base_uri&quot;:&quot;https://localhost:8080/&quot;}}" data-outputid="e5050605-f6c9-421c-98f9-bde56a281eae">
-<div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> transformers <span class="im">import</span> TextStreamer</span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> transformers <span class="im">import</span> TextStreamer</span>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>messages <span class="op">=</span> [</span>
 <span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    {</span>
@@ -1272,7 +1278,7 @@ You're using a Qwen2TokenizerFast tokenizer. Please note that with a fast tokeni
 <span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a>    top_p<span class="op">=</span><span class="fl">0.8</span>,</span>
 <span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a>    top_k<span class="op">=</span><span class="dv">32</span>,</span>
 <span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a>    streamer<span class="op">=</span>TextStreamer(tokenizer, skip_prompt<span class="op">=</span><span class="va">True</span>),</span>
-<span id="cb11-24"><a href="#cb11-24" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb11-24"><a href="#cb11-24" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>Ahoy there, matey! Shiver me timbers, ye be lookin' for the Pythagorean theorem, eh? Well, hold yer horses and listen up, for I'll be tellin' ye all about it in me own special way.
 
@@ -1288,8 +1294,8 @@ In other words, if ye have a triangle with sides of length a, b, and c (</code><
 <h1>Saving your trained model</h1>
 <p>Axolotl automatically saves checkpoints to the <code>output_dir</code> path.</p>
 <div id="cell-18" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;colab&quot;,&quot;value&quot;:{&quot;base_uri&quot;:&quot;https://localhost:8080/&quot;}}" data-outputid="f5e1d913-7d55-42d2-8340-f9f1b0bc2b38">
-<div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Show the saved checkpoints in the output_dir</span></span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>ls <span class="op">-</span>lh <span class="st">"./outputs/qwen-sft-pirate-rrr"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Show the saved checkpoints in the output_dir</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>ls <span class="op">-</span>lh <span class="st">"./outputs/qwen-sft-pirate-rrr"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>total 506M
 -rw-r--r-- 1 root root  845 May  7 22:21 adapter_config.json
@@ -1309,7 +1315,7 @@ drwxr-xr-x 2 root root 4.0K May  7 22:21 checkpoint-25
 <p>Setting <code>hub_model_id:</code> in the original config would have automatically uploaded the model to HuggingFace Hub (e.g.&nbsp;<code>hub_model_id: username/model_id</code>)</p>
 <p>If you prefer to manually upload the training artifacts, we can still upload the entire final checkpoint to HuggingFace from the CLI.</p>
 <div id="cell-20" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;colab&quot;,&quot;value&quot;:{&quot;base_uri&quot;:&quot;https://localhost:8080/&quot;,&quot;height&quot;:955,&quot;referenced_widgets&quot;:[&quot;c12ea43372ac4d57bb9605f1a429b397&quot;,&quot;86816687746246b4a6105e8010384e25&quot;,&quot;6f05e9bebf7b40c9835808e77de6c236&quot;,&quot;c7433acd3c4841e6958ae8f7e87b1808&quot;,&quot;19c1e38389fa46c7b7e2152a56e1df34&quot;,&quot;0e067d8db8ed48308a718d5f57683fd1&quot;,&quot;131065f118274a1586ac38e39ed84ef0&quot;,&quot;8640ac440fbc4644b9a3af7ba3ae7183&quot;,&quot;5cea7996f02040b187ece0bb2d6a8d1f&quot;,&quot;2e257c8be2da40b4bb67a9e4ab6811f3&quot;,&quot;56e3768bef5a4b9db4168c5c17f509c2&quot;,&quot;62c028fdef904dedb9cdeca2b3bda725&quot;,&quot;a7cf477e80fc43e0ad82c7997b076dce&quot;,&quot;835bcc28a5564fb9b3d651bc8e32dc46&quot;,&quot;9f1c9a0695384bdaa6f8b847ef89bee8&quot;,&quot;b1bea589efa14258a9982071b87938bf&quot;,&quot;590eef89881545aa8bbef9a8bbe7fb00&quot;,&quot;4b1f04ff63d14a118fdd15814dff50e4&quot;,&quot;39789237703c4a418134243055c9cbf5&quot;,&quot;a3a945817f684328b34651fe052393ec&quot;]}}" data-outputid="6e489ab2-4abe-4e28-84ca-959f912433a4">
-<div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> huggingface_hub <span class="im">import</span> notebook_login</span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> huggingface_hub <span class="im">import</span> notebook_login</span>
 <span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="co"># remove the partial epoch checkpoints</span></span>
 <span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>rm <span class="op">-</span>rf <span class="st">"./outputs/qwen-sft-pirate-rrr/checkpoint-*"</span></span>
@@ -1318,7 +1324,7 @@ drwxr-xr-x 2 root root 4.0K May  7 22:21 checkpoint-25
 <span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>notebook_login()</span>
 <span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="co"># upload the LoRA adapter for your model to HF, remember to update the username/model-name below</span></span>
-<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>huggingface<span class="op">-</span>cli upload <span class="op">--</span>repo<span class="op">-</span><span class="bu">type</span><span class="op">=</span>model winglian<span class="op">/</span>pirate<span class="op">-</span>qwen<span class="op">-</span><span class="dv">14</span><span class="er">B</span> <span class="st">"./outputs/qwen-sft-pirate-rrr"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>huggingface<span class="op">-</span>cli upload <span class="op">--</span>repo<span class="op">-</span><span class="bu">type</span><span class="op">=</span>model winglian<span class="op">/</span>pirate<span class="op">-</span>qwen<span class="op">-</span><span class="dv">14</span><span class="er">B</span> <span class="st">"./outputs/qwen-sft-pirate-rrr"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display">
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id":"c12ea43372ac4d57bb9605f1a429b397","version_major":2,"version_minor":0,"quarto_mimetype":"application/vnd.jupyter.widget-view+json"}
@@ -1440,13 +1446,14 @@ KeyboardInterrupt
       e.clearSelection();
     }
     const getTextToCopy = function(trigger) {
-        const codeEl = trigger.previousElementSibling.cloneNode(true);
-        for (const childEl of codeEl.children) {
-          if (isCodeAnnotation(childEl)) {
-            childEl.remove();
-          }
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
         }
-        return codeEl.innerText;
+      }
+      return codeEl.innerText;
     }
     const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
       text: getTextToCopy

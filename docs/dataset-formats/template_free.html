@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.7.34">
+<meta name="generator" content="quarto-1.8.24">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -68,14 +68,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../favicon.jpg" rel="icon" type="image/jpeg">
 <script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
 <script src="../../site_libs/quarto-html/popper.min.js"></script>
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-befe23ebd2f54d8af2c8a89d1a1611f1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b651517ce65839d647a86e2780455cfb.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-e9895ec3143e9833a687747e8d39d226.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-f9d679a32da2b248d4ca48a0e58e089e.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -125,7 +126,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
     <a href="../../index.html" class="navbar-brand navbar-brand-logo">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo">
+    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
+    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
     </a>
   </div>
         <div class="quarto-navbar-tools tools-wide tools-end">
@@ -151,6 +153,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
 <!-- sidebar -->
   <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header">
+      <a href="../../index.html" class="sidebar-logo-link">
+      </a>
+      </div>
     <div class="sidebar-menu-container"> 
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item">
@@ -547,7 +553,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <p>One of the most popular features of
 <a href="https://github.com/axolotl-ai-cloud/axolotl">axolotl</a> is
 setting the following configuration value:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>If you declare a <a href="https://github.com/axolotl-ai-cloud/axolotl?tab=readme-ov-file#dataset">dataset formats</a>
 such as <code>alpaca</code> or <code>chatml</code>, axolotl knows what is an input
 (i.e.&nbsp;human) vs.&nbsp;an output (i.e.&nbsp;the assistant) and masks the input
@@ -574,10 +580,10 @@ want multi-turn conversations, roles, etc.</li>
 <code>input_output</code> format, by setting <code>type: input_output</code> in your
 configuration file like this:</p>
 <p><strong>config.yml</strong></p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co"> # Mask segments of your data</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co"> # Mask segments of your data</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> output.jsonl</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> input_output</span><span class="co">  # use template free prompt construction</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> input_output</span><span class="co">  # use template free prompt construction</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Unlike <code>type: completion</code>, which is also template-free,
 <code>type: input_output</code> allows you to mask segments of your text. More
 details on how this works are described below.</p>
@@ -591,7 +597,7 @@ details on how this works are described below.</p>
 <p>To use the <code>input_output</code> format, collect your data in the following
 format into a jsonl file (below is the first row from the file
 <code>output</code>.jsonl` pretty printed):</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> head <span class="at">-n1</span> output.jsonl <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> json.tool</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> head <span class="at">-n1</span> output.jsonl <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> json.tool</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>{
     "segments": [
@@ -630,7 +636,7 @@ prompt is getting assembled how you like.</p>
 <h3 class="anchored" data-anchor-id="sec-2-use-type-inputoutput">2. Use <code>type: input_output</code></h3>
 <p>Let’s materialize data with our <code>output.jsonl</code> file by setting
 <code>type: input_output</code> in our axolotl config:</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># training_config.yaml</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># training_config.yaml</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> mistralai/Mistral-7B-v0.1</span></span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">data_seed</span><span class="kw">:</span><span class="at"> </span><span class="dv">49</span></span>
 <span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">seed</span><span class="kw">:</span><span class="at"> </span><span class="dv">49</span></span>
@@ -653,15 +659,15 @@ prompt is getting assembled how you like.</p>
 <span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a><span class="fu">special_tokens</span><span class="kw">:</span></span>
 <span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bos_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;s&gt;"</span></span>
 <span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">eos_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;/s&gt;"</span></span>
-<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">unk_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;unk&gt;"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">unk_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;unk&gt;"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>You can use the following command to materialize your data. The
 <code>--debug</code> flag will print the tokens, along with the labels so you can
 verify that the correct items are being ignored:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> preprocess training_config.yaml <span class="at">--debug</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> preprocess training_config.yaml <span class="at">--debug</span></span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="ex">...</span></span>
 <span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="ex">[2024-03-05</span> 23:36:46,969] <span class="pp">[</span><span class="ss">INFO</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">axolotl.check_example_labels:35</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">PID:607731</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">RANK:0</span><span class="pp">]</span> <span class="op">&lt;</span>s<span class="op">&gt;(</span><span class="ex">1,</span> 1<span class="op">)</span> Hello<span class="er">(</span><span class="ex">22557,</span> 22557<span class="kw">)</span></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="ex">13,</span> 13<span class="kw">)</span> <span class="ex">hi</span><span class="er">(</span><span class="ex">12014,</span> 12014<span class="kw">)</span> <span class="ex">there</span><span class="er">(</span><span class="ex">736,</span> 736<span class="kw">)</span> <span class="ex">!</span><span class="er">(</span><span class="ex">28808,</span> 28808<span class="kw">)</span> <span class="bu">.</span><span class="er">(</span><span class="ex">28723,</span> 28723<span class="kw">)</span> <span class="kw">(</span><span class="ex">28705,</span> 28705<span class="kw">)</span> <span class="ex">good</span><span class="er">(</span><span class="ex">-100,</span> 1179<span class="kw">)</span> <span class="ex">bye</span><span class="er">(</span><span class="ex">-100,</span> 17664<span class="kw">)</span> <span class="kw">(</span><span class="ex">-100,</span> 28705<span class="kw">)</span> <span class="ex">fare</span><span class="er">(</span><span class="ex">19111,</span> 19111<span class="kw">)</span> <span class="ex">well</span><span class="er">(</span><span class="ex">5458,</span> 5458<span class="kw">)</span> <span class="op">&lt;</span>/s<span class="op">&gt;(</span><span class="ex">2,</span> 2<span class="op">)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="ex">13,</span> 13<span class="kw">)</span> <span class="ex">hi</span><span class="er">(</span><span class="ex">12014,</span> 12014<span class="kw">)</span> <span class="ex">there</span><span class="er">(</span><span class="ex">736,</span> 736<span class="kw">)</span> <span class="ex">!</span><span class="er">(</span><span class="ex">28808,</span> 28808<span class="kw">)</span> <span class="bu">.</span><span class="er">(</span><span class="ex">28723,</span> 28723<span class="kw">)</span> <span class="kw">(</span><span class="ex">28705,</span> 28705<span class="kw">)</span> <span class="ex">good</span><span class="er">(</span><span class="ex">-100,</span> 1179<span class="kw">)</span> <span class="ex">bye</span><span class="er">(</span><span class="ex">-100,</span> 17664<span class="kw">)</span> <span class="kw">(</span><span class="ex">-100,</span> 28705<span class="kw">)</span> <span class="ex">fare</span><span class="er">(</span><span class="ex">19111,</span> 19111<span class="kw">)</span> <span class="ex">well</span><span class="er">(</span><span class="ex">5458,</span> 5458<span class="kw">)</span> <span class="op">&lt;</span>/s<span class="op">&gt;(</span><span class="ex">2,</span> 2<span class="op">)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>The format is <code>decoded_token</code>(<code>label</code>, <code>token_id</code>), for example,
 <code>&lt;s&gt;(1, 1)</code> means that the token is <code>&lt;s&gt;</code>, the label is <code>1</code> and the
 token_id is <code>1</code>. When the label is <code>-100</code> then that token is ignored for
@@ -670,7 +676,7 @@ training.</p>
 <section id="sec-3-check-the-prompts" class="level3">
 <h3 class="anchored" data-anchor-id="sec-3-check-the-prompts">3. Check the prompts</h3>
 <p>Here is another way to check the materialized output:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> transformers <span class="im">import</span> AutoTokenizer</span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> transformers <span class="im">import</span> AutoTokenizer</span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> datasets <span class="im">import</span> load_from_disk</span>
 <span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> yaml</span>
 <span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a></span>
@@ -679,16 +685,16 @@ training.</p>
 <span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    cfg <span class="op">=</span> yaml.safe_load(f)</span>
 <span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>model_id <span class="op">=</span> cfg[<span class="st">'base_model'</span>]</span>
 <span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>tok <span class="op">=</span> AutoTokenizer.from_pretrained(model_id)</span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>ds <span class="op">=</span> load_from_disk(<span class="ss">f'last_run_prepared/</span><span class="sc">{</span>directory[<span class="dv">0</span>]<span class="sc">}</span><span class="ss">/'</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> row <span class="op">=</span> ds[<span class="dv">0</span>]</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>ds <span class="op">=</span> load_from_disk(<span class="ss">f'last_run_prepared/</span><span class="sc">{</span>directory[<span class="dv">0</span>]<span class="sc">}</span><span class="ss">/'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> row <span class="op">=</span> ds[<span class="dv">0</span>]</span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> <span class="bu">print</span>(tok.decode(row[<span class="st">'input_ids'</span>]))</span>
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span>s<span class="op">&gt;</span> Hello</span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    hi there<span class="op">!</span>.  goodbye  farewell<span class="op">&lt;/</span>s<span class="op">&gt;</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    hi there<span class="op">!</span>.  goodbye  farewell<span class="op">&lt;/</span>s<span class="op">&gt;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>We can check that the right tokens are ignored by comparing the labels
 to each token:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
 <span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>pd.DataFrame([{<span class="st">'token'</span>: tok.decode(i), <span class="st">'label'</span>: l, <span class="st">'id'</span>:i} <span class="cf">for</span> i,l <span class="kw">in</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>              <span class="bu">zip</span>(row[<span class="st">'input_ids'</span>], row[<span class="st">'labels'</span>])])</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>              <span class="bu">zip</span>(row[<span class="st">'input_ids'</span>], row[<span class="st">'labels'</span>])])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <table class="caption-top table">
 <thead>
 <tr class="header">
@@ -772,7 +778,7 @@ to each token:</p>
 </table>
 <p>If we look at the input data, the above table seems correct! (The jsonl
 version is repeated below for reference):</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> head <span class="at">-n1</span> output.jsonl <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> json.tool</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> head <span class="at">-n1</span> output.jsonl <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> json.tool</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>{
     "segments": [
@@ -852,13 +858,14 @@ version is repeated below for reference):</p>
       e.clearSelection();
     }
     const getTextToCopy = function(trigger) {
-        const codeEl = trigger.previousElementSibling.cloneNode(true);
-        for (const childEl of codeEl.children) {
-          if (isCodeAnnotation(childEl)) {
-            childEl.remove();
-          }
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
         }
-        return codeEl.innerText;
+      }
+      return codeEl.innerText;
     }
     const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
       text: getTextToCopy
