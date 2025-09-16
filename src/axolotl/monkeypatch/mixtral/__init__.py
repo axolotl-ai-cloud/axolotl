@@ -10,7 +10,7 @@ def patch_mixtral_moe_forward_zero3(cfg=None) -> None:
 
     import torch.nn.functional as F
 
-    from axolotl.kernels.moe import backends as _moe_backends, hf_triton as _hf_triton
+    from axolotl.kernels.moe import backends as _moe_backends
     from axolotl.kernels.moe.backends import MOEBackend, get_moe_backend_name
 
     def mlp_forward(self, hidden_states):
@@ -28,19 +28,7 @@ def patch_mixtral_moe_forward_zero3(cfg=None) -> None:
         router_logits = self.gate(hidden_states)
         preferred = getattr(cfg, "moe_backend", None) if cfg is not None else None
         backend = get_moe_backend_name(preferred)
-        if backend == MOEBackend.HF_TRITON and _hf_triton.available():
-            # Stub path: use kernels hub routing and fallback per-expert compute
-            try:
-                final_hidden_states, router_logits = _hf_triton.moe_ffn_forward_stub(
-                    hidden_states.view(batch_size, sequence_length, hidden_dim),
-                    self.gate,
-                    self.experts,
-                    self.top_k,
-                )
-                return final_hidden_states, router_logits
-            except Exception as e:
-                warnings.warn(f"hf_triton backend failed, falling back to naive: {e}")
-        elif (
+        if (
             backend == MOEBackend.TORCH_GROUPED
             and not _moe_backends._probe_torch_grouped()
         ):
@@ -73,4 +61,23 @@ def patch_mixtral_moe_forward_zero3(cfg=None) -> None:
     )
 
     MixtralBlockSparseTop2MLP.forward = mlp_forward
-    MixtralSparseMoeBlock.forward = moe_forward
+    # Wrap forward to support optional torch_grouped backend via config
+    from axolotl.kernels.moe import torch_grouped as _tg
+
+    preferred = getattr(cfg, "moe_backend", None) if cfg is not None else None
+    backend = get_moe_backend_name(preferred)
+
+    if backend == MOEBackend.TORCH_GROUPED and _tg.available():
+
+        def moe_forward_grouped(self, hidden_states: torch.Tensor) -> torch.Tensor:
+            bsz, seqlen, hdim = hidden_states.shape
+            y, router_logits = _tg.moe_ffn_forward_grouped(
+                hidden_states, self.gate, self.experts, self.top_k
+            )
+            if y is None:
+                return moe_forward(self, hidden_states)
+            return y, router_logits
+
+        MixtralSparseMoeBlock.forward = moe_forward_grouped
+    else:
+        MixtralSparseMoeBlock.forward = moe_forward

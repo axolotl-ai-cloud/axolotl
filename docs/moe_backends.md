@@ -2,18 +2,17 @@ MoE Backends in Axolotl
 
 Axolotl supports selecting a Mixture-of-Experts (MoE) compute backend via the training config (YAML):
 
-- Set `moe_backend: auto|hf_triton|torch_grouped|naive`
+- Set `moe_backend: auto|torch_grouped|naive`
 
 Behavior
-- auto (default): prefers PyTorch 2.8+ grouped GEMM, then Hugging Face kernels hub, otherwise naive.
-- hf_triton: uses the Hugging Face kernels hub (kernels-community/triton_kernels) when available.
-- torch_grouped: targets PyTorch 2.8+ grouped GEMM.
+- auto (default): prefers PyTorch 2.8+ grouped GEMM; otherwise naive.
+- torch_grouped: targets PyTorch 2.8+ grouped GEMM (H100/SM90+ recommended).
 - naive: keeps the reference per-expert loop.
 
 Notes
-- Current implementation wires the backend selector and routes Mixtral MoE through it. The hf_triton path is initially a stub: it uses kernels hub for routing but still falls back to per-expert computation until grouped GEMM is fully integrated.
-- No changes to training scripts are required; selection happens inside the model forward. The `AXOLOTL_MOE_BACKEND` environment variable is no longer used.
+- Current implementation wires the backend selector and routes Mixtral MoE through it. Torch grouped uses cuBLASLt grouped GEMM when available; otherwise, the code falls back to the naive per-expert loop.
+- No changes to training scripts are required; selection happens inside the model forward.
 
 Example
-moe_backend: hf_triton
+moe_backend: torch_grouped
 accelerate launch -m axolotl.cli.train path/to/config.yaml
