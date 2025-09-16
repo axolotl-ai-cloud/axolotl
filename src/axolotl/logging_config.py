@@ -141,11 +141,15 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
 
 def configure_logging():
     """Configure with default logging"""
+    init()  # Initialize colorama
+
     dictConfig(DEFAULT_LOGGING_CONFIG)
     logging.setLoggerClass(AxolotlLogger)
+
+    # Route Python warnings through logging so they reach file handlers
     logging.captureWarnings(True)
 
-    # set default `ACCELERATE_LOG_LEVEL` to `LOG_LEVEL` if available and not set
+    # Set default `ACCELERATE_LOG_LEVEL` to `LOG_LEVEL` if available and not set
     if "ACCELERATE_LOG_LEVEL" not in os.environ:
         os.environ["ACCELERATE_LOG_LEVEL"] = os.getenv(
             "LOG_LEVEL", DEFAULT_LOG_LEVEL
