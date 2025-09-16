@@ -248,8 +248,6 @@ def patch_qwen3_next_gateddelta_layer():
     # Apply the patches
     Qwen3NextGatedDeltaNet.forward = patched_gated_delta_net_forward
 
-    LOG.info("Applied Qwen3NextGatedDeltaNet patch")
-
     def unpatch():
         """Restore the original forward method"""
         Qwen3NextGatedDeltaNet.forward = original_gated_delta_net_forward
@@ -298,8 +296,6 @@ def patch_qwen3_next_imports():
         qwen3_modeling.fused_recurrent_gated_delta_rule = None
         qwen3_modeling.FusedRMSNormGated = None
 
-    LOG.info("Applied Qwen3Next imports patch")
-
     def unpatch():
         """Restore the original import values"""
         qwen3_modeling.FusedRMSNormGated = original_FusedRMSNormGated
@@ -317,3 +313,5 @@ def patch_qwen3_next_modeling():
     patch_qwen3_next_imports()
     patch_qwen3_next_decoder_layer()
     patch_qwen3_next_gateddelta_layer()
+
+    LOG.info("Applied Qwen3Next patch for packing")
