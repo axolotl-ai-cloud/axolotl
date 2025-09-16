@@ -23,14 +23,10 @@ lora_model_dir:
 sequence_len: 2048
 sample_packing: true
 
-lora_r: 32
-lora_alpha: 16
+lora_r: 16
+lora_alpha: 8
 lora_dropout: 0.05
-lora_target_linear: true
 lora_target_modules:
-  - gate_proj
-  - down_proj
-  - up_proj
   - q_proj
   - v_proj
   - k_proj
@@ -42,7 +38,7 @@ wandb_watch:
 wandb_name:
 wandb_log_model:
 
-gradient_accumulation_steps: 4
+gradient_accumulation_steps: 2
 micro_batch_size: 2
 num_epochs: 1
 optimizer: adamw_bnb_8bit

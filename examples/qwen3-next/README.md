@@ -22,20 +22,30 @@ pip3 install --no-build-isolation -e '.[flash-attn]'
 python scripts/cutcrossentropy_install.py | sh
 ```
 
-2. Run the finetuning example:
+2. Install Qwen3-Next transformers commit
+```bash
+pip3 uninstall -y transformers && pip3 install "git+https://github.com/huggingface/transformers.git@b9282355bea846b54ed850a066901496b19da654"
+```
+
+3. Install FLA for improved performance
+```bash
+pip3 uninstall -y causal-conv1d && pip3 install flash-linear-attention==0.3.2
+```
+
+4. Run the finetuning example:
 
 ```bash
 axolotl train examples/qwen3-next/qwen3-next-80b-a3b-qlora.yaml
 ```
 
-This config uses about XY GiB VRAM.
+This config uses about 41.7 GiB VRAM.
 
 Let us know how it goes. Happy finetuning! 🚀
 
 ### TIPS
 
-- For inference, you can experiment with TODO.
-- You can run a full finetuning by removing the `adapter: qlora` and `load_in_4bit: true` from the config.
+- For inference, you can experiment with `temperature: 0.7`, `top_p: 0.8`, `top_k: 20`, and `min_p: 0`.
+- You can run a full finetuning by removing the `adapter: qlora` and `load_in_4bit: true` from the config. See [Multi-GPU](#optimization-guides) section below.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
 

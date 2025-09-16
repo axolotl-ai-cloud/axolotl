@@ -257,7 +257,63 @@ def patch_qwen3_next_gateddelta_layer():
     return unpatch
 
 
+def patch_qwen3_next_imports():
+    """Patch Qwen3Next imports to use try/except instead of is_flash_linear_attention_available."""
+    try:
+        import transformers.models.qwen3_next.modeling_qwen3_next as qwen3_modeling
+    except ImportError:
+        LOG.warning("Qwen3Next model not found, skipping import patch")
+        return
+
+    # Save original values for unpatch
+    original_FusedRMSNormGated = getattr(qwen3_modeling, "FusedRMSNormGated", None)
+    original_chunk_gated_delta_rule = getattr(
+        qwen3_modeling, "chunk_gated_delta_rule", None
+    )
+    original_fused_recurrent_gated_delta_rule = getattr(
+        qwen3_modeling, "fused_recurrent_gated_delta_rule", None
+    )
+    original_is_fast_path_available = getattr(
+        qwen3_modeling, "is_fast_path_available", False
+    )
+
+    try:
+        from fla.modules import FusedRMSNormGated
+        from fla.ops.gated_delta_rule import (
+            chunk_gated_delta_rule,
+            fused_recurrent_gated_delta_rule,
+        )
+
+        qwen3_modeling.FusedRMSNormGated = FusedRMSNormGated
+        qwen3_modeling.chunk_gated_delta_rule = chunk_gated_delta_rule
+        qwen3_modeling.fused_recurrent_gated_delta_rule = (
+            fused_recurrent_gated_delta_rule
+        )
+
+        # Force is_fast_path_available to be True
+        # fla has triton kernels for causal_conv1d
+        qwen3_modeling.is_fast_path_available = True
+    except ImportError:
+        qwen3_modeling.chunk_gated_delta_rule = None
+        qwen3_modeling.fused_recurrent_gated_delta_rule = None
+        qwen3_modeling.FusedRMSNormGated = None
+
+    LOG.info("Applied Qwen3Next imports patch")
+
+    def unpatch():
+        """Restore the original import values"""
+        qwen3_modeling.FusedRMSNormGated = original_FusedRMSNormGated
+        qwen3_modeling.chunk_gated_delta_rule = original_chunk_gated_delta_rule
+        qwen3_modeling.fused_recurrent_gated_delta_rule = (
+            original_fused_recurrent_gated_delta_rule
+        )
+        qwen3_modeling.is_fast_path_available = original_is_fast_path_available
+
+    return unpatch
+
+
 def patch_qwen3_next_modeling():
     """Apply all Qwen3Next model patches."""
+    patch_qwen3_next_imports()
     patch_qwen3_next_decoder_layer()
     patch_qwen3_next_gateddelta_layer()
