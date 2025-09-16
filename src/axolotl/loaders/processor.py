@@ -24,7 +24,9 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
     if cfg.tokenizer_use_mistral_common:
         from axolotl.utils.mistral import Mistral3Processor
 
-        processor_cls = Mistral3Processor
+        return Mistral3Processor(
+            tokenizer=tokenizer,
+        )
 
     processor = processor_cls.from_pretrained(
         cfg.processor_config,

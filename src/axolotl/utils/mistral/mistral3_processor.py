@@ -37,6 +37,16 @@ class Mistral3Processor(ProcessorMixin):
         # Don't call super().__init__ to avoid the class validation issue
         self.tokenizer = tokenizer
 
+    @property
+    def chat_template(self) -> None:
+        """Chat template is not supported. Dummy method to satisfy HuggingFace API."""
+        return None
+
+    @property
+    def audio_tokenizer(self) -> None:
+        """Audio tokenizer is not supported. Dummy method to satisfy HuggingFace API."""
+        return None
+
     def _merge_kwargs(
         self, processor_kwargs_class: Any, **kwargs: Any
     ) -> Dict[str, Dict[str, Any]]:
