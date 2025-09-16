@@ -6,7 +6,7 @@ from logging import Formatter, Logger, LogRecord
 from logging.config import dictConfig
 from typing import Any, Dict
 
-from colorama import Fore, Style
+from colorama import Fore, Style, init
 
 DEFAULT_AXOLOTL_LOG_LEVEL = "INFO"
 DEFAULT_LOG_LEVEL = "WARNING"
