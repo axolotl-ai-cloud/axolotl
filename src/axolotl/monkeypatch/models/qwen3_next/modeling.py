@@ -1,6 +1,6 @@
 """Monkeypatch for Qwen3_Next model to pass position_ids to linear attention."""
 
-from typing import Optional, tuple
+from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -47,10 +47,10 @@ def patch_qwen3_next_decoder_layer():
     def patched_decoder_forward(
         self,
         hidden_states: torch.Tensor,
-        position_embeddings: tuple[torch.Tensor, torch.Tensor],
+        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[tuple[torch.Tensor]] = None,
+        past_key_values: Optional[Tuple[torch.Tensor]] = None,
         cache_position: Optional[torch.LongTensor] = None,
         **kwargs,
     ) -> torch.FloatTensor:
@@ -86,7 +86,7 @@ def patch_qwen3_next_decoder_layer():
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         # For the MoE layers, we need to unpack
-        if isinstance(hidden_states, tuple):
+        if isinstance(hidden_states, Tuple):
             hidden_states, _ = hidden_states
         hidden_states = residual + hidden_states
 
