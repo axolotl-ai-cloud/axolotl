@@ -12,6 +12,7 @@ import transformers
 from transformers import PretrainedConfig, PreTrainedModel
 
 from axolotl.integrations.base import PluginManager
+from axolotl.monkeypatch.moe_grouped import apply_grouped_to_moe_blocks
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
@@ -57,6 +58,8 @@ class PatchManager:
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
         self._apply_model_specific_patches()
+        # Apply MoE grouped GEMM patches (cfg.moe_backend)
+        apply_grouped_to_moe_blocks(self.cfg)
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
         self._apply_gradient_checkpointing_patches()
