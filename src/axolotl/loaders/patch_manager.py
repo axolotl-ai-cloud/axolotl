@@ -168,12 +168,19 @@ class PatchManager:
 
             patch_llama4_linearized_modeling()
 
-        if self.cfg.model_config_type == "qwen3_next" and self.cfg.sample_packing:
-            from axolotl.monkeypatch.models.qwen3_next.modeling import (
-                patch_qwen3_next_modeling,
-            )
+        if self.cfg.model_config_type == "qwen3_next":
+            if self.cfg.sample_packing:
+                from axolotl.monkeypatch.models.qwen3_next.modeling import (
+                    patch_qwen3_next_modeling_packing,
+                )
 
-            patch_qwen3_next_modeling()
+                patch_qwen3_next_modeling_packing()
+            else:
+                from axolotl.monkeypatch.models.qwen3_next.modeling import (
+                    patch_qwen3_next_modeling_standard,
+                )
+
+                patch_qwen3_next_modeling_standard()
 
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
