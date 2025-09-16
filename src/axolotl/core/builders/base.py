@@ -435,7 +435,7 @@ class TrainerBuilderBase(abc.ABC):
             # don't use the HF gradient checkpointing, manually wrap
             training_args_kwargs["gradient_checkpointing"] = False
             training_args_kwargs["activation_offloading"] = True
-        elif self.cfg.gradient_checkpointing:
+        elif self.cfg.gradient_checkpointing is not None:
             training_args_kwargs["gradient_checkpointing"] = (
                 self.cfg.gradient_checkpointing
             )
