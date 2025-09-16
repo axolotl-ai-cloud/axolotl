@@ -78,7 +78,7 @@ dependencies = [
 
     # Platform-specific dependencies (Linux by default, excluded on macOS)
     "triton>=3.0.0 ; sys_platform != 'darwin'",
-    "xformers>=0.0.23.post1 ; sys_platform != 'darwin'",
+    "xformers>=0.0.32.post1 ; sys_platform != 'darwin'",
     "autoawq==0.2.7.post3 ; sys_platform != 'darwin'",
     "liger-kernel==0.6.1 ; sys_platform != 'darwin'",
     "torchao==0.13.0 ; sys_platform != 'darwin'",
@@ -204,7 +204,9 @@ dev-dependencies = [
 ]
 find-links = [
     "https://github.com/Dao-AILab/flash-attention/releases/expanded_assets/v2.8.3",
+    "https://github.com/ModelCloud/GPTQModel/releases",
 ]
+prerelease = "allow"
 
 # UV custom index for specific packages
 [[tool.uv.index]]
@@ -220,7 +222,7 @@ flash-attn = [
     "setuptools",
     { requirement = "torch", match-runtime = true },
 ]
-auto-gptq = [
+gptqmodel = [
     { requirement = "torch", match-runtime = true },
 ]
 autoawq = ["torch"]
