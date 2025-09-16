@@ -17,9 +17,6 @@ from axolotl.integrations.base import PluginManager
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, resolve_dtype
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.logging import get_logger
-
-LOG = get_logger(__name__)
 
 
 def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):

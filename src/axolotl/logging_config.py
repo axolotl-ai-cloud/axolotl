@@ -6,7 +6,7 @@ from logging import Formatter, Logger, LogRecord
 from logging.config import dictConfig
 from typing import Any, Dict
 
-from colorama import Fore, Style, init
+from colorama import Fore, Style
 
 DEFAULT_AXOLOTL_LOG_LEVEL = "INFO"
 DEFAULT_LOG_LEVEL = "WARNING"
@@ -86,7 +86,6 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
             "()": ColorfulFormatter,
             "format": "[%(asctime)s] [%(levelname)s] [%(name)s.%(funcName)s:%(lineno)d] [PID:%(process)d]%(rank_fmt)s %(message)s",
         },
-        # Concise (no callsite, no PID) variants
         "concise": {
             "format": "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
         },
@@ -103,14 +102,12 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            # formatter set in configure_logging() based on AXOLOTL_LOG_FORMAT
             "formatter": "concise",
             "filters": ["ax_or_warn"],
             "stream": "ext://sys.stdout",
         },
         "color_console": {
             "class": "logging.StreamHandler",
-            # formatter set in configure_logging() based on AXOLOTL_LOG_FORMAT
             "formatter": "concise_color",
             "filters": ["ax_or_warn"],
             "stream": "ext://sys.stdout",
@@ -144,12 +141,8 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
 
 def configure_logging():
     """Configure with default logging"""
-    init()  # Initialize colorama
-
     dictConfig(DEFAULT_LOGGING_CONFIG)
     logging.setLoggerClass(AxolotlLogger)
-
-    # Route Python warnings through logging so they reach file handlers
     logging.captureWarnings(True)
 
     # set default `ACCELERATE_LOG_LEVEL` to `LOG_LEVEL` if available and not set
