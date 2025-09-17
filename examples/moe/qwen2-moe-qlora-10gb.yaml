@@ -47,7 +47,6 @@ evals_per_epoch: 2
 saves_per_epoch: 1
 weight_decay: 0.0
 
-# Enable router logits if you want aux loss/analysis
 model_config:
   output_router_logits: true
 

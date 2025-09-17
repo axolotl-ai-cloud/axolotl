@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
+
+_LOGGER = logging.getLogger("axolotl.moe.grouped")
 
 
 def available() -> bool:
@@ -71,7 +74,8 @@ def _call_grouped_mm(
             outs.append(Y_cat[start : start + m])
             start += m
         return outs
-    except RuntimeError:
+    except RuntimeError as err:
+        _LOGGER.warning("torch_grouped: _grouped_mm failed (%s)", err)
         return None
 
 
