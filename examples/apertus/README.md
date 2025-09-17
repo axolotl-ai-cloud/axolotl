@@ -46,7 +46,7 @@ This config uses about 8.7 GiB VRAM.
 
 Let us know how it goes. Happy finetuning! 🚀
 
-### TIPS
+### Tips
 
 - For inference, the official Apertus team recommends `top_p=0.9` and `temperature=0.8`.
 - You can run a full finetuning by removing the `adapter: qlora` and `load_in_4bit: true` from the config.
