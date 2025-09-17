@@ -285,6 +285,7 @@ website:
             - docs/custom_integrations.qmd
             - docs/sequence_parallelism.qmd
             - docs/gradient_checkpointing.qmd
+            - docs/moe_backends.md
             - docs/nd_parallelism.qmd
 
         - section: "Troubleshooting"

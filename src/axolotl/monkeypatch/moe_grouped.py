@@ -1,5 +1,5 @@
 import logging
-import warnings
+from functools import wraps
 
 import torch
 
@@ -11,7 +11,7 @@ _LOG = logging.getLogger("axolotl.moe.patch")
 
 def _patch_block_forward(block_cls, grouped_fn):
     """Replace block_cls.forward with grouped_fn preserving signature."""
-    setattr(block_cls, "forward", grouped_fn)
+    block_cls.forward = grouped_fn
 
 
 def apply_grouped_to_moe_blocks(cfg=None) -> None:
@@ -73,7 +73,8 @@ def apply_grouped_to_moe_blocks(cfg=None) -> None:
     }
 
     def make_grouped_forward(orig_forward):
-        def _grouped_forward(self, hidden_states: torch.Tensor):
+        @wraps(orig_forward)
+        def _grouped_forward(self, hidden_states: torch.Tensor, *args, **kwargs):
             bsz, seqlen, hdim = hidden_states.shape
             y, router_logits = _tg.moe_ffn_forward_grouped(
                 hidden_states, self.gate, self.experts, self.top_k
@@ -90,7 +91,7 @@ def apply_grouped_to_moe_blocks(cfg=None) -> None:
                     )
                 self._ax_grouped_wrapper_logged = True
             if y is None:
-                return orig_forward(self, hidden_states)
+                return orig_forward(self, hidden_states, *args, **kwargs)
             return y, router_logits
 
         return _grouped_forward
