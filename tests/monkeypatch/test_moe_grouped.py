@@ -248,7 +248,7 @@ def test_get_moe_backend_name_prefers_probe(monkeypatch):
 def test_get_moe_backend_name_falls_back(monkeypatch):
     warnings_captured = []
 
-    def fake_warn(msg):
+    def fake_warn(msg, *, stacklevel=None):  # noqa: ARG001
         warnings_captured.append(msg)
 
     monkeypatch.setattr(moe_backends, "_probe_torch_grouped", lambda: False)
