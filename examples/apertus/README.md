@@ -49,7 +49,7 @@ Let us know how it goes. Happy finetuning! 🚀
 ### Tips
 
 - For inference, the official Apertus team recommends `top_p=0.9` and `temperature=0.8`.
-- You can run a full finetuning by removing the `adapter: qlora` and `load_in_4bit: true` from the config.
+- You can instead use full paremter fine-tuning by removing the `adapter: qlora` and `load_in_4bit: true` from the config.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
 
