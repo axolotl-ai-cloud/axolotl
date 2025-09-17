@@ -196,10 +196,11 @@ def execute_training(
                 )
             )
 
-        LOG.info("Starting trainer...")
         # TODO: disabling for now as not compatible with FSDP2 + torchao low bit optimizers
         # if cfg.bf16:
         #     torch.set_default_dtype(torch.bfloat16)
+
+        LOG.info("Starting trainer...")
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
         plugin_manager = PluginManager.get_instance()

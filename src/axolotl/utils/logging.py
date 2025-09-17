@@ -2,7 +2,6 @@
 
 import functools
 import logging
-import os
 
 from axolotl.utils.distributed import is_main_process
 
@@ -40,10 +39,6 @@ class MultiProcessAdapter(logging.LoggerAdapter):
 
 
 def get_logger(name: str, log_level: str | None = None) -> MultiProcessAdapter:
-    if log_level is None:
-        log_level = os.environ.get("AXOLOTL_LOG_LEVEL", None)
     logger = logging.getLogger(name)
-    if log_level is not None:
-        logger.setLevel(log_level.upper())
-        logger.root.setLevel(log_level.upper())
+    logger.setLevel(logging.DEBUG)
     return MultiProcessAdapter(logger, extra={})
