@@ -21,13 +21,13 @@ def apply_mistral_tokenizer_image_patch():
 
     # Define the replacement
     original_tensor_conversion = (
-        """                        pixel_values = torch.tensor(images)"""
+        "                    pixel_values = torch.tensor(images)"
     )
 
-    patched_tensor_conversion = """                        if isinstance(images, list) and len(images) > 0 and isinstance(images[0], np.ndarray):
-                            pixel_values = torch.tensor(np.array(images))
-                        else:
-                            pixel_values = torch.tensor(images)"""
+    patched_tensor_conversion = """                    if isinstance(images, list) and len(images) > 0 and isinstance(images[0], np.ndarray):
+                        pixel_values = torch.tensor(np.array(images))
+                    else:
+                        pixel_values = torch.tensor(images)"""
 
     # Apply the replacement
     if original_tensor_conversion in original_source:
@@ -80,6 +80,6 @@ def apply_mistral_tokenizer_image_patch():
 
         # Replace the method
         MistralCommonTokenizer.apply_chat_template = patched_apply_chat_template
-        LOG.debug("Successfully applied MistralCommonTokenizer tensor conversion patch")
+        LOG.info("Successfully applied MistralCommonTokenizer tensor conversion patch")
     else:
         LOG.warning("Could not find target code for MistralCommonTokenizer patching")
