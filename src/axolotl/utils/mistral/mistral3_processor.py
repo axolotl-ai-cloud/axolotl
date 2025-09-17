@@ -108,7 +108,7 @@ class Mistral3Processor(ProcessorMixin):
 
         # Call tokenizer's apply_chat_template
         tokenizer_kwargs = {**text_kwargs, **common_kwargs}
-        tokenizer_kwargs["return_tensors"] = None  # Let's not return tensors here
+        tokenizer_kwargs["return_tensors"] = return_tensors
         tokenizer_kwargs["tokenize"] = tokenize
         tokenizer_kwargs["return_dict"] = return_dict
 
@@ -129,6 +129,10 @@ class Mistral3Processor(ProcessorMixin):
 
                 if "pixel_values" in data:
                     pixel_values = data["pixel_values"]
+
+                    # MistralTokenizer returns a Double, so we convert to fp32
+                    data["pixel_values"] = pixel_values.to(dtype=torch.float32)
+
                     # Always batched: [B, C, H, W] -> image_sizes: [B, 2]
                     # Since tensor is homogeneous, all images have same H, W
                     batch_size = pixel_values.shape[0]
