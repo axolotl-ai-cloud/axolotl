@@ -51,7 +51,4 @@ weight_decay: 0.0
 model_config:
   output_router_logits: true
 
-# ZeRO-3 with CPU offload keeps VRAM within ~10GB
-deepspeed: deepspeed_configs/zero3_bf16_cpuoffload_params.json
-
 special_tokens:
