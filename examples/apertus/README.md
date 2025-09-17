@@ -1,4 +1,4 @@
-# Finetune Swiss-ai's Apertus with Axolotl
+# Finetune Swiss-AI's Apertus with Axolotl
 
 [Apertus](https://huggingface.co/collections/swiss-ai/apertus-llm-68b699e65415c231ace3b059) is a family of opensource models trained by Swiss-ai.
 
