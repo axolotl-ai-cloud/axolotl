@@ -82,18 +82,10 @@ def apply_grouped_to_moe_blocks(cfg=None) -> None:
             # One-time log per block instance indicating whether grouped engaged or fallback occurred
             if not getattr(self, "_ax_grouped_wrapper_logged", False):
                 if y is None:
-                    reason = getattr(_tg, "LAST_ERROR", None)
-                    if reason:
-                        _LOG.warning(
-                            "Grouped wrapper fell back to naive for %s (reason=%s)",
-                            self.__class__.__name__,
-                            reason,
-                        )
-                    else:
-                        _LOG.warning(
-                            "Grouped wrapper active but fell back to naive for %s",
-                            self.__class__.__name__,
-                        )
+                    _LOG.warning(
+                        "Grouped wrapper active but fell back to naive for %s",
+                        self.__class__.__name__,
+                    )
                 else:
                     _LOG.info(
                         f"Grouped wrapper engaged for {self.__class__.__name__} (top_k={self.top_k})"

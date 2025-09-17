@@ -9,7 +9,6 @@ from pydantic import (
     Field,
     StringConstraints,
     field_serializer,
-    field_validator,
     model_validator,
 )
 
