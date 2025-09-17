@@ -14,7 +14,7 @@ class TestMistralTokenizerPatchIntegration:
         except ImportError:
             pytest.skip("MistralCommonTokenizer not available")
 
-        from axolotl.monkeypatch.mistralcommontokenizer import (
+        from axolotl.monkeypatch.models.mistral3.mistral_common_tokenizer import (
             apply_mistral_tokenizer_image_patch,
         )
 

@@ -169,7 +169,7 @@ class PatchManager:
             patch_llama4_linearized_modeling()
 
         if self.cfg.model_config_type == "mistral3" and self.cfg.processor_type:
-            from axolotl.monkeypatch.mistralcommontokenizer import (
+            from axolotl.monkeypatch.models.mistral3.mistral_common_tokenizer import (
                 apply_mistral_tokenizer_image_patch,
             )
 
