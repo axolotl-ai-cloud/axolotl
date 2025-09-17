@@ -1,6 +1,9 @@
 base_model: mistralai/Mistral-Small-3.1-24B-Instruct-2503
 processor_type: AutoProcessor
 
+# Enable to use mistral-common tokenizer
+tokenizer_use_mistral_common: true
+
 load_in_8bit: true
 
 # these 3 lines are needed for now to handle vision chat templates w images
@@ -8,12 +11,12 @@ skip_prepare_dataset: true
 remove_unused_columns: false
 sample_packing: false
 
-chat_template: mistral_v7_tekken
+# sample dataset below requires downloading image in advance
+# wget https://huggingface.co/datasets/Nanobit/text-vision-2k-test/resolve/main/African_elephant.jpg
 datasets:
-  - path: HuggingFaceH4/llava-instruct-mix-vsft
+  - path: Nanobit/text-vision-2k-test
     type: chat_template
-    split: train[:1%]
-    field_messages: messages
+
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.01
 output_dir: ./outputs/out
