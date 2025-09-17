@@ -33,7 +33,8 @@ def patch_mixtral_moe_forward_zero3(cfg=None) -> None:
             and not _moe_backends._probe_torch_grouped()
         ):
             warnings.warn(
-                "torch_grouped selected but not available; falling back to naive"
+                "torch_grouped selected but not available; falling back to naive",
+                stacklevel=2,
             )
 
         routing_weights = F.softmax(router_logits, dim=1, dtype=torch.float)

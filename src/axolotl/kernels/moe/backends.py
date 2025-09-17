@@ -29,7 +29,9 @@ def get_moe_backend_name(preferred: str | None = None) -> MOEBackend:
     try:
         selected = MOEBackend(choice)
     except ValueError:
-        warnings.warn(f"Unknown moe backend '{choice}', falling back to auto")
+        warnings.warn(
+            f"Unknown moe backend '{choice}', falling back to auto", stacklevel=2
+        )
         selected = MOEBackend.AUTO
 
     if selected == MOEBackend.AUTO:
@@ -38,7 +40,8 @@ def get_moe_backend_name(preferred: str | None = None) -> MOEBackend:
         return MOEBackend.NAIVE
     if selected == MOEBackend.TORCH_GROUPED and not _probe_torch_grouped():
         warnings.warn(
-            "torch_grouped requested but torch>=2.8 not detected; falling back to naive"
+            "torch_grouped requested but torch>=2.8 not detected; falling back to naive",
+            stacklevel=2,
         )
         return MOEBackend.NAIVE
     return selected
