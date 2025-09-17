@@ -190,3 +190,6 @@ out/
 
 # vim
 *.swp
+
+# setuptools-scm generated version file
+src/axolotl/_version.py

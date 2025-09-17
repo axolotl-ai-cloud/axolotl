@@ -29,13 +29,16 @@ PRs are **greatly welcome**!
 2. Set up the development environment by following the instructions in the [README.md](https://github.com/axolotl-ai-cloud/axolotl/tree/main/README.md) file.
 3. Explore the codebase, run tests, and verify that everything works as expected.
 
-Please run below to setup env
-```bash
-pip3 install -r requirements-dev.txt -r requirements-tests.txt
-pre-commit install
+Please run the below to setup:
 
-# test
-pytest tests/
+```bash
+git clone https://github.com/axolotl-ai-cloud/axolotl.git
+cd axolotl
+
+uv sync  # TODO(djsaunde): extras installation details
+uv run pre-commit install
+
+pytest tests/  # optional
 ```
 
 ## How to Contribute
