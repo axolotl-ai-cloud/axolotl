@@ -52,6 +52,7 @@ class GRPOStrategy:
             if trl.vllm_mode:
                 grpo_args_kwargs["vllm_mode"] = trl.vllm_mode
             if trl.vllm_mode == "colocate":
+                grpo_args_kwargs["enable_sleep_mode"] = True
                 grpo_args_kwargs["vllm_gpu_memory_utilization"] = (
                     vllm_cfg.gpu_memory_utilization
                 )
