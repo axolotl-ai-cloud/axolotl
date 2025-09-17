@@ -528,7 +528,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.logging_config" class="level1">
 <h1>logging_config</h1>
 <p><code>logging_config</code></p>
-<p>Common logging module for axolotl</p>
+<p>Common logging module for axolotl.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -541,11 +541,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.logging_config.AxolotlLogger">AxolotlLogger</a></td>
-<td>A Logger that automatically rejects non-axolotl INFOs.</td>
+<td>Logger that applies filtering to non-axolotl loggers.</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.logging_config.AxolotlOrWarnErrorFilter">AxolotlOrWarnErrorFilter</a></td>
-<td>Allows ANY WARNING or higher (unless overridden by LOG_LEVEL)</td>
+<td>Allows ANY WARNING or higher (unless overridden by LOG_LEVEL). Allows axolotl.* at</td>
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.logging_config.ColorfulFormatter">ColorfulFormatter</a></td>
@@ -556,14 +556,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.logging_config.AxolotlLogger" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.logging_config.AxolotlLogger">AxolotlLogger</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>logging_config.AxolotlLogger(name, level<span class="op">=</span>logging.NOTSET)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>A Logger that automatically rejects non-axolotl INFOs.</p>
+<p>Logger that applies filtering to non-axolotl loggers.</p>
 </section>
 <section id="axolotl.logging_config.AxolotlOrWarnErrorFilter" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.logging_config.AxolotlOrWarnErrorFilter">AxolotlOrWarnErrorFilter</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>logging_config.AxolotlOrWarnErrorFilter(<span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Allows ANY WARNING or higher (unless overridden by LOG_LEVEL)
-Allows axolotl.* at INFO or higher (unless overridden by AXOLOTL_LOG_LEVEL)
-Drops all other records (i.e.&nbsp;non-axolotl.INFO, DEBUG, etc. by default)</p>
+<p>Allows ANY WARNING or higher (unless overridden by LOG_LEVEL). Allows axolotl.* at
+INFO or higher (unless overridden by AXOLOTL_LOG_LEVEL). Drops all other records
+(i.e.&nbsp;non-axolotl.INFO, DEBUG, etc. by default).</p>
 </section>
 <section id="axolotl.logging_config.ColorfulFormatter" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.logging_config.ColorfulFormatter">ColorfulFormatter</h3>
