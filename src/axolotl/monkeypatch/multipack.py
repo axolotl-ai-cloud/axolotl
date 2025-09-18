@@ -23,6 +23,7 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "falcon",
     "phi",
     "phi3",
+    "phimoe",
     "gemma",
     "gemma2",
     "gemma3",
