@@ -134,6 +134,7 @@ def moe_ffn_forward_grouped(
 
     counts_active = assignments[active_idx]
     offsets = torch.cumsum(counts_active.to(device=device, dtype=torch.int32), dim=0)
+    offsets = offsets.to(torch.int32)
     if offsets[-1].item() == 0:
         zero = torch.zeros_like(x_flat)
         return zero.view(bsz, seqlen, hdim), router_logits
