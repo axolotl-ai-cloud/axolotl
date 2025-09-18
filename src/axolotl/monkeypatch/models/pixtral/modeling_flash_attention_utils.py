@@ -26,7 +26,7 @@ def apply_patch_is_packed_sequence():
         )
         return (
             batch_size == 1
-            and (increasing_position_sequences - position_ids).abs().sum().bool()
+            and (increasing_position_sequences - position_ids).abs().sum().bool().item()
         )
 
     # Store original method
