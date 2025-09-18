@@ -8,6 +8,12 @@ import re
 
 import torch
 
+# Disable memory pinning if requested (must be after torch import)
+if os.getenv("AXOLOTL_DISABLE_MEMORY_PINNING") == "1":
+    from axolotl.monkeypatch.memory_pinning import apply_memory_pinning_patch
+
+    apply_memory_pinning_patch()
+
 
 def is_mlflow_available():
     return importlib.util.find_spec("mlflow") is not None
