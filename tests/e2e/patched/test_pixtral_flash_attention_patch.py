@@ -34,10 +34,46 @@ class TestPixtralFlashAttentionPatchIntegration:
         # Test the patched function with 1D position_ids
         patched_fn = modeling_flash_attention_utils._is_packed_sequence
 
-        # Test with 1D position_ids (should work after patch)
+        # Test 1D position_ids 1 sequence
         position_ids_1d = torch.tensor([0, 1, 2, 3])
         result = patched_fn(position_ids_1d, batch_size=1)
         assert isinstance(result, bool), "Function should return a boolean"
+        assert result is True, "1D sequential position_ids should be packed"
+
+        # Test 1D packed 2 sequences
+        position_ids_1d_packed = torch.tensor([0, 1, 2, 0, 1, 2])
+        result = patched_fn(position_ids_1d_packed, batch_size=1)
+        assert isinstance(result, bool), "Function should return a boolean"
+        assert result is True, "1D packed position_ids should be detected as packed"
+
+        # Test 2D packed 2 sequences
+        position_ids_2d_packed = torch.tensor([[0, 1, 2, 3, 0, 1]])
+        result = patched_fn(position_ids_2d_packed, batch_size=1)
+        assert isinstance(result, bool), "Function should return a boolean"
+        assert result is True, "2D packed position_ids should be detected as packed"
+
+        # Test 2D 1 sequence
+        position_ids_2d_normal = torch.tensor([[0, 1, 2, 3, 4, 5]])
+        result = patched_fn(position_ids_2d_normal, batch_size=1)
+        assert isinstance(result, bool), "Function should return a boolean"
+        assert result is True, "2D sequential position_ids should be packed"
+
+        # Test 2D irregular sequence
+        position_ids_2d_normal = torch.tensor([[0, 1, 2, 3, 7, 8]])
+        result = patched_fn(position_ids_2d_normal, batch_size=1)
+        assert isinstance(result, bool), "Function should return a boolean"
+        assert result is False, "2D irregular position_ids should not be packed"
+
+        # Test 2D batch size 2
+        position_ids_2d_normal = torch.tensor([[0, 1, 2, 3, 4, 5, 6, 7, 8]])
+        result = patched_fn(position_ids_2d_normal, batch_size=2)
+        assert isinstance(result, bool), "Function should return a boolean"
+        assert result is False, "2D position_ids batch 2 should not be packed"
+
+        # Test None case
+        result = patched_fn(None, batch_size=1)
+        assert isinstance(result, bool), "Function should return a boolean"
+        assert result is False, "None position_ids should return False"
 
         # Test unpatch function
         unpatch_fn()
