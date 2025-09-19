@@ -68,11 +68,12 @@ class PatchManager:
         self._apply_self_attention_lora_patch()
         self._apply_fsdp2_bnb_patches()
         self._apply_patch_deepspeed_zero3()
+        self._apply_voxtral_patches()
+        self._apply_apertus_patches()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
         self._apply_tiled_mlp(self.cfg.model_config_type)
-        self._apply_voxtral_patches()
 
     def _apply_transformers_patches(self):
         from axolotl.monkeypatch.transformers.trainer_loss_calc import (
@@ -493,3 +494,12 @@ class PatchManager:
                 apply_deepspeed_patches()
         except ImportError as e:
             LOG.warning(f"DeepSpeed patches not applied: {e}")
+
+    def _apply_apertus_patches(self):
+        """Apply patches for Apertus model."""
+        if self.cfg.model_config_type == "apertus":
+            from axolotl.monkeypatch.models.apertus.activation import (
+                patch_apertus_xielu_activation,
+            )
+
+            patch_apertus_xielu_activation()
