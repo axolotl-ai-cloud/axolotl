@@ -1,4 +1,5 @@
 import pytest
+
 from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
 
