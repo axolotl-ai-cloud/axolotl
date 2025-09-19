@@ -21,7 +21,6 @@ class AxolotlScriptArguments(ScriptArguments):
     enable_reasoning: bool | None = field(default=None, kw_only=True)
 
 
-
 def do_vllm_serve(
     config: Union[Path, str],
     cli_args: dict,
@@ -81,7 +80,5 @@ def do_vllm_serve(
         enable_prefix_caching=enable_prefix_caching,
         reasoning_parser=reasoning_parser,
         enable_reasoning=enable_reasoning,
-        enable_sleep_mode=enable_sleep_mode,
-        sleep_timeout=sleep_timeout,
     )
     vllm_serve_main(vllm_script_args)

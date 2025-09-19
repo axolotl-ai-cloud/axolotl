@@ -104,6 +104,7 @@ class VllmServeCliArgs:
         default=None,
     )
 
+
 @dataclass
 class QuantizeCliArgs:
     """Dataclass with CLI arguments for `axolotl quantize` command."""
