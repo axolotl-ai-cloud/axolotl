@@ -20,8 +20,6 @@ class AxolotlScriptArguments(ScriptArguments):
     reasoning_parser: str = field(default="", kw_only=True)
     enable_reasoning: bool | None = field(default=None, kw_only=True)
 
-    enable_sleep_mode: bool | None = field(default=None, kw_only=True)
-    sleep_timeout: int | None = field(default=None, kw_only=True)
 
 
 def do_vllm_serve(
@@ -70,8 +68,6 @@ def do_vllm_serve(
     enable_reasoning = (
         cli_args.get("enable_reasoning") or cfg.vllm.enable_reasoning or False
     )
-    enable_sleep_mode = cli_args.get("enable_sleep_mode") or cfg.vllm.enable_sleep_mode
-    sleep_timeout = cli_args.get("sleep_timeout") or cfg.vllm.sleep_timeout
 
     vllm_script_args = AxolotlScriptArguments(
         model=model,
