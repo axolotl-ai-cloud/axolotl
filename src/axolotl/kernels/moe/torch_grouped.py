@@ -277,6 +277,17 @@ def moe_ffn_forward_grouped(
     x_flat = hidden_states.view(tokens, hdim).to(expert_dtype)
     router_logits = gate_linear(x_flat.to(routing_dtype))
 
+    shared_out_flat: Optional[torch.Tensor] = None
+    if hasattr(experts_module, "shared_expert"):
+        shared_expert = experts_module.shared_expert
+        shared_out_flat = shared_expert(x_flat)
+        shared_out_flat = shared_out_flat.to(expert_dtype)
+        shared_gate = getattr(experts_module, "shared_expert_gate", None)
+        if shared_gate is not None:
+            gate_input = shared_gate(x_flat.to(shared_gate.weight.dtype))
+            gate_vals = torch.sigmoid(gate_input)
+            shared_out_flat.mul_(gate_vals.to(expert_dtype))
+
     routing_weights = F.softmax(router_logits, dim=1, dtype=torch.float)
     topk_weight, topk_idx = torch.topk(routing_weights, top_k, dim=-1, sorted=False)
     topk_weight = topk_weight / topk_weight.sum(dim=-1, keepdim=True)
@@ -321,4 +332,8 @@ def moe_ffn_forward_grouped(
 
     combined = torch.zeros_like(x_flat)
     combined.scatter_add_(0, gather_index, down_out)
-    return combined.view(bsz, seqlen, hdim), router_logits
+
+    output = combined.view(bsz, seqlen, hdim)
+    if shared_out_flat is not None:
+        output = output + shared_out_flat.view(bsz, seqlen, hdim)
+    return output, router_logits
