@@ -76,7 +76,7 @@ def main() -> None:
     p.add_argument("--bsz", type=int, default=8)
     p.add_argument("--seq", type=int, default=512)
     p.add_argument("--hidden", type=int, default=1024)
-    p.add_argument("--inter", type=int, default=2948)
+    p.add_argument("--inter", type=int, default=2048)
     p.add_argument("--experts", type=int, default=8)
     p.add_argument("--top_k", type=int, default=2)
     p.add_argument("--dtype", choices=["bf16", "fp16", "fp32"], default="bf16")
