@@ -76,6 +76,11 @@ def apply_grouped_to_moe_blocks(cfg=None) -> None:
         @wraps(orig_forward)
         def _grouped_forward(self, hidden_states: torch.Tensor, *args, **kwargs):
             bsz, seqlen, hdim = hidden_states.shape
+            # expose parent block so grouped backend can access shared expert context
+            try:
+                self.experts._ax_parent_block = self
+            except Exception:
+                pass
             y, router_logits = _tg.moe_ffn_forward_grouped(
                 hidden_states, self.gate, self.experts, self.top_k
             )

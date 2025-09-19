@@ -267,9 +267,12 @@ def moe_ffn_forward_grouped(
         )
         return None, None
 
-    expert_impls = _iter_expert_impls(experts_module)
+    parent_block = getattr(experts_module, "_ax_parent_block", None)
+    expert_container = getattr(experts_module, "experts", experts_module)
+
+    expert_impls = _iter_expert_impls(expert_container)
     sample_mod = expert_impls[0]
-    storage = _ensure_grouped_weights(experts_module, expert_impls, sample_mod)
+    storage = _ensure_grouped_weights(expert_container, expert_impls, sample_mod)
     w_gate = storage.gate
     w_up = storage.up
     w2 = storage.down
@@ -278,11 +281,12 @@ def moe_ffn_forward_grouped(
     router_logits = gate_linear(x_flat.to(routing_dtype))
 
     shared_out_flat: Optional[torch.Tensor] = None
-    if hasattr(experts_module, "shared_expert"):
-        shared_expert = experts_module.shared_expert
+    shared_owner = parent_block if parent_block is not None else experts_module
+    if hasattr(shared_owner, "shared_expert"):
+        shared_expert = shared_owner.shared_expert
         shared_out_flat = shared_expert(x_flat)
         shared_out_flat = shared_out_flat.to(expert_dtype)
-        shared_gate = getattr(experts_module, "shared_expert_gate", None)
+        shared_gate = getattr(shared_owner, "shared_expert_gate", None)
         if shared_gate is not None:
             gate_input = shared_gate(x_flat.to(shared_gate.weight.dtype))
             gate_vals = torch.sigmoid(gate_input)
