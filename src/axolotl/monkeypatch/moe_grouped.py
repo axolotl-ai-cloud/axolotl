@@ -1,4 +1,5 @@
 import logging
+import weakref
 from functools import wraps
 
 import torch
@@ -78,7 +79,7 @@ def apply_grouped_to_moe_blocks(cfg=None) -> None:
             bsz, seqlen, hdim = hidden_states.shape
             # expose parent block so grouped backend can access shared expert context
             try:
-                self.experts._ax_parent_block = self
+                self.experts._ax_parent_block_ref = weakref.ref(self)
             except Exception:
                 pass
             y, router_logits = _tg.moe_ffn_forward_grouped(

@@ -286,7 +286,14 @@ def moe_ffn_forward_grouped(
         )
         return None, None
 
-    parent_block = getattr(experts_module, "_ax_parent_block", None)
+    parent_block = None
+    parent_ref = getattr(experts_module, "_ax_parent_block_ref", None)
+    if parent_ref is not None:
+        try:
+            parent_block = parent_ref()
+        except TypeError:
+            parent_block = None
+
     expert_container = getattr(experts_module, "experts", experts_module)
 
     expert_impls = _iter_expert_impls(expert_container)
