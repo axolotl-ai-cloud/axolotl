@@ -7,6 +7,7 @@ import argparse
 import csv
 import sys
 import time
+import weakref
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List
@@ -108,6 +109,7 @@ def main() -> None:
     p.add_argument("--iters", type=int, default=25)
     p.add_argument("--warmup", type=int, default=5)
     p.add_argument("--csv", type=Path, default=None)
+    p.add_argument("--compile", action="store_true")
     args = p.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -159,12 +161,46 @@ def main() -> None:
                                 bsz, seq, hidden, device=device, dtype=dtype
                             )
 
+                            compiled_impl = None
+                            if args.compile:
+                                try:
+                                    block_naive = torch.compile(block_naive)  # type: ignore[arg-type]
+                                except Exception as exc:
+                                    print(
+                                        f"torch.compile naive failed ({exc}); using eager"
+                                    )
+                                else:
+
+                                    def grouped_forward(inp, *, block=block_grouped):
+                                        block.experts._ax_parent_block_ref = (
+                                            weakref.ref(block)
+                                        )  # type: ignore[attr-defined]
+                                        y, _ = tg.moe_ffn_forward_grouped(
+                                            inp,
+                                            block.gate,
+                                            block.experts,
+                                            block.top_k,
+                                        )
+                                        return y
+
+                                    try:
+                                        compiled_impl = torch.compile(grouped_forward)  # type: ignore[arg-type]
+                                    except Exception as exc:
+                                        print(
+                                            f"torch.compile grouped failed ({exc}); using eager"
+                                        )
+                                        compiled_impl = None
+
                             def run_naive(block=block_naive, data=x):
                                 y, _ = block(data)
                                 return y
 
-                            def run_grouped(block=block_grouped, data=x):
-                                block.experts._ax_parent_block_ref = weakref.ref(block)  # type: ignore
+                            def run_grouped(
+                                block=block_grouped, data=x, impl=compiled_impl
+                            ):
+                                if impl is not None:
+                                    return impl(data)
+                                block.experts._ax_parent_block_ref = weakref.ref(block)  # type: ignore[attr-defined]
                                 y, _ = tg.moe_ffn_forward_grouped(
                                     data,
                                     block.gate,

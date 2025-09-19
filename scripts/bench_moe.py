@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+import weakref
 from pathlib import Path
 
 import torch
@@ -83,6 +84,11 @@ def main() -> None:
     p.add_argument("--iters", type=int, default=50)
     p.add_argument("--warmup", type=int, default=10)
     p.add_argument("--profile", action="store_true")
+    p.add_argument(
+        "--compile",
+        action="store_true",
+        help="Torch.compile both paths before benchmarking",
+    )
     args = p.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -114,17 +120,39 @@ def main() -> None:
 
     x = torch.randn(args.bsz, args.seq, args.hidden, device=device, dtype=dtype)
 
-    def run_naive():
-        y, _ = block_naive(x)
+    # Optional torch.compile
+    run_grouped_impl = None
+    if args.compile:
+        try:
+            block_naive = torch.compile(block_naive)  # type: ignore[arg-type]
+        except Exception as exc:  # pragma: no cover
+            print(f"torch.compile naive failed ({exc}); using eager")
+        else:
+
+            def grouped_forward(inp, *, block=block_grouped):
+                block.experts._ax_parent_block_ref = weakref.ref(block)  # type: ignore[attr-defined]
+                y, _ = tg.moe_ffn_forward_grouped(
+                    inp, block.gate, block.experts, block.top_k
+                )
+                return y
+
+            try:
+                run_grouped_impl = torch.compile(grouped_forward)  # type: ignore[arg-type]
+            except Exception as exc:  # pragma: no cover
+                print(f"torch.compile grouped failed ({exc}); using eager")
+                run_grouped_impl = None
+
+    def run_naive(block=block_naive, data=x):
+        y, _ = block(data)
         return y
 
-    def run_grouped():
+    def run_grouped(block=block_grouped, data=x, impl=run_grouped_impl):
+        if impl is not None:
+            return impl(data)
         if tg is None or not tg.available():
             return torch.empty(0)
-        block_grouped.experts._ax_parent_block = block_grouped
-        y, _ = tg.moe_ffn_forward_grouped(
-            x, block_grouped.gate, block_grouped.experts, block_grouped.top_k
-        )
+        block.experts._ax_parent_block_ref = weakref.ref(block)  # type: ignore[attr-defined]
+        y, _ = tg.moe_ffn_forward_grouped(data, block.gate, block.experts, block.top_k)
         return y if y is not None else torch.empty(0)
 
     t_naive = bench(run_naive, iters=args.iters, warmup=args.warmup)
