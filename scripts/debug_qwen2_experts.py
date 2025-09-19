@@ -33,7 +33,7 @@ def main() -> None:
 
     block = Qwen2MoeSparseMoeBlock(cfg).to("cuda", dtype=torch.bfloat16)
     experts = block.experts
-    setattr(experts, "_ax_parent_block", block)
+    experts._ax_parent_block = block
 
     impls = _iter_expert_impls(experts)
     print(f"impl count: {len(impls)}")

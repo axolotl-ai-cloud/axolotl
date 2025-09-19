@@ -30,7 +30,17 @@ def available() -> bool:
 def _iter_expert_impls(experts_module) -> List[torch.nn.Module]:
     impls: List[torch.nn.Module] = []
     for exp in experts_module:
-        impls.append(getattr(exp, "mlp", getattr(exp, "ffn", exp)))
+        candidate = getattr(exp, "mlp", getattr(exp, "ffn", exp))
+        if hasattr(candidate, "gate_proj") and hasattr(candidate, "up_proj"):
+            impls.append(candidate)
+            continue
+        nested = getattr(candidate, "experts", None)
+        if nested is not None:
+            impls.extend(_iter_expert_impls(nested))
+            continue
+        raise RuntimeError(
+            "torch_grouped: unable to resolve expert implementation for module"
+        )
     return impls
 
 

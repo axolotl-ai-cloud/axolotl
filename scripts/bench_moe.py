@@ -38,7 +38,15 @@ def estimate_moe_flops(tokens: int, hidden: int, inter: int, top_k: int) -> floa
     return 6.0 * tokens * top_k * hidden * inter
 
 
-def load_hf_block(hidden: int, inter: int, experts: int, top_k: int, *, device: torch.device, dtype: torch.dtype):
+def load_hf_block(
+    hidden: int,
+    inter: int,
+    experts: int,
+    top_k: int,
+    *,
+    device: torch.device,
+    dtype: torch.dtype,
+):
     project_root = Path(__file__).resolve().parents[2]
     transformers_src = project_root / "transformers" / "src"
     if transformers_src.exists() and str(transformers_src) not in sys.path:
@@ -114,12 +122,16 @@ def main() -> None:
         if tg is None or not tg.available():
             return torch.empty(0)
         block_grouped.experts._ax_parent_block = block_grouped
-        y, _ = tg.moe_ffn_forward_grouped(x, block_grouped.gate, block_grouped.experts, block_grouped.top_k)
+        y, _ = tg.moe_ffn_forward_grouped(
+            x, block_grouped.gate, block_grouped.experts, block_grouped.top_k
+        )
         return y if y is not None else torch.empty(0)
 
     t_naive = bench(run_naive, iters=args.iters, warmup=args.warmup)
     tflops_naive = flops_total / ((t_naive / 1000.0) * 1e12)
-    print(f"naive\t{t_naive:.2f} ms\t{tokens / (t_naive / 1000.0):.1f} tok/s\t{tflops_naive:.2f} TFLOP/s")
+    print(
+        f"naive\t{t_naive:.2f} ms\t{tokens / (t_naive / 1000.0):.1f} tok/s\t{tflops_naive:.2f} TFLOP/s"
+    )
 
     with torch.no_grad():
         y_ref = run_naive()
