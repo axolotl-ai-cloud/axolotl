@@ -19,6 +19,9 @@ cd axolotl
 
 pip3 install packaging==23.2 setuptools==75.8.0 wheel ninja
 pip3 install --no-build-isolation -e '.[flash-attn]'
+
+# Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy
+python scripts/cutcrossentropy_install.py | sh
 ```
 
 2. Run the finetuning example:

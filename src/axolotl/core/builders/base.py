@@ -36,7 +36,6 @@ from axolotl.utils.callbacks import (
     SaveModelOnFirstStepCallback,
 )
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
-from axolotl.utils.callbacks.tokens_per_second import TokensPerSecondCallback
 from axolotl.utils.distributed import build_parallelism_config
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
@@ -143,12 +142,6 @@ class TrainerBuilderBase(abc.ABC):
                 PytorchProfilerCallback(
                     steps_to_profile=self.cfg.profiler_steps,
                     profiler_steps_start=self.cfg.profiler_steps_start,
-                )
-            )
-        if self.cfg.include_tkps:
-            callbacks.append(
-                TokensPerSecondCallback(
-                    self.cfg.tensor_parallel_size, self.cfg.context_parallel_size
                 )
             )
 
@@ -442,7 +435,7 @@ class TrainerBuilderBase(abc.ABC):
             # don't use the HF gradient checkpointing, manually wrap
             training_args_kwargs["gradient_checkpointing"] = False
             training_args_kwargs["activation_offloading"] = True
-        elif self.cfg.gradient_checkpointing:
+        elif self.cfg.gradient_checkpointing is not None:
             training_args_kwargs["gradient_checkpointing"] = (
                 self.cfg.gradient_checkpointing
             )

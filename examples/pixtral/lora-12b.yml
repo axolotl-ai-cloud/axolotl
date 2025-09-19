@@ -45,8 +45,7 @@ tf32: true
 
 gradient_checkpointing: true
 logging_steps: 1
-# flash_attention:  # PixtralVisionModel does not support Flash Attention 2.0 yet
-sdp_attention: true
+flash_attention: true
 
 warmup_ratio: 0.1
 evals_per_epoch: 1

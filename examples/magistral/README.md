@@ -1,10 +1,10 @@
 # Finetune Magistral Small with Axolotl
 
-Magistral Small is a 24B parameter opensource model from MistralAI found on HuggingFace at [2506](https://huggingface.co/mistralai/Magistral-Small-2506) and [2507](https://huggingface.co/mistralai/Magistral-Small-2507) (see [Thinking](#thinking)). This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.
+Magistral Small is a 24B parameter opensource model from MistralAI found on HuggingFace at [2506](https://huggingface.co/mistralai/Magistral-Small-2506), [2507](https://huggingface.co/mistralai/Magistral-Small-2507) (see [Thinking](#thinking)), and [2509](https://huggingface.co/mistralai/Magistral-Small-2509) (see [Vision](#vision)). This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.
 
 MistralAI has also released a proprietary medium-sized version called Magistral Medium.
 
-Thanks to the team at MistralAI for giving us early access to prepare for this release.
+Thanks to the team at MistralAI for giving us early access to prepare for these releases.
 
 ## Getting started
 
@@ -18,7 +18,13 @@ pip3 install packaging==23.2 setuptools==75.8.0 wheel ninja
 pip3 install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
 ```
 
-2. Run the finetuning example:
+2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage
+
+```bash
+python scripts/cutcrossentropy_install.py | sh
+```
+
+3. Run the finetuning example:
 
 ```bash
 axolotl train examples/magistral/magistral-small-qlora.yaml
@@ -30,29 +36,17 @@ Let us know how it goes. Happy finetuning! 🚀
 
 ### Thinking
 
-MistralAI has released their [2507](https://huggingface.co/mistralai/Magistral-Small-2507) model with thinking capabilities. The model requires the multi-content dataset format with support for an extra `role: thinking` within system and assistant messages.
+MistralAI has released their [2507](https://huggingface.co/mistralai/Magistral-Small-2507) model with thinking capabilities, enabling Chain-of-Thought reasoning with explicit thinking steps.
 
-Example format:
+📚 **[See the Thinking fine-tuning guide →](./think/README.md)**
 
-```json
-{
-    "messages": [
-        {"role": "system", "content": [{ "type": "text", "text": "{SYSTEM_PROMPT}"}]},
-        {"role": "user", "content": [{ "type": "text", "text": "..."}]},
-        {"role": "assistant", "content": [{ "type": "thinking", "thinking": "..."}, { "type": "text", "text": "..." }]},
-    ],
-}
-```
+### Vision
 
-Example config: `./magistral-small-think-qlora.yaml`.
+MistralAI has released their [2509](https://huggingface.co/mistralai/Magistral-Small-2509) model with vision capabilities.
 
-The `thinking` section also supports an optional arg `closed: bool` (`True` default) which controls adding the closing `[/THINK]` tag.
+📚 **[See the Vision fine-tuning guide →](./vision/README.md)**
 
-Limitations:
-- You cannot mix `content: str` with `content: list[dict]` as the `dataset.load_dataset` may complain about different types for `content` key.
-- This mode does not work with custom `train_detail` and `training` at the moment.
-
-### TIPS
+### Tips
 
 - We recommend adding the same/similar SystemPrompt that the model is tuned for. You can find this within the repo's files titled `SYSTEM_PROMPT.txt`.
 - For inference, the official MistralAI team recommends `top_p: 0.95` and `temperature: 0.7` with `max_tokens: 40960`.
@@ -83,5 +77,5 @@ In addition, we do not support overriding tokens yet.
 
 ## Future Work
 
-- Add parity to Preference Tuning, RL, Multi-modal, etc.
+- Add parity to Preference Tuning, RL, etc.
 - Add parity to other tokenizer configs like overriding tokens.

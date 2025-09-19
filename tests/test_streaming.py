@@ -5,12 +5,12 @@ from unittest.mock import Mock, patch
 
 from datasets import IterableDataset
 
-from axolotl.utils.dict import DictDefault
+from axolotl.utils.config import validate_config
 from axolotl.utils.data.sft import (
     _prepare_streaming_dataset,
     prepare_datasets,
 )
-from axolotl.utils.config import validate_config
+from axolotl.utils.dict import DictDefault
 
 
 class TestStreamingConfig(unittest.TestCase):

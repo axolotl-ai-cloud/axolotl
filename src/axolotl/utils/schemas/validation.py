@@ -14,7 +14,6 @@ from transformers.utils.import_utils import is_torch_npu_available
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
 
-
 LOG = get_logger(__name__)
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
@@ -1377,6 +1376,21 @@ class ComplexValidationMixin:
                 else RingAttnFunc.BATCH_RING
             )
 
+        return self
+
+    def hint_gradient_checkpointing_dpo_lora_ddp(self):
+        if (
+            (self.gradient_checkpointing is True or self.gradient_checkpointing is None)
+            and self.capabilities
+            and self.capabilities.get("n_gpu", 1) > 1
+            and self.adapter in ("lora", "qlora")
+            and self.rl == RLType.DPO
+            and not self.fsdp
+            and not self.deepspeed
+        ):
+            LOG.warning(
+                "gradient_checkpointing with DPO + DDP + LoRA is not recommended."
+            )
         return self
 
 

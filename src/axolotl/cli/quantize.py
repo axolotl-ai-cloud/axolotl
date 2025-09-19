@@ -5,12 +5,17 @@ CLI to post-training quantize a model using torchao
 from pathlib import Path
 from typing import Union
 
-from transformers import AutoModelForCausalLM
+from transformers import AutoConfig, AutoModelForCausalLM, TorchAoConfig
 
 from axolotl.cli.config import load_cfg
 from axolotl.loaders import load_tokenizer
 from axolotl.utils.logging import get_logger
-from axolotl.utils.quantization import TorchIntDType, quantize_model_for_ptq
+from axolotl.utils.quantization import (
+    TorchAOQuantDType,
+    get_quantization_config,
+    quantization_config_to_str,
+    quantize_model,
+)
 
 LOG = get_logger(__name__)
 
@@ -43,13 +48,13 @@ def do_quantize(
             "No quantization configuration found. Please specify either qat or quantization in your config file."
         )
 
-    model_path = cli_args.get("model_path") or cfg.output_dir
+    model_path = cli_args.get("base_model") or cfg.output_dir
     if weight_dtype := cli_args.get("weight_dtype"):
-        weight_dtype = TorchIntDType[weight_dtype]
+        weight_dtype = TorchAOQuantDType.from_string(weight_dtype)
     else:
         weight_dtype = quantize_cfg.weight_dtype
     if activation_dtype := cli_args.get("activation_dtype"):
-        activation_dtype = TorchIntDType[activation_dtype]
+        activation_dtype = TorchAOQuantDType.from_string(activation_dtype)
     else:
         activation_dtype = quantize_cfg.activation_dtype
     group_size = cli_args.get("group_size") or quantize_cfg.group_size
@@ -57,10 +62,15 @@ def do_quantize(
         cli_args.get("quantize_embedding") or quantize_cfg.quantize_embedding
     )
     output_dir = cli_args.get("output_dir") or cfg.output_dir
+    hub_model_id = cli_args.get("hub_model_id") or cfg.hub_model_id
 
-    LOG.info(f"Loading model from {model_path}...")
+    LOG.info(f"Loading model from {model_path}.")
     tokenizer = load_tokenizer(cfg)
-    model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto")
+    config = AutoConfig.from_pretrained(model_path)
+    torch_dtype = config.torch_dtype if hasattr(config, "torch_dtype") else None
+    model = AutoModelForCausalLM.from_pretrained(
+        model_path, device_map="auto", torch_dtype=torch_dtype
+    )
 
     LOG.info(
         f"Quantizing model with configuration: \n"
@@ -70,11 +80,21 @@ def do_quantize(
         f"\tquantize_embedding: {quantize_embedding}"
     )
 
-    quantize_model_for_ptq(
+    quantize_model(
         model, weight_dtype, group_size, activation_dtype, quantize_embedding
     )
 
-    LOG.info(f"Saving quantized model to: {str(Path(output_dir) / 'quantized')}...")
+    quantization_config = get_quantization_config(
+        weight_dtype, activation_dtype, group_size
+    )
+
+    ao_config = TorchAoConfig(
+        quant_type=quantization_config,
+        include_input_output_embeddings=quantize_embedding,
+    )
+    model.config.quantization_config = ao_config
+
+    LOG.info(f"Saving quantized model to: {str(Path(output_dir) / 'quantized')}.")
     model.save_pretrained(
         str(Path(output_dir) / "quantized"),
         safe_serialization=False,
@@ -86,4 +106,14 @@ def do_quantize(
         progressbar=True,
         save_jinja_files=cfg.tokenizer_save_jinja_files,
     )
-    LOG.info(f"Quantized model saved to: {str(Path(output_dir) / 'quantized')}...")
+
+    if hub_model_id:
+        hub_model_id = (
+            hub_model_id.rstrip("-")
+            + f"-{quantization_config_to_str[type(quantization_config)]}"
+        )
+        model.push_to_hub(hub_model_id, safe_serialization=False)
+        tokenizer.push_to_hub(hub_model_id)
+        LOG.info(f"Quantized model pushed to: {hub_model_id}.")
+
+    LOG.info(f"Quantized model saved to: {str(Path(output_dir) / 'quantized')}.")

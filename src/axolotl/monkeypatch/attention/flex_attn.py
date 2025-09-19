@@ -1,11 +1,12 @@
 """Flex attention monkey patch"""
 
 import sys
-from packaging import version
 
 import torch
 import transformers
+from packaging import version
 from transformers.utils.import_utils import _torch_version, is_torch_less_or_equal
+
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)

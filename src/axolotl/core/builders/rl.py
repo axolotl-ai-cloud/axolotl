@@ -120,6 +120,11 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.use_wandb:
             training_args_kwargs["run_name"] = self.cfg.wandb_name
 
+        if self.cfg.max_prompt_len:
+            training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
+        else:
+            training_args_kwargs["max_prompt_length"] = self.cfg.sequence_len
+
         training_args_cls = None
         blocklist_args_kwargs = []
         if self.cfg.rl is RLType.SIMPO:
@@ -129,10 +134,16 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if self.cfg.cpo_alpha is not None:
                 training_args_kwargs["cpo_alpha"] = self.cfg.cpo_alpha
 
+            # Handle when max_prompt_length == max_length from defaults
+            # CPOTrainer requires strictly less than
+            if (
+                training_args_kwargs["max_prompt_length"]
+                == training_args_kwargs["max_length"]
+            ):
+                training_args_kwargs["max_prompt_length"] -= 1
+
         elif self.cfg.rl is RLType.ORPO:
             training_args_cls = AxolotlORPOConfig
-            if self.cfg.max_prompt_len:
-                training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
         elif self.cfg.rl is RLType.KTO:
             training_args_cls = AxolotlKTOConfig
@@ -143,9 +154,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_kwargs["undesirable_weight"] = (
                 self.cfg.kto_undesirable_weight or 1.0
             )
-
-            if self.cfg.max_prompt_len:
-                training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
         elif self.cfg.rl is RLType.GRPO:
             training_args_cls = GRPOStrategy.get_training_args_class()

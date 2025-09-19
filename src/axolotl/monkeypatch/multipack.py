@@ -11,6 +11,7 @@ from axolotl.monkeypatch.mixtral import patch_mixtral_moe_forward_zero3
 from axolotl.monkeypatch.utils import get_unpad_data
 
 SUPPORTED_MULTIPACK_MODEL_TYPES = [
+    "apertus",
     "mllama_text_model",
     "llama",
     "llama4",
@@ -36,8 +37,13 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "glm",
     "glm4",
     "smollm3",
+    "granite",
+    "granitemoe",
+    "hunyuan_v1_dense",
+    "hunyuan_v1_moe",
     "gpt_oss",
     "arcee",
+    "seed_oss",
 ]
 
 

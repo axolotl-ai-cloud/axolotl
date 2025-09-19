@@ -124,12 +124,7 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
 
     def _load_mistral_common_tokenizer(cfg: DictDefault):
         """Load mistral-common tokenizer"""
-        from transformers import tokenization_mistral_common
-
         from axolotl.utils.mistral import HFMistralTokenizer
-
-        # patch
-        tokenization_mistral_common.MistralCommonTokenizer = HFMistralTokenizer
 
         # Load the HF-compatible wrapper around MistralTokenizer
         tokenizer = HFMistralTokenizer.from_pretrained(cfg.tokenizer_config)
@@ -296,7 +291,7 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
             )
 
         tokenizer.chat_template = chat_template_string
-    else:
+    elif getattr(tokenizer, "chat_template", None) is None:
         LOG.info(
             "No Chat template selected. Consider adding a chat template for easier inference."
         )

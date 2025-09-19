@@ -43,7 +43,7 @@ class TestQATLlama:
                 "qat": {
                     "quantize_embedding": True,
                     "activation_dtype": "int8",
-                    "weight_dtype": "int8",
+                    "weight_dtype": "int4",
                     "group_size": 8,
                 },
                 "num_epochs": 1,
@@ -111,7 +111,7 @@ class TestQATLlama:
                 "qat": {
                     "quantize_embedding": True,
                     "activation_dtype": "int8",
-                    "weight_dtype": "int8",
+                    "weight_dtype": "int4",
                     "group_size": 8,
                 },
                 "save_first_step": False,
