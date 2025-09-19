@@ -1378,6 +1378,21 @@ class ComplexValidationMixin:
 
         return self
 
+    def hint_gradient_checkpointing_dpo_lora_ddp(self):
+        if (
+            (self.gradient_checkpointing is True or self.gradient_checkpointing is None)
+            and self.capabilities
+            and self.capabilities.get("n_gpu", 1) > 1
+            and self.adapter in ("lora", "qlora")
+            and self.rl == RLType.DPO
+            and not self.fsdp
+            and not self.deepspeed
+        ):
+            LOG.warning(
+                "gradient_checkpointing with DPO + DDP + LoRA is not recommended."
+            )
+        return self
+
 
 class DistributedValidationMixin:
     """validation for distributed training."""

@@ -65,6 +65,7 @@ plugins:
 - qwen2_5_vl
 - qwen3
 - qwen3_moe
+- qwen3_next
 - smollm3
 - seed_oss
 - voxtral

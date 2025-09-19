@@ -436,8 +436,8 @@ class AxolotlInputConfig(
         },
     )
     min_sample_len: int | None = None
-    max_prompt_len: int = Field(
-        default=512,
+    max_prompt_len: int | None = Field(
+        default=None,
         json_schema_extra={"description": "maximum prompt length for RL training"},
     )
     sample_packing: bool | None = Field(
