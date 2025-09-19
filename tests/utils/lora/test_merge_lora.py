@@ -1,5 +1,7 @@
-import torch
 from unittest.mock import Mock, patch
+
+import torch
+
 from axolotl.cli.merge_lora import do_merge_lora
 from axolotl.utils.dict import DictDefault
 
