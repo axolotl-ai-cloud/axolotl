@@ -300,11 +300,10 @@ def moe_ffn_forward_grouped(
     routed_input = torch.gather(x_flat, 0, gather_index)
 
     counts_i32 = assignments.to(device=device, dtype=torch.int32)
-    offsets = torch.cumsum(counts_i32, dim=0)
+    offsets = torch.cumsum(counts_i32, dim=0).to(dtype=torch.int32)
     if offsets[-1].item() == 0:
         zero = torch.zeros_like(x_flat)
         return zero.view(bsz, seqlen, hdim), router_logits
-
     mm_dtype = torch.bfloat16 if expert_dtype == torch.bfloat16 else expert_dtype
     routed_in = routed_input.to(mm_dtype)
     w_gate_t = w_gate.transpose(-2, -1).to(mm_dtype)

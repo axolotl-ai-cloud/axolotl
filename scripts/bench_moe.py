@@ -189,6 +189,20 @@ def main():
     else:
         print("torch_grouped\tN/A (unavailable)")
 
+    with torch.profiler.profile(
+        activities=[torch.profiler.ProfilerActivity.CUDA], record_shapes=True
+    ) as prof:
+        forward_naive(x, gate, experts, args.top_k)
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
+
+    with torch.profiler.profile(
+        activities=[torch.profiler.ProfilerActivity.CUDA],
+        record_shapes=True,
+        with_stack=False,
+    ) as prof:
+        forward_tg(x, gate, experts, args.top_k)
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
+
 
 if __name__ == "__main__":
     main()
