@@ -823,9 +823,13 @@ class OptimizationValidationMixin:
         load_in_8bit = self.load_in_8bit if hasattr(self, "load_in_8bit") else None
         load_in_4bit = self.load_in_4bit if hasattr(self, "load_in_4bit") else None
         if fsdp_config and fsdp_version == 2:
-            if fsdp_config.get("cpu_ram_efficient_loading") and (
-                load_in_8bit or load_in_4bit
-            ):
+            cpu_ram_efficient_loading = None
+            if hasattr(fsdp_config, "cpu_ram_efficient_loading"):
+                cpu_ram_efficient_loading = fsdp_config.cpu_ram_efficient_loading
+            elif isinstance(fsdp_config, dict):
+                cpu_ram_efficient_loading = fsdp_config.get("cpu_ram_efficient_loading")
+
+            if cpu_ram_efficient_loading and (load_in_8bit or load_in_4bit):
                 raise ValueError(
                     "FSDP2 does not support load_in_8bit or load_in_4bit with cpu_ram_efficient_loading. Please do one of the following: use DeepSpeed, "
                     "set fsdp_version to 1, or disable cpu_ram_efficient_loading."
@@ -860,28 +864,6 @@ class OptimizationValidationMixin:
             data["fsdp_version"] = fsdp_config.pop("fsdp_version")
         return data
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_fsdp_config_kwargs_prefix(cls, data):
-        if fsdp_config := data.get("fsdp_config"):
-            should_fix = False
-            for key, _ in fsdp_config.items():
-                if key.startswith("fsdp_"):
-                    should_fix = True
-                    LOG.warning_once(
-                        "Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
-                        "Please omit the `fsdp_` prefix from the any fields in `fsdp_config`."
-                    )
-            if should_fix:
-                update_fsdp_config = {}
-                for key, value in fsdp_config.items():
-                    if key.startswith("fsdp_") and key != "fsdp_version":
-                        update_fsdp_config[key.replace("fsdp_", "")] = value
-                    else:
-                        update_fsdp_config[key] = value
-                data["fsdp_config"] = update_fsdp_config
-        return data
-
     @model_validator(mode="after")
     def check_fsdp_offload_w_8bit_optimizer(self):
         if (
@@ -889,12 +871,18 @@ class OptimizationValidationMixin:
             and self.fsdp_config
             and self.optimizer
             and "8bit" in self.optimizer.value
-            and self.fsdp_config["offload_params"]
             and str(self.fsdp_version) != "2"
         ):
-            raise ValueError(
-                f"FSDP Offload not compatible with {str(self.optimizer.value)}"
-            )
+            offload_params = None
+            if hasattr(self.fsdp_config, "offload_params"):
+                offload_params = self.fsdp_config.offload_params
+            elif isinstance(self.fsdp_config, dict):
+                offload_params = self.fsdp_config.get("offload_params")
+
+            if offload_params:
+                raise ValueError(
+                    f"FSDP Offload not compatible with {str(self.optimizer.value)}"
+                )
         return self
 
     @model_validator(mode="after")
