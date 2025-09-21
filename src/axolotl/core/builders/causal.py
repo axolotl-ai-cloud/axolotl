@@ -176,6 +176,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.deepspeed:
             training_arguments_kwargs["deepspeed"] = self.cfg.deepspeed
 
+        if self.cfg.fp8:
+            training_arguments_kwargs["fp8"] = self.cfg.fp8
+            training_arguments_kwargs["fp8_enable_fsdp_float8_all_gather"] = (
+                self.cfg.fp8_enable_fsdp_float8_all_gather
+            )
+
         if self.cfg.lr_quadratic_warmup is not None:
             training_arguments_kwargs["lr_quadratic_warmup"] = (
                 self.cfg.lr_quadratic_warmup

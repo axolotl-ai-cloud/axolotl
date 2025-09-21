@@ -816,21 +816,6 @@ class OptimizationValidationMixin:
             )
         return data
 
-    @model_validator(mode="after")
-    def check_fsdp2_base_model_quant_ram_efficient_loading(self):
-        fsdp_config = self.fsdp_config if hasattr(self, "fsdp_config") else None
-        fsdp_version = self.fsdp_version if hasattr(self, "fsdp_version") else None
-        load_in_8bit = self.load_in_8bit if hasattr(self, "load_in_8bit") else None
-        load_in_4bit = self.load_in_4bit if hasattr(self, "load_in_4bit") else None
-        if fsdp_config and fsdp_version == 2:
-            if fsdp_config.get("cpu_ram_efficient_loading") and (
-                load_in_8bit or load_in_4bit
-            ):
-                raise ValueError(
-                    "FSDP2 does not support load_in_8bit or load_in_4bit with cpu_ram_efficient_loading. Please do one of the following: use DeepSpeed, "
-                    "set fsdp_version to 1, or disable cpu_ram_efficient_loading."
-                )
-        return self
 
     @model_validator(mode="before")
     @classmethod

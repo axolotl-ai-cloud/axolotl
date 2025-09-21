@@ -29,9 +29,9 @@ To enable `QLoRA` with `FSDP`, you need to perform the following steps:
 
 ## Enabling Swap for FSDP
 
-When FSDP's CPU offloading still exceeds your available RAM, you can enable swap memory usage to offload to disk by setting AXOLOTL_DISABLE_MEMORY_PINNING=1.
+If available memory is insufficient even after FSDP's CPU offloading, you can enable swap memory usage by setting `cpu_offload_pin_memory: false` in `fsdp_config`.
 
-This disables memory pinning -- necessary for FSDP to use NVMe/SSD swap space. While even slower than RAM, it may enable training that would otherwise fail with OOM errors.
+This disables memory pinning -- necessary for FSDP to use NVMe/SSD swap space. While even slower than RAM from initial CPU offload, it unlocks a new pool of memory which may enable training that would otherwise fail with OOM errors.
 
 ## References
 

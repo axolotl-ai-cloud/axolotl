@@ -10,9 +10,12 @@ from typing import Any, Callable, Literal, Optional
 import datasets
 import safetensors
 import torch
+from torchao.float8 import Float8LinearConfig
 from accelerate.state import AcceleratorState
+from accelerate.utils import AORecipeKwargs, FullyShardedDataParallelPlugin
 from datasets import Dataset
 from peft import PeftModel
+from torch.distributed.fsdp import CPUOffloadPolicy
 from torch.utils.data import (
     BatchSampler,
     DataLoader,
@@ -567,25 +570,54 @@ class AxolotlTrainer(
             ):
                 self.accelerator.state.fsdp_plugin.limit_all_gathers = True
 
-    def additional_accelerator_args(
-        self, fp8: bool = False, enable_fsdp_float8_all_gather: bool = False, **kwargs
-    ) -> dict[str, Any]:
+    def additional_accelerator_args(self, **kwargs) -> dict[str, Any]:
         ret_kwargs = {}
-        if fp8:
-            from accelerate.utils import AORecipeKwargs
-            from torchao.float8 import Float8LinearConfig
 
+        if self.args.fp8:
             # By default, Float8LinearConfig is instantiated using the "tensorwise"
             # scaling strategy. See more details here:
             # https://github.com/pytorch/ao/tree/main/torchao/float8.
             config = Float8LinearConfig(
-                enable_fsdp_float8_all_gather=enable_fsdp_float8_all_gather,
-                force_recompute_fp8_weight_in_bwd=enable_fsdp_float8_all_gather is True,
+                enable_fsdp_float8_all_gather=self.args.fp8_enable_fsdp_float8_all_gather,
+                force_recompute_fp8_weight_in_bwd=self.args.fp8_enable_fsdp_float8_all_gather is True,
             )
 
             ret_kwargs["mixed_precision"] = "fp8"
             ret_kwargs["kwargs_handlers"] = [AORecipeKwargs(config=config)]  # type: ignore
             os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
+
+        if (
+            self.args.fsdp_config
+            and self.args.fsdp_config.get("cpu_offload_pin_memory") is False
+            and self.args.fsdp_version == 2
+            and self.args.fsdp_config.get("offload_params")
+        ):
+            plugin_kwargs = {
+                "fsdp_version": 2,
+                "cpu_offload": CPUOffloadPolicy(pin_memory=False),
+            }
+
+            if self.args.fsdp_config.get("activation_checkpointing"):
+                plugin_kwargs["activation_checkpointing"] = True
+            if self.args.fsdp_config.get("sync_module_states"):
+                plugin_kwargs["sync_module_states"] = True
+            if self.args.fsdp_config.get("use_orig_params"):
+                plugin_kwargs["use_orig_params"] = True
+            if self.args.fsdp_config.get("state_dict_type"):
+                plugin_kwargs["state_dict_type"] = self.args.fsdp_config["state_dict_type"]
+            if self.args.fsdp_config.get("auto_wrap_policy"):
+                plugin_kwargs["auto_wrap_policy"] = self.args.fsdp_config["auto_wrap_policy"]
+            if self.args.fsdp_config.get("reshard_after_forward") is not None:
+                plugin_kwargs["reshard_after_forward"] = self.args.fsdp_config["reshard_after_forward"]
+            if self.args.fsdp_config.get("limit_all_gathers") is not None:
+                plugin_kwargs["limit_all_gathers"] = self.args.fsdp_config["limit_all_gathers"]
+            if self.args.fsdp_config.get("cpu_ram_efficient_loading"):
+                plugin_kwargs["cpu_ram_efficient_loading"] = True
+            if self.args.fsdp_config.get("transformer_layer_cls_to_wrap"):
+                plugin_kwargs["transformer_cls_names_to_wrap"] = self.args.fsdp_config["transformer_layer_cls_to_wrap"]
+
+            fsdp_plugin = FullyShardedDataParallelPlugin(**plugin_kwargs)
+            ret_kwargs["fsdp_plugin"] = fsdp_plugin
 
         return ret_kwargs
 

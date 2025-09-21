@@ -53,19 +53,20 @@ class TestFSDPValidation:
             validate_config(cfg)
 
     def test_fsdp2_w_cpu_ram_efficient_loading(self, min_base_cfg):
+        """Test that FSDP v2 with cpu_ram_efficient_loading now passes validation."""
         cfg = min_base_cfg | DictDefault(
             load_in_8bit=True,
             adapter="lora",
             fsdp_config={
                 "cpu_ram_efficient_loading": True,
+                "cpu_offload_pin_memory": False,
+                "offload_params": True,
             },
             fsdp_version=2,
         )
-        with pytest.raises(
-            ValueError,
-            match="FSDP2 does not support load_in_8bit or load_in_4bit with cpu_ram_efficient_loading.",
-        ):
-            validate_config(cfg)
+        validated_cfg = validate_config(cfg)
+        assert validated_cfg.fsdp_version == 2
+        assert validated_cfg.fsdp_config.cpu_ram_efficient_loading is True
 
     def test_fsdp_prefixes_removed(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(
