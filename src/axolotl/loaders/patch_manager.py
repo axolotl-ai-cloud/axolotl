@@ -190,6 +190,11 @@ class PatchManager:
 
             apply_mistral_tokenizer_image_patch()
 
+        if self.cfg.model_config_type == "deepseek_v3":
+            from axolotl.monkeypatch.deepseek_v3 import patch_deepseek_v3_moe
+
+            patch_deepseek_v3_moe()
+
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
         if self.cfg.fp8:
