@@ -8,9 +8,13 @@ from typing import Callable
 import torch
 
 from axolotl.kernels.moe import ContiguousGroupedGEMM
+from axolotl.kernels.moe.indices import generate_permute_indices
+from axolotl.utils.logging import get_logger
 
 _GROUP_SIZE_M = 128
 _COMBINED_SUBMODULES = ("gate_proj", "up_proj", "down_proj")
+
+LOG = get_logger(__name__)
 
 
 def _is_triton_eligible(hidden_states: torch.Tensor) -> bool:
@@ -55,9 +59,7 @@ def _ensure_combined_expert_weights(
                 # DeepseekV3 MLP layers are bias-free, but keep this for safety.
                 del lin._parameters["bias"]
         combined[name] = torch.stack(weights, dim=0).contiguous()
-        module.register_parameter(
-            f"{name}_weight", torch.nn.Parameter(combined[name])
-        )
+        module.register_parameter(f"{name}_weight", torch.nn.Parameter(combined[name]))
         module._axolotl_original_specs[name] = (orig_device, orig_dtype)
 
     module._axolotl_combined_weights = True
@@ -72,7 +74,9 @@ def _restore_expert_weights(module) -> None:
     for name in _COMBINED_SUBMODULES:
         param_name = f"{name}_weight"
         combined = module._parameters.pop(param_name)
-        orig_device, orig_dtype = module._axolotl_original_specs.get(name, (combined.device, combined.dtype))
+        orig_device, orig_dtype = module._axolotl_original_specs.get(
+            name, (combined.device, combined.dtype)
+        )
         for idx, expert in enumerate(module.experts):
             lin = expert.get_submodule(name)
             lin._parameters["weight"] = torch.nn.Parameter(
@@ -82,6 +86,7 @@ def _restore_expert_weights(module) -> None:
     module._axolotl_combined_weights = False
     module._axolotl_combined_dtype = None
     module._axolotl_combined_device = None
+    module._axolotl_original_specs = {}
 
 
 def _moe_triton_forward(
@@ -115,36 +120,45 @@ def _moe_triton_forward(
     if total_actual == 0:
         return hidden_states.new_zeros_like(hidden_states)
 
-    padded_counts = (
-        (
-            torch.where(
-                counts > 0,
-                counts,
-                torch.full_like(counts, group_size_m),
-            )
-            + group_size_m
-            - 1
-        )
+    counts_int = counts.to(torch.int32)
+    aligned_counts = (
+        (torch.clamp_min(counts_int, group_size_m) + group_size_m - 1)
         // group_size_m
     ) * group_size_m
+    max_len = int(aligned_counts.sum().item())
 
-    total_padded = int(padded_counts.sum().item())
-    grouped_hidden = hidden_states.new_zeros((total_padded, hidden_dim))
+    permuted_indices, m_sizes, m_offsets = generate_permute_indices(
+        counts_int.to(device),
+        experts_per_rank=num_experts,
+        num_ranks=1,
+        max_len=max_len,
+        alignment=group_size_m,
+        use_cpu=not hidden_states.is_cuda,
+    )
 
-    write_offsets = torch.cumsum(padded_counts, dim=0) - padded_counts
-    actual_offsets = torch.cumsum(counts, dim=0) - counts
+    if permuted_indices.device != device:
+        permuted_indices = permuted_indices.to(device)
+    if m_sizes.device != device:
+        m_sizes = m_sizes.to(device)
+    if m_offsets.device != device:
+        m_offsets = m_offsets.to(device)
 
-    repeated_offsets = torch.repeat_interleave(actual_offsets, counts)
-    token_index = torch.arange(total_actual, device=device) - repeated_offsets
-    dest_indices = write_offsets[sorted_assignments] + token_index
+    permuted_indices_long = permuted_indices.to(torch.int64)
+    valid_mask = permuted_indices_long >= 0
+    valid_positions = torch.nonzero(valid_mask, as_tuple=False).squeeze(-1)
+    source_indices = permuted_indices_long[valid_mask]
 
-    grouped_hidden.index_copy_(0, dest_indices, sorted_hidden)
-    padded_counts_idx = padded_counts.to(torch.int64)
-    expert_index_tensor = (
-        torch.arange(num_experts, device=device, dtype=torch.int64)
-        .repeat_interleave(padded_counts_idx)
-        .to(torch.int32)
-        .contiguous()
+    grouped_hidden = hidden_states.new_zeros((max_len, hidden_dim))
+    if valid_positions.numel() > 0:
+        grouped_hidden.index_copy_(
+            0,
+            valid_positions,
+            sorted_hidden.index_select(0, source_indices),
+        )
+
+    expert_index_tensor = torch.repeat_interleave(
+        torch.arange(num_experts, device=device, dtype=torch.int32),
+        m_sizes.to(torch.int64),
     )
 
     _ensure_combined_expert_weights(module, hidden_dtype, device)
@@ -167,13 +181,17 @@ def _moe_triton_forward(
     )
 
     act_fn: Callable[[torch.Tensor], torch.Tensor] = module.experts[0].act_fn
-    valid_gate = gate_out.index_select(0, dest_indices).to(hidden_dtype)
-    valid_up = up_out.index_select(0, dest_indices).to(hidden_dtype)
-    hidden_concat = act_fn(valid_gate) * valid_up
+    if valid_positions.numel() > 0:
+        gate_valid = gate_out.index_select(0, valid_positions).to(hidden_dtype)
+        up_valid = up_out.index_select(0, valid_positions).to(hidden_dtype)
+        hidden_concat = act_fn(gate_valid) * up_valid
+    else:
+        hidden_concat = torch.empty((0, gate_out.shape[-1]), device=device, dtype=hidden_dtype)
 
     intermediate_dim = hidden_concat.shape[-1]
-    hidden_grouped = hidden_states.new_zeros((total_padded, intermediate_dim))
-    hidden_grouped.index_copy_(0, dest_indices, hidden_concat)
+    hidden_grouped = hidden_states.new_zeros((max_len, intermediate_dim))
+    if valid_positions.numel() > 0:
+        hidden_grouped.index_copy_(0, valid_positions, hidden_concat)
 
     down_out = ContiguousGroupedGEMM.apply(
         hidden_grouped,
@@ -182,10 +200,19 @@ def _moe_triton_forward(
         group_size_m,
     )
 
-    down_valid = down_out.index_select(0, dest_indices).to(hidden_dtype)
+    if valid_positions.numel() > 0:
+        down_valid = down_out.index_select(0, valid_positions).to(hidden_dtype)
+    else:
+        down_valid = torch.empty((0, down_out.shape[-1]), device=device, dtype=hidden_dtype)
+
+    sorted_outputs = hidden_states.new_empty((total_actual, hidden_dim))
+    if down_valid.numel() > 0:
+        sorted_outputs.index_copy_(0, source_indices, down_valid)
+    else:
+        sorted_outputs.zero_()
 
     expanded_output = expanded_hidden.new_empty(expanded_hidden.shape)
-    expanded_output.index_copy_(0, sort_perm, down_valid)
+    expanded_output.index_copy_(0, sort_perm, sorted_outputs)
     expert_outputs = expanded_output.view(num_tokens, top_k, hidden_dim)
 
     weighted = expert_outputs * topk_weights.unsqueeze(-1).to(hidden_dtype)
@@ -212,7 +239,13 @@ def patch_deepseek_v3_moe(group_size_m: int = _GROUP_SIZE_M) -> None:
                 group_size_m,
                 original_moe,
             )
-        except RuntimeError:
+        except RuntimeError as err:
+            if not getattr(self, "_axolotl_triton_warned", False):
+                LOG.warning(
+                    "DeepseekV3MoE Triton path failed; falling back to baseline: %s",
+                    err,
+                )
+                self._axolotl_triton_warned = True
             _restore_expert_weights(self)
             return original_moe(self, hidden_states, topk_indices, topk_weights)
 
