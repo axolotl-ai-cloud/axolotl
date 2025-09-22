@@ -11,9 +11,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 CURRENT_DIR = Path(__file__).resolve().parent
-PACKAGE_ROOT = CURRENT_DIR.parent
-if str(PACKAGE_ROOT) not in sys.path:
-    sys.path.insert(0, str(PACKAGE_ROOT))
+REPO_ROOT = CURRENT_DIR.parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.benchmarks.deepseek_v3_moe import (
     DTYPE_MAP,
