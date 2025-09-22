@@ -226,6 +226,9 @@ def load_cfg(
             "torch_version": str(torch.__version__).split("+", maxsplit=1)[0]
         },
     )
+    import ipdb
+
+    ipdb.set_trace()
 
     prepare_optim_env(cfg)
     prepare_opinionated_env(cfg)

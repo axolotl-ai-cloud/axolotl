@@ -823,9 +823,7 @@ class OptimizationValidationMixin:
         load_in_8bit = self.load_in_8bit if hasattr(self, "load_in_8bit") else None
         load_in_4bit = self.load_in_4bit if hasattr(self, "load_in_4bit") else None
         if fsdp_config and fsdp_version == 2:
-            if fsdp_config.get("cpu_ram_efficient_loading") and (
-                load_in_8bit or load_in_4bit
-            ):
+            if fsdp_config.cpu_ram_efficient_loading and (load_in_8bit or load_in_4bit):
                 raise ValueError(
                     "FSDP2 does not support load_in_8bit or load_in_4bit with cpu_ram_efficient_loading. Please do one of the following: use DeepSpeed, "
                     "set fsdp_version to 1, or disable cpu_ram_efficient_loading."
@@ -889,7 +887,7 @@ class OptimizationValidationMixin:
             and self.fsdp_config
             and self.optimizer
             and "8bit" in self.optimizer.value
-            and self.fsdp_config["offload_params"]
+            and self.fsdp_config.offload_params
             and str(self.fsdp_version) != "2"
         ):
             raise ValueError(
