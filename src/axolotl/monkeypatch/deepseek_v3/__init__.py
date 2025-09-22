@@ -119,6 +119,18 @@ def _moe_triton_forward(
     if total_actual == 0:
         return hidden_states.new_zeros_like(hidden_states)
 
+    if not getattr(module, "_axolotl_triton_logged", False):
+        min_tokens = int(counts.min().item())
+        max_tokens = int(counts.max().item())
+        LOG.info(
+            "DeepseekV3MoE Triton: tokens per expert (min=%s, max=%s, avg=%.1f) with group_size=%s",
+            min_tokens,
+            max_tokens,
+            total_actual / max(1, num_experts),
+            group_size_m,
+        )
+        module._axolotl_triton_logged = True
+
     counts_int = counts.to(torch.int32)
     aligned_counts = (
         (torch.clamp_min(counts_int, group_size_m) + group_size_m - 1) // group_size_m
