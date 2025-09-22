@@ -68,7 +68,7 @@ class NormalizeConfigTestCase(unittest.TestCase):
         assert cfg.datasets[1].chat_template == "chatml"
 
     @patch("axolotl.utils.config.is_torch_bf16_gpu_available")
-    def E(self, mock_bf16_avail):
+    def test_bf16_auto_setter_available(self, mock_bf16_avail):
         cfg = self._get_base_cfg()
         cfg.bf16 = "auto"
         mock_bf16_avail.return_value = True
@@ -135,6 +135,7 @@ class NormalizeConfigTestCase(unittest.TestCase):
                 "fsdp_config": {
                     "fsdp_auto_wrap_policy": "SIZE_BASED_WRAP",
                     "fsdp_offload_params": True,
+                    "regular_param": "value",
                 }
             }
         )
@@ -146,6 +147,7 @@ class NormalizeConfigTestCase(unittest.TestCase):
             cfg_without_version.fsdp_config.auto_wrap_policy, "SIZE_BASED_WRAP"
         )
         self.assertEqual(cfg_without_version.fsdp_config.offload_params, True)
+        self.assertEqual(cfg_without_version.fsdp_config.regular_param, "value")
 
         self.assertNotIn("fsdp_auto_wrap_policy", cfg_without_version.fsdp_config)
         self.assertNotIn("fsdp_offload_params", cfg_without_version.fsdp_config)

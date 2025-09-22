@@ -12,7 +12,6 @@ class FSDPConfig(BaseModel):
     FSDP Configuration Schema
     """
 
-    # Core FSDP settings
     activation_checkpointing: bool | None = Field(
         default=None,
         description="Enable activation checkpointing to reduce memory usage during forward passes",
@@ -34,7 +33,6 @@ class FSDPConfig(BaseModel):
         description="Use original parameters instead of flattened parameters",
     )
 
-    # State dict configuration
     state_dict_type: (
         Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None
     ) = Field(
@@ -48,7 +46,6 @@ class FSDPConfig(BaseModel):
         description="Final state dict type to use after training completion",
     )
 
-    # Wrapping policy configuration
     auto_wrap_policy: Literal["TRANSFORMER_BASED_WRAP", "SIZE_BASED_WRAP"] | None = (
         Field(
             default=None,
@@ -60,7 +57,6 @@ class FSDPConfig(BaseModel):
         description="Class name of transformer layers to wrap (e.g., 'LlamaDecoderLayer')",
     )
 
-    # Memory and performance settings
     reshard_after_forward: bool | None = Field(
         default=None,
         description="Reshard parameters after forward pass to save memory",
