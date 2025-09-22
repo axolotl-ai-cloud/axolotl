@@ -819,7 +819,8 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_fsdp2_cpu_offload_pin_memory(cls, data):
-        if not (fsdp_config := data.get("fsdp_config")): return data
+        if not (fsdp_config := data.get("fsdp_config")):
+            return data
 
         if fsdp_config.get("cpu_offload_pin_memory") is False:
             if str(data.get("fsdp_version")) != "2":
