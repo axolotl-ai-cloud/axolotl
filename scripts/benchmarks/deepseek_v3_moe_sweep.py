@@ -21,6 +21,7 @@ from scripts.benchmarks.deepseek_v3_moe import (
     benchmark_deepseek_v3,
 )
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
