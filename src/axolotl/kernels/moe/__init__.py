@@ -1,5 +1,6 @@
 """Mixture-of-Experts kernel implementations."""
 
+from .indices import generate_permute_indices
 from .tt_cg_gemm import (
     ContiguousGroupedGEMM,
     ContiguousGroupedGEMMForwardOnly,
@@ -7,7 +8,6 @@ from .tt_cg_gemm import (
     cg_grouped_gemm_forward,
     cg_grouped_gemm_forward_dynamic,
 )
-from .indices import generate_permute_indices
 
 __all__ = [
     "cg_grouped_gemm",
