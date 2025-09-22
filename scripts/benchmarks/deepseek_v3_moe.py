@@ -1,11 +1,4 @@
-#!/usr/bin/env python
-"""Microbenchmark for DeepSeek V3 MoE block comparing baseline vs Triton CG kernels.
-
-Example usage (run from project root):
-
-    PYTHONPATH=./src:../transformers/src \
-        python scripts/benchmarks/deepseek_v3_moe.py --device cuda --iters 20
-"""
+"""Microbenchmark for DeepSeek V3 MoE block comparing baseline vs Triton CG kernels."""
 
 from __future__ import annotations
 
@@ -14,16 +7,10 @@ import time
 from types import MethodType
 
 import torch
-
-try:
-    from transformers.models.deepseek_v3.configuration_deepseek_v3 import (
-        DeepseekV3Config,
-    )
-    from transformers.models.deepseek_v3.modeling_deepseek_v3 import DeepseekV3MoE
-except ImportError as exc:  # pragma: no cover - utility script
-    raise SystemExit(
-        "Transformers with DeepSeek-V3 support must be available in PYTHONPATH"
-    ) from exc
+from transformers.models.deepseek_v3.configuration_deepseek_v3 import (
+    DeepseekV3Config,
+)
+from transformers.models.deepseek_v3.modeling_deepseek_v3 import DeepseekV3MoE
 
 from axolotl.monkeypatch.deepseek_v3 import patch_deepseek_v3_moe
 
