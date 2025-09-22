@@ -9,22 +9,10 @@ LOG = get_logger(__name__)
 
 
 class FSDPConfig(BaseModel):
-    model_config = ConfigDict(extra="allow")
     fsdp: list[str] | None = Field(
         default=None,
         json_schema_extra={"description": "FSDP configuration"},
         deprecated="Configuring FSDP using `fsdp` is deprecated. Please use `fsdp_config` instead. ",
-    )
-    fsdp_version: Literal[1, 2] | None = Field(
-        default=None,
-        json_schema_extra={"description": "FSDP version"},
-    )
-    fp8_enable_fsdp_float8_all_gather: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Enable FSDP float8 all-gather optimization for FP8 training. Can "
-            "improve training speed by 10-15% when FSDP is enabled."
-        },
     )
     final_state_dict_type: (
         Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None

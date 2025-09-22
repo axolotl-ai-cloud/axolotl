@@ -374,6 +374,13 @@ class AxolotlInputConfig(
             "used in combination with torch.compile."
         },
     )
+    fp8_enable_fsdp_float8_all_gather: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable FSDP float8 all-gather optimization for FP8 training. Can "
+            "improve training speed by 10-15% when FSDP is enabled."
+        },
+    )
     bfloat16: bool | None = Field(
         default=None,
         json_schema_extra={
