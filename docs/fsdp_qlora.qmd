@@ -23,15 +23,15 @@ To enable `QLoRA` with `FSDP`, you need to perform the following steps:
 2. Enable FSDP in your axolotl config, as [described here](multi-gpu.qmd#sec-fsdp).
 3. Use one of the supported model types: `llama`, `mistral` or `mixtral`.
 
+## Enabling Swap for FSDP
+
+If available memory is insufficient even after FSDP's CPU offloading, you can enable swap memory usage by setting `cpu_offload_pin_memory: false` alongside `offload_params: true` in FSDP config.
+
+This disables memory pinning, allowing FSDP to use disk swap space as fallback. Disabling memory pinning itself incurs some performance impact and actually having to use swap space incurs even more. However, it may allow training larger models than otherwise would have been possible due to OOM errors.
+
 ## Example Config
 
 [examples/llama-2/qlora-fsdp.yml](../examples/llama-2/qlora-fsdp.yml) contains an example of how to enable QLoRA + FSDP in axolotl.
-
-## Enabling Swap for FSDP
-
-If available memory is insufficient even after FSDP's CPU offloading, you can enable swap memory usage by setting `cpu_offload_pin_memory: false` in `fsdp_config`.
-
-This disables memory pinning -- necessary for FSDP to use NVMe/SSD swap space. While even slower than RAM from initial CPU offload, it unlocks a new pool of memory which may enable training that would otherwise fail with OOM errors.
 
 ## References
 

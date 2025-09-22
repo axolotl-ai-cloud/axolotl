@@ -263,15 +263,3 @@ class AxolotlTrainingMixins:
     dion_rank_multiple_of: int | None = field(
         default=None,
     )
-    fsdp_version: Optional[int] = field(
-        default=None,
-        metadata={"help": "FSDP version to use"}
-    )
-    fp8: bool = field(
-        default=False,
-        metadata={"help": "Enable FP8 training with torchao"}
-    )
-    fp8_enable_fsdp_float8_all_gather: bool = field(
-        default=False,
-        metadata={"help": "Enable FSDP float8 all-gather for FP8 training"}
-    )

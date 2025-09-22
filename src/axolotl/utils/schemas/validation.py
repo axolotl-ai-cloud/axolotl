@@ -815,7 +815,22 @@ class OptimizationValidationMixin:
                 "For more details on migrating your config. "
             )
         return data
+    
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp2_cpu_offload_pin_memory(cls, data):
+        if not (fsdp_config := data.get("fsdp_config")): return data
 
+        if fsdp_config.get("cpu_offload_pin_memory") is False:
+            if str(data.get("fsdp_version")) != "2":
+                raise ValueError(
+                    "FSDP1 does not support disabling cpu_offload_pin_memory, please set `fsdp_version` to 2"
+                )
+            if not fsdp_config.get("offload_params"):
+                raise ValueError(
+                    "disabling cpu_offload_pin_memory requires enabling offload_params"
+                )
+        return data
 
     @model_validator(mode="before")
     @classmethod

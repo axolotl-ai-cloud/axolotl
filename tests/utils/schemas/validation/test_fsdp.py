@@ -53,20 +53,57 @@ class TestFSDPValidation:
             validate_config(cfg)
 
     def test_fsdp2_w_cpu_ram_efficient_loading(self, min_base_cfg):
-        """Test that FSDP v2 with cpu_ram_efficient_loading now passes validation."""
         cfg = min_base_cfg | DictDefault(
             load_in_8bit=True,
             adapter="lora",
             fsdp_config={
                 "cpu_ram_efficient_loading": True,
-                "cpu_offload_pin_memory": False,
-                "offload_params": True,
             },
             fsdp_version=2,
         )
         validated_cfg = validate_config(cfg)
         assert validated_cfg.fsdp_version == 2
         assert validated_cfg.fsdp_config.cpu_ram_efficient_loading is True
+
+    def test_fsdp2_cpu_offload_pin_memory_requires_offload_params(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            fsdp_config={
+                "cpu_offload_pin_memory": False,
+                "offload_params": False,
+            },
+            fsdp_version=2,
+        )
+        with pytest.raises(
+            ValueError,
+            match="disabling cpu_offload_pin_memory requires enabling offload_params"
+        ):
+            validate_config(cfg)
+
+    def test_fsdp1_cpu_offload_pin_memory_not_supported(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            fsdp_config={
+                "cpu_offload_pin_memory": False,
+                "offload_params": True,
+            },
+            fsdp_version=1,
+        )
+        with pytest.raises(
+            ValueError,
+            match="FSDP1 does not support disabling cpu_offload_pin_memory, please set `fsdp_version` to 2"
+        ):
+            validate_config(cfg)
+
+    def test_fsdp2_cpu_offload_pin_memory_w_offload_params(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            fsdp_config={
+                "cpu_offload_pin_memory": False,
+                "offload_params": True,
+            },
+            fsdp_version=2,
+        )
+        validated_cfg = validate_config(cfg)
+        assert validated_cfg.fsdp_config.cpu_offload_pin_memory is False
+        assert validated_cfg.fsdp_config.offload_params is True
 
     def test_fsdp_prefixes_removed(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(

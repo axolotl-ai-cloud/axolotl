@@ -57,7 +57,7 @@ class PatchManager:
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
         self._apply_model_specific_patches()
-        self._apply_accelerator_args_patches()
+        self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
         self._apply_gradient_checkpointing_patches()
         self._patch_attention()
@@ -126,16 +126,6 @@ class PatchManager:
 
                 patch_trl_prepare_fsdp2()
 
-        if (
-            self.cfg.fsdp_config
-            and str(self.cfg.fsdp_version) == "1"
-            and self.cfg.fsdp_config.get("offload_params")
-            and self.cfg.fsdp_config.get("cpu_offload_pin_memory") is False
-        ):
-            from axolotl.monkeypatch.memory_pinning import patch_memory_pinning
-
-            patch_memory_pinning()
-
         # if self.cfg.fsdp_config:
         #     # see transformers#39152
         #     from axolotl.monkeypatch.trainer_fsdp_optim import (
@@ -193,25 +183,16 @@ class PatchManager:
 
             apply_mistral_tokenizer_image_patch()
 
-    def _apply_accelerator_args_patches(self):
-        """Apply patches for custom accelerator args (FP8, FSDP v2 memory pinning, etc.)."""
-        needs_fsdp_v2_pinning = (
-            self.cfg.fsdp_config
-            and str(self.cfg.get("fsdp_version")) == "2"
-            and self.cfg.fsdp_config.get("offload_params")
-            and self.cfg.fsdp_config.get("cpu_offload_pin_memory") is False
-        )
-
-        if self.cfg.fp8 or needs_fsdp_v2_pinning:
+    def _apply_fp8_patches(self):
+        """Apply patches for FP8 support."""
+        if self.cfg.fp8:
             from axolotl.monkeypatch.trainer_accelerator_args import (
-                patch_accelerator_args_hook,
+                patch_create_accelerate_code_for_fp8,
             )
 
-            if needs_fsdp_v2_pinning:
-                LOG.info("Applying accelerator args patch for FSDP v2 memory pinning control")
-            if self.cfg.fp8:
-                LOG.info("Applying accelerator args patch for FP8 support")
-            patch_accelerator_args_hook()
+            patch_create_accelerate_code_for_fp8(
+                self.cfg.fp8_enable_fsdp_float8_all_gather
+            )
 
     def _apply_flash_attention_peft_patches(self):
         """Apply patches for Flash Attention with PEFT."""

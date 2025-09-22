@@ -524,7 +524,6 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.fsdp_config or self.cfg.fsdp:
             training_args_kwargs["fsdp_config"] = self.cfg.fsdp_config
             training_args_kwargs["fsdp"] = self.cfg.fsdp if self.cfg.fsdp else True
-            training_args_kwargs["fsdp_version"] = self.cfg.fsdp_version
 
         self._configure_reporting(training_args_kwargs)
         self._configure_hub_parameters(training_args_kwargs)
