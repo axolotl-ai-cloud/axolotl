@@ -75,7 +75,7 @@ class TestFSDPValidation:
         )
         with pytest.raises(
             ValueError,
-            match="disabling cpu_offload_pin_memory requires enabling offload_params"
+            match="disabling cpu_offload_pin_memory requires enabling offload_params",
         ):
             validate_config(cfg)
 
@@ -89,7 +89,7 @@ class TestFSDPValidation:
         )
         with pytest.raises(
             ValueError,
-            match="FSDP1 does not support disabling cpu_offload_pin_memory, please set `fsdp_version` to 2"
+            match="FSDP1 does not support disabling cpu_offload_pin_memory, please set `fsdp_version` to 2",
         ):
             validate_config(cfg)
 

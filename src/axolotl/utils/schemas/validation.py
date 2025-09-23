@@ -815,7 +815,7 @@ class OptimizationValidationMixin:
                 "For more details on migrating your config. "
             )
         return data
-    
+
     @model_validator(mode="before")
     @classmethod
     def check_fsdp2_cpu_offload_pin_memory(cls, data):
