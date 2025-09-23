@@ -18,7 +18,7 @@ datasets:
   - path: HuggingFaceH4/llava-instruct-mix-vsft
     type: chat_template
     split: train[:1%]
-    field_messages: messages
+
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.01
 output_dir: ./outputs/out
