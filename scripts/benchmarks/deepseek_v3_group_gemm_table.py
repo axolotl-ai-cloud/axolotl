@@ -4,11 +4,23 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable
 
 import torch
+
+CURRENT_DIR = Path(__file__).resolve().parent
+for candidate in [CURRENT_DIR, *CURRENT_DIR.parents]:
+    repo_root = candidate / "axolotl"
+    if repo_root.exists():
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        break
+else:
+    raise SystemExit("Unable to locate axolotl repository root for imports")
 
 from axolotl.kernels.moe import (
     cg_grouped_gemm_forward,
