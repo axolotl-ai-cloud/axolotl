@@ -38,7 +38,7 @@ Leverages optimized kernels to accelerate LoRA training and reduce memory usage.
 
 These techniques help you fit larger models or use bigger batch sizes on your existing hardware.
 
-### Adapter Finetuning (LoRA & QLoRA)
+### Parameter Efficient Finetuning (LoRA & QLoRA)
 
 Drastically reduces memory by training a small set of "adapter" parameters instead of the full model. This is the most common and effective memory-saving technique.
 
