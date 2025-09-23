@@ -77,8 +77,8 @@ class TmaDescriptorHelper:
             )
 
         self.tma_size = tma_size
-        self.fill_1d_tma_descriptor_inner = driver.active.utils.fill_1d_tma_descriptor
-        self.fill_2d_tma_descriptor_inner = driver.active.utils.fill_2d_tma_descriptor
+        self.fill_1d_tma_descriptor_inner = driver.active.utils.fill_tma_descriptor
+        self.fill_2d_tma_descriptor_inner = driver.active.utils.fill_tma_descriptor
         self.descriptors: Dict[str, torch.Tensor] = {}
 
     def init_tma_descriptor(self, name: str) -> None:
