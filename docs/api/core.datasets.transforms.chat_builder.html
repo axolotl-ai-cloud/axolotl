@@ -544,7 +544,7 @@ dataset and converts it to a Chat.</p>
 <h3 class="anchored" data-anchor-id="axolotl.core.datasets.transforms.chat_builder.chat_message_transform_builder">chat_message_transform_builder</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.datasets.transforms.chat_builder.chat_message_transform_builder(</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    train_on_inputs<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    conversations_field<span class="op">=</span><span class="st">'conversations'</span>,</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    conversations_field<span class="op">=</span><span class="st">'messages'</span>,</span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    message_field_role<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    message_field_content<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    message_field_training<span class="op">=</span><span class="va">None</span>,</span>
@@ -555,9 +555,9 @@ dataset and converts it to a Chat.</p>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 13%">
-<col style="width: 10%">
-<col style="width: 65%">
-<col style="width: 10%">
+<col style="width: 11%">
+<col style="width: 67%">
+<col style="width: 7%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -577,25 +577,25 @@ dataset and converts it to a Chat.</p>
 <tr class="even">
 <td>conversations_field</td>
 <td>str</td>
-<td>The field name of the conversations. Defaults to “conversations”.</td>
-<td><code>'conversations'</code></td>
+<td>The field name of the conversations. Defaults to “messages”.</td>
+<td><code>'messages'</code></td>
 </tr>
 <tr class="odd">
 <td>message_field_role</td>
 <td>str | list[str]</td>
-<td>The field name of the role. Defaults to “role”.</td>
+<td>The field name of the role.</td>
 <td><code>None</code></td>
 </tr>
 <tr class="even">
 <td>message_field_content</td>
 <td>str | list[str]</td>
-<td>The field name of the message content. Defaults to “content”.</td>
+<td>The field name of the message content.</td>
 <td><code>None</code></td>
 </tr>
 <tr class="odd">
 <td>message_field_training</td>
 <td>str | list[str]</td>
-<td>The field name of the train/weight. Defaults to “weight”.</td>
+<td>The field name of the train/weight.</td>
 <td><code>None</code></td>
 </tr>
 </tbody>
