@@ -278,7 +278,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     mesh = getattr(accelerator.state, "device_mesh", None)
 
-    # Disable memory pinning if requested (must be before fully_shard is called)
+    # Disable memory pinning if requested
     offload_to_cpu = isinstance(fsdp2_plugin.cpu_offload, CPUOffloadPolicy)
     if offload_to_cpu and os.environ.get("FSDP_CPU_OFFLOAD_PIN_MEMORY", "") == "false":
         fsdp2_plugin.cpu_offload.pin_memory = False
