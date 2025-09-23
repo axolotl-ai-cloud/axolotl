@@ -169,6 +169,13 @@ class PatchManager:
 
             patch_llama4_linearized_modeling()
 
+        if self.cfg.model_config_type == "qwen3_next" and self.cfg.sample_packing:
+            from axolotl.monkeypatch.models.qwen3_next.modeling import (
+                patch_qwen3_next_modeling_packing,
+            )
+
+            patch_qwen3_next_modeling_packing()
+
         if self.cfg.model_config_type == "mistral3" and self.cfg.processor_type:
             from axolotl.monkeypatch.models.mistral3.mistral_common_tokenizer import (
                 apply_mistral_tokenizer_image_patch,

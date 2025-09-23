@@ -21,6 +21,7 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "qwen2_moe",
     "qwen3",
     "qwen3_moe",
+    "qwen3_next",
     "falcon",
     "phi",
     "phi3",
