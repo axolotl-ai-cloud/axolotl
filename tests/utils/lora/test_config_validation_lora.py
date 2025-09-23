@@ -91,9 +91,3 @@ class TestLoRAConfigValidation:
             )
             validate_config(invalid_config)
 
-    def test_target_module_validation(self):
-        """Test target module selection validation"""
-        pass
-
-        # Note: Target module existence validation happens during model loading in petf,
-        # not during config validation, so we don't test for ValueError here
