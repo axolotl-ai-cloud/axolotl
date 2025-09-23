@@ -15,7 +15,6 @@ from typing import Dict
 
 import torch
 import triton
-import triton.language as tl
 from triton.runtime import driver  # @manual
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -70,10 +69,6 @@ class TmaDescriptorHelper:
         if not CudaUtils.verify_tma():
             raise RuntimeError(
                 "TMA not supported on this device (requires Hopper or newer)"
-            )
-        if "nv_tma_desc_type" not in dir(tl):
-            raise RuntimeError(
-                "TMA grid constant descriptors not supported in your Triton version"
             )
 
         self.tma_size = tma_size
