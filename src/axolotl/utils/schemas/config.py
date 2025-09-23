@@ -106,6 +106,12 @@ class AxolotlInputConfig(
             "description": "Don't upcast the embeddings to float32 when using PEFT. Useful for low-VRAM GPUs"
         },
     )
+    moe_kernels: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Enable Axolotl's vendored MoE kernels when supported (e.g., DeepSeek V3)"
+        },
+    )
     reinit_weights: bool | None = Field(
         default=None,
         json_schema_extra={

@@ -190,10 +190,14 @@ class PatchManager:
 
             apply_mistral_tokenizer_image_patch()
 
-        if self.cfg.model_config_type == "deepseek_v3":
+        if self.cfg.moe_kernels and self.cfg.model_config_type == "deepseek_v3":
             from axolotl.monkeypatch.deepseek_v3 import patch_deepseek_v3_moe
 
             patch_deepseek_v3_moe()
+        elif self.cfg.model_config_type == "deepseek_v3" and not self.cfg.moe_kernels:
+            LOG.info(
+                "Skipping DeepSeek V3 Triton MoE kernels; enable with `moe_kernels: true`"
+            )
 
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
