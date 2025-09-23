@@ -90,4 +90,3 @@ class TestLoRAConfigValidation:
                 }
             )
             validate_config(invalid_config)
-

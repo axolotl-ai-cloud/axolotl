@@ -39,8 +39,9 @@ class TestAdapterMergeUnmerge:
         """Create a mock LoRA model wrapping the base model"""
         mock_lora_model = Mock()
         mock_lora_model.base_model = base_model
-        mock_lora_model.merge_and_unload = mock_lora_model
-        mock_lora_model.to.return_value = mock_lora_model
+
+        mock_lora_model.merge_and_unload = None
+        mock_lora_model.to = Mock(return_value=mock_lora_model)
 
         mock_lora_model.generation_config = Mock()
         mock_lora_model.config = Mock()
