@@ -131,6 +131,7 @@ def benchmark_deepseek_v3(args: argparse.Namespace) -> dict:
 
     device = resolve_device(args.device)
     dtype = DTYPE_MAP[args.dtype]
+    print(f"device: {device}, dtype: {dtype}")
 
     if args.n_experts % args.groups != 0:
         raise SystemExit("n-experts must be divisible by groups")
