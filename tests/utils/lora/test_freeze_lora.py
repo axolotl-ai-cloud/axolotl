@@ -1,3 +1,4 @@
+import importlib.util
 from unittest.mock import Mock
 
 import pytest
@@ -5,6 +6,8 @@ import torch
 import torch.nn as nn
 
 from axolotl.kernels.lora import get_lora_parameters
+
+PEFT_AVAILABLE = importlib.util.find_spec("peft") is not None
 
 
 class TestLoRAParameterFreezing:
@@ -164,105 +167,95 @@ class TestLoRAParameterFreezing:
 class TestLoRAParameterFreezingIntegration:
     """Integration tests for parameter freezing with actual LoRA layers."""
 
+    @pytest.mark.skipif(
+        not PEFT_AVAILABLE, reason="PEFT not available for integration tests"
+    )
     def test_parameter_freezing_with_real_lora_layer(self):
         """Test parameter freezing with actual PEFT LoRA layer."""
-        try:
-            from peft import LoraConfig, get_peft_model
+        from peft import LoraConfig, get_peft_model
 
-            class SimpleModel(nn.Module):
-                def __init__(self):
-                    super().__init__()
-                    self.linear = nn.Linear(256, 512)
+        class SimpleModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(256, 512)
 
-                def forward(self, x):
-                    return self.linear(x)
+            def forward(self, x):
+                return self.linear(x)
 
-            base_model = SimpleModel()
+        base_model = SimpleModel()
+        lora_config = LoraConfig(
+            r=16,
+            lora_alpha=32,
+            target_modules=["linear"],
+            lora_dropout=0.1,
+        )
+        model = get_peft_model(base_model, lora_config)
+        lora_layer = model.base_model.model.linear
+        # Test with adapters enabled
+        W, b, quant_state, A, B, s = get_lora_parameters(lora_layer)
+        assert A is not None
+        assert B is not None
+        assert s is not None
+        # Test with adapters disabled
+        model.disable_adapter_layers()
+        W, b, quant_state, A, B, s = get_lora_parameters(lora_layer)
+        assert A is None
+        assert B is None
+        assert s is None
 
-            lora_config = LoraConfig(
-                r=16,
-                lora_alpha=32,
-                target_modules=["linear"],
-                lora_dropout=0.1,
-            )
-
-            model = get_peft_model(base_model, lora_config)
-            lora_layer = model.base_model.model.linear
-
-            # Test with adapters enabled
-            W, b, quant_state, A, B, s = get_lora_parameters(lora_layer)
-            assert A is not None
-            assert B is not None
-            assert s is not None
-
-            # Test with adapters disabled
-            model.disable_adapter_layers()
-            W, b, quant_state, A, B, s = get_lora_parameters(lora_layer)
-            assert A is None
-            assert B is None
-            assert s is None
-
-        except ImportError:
-            pytest.skip("PEFT not available for integration test")
-
+    @pytest.mark.skipif(
+        not PEFT_AVAILABLE, reason="PEFT not available for integration tests"
+    )
     def test_parameter_freezing_gradient_behavior(self):
         """Test that frozen parameters don't receive gradients."""
-        try:
-            from peft import LoraConfig, get_peft_model
+        from peft import LoraConfig, get_peft_model
 
-            class SimpleModel(nn.Module):
-                def __init__(self):
-                    super().__init__()
-                    self.linear = nn.Linear(256, 512)
+        class SimpleModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(256, 512)
 
-                def forward(self, x):
-                    return self.linear(x)
+            def forward(self, x):
+                return self.linear(x)
 
-            base_model = SimpleModel()
-            lora_config = LoraConfig(
-                r=16,
-                lora_alpha=32,
-                target_modules=["linear"],
-                lora_dropout=0.1,
-            )
-
-            model = get_peft_model(base_model, lora_config)
-
-            x = torch.randn(1, 256)
-            target = torch.randn(1, 512)
-
-            model.enable_adapter_layers()
-            output = model(x)
-            loss = nn.MSELoss()(output, target)
+        base_model = SimpleModel()
+        lora_config = LoraConfig(
+            r=16,
+            lora_alpha=32,
+            target_modules=["linear"],
+            lora_dropout=0.1,
+        )
+        model = get_peft_model(base_model, lora_config)
+        x = torch.randn(1, 256)
+        target = torch.randn(1, 512)
+        model.enable_adapter_layers()
+        output = model(x)
+        loss = nn.MSELoss()(output, target)
+        loss.backward()
+        lora_layer = model.base_model.model.linear
+        has_lora_grads = any(
+            param.grad is not None
+            for name, param in lora_layer.named_parameters()
+            if "lora_" in name
+        )
+        assert has_lora_grads, (
+            "LoRA parameters should have gradients when adapters are enabled"
+        )
+        model.zero_grad()
+        model.disable_adapter_layers()
+        output = model(x)
+        loss = nn.MSELoss()(output, target)
+        any_requires_grad = any(param.requires_grad for param in model.parameters())
+        if any_requires_grad:
             loss.backward()
-
-            lora_layer = model.base_model.model.linear
-            has_lora_grads = any(
-                param.grad is not None
-                for name, param in lora_layer.named_parameters()
-                if "lora_" in name
-            )
-            assert has_lora_grads, (
-                "LoRA parameters should have gradients when adapters are enabled"
-            )
-
-            model.zero_grad()
-            model.disable_adapter_layers()
-
-            output = model(x)
-            loss = nn.MSELoss()(output, target)
-            any_requires_grad = any(param.requires_grad for param in model.parameters())
-            if any_requires_grad:
-                loss.backward()
-
-            has_lora_grads_disabled = any(
-                param.grad is not None
-                for name, param in lora_layer.named_parameters()
-                if "lora_" in name
-            )
-            assert not has_lora_grads_disabled, (
-                "LoRA parameters should not have gradients when adapters are disabled"
-            )
-
-        except ImportError:
-            pytest.skip("PEFT not available for integration test")
+        has_lora_grads_disabled = any(
+            param.grad is not None
+            for name, param in lora_layer.named_parameters()
+            if "lora_" in name
+        )
+        assert not has_lora_grads_disabled, (
+            "LoRA parameters should not have gradients when adapters are disabled"
+        )
+        model.zero_grad()
+        del model, base_model, lora_layer, x, target, output, loss
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
