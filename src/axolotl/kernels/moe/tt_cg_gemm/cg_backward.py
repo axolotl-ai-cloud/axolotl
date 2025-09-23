@@ -69,10 +69,10 @@ def _kernel_cg_backward_dx(
             mask_w = mask_n[:, None] & mask_k[None, :]
 
             go_ptrs = grad_output_ptr + offs_m[:, None] * N + offs_n[None, :]
-            go = tl.load(go_ptrs, mask=mask_go, other=0.0)
+            go = tl.load(go_ptrs, mask=mask_go, other=0.0).to(tl.float32)
 
             w_ptrs = b_ptr + expert_idx * N * K + offs_n[:, None] * K + offs_k[None, :]
-            w = tl.load(w_ptrs, mask=mask_w, other=0.0)
+            w = tl.load(w_ptrs, mask=mask_w, other=0.0).to(tl.float32)
 
             grad_input += tl.dot(go, w)
 
