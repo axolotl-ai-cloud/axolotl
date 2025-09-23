@@ -8,6 +8,7 @@ from .tt_cg_gemm import (
     cg_grouped_gemm_forward,
     cg_grouped_gemm_forward_dynamic,
 )
+from .tt_mg_gemm import grouped_gemm_forward as mg_grouped_gemm
 
 __all__ = [
     "cg_grouped_gemm",
@@ -16,4 +17,5 @@ __all__ = [
     "ContiguousGroupedGEMM",
     "ContiguousGroupedGEMMForwardOnly",
     "generate_permute_indices",
+    "mg_grouped_gemm",
 ]

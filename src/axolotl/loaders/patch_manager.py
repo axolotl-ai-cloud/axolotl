@@ -193,7 +193,7 @@ class PatchManager:
         if self.cfg.moe_kernels and self.cfg.model_config_type == "deepseek_v3":
             from axolotl.monkeypatch.deepseek_v3 import patch_deepseek_v3_moe
 
-            patch_deepseek_v3_moe()
+            patch_deepseek_v3_moe(backend=self.cfg.moe_kernel_backend)
         elif self.cfg.model_config_type == "deepseek_v3" and not self.cfg.moe_kernels:
             LOG.info(
                 "Skipping DeepSeek V3 Triton MoE kernels; enable with `moe_kernels: true`"

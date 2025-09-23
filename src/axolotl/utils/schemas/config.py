@@ -119,6 +119,12 @@ class AxolotlInputConfig(
             "description": "Enable Axolotl's vendored MoE kernels when supported (e.g., DeepSeek V3)"
         },
     )
+    moe_kernel_backend: Literal["cg", "mg"] | None = Field(
+        default="mg",
+        json_schema_extra={
+            "description": "Grouped GEMM backend to use when `moe_kernels` is enabled. `mg` selects the Hopper TMA kernel; `cg` selects the contiguous kernel."
+        },
+    )
 
     trainer_cls: str | None = Field(
         default=None,
