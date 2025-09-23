@@ -142,7 +142,11 @@ def benchmark_deepseek_v3(args: argparse.Namespace) -> dict:
         raise SystemExit("CUDA requested but not available")
 
     baseline_module = build_module(args)
-    original_moe = DeepseekV3MoE.moe
+    original_moe = getattr(
+        DeepseekV3MoE,
+        "_axolotl_triton_original_moe",
+        DeepseekV3MoE.moe,
+    )
     baseline_module.moe = MethodType(original_moe, baseline_module)
     state_dict = baseline_module.state_dict()
 

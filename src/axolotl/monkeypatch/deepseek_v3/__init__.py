@@ -241,10 +241,15 @@ def patch_deepseek_v3_moe(group_size_m: int = _GROUP_SIZE_M) -> None:
 
     from transformers.models.deepseek_v3.modeling_deepseek_v3 import DeepseekV3MoE
 
+    # Record the unpatched implementation so callers can access a true baseline even
+    # after the Triton patch has been applied (e.g. repeated microbenchmarks).
+    if not hasattr(DeepseekV3MoE, "_axolotl_triton_original_moe"):
+        DeepseekV3MoE._axolotl_triton_original_moe = DeepseekV3MoE.moe
+
     if getattr(DeepseekV3MoE, "_axolotl_triton_patch", False):
         return
 
-    original_moe = DeepseekV3MoE.moe
+    original_moe = DeepseekV3MoE._axolotl_triton_original_moe
 
     def patched_moe(self, hidden_states, topk_indices, topk_weights):
         try:
