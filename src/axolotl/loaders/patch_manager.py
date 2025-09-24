@@ -76,6 +76,9 @@ class PatchManager:
         self._apply_tiled_mlp(self.cfg.model_config_type)
 
     def _apply_transformers_patches(self):
+        from axolotl.monkeypatch.transformers.trainer_context_parallel import (
+            patch_prepare_context_parallel_inputs,
+        )
         from axolotl.monkeypatch.transformers.trainer_loss_calc import (
             patch_evaluation_loop,
             patch_maybe_log_save_evaluate,
@@ -83,6 +86,7 @@ class PatchManager:
 
         patch_evaluation_loop()
         patch_maybe_log_save_evaluate()
+        patch_prepare_context_parallel_inputs()
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
