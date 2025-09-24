@@ -1,7 +1,3 @@
-"""
-Memory-efficient LoRA merging implementation inspired by qlora-pipe.
-Processes model shards individually without loading the full model into memory.
-"""
 
 import gc
 import os
@@ -85,6 +81,50 @@ def copy_non_model_files(
         shutil.copy2(filepath, output_path)
 
 
+def _merge_tensor_with_lora(
+    tensor: torch.Tensor,
+    key: str,
+    lora_state: Dict[str, torch.Tensor],
+    scale: float,
+    lora_config_dict: Dict,
+    device: str,
+) -> torch.Tensor:
+    """
+    Helper function to merge a single tensor with its corresponding LoRA weights.
+
+    Args:
+        tensor: Base model tensor
+        key: Tensor key/name
+        lora_state: Dictionary containing LoRA weights
+        scale: LoRA scaling factor (alpha/r)
+        lora_config_dict: LoRA configuration dictionary
+        device: Device to perform computations on
+
+    Returns:
+        Merged tensor with LoRA applied
+    """
+    lora_a, lora_b = find_lora_weights(lora_state, key)
+
+    if lora_a is not None and lora_b is not None:
+        LOG.debug(f"Merging LoRA for {key}: {lora_a.shape}, {lora_b.shape}")
+
+        original_dtype = tensor.dtype
+        base_fp32 = tensor.to(device).to(torch.float32)
+        a_fp32 = lora_a.to(device).to(torch.float32)
+        b_fp32 = lora_b.to(device).to(torch.float32)
+        delta = scale * (b_fp32 @ a_fp32)
+        if bool(
+            lora_config_dict.get("fan_in_fan_out", False)
+            or lora_config_dict.get("lora_fan_in_fan_out", False)
+        ):
+            delta = delta.T
+        merged_tensor = (base_fp32 + delta).to(original_dtype).detach().cpu()
+        del base_fp32, a_fp32, b_fp32, delta
+        return merged_tensor, True
+    else:
+        return tensor.detach().cpu(), False
+
+
 def merge_lora_sharded_efficient(
     base_model_path: Union[str, Path],
     lora_adapter_path: Union[str, Path],
@@ -101,7 +141,6 @@ def merge_lora_sharded_efficient(
     output_path = Path(output_path)
 
     if "/" in str(base_model_path) and not base_model_path.exists():
-
         base_model_path = Path(snapshot_download(str(base_model_path)))
 
     os.makedirs(output_path, exist_ok=True)
@@ -206,70 +245,41 @@ def merge_lora_sharded_efficient(
                 for key in f.keys():
                     total_tensors += 1
                     tensor = f.get_tensor(key)
-                    lora_a, lora_b = find_lora_weights(lora_state, key)
-
-                    if lora_a is not None and lora_b is not None:
+                    merged_tensor, was_merged = _merge_tensor_with_lora(
+                        tensor, key, lora_state, scale, lora_config_dict, device
+                    )
+                    merged_tensors[key] = merged_tensor
+                    if was_merged:
                         merged_count += 1
-                        LOG.debug(
-                            f"Merging LoRA for {key}: {lora_a.shape}, {lora_b.shape}"
-                        )
-
-                        original_dtype = tensor.dtype
-                        base_fp32 = tensor.to(device).to(torch.float32)
-                        a_fp32 = lora_a.to(device).to(torch.float32)
-                        b_fp32 = lora_b.to(device).to(torch.float32)
-                        delta = scale * (b_fp32 @ a_fp32)
-                        if bool(
-                            lora_config_dict.get("fan_in_fan_out", False)
-                            or lora_config_dict.get("lora_fan_in_fan_out", False)
-                        ):
-                            delta = delta.T
-                        merged_tensors[key] = (
-                            (base_fp32 + delta).to(original_dtype).detach().cpu()
-                        )
-                        del base_fp32, a_fp32, b_fp32, delta
-                    else:
-                        merged_tensors[key] = tensor.detach().cpu()
         else:
             state_dict = torch.load(  # nosec B614: loading trusted model weights
                 shard_path, map_location="cpu", weights_only=True
             )
             for key, tensor in state_dict.items():
                 total_tensors += 1
-                lora_a, lora_b = find_lora_weights(lora_state, key)
-
-                if lora_a is not None and lora_b is not None:
+                merged_tensor, was_merged = _merge_tensor_with_lora(
+                    tensor, key, lora_state, scale, lora_config_dict, device
+                )
+                merged_tensors[key] = merged_tensor
+                if was_merged:
                     merged_count += 1
-                    original_dtype = tensor.dtype
-                    base_fp32 = tensor.to(device).to(torch.float32)
-                    a_fp32 = lora_a.to(device).to(torch.float32)
-                    b_fp32 = lora_b.to(device).to(torch.float32)
-                    delta = scale * (b_fp32 @ a_fp32)
-                    if bool(
-                        lora_config_dict.get("fan_in_fan_out", False)
-                        or lora_config_dict.get("lora_fan_in_fan_out", False)
-                    ):
-                        delta = delta.T
-                    merged_tensors[key] = (
-                        (base_fp32 + delta).to(original_dtype).detach().cpu()
-                    )
-                    del base_fp32, a_fp32, b_fp32, delta
-                else:
-                    merged_tensors[key] = tensor.detach().cpu()
 
         output_shard_path = output_path / shard_path.name
         merged_tensors = {k: v.detach().cpu() for k, v in merged_tensors.items()}
-        if shard_path.suffix == ".safetensors":
+
+        if safe_tensors:
+            if not str(output_shard_path).endswith(".safetensors"):
+                output_shard_path = output_path / (shard_path.stem + ".safetensors")
             safetensors.torch.save_file(
                 merged_tensors, output_shard_path, metadata=metadata
             )
         else:
-            if safe_tensors:
-                LOG.warning(
-                    "safe_tensors=True requested but input shards are .bin; preserving .bin format "
-                    "to avoid index mismatches."
+            if shard_path.suffix == ".safetensors":
+                safetensors.torch.save_file(
+                    merged_tensors, output_shard_path, metadata=metadata
                 )
-            torch.save(merged_tensors, output_shard_path)
+            else:
+                torch.save(merged_tensors, output_shard_path)
 
         del merged_tensors
         if device != "cpu" and torch.cuda.is_available():
