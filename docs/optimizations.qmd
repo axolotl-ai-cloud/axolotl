@@ -16,6 +16,7 @@ These optimizations focus on increasing training throughput and reducing total t
 Improves GPU utilization by combining multiple short sequences into a single packed sequence for training. This requires enabling one of the [attention](#attention-implementations) implementations below.
 
 - **Config:** `sample_packing: true`
+- **Learn more:** [Sample Packing](multipack.qmd)
 
 ### Attention Implementations
 
@@ -32,7 +33,7 @@ Using an optimized attention implementation is critical for training speed.
 
 Leverages optimized kernels to accelerate LoRA training and reduce memory usage.
 
-- **Learn more:** [LoRA Optimizations Documentation](https://docs.axolotl.ai/docs/lora_optims.html)
+- **Learn more:** [LoRA Optimizations Documentation](lora_optims.qmd)
 
 ## VRAM Savings
 
@@ -42,26 +43,28 @@ These techniques help you fit larger models or use bigger batch sizes on your ex
 
 Drastically reduces memory by training a small set of "adapter" parameters instead of the full model. This is the most common and effective memory-saving technique.
 
-- **Examples:** Find configs with `lora` or `qlora` in the [examples directory](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/llama-3).
-- **Config Reference:** See `adapter`, `load_in_4bit`, and `load_in_8bit` in the [Configuration Reference](https://docs.axolotl.ai/docs/config-reference.html).
+- Examples: Find configs with `lora` or `qlora` in the [examples directory](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/llama-3).
+- Config Reference: See `adapter`, `load_in_4bit`, and `load_in_8bit` in the [Configuration Reference](config-reference.qmd).
 
-### Gradient Checkpointing
+### Gradient Checkpointing & Activation Offloading
 
-Saves a large amount of VRAM by re-computing activations during the backward pass instead of storing them. This trades a small amount of compute time for significant memory reduction.
+These techniques save VRAM by changing how activations are handled.
 
-- **Learn more:** [Gradient Checkpointing Documentation](https://docs.axolotl.ai/docs/gradient_checkpointing.html)
+- Gradient Checkpointing: re-computes activations during the backward pass, trading compute time for VRAM.
+- Activation Offloading: moves activations to CPU RAM or disk, trading I/O overhead for VRAM.
+- Learn more: [Gradient Checkpointing and Offloading Docs](gradient_checkpointing.qmd)
 
 ### Cut Cross Entropy (CCE)
 
 Reduces VRAM usage by using an optimized cross-entropy loss calculation.
 
-- **Learn more:** [Custom Integrations - CCE](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy)
+- **Learn more:** [Custom Integrations - CCE](custom_integrations.qmd#cut-cross-entropy)
 
 ### Liger Kernels
 
 Provides efficient Triton kernels to improve training speed and reduce memory usage.
 
-- **Learn more:** [Custom Integrations - Liger Kernels](https://docs.axolotl.ai/docs/custom_integrations.html#liger-kernels)
+- **Learn more:** [Custom Integrations - Liger Kernels](custom_integrations.qmd#liger-kernels)
 
 ## Long Context Models
 
@@ -71,20 +74,37 @@ Techniques to train models on sequences longer than their original context windo
 
 Extends a model's context window by interpolating its Rotary Position Embeddings.
 
-- **Config:** Pass the `rope_scaling` config under the `overrides_of_model_config` in [Configuration Reference](https://docs.axolotl.ai/docs/config-reference.html). To learn how to set RoPE, check the respective model config.
+- **Config:** Pass the `rope_scaling` config under the `overrides_of_model_config: `. To learn how to set RoPE, check the respective model config.
 
 ### Sequence Parallelism
 
 Splits long sequences across multiple GPUs, enabling training with sequence lengths that would not fit on a single device.
 
-- **Learn more:** [Sequence Parallelism Documentation](https://docs.axolotl.ai/docs/sequence_parallelism.html)
+- **Learn more:** [Sequence Parallelism Documentation](sequence_parallelism.qmd)
+
+### Artic Long Sequence Training (ALST)
+
+ALST is a recipe that combines several techniques to train long-context models efficiently. It typically involves:
+
+- TiledMLP to reduce memory usage in MLP layers.
+- Tiled Loss functions (like [CCE](#cut-cross-entropy-(cce) or [Liger](#liger-kernels)).
+- Activation Offloading to CPU.
+
+- Example: [ALST Example Configuration](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/alst)
 
 ## Large Models (Distributed Training)
 
 To train models that don't fit on a single GPU, you'll need to use a distributed training strategy like FSDP or DeepSpeed. These frameworks shard the model weights, gradients, and optimizer states across multiple GPUs and nodes.
 
-- **Learn more:** [Multi-GPU Guide](https://docs.axolotl.ai/docs/multi-gpu.html)
-- **Learn more:** [Multi-Node Guide](https://docs.axolotl.ai/docs/multi-node.html)
+- **Learn more:** [Multi-GPU Guide](multi-gpu.qmd)
+- **Learn more:** [Multi-Node Guide](multi-node.qmd)
+
+### N-D Parallelism (Beta)
+
+For advanced scaling, Axolotl allows you to compose different parallelism techniques (e.g., Data, Tensor, Sequence Parallelism). This is a powerful approach to train an extremely large model by overcoming multiple bottlenecks at once.
+
+- **Learn more:** [N-D Parallelism Guide](nd_parallelism.qmd)
+
 
 ## Quantization
 
@@ -104,7 +124,7 @@ Enables training with 8-bit floating point precision on supported hardware (e.g.
 
 Simulates quantization effects during training, helping the model adapt and potentially improving the final accuracy of the quantized model.
 
-- **Learn more:** [QAT Documentation](https://docs.axolotl.ai/docs/qat.html)
+- **Learn more:** [QAT Documentation](qat.qmd)
 
 ### GPTQ
 
