@@ -206,7 +206,7 @@ def load_llama_adapter(
         peft_model = PeftModel.from_pretrained(
             model,
             cfg.lora_model_dir,
-            dtype=torch.float16,
+            torch_dtype=torch.float16,
         )
     else:
         peft_model = get_peft_model(model, peft_config)
