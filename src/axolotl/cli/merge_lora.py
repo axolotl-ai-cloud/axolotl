@@ -25,7 +25,7 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
     merge_method = (
         str(getattr(cfg, "merge_method", "")).strip().lower().replace("-", "_")
     )
-    if merge_method in {"legacy", "standard"}:
+    if merge_method == "legacy":
         LOG.debug("Using legacy LoRA merging method...")
         _do_merge_lora_legacy(cfg=cfg)
     else:
