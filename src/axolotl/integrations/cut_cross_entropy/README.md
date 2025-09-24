@@ -31,6 +31,7 @@ plugins:
 
 ## Supported Models
 
+- apertus
 - arcee
 - cohere
 - cohere2
@@ -44,9 +45,13 @@ plugins:
 - glm
 - glm4
 - glm4_moe
+- glm4v
+- glm4v_moe
 - gpt_oss
 - granite
 - granitemoe
+- granitemoeshared
+- granitemoehybrid
 - hunyuan_v1_dense
 - hunyuan_v1_moe
 - llama
@@ -65,6 +70,8 @@ plugins:
 - qwen2_5_vl
 - qwen3
 - qwen3_moe
+- qwen3_vl
+- qwen3_vl_moe
 - qwen3_next
 - smollm3
 - seed_oss
