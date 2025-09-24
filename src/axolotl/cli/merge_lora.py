@@ -88,7 +88,6 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
     safe_tensors = getattr(cfg, "save_safetensors", True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # Perform memory-efficient merge
     merge_lora_sharded_efficient(
         base_model_path=cfg.base_model,
         lora_adapter_path=cfg.lora_model_dir,
