@@ -220,14 +220,6 @@ If you have tool arguments with same name but different dtypes (like `"time": st
 ```
 :::
 
-::: {.callout-warning}
-If you have tool arguments with same name but different dtypes (like `"time": string` and `"time": number`), please save `arguments: ` as JSON string to prevent `datasets` from having casting issues.
-
-```
-"arguments": "{\"...\": \"...\"}"
-```
-:::
-
 Example config for Llama4:
 ```yaml
 chat_template: llama4
