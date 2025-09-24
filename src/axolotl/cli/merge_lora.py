@@ -22,19 +22,13 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
-    merge_method = (
-        str(getattr(cfg, "merge_method", "")).strip().lower().replace("-", "_")
-    )
+    merge_method = str(getattr(cfg, "merge_method", ""))
     if merge_method == "legacy":
         LOG.debug("Using legacy LoRA merging method...")
         _do_merge_lora_legacy(cfg=cfg)
     else:
         LOG.debug("Using memory-efficient LoRA merging method...")
-        try:
-            _do_merge_lora_efficient(cfg=cfg)
-        except Exception:  # pylint: disable=broad-exception-caught
-            LOG.exception("Memory-efficient merge failed; falling back to legacy.")
-            _do_merge_lora_legacy(cfg=cfg)
+    _do_merge_lora_efficient(cfg=cfg)
 
 
 def _do_merge_lora_legacy(*, cfg: DictDefault) -> None:
