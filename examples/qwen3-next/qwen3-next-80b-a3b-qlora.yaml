@@ -27,6 +27,14 @@ lora_r: 16
 lora_alpha: 8
 lora_dropout: 0.05
 lora_target_modules:
+  - linear_attn.in_proj_ba
+  - linear_attn.in_proj_qkvz
+  - linear_attn.out_proj
+  - shared_expert.up_proj
+  - shared_expert.down_proj
+  - shared_expert.gate_proj
+  - shared_expert_gate
+  - mlp.gate
   - q_proj
   - v_proj
   - k_proj
