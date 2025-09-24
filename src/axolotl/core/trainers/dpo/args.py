@@ -16,3 +16,4 @@ class AxolotlDPOConfig(AxolotlTrainingMixins, DPOConfig):
     """
 
     dpo_norm_loss: bool | None = False
+    disable_output_fp32: bool | None = False

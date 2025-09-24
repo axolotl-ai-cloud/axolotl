@@ -54,6 +54,7 @@ class PatchManager:
         # self._apply_flex_attention_patches()
         self._apply_flash_attention_patches()
         self._apply_chunked_cross_entropy_patch()
+        self._apply_dpo_disable_output_fp32_patch()
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
         self._apply_model_specific_patches()
@@ -106,6 +107,16 @@ class PatchManager:
                 patch_chunked_ce_loss_fn(self.cfg.chunked_cross_entropy_num_chunks)
             else:
                 patch_chunked_ce_loss_fn()
+
+    def _apply_dpo_disable_output_fp32_patch(self):
+        from axolotl.utils.schemas.enums import RLType
+
+        if self.cfg.rl in {RLType.DPO, RLType.IPO} and self.cfg.dpo_disable_output_fp32:
+            from axolotl.monkeypatch.trainer.dpo_chunked import (
+                patch_dpo_disable_output_fp32,
+            )
+
+            patch_dpo_disable_output_fp32()
 
     def _apply_fsdp_patches(self):
         """Apply patches for FSDP configurations."""

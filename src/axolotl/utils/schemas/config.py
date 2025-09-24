@@ -160,6 +160,12 @@ class AxolotlInputConfig(
         },
     )
     dpo_use_logits_to_keep: bool | None = None
+    dpo_disable_output_fp32: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Set to true to bypass Accelerate's automatic fp32 upcast in DPO forward passes and rely on chunked computations for lower VRAM usage."
+        },
+    )
     dpo_label_smoothing: float | None = None
     dpo_norm_loss: bool | None = None
     dpo_padding_free: bool | None = None

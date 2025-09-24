@@ -36,4 +36,6 @@ class DPOStrategy:
             training_args_kwargs["dpo_norm_loss"] = cfg.dpo_norm_loss
         if cfg.dpo_use_logits_to_keep is not None:
             training_args_kwargs["use_logits_to_keep"] = cfg.dpo_use_logits_to_keep
+        if cfg.dpo_disable_output_fp32 is not None:
+            training_args_kwargs["disable_output_fp32"] = cfg.dpo_disable_output_fp32
         return training_args_kwargs
