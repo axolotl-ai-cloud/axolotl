@@ -63,4 +63,6 @@ def patch_prepare_context_parallel_inputs() -> None:
     Trainer._prepare_context_parallel_inputs = axolotl_prepare_context_parallel_inputs
     Trainer._axolotl_prepare_context_parallel_inputs_source = patched_source
     Trainer._axolotl_prepare_context_parallel_inputs_patched = True
-    LOG.info("Patched Trainer._prepare_context_parallel_inputs for FlashAttention + CP")
+    LOG.debug(
+        "Patched Trainer._prepare_context_parallel_inputs for FlashAttention + CP"
+    )
