@@ -192,7 +192,7 @@ Instead of passing `tools` via the system prompt, an alternative method would be
                     "function": {
                         "name": "...",
                         "arguments": {
-                          "...": "..."
+                            "...": "...",
                         }
                     }
                 }
