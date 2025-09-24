@@ -35,7 +35,7 @@ Leverages optimized kernels to accelerate LoRA training and reduce memory usage.
 
 - **Learn more:** [LoRA Optimizations Documentation](lora_optims.qmd)
 
-## VRAM Savings
+## Memory Optimizations
 
 These techniques help you fit larger models or use bigger batch sizes on your existing hardware.
 
