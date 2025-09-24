@@ -2,8 +2,8 @@
 HF Chat Templates prompt strategy
 """
 
-from collections import defaultdict
 import json
+from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
 
 from pydantic import BaseModel
