@@ -191,7 +191,9 @@ Instead of passing `tools` via the system prompt, an alternative method would be
                     "type": "function",
                     "function": {
                         "name": "...",
-                        "arguments": "{\"...\": \"...\"}" // should be json string
+                        "arguments": {
+                          "...": "..."
+                        }
                     }
                 }
             ]
@@ -208,6 +210,22 @@ Instead of passing `tools` via the system prompt, an alternative method would be
 
 ::: {.callout-note}
 Tools need to follow [JSON schema](https://json-schema.org/learn/getting-started-step-by-step).
+:::
+
+::: {.callout-warning}
+If you have tool arguments with same name but different dtypes (like `"time": string` and `"time": number`), please save `arguments: ` as JSON string to prevent `datasets` from having casting issues.
+
+```
+"arguments": "{\"...\": \"...\"}"
+```
+:::
+
+::: {.callout-warning}
+If you have tool arguments with same name but different dtypes (like `"time": string` and `"time": number`), please save `arguments: ` as JSON string to prevent `datasets` from having casting issues.
+
+```
+"arguments": "{\"...\": \"...\"}"
+```
 :::
 
 Example config for Llama4:
