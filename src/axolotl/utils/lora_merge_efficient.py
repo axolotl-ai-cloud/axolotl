@@ -16,6 +16,7 @@ from peft import LoraConfig
 from tqdm import tqdm
 
 from axolotl.utils.logging import get_logger
+from huggingface_hub import snapshot_download
 
 LOG = get_logger(__name__)
 
@@ -100,7 +101,6 @@ def merge_lora_sharded_efficient(
     output_path = Path(output_path)
 
     if "/" in str(base_model_path) and not base_model_path.exists():
-        from huggingface_hub import snapshot_download
 
         base_model_path = Path(snapshot_download(str(base_model_path)))
 
@@ -181,10 +181,7 @@ def merge_lora_sharded_efficient(
     if lora_file.suffix == ".safetensors":
         lora_state = safetensors.torch.load_file(lora_file)
     else:
-        try:
-            lora_state = torch.load(lora_file, map_location="cpu", weights_only=True)  # nosec B614
-        except TypeError:
-            lora_state = torch.load(lora_file, map_location="cpu")  # nosec B614
+        lora_state = torch.load(lora_file, map_location="cpu", weights_only=True)  # nosec B614
     LOG.debug("Keeping LoRA weights on CPU; will move per-tensor during merge")
 
     model_shards = get_model_shards(base_model_path)
