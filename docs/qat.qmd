@@ -30,6 +30,7 @@ qat:
 ```
 
 We support the following quantization schemas:
+
 - `Int4WeightOnly` (requires the `fbgemm-gpu` extra when installing Axolotl)
 - `Int8DynamicActivationInt4Weight`
 - `Float8DynamicActivationFloat8Weight`
