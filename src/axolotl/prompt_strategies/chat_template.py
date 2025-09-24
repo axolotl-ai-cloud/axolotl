@@ -803,7 +803,12 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                         try:
                             tool_call["function"]["arguments"] = json.loads(args)
                         except json.JSONDecodeError as e:
-                            LOG.error(f"Error in tool_calls arguments format, {e}")
+                            LOG.error(
+                                f"Error parsing tool_calls arguments as JSON. "
+                                f"Function: {tool_call.get('function', {}).get('name', 'unknown')}, "
+                                f"Arguments string: {args!r}, "
+                                f"Error: {e}"
+                            )
                             raise
 
         return transformed_message
