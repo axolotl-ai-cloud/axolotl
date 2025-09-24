@@ -1,36 +1,54 @@
+"""
+Tests for handling json tool content
+"""
+
 import json
+
 import pytest
 from datasets import Dataset
-from transformers import AutoTokenizer
 
-from axolotl.prompt_strategies.chat_template import StrategyLoader
+from axolotl.prompt_strategies.chat_template import (
+    load,
+)
 from axolotl.utils.dict import DictDefault
 
 
-@pytest.fixture(name="qwen3_0_6b_instruct_tokenizer")
-def qwen3_0_6b_instruct_tokenizer_fixture():
-    tokenizer = AutoTokenizer.from_pretrained(
-        "/lpai/models/Qwen__Qwen3-0.6B/main", trust_remote_code=True
+@pytest.fixture(name="qwen3_instruct_prompt_strategy")
+def qwen3_instruct_chat_template_strategy(qwen3_tokenizer):
+    strategy = load(
+        qwen3_tokenizer,
+        DictDefault(
+            {
+                "train_on_inputs": False,
+                "sequence_len": 512,
+            }
+        ),
+        DictDefault(
+            {
+                "chat_template": "qwen3",
+                "message_field_role": "role",
+                "message_field_content": "content",
+                "message_property_mappings": {
+                    "role": "role",
+                    "content": "content",
+                },
+                "roles": {
+                    "user": ["user"],
+                    "assistant": ["assistant"],
+                    "system": ["system"],
+                },
+                "field_messages": "messages",
+            }
+        ),
     )
-    return tokenizer
-
-
-@pytest.fixture(name="qwen3_0_6b_instruct_prompt_strategy")
-def qwen3_0_6b_instruct_chat_template_strategy(qwen3_0_6b_instruct_tokenizer):
-    cfg = DictDefault(
-        sequence_len=2048,
-        chat_template="qwen3",
-        eot_tokens=["<|im_end|>"],
-    )
-    ds_cfg = DictDefault(
-        type="chat_template",
-    )
-    loader = StrategyLoader()
-    strategy = loader(qwen3_0_6b_instruct_tokenizer, cfg, ds_cfg)
     return strategy
 
 
 class TestQwen3IdenticalConversationArgs:
+    """
+    Test Qwen3 tools is identical between JSON and dict
+    """
+
     @pytest.fixture(name="conversation_dict_args_dataset")
     def fixture_conversation_dict_args_dataset(self):
         """
@@ -135,30 +153,30 @@ class TestQwen3IdenticalConversationArgs:
         self,
         conversation_dict_args_dataset,
         conversation_str_args_dataset,
-        qwen3_0_6b_instruct_prompt_strategy,
-        qwen3_0_6b_instruct_tokenizer,
+        qwen3_instruct_prompt_strategy,
+        qwen3_tokenizer,
     ):
         """
         Tests that after tokenization and decoding, the outputs for both
         dict and string `arguments` are exactly the same.
         """
         processed_dict_args = conversation_dict_args_dataset.map(
-            qwen3_0_6b_instruct_prompt_strategy.tokenize_prompt,
+            qwen3_instruct_prompt_strategy.tokenize_prompt,
             batched=True,
             remove_columns=["messages"],
         )
 
         processed_str_args = conversation_str_args_dataset.map(
-            qwen3_0_6b_instruct_prompt_strategy.tokenize_prompt,
+            qwen3_instruct_prompt_strategy.tokenize_prompt,
             batched=True,
             remove_columns=["messages"],
         )
 
-        decoded_prompt_from_dict = qwen3_0_6b_instruct_tokenizer.decode(
+        decoded_prompt_from_dict = qwen3_tokenizer.decode(
             processed_dict_args[0]["input_ids"]
         )
 
-        decoded_prompt_from_str = qwen3_0_6b_instruct_tokenizer.decode(
+        decoded_prompt_from_str = qwen3_tokenizer.decode(
             processed_str_args[0]["input_ids"]
         )
 
@@ -174,27 +192,23 @@ class TestQwen3IdenticalConversationArgs:
     def test_str_args_with_mixed_time_types_no_error(
         self,
         conversation_mixed_time_types_dataset,
-        qwen3_0_6b_instruct_prompt_strategy,
-        qwen3_0_6b_instruct_tokenizer,
+        qwen3_instruct_prompt_strategy,
+        qwen3_tokenizer,
     ):
         """
         Tests that when 'time' field has different types (string vs number)
         in different tool calls, str format arguments don't cause errors.
         """
-        try:
-            processed = conversation_mixed_time_types_dataset.map(
-                qwen3_0_6b_instruct_prompt_strategy.tokenize_prompt,
-                batched=True,
-                remove_columns=["messages"],
-            )
+        processed = conversation_mixed_time_types_dataset.map(
+            qwen3_instruct_prompt_strategy.tokenize_prompt,
+            batched=True,
+            remove_columns=["messages"],
+        )
 
-            assert len(processed) == 1
-            assert "input_ids" in processed[0]
-            assert len(processed[0]["input_ids"]) > 0
+        assert len(processed) == 1
+        assert "input_ids" in processed[0]
+        assert len(processed[0]["input_ids"]) > 0
 
-            decoded = qwen3_0_6b_instruct_tokenizer.decode(processed[0]["input_ids"])
-            assert "2025-08-01" in decoded, "String time value should be present"
-            assert "1690876800" in decoded, "Number time value should be present"
-
-        except Exception as e:
-            pytest.fail(f"Failed to process mixed time types: {e}")
+        decoded = qwen3_tokenizer.decode(processed[0]["input_ids"])
+        assert "2025-08-01" in decoded, "String time value should be present"
+        assert "1690876800" in decoded, "Number time value should be present"
