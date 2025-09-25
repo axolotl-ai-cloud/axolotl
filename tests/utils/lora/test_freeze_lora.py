@@ -48,7 +48,7 @@ class TestLoRAParameterFreezing:
         """Test that LoRA parameters are None when adapters are disabled."""
         layer = self.create_mock_lora_layer(has_adapters=True, adapters_disabled=True)
 
-        W, b, quant_state, A, B, s = get_lora_parameters(layer)
+        W, b, A, B, s = get_lora_parameters(layer)
 
         # Base parameters should be returned
         assert W is not None
@@ -62,7 +62,7 @@ class TestLoRAParameterFreezing:
         """Test that LoRA parameters are None when adapters are merged."""
         layer = self.create_mock_lora_layer(has_adapters=True, merged=True)
 
-        W, b, quant_state, A, B, s = get_lora_parameters(layer)
+        W, b, A, B, s = get_lora_parameters(layer)
 
         # Base parameters should be returned
         assert W is not None
@@ -77,7 +77,7 @@ class TestLoRAParameterFreezing:
         """Test parameter behavior when no adapters are present."""
         layer = self.create_mock_lora_layer(has_adapters=False)
 
-        W, b, quant_state, A, B, s = get_lora_parameters(layer)
+        W, b, A, B, s = get_lora_parameters(layer)
 
         # Base parameters should be returned
         assert W is not None
@@ -94,7 +94,7 @@ class TestLoRAParameterFreezing:
             has_adapters=True, adapters_disabled=False, merged=False
         )
 
-        W, b, quant_state, A, B, s = get_lora_parameters(layer)
+        W, b, A, B, s = get_lora_parameters(layer)
 
         # All parameters should be returned
         assert W is not None
@@ -110,7 +110,7 @@ class TestLoRAParameterFreezing:
             has_adapters=True, adapters_disabled=False, merged=False
         )
 
-        W, b, quant_state, A, B, s = get_lora_parameters(layer)
+        W, b, A, B, s = get_lora_parameters(layer)
 
         # Check shape consistency
         assert W.shape == (512, 256)
@@ -157,7 +157,7 @@ class TestLoRAParameterFreezing:
 
         layer.active_adapters = ["adapter2"]
 
-        W, b, quant_state, A, B, s = get_lora_parameters(layer)
+        W, b, A, B, s = get_lora_parameters(layer)
 
         assert s == 0.2
         assert torch.equal(A, layer.lora_A["adapter2"].weight)
@@ -192,13 +192,13 @@ class TestLoRAParameterFreezingIntegration:
         model = get_peft_model(base_model, lora_config)
         lora_layer = model.base_model.model.linear
         # Test with adapters enabled
-        W, b, quant_state, A, B, s = get_lora_parameters(lora_layer)
+        W, b, A, B, s = get_lora_parameters(lora_layer)
         assert A is not None
         assert B is not None
         assert s is not None
         # Test with adapters disabled
         model.disable_adapter_layers()
-        W, b, quant_state, A, B, s = get_lora_parameters(lora_layer)
+        W, b, A, B, s = get_lora_parameters(lora_layer)
         assert A is None
         assert B is None
         assert s is None

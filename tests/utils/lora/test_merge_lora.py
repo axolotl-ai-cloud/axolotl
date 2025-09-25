@@ -69,7 +69,7 @@ class TestAdapterMergeUnmerge:
 
         self.scaling = alpha / r
 
-        def mock_merge_and_unload(progressbar=False):
+        def mock_merge_and_unload(_progressbar=False):
             """Simulate the actual merge operation"""
             # Apply LoRA delta to base weights: W_new = W_base + (B @ A) * scaling
             delta_q = (self.lora_B_q @ self.lora_A_q) * self.scaling
@@ -118,7 +118,7 @@ class TestAdapterMergeUnmerge:
         assert torch.allclose(merged_model.q_proj.weight, expected_merged_q, atol=1e-6)
 
     @patch("axolotl.cli.merge_lora.load_model_and_tokenizer")
-    def test_cli_do_merge_functionality(self, mock_load_model):
+    def test_cli_do_merge_functionality(self, mock_load_model, tmp_path):
         base_model = self.create_mock_base_model()
         lora_model = self.create_mock_lora_model(base_model)
         tokenizer = Mock()
@@ -131,13 +131,12 @@ class TestAdapterMergeUnmerge:
                 "save_safetensors": True,
                 "torch_dtype": torch.float32,
                 "local_rank": 0,
-                "output_dir": "/tmp/test_output",
+                "output_dir": str(tmp_path),
             }
         )
 
         with (
             patch("pathlib.Path.mkdir"),
-            patch("torch.save"),
             patch.object(base_model, "save_pretrained") as mock_save_model,
             patch.object(tokenizer, "save_pretrained") as mock_save_tokenizer,
         ):
@@ -160,13 +159,13 @@ class TestAdapterMergeUnmerge:
         assert merged_model is not None
 
     @patch.dict("os.environ", {"CUDA_VISIBLE_DEVICES": ""})
-    def test_memory_efficient_merge_with_cpu_offload(self):
+    def test_memory_efficient_merge_with_cpu_offload(self, tmp_path):
         """Test lora_on_cpu configuration during merge"""
         cfg = DictDefault(
             {
                 "lora_on_cpu": True,
                 "save_safetensors": True,
-                "output_dir": "/tmp/test_output",
+                "output_dir": str(tmp_path),
                 "local_rank": 0,
             }
         )
