@@ -375,6 +375,13 @@ def patch_deepseek_v3_moe(
     def patched_moe(self, hidden_states, topk_indices, topk_weights):
         backend_sel = getattr(self, "_axolotl_triton_backend", backend)
         group_size_sel = getattr(self, "_axolotl_group_size_m", group_size_m)
+        if backend_sel == "cg" and group_size_sel != _GROUP_SIZE_M:
+            LOG.debug(
+                "Adjusting group_size_m=%s to %s for CG backend",
+                group_size_sel,
+                _GROUP_SIZE_M,
+            )
+            group_size_sel = _GROUP_SIZE_M
         try:
             return _moe_triton_forward(
                 self,

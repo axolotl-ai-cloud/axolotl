@@ -101,18 +101,6 @@ ARCHETYPES = (
         [(4, 2048), (8, 4096)],
     ),
     (
-        "dbrx",
-        {
-            "hidden_size": 6144,
-            "moe_intermediate_size": 24576,
-            "n_experts": 16,
-            "top_k": 2,
-            "groups": 4,
-            "group_size": 192,
-        },
-        [(4, 4096), (8, 8192)],
-    ),
-    (
         "qwen",
         {
             "hidden_size": 6144,
