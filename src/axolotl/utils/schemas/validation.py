@@ -1,7 +1,6 @@
 """Module with validation methods for config pydantic model."""
 
 import json
-import sys
 import tempfile
 from pathlib import Path
 
@@ -1314,49 +1313,39 @@ class ComplexValidationMixin:
         if not self.context_parallel_size:
             self.context_parallel_size = 1
         elif self.context_parallel_size > 1:
-            if not self.flash_attention:
+            use_flash_attention = getattr(self, "flash_attention", False)
+            use_sdp_attention = getattr(self, "sdp_attention", False)
+
+            if not (use_flash_attention or use_sdp_attention):
                 raise ValueError(
-                    "flash_attention: true must be set with context_parallel_size > 1"
+                    "context_parallel_size > 1 requires either flash_attention: true "
+                    "or sdp_attention: true"
                 )
 
-            if self.sample_packing and self.micro_batch_size > 1:
-                raise ValueError(
-                    "micro_batch_size must be set to 1 when sample_packing is enabled "
-                    "due to a `ring-flash-attn` requirement"
+            if use_flash_attention:
+                if self.sample_packing and self.micro_batch_size > 1:
+                    raise ValueError(
+                        "micro_batch_size must be set to 1 when sample_packing is enabled "
+                        "due to a `ring-flash-attn` requirement"
+                    )
+
+                try:
+                    import ring_flash_attn  # noqa: F401  # Required after monkey-patching
+                except ImportError as exception:
+                    raise ImportError(
+                        "context_parallel_size > 1 but ring_flash_attn is not installed. "
+                        "Please install it with `pip install axolotl[ring-flash-attn] "
+                        "or `pip install ring-flash-attn>=0.1.4`."
+                    ) from exception
+
+                LOG.warning(
+                    "Sequence parallelism (SP) is enabled with "
+                    f"context_parallel_size={self.context_parallel_size}. "
+                    "Please note that logged losses may differ slightly to the non-SP "
+                    "losses due to transformers Trainer implementation details. "
+                    "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
+                    "for more details."
                 )
-
-            try:
-                import transformers.modeling_flash_attention_utils
-                from transformers.utils import is_flash_attn_greater_or_equal
-
-                transformers.modeling_flash_attention_utils._flash_supports_window = (
-                    True
-                )
-                sys.modules[
-                    "transformers.modeling_flash_attention_utils"
-                ]._flash_supports_window = True
-                sys.modules[
-                    "transformers.modeling_flash_attention_utils"
-                ]._flash_supports_window_size = True
-                sys.modules[
-                    "transformers.modeling_flash_attention_utils"
-                ].is_flash_attn_greater_or_equal = is_flash_attn_greater_or_equal
-                import ring_flash_attn  # noqa: F401  # Required after monkey-patching
-            except ImportError as exception:
-                raise ImportError(
-                    "context_parallel_size > 1 but ring_flash_attn is not installed. "
-                    "Please install it with `pip install axolotl[ring-flash-attn] "
-                    "or `pip install ring-flash-attn>=0.1.4`."
-                ) from exception
-
-            LOG.warning(
-                "Sequence parallelism (SP) is enabled with "
-                f"context_parallel_size={self.context_parallel_size}. "
-                "Please note that logged losses may differ slightly to the non-SP "
-                "losses due to transformers Trainer implementation details. "
-                "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
-                "for more details."
-            )
 
         return self
 

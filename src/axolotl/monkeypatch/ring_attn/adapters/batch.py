@@ -13,21 +13,10 @@ from typing import Callable
 import torch
 import torch.distributed as dist
 import transformers
-import transformers.modeling_flash_attention_utils
+import transformers.modeling_flash_attention_utils as flash_utils
 from ring_flash_attn import ring_flash_attn_func
 from ring_flash_attn.adapters.hf_adapter import check_params
 from transformers.modeling_flash_attention_utils import is_flash_attn_greater_or_equal
-
-try:
-    from transformers.modeling_flash_attention_utils import _flash_supports_window
-except ImportError:
-    try:
-        from transformers.modeling_flash_attention_utils import (
-            _flash_supports_window_size as _flash_supports_window,
-        )
-    except ImportError:
-        _flash_supports_window = True
-
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
 from axolotl.utils.schemas.enums import RingAttnFunc
@@ -118,7 +107,7 @@ def create_flash_attn_forward_varlen_llama3(
 
         # Handle sliding window
         use_sliding_windows = (
-            _flash_supports_window
+            _flash_windows_supported()
             and sliding_window is not None
             and key_states.shape[1] > sliding_window
         )
@@ -194,3 +183,18 @@ def substitute_hf_flash_attn(
         from ring_flash_attn.adapters.hf_adapter import flash_attention_forward
 
         ALL_ATTENTION_FUNCTIONS["flash_attention_2"] = flash_attention_forward
+
+
+def _flash_windows_supported() -> bool:
+    """Return whether current transformers build advertises sliding-window support."""
+    support = getattr(flash_utils, "_flash_supports_window", None)
+    if support is None:
+        support = getattr(flash_utils, "_flash_supports_window_size", None)
+
+    if support is None:
+        return True
+
+    if callable(support):
+        return True
+
+    return bool(support)

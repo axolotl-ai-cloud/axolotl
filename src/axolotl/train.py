@@ -179,7 +179,11 @@ def execute_training(
                 )
             )
 
-        if cfg.context_parallel_size > 1:
+        use_flash_cp = cfg.context_parallel_size > 1 and bool(
+            getattr(cfg, "flash_attention", False)
+        )
+
+        if use_flash_cp:
             models = [trainer.model]
             if hasattr(trainer, "ref_model") and trainer.ref_model:
                 models.append(trainer.ref_model)

@@ -13,17 +13,8 @@ from typing import Optional
 
 import torch
 import torch.distributed as dist
+import transformers.modeling_flash_attention_utils as flash_utils
 from torch.distributed import DeviceMesh
-
-try:
-    from transformers.modeling_flash_attention_utils import _flash_supports_window
-except ImportError:
-    try:
-        from transformers.modeling_flash_attention_utils import (
-            _flash_supports_window_size as _flash_supports_window,
-        )
-    except ImportError:
-        _flash_supports_window = True
 
 from axolotl.monkeypatch.utils import get_cu_seqlens_from_pos_ids
 from axolotl.utils.logging import get_logger
@@ -83,7 +74,7 @@ def create_ring_flash_attention_forward(
 
         # Assuming 4D tensors, key_states.shape[1] is the key/value sequence length (source length).
         use_sliding_windows = (
-            _flash_supports_window
+            _flash_windows_supported()
             and sliding_window is not None
             and key_states.shape[1] > sliding_window
         )
@@ -225,3 +216,19 @@ def update_ring_attn_params(position_ids: torch.Tensor | None):
     cu_seqlens, _ = get_cu_seqlens_from_pos_ids(position_ids)
     cu_seqlens = cu_seqlens.squeeze().to(device=torch.cuda.current_device())
     update_ring_flash_attn_params(cu_seqlens, get_ring_attn_group())
+
+
+def _flash_windows_supported() -> bool:
+    """Best-effort check for FlashAttention sliding-window support."""
+    support = getattr(flash_utils, "_flash_supports_window", None)
+    if support is None:
+        support = getattr(flash_utils, "_flash_supports_window_size", None)
+
+    if support is None:
+        return True
+
+    if callable(support):
+        # Signature differs across versions; assume support when callable.
+        return True
+
+    return bool(support)

@@ -84,7 +84,9 @@ class PatchManager:
         patch_evaluation_loop()
         patch_maybe_log_save_evaluate()
 
-        if self.cfg.context_parallel_size > 1:
+        if self.cfg.context_parallel_size > 1 and getattr(
+            self.cfg, "flash_attention", False
+        ):
             from axolotl.monkeypatch.transformers.trainer_context_parallel import (
                 patch_prepare_context_parallel_inputs,
             )
