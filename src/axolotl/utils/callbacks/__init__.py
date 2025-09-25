@@ -17,7 +17,6 @@ import torch
 import torch.distributed as dist
 import wandb
 from datasets import load_dataset
-from optimum.bettertransformer import BetterTransformer
 from tqdm import tqdm
 from transformers import (
     GenerationConfig,
@@ -66,6 +65,14 @@ class SaveBetterTransformerModelCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,
     ) -> TrainerControl:
+        # Import error due Transformers removed tensorflow support after version 4.56.2.
+        # Need wait until optimum release a new version.
+        try:
+            from optimum.bettertransformer import BetterTransformer
+        except ImportError as e:
+            raise ImportError(
+                f"Import error due Transformers removed tensorflow support after version 4.56.2. Please install transformers<=4.56.2: {e}"
+            )
         # Save
         if (
             args.save_strategy == IntervalStrategy.STEPS
