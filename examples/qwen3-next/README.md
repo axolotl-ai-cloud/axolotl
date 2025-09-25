@@ -38,7 +38,7 @@ pip3 uninstall -y causal-conv1d && pip3 install flash-linear-attention==0.3.2
 axolotl train examples/qwen3-next/qwen3-next-80b-a3b-qlora.yaml
 ```
 
-This config uses about 41.7 GiB VRAM.
+This config uses about 45.62 GiB VRAM.
 
 Let us know how it goes. Happy finetuning! 🚀
 
