@@ -6,8 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
+<meta name="description" content="A guide to the performance and memory optimizations available in Axolotl.">
 
-<title>integrations.liger.args – Axolotl</title>
+<title>Optimizations Guide – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -20,62 +21,27 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
-/* CSS for syntax highlighting */
-html { -webkit-text-size-adjust: 100%; }
-pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
-pre > code.sourceCode > span:empty { height: 1.2em; }
-.sourceCode { overflow: visible; }
-code.sourceCode > span { color: inherit; text-decoration: inherit; }
-div.sourceCode { margin: 1em 0; }
-pre.sourceCode { margin: 0; }
-@media screen {
-div.sourceCode { overflow: auto; }
-}
-@media print {
-pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
-}
-pre.numberSource code
-  { counter-reset: source-line 0; }
-pre.numberSource code > span
-  { position: relative; left: -4em; counter-increment: source-line; }
-pre.numberSource code > span > a:first-child::before
-  { content: counter(source-line);
-    position: relative; left: -1em; text-align: right; vertical-align: baseline;
-    border: none; display: inline-block;
-    -webkit-touch-callout: none; -webkit-user-select: none;
-    -khtml-user-select: none; -moz-user-select: none;
-    -ms-user-select: none; user-select: none;
-    padding: 0 4px; width: 4em;
-  }
-pre.numberSource { margin-left: 3em;  padding-left: 4px; }
-div.sourceCode
-  {   }
-@media screen {
-pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
-}
 </style>
 
 
-<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
-<script src="../../site_libs/clipboard/clipboard.min.js"></script>
-<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
-<script src="../../site_libs/quarto-search/fuse.min.js"></script>
-<script src="../../site_libs/quarto-search/quarto-search.js"></script>
-<meta name="quarto:offset" content="../../">
-<link href="../../favicon.jpg" rel="icon" type="image/jpeg">
-<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
-<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
-<script src="../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
-<script src="../../site_libs/quarto-html/popper.min.js"></script>
-<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
-<script src="../../site_libs/quarto-html/anchor.min.js"></script>
-<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b651517ce65839d647a86e2780455cfb.css" rel="stylesheet" id="quarto-text-highlighting-styles">
-<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
-<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-08d9eb451d58809f35fda8b852d737d8.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../favicon.jpg" rel="icon" type="image/jpeg">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b651517ce65839d647a86e2780455cfb.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-08d9eb451d58809f35fda8b852d737d8.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -114,7 +80,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </script>
 
 
-<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../styles.css">
 </head>
 
 <body class="nav-sidebar docked nav-fixed quarto-light">
@@ -124,9 +90,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <nav class="navbar navbar-expand " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
-    <a href="../../index.html" class="navbar-brand navbar-brand-logo">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
     </a>
   </div>
         <div class="quarto-navbar-tools tools-wide tools-end">
@@ -142,7 +108,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/multimodal.html">How To Guides</a></li><li class="breadcrumb-item"><a href="../docs/optimizations.html">Optimizations Guide</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -153,14 +119,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <!-- sidebar -->
   <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
     <div class="pt-lg-2 mt-2 text-left sidebar-header">
-      <a href="../../index.html" class="sidebar-logo-link">
+      <a href="../index.html" class="sidebar-logo-link">
       </a>
       </div>
     <div class="sidebar-menu-container"> 
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../index.html" class="sidebar-item-text sidebar-link">
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Home</span></a>
   </div>
 </li>
@@ -175,37 +141,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/getting-started.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/getting-started.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quickstart</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/installation.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/installation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Installation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/inference.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/inference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Inference and Merging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/cli.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/config-reference.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/config-reference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/api" class="sidebar-item-text sidebar-link">
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
  <span class="menu-text">API Reference</span></a>
   </div>
 </li>
@@ -213,7 +179,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a href="../../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
+            <a href="../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Formats</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
@@ -222,37 +188,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Pre-training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Instruction Tuning</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Conversation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Stepwise Supervised Format</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-Free</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Pre-Tokenized Dataset</span></a>
   </div>
 </li>
@@ -269,37 +235,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/docker.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/docker.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Docker</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi-GPU</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-node.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi Node</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ray Train</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mac.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/mac.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mac M-series</span></a>
   </div>
 </li>
@@ -316,55 +282,55 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multimodal.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multimodal.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MultiModal / Vision Language Models (BETA)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">RLHF (Beta)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Reward Modelling</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Learning Rate Groups</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Loading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/qat.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/qat.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization Aware Training (QAT)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/quantize.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/quantize.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization with torchao</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/optimizations.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/optimizations.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Optimizations Guide</span></a>
   </div>
 </li>
@@ -381,37 +347,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Batch size vs Gradient accumulation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Preprocessing</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/streaming.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/streaming.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Streaming Datasets</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multipack.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multipack (Sample Packing)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mixed Precision Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/optimizers.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/optimizers.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Optimizers</span></a>
   </div>
 </li>
@@ -428,43 +394,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FDSP + QLoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/unsloth.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/unsloth.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Unsloth</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/torchao.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/torchao.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">PyTorch ao</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Integrations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Sequence Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gradient Checkpointing and Activation Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">N-D Parallelism (Beta)</span></a>
   </div>
 </li>
@@ -481,19 +447,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/faq.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/faq.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FAQ</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/debugging.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Debugging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nccl.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NCCL</span></a>
   </div>
 </li>
@@ -509,49 +475,205 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.integrations.liger.args" id="toc-axolotl.integrations.liger.args" class="nav-link active" data-scroll-target="#axolotl.integrations.liger.args">integrations.liger.args</a>
+  <li><a href="#speed-optimizations" id="toc-speed-optimizations" class="nav-link active" data-scroll-target="#speed-optimizations">Speed Optimizations</a>
   <ul class="collapse">
-  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.integrations.liger.args.LigerArgs" id="toc-axolotl.integrations.liger.args.LigerArgs" class="nav-link" data-scroll-target="#axolotl.integrations.liger.args.LigerArgs">LigerArgs</a></li>
+  <li><a href="#sample-packing" id="toc-sample-packing" class="nav-link" data-scroll-target="#sample-packing">Sample Packing</a></li>
+  <li><a href="#attention-implementations" id="toc-attention-implementations" class="nav-link" data-scroll-target="#attention-implementations">Attention Implementations</a></li>
+  <li><a href="#lora-optimizations" id="toc-lora-optimizations" class="nav-link" data-scroll-target="#lora-optimizations">LoRA Optimizations</a></li>
   </ul></li>
+  <li><a href="#memory-optimizations" id="toc-memory-optimizations" class="nav-link" data-scroll-target="#memory-optimizations">Memory Optimizations</a>
+  <ul class="collapse">
+  <li><a href="#parameter-efficient-finetuning-lora-qlora" id="toc-parameter-efficient-finetuning-lora-qlora" class="nav-link" data-scroll-target="#parameter-efficient-finetuning-lora-qlora">Parameter Efficient Finetuning (LoRA &amp; QLoRA)</a></li>
+  <li><a href="#gradient-checkpointing-activation-offloading" id="toc-gradient-checkpointing-activation-offloading" class="nav-link" data-scroll-target="#gradient-checkpointing-activation-offloading">Gradient Checkpointing &amp; Activation Offloading</a></li>
+  <li><a href="#cut-cross-entropy-cce" id="toc-cut-cross-entropy-cce" class="nav-link" data-scroll-target="#cut-cross-entropy-cce">Cut Cross Entropy (CCE)</a></li>
+  <li><a href="#liger-kernels" id="toc-liger-kernels" class="nav-link" data-scroll-target="#liger-kernels">Liger Kernels</a></li>
+  </ul></li>
+  <li><a href="#long-context-models" id="toc-long-context-models" class="nav-link" data-scroll-target="#long-context-models">Long Context Models</a>
+  <ul class="collapse">
+  <li><a href="#rope-scaling" id="toc-rope-scaling" class="nav-link" data-scroll-target="#rope-scaling">RoPE Scaling</a></li>
+  <li><a href="#sequence-parallelism" id="toc-sequence-parallelism" class="nav-link" data-scroll-target="#sequence-parallelism">Sequence Parallelism</a></li>
+  <li><a href="#artic-long-sequence-training-alst" id="toc-artic-long-sequence-training-alst" class="nav-link" data-scroll-target="#artic-long-sequence-training-alst">Artic Long Sequence Training (ALST)</a></li>
+  </ul></li>
+  <li><a href="#large-models-distributed-training" id="toc-large-models-distributed-training" class="nav-link" data-scroll-target="#large-models-distributed-training">Large Models (Distributed Training)</a>
+  <ul class="collapse">
+  <li><a href="#n-d-parallelism-beta" id="toc-n-d-parallelism-beta" class="nav-link" data-scroll-target="#n-d-parallelism-beta">N-D Parallelism (Beta)</a></li>
+  </ul></li>
+  <li><a href="#quantization" id="toc-quantization" class="nav-link" data-scroll-target="#quantization">Quantization</a>
+  <ul class="collapse">
+  <li><a href="#bit-training-qlora" id="toc-bit-training-qlora" class="nav-link" data-scroll-target="#bit-training-qlora">4-bit Training (QLoRA)</a></li>
+  <li><a href="#fp8-training" id="toc-fp8-training" class="nav-link" data-scroll-target="#fp8-training">FP8 Training</a></li>
+  <li><a href="#quantization-aware-training-qat" id="toc-quantization-aware-training-qat" class="nav-link" data-scroll-target="#quantization-aware-training-qat">Quantization Aware Training (QAT)</a></li>
+  <li><a href="#gptq" id="toc-gptq" class="nav-link" data-scroll-target="#gptq">GPTQ</a></li>
   </ul></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/multimodal.html">How To Guides</a></li><li class="breadcrumb-item"><a href="../docs/optimizations.html">Optimizations Guide</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Optimizations Guide</h1>
+</div>
+
+<div>
+  <div class="description">
+    A guide to the performance and memory optimizations available in Axolotl.
+  </div>
+</div>
 
 
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
 
 
-<section id="axolotl.integrations.liger.args" class="level1">
-<h1>integrations.liger.args</h1>
-<p><code>integrations.liger.args</code></p>
-<p>Module for handling LIGER input arguments.</p>
-<section id="classes" class="level2">
-<h2 class="anchored" data-anchor-id="classes">Classes</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.integrations.liger.args.LigerArgs">LigerArgs</a></td>
-<td>Input args for LIGER.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.integrations.liger.args.LigerArgs" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.integrations.liger.args.LigerArgs">LigerArgs</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.liger.args.LigerArgs()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Input args for LIGER.</p>
+</header>
 
 
+<p>Axolotl includes numerous optimizations to speed up training, reduce memory usage, and handle large models.</p>
+<p>This guide provides a high-level overview and directs you to the detailed documentation for each feature.</p>
+<section id="speed-optimizations" class="level2">
+<h2 class="anchored" data-anchor-id="speed-optimizations">Speed Optimizations</h2>
+<p>These optimizations focus on increasing training throughput and reducing total training time.</p>
+<section id="sample-packing" class="level3">
+<h3 class="anchored" data-anchor-id="sample-packing">Sample Packing</h3>
+<p>Improves GPU utilization by combining multiple short sequences into a single packed sequence for training. This requires enabling one of the <a href="#attention-implementations">attention</a> implementations below.</p>
+<ul>
+<li><strong>Config:</strong> <code>sample_packing: true</code></li>
+<li><strong>Learn more:</strong> <a href="../docs/multipack.html">Sample Packing</a></li>
+</ul>
 </section>
+<section id="attention-implementations" class="level3">
+<h3 class="anchored" data-anchor-id="attention-implementations">Attention Implementations</h3>
+<p>Using an optimized attention implementation is critical for training speed.</p>
+<ul>
+<li><strong><a href="https://github.com/Dao-AILab/flash-attention">Flash Attention 2</a></strong>: <code>flash_attention: true</code>. <strong>(Recommended)</strong> The industry standard for fast attention on modern GPUs. Requires Ampere or higher. For AMD, check <a href="https://github.com/Dao-AILab/flash-attention?tab=readme-ov-file#amd-rocm-support">AMD Support</a>.</li>
+<li><strong><a href="https://pytorch.org/blog/flexattention/">Flex Attention</a></strong>: <code>flex_attention: true</code>.</li>
+<li><strong><a href="https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html">SDP Attention</a></strong>: <code>sdp_attention: true</code>. PyTorch’s native implementation.</li>
+<li><strong><a href="https://github.com/facebookresearch/xformers">Xformers</a></strong>: <code>xformers_attention: true</code>. Works with FP16.</li>
+</ul>
+<p><em>Note: You should only enable one attention backend.</em></p>
+</section>
+<section id="lora-optimizations" class="level3">
+<h3 class="anchored" data-anchor-id="lora-optimizations">LoRA Optimizations</h3>
+<p>Leverages optimized kernels to accelerate LoRA training and reduce memory usage.</p>
+<ul>
+<li><strong>Learn more:</strong> <a href="../docs/lora_optims.html">LoRA Optimizations Documentation</a></li>
+</ul>
+</section>
+</section>
+<section id="memory-optimizations" class="level2">
+<h2 class="anchored" data-anchor-id="memory-optimizations">Memory Optimizations</h2>
+<p>These techniques help you fit larger models or use bigger batch sizes on your existing hardware.</p>
+<section id="parameter-efficient-finetuning-lora-qlora" class="level3">
+<h3 class="anchored" data-anchor-id="parameter-efficient-finetuning-lora-qlora">Parameter Efficient Finetuning (LoRA &amp; QLoRA)</h3>
+<p>Drastically reduces memory by training a small set of “adapter” parameters instead of the full model. This is the most common and effective memory-saving technique.</p>
+<ul>
+<li>Examples: Find configs with <code>lora</code> or <code>qlora</code> in the <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/llama-3">examples directory</a>.</li>
+<li>Config Reference: See <code>adapter</code>, <code>load_in_4bit</code>, and <code>load_in_8bit</code> in the <a href="../docs/config-reference.html">Configuration Reference</a>.</li>
+</ul>
+</section>
+<section id="gradient-checkpointing-activation-offloading" class="level3">
+<h3 class="anchored" data-anchor-id="gradient-checkpointing-activation-offloading">Gradient Checkpointing &amp; Activation Offloading</h3>
+<p>These techniques save VRAM by changing how activations are handled.</p>
+<ul>
+<li>Gradient Checkpointing: re-computes activations during the backward pass, trading compute time for VRAM.</li>
+<li>Activation Offloading: moves activations to CPU RAM or disk, trading I/O overhead for VRAM.</li>
+<li>Learn more: <a href="../docs/gradient_checkpointing.html">Gradient Checkpointing and Offloading Docs</a></li>
+</ul>
+</section>
+<section id="cut-cross-entropy-cce" class="level3">
+<h3 class="anchored" data-anchor-id="cut-cross-entropy-cce">Cut Cross Entropy (CCE)</h3>
+<p>Reduces VRAM usage by using an optimized cross-entropy loss calculation.</p>
+<ul>
+<li><strong>Learn more:</strong> <a href="../docs/custom_integrations.html#cut-cross-entropy">Custom Integrations - CCE</a></li>
+</ul>
+</section>
+<section id="liger-kernels" class="level3">
+<h3 class="anchored" data-anchor-id="liger-kernels">Liger Kernels</h3>
+<p>Provides efficient Triton kernels to improve training speed and reduce memory usage.</p>
+<ul>
+<li><strong>Learn more:</strong> <a href="../docs/custom_integrations.html#liger-kernels">Custom Integrations - Liger Kernels</a></li>
+</ul>
+</section>
+</section>
+<section id="long-context-models" class="level2">
+<h2 class="anchored" data-anchor-id="long-context-models">Long Context Models</h2>
+<p>Techniques to train models on sequences longer than their original context window.</p>
+<section id="rope-scaling" class="level3">
+<h3 class="anchored" data-anchor-id="rope-scaling">RoPE Scaling</h3>
+<p>Extends a model’s context window by interpolating its Rotary Position Embeddings.</p>
+<ul>
+<li><strong>Config:</strong> Pass the <code>rope_scaling</code> config under the <code>overrides_of_model_config:</code>. To learn how to set RoPE, check the respective model config.</li>
+</ul>
+</section>
+<section id="sequence-parallelism" class="level3">
+<h3 class="anchored" data-anchor-id="sequence-parallelism">Sequence Parallelism</h3>
+<p>Splits long sequences across multiple GPUs, enabling training with sequence lengths that would not fit on a single device.</p>
+<ul>
+<li><strong>Learn more:</strong> <a href="../docs/sequence_parallelism.html">Sequence Parallelism Documentation</a></li>
+</ul>
+</section>
+<section id="artic-long-sequence-training-alst" class="level3">
+<h3 class="anchored" data-anchor-id="artic-long-sequence-training-alst">Artic Long Sequence Training (ALST)</h3>
+<p>ALST is a recipe that combines several techniques to train long-context models efficiently. It typically involves:</p>
+<ul>
+<li><p>TiledMLP to reduce memory usage in MLP layers.</p></li>
+<li><p>Tiled Loss functions (like <a href="#cut-cross-entropy-(cce)%20or%20%5BLiger%5D(#liger-kernels)">CCE</a>.</p></li>
+<li><p>Activation Offloading to CPU.</p></li>
+<li><p>Example: <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/alst">ALST Example Configuration</a></p></li>
+</ul>
+</section>
+</section>
+<section id="large-models-distributed-training" class="level2">
+<h2 class="anchored" data-anchor-id="large-models-distributed-training">Large Models (Distributed Training)</h2>
+<p>To train models that don’t fit on a single GPU, you’ll need to use a distributed training strategy like FSDP or DeepSpeed. These frameworks shard the model weights, gradients, and optimizer states across multiple GPUs and nodes.</p>
+<ul>
+<li><strong>Learn more:</strong> <a href="../docs/multi-gpu.html">Multi-GPU Guide</a></li>
+<li><strong>Learn more:</strong> <a href="../docs/multi-node.html">Multi-Node Guide</a></li>
+</ul>
+<section id="n-d-parallelism-beta" class="level3">
+<h3 class="anchored" data-anchor-id="n-d-parallelism-beta">N-D Parallelism (Beta)</h3>
+<p>For advanced scaling, Axolotl allows you to compose different parallelism techniques (e.g., Data, Tensor, Sequence Parallelism). This is a powerful approach to train an extremely large model by overcoming multiple bottlenecks at once.</p>
+<ul>
+<li><strong>Learn more:</strong> <a href="../docs/nd_parallelism.html">N-D Parallelism Guide</a></li>
+</ul>
+</section>
+</section>
+<section id="quantization" class="level2">
+<h2 class="anchored" data-anchor-id="quantization">Quantization</h2>
+<p>Techniques to reduce the precision of model weights for memory savings.</p>
+<section id="bit-training-qlora" class="level3">
+<h3 class="anchored" data-anchor-id="bit-training-qlora">4-bit Training (QLoRA)</h3>
+<p>The recommended approach for quantization-based training. It loads the base model in 4-bit using <code>bitsandbytes</code> and then trains QLoRA adapters. See <a href="#adapter-finetuning-lora-qlora">Adapter Finetuning</a> for details.</p>
+</section>
+<section id="fp8-training" class="level3">
+<h3 class="anchored" data-anchor-id="fp8-training">FP8 Training</h3>
+<p>Enables training with 8-bit floating point precision on supported hardware (e.g., NVIDIA Hopper series GPUs) for significant speed and memory gains.</p>
+<ul>
+<li><strong>Example:</strong> <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/llama-3/3b-fp8-fsdp2.yaml">Llama 3 FP8 FSDP Example</a></li>
+</ul>
+</section>
+<section id="quantization-aware-training-qat" class="level3">
+<h3 class="anchored" data-anchor-id="quantization-aware-training-qat">Quantization Aware Training (QAT)</h3>
+<p>Simulates quantization effects during training, helping the model adapt and potentially improving the final accuracy of the quantized model.</p>
+<ul>
+<li><strong>Learn more:</strong> <a href="../docs/qat.html">QAT Documentation</a></li>
+</ul>
+</section>
+<section id="gptq" class="level3">
+<h3 class="anchored" data-anchor-id="gptq">GPTQ</h3>
+<p>Allows you to finetune LoRA adapters on top of a model that has already been quantized using the GPTQ method.</p>
+<ul>
+<li><strong>Example:</strong> <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/llama-2/gptq-lora.yml">GPTQ LoRA Example</a></li>
+</ul>
+
+
 </section>
 </section>
 
