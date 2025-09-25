@@ -323,8 +323,8 @@ def apply_lora_kernel_patches(
         AssertionError: If multiple adapters are active (currently unsupported).
 
     Note:
-        The optimizations require LoRA adapters with no dropout and no bias terms. The
-            function will skip patching if these conditions aren't met.
+        The optimizations require LoRA adapters with no dropout. The function will skip
+        patching if that condition isn't met.
     """
     if not isinstance(model, PeftModelForCausalLM):
         raise TypeError("Model must be a PeftModelForCausalLM")
@@ -340,10 +340,10 @@ def apply_lora_kernel_patches(
     lora_config = model.model.peft_config[active_adapter]
 
     # Only patch if conditions are met
-    can_patch = lora_config.lora_dropout == 0 and lora_config.bias == "none"
+    can_patch = lora_config.lora_dropout == 0
 
     if not can_patch:
-        LOG.warning("Cannot patch layers - requires no dropout and no bias")
+        LOG.warning("Cannot patch layers - requires `lora_dropout: 0`")
         LOG.warning("Please specify `lora_dropout: 0` in your axolotl config file")
         return model
 

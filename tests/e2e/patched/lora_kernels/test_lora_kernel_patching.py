@@ -221,44 +221,53 @@ def test_model_specific_activation(model_name, expected_activation):
     assert layer.mlp.forward.__func__ is expected_activation
 
 
-def test_kernel_patch_conditions():
-    """Test various conditions that should prevent kernel patching."""
-    test_configs = [
-        # Dropout prevents patching
-        {
-            "peft_type": "LORA",
-            "task_type": "CAUSAL_LM",
-            "r": 8,
-            "lora_alpha": 16,
-            "target_modules": ["gate_proj", "up_proj", "down_proj"],
-            "lora_dropout": 0.1,
-            "bias": "none",
-        },
-        # Bias prevents patching
-        {
-            "peft_type": "LORA",
-            "task_type": "CAUSAL_LM",
-            "r": 8,
-            "lora_alpha": 16,
-            "target_modules": ["gate_proj", "up_proj", "down_proj"],
-            "lora_dropout": 0,
-            "bias": "lora_only",
-        },
-    ]
+def test_kernel_patch_requires_zero_dropout():
+    """Kernel patching should be skipped when dropout is enabled."""
+    config = {
+        "peft_type": "LORA",
+        "task_type": "CAUSAL_LM",
+        "r": 8,
+        "lora_alpha": 16,
+        "target_modules": ["gate_proj", "up_proj", "down_proj"],
+        "lora_dropout": 0.1,
+        "bias": "none",
+    }
 
-    for config in test_configs:
-        model = AutoModelForCausalLM.from_pretrained("HuggingFaceTB/SmolLM2-135M")
-        peft_config = get_peft_config(config)
-        model = PeftModelForCausalLM(model, peft_config)
-        cfg = DictDefault({"lora_mlp_kernel": True})
+    model = AutoModelForCausalLM.from_pretrained("HuggingFaceTB/SmolLM2-135M")
+    peft_config = get_peft_config(config)
+    model = PeftModelForCausalLM(model, peft_config)
+    cfg = DictDefault({"lora_mlp_kernel": True})
 
-        # Should not patch
-        patched_model = apply_lora_kernel_patches(model, cfg)
-        layer = patched_model.model.model.layers[0].mlp
+    patched_model = apply_lora_kernel_patches(model, cfg)
+    layer = patched_model.model.model.layers[0].mlp
 
-        # Verify no patches applied
-        assert layer.forward.__func__ is not apply_lora_mlp_swiglu
-        assert layer.forward.__func__ is not apply_lora_mlp_geglu
+    # Verify no patches applied when dropout is non-zero
+    assert layer.forward.__func__ is not apply_lora_mlp_swiglu
+    assert layer.forward.__func__ is not apply_lora_mlp_geglu
+
+
+def test_kernel_patch_with_bias_enabled():
+    """Kernel patching should succeed when LoRA bias is enabled."""
+    config = {
+        "peft_type": "LORA",
+        "task_type": "CAUSAL_LM",
+        "r": 8,
+        "lora_alpha": 16,
+        "target_modules": ["gate_proj", "up_proj", "down_proj"],
+        "lora_dropout": 0,
+        "bias": "lora_only",
+    }
+
+    model = AutoModelForCausalLM.from_pretrained("HuggingFaceTB/SmolLM2-135M")
+    peft_config = get_peft_config(config)
+    model = PeftModelForCausalLM(model, peft_config)
+    cfg = DictDefault({"lora_mlp_kernel": True})
+
+    patched_model = apply_lora_kernel_patches(model, cfg)
+    layer = patched_model.model.model.layers[0].mlp
+
+    # Verify patches applied when bias support is enabled
+    assert layer.forward.__func__ is apply_lora_mlp_swiglu
 
 
 def test_kernel_config_options():

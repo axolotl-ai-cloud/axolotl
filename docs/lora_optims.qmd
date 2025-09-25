@@ -5,10 +5,11 @@ description: "Custom autograd functions and Triton kernels in Axolotl for optimi
 
 Inspired by [Unsloth](https://github.com/unslothai/unsloth), we've implemented two
 optimizations for LoRA and QLoRA fine-tuning, supporting both single GPU and multi-GPU
-(in the DDP and DeepSpeed settings) training. These include (1) SwiGLU and GEGLU activation function
-Triton kernels, and (2) LoRA MLP and attention custom autograd functions. Our goal was
-to leverage operator fusion and tensor re-use in order to improve speed and reduce
-memory usage during the forward and backward passes of these calculations.
+(including DDP, DeepSpeed, and FSDP2) training. These include (1) SwiGLU and GEGLU
+activation function Triton kernels, and (2) LoRA MLP and attention custom autograd
+functions. Our goal was to leverage operator fusion and tensor re-use in order to
+improve speed and reduce memory usage during the forward and backward passes of these
+calculations.
 
 We currently support several common model architectures, including (but not limited to):
 
@@ -92,13 +93,12 @@ Currently, LoRA kernels are not supported for RLHF training, only SFT.
 
 - One or more NVIDIA or AMD GPUs (in order to use the Triton kernels)
     - Note: Set `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` to enable [memory-efficient attention on AMD GPUs](https://github.com/ROCm/aotriton/issues/16#issuecomment-2346675491)
-- Targeted LoRA adapters cannot use Dropout
-    - This may limit model expressivity / cause overfitting
-- Targeted LoRA adapters cannot have bias terms
+- Targeted LoRA adapters must disable dropout (`lora_dropout: 0`)
     - This may limit model expressivity
+- Adapters that already include bias terms are supported.
 
-Models with pre-existing LoRA adapters that use Dropout or have bias terms may need to
-be re-finetuned without these features in order to be useful.
+Models with pre-existing LoRA adapters that use Dropout may need to be re-finetuned
+without it in order to be as performant.
 
 ## Implementation details
 
