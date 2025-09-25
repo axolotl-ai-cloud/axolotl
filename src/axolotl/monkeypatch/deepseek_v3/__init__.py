@@ -132,7 +132,7 @@ def _run_cg_grouped_gemm(
     group_size_m: int,
     hidden_dtype: torch.dtype,
     device: torch.device,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     _ensure_combined_expert_weights(module, hidden_dtype, device, backend="cg")
 
     expert_index_tensor = torch.repeat_interleave(
@@ -167,17 +167,11 @@ def _run_cg_grouped_gemm(
         expert_index_tensor,
         group_size_m,
     )
-    down_out = ContiguousGroupedGEMM.apply(
-        grouped_hidden,
-        down_weights,
-        expert_index_tensor,
-        group_size_m,
-    )
-
     return (
         gate_out.to(hidden_dtype),
         up_out.to(hidden_dtype),
-        down_out.to(hidden_dtype),
+        down_weights,
+        expert_index_tensor,
     )
 
     gate_out = mg_grouped_gemm(
@@ -296,7 +290,7 @@ def _moe_triton_forward(
             m_sizes_tensor,
         ).to(hidden_dtype)
     else:
-        gate_out, up_out, down_out_cg = _run_cg_grouped_gemm(
+        gate_out, up_out, down_weights, expert_index_tensor = _run_cg_grouped_gemm(
             module,
             grouped_hidden,
             m_sizes,
@@ -330,7 +324,12 @@ def _moe_triton_forward(
             m_sizes_tensor,
         ).to(hidden_dtype)
     else:
-        down_out = down_out_cg
+        down_out = ContiguousGroupedGEMM.apply(
+            hidden_grouped,
+            down_weights,
+            expert_index_tensor,
+            group_size_m,
+        ).to(hidden_dtype)
 
     if valid_positions.numel() > 0:
         down_valid = down_out.index_select(0, valid_positions)
