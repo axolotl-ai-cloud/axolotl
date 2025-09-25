@@ -4,11 +4,11 @@ Interactive Golf Strategy Chat
 Chat with your trained LoRA model to get golf strategy recommendations and hole descriptions.
 
 Basic usage (interactive):
-    python golf_strategy_chat.py --adapter_dir outputs/bethpage-lora/checkpoint-8_hour \
+    python golf_strategy_chat.py --adapter_dir outputs/bethpage-lora/checkpoint-1_hour-gpt2 \
         --data-file data/bethpage_black/train_multitask_case_fixed.jsonl
 
 One-shot example:
-    python golf_strategy_chat.py --adapter_dir outputs/bethpage-lora/checkpoint-8_hour \
+    python golf_strategy_chat.py --adapter_dir outputs/bethpage-lora/checkpoint-1_hour-gpt2 \
         --data-file data/bethpage_black/train_multitask_case_fixed.jsonl \
         --prompt "Hole 5, I drive 290 yards, what strategy?"
 """
@@ -21,6 +21,7 @@ import tempfile
 import shutil
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from collections import Counter
 from peft import PeftModel, PeftConfig
 from safetensors.torch import load_file, save_file
 
@@ -182,8 +183,176 @@ def normalize_user_input(text: str) -> str:
     return lower
 
 
+# Heuristics for deterministic description synthesis
+KEY_HAZARD_TERMS = [
+    "bunker", "bunkers", "sand", "rough", "fairway", "narrow", "dogleg",
+    "wind", "elevation", "uphill", "downhill", "carry", "landing", "landing zone",
+    "water", "creek", "pond", "out of bounds", "OB", "green", "tier", "slope",
+    "angle", "approach", "runoff", "false front", "hazard", "mound"
+]
+
+GENERIC_NOISE = [
+    r"strategic demands?",
+    r"decision[- ]?making",
+    r"combines? strategic positioning",
+    r"technical execut(ion|ing)",
+    r"Success\s*depends",
+]
+
+def keep_only_official_yardage(text: str, official: int | None) -> str:
+    if not isinstance(official, int):
+        return text
+    # Remove all yardage mentions that aren't the official number
+    def repl(m: re.Match) -> str:
+        num = int(m.group(1))
+        return f"{official} yards" if num == official else ""
+    text = re.sub(r"(\d{2,4})\s*(?:yards?|yds?)\+?", repl, text)
+    # Compress spaces after removals
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+def strip_generic_phrases(text: str) -> str:
+    out = text
+    for pat in GENERIC_NOISE:
+        out = re.sub(pat, "", out, flags=re.IGNORECASE)
+    out = de_template(out)
+    out = re.sub(r"\s+", " ", out).strip()
+    return out
+
+def rank_insights(items: list[str]) -> list[str]:
+    def score(s: str) -> int:
+        s_low = s.lower()
+        hits = sum(1 for k in KEY_HAZARD_TERMS if k in s_low)
+        length = min(len(s_low) // 40, 5)  # mild preference for longer, capped
+        return hits * 5 + length
+    return sorted(items, key=score, reverse=True)
+
+def compose_description(
+    hole_num: int,
+    par: int | None,
+    yardage: int | None,
+    insights: list[str],
+    hazards: list[str] | set[str] | None = None,
+    preferred_miss: str | None = None,
+    theme: str | None = None,
+) -> str:
+    # Pick top 4-6 insights
+    top = rank_insights([fix_mojibake(s).strip() for s in insights if s and len(s) > 8])[:6]
+    lead = f"Hole {hole_num} at Bethpage Black"
+    if isinstance(par, int) and isinstance(yardage, int):
+        header = f"{lead} is a Par {par} playing {yardage} yards."
+    elif isinstance(yardage, int):
+        header = f"{lead} plays {yardage} yards."
+    elif isinstance(par, int):
+        header = f"{lead} is a Par {par}."
+    else:
+        header = f"{lead} demands precise placement."
+
+    body = []
+    for s in top:
+        s = sanitize_hole_header(s, hole_num)
+        s = strip_generic_phrases(s)
+        # Avoid ending with colons from bullets
+        s = s.rstrip(": ")
+        body.append(s if s.endswith(('.', '!', '?')) else s + ".")
+
+    # Append concise structured bits when present
+    extras = []
+    if hazards:
+        hz = sorted(set(hazards))[:5]
+        if hz:
+            extras.append("Key hazards: " + ", ".join(hz) + ".")
+    if isinstance(theme, str) and theme.strip():
+        extras.append(f"Strategic theme: {theme.strip()}.")
+    if isinstance(preferred_miss, str) and preferred_miss.strip():
+        extras.append(f"Preferred miss: {preferred_miss.strip()}.")
+
+    text = header + " " + " ".join(body + (extras if extras else []))
+    text = keep_only_official_yardage(text, yardage)
+    text = sentence_boundary_trim(text, min_words=60, target_words=130, max_words=180)
+    return text
+
+
+def compose_description_structured(
+    hole_num: int,
+    par: int | None,
+    yardage: int | None,
+    attrs: dict | None,
+    theme: str | None,
+    preferred_miss: str | None,
+    hazards: list[str] | set[str] | None,
+) -> str:
+    """Compose a grounded paragraph from structured attributes rather than copying dataset text."""
+    attrs = attrs or {}
+    lead = f"Hole {hole_num} at Bethpage Black"
+    if isinstance(par, int) and isinstance(yardage, int):
+        header = f"{lead} is a Par {par} playing {yardage} yards."
+    elif isinstance(yardage, int):
+        header = f"{lead} plays {yardage} yards."
+    elif isinstance(par, int):
+        header = f"{lead} is a Par {par}."
+    else:
+        header = f"{lead} demands precise placement."
+
+    bits: list[str] = []
+    gradient = attrs.get("gradient")
+    shape = attrs.get("hole_shape")
+    elev_note = attrs.get("elevation_note")
+    risk_note = attrs.get("risk_note")
+    angle_note = attrs.get("angle_note")
+    pri_hz = attrs.get("primary_hazard_type")
+    sec_hz = attrs.get("secondary_hazard_type")
+    key_hz = attrs.get("key_hazards") or []
+
+    if shape or gradient:
+        if shape and gradient:
+            bits.append(f"It’s a {shape.replace('_', ' ')} that plays {gradient.replace('_', ' ')} from the tee.")
+        elif shape:
+            bits.append(f"It’s a {shape.replace('_', ' ')} with emphasis on line and distance control.")
+        else:
+            bits.append(f"It plays {gradient.replace('_', ' ')} from the tee.")
+    if key_hz or pri_hz or sec_hz:
+        hz_list = list(sorted(set([*(key_hz or []), *(h for h in [pri_hz, sec_hz] if h)])))
+        if hz_list:
+            bits.append("Key hazards: " + ", ".join(hz_list) + ".")
+    if elev_note:
+        bits.append(f"Elevation: {elev_note}.")
+    if risk_note:
+        bits.append(f"Risk: {risk_note}.")
+    if angle_note:
+        bits.append(f"Angles: {angle_note}.")
+    if theme:
+        bits.append(f"Strategic theme: {theme}.")
+    if preferred_miss:
+        bits.append(f"Preferred miss: {preferred_miss}.")
+
+    # If we also have hazards set from aggregate signals, summarize succinctly
+    if hazards and not key_hz:
+        hz = sorted(set(hazards))[:4]
+        if hz:
+            bits.append("Additional hazards: " + ", ".join(hz) + ".")
+
+    text = header + " " + " ".join(bits)
+    text = keep_only_official_yardage(text, yardage)
+    text = sentence_boundary_trim(text, min_words=50, target_words=110, max_words=160)
+    return text
+
+
 class GolfStrategyChat:
-    def __init__(self, adapter_path: str, data_file: str, device: str = "auto", use_guidance: bool = True, base_model_name: str = "gpt2", base_only: bool = False):
+    def __init__(
+        self,
+        adapter_path: str,
+        data_file: str,
+        device: str = "auto",
+        use_guidance: bool = True,
+        base_model_name: str = "gpt2",
+        base_only: bool = False,
+        explain: bool = True,
+        desc_mode: str = "model",
+        sample_desc: bool = False,
+        desc_fallback: bool = True,
+        desc_grounding_min_signals: int = 2,
+    ) -> None:
         self.adapter_path = adapter_path
         self.data_file = data_file
         self.hole_data = {}
@@ -192,6 +361,22 @@ class GolfStrategyChat:
         self.use_guidance = use_guidance
         self.base_model_name = base_model_name
         self.base_only = base_only
+        self.explain = explain
+        # description generation mode: 'model' (default) or 'deterministic'
+        self.desc_mode = desc_mode or "model"
+        # description decoding mode: greedy by default unless sampling requested
+        self.sample_desc = bool(sample_desc)
+        self.desc_fallback = bool(desc_fallback)
+        self.desc_grounding_min_signals = max(0, int(desc_grounding_min_signals))
+        # metrics
+        self.last_desc_meta: dict | None = None
+        self.desc_stats = {
+            "model_attempts": 0,
+            "model_accepted": 0,
+            "fallback_used": 0,
+            "signals_matched_sum": 0,
+            "signals_possible_sum": 0,
+        }
         self.load_model()
         self.load_hole_data()
 
@@ -217,10 +402,12 @@ class GolfStrategyChat:
         self.tokenizer = AutoTokenizer.from_pretrained(self.base_model_name, padding_side="left")
         self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        base_model = AutoModelForCausalLM.from_pretrained(self.base_model_name)
+        # Prefer fp16 on CUDA for speed/memory, else float32
+        load_dtype = torch.float16 if (self.device.type == "cuda") else torch.float32
+        base_model = AutoModelForCausalLM.from_pretrained(self.base_model_name, torch_dtype=load_dtype)
         base_model.resize_token_embeddings(len(self.tokenizer))
 
-    # Load LoRA adapter unless base-only
+        # Load LoRA adapter unless base-only
         if self.base_only:
             self.model = base_model.to(self.device)
             self.model.eval()
@@ -246,9 +433,11 @@ class GolfStrategyChat:
                 f"Data file not found: {self.data_file}. Pass --data-file to point at the dataset."
             )
 
-        from collections import Counter
-        pars = {}
-        yardages = {}
+        pars: dict[int, Counter] = {}
+        yardages: dict[int, Counter] = {}
+        themes: dict[int, Counter] = {}
+        misses: dict[int, Counter] = {}
+        hazards_counts: dict[int, Counter] = {}
 
         # Use utf-8-sig to tolerate potential BOM on Windows
         with open(self.data_file, "r", encoding="utf-8-sig") as f:
@@ -269,15 +458,42 @@ class GolfStrategyChat:
                         "descriptions": set(),
                         "insights": set(),
                         "strategies": [],
+                        "hazards": set(),
+                        "preferred_miss": None,
+                        "strategic_theme": None,
+                        "attributes": {},
                     }
                     pars[hole] = Counter()
                     yardages[hole] = Counter()
+                    themes[hole] = Counter()
+                    misses[hole] = Counter()
+                    hazards_counts[hole] = Counter()
 
                 # Track par/yardage candidates
                 if isinstance(example.get("par"), int):
                     pars[hole][example["par"]] += 1
                 if isinstance(example.get("yardage"), int):
                     yardages[hole][example["yardage"]] += 1
+
+                # Optional enriched fields
+                hz = example.get("hazards")
+                if isinstance(hz, list):
+                    for h in hz:
+                        if isinstance(h, str) and h.strip():
+                            hazards_counts[hole][h.strip().lower()] += 1
+                elif isinstance(hz, str) and hz.strip():
+                    for h in re.split(r",|/|;|\n", hz):
+                        h = h.strip()
+                        if h:
+                            hazards_counts[hole][h.lower()] += 1
+
+                pm = example.get("preferred_miss")
+                if isinstance(pm, str) and pm.strip():
+                    misses[hole][pm.strip().lower()] += 1
+
+                th = example.get("strategic_theme")
+                if isinstance(th, str) and th.strip():
+                    themes[hole][th.strip()] += 1
 
                 task_type = example.get("task_type")
                 if task_type == "strategy_selection":
@@ -308,16 +524,78 @@ class GolfStrategyChat:
                         self.hole_data[hole]["descriptions"].add(fix_mojibake(comp))
                     # Also parse insights from the prompt bullets for cleaner synthesis
                     prompt_text = example.get("prompt") or ""
-                    # Extract lines that look like numbered bullets
+                    # Extract simple insights from numbered bullets if present
                     for bl in re.findall(r"\n\s*\d+\.\s*(.+?)\n", prompt_text + "\n", flags=re.DOTALL):
                         bl = fix_mojibake(bl.strip())
                         if len(bl) > 8:
                             self.hole_data[hole]["insights"].add(bl)
+                        low = bl.lower()
+                        for kw in KEY_HAZARD_TERMS:
+                            if kw in low:
+                                hazards_counts[hole][kw] += 1
+
+                # Parse Facts-style lines from prompts to harvest hazards/theme/miss and attributes
+                ptxt = (example.get("prompt") or "")
+                if ptxt:
+                    # KeyHazards: a; b; c
+                    m = re.search(r"KeyHazards:\s*(.+)", ptxt)
+                    if m:
+                        raw = m.group(1)
+                        for h in re.split(r";|,|/", raw):
+                            h = h.strip()
+                            if h:
+                                hazards_counts[hole][h.lower()] += 1
+                        self.hole_data[hole].setdefault("attributes", {})["key_hazards"] = [
+                            s.strip() for s in re.split(r";|,|/", raw) if s.strip()
+                        ]
+                    # Primary/SecondaryHazard
+                    for lab in ("PrimaryHazard", "SecondaryHazard"):
+                        m2 = re.search(rf"{lab}:\s*([A-Za-z][\w\- ]+)", ptxt)
+                        if m2:
+                            hz = m2.group(1).strip().lower()
+                            hazards_counts[hole][hz] += 1
+                            key = "primary_hazard_type" if lab == "PrimaryHazard" else "secondary_hazard_type"
+                            self.hole_data[hole].setdefault("attributes", {})[key] = hz
+                    # PreferredMiss
+                    m3 = re.search(r"PreferredMiss:\s*([^\n]+)", ptxt)
+                    if m3:
+                        pmv = m3.group(1).strip().lower()
+                        if pmv:
+                            misses[hole][pmv] += 1
+                            self.hole_data[hole]["preferred_miss"] = pmv
+                    # Theme
+                    m4 = re.search(r"Theme:\s*([^\n]+)", ptxt)
+                    if m4:
+                        thv = m4.group(1).strip()
+                        if thv:
+                            themes[hole][thv] += 1
+                            self.hole_data[hole]["strategic_theme"] = thv
+                    # Additional attributes sometimes present in prompts
+                    m5 = re.search(r"Gradient:\s*([^\n]+)", ptxt)
+                    if m5:
+                        self.hole_data[hole].setdefault("attributes", {})["gradient"] = m5.group(1).strip()
+                    m6 = re.search(r"Shape:\s*([^\n]+)", ptxt)
+                    if m6:
+                        self.hole_data[hole].setdefault("attributes", {})["hole_shape"] = m6.group(1).strip()
+                    m7 = re.search(r"ElevationNote:\s*([^\n]+)", ptxt)
+                    if m7:
+                        self.hole_data[hole].setdefault("attributes", {})["elevation_note"] = m7.group(1).strip()
+                    m8 = re.search(r"RiskNote:\s*([^\n]+)", ptxt)
+                    if m8:
+                        self.hole_data[hole].setdefault("attributes", {})["risk_note"] = m8.group(1).strip()
+                    m9 = re.search(r"AngleNote:\s*([^\n]+)", ptxt)
+                    if m9:
+                        self.hole_data[hole].setdefault("attributes", {})["angle_note"] = m9.group(1).strip()
 
                 # Also capture any base description on original records
                 base_desc = (example.get("description") or "").strip()
                 if base_desc and len(base_desc) > 20:
-                    self.hole_data[hole]["descriptions"].add(fix_mojibake(base_desc))
+                    clean = fix_mojibake(base_desc)
+                    self.hole_data[hole]["descriptions"].add(clean)
+                    low = clean.lower()
+                    for kw in KEY_HAZARD_TERMS:
+                        if kw in low:
+                            hazards_counts[hole][kw] += 1
 
         # Convert description sets to lists for easier handling
         for h, hole_data in self.hole_data.items():
@@ -328,6 +606,15 @@ class GolfStrategyChat:
                 hole_data["par"] = pars[h].most_common(1)[0][0]
             if yardages.get(h):
                 hole_data["yardage"] = yardages[h].most_common(1)[0][0]
+
+            # Finalize hazards/theme/preferred_miss
+            if hazards_counts.get(h):
+                top_hz = [k for k, _ in hazards_counts[h].most_common(6)]
+                hole_data["hazards"] = set(top_hz)
+            if themes.get(h) and themes[h]:
+                hole_data["strategic_theme"] = themes[h].most_common(1)[0][0]
+            if misses.get(h) and misses[h]:
+                hole_data["preferred_miss"] = misses[h].most_common(1)[0][0]
 
             # Fill in missing remaining_distance for strategies using hole yardage
             yd = hole_data.get("yardage")
@@ -392,6 +679,24 @@ class GolfStrategyChat:
         description = self.get_hole_description(hole_num)
         if description:
             info += f"Description: {description}\n"
+            # Append concise grounding/fallback score if available
+            meta = getattr(self, "last_desc_meta", None)
+            if isinstance(meta, dict):
+                mode = meta.get("mode")
+                if mode == "model":
+                    matched = meta.get("signals_matched")
+                    possible = meta.get("signals_possible")
+                    fallback_used = meta.get("fallback_used")
+                    threshold = meta.get("grounding_threshold")
+                    disabled = meta.get("fallback_disabled", False)
+                    score_line = f"Grounding: {matched}/{possible} signals; Fallback: {'Yes' if fallback_used else 'No'}"
+                    if disabled:
+                        score_line += " (fallback disabled)"
+                    else:
+                        score_line += f" (threshold {threshold})"
+                else:
+                    score_line = "Mode: deterministic (no model used)"
+                info += score_line + "\n"
         
         if hole['strategies']:
             info += f"\nAvailable Strategies:\n"
@@ -410,128 +715,257 @@ class GolfStrategyChat:
         return info
     
     def get_hole_description(self, hole_num):
-        """Generate hole description by synthesizing multiple source descriptions"""
+        """Generate hole description using either:
+        - 'model': LoRA model conditioned on structured facts (with optional fallback)
+        - 'deterministic': a structured, template-based composer that uses only attributes/hazards/theme
+          and never copies description text from the dataset.
+        """
         if hole_num not in self.hole_data:
             return "No data for that hole."
-        
+
         hole = self.hole_data[hole_num]
-        descriptions = hole.get('descriptions', [])
-        insights = hole.get('insights', [])
-
-        # Prefer synthesizing from prompt-derived insights when available
-        sources = insights if len(insights) >= 1 else descriptions
-
-        if not sources:
-            return "A challenging hole at Bethpage Black."
-
-        # If only one source, return it as-is (lightly cleaned)
-        if len(sources) == 1:
-            return de_template(sanitize_hole_header(clean_bleed(fix_mojibake(sources[0])), hole_num))
-
-        # Multiple sources - ask model to synthesize them
-        prompt = (
-            f"TASK: description_synthesis\n"
-            f"Combine these {len(sources)} observations for Hole {hole_num} at Bethpage Black "
-            f"(Par {hole['par']}, {hole['yardage']} yards) into one cohesive narrative:\n\n"
-        )
-
-        for i, desc in enumerate(sources, 1):
-            prompt += f"{i}. {desc}\n\n"
-        
-        prompt += "Synthesized description:"
-        if self.use_guidance:
-            prompt += "\n\nGuidance: " + GUIDANCE
-
-        inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=600).to(self.device)
-        expected_hole = hole_num
-
-        # Build a small banned words list to avoid clunky artifacts
-        banned_words = [
-            "Hints", "Hints:", "Guidance", "Guidance:", "diagram", "Diagram", "Zone", "zone",
-            "SuccessOn", "decision sharing", "technical executing", "Permanent damage"
-        ]
-        bad_words_ids = [self.tokenizer.encode(w, add_special_tokens=False) for w in banned_words]
-
-        with torch.no_grad():
-            outputs = self.model.generate(
-                **inputs,
-                max_new_tokens=180,
-                temperature=0.5,
-                top_p=0.9,
-                do_sample=True,
-                pad_token_id=self.tokenizer.eos_token_id,
-                repetition_penalty=1.15,
-                no_repeat_ngram_size=3,
-                bad_words_ids=[ids for ids in bad_words_ids if ids],
+        mode = getattr(self, "desc_mode", "model")
+        if mode == "model":
+            return self._generate_model_description(hole_num, hole)
+        else:
+            # Strictly structured deterministic composer: never copy dataset description text.
+            desc = compose_description_structured(
+                hole_num,
+                hole.get("par"),
+                hole.get("yardage"),
+                hole.get("attributes"),
+                hole.get("strategic_theme"),
+                hole.get("preferred_miss"),
+                hole.get("hazards"),
             )
+            # Record meta for display
+            self.last_desc_meta = {
+                "mode": "deterministic",
+            }
+            return desc
 
-        # Decode only the generated tail, not the prompt
-        gen_ids = outputs[0, inputs["input_ids"].shape[-1]:].detach().cpu()
-        response = self.tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
-        response = clean_bleed(fix_mojibake(response))
-        response = sanitize_hole_header(response, expected_hole)
-        response = de_template(response)
-        response = sentence_boundary_trim(response)
-        
-        # If model fails to generate good description, fall back to first available
-        if not response or len(response) < 20 or "Strategy:" in response:
-            return sources[0]  # Fallback to a source snippet
-        
-        return response
+    def _generate_model_description(self, hole_num: int, hole: dict) -> str:
+        """Generate a hole description using the model+adapter, conditioning on structured facts.
+        Post-process to keep it specific and within length and yardage constraints."""
+        par = hole.get("par")
+        yard = hole.get("yardage")
+        hz = sorted(set(hole.get("hazards") or []))[:6]
+        theme = hole.get("strategic_theme")
+        pmiss = hole.get("preferred_miss")
+        # Use a few high-signal insights as context (up to 3)
+        insights = rank_insights([fix_mojibake(s).strip() for s in hole.get("insights", [])])[:3]
+
+        facts = []
+        if isinstance(par, int) and isinstance(yard, int):
+            facts.append(f"Par {par}, {yard} yards")
+        elif isinstance(par, int):
+            facts.append(f"Par {par}")
+        elif isinstance(yard, int):
+            facts.append(f"{yard} yards")
+        # include structured attributes for stronger grounding
+        attrs = hole.get("attributes") or {}
+        gradient = attrs.get("gradient")
+        shape = attrs.get("hole_shape")
+        elev_note = attrs.get("elevation_note")
+        risk_note = attrs.get("risk_note")
+        angle_note = attrs.get("angle_note")
+        if hz:
+            facts.append("Hazards: " + ", ".join(hz))
+        if theme:
+            facts.append(f"Strategic theme: {theme}")
+        if pmiss:
+            facts.append(f"Preferred miss: {pmiss}")
+        if gradient:
+            facts.append(f"Gradient: {gradient}")
+        if shape:
+            facts.append(f"Shape: {shape}")
+        if elev_note:
+            facts.append(f"ElevationNote: {elev_note}")
+        if risk_note:
+            facts.append(f"RiskNote: {risk_note}")
+        if angle_note:
+            facts.append(f"AngleNote: {angle_note}")
+
+        prompt_parts = [
+            "TASK: description_synthesis",
+            f"Hole {hole_num} at Bethpage Black.",
+        ]
+        if facts:
+            prompt_parts.append("Facts: " + " | ".join(facts))
+        if insights:
+            for i, s in enumerate(insights, 1):
+                prompt_parts.append(f"Insight {i}: {s}")
+        if self.use_guidance:
+            prompt_parts.append("Guidance: " + GUIDANCE)
+        prompt_parts.append("Synthesized description:")
+        prompt = "\n".join(prompt_parts).strip()
+
+        inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512).to(self.device)
+        do_sample = bool(self.sample_desc)
+        gen_kwargs = dict(
+            max_new_tokens=200,
+            do_sample=do_sample,
+            repetition_penalty=1.1,
+            no_repeat_ngram_size=3,
+            pad_token_id=self.tokenizer.eos_token_id,
+        )
+        if do_sample:
+            gen_kwargs.update(temperature=0.7, top_p=0.85)
+        with torch.no_grad():
+            out = self.model.generate(**inputs, **gen_kwargs)
+        text = self.tokenizer.decode(out[0], skip_special_tokens=True)
+        # Keep only the part after the prompt header
+        gen = text.split("Synthesized description:", 1)
+        gen_text = gen[1] if len(gen) == 2 else text
+        gen_text = gen_text.strip()
+
+        # Post-process for specificity and constraints
+        gen_text = fix_mojibake(gen_text)
+        gen_text = sanitize_hole_header(gen_text, hole_num)
+        gen_text = strip_generic_phrases(gen_text)
+        gen_text = keep_only_official_yardage(gen_text, yard)
+        gen_text = sentence_boundary_trim(gen_text, min_words=60, target_words=130, max_words=180)
+
+        # Optional grounding check with deterministic fallback
+        def _signals(txt: str) -> tuple[int, int]:
+            low = txt.lower()
+            hz = [h.lower() for h in (hole.get("hazards") or [])]
+            theme = (hole.get("strategic_theme") or "").lower()
+            pmiss = (hole.get("preferred_miss") or "").lower()
+            signals = 0
+            possible = 0
+            if hz:
+                possible += 1
+                signals += 1 if any(h in low for h in hz) else 0
+            if theme:
+                possible += 1
+                signals += 1 if (theme.split("+")[0] in low or theme in low) else 0
+            if pmiss:
+                possible += 1
+                signals += 1 if pmiss in low else 0
+            return signals, possible
+
+        signals_matched, signals_possible = _signals(gen_text)
+        threshold = getattr(self, "desc_grounding_min_signals", 2)
+        self.desc_stats["model_attempts"] += 1
+        self.desc_stats["signals_matched_sum"] += signals_matched
+        self.desc_stats["signals_possible_sum"] += signals_possible
+
+        fallback_disabled = not bool(self.desc_fallback)
+        needs_fallback = (signals_matched < threshold) and (not fallback_disabled)
+        if needs_fallback:
+            self.desc_stats["fallback_used"] += 1
+            desc = compose_description_structured(
+                hole_num,
+                hole.get("par"),
+                hole.get("yardage"),
+                hole.get("attributes"),
+                hole.get("strategic_theme"),
+                hole.get("preferred_miss"),
+                hole.get("hazards"),
+            )
+            self.last_desc_meta = {
+                "mode": "model",
+                "signals_matched": signals_matched,
+                "signals_possible": signals_possible,
+                "grounding_threshold": threshold,
+                "fallback_used": True,
+                "fallback_disabled": False,
+            }
+            return desc
+
+        # Model accepted
+        self.desc_stats["model_accepted"] += 1
+        self.last_desc_meta = {
+            "mode": "model",
+            "signals_matched": signals_matched,
+            "signals_possible": signals_possible,
+            "grounding_threshold": threshold,
+            "fallback_used": False,
+            "fallback_disabled": fallback_disabled,
+        }
+        return gen_text if gen_text else f"Hole {hole_num} at Bethpage Black."
 
     def get_strategy_recommendation(self, hole_num, drive_distance):
         """Get strategy recommendation using the trained model"""
         if hole_num not in self.hole_data:
             return "No data for that hole."
-        
-        # Create prompt similar to training format
+        # Create prompt aligned to training format with explicit cutoff list
         hole = self.hole_data[hole_num]
-        # Align with training format
+        available_cutoffs = [
+            s["cutoff_distance"] for s in hole["strategies"] if isinstance(s.get("cutoff_distance"), int)
+        ]
+        available_cutoffs = sorted(set(available_cutoffs))
+        cutoff_list_text = ", ".join(f"{c} yards" for c in available_cutoffs) if available_cutoffs else ""
         prompt = (
             "TASK: strategy_selection\n"
-            f"Hole {hole_num}, Bethpage Black: Par {hole['par']}, {hole['yardage']} yards. Golfer drives {drive_distance} yards. Best strategy?\n"
-            "Respond with: Strategy: <number> yards"
+            f"Hole {hole_num} at Bethpage Black. Par {hole['par']}, {hole['yardage']} yards.\n\n"
+            "Tee Strategy Selection Task:\n"
+            f"Player average drive: {drive_distance} yards. "
+            + (f"Available tee strategy cutoffs: {cutoff_list_text}.\n" if cutoff_list_text else "")
+            + "Return only: 'Strategy: <number> yards' for the recommended tee shot cutoff distance."
         )
-        
+
         # Tokenize and generate
         inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=250).to(self.device)
-        
+
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=10,
-                temperature=0.1,
+                temperature=0.0,
                 do_sample=False,
-                pad_token_id=self.tokenizer.eos_token_id
+                pad_token_id=self.tokenizer.eos_token_id,
             )
-        
+
         # Decode response
         full_response = self.tokenizer.decode(outputs[0].detach().cpu(), skip_special_tokens=True)
-        response = full_response[len(prompt):].strip()
-        
+        response = full_response[len(prompt) :].strip()
+
         # Extract strategy number
         strategy_match = re.search(r"Strategy:\s*(\d{2,4})\s*(?:yards?)?", response, re.IGNORECASE)
         if not strategy_match:
             # Fallback: any 2–4 digit number
             strategy_match = re.search(r"(\d{2,4})", response)
-        if strategy_match:
-            strategy_yards = int(strategy_match.group(1))
-            
-            # Add explanation of choice
-            available_cutoffs = [s['cutoff_distance'] for s in hole['strategies'] if isinstance(s.get('cutoff_distance'), int)]
-            eligible = [c for c in available_cutoffs if c <= drive_distance]
-            
-            explanation = f"\nRecommended Strategy: {strategy_yards} yards\n"
-            explanation += f"Available strategies: {sorted(available_cutoffs)} yards\n"
-            explanation += (
-                f"Eligible for {drive_distance}-yard drive: {sorted(eligible) if eligible else ['None - using shortest option']}\n"
-            )
-            explanation += "Logic: Choose highest available <= drive distance"
-            
-            return explanation
+
+        # Guarded selection coerced to valid cutoffs (available_cutoffs already computed above)
+        eligible = [c for c in available_cutoffs if c <= drive_distance]
+        if eligible:
+            coerced = max(eligible)
         else:
-            return f"Model response: {response}"
-    
+            coerced = min(available_cutoffs) if available_cutoffs else None
+
+        if strategy_match:
+            model_pick = int(strategy_match.group(1))
+            final_choice = coerced if coerced is not None else model_pick
+            note = " (coerced from model suggestion)" if coerced is not None and model_pick != coerced else ""
+            rec_text = f"\nRecommended Strategy: {final_choice} yards{note}\n"
+        else:
+            final_choice = coerced
+            rec_text = (
+                f"\nRecommended Strategy: {final_choice} yards (coerced)\n" if coerced is not None else "\nRecommended Strategy: unavailable\n"
+            )
+
+        rec_text += f"Available strategies: {available_cutoffs} yards\n"
+        rec_text += (
+            f"Eligible for {drive_distance}-yard drive: {eligible if eligible else ['None - using shortest option']}\n"
+        )
+        rec_text += "Logic: Choose highest available <= drive distance"
+        # Short rationale using structured fields
+        if getattr(self, "explain", True):
+            why = []
+            if hole.get("strategic_theme"):
+                why.append(f"Theme: {hole['strategic_theme']}")
+            if hole.get("preferred_miss"):
+                why.append(f"Preferred miss: {hole['preferred_miss']}")
+            if hole.get("hazards"):
+                hz = ", ".join(sorted(set(hole["hazards"]))[:4])
+                if hz:
+                    why.append(f"Hazards: {hz}")
+            if why:
+                rec_text += "\nWhy: " + "; ".join(why)
+        return rec_text
+
     def process_input(self, user_input):
         """Process user input and generate appropriate response"""
         original = user_input.strip()
@@ -586,13 +1020,18 @@ class GolfStrategyChat:
 
 def main():
     parser = argparse.ArgumentParser(description="Interactive chat for golf strategies and descriptions")
-    parser.add_argument("--adapter_dir", required=False, default="outputs/bethpage-lora/checkpoint-8_hour")
-    parser.add_argument("--data-file", required=False, default="data/bethpage_black/train_multitask_case_fixed.jsonl")
+    parser.add_argument("--adapter_dir", required=False, default="outputs/bethpage-lora/checkpoint-1_hour-gpt2")
+    parser.add_argument("--data-file", required=False, default="data/bethpage_black/train_multitask_enriched_v3.jsonl")
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument("--prompt", help="Optional one-shot prompt; if provided, runs once and exits", default=None)
     parser.add_argument("--no_desc_guidance", action="store_true", help="Disable extra guidance for description synthesis prompts")
-    parser.add_argument("--base-model", default="gpt2", help="Base model name (e.g., gpt2, gpt2-medium). Adapter was trained on gpt2.")
+    parser.add_argument("--base-model", default="gpt2", help="Base model name used during training (e.g., gpt2, gpt2-medium)")
+    parser.add_argument("--desc-sample", action="store_true", help="Enable sampling for description generation (default: greedy)")
     parser.add_argument("--base-only", action="store_true", help="Use base model without loading the LoRA adapter (for comparison)")
+    parser.add_argument("--no-explain", action="store_true", help="Omit rationale lines for strategies (theme/miss/hazards)")
+    parser.add_argument("--desc-mode", choices=["model", "deterministic"], default="model", help="Choose description engine: model (LoRA) or deterministic composer")
+    parser.add_argument("--no-desc-fallback", action="store_true", help="Disable automatic fallback to deterministic description if model output seems ungrounded")
+    parser.add_argument("--desc-grounding-min-signals", type=int, default=2, help="Minimum number of grounding signals (hazard/theme/miss) the model text must contain to avoid fallback")
     args = parser.parse_args()
 
     print("Golf Strategy Chat - Bethpage Black")
@@ -607,6 +1046,11 @@ def main():
             use_guidance=(not args.no_desc_guidance),
             base_model_name=args.base_model,
             base_only=args.base_only,
+            explain=(not args.no_explain),
+            desc_mode=args.desc_mode,
+            sample_desc=args.desc_sample,
+            desc_fallback=(not args.no_desc_fallback),
+            desc_grounding_min_signals=args.desc_grounding_min_signals,
         )
     except Exception as e:
         print(f"Error loading model: {e}")
