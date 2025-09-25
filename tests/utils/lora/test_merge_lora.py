@@ -69,7 +69,7 @@ class TestAdapterMergeUnmerge:
 
         self.scaling = alpha / r
 
-        def mock_merge_and_unload(_progressbar=False):
+        def mock_merge_and_unload(progressbar=False):
             """Simulate the actual merge operation"""
             # Apply LoRA delta to base weights: W_new = W_base + (B @ A) * scaling
             delta_q = (self.lora_B_q @ self.lora_A_q) * self.scaling
