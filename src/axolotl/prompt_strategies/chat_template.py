@@ -2,6 +2,7 @@
 HF Chat Templates prompt strategy
 """
 
+import json
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
 
@@ -793,6 +794,22 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 val = message.get(key)
                 if val is not None:
                     transformed_message[key] = val
+
+        if "tool_calls" in transformed_message and transformed_message["tool_calls"]:
+            for tool_call in transformed_message["tool_calls"]:
+                if "function" in tool_call and "arguments" in tool_call["function"]:
+                    args = tool_call["function"]["arguments"]
+                    if isinstance(args, str):
+                        try:
+                            tool_call["function"]["arguments"] = json.loads(args)
+                        except json.JSONDecodeError as e:
+                            LOG.error(
+                                f"Error parsing tool_calls arguments as JSON. "
+                                f"Function: {tool_call.get('function', {}).get('name', 'unknown')}, "
+                                f"Arguments string: {args!r}, "
+                                f"Error: {e}"
+                            )
+                            raise
 
         return transformed_message
 

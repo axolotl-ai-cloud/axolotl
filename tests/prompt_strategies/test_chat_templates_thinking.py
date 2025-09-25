@@ -4,7 +4,6 @@ Tests for splitting reasoning/thinking from content into separate field
 
 import pytest
 from datasets import Dataset
-from transformers import AutoTokenizer
 
 from axolotl.prompt_strategies.chat_template import (
     load,
@@ -54,15 +53,6 @@ def messages_w_reasoning_fixture():
             },
         ]
     )
-
-
-@pytest.fixture(name="qwen3_tokenizer")
-def qwen3_tokenizer_fixture(
-    download_qwen3_half_billion_model,
-):
-    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
-
-    return tokenizer
 
 
 class TestSplitThinking:
