@@ -62,7 +62,7 @@ class TestLoRAConfigValidation:
         assert result["load_in_4bit"] is True
 
         # Test QLoRA without 4-bit (should fail via PEFT validation)
-        with pytest.raises(ValueError, match="Require cfg.load_in_4bit"):
+        with pytest.raises(ValueError, match=r"Require cfg\.load_in_4bit"):
             invalid_config = DictDefault(
                 {
                     "adapter": "qlora",
