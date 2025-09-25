@@ -131,6 +131,5 @@ computation path.
 ## Future Work
 
 - Support for additional model architectures
-- Support for the FSDP setting
-- Support for dropout and bias
+- Support for dropout
 - Additional operator fusions
