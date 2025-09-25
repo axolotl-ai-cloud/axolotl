@@ -84,6 +84,13 @@ class PatchManager:
         patch_evaluation_loop()
         patch_maybe_log_save_evaluate()
 
+        if self.cfg.context_parallel_size > 1:
+            from axolotl.monkeypatch.transformers.trainer_context_parallel import (
+                patch_prepare_context_parallel_inputs,
+            )
+
+            patch_prepare_context_parallel_inputs()
+
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
         self._apply_llama_flash_attn_patches(model)
