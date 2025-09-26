@@ -109,8 +109,8 @@ def prepare_debug_log(cfg, filename: str = "debug.log") -> str:
             cfg.get("resume_from_checkpoint") or cfg.get("auto_resume_from_checkpoints")
         )
 
-        if not append and log_path.exists():
-            log_path.unlink()
+        if not append:
+            log_path.unlink(missing_ok=True)
 
         fh = open(log_path, "a", encoding="utf-8")
         fh.flush()
