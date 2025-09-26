@@ -3425,67 +3425,78 @@
   {
     "objectID": "docs/fsdp_qlora.html",
     "href": "docs/fsdp_qlora.html",
-    "title": "FDSP + QLoRA",
+    "title": "FSDP + QLoRA",
     "section": "",
     "text": "Using FSDP with QLoRA is essential for fine-tuning larger (70b+ parameter) LLMs on consumer GPUs. For example, you can use FSDP + QLoRA to train a 70b model on two 24GB GPUs1.\nBelow, we describe how to use this feature in Axolotl.",
     "crumbs": [
       "Advanced Features",
-      "FDSP + QLoRA"
+      "FSDP + QLoRA"
     ]
   },
   {
     "objectID": "docs/fsdp_qlora.html#background",
     "href": "docs/fsdp_qlora.html#background",
-    "title": "FDSP + QLoRA",
+    "title": "FSDP + QLoRA",
     "section": "",
     "text": "Using FSDP with QLoRA is essential for fine-tuning larger (70b+ parameter) LLMs on consumer GPUs. For example, you can use FSDP + QLoRA to train a 70b model on two 24GB GPUs1.\nBelow, we describe how to use this feature in Axolotl.",
     "crumbs": [
       "Advanced Features",
-      "FDSP + QLoRA"
+      "FSDP + QLoRA"
     ]
   },
   {
     "objectID": "docs/fsdp_qlora.html#usage",
     "href": "docs/fsdp_qlora.html#usage",
-    "title": "FDSP + QLoRA",
+    "title": "FSDP + QLoRA",
     "section": "Usage",
     "text": "Usage\nTo enable QLoRA with FSDP, you need to perform the following steps:\n\n![Tip]\nSee the example config file in addition to reading these instructions.\n\n\nSet adapter: qlora in your axolotl config file.\nEnable FSDP in your axolotl config, as described here.\nUse one of the supported model types: llama, mistral or mixtral.",
     "crumbs": [
       "Advanced Features",
-      "FDSP + QLoRA"
+      "FSDP + QLoRA"
+    ]
+  },
+  {
+    "objectID": "docs/fsdp_qlora.html#enabling-swap-for-fsdp2",
+    "href": "docs/fsdp_qlora.html#enabling-swap-for-fsdp2",
+    "title": "FSDP + QLoRA",
+    "section": "Enabling Swap for FSDP2",
+    "text": "Enabling Swap for FSDP2\nIf available memory is insufficient even after FSDP’s CPU offloading, you can enable swap memory usage by setting cpu_offload_pin_memory: false alongside offload_params: true in FSDP config.\nThis disables memory pinning, allowing FSDP to use disk swap space as fallback. Disabling memory pinning itself incurs performance overhead, and actually having to use swap adds more, but it may enable training larger models that would otherwise cause OOM errors on resource constrained systems.",
+    "crumbs": [
+      "Advanced Features",
+      "FSDP + QLoRA"
     ]
   },
   {
     "objectID": "docs/fsdp_qlora.html#example-config",
     "href": "docs/fsdp_qlora.html#example-config",
-    "title": "FDSP + QLoRA",
+    "title": "FSDP + QLoRA",
     "section": "Example Config",
     "text": "Example Config\nexamples/llama-2/qlora-fsdp.yml contains an example of how to enable QLoRA + FSDP in axolotl.",
     "crumbs": [
       "Advanced Features",
-      "FDSP + QLoRA"
+      "FSDP + QLoRA"
     ]
   },
   {
     "objectID": "docs/fsdp_qlora.html#references",
     "href": "docs/fsdp_qlora.html#references",
-    "title": "FDSP + QLoRA",
+    "title": "FSDP + QLoRA",
     "section": "References",
     "text": "References\n\nPR #1378 enabling QLoRA in FSDP in Axolotl.\nBlog Post from the Answer.AI team describing the work that enabled QLoRA in FSDP.\nRelated HuggingFace PRs Enabling FDSP + QLoRA:\n\nAccelerate PR#2544\nTransformers PR#29587\nTRL PR#1416\nPEFT PR#1550",
     "crumbs": [
       "Advanced Features",
-      "FDSP + QLoRA"
+      "FSDP + QLoRA"
     ]
   },
   {
     "objectID": "docs/fsdp_qlora.html#footnotes",
     "href": "docs/fsdp_qlora.html#footnotes",
-    "title": "FDSP + QLoRA",
+    "title": "FSDP + QLoRA",
     "section": "Footnotes",
     "text": "Footnotes\n\n\nThis was enabled by this work from the Answer.AI team.↩︎",
     "crumbs": [
       "Advanced Features",
-      "FDSP + QLoRA"
+      "FSDP + QLoRA"
     ]
   },
   {

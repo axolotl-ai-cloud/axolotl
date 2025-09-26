@@ -8,7 +8,7 @@
 
 <meta name="description" content="Use FSDP with QLoRA to fine-tune large LLMs on consumer GPUs.">
 
-<title>FDSP + QLoRA – Axolotl</title>
+<title>FSDP + QLoRA – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -108,7 +108,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/fsdp_qlora.html">Advanced Features</a></li><li class="breadcrumb-item"><a href="../docs/fsdp_qlora.html">FDSP + QLoRA</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/fsdp_qlora.html">Advanced Features</a></li><li class="breadcrumb-item"><a href="../docs/fsdp_qlora.html">FSDP + QLoRA</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -395,7 +395,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link active">
- <span class="menu-text">FDSP + QLoRA</span></a>
+ <span class="menu-text">FSDP + QLoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -477,6 +477,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul>
   <li><a href="#background" id="toc-background" class="nav-link active" data-scroll-target="#background">Background</a></li>
   <li><a href="#usage" id="toc-usage" class="nav-link" data-scroll-target="#usage">Usage</a></li>
+  <li><a href="#enabling-swap-for-fsdp2" id="toc-enabling-swap-for-fsdp2" class="nav-link" data-scroll-target="#enabling-swap-for-fsdp2">Enabling Swap for FSDP2</a></li>
   <li><a href="#example-config" id="toc-example-config" class="nav-link" data-scroll-target="#example-config">Example Config</a></li>
   <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
   </ul>
@@ -485,9 +486,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/fsdp_qlora.html">Advanced Features</a></li><li class="breadcrumb-item"><a href="../docs/fsdp_qlora.html">FDSP + QLoRA</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/fsdp_qlora.html">Advanced Features</a></li><li class="breadcrumb-item"><a href="../docs/fsdp_qlora.html">FSDP + QLoRA</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">FDSP + QLoRA</h1>
+<h1 class="title">FSDP + QLoRA</h1>
 </div>
 
 <div>
@@ -526,6 +527,11 @@ See the <a href="#example-config">example config</a> file in addition to reading
 <li>Enable FSDP in your axolotl config, as <a href="../docs/multi-gpu.html#sec-fsdp">described here</a>.</li>
 <li>Use one of the supported model types: <code>llama</code>, <code>mistral</code> or <code>mixtral</code>.</li>
 </ol>
+</section>
+<section id="enabling-swap-for-fsdp2" class="level2">
+<h2 class="anchored" data-anchor-id="enabling-swap-for-fsdp2">Enabling Swap for FSDP2</h2>
+<p>If available memory is insufficient even after FSDP’s CPU offloading, you can enable swap memory usage by setting <code>cpu_offload_pin_memory: false</code> alongside <code>offload_params: true</code> in FSDP config.</p>
+<p>This disables memory pinning, allowing FSDP to use disk swap space as fallback. Disabling memory pinning itself incurs performance overhead, and actually having to use swap adds more, but it may enable training larger models that would otherwise cause OOM errors on resource constrained systems.</p>
 </section>
 <section id="example-config" class="level2">
 <h2 class="anchored" data-anchor-id="example-config">Example Config</h2>
