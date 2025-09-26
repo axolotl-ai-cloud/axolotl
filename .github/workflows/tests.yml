@@ -83,7 +83,8 @@ jobs:
         run: |
           uv pip show --system torch
           uv pip install --system wheel
-          uv pip install --system --no-build-isolation -e ".[dev]"
+          printf "torch==${{ matrix.pytorch_version }}\n" > torch-constraints.txt
+          uv pip install --system --no-build-isolation -e ".[dev]" --constraints torch-constraints.txt
           set -o pipefail
           python scripts/unsloth_install.py | bash
           python scripts/cutcrossentropy_install.py | bash
@@ -160,7 +161,8 @@ jobs:
           uv pip install --system dist/*.tar.gz
           python scripts/unsloth_install.py | sh
           python scripts/cutcrossentropy_install.py | sh
-          uv pip install --system ".[dev]"
+          printf "torch==${{ matrix.pytorch_version }}\n" > torch-constraints.txt
+          uv pip install --system ".[dev]" --constraints torch-constraints.txt
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
