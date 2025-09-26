@@ -200,8 +200,16 @@ find-links = [
     "https://github.com/ModelCloud/GPTQModel/releases",
 ]
 prerelease = "allow"
+default-groups = ["default"]
+conflicts = [
+    [
+        { group = "default" },
+        { extra = "vllm" },
+    ],
+]
 
 [dependency-groups]
+default = ["torch>=2.6.0"]
 dev = [
     "pytest",
     "pytest-cov",
