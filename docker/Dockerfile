@@ -6,8 +6,12 @@ ARG AXOLOTL_EXTRAS=""
 ARG AXOLOTL_ARGS=""
 ARG CUDA="118"
 ARG PYTORCH_VERSION="2.1.2"
+ARG GIT_REF="refs/heads/main"
+ARG GIT_SHA="HEAD"
 
 ENV PYTORCH_VERSION=$PYTORCH_VERSION
+ENV GIT_REF=$GIT_REF
+ENV GIT_SHA=$GIT_SHA
 
 RUN apt-get update && \
     apt-get install -y --allow-change-held-packages vim curl nano libnccl2 libnccl-dev rsync s3fs && \
@@ -19,6 +23,9 @@ WORKDIR /workspace
 RUN git clone --depth=1 https://github.com/axolotl-ai-cloud/axolotl.git
 
 WORKDIR /workspace/axolotl
+
+# Ensure we are on the expected commit and break Docker cache between revisions
+RUN git fetch origin "$GIT_REF" && git checkout "$GIT_SHA"
 
 # If AXOLOTL_EXTRAS is set, append it in brackets
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \

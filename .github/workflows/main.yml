@@ -91,11 +91,6 @@ jobs:
           - cuda: 126
             cuda_version: 12.6.3
             python_version: "3.11"
-            pytorch: 2.7.0
-            axolotl_extras:
-          - cuda: 126
-            cuda_version: 12.6.3
-            python_version: "3.11"
             pytorch: 2.7.1
             axolotl_extras:
             is_latest:
@@ -143,6 +138,8 @@ jobs:
           build-args: |
             BASE_TAG=${{ github.ref_type == 'tag' && 'main' || github.ref_name }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
             CUDA=${{ matrix.cuda }}
+            GIT_REF=${{ github.ref }}
+            GIT_SHA=${{ github.sha }}
           file: ./docker/Dockerfile-cloud
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
