@@ -551,10 +551,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 <p>Inspired by <a href="https://github.com/unslothai/unsloth">Unsloth</a>, we’ve implemented two
 optimizations for LoRA and QLoRA fine-tuning, supporting both single GPU and multi-GPU
-(in the DDP and DeepSpeed settings) training. These include (1) SwiGLU and GEGLU activation function
-Triton kernels, and (2) LoRA MLP and attention custom autograd functions. Our goal was
-to leverage operator fusion and tensor re-use in order to improve speed and reduce
-memory usage during the forward and backward passes of these calculations.</p>
+(including the DDP, DeepSpeed, and FSDP2 settings) training. These include (1) SwiGLU
+and GEGLU activation function Triton kernels, and (2) LoRA MLP and attention custom
+autograd functions. Our goal was to leverage operator fusion and tensor re-use in order
+to improve speed and reduce memory usage during the forward and backward passes of
+these calculations.</p>
 <p>We currently support several common model architectures, including (but not limited to):</p>
 <ul>
 <li><code>llama</code></li>
@@ -687,7 +688,6 @@ computation path.</p>
 <h2 class="anchored" data-anchor-id="future-work">Future Work</h2>
 <ul>
 <li>Support for additional model architectures</li>
-<li>Support for the FSDP setting</li>
 <li>Support for dropout and bias</li>
 <li>Additional operator fusions</li>
 </ul>

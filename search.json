@@ -319,7 +319,7 @@
     "href": "docs/lora_optims.html",
     "title": "LoRA Optimizations",
     "section": "",
-    "text": "Inspired by Unsloth, we’ve implemented two\noptimizations for LoRA and QLoRA fine-tuning, supporting both single GPU and multi-GPU\n(in the DDP and DeepSpeed settings) training. These include (1) SwiGLU and GEGLU activation function\nTriton kernels, and (2) LoRA MLP and attention custom autograd functions. Our goal was\nto leverage operator fusion and tensor re-use in order to improve speed and reduce\nmemory usage during the forward and backward passes of these calculations.\nWe currently support several common model architectures, including (but not limited to):",
+    "text": "Inspired by Unsloth, we’ve implemented two\noptimizations for LoRA and QLoRA fine-tuning, supporting both single GPU and multi-GPU\n(including the DDP, DeepSpeed, and FSDP2 settings) training. These include (1) SwiGLU\nand GEGLU activation function Triton kernels, and (2) LoRA MLP and attention custom\nautograd functions. Our goal was to leverage operator fusion and tensor re-use in order\nto improve speed and reduce memory usage during the forward and backward passes of\nthese calculations.\nWe currently support several common model architectures, including (but not limited to):",
     "crumbs": [
       "How To Guides",
       "LoRA Optimizations"
@@ -363,7 +363,7 @@
     "href": "docs/lora_optims.html#future-work",
     "title": "LoRA Optimizations",
     "section": "Future Work",
-    "text": "Future Work\n\nSupport for additional model architectures\nSupport for the FSDP setting\nSupport for dropout and bias\nAdditional operator fusions",
+    "text": "Future Work\n\nSupport for additional model architectures\nSupport for dropout and bias\nAdditional operator fusions",
     "crumbs": [
       "How To Guides",
       "LoRA Optimizations"
