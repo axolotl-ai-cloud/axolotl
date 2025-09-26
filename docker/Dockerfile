@@ -29,13 +29,13 @@ RUN git fetch origin "$GIT_REF" && git checkout "$GIT_SHA"
 
 # If AXOLOTL_EXTRAS is set, append it in brackets
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
-        uv pip install --no-build-isolation -e .[ring-flash-attn,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
+        uv pip install --system --no-build-isolation -e .[ring-flash-attn,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
     else \
-        uv pip install --no-build-isolation -e .[ring-flash-attn,optimizers,ray] $AXOLOTL_ARGS; \
+        uv pip install --system --no-build-isolation -e .[ring-flash-attn,optimizers,ray] $AXOLOTL_ARGS; \
     fi && \
     python scripts/unsloth_install.py | sh && \
     python scripts/cutcrossentropy_install.py | sh && \
-    uv pip install pytest
+    uv pip install --system pytest
 
 # fix so that git fetch/pull from remote works with shallow clone
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
