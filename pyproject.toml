@@ -194,7 +194,15 @@ addopts = "-v --tb=short"
 
 # UV specific configuration
 [tool.uv]
-dev-dependencies = [
+find-links = [
+    "https://github.com/Dao-AILab/flash-attention/releases",
+    "https://github.com/Dao-AILab/causal-conv1d/releases",
+    "https://github.com/ModelCloud/GPTQModel/releases",
+]
+prerelease = "allow"
+
+[dependency-groups]
+dev = [
     "pytest",
     "pytest-cov",
     "pytest-xdist",
@@ -202,12 +210,6 @@ dev-dependencies = [
     "ruff",
     "mypy",
 ]
-find-links = [
-    "https://github.com/Dao-AILab/flash-attention/releases",
-    "https://github.com/Dao-AILab/causal-conv1d/releases",
-    "https://github.com/ModelCloud/GPTQModel/releases",
-]
-prerelease = "allow"
 
 # UV custom index for specific packages
 [[tool.uv.index]]
