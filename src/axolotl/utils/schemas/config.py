@@ -24,6 +24,7 @@ from axolotl.utils.schemas.datasets import (
 )
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
 from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
+from axolotl.utils.schemas.fsdp import FSDPConfig
 from axolotl.utils.schemas.integrations import (
     CometConfig,
     GradioConfig,
@@ -667,8 +668,7 @@ class AxolotlInputConfig(
         json_schema_extra={"description": "FSDP configuration"},
         deprecated="Configuring FSDP using `fsdp` is deprecated. Please use `fsdp_config` instead. ",
     )
-    # TODO @SalmanMohammadi strongly type this as its own schema
-    fsdp_config: dict[str, Any] | None = Field(
+    fsdp_config: FSDPConfig | None = Field(
         default=None, json_schema_extra={"description": "FSDP configuration options"}
     )
     fsdp_version: int | None = Field(

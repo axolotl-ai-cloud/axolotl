@@ -560,13 +560,6 @@ class AxolotlTrainer(
 
         super().create_accelerator_and_postprocess()
 
-        if self.is_fsdp_enabled:
-            if (
-                "limit_all_gathers" in self.args.fsdp_config
-                and self.args.fsdp_config["limit_all_gathers"]
-            ):
-                self.accelerator.state.fsdp_plugin.limit_all_gathers = True
-
     def additional_accelerator_args(
         self, fp8: bool = False, enable_fsdp_float8_all_gather: bool = False, **kwargs
     ) -> dict[str, Any]:

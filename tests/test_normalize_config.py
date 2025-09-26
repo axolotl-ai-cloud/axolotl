@@ -111,7 +111,6 @@ class NormalizeConfigTestCase(unittest.TestCase):
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                     "fsdp_offload_params": False,
                     "fsdp_cpu_ram_efficient_loading": True,
-                    "regular_param": "value",
                 }
             }
         )
@@ -124,7 +123,6 @@ class NormalizeConfigTestCase(unittest.TestCase):
         )
         self.assertEqual(cfg_with_version.fsdp_config.offload_params, False)
         self.assertEqual(cfg_with_version.fsdp_config.cpu_ram_efficient_loading, True)
-        self.assertEqual(cfg_with_version.fsdp_config.regular_param, "value")
 
         self.assertNotIn("fsdp_auto_wrap_policy", cfg_with_version.fsdp_config)
         self.assertNotIn("fsdp_offload_params", cfg_with_version.fsdp_config)
@@ -137,7 +135,6 @@ class NormalizeConfigTestCase(unittest.TestCase):
                 "fsdp_config": {
                     "fsdp_auto_wrap_policy": "SIZE_BASED_WRAP",
                     "fsdp_offload_params": True,
-                    "regular_param": "value",
                 }
             }
         )
@@ -149,7 +146,6 @@ class NormalizeConfigTestCase(unittest.TestCase):
             cfg_without_version.fsdp_config.auto_wrap_policy, "SIZE_BASED_WRAP"
         )
         self.assertEqual(cfg_without_version.fsdp_config.offload_params, True)
-        self.assertEqual(cfg_without_version.fsdp_config.regular_param, "value")
 
         self.assertNotIn("fsdp_auto_wrap_policy", cfg_without_version.fsdp_config)
         self.assertNotIn("fsdp_offload_params", cfg_without_version.fsdp_config)
