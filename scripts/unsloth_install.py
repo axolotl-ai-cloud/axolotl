@@ -1,23 +1,27 @@
-"""Print the uv commands required to install Unsloth without altering Torch."""
+"""Emit the uv commands needed to install Unsloth without touching torch."""
+
+from __future__ import annotations
 
 try:
     import torch
-except ImportError as error:
-    raise ImportError("Install torch via `pip install torch`") from error
+except ImportError as exc:  # pragma: no cover
+    raise ImportError("Install torch via `pip install torch`") from exc
 
 from packaging.version import Version as V
 
-TORCH_MIN = V("2.6.0")
-UNSLOTH_BASE = (
-    "uv pip install --system --no-deps unsloth-zoo==2025.9.12"
-    ' && uv pip install --system --no-deps "unsloth[huggingface]==2025.9.9"'
-)
+torch_version = V(torch.__version__.split("+")[0])
 
-version = V(torch.__version__)
-if version < TORCH_MIN:
+# Unsloth supports torch >= 2.6.0 via the 2025.9 builds.
+MIN_TORCH = V("2.6.0")
+
+if torch_version < MIN_TORCH:
     raise RuntimeError(
-        f"Torch {version} detected, but Unsloth requires >= {TORCH_MIN}. "
-        "Upgrade your torch install and re-run this helper."
+        f"Torch {torch.__version__} detected, but Unsloth requires >= {MIN_TORCH}."
     )
 
-print(UNSLOTH_BASE)
+commands = (
+    "uv pip install --system --no-deps unsloth-zoo==2025.9.12 && "
+    'uv pip install --system --no-deps "unsloth[huggingface]==2025.9.9"'
+)
+
+print(commands)

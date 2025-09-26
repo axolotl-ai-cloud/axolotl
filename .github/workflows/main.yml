@@ -68,6 +68,8 @@ jobs:
             PYTORCH_VERSION=${{ matrix.pytorch }}
             AXOLOTL_ARGS=${{ matrix.axolotl_args }}
             AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}
+            GIT_REF=${{ github.ref }}
+            GIT_SHA=${{ github.sha }}
           file: ./docker/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
@@ -205,6 +207,8 @@ jobs:
           build-args: |
             BASE_TAG=${{ github.ref_type == 'tag' && 'main' || github.ref_name }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
             CUDA=${{ matrix.cuda }}
+            GIT_REF=${{ github.ref }}
+            GIT_SHA=${{ github.sha }}
           file: ./docker/Dockerfile-cloud-no-tmux
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
