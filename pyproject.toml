@@ -31,9 +31,9 @@ dependencies = [
     "peft==0.17.0",
     "transformers==4.56.1",
     "tokenizers>=0.21.1",
-    "accelerate==1.10.0",
+    "accelerate==1.10.1",
     "datasets==4.0.0",
-    "trl==0.21.0",
+    "trl==0.23.0",
     "hf_xet==1.1.5",
     "kernels==0.9.0",
     "trackio",
@@ -70,7 +70,7 @@ dependencies = [
     "immutabledict==4.2.0",
     "antlr4-python3-runtime==4.13.2",
     "schedulefree==1.4.1",
-    "mistral-common==1.8.3",
+    "mistral-common==1.8.5",
 
     # Axolotl contribs
     "axolotl-contribs-lgpl @ git+https://github.com/axolotl-ai-cloud/axolotl-contribs-lgpl.git@numpy",
