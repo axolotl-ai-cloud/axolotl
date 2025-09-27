@@ -29,7 +29,7 @@ class TestPretrainLlama:
                 "sequence_len": 1024,
                 "sample_packing": sample_packing,
                 "pretrain_multipack_attn": pretrain_multipack_attn,
-                "dataset_processes": 1,
+                "dataset_num_proc": 1,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
