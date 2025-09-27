@@ -60,7 +60,8 @@ jobs:
           version: "latest"
       - name: Install Modal
         run: |
-          uv pip install --python "$(which python3)" modal==1.0.2 jinja2 protobuf
+          python -m pip install --upgrade pip
+          pip install modal==1.0.2 jinja2
       - name: Update env vars
         run: |
           echo "BASE_TAG=${{ github.ref_name }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
