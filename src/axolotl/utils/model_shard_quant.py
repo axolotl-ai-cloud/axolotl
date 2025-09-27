@@ -148,7 +148,7 @@ def load_sharded_model(
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             use_cache=False,
-            torch_dtype=torch.float32,
+            dtype=torch.float32,
             _attn_implementation=model_config._attn_implementation,
             trust_remote_code=cfg.trust_remote_code,
         )
@@ -158,7 +158,7 @@ def load_sharded_model(
         with init_empty_weights():
             model = AutoModelForCausalLM.from_config(
                 model_config,
-                torch_dtype=torch_dtype,
+                dtype=torch_dtype,
                 trust_remote_code=cfg.trust_remote_code,
             )
     return model

@@ -69,7 +69,7 @@ def do_quantize(
     config = AutoConfig.from_pretrained(model_path)
     torch_dtype = config.torch_dtype if hasattr(config, "torch_dtype") else None
     model = AutoModelForCausalLM.from_pretrained(
-        model_path, device_map="auto", torch_dtype=torch_dtype
+        model_path, device_map="auto", dtype=torch_dtype
     )
 
     LOG.info(
