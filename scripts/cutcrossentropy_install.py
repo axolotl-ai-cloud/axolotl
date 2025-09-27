@@ -2,14 +2,13 @@
 
 import importlib.util
 import sys
+from shlex import quote
 
 try:
     import torch
 except ImportError as exc:
     raise ImportError("Install torch via `pip install torch`") from exc
 from packaging.version import Version as V
-
-USE_UV = "--uv" in sys.argv[1:]
 
 v = V(torch.__version__)
 
@@ -20,14 +19,14 @@ if v < V("2.4.0"):
 
 cce_spec = importlib.util.find_spec("cut_cross_entropy")
 
-UNINSTALL_PREFIX = ""
-if cce_spec:
-    if not importlib.util.find_spec("cut_cross_entropy.transformers"):
-        UNINSTALL_PREFIX = "pip uninstall -y cut-cross-entropy && "
+python_path = quote(sys.executable)
 
-UV_PREFIX = "uv " if USE_UV else ""
+commands = []
+if cce_spec and not importlib.util.find_spec("cut_cross_entropy.transformers"):
+    commands.append(f"uv pip uninstall --python {python_path} cut-cross-entropy")
 
-print(
-    UNINSTALL_PREFIX
-    + f'{UV_PREFIX}pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@147ea28"'
+commands.append(
+    f'uv pip install --python {python_path} "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@c6a32c5"'
 )
+
+print(" && ".join(commands))

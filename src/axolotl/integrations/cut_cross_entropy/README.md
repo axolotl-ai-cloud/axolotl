@@ -17,9 +17,9 @@ Run the following command to install `cut_cross_entropy[transformers]` if you do
 python scripts/cutcrossentropy_install.py | sh
 ```
 
-- If you are installing from pip
+- If you are installing manually
 ```bash
-pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@147ea28"
+uv pip uninstall -y cut-cross-entropy && uv pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@c6a32c5"
 ```
 
 ## Usage

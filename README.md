@@ -65,15 +65,9 @@ Features:
 - **Flexible Dataset Handling**: Load from local, HuggingFace, and cloud (S3, Azure, GCP, OCI) datasets.
 - **Cloud Ready**: We ship [Docker images](https://hub.docker.com/u/axolotlai) and also [PyPI packages](https://pypi.org/project/axolotl/) for use on cloud platforms and local hardware.
 
-
-
 ## 🚀 Quick Start - LLM Fine-tuning in Minutes
 
-**Requirements**:
-
-- NVIDIA GPU (Ampere or newer for `bf16` and Flash Attention) or AMD GPU
-- Python 3.11
-- PyTorch ≥2.6.0
+**Requirements**: NVIDIA GPU (Ampere+) or AMD GPU, Python 3.11+
 
 ### Google Colab
 
@@ -81,15 +75,34 @@ Features:
 
 ### Installation
 
+#### Using uv (recommended)
+
+```bash
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# One-off usage
+uvx axolotl fetch examples
+
+# Or, in your project
+uv init my-project && cd my-project
+uv add axolotl
+source .venv/bin/activate
+
+# Download example axolotl configs, deepspeed configs
+axolotl fetch examples
+axolotl fetch deepspeed_configs  # optional
+```
+
 #### Using pip
 
 ```bash
 pip3 install -U packaging==23.2 setuptools==75.8.0 wheel ninja
-pip3 install --no-build-isolation axolotl[flash-attn,deepspeed]
+pip3 install --no-build-isolation axolotl
 
 # Download example axolotl configs, deepspeed configs
 axolotl fetch examples
-axolotl fetch deepspeed_configs  # OPTIONAL
+axolotl fetch deepspeed_configs  # optional
 ```
 
 #### Using Docker
