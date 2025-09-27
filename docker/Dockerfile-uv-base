@@ -13,6 +13,7 @@ ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
 ENV PYTHON_VERSION=$PYTHON_VERSION
 ENV TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST
 ENV UV_TORCH_BACKEND="cu${CUDA}"
+ENV VENV_PYTHON=/workspace/axolotl-venv/bin/python
 
 RUN apt-get update \
     && apt-get install -y wget git build-essential ninja-build git-lfs libaio-dev pkg-config curl && rm -rf /var/lib/apt/lists/* \
@@ -29,8 +30,8 @@ RUN uv venv --no-project --relocatable axolotl-venv
 
 ENV PATH="/workspace/axolotl-venv/bin:${PATH}"
 
-RUN uv pip install --system packaging setuptools wheel psutil \
-    && uv pip install --system torch==${PYTORCH_VERSION} \
-    && uv pip install --system --no-build-isolation "causal_conv1d @ git+https://github.com/Dao-AILab/causal-conv1d.git@main" \
-    && uv pip install --system "mamba_ssm @ git+https://github.com/state-spaces/mamba.git@main" \
-    && uv pip install --system awscli pydantic
+RUN uv pip install --python "$VENV_PYTHON" packaging setuptools wheel psutil \
+    && uv pip install --python "$VENV_PYTHON" torch==${PYTORCH_VERSION} \
+    && uv pip install --python "$VENV_PYTHON" --no-build-isolation "causal_conv1d @ git+https://github.com/Dao-AILab/causal-conv1d.git@main" \
+    && uv pip install --python "$VENV_PYTHON" "mamba_ssm @ git+https://github.com/state-spaces/mamba.git@main" \
+    && uv pip install --python "$VENV_PYTHON" awscli pydantic

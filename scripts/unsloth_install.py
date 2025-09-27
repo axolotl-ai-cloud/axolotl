@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import sys
+from shlex import quote
+
 try:
     import torch
 except ImportError as exc:  # pragma: no cover
@@ -9,19 +12,18 @@ except ImportError as exc:  # pragma: no cover
 
 from packaging.version import Version as V
 
-torch_version = V(torch.__version__.split("+")[0])
-
-# Unsloth supports torch >= 2.6.0 via the 2025.9 builds.
 MIN_TORCH = V("2.6.0")
 
-if torch_version < MIN_TORCH:
+python_version = V(torch.__version__.split("+")[0])
+if python_version < MIN_TORCH:
     raise RuntimeError(
         f"Torch {torch.__version__} detected, but Unsloth requires >= {MIN_TORCH}."
     )
 
+python_path = quote(sys.executable)
 commands = (
-    "uv pip install --system --no-deps unsloth-zoo==2025.9.12 && "
-    'uv pip install --system --no-deps "unsloth[huggingface]==2025.9.9"'
+    f"uv pip install --python {python_path} --no-deps unsloth-zoo==2025.9.12 && "
+    f'uv pip install --python {python_path} --no-deps "unsloth[huggingface]==2025.9.9"'
 )
 
 print(commands)

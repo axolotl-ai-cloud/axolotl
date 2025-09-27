@@ -8,10 +8,12 @@ ARG CUDA="118"
 ARG PYTORCH_VERSION="2.1.2"
 ARG GIT_REF="refs/heads/main"
 ARG GIT_SHA="HEAD"
+ARG VENV_PYTHON="/workspace/axolotl-venv/bin/python"
 
 ENV PYTORCH_VERSION=$PYTORCH_VERSION
 ENV GIT_REF=$GIT_REF
 ENV GIT_SHA=$GIT_SHA
+ENV VENV_PYTHON=$VENV_PYTHON
 
 RUN apt-get update && \
     apt-get install -y --allow-change-held-packages vim curl nano libnccl2 libnccl-dev rsync s3fs && \
@@ -29,13 +31,13 @@ RUN git fetch origin "$GIT_REF" && git checkout "$GIT_SHA"
 
 # If AXOLOTL_EXTRAS is set, append it in brackets
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
-        uv pip install --system --no-build-isolation -e .[ring-flash-attn,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
+        uv pip install --python "$VENV_PYTHON" --no-build-isolation -e .[ring-flash-attn,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
     else \
-        uv pip install --system --no-build-isolation -e .[ring-flash-attn,optimizers,ray] $AXOLOTL_ARGS; \
+        uv pip install --python "$VENV_PYTHON" --no-build-isolation -e .[ring-flash-attn,optimizers,ray] $AXOLOTL_ARGS; \
     fi && \
     python scripts/unsloth_install.py | sh && \
     python scripts/cutcrossentropy_install.py | sh && \
-    uv pip install --system pytest
+    uv pip install --python "$VENV_PYTHON" pytest
 
 # fix so that git fetch/pull from remote works with shallow clone
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
