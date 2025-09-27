@@ -35,9 +35,9 @@ RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
 
 RUN uv pip install packaging==23.2 setuptools==75.8.0
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
-        uv sync --frozen -E ring-flash-attn -E optimizers -E ray $(printf ' -E %s' "${AXOLOTL_EXTRAS//,/ }") $AXOLOTL_ARGS; \
+        uv sync --frozen --extra ring-flash-attn --extra optimizers --extra ray $(printf ' --extra %s' "${AXOLOTL_EXTRAS//,/ }") $AXOLOTL_ARGS; \
     else \
-        uv sync --frozen -E ring-flash-attn -E optimizers -E ray $AXOLOTL_ARGS; \
+        uv sync --frozen --extra ring-flash-attn --extra optimizers --extra ray $AXOLOTL_ARGS; \
     fi
 
 RUN python scripts/unsloth_install.py | sh
