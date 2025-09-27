@@ -35,8 +35,8 @@ RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
     else \
         uv pip install --python "$VENV_PYTHON" --no-build-isolation -e .[ring-flash-attn,optimizers,ray] $AXOLOTL_ARGS; \
     fi && \
-    python scripts/unsloth_install.py | sh && \
-    python scripts/cutcrossentropy_install.py | sh && \
+    "$VENV_PYTHON" scripts/unsloth_install.py | sh && \
+    "$VENV_PYTHON" scripts/cutcrossentropy_install.py | sh && \
     uv pip install --python "$VENV_PYTHON" pytest
 
 # fix so that git fetch/pull from remote works with shallow clone

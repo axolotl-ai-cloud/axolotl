@@ -2,6 +2,7 @@
 
 import importlib.util
 import sys
+from shlex import quote
 
 try:
     import torch
@@ -18,12 +19,14 @@ if v < V("2.4.0"):
 
 cce_spec = importlib.util.find_spec("cut_cross_entropy")
 
-UNINSTALL_PREFIX = ""
-if cce_spec:
-    if not importlib.util.find_spec("cut_cross_entropy.transformers"):
-        UNINSTALL_PREFIX = "uv pip uninstall --system cut-cross-entropy && "
+python_path = quote(sys.executable)
 
-print(
-    UNINSTALL_PREFIX
-    + 'uv pip install --system "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@c6a32c5"'
+commands = []
+if cce_spec and not importlib.util.find_spec("cut_cross_entropy.transformers"):
+    commands.append(f"uv pip uninstall --python {python_path} cut-cross-entropy")
+
+commands.append(
+    f'uv pip install --python {python_path} "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@c6a32c5"'
 )
+
+print(" && ".join(commands))
