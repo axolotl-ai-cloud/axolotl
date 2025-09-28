@@ -61,7 +61,7 @@ jobs:
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
-          pip install modal==1.0.2 jinja2
+          pip install modal==1.0.2 jinja2 protobuf
       - name: Update env vars
         run: |
           echo "BASE_TAG=${{ github.ref_name }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
