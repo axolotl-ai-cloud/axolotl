@@ -97,7 +97,38 @@ def parse_args():
 
 # ─── Main ───────────────────────────────────────────────────────────────────
 
-def run_inference(adapter_dir, jsonl_file, output_file, model_name="gpt2", max_tokens=60):
+def extract_drive(prompt: str):
+    pats = [
+        r"average drive:\s*(\d{2,4})\s*yards",
+        r"drives\s*(\d{2,4})\s*yards",
+        r"with a\s*(\d{2,4})-yard drive",
+        r"drive is exactly\s*(\d{2,4})\s*yards",
+        r"average drive of\s*(\d{2,4})\s*yards",
+        r"drive is\s*(\d{2,4})\s*yards",
+    ]
+    for p in pats:
+        m = re.search(p, prompt, flags=re.IGNORECASE)
+        if m:
+            try:
+                return int(m.group(1))
+            except Exception:
+                return None
+    return None
+
+
+def choose_cutoff(available: list[int] | None, drive: int | None) -> int | None:
+    if not available:
+        return None
+    available = sorted([c for c in available if isinstance(c, int)])
+    if not available:
+        return None
+    if drive is None:
+        return available[-1]
+    eligible = [c for c in available if c <= drive]
+    return max(eligible) if eligible else available[0]
+
+
+def run_inference(adapter_dir, jsonl_file, output_file, model_name="gpt2", max_tokens=16):
     fixed_adapter = prepare_adapter_folder(adapter_dir)
     print("Using adapter folder:", fixed_adapter)
 
@@ -123,6 +154,18 @@ def run_inference(adapter_dir, jsonl_file, output_file, model_name="gpt2", max_t
             prompt_plus = prompt + " Answer only in this format: Strategy: <N> yards"
             m = hole_re.search(prompt)
             expected_hole = int(m.group(1)) if m else None
+            # Gather available cutoffs if present
+            available = None
+            if isinstance(entry.get("available_cutoffs"), list):
+                available = [int(x) for x in entry["available_cutoffs"] if isinstance(x, int)]
+            elif isinstance(entry.get("tee_shot_strategies"), list):
+                vals = []
+                for s in entry["tee_shot_strategies"]:
+                    v = s.get("cutoff_distance") if isinstance(s, dict) else None
+                    if isinstance(v, int):
+                        vals.append(v)
+                available = vals or None
+            drive = extract_drive(prompt)
             inputs = tokenizer(prompt_plus, return_tensors="pt").to(device)
             outputs = model.generate(
                 **inputs,
@@ -146,7 +189,24 @@ def run_inference(adapter_dir, jsonl_file, output_file, model_name="gpt2", max_t
                 # Fallback: accept any 2-4 digit number (unit optional) and coerce to yards for standardized output
                 mnum = re.search(r"(\d{2,4})", clean)
                 if mnum:
-                    clean = f"Strategy: {int(mnum.group(1))} yards"
+                    num = int(mnum.group(1))
+                    # If we know available options and/or drive, coerce to a valid cutoff using the rule
+                    coerced = None
+                    if available:
+                        # Prefer rule by drive; else nearest value
+                        by_rule = choose_cutoff(available, drive)
+                        if by_rule is not None:
+                            coerced = by_rule
+                        else:
+                            # nearest
+                            coerced = min(available, key=lambda x: abs(x - num))
+                    clean = f"Strategy: {int(coerced if coerced is not None else num)} yards"
+                else:
+                    # As a last resort, use rule-based choice if available, otherwise default to 300
+                    fallback = choose_cutoff(available, drive) if available else None
+                    if fallback is None:
+                        fallback = 300
+                    clean = f"Strategy: {int(fallback)} yards"
             rec = {
                 **entry,
                 "raw_completion": raw,

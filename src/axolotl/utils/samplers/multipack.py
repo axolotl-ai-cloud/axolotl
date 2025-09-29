@@ -10,7 +10,21 @@ from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import cpu_count, get_context
 from typing import Iterable, Iterator, Union
 
-import numba
+try:  # optionalize numba for Windows / minimal environments
+    import numba  # type: ignore
+    _NUMBA_AVAILABLE = True
+except Exception:  # pragma: no cover - broad to avoid edge import issues
+    _NUMBA_AVAILABLE = False
+    class _NumbaShim:  # minimal shim exposing njit decorator passthrough
+        def njit(self, *_, **__):
+            def deco(fn):
+                return fn
+            return deco
+    numba = _NumbaShim()  # type: ignore
+    from axolotl.utils.logging import get_logger as _get_logger
+    _get_logger(__name__).warning(
+        "numba not available - falling back to pure Python packing (slower). Install 'numba' to enable JIT acceleration."
+    )
 import numpy as np
 from torch.utils.data import BatchSampler, Sampler, SequentialSampler
 
@@ -20,7 +34,7 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
-@numba.njit
+@numba.njit  # will be no-op if numba missing
 def ffd_check(sequence_lengths: np.ndarray, bin_capacity: int, num_bins: int) -> bool:
     """First-fit-decreasing bin packing algorithm check.
 
@@ -56,7 +70,7 @@ def ffd_check(sequence_lengths: np.ndarray, bin_capacity: int, num_bins: int) ->
     return True
 
 
-@numba.njit
+@numba.njit  # will be no-op if numba missing
 def pack_group(
     sequence_lengths: np.ndarray,
     group_offset: int,
@@ -189,7 +203,7 @@ def pack_parallel(
     return all_bins
 
 
-@numba.njit
+@numba.njit  # will be no-op if numba missing
 def allocate_sequentially(
     sequence_lengths: np.ndarray, rank: int, bin_capacity: int, num_ranks: int
 ) -> tuple[list[list[int]], int, int]:
@@ -297,6 +311,12 @@ class MultipackBatchSampler(BatchSampler):
             LOG.warning(
                 "using sequential sample packing with non-sequential sampler, did you want to also enable curriculum_sampling?"
             )
+
+        if not _NUMBA_AVAILABLE:
+            # force reduced parallelism to avoid heavy overhead without JIT
+            if not self.sequential:
+                LOG.info("Disabling parallel packing due to missing numba; enabling sequential mode for reliability.")
+                self.sequential = True
 
     def set_epoch(self, epoch: int):
         """Set the epoch number, used for reproducible shuffling across epochs"""

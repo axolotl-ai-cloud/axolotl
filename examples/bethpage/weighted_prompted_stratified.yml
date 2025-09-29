@@ -1,0 +1,39 @@
+# Variant config enabling stratified batch/window mixing.
+# Builds on weighted_prompted_locked.yml; only differences included here for brevity.
+
+base_model: meta-llama/Llama-3-8B
+output_dir: outputs/bethpage-weighted-stratified
+run_name: bethpage_weighted_v1_strat
+
+weighted_prompted_jsonl:
+  path: data/bethpage_black/training_bethpage_multitask.weighted.prompted.dedup.train.jsonl
+  epoch_size: 4000
+  seed: 42
+  temperature: 1.0
+  enforce_quota: false
+  stratify_window_size: 8   # Each window mixes tasks round-robin before emission
+  stratify_shuffle: true    # Shuffle order inside window for randomness
+
+sequence_len: 512
+packing: true
+
+lora: true
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lr: 1.5e-4
+max_steps: 120
+warmup_steps: 12
+lr_scheduler_type: cosine
+
+micro_batch_size: 2
+gradient_accumulation_steps: 8
+
+bf16: true
+gradient_checkpointing: true
+flash_attention: true
+
+logging_steps: 10
+save_steps: 40
+eval_steps: 20
+seed: 42

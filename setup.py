@@ -25,10 +25,13 @@ def parse_requirements(extras_require_map):
                 # Handle standard packages
                 _install_requires.append(line)
     try:
-        xformers_version = [req for req in _install_requires if "xformers" in req][0]
-        autoawq_version = [req for req in _install_requires if "autoawq" in req][0]
-        if "Darwin" in platform.system():
-            # skip packages not compatible with OSX
+        # Some optional dependencies may be commented out or filtered on platforms; guard indexing.
+        xformers_candidates = [req for req in _install_requires if "xformers" in req]
+        autoawq_candidates = [req for req in _install_requires if "autoawq" in req]
+        xformers_version = xformers_candidates[0] if xformers_candidates else None
+        autoawq_version = autoawq_candidates[0] if autoawq_candidates else None
+        if platform.system() in ("Darwin", "Windows"):
+            # skip packages not compatible or problematic on OSX/Windows
             skip_packages = [
                 "bitsandbytes",
                 "triton",
@@ -67,7 +70,8 @@ def parse_requirements(extras_require_map):
             if (major, minor) >= (2, 8):
                 pass
             elif (major, minor) >= (2, 7):
-                _install_requires.pop(_install_requires.index(xformers_version))
+                if xformers_version and xformers_version in _install_requires:
+                    _install_requires.pop(_install_requires.index(xformers_version))
                 if patch == 0:
                     _install_requires.append("xformers==0.0.30")
                     # vllm 0.9.x is incompatible with latest transformers
@@ -76,32 +80,37 @@ def parse_requirements(extras_require_map):
                     _install_requires.append("xformers==0.0.31")
                     extras_require_map["vllm"] = ["vllm>=0.10.0"]
             elif (major, minor) >= (2, 6):
-                _install_requires.pop(_install_requires.index(xformers_version))
+                if xformers_version and xformers_version in _install_requires:
+                    _install_requires.pop(_install_requires.index(xformers_version))
                 _install_requires.append("xformers==0.0.29.post3")
                 # since we only support 2.6.0+cu126
                 _dependency_links.append("https://download.pytorch.org/whl/cu126")
                 extras_require_map.pop("vllm")
             elif (major, minor) >= (2, 5):
-                _install_requires.pop(_install_requires.index(xformers_version))
+                if xformers_version and xformers_version in _install_requires:
+                    _install_requires.pop(_install_requires.index(xformers_version))
                 if patch == 0:
                     _install_requires.append("xformers==0.0.28.post2")
                 else:
                     _install_requires.append("xformers>=0.0.28.post3")
-                _install_requires.pop(_install_requires.index(autoawq_version))
+                if autoawq_version and autoawq_version in _install_requires:
+                    _install_requires.pop(_install_requires.index(autoawq_version))
                 extras_require_map.pop("vllm")
             elif (major, minor) >= (2, 4):
                 extras_require_map.pop("vllm")
-                if patch == 0:
+                if xformers_version and xformers_version in _install_requires:
                     _install_requires.pop(_install_requires.index(xformers_version))
-                    _install_requires.append("xformers>=0.0.27")
-                else:
-                    _install_requires.pop(_install_requires.index(xformers_version))
-                    _install_requires.append("xformers==0.0.28.post1")
+                    if patch == 0:
+                        _install_requires.append("xformers>=0.0.27")
+                    else:
+                        _install_requires.append("xformers==0.0.28.post1")
             else:
                 raise ValueError("axolotl requires torch>=2.4")
 
     except PackageNotFoundError:
         pass
+    except Exception as exc:  # Broad catch to avoid installer hard-fail on edge parsing
+        print(f"[axolotl setup] Non-fatal dependency resolution issue: {exc}")
     return _install_requires, _dependency_links, extras_require_map
 
 

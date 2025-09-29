@@ -1,0 +1,13 @@
+{
+  "source": "data\\bethpage_black\\train_multitask_case_fixed.jsonl",
+  "train_file": "data\\bethpage_black\\train_v2.jsonl",
+  "val_file": "data\\bethpage_black\\val_v2.jsonl",
+  "test_file": "data\\bethpage_black\\test_v2.jsonl",
+  "seed": 42,
+  "val_size": 60,
+  "test_size": 60,
+  "stratify_task": true,
+  "stratify_yard_buckets": true,
+  "bucket_spec": "<230,230-260,260-290,>=290",
+  "yard_col": "expected_cutoff_yards"
+}

@@ -1,0 +1,11 @@
+{
+  "generated_at": "2025-09-22T19:02:06.829579+00:00",
+  "source_file": "strategy_augmented_holes_enriched.jsonl",
+  "source_sha256": "63acf8338f57e77e4222f714d4fc2563afc544973f856898af7de5b8945e9b84",
+  "hole_count": 18,
+  "severity_counts": {
+    "error": 0,
+    "warning": 0
+  },
+  "issues": {}
+}

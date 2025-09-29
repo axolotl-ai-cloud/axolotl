@@ -31,65 +31,64 @@ def parse_requirements():
                 _install_requires.append(line)
 
     try:
-        xformers_version = [req for req in _install_requires if "xformers" in req][0]
-        torchao_version = [req for req in _install_requires if "torchao" in req][0]
-        autoawq_version = [req for req in _install_requires if "autoawq" in req][0]
+        xformers_version = next((r for r in _install_requires if "xformers" in r), None)
+        torchao_version = next((r for r in _install_requires if "torchao" in r), None)
+        autoawq_version = next((r for r in _install_requires if "autoawq" in r), None)
 
-        if "Darwin" in platform.system():
-            # don't install xformers on MacOS
-            _install_requires.pop(_install_requires.index(xformers_version))
-        else:
-            # detect the version of torch already installed
-            # and set it so dependencies don't clobber the torch version
-            try:
-                torch_version = version("torch")
-            except PackageNotFoundError:
-                torch_version = "2.5.1"
+        sys_platform = platform.system()
+        # On macOS/Windows skip xformers adjustments entirely (build friction); leave if user later adds manually.
+        if sys_platform in ("Darwin", "Windows") and xformers_version and xformers_version in _install_requires:
+            _install_requires.remove(xformers_version)
+            xformers_version = None
+
+        # Always pin torch to already-installed version (or default) to avoid clobber.
+        try:
+            torch_version = version("torch")
+        except PackageNotFoundError:
+            torch_version = "2.5.1"
+        if not any(req.startswith("torch==") for req in _install_requires):
             _install_requires.append(f"torch=={torch_version}")
 
-            version_match = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", torch_version)
-            if version_match:
-                major, minor, patch = version_match.groups()
-                major, minor = int(major), int(minor)
-                patch = (
-                    int(patch) if patch is not None else 0
-                )  # Default patch to 0 if not present
-            else:
-                raise ValueError("Invalid version format")
+        # If xformers not present in requirements list, nothing else to massage.
+        if not xformers_version:
+            return _install_requires, _dependency_links
 
-            if (major, minor) >= (2, 5):
-                _install_requires.pop(_install_requires.index(xformers_version))
-                if patch == 0:
-                    _install_requires.append("xformers==0.0.28.post2")
-                else:
-                    _install_requires.append("xformers==0.0.28.post3")
-                _install_requires.pop(_install_requires.index(autoawq_version))
-            elif (major, minor) >= (2, 4):
-                if patch == 0:
-                    _install_requires.pop(_install_requires.index(xformers_version))
-                    _install_requires.append("xformers>=0.0.27")
-                else:
-                    _install_requires.pop(_install_requires.index(xformers_version))
-                    _install_requires.append("xformers==0.0.28.post1")
-            elif (major, minor) >= (2, 3):
-                _install_requires.pop(_install_requires.index(torchao_version))
-                if patch == 0:
-                    _install_requires.pop(_install_requires.index(xformers_version))
-                    _install_requires.append("xformers>=0.0.26.post1")
-                else:
-                    _install_requires.pop(_install_requires.index(xformers_version))
-                    _install_requires.append("xformers>=0.0.27")
-            elif (major, minor) >= (2, 2):
-                _install_requires.pop(_install_requires.index(torchao_version))
-                _install_requires.pop(_install_requires.index(xformers_version))
-                _install_requires.append("xformers>=0.0.25.post1")
-            else:
-                _install_requires.pop(_install_requires.index(torchao_version))
-                _install_requires.pop(_install_requires.index(xformers_version))
-                _install_requires.append("xformers>=0.0.23.post1")
+        version_match = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", torch_version)
+        if version_match:
+            major, minor, patch = version_match.groups()
+            major, minor = int(major), int(minor)
+            patch = int(patch) if patch is not None else 0
+        else:
+            raise ValueError("Invalid version format")
+
+        def replace_xformers(new_spec: str):
+            if xformers_version in _install_requires:
+                _install_requires.remove(xformers_version)
+            _install_requires.append(new_spec)
+
+        if (major, minor) >= (2, 5):
+            replace_xformers("xformers==0.0.28.post2" if patch == 0 else "xformers==0.0.28.post3")
+            if autoawq_version and autoawq_version in _install_requires:
+                _install_requires.remove(autoawq_version)
+        elif (major, minor) >= (2, 4):
+            replace_xformers("xformers>=0.0.27" if patch == 0 else "xformers==0.0.28.post1")
+        elif (major, minor) >= (2, 3):
+            if torchao_version and torchao_version in _install_requires:
+                _install_requires.remove(torchao_version)
+            replace_xformers("xformers>=0.0.26.post1" if patch == 0 else "xformers>=0.0.27")
+        elif (major, minor) >= (2, 2):
+            if torchao_version and torchao_version in _install_requires:
+                _install_requires.remove(torchao_version)
+            replace_xformers("xformers>=0.0.25.post1")
+        else:
+            if torchao_version and torchao_version in _install_requires:
+                _install_requires.remove(torchao_version)
+            replace_xformers("xformers>=0.0.23.post1")
 
     except PackageNotFoundError:
         pass
+    except Exception as exc:
+        print(f"[axolotl setup dynamic] Non-fatal dependency resolution issue: {exc}")
     return _install_requires, _dependency_links
 
 

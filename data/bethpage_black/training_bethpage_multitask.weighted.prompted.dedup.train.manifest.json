@@ -1,0 +1,20 @@
+{
+  "created_utc": "2025-09-22T21:55:33.320234+00:00",
+  "format": "prompted_multitask_jsonl_v1",
+  "line_count": 60,
+  "per_task_sample_weight": {
+    "description_generation": 60.0,
+    "strategy_selection": 15.0,
+    "strategy_selection_negative": 15.0,
+    "style_rewrite": 45.0
+  },
+  "sha256": "6f5826cdb109819c8c7ef7b3a9cd9ec256b97e3e96455bd15b6f7e7ab4b7b5e9",
+  "source_path": "data\\bethpage_black\\training_bethpage_multitask.weighted.prompted.dedup.train.jsonl",
+  "task_counts": {
+    "description_generation": 15,
+    "strategy_selection": 15,
+    "strategy_selection_negative": 15,
+    "style_rewrite": 15
+  },
+  "total_sample_weight": 135.0
+}

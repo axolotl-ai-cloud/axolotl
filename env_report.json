@@ -1,0 +1,20 @@
+{
+  "warnings": [
+    "flash-attn not found (flash_attn)"
+  ],
+  "errors": [],
+  "info": [
+    "Platform: Windows-11-10.0.26100-SP0",
+    "Python version: 3.13",
+    "torch version: 2.9.0.dev20250830+cu128",
+    "CUDA available: True",
+    "GPU count: 1",
+    "GPU[0] NVIDIA GeForce RTX 5060 Ti total_mem_gb=15.93",
+    "transformers version: 4.55.4",
+    "bitsandbytes present (bitsandbytes)",
+    "Deterministic RNG hash (seed=42): e5c5580c66423048...",
+    "Disk free at outputs: 1290.02 GB",
+    "Validation duration: 13.89s"
+  ],
+  "status_code": 1
+}

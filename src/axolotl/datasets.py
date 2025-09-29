@@ -4,6 +4,7 @@ import torch
 from datasets import Dataset, IterableDataset
 
 from axolotl.utils.logging import get_logger
+from axolotl.data.weighted_prompted_dataset import WeightedPromptedIterableDataset
 
 from .prompt_tokenizers import PromptTokenizingStrategy
 
@@ -86,6 +87,35 @@ def wrap_dataset_for_tokenized_prompt(
             **map_kwargs,
         )
     return TokenizedPromptDataset(prompt_tokenizer, dataset, **kwargs)
+
+
+def build_weighted_prompted_iterable(
+    path: str,
+    epoch_size: int,
+    seed: int = 42,
+    temperature: float = 1.0,
+    enforce_quota: bool = False,
+    world_size: int = 1,
+    rank: int = 0,
+    stratify_window_size: int | None = None,
+    stratify_shuffle: bool = True,
+):
+    """Factory for WeightedPromptedIterableDataset.
+
+    Intended to be called by training config loading logic when a dataset entry
+    specifies `weighted_prompted_jsonl`.
+    """
+    return WeightedPromptedIterableDataset(
+        path=path,
+        epoch_size=epoch_size,
+        temperature=temperature,
+        seed=seed,
+        world_size=world_size,
+        rank=rank,
+        enforce_quota=enforce_quota,
+    stratify_window_size=stratify_window_size,
+    stratify_shuffle=stratify_shuffle,
+    )
 
 
 # TODO this isn't the best since it can't interleave datasets

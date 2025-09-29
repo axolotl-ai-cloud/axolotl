@@ -4,9 +4,15 @@ import os
 import types
 from typing import Any
 
-import bitsandbytes as bnb
 import torch
-from bitsandbytes.nn import Params4bit
+try:  # optional bitsandbytes
+    import bitsandbytes as bnb  # type: ignore
+    from bitsandbytes.nn import Params4bit  # type: ignore
+    _BNB_AVAILABLE = True
+except Exception:  # pragma: no cover - handled gracefully
+    bnb = None  # type: ignore
+    Params4bit = tuple()  # type: ignore
+    _BNB_AVAILABLE = False
 from peft import (
     AdaptionPromptConfig,
     LoftQConfig,
@@ -31,14 +37,19 @@ def setup_quantized_meta_for_peft(model: torch.nn.Module):
     def temp_to_method(self, *args, **kwargs):
         return self
 
+    if not _BNB_AVAILABLE:
+        return
     for param in model.parameters():
-        if isinstance(param, Params4bit):
+        if isinstance(param, Params4bit):  # type: ignore[arg-type]
+            # some platforms without bnb will skip this path
             param.quant_state._orig_to = param.quant_state.to
             param.quant_state.to = types.MethodType(temp_to_method, param.quant_state)
 
 
 def setup_quantized_peft_meta_for_training(model: torch.nn.Module):
     """Replaces dummy `quant_state.to` method with the original function to allow training to continue"""
+    if not _BNB_AVAILABLE:
+        return
     for param in model.parameters():
         if isinstance(param, Params4bit) and hasattr(param.quant_state, "_orig_to"):
             param.quant_state.to = param.quant_state._orig_to
@@ -46,7 +57,10 @@ def setup_quantized_peft_meta_for_training(model: torch.nn.Module):
 
 
 def find_all_linear_names(model):
-    cls = (bnb.nn.Linear4bit, bnb.nn.Linear8bitLt, torch.nn.Linear)
+    if _BNB_AVAILABLE:
+        cls = (bnb.nn.Linear4bit, bnb.nn.Linear8bitLt, torch.nn.Linear)  # type: ignore[attr-defined]
+    else:
+        cls = (torch.nn.Linear,)
     lora_module_names = set()
     for name, module in model.named_modules():
         if (

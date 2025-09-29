@@ -1,0 +1,7 @@
+Bethpage Black dataset freeze
+Timestamp (UTC): 2025-09-22T19:02:06Z
+Source file: strategy_augmented_holes_enriched.jsonl
+SHA256: 63acf8338f57e77e4222f714d4fc2563afc544973f856898af7de5b8945e9b84
+Validator: validate_hole_schema.py (errors=0 warnings=0)
+QA report: training_bethpage_multitask.qa_report.json (style_over_limit=0 rationale_missing=0)
+Notes: Further data changes require bumping SHA and removing/replacing this freeze marker.

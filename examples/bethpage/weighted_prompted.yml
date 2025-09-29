@@ -1,0 +1,44 @@
+# Example training config using weighted prompted iterable dataset
+
+base_model: meta-llama/Llama-3-8B
+output_dir: outputs/bethpage-weighted
+
+# Dataset specification
+weighted_prompted_jsonl:
+  path: data/bethpage_black/training_bethpage_multitask.weighted.prompted.dedup.train.jsonl
+  epoch_size: 2000          # effective examples per epoch (with replacement)
+  seed: 42
+  temperature: 1.0          # >1 flatten, <1 sharpen
+  enforce_quota: false      # set true for deterministic per-task counts
+
+# Prompt formatting (already chat formatted; ensure template passthrough)
+chat_template: default
+
+# Tokenization & packing
+sequence_len: 2048
+packing: true
+
+# Optimization
+lora: true
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.05
+lr: 2e-4
+batch_size: 1
+micro_batch_size: 1
+warmup_steps: 50
+epochs: 3
+optimizer: adamw
+weight_decay: 0.01
+
+# Precision
+bf16: true
+
+# Logging
+logging_steps: 25
+save_steps: 250
+eval_steps: 250
+
+# Misc
+seed: 42
+apply_chat_template: false  # data already in messages form

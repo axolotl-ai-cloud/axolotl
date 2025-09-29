@@ -507,6 +507,12 @@ class ModelLoader:
 
     def _set_quantization_config(self):
         """Set up quantization config (bitsandbytes, awq, gptq, etc.)"""
+        # Detect bitsandbytes availability early so we can gracefully skip config
+        try:
+            import bitsandbytes as _bnb  # noqa: F401
+            _bnb_available = True
+        except Exception:
+            _bnb_available = False
 
         if self.cfg.model_quantization_config == "Mxfp4Config":
             from transformers import Mxfp4Config
@@ -555,46 +561,56 @@ class ModelLoader:
         elif self.cfg.adapter == "qlora" and self.model_kwargs.get(
             "load_in_4bit", False
         ):
-            bnb_config = {
-                "load_in_4bit": True,
-                "llm_int8_threshold": 6.0,
-                "llm_int8_has_fp16_weight": False,
-                "bnb_4bit_compute_dtype": self.cfg.torch_dtype,
-                "bnb_4bit_use_double_quant": True,
-                "bnb_4bit_quant_type": "nf4",
-                "bnb_4bit_quant_storage": torch.bfloat16,
-            }
-            if self.cfg.model_config_type in ["jamba", "qwen2_moe"] and not (
-                self.cfg.deepspeed or self.is_fsdp_enabled
-            ):
-                # for some reason, this causes the loss to be off by an order of magnitude
-                # but deepspeed needs this still in bfloat16
-                bnb_config["bnb_4bit_quant_storage"] = torch.float32
-            if self.cfg.model_config_type == "falcon_h1":
-                # output projection cannot be quantized for Falcon-H1 models
-                bnb_config["llm_int8_skip_modules"] = ["out_proj"]
+            if not _bnb_available:
+                LOG.warning(
+                    "Requested QLoRA 4-bit load but bitsandbytes is not installed/available. "
+                    "Proceeding with full precision weights. Install bitsandbytes on Linux "
+                    "or remove load_in_4bit to silence this message."
+                )
+                # ensure flags are removed so downstream HF doesn't expect quantization
+                self.model_kwargs.pop("load_in_4bit", None)
+                self.cfg.load_in_4bit = False
+                # fall through without setting quantization_config
+            else:
+                bnb_config = {
+                    "load_in_4bit": True,
+                    "llm_int8_threshold": 6.0,
+                    "llm_int8_has_fp16_weight": False,
+                    "bnb_4bit_compute_dtype": self.cfg.torch_dtype,
+                    "bnb_4bit_use_double_quant": True,
+                    "bnb_4bit_quant_type": "nf4",
+                    "bnb_4bit_quant_storage": torch.bfloat16,
+                }
+                if self.cfg.model_config_type in ["jamba", "qwen2_moe"] and not (
+                    self.cfg.deepspeed or self.is_fsdp_enabled
+                ):
+                    bnb_config["bnb_4bit_quant_storage"] = torch.float32
+                if self.cfg.model_config_type == "falcon_h1":
+                    bnb_config["llm_int8_skip_modules"] = ["out_proj"]
+                if self.cfg.bnb_config_kwargs:
+                    bnb_config.update(self.cfg.bnb_config_kwargs)
 
-            if self.cfg.bnb_config_kwargs:
-                bnb_config.update(self.cfg.bnb_config_kwargs)
-
-            self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
-                **bnb_config,
-            )
+                self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                    **bnb_config,
+                )
         elif self.cfg.adapter == "lora" and self.model_kwargs.get(
             "load_in_8bit", False
         ):
-            bnb_config = {
-                "load_in_8bit": True,
-            }
-            # Exclude mamba blocks from int8 quantization for jamba
-            if self.cfg.model_config_type == "jamba":
-                bnb_config["llm_int8_skip_modules"] = ["mamba"]
-            if self.cfg.model_config_type == "falcon_h1":
-                # output projection cannot be quantized for Falcon-H1 models
-                bnb_config["llm_int8_skip_modules"] = ["out_proj"]
-            self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
-                **bnb_config,
-            )
+            if not _bnb_available:
+                LOG.warning(
+                    "Requested 8-bit LoRA load but bitsandbytes unavailable. Proceeding in full precision."
+                )
+                self.model_kwargs.pop("load_in_8bit", None)
+                self.cfg.load_in_8bit = False
+            else:
+                bnb_config = {"load_in_8bit": True}
+                if self.cfg.model_config_type == "jamba":
+                    bnb_config["llm_int8_skip_modules"] = ["mamba"]
+                if self.cfg.model_config_type == "falcon_h1":
+                    bnb_config["llm_int8_skip_modules"] = ["out_proj"]
+                self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                    **bnb_config,
+                )
 
         # no longer needed per https://github.com/huggingface/transformers/pull/26610
         if "quantization_config" in self.model_kwargs or self.cfg.gptq:

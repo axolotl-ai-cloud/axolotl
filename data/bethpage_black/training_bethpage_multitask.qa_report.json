@@ -1,0 +1,65 @@
+{
+  "generated_at": "2025-09-22T18:25:39.765830Z",
+  "style_rewrite": {
+    "task": "style_rewrite",
+    "total": 18,
+    "over_limit_count": 0,
+    "over_limit_examples": [],
+    "length_distribution_top": [
+      [
+        21,
+        3
+      ],
+      [
+        22,
+        3
+      ],
+      [
+        24,
+        2
+      ],
+      [
+        15,
+        2
+      ],
+      [
+        16,
+        1
+      ],
+      [
+        14,
+        1
+      ],
+      [
+        20,
+        1
+      ],
+      [
+        17,
+        1
+      ],
+      [
+        11,
+        1
+      ],
+      [
+        19,
+        1
+      ],
+      [
+        18,
+        1
+      ],
+      [
+        26,
+        1
+      ]
+    ]
+  },
+  "rationale_grounding": {
+    "task": "description_generation.rationale",
+    "examples_with_rationale": 18,
+    "missing_note_occurrences": 0,
+    "missing_examples": []
+  }
+}

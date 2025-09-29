@@ -261,6 +261,15 @@ def validate_config(
     capabilities: Optional[dict] = None,
     env_capabilities: Optional[dict] = None,
 ) -> DictDefault:
+    """Validate raw cfg dict against pydantic models.
+
+    Windows workaround:
+      Setting AXO_SKIP_CAPABILITIES=1 will bypass the AxolotlConfigWCapabilities
+      model (which performs extended GPU/env capability validation) and instead
+      use the simpler AxolotlInputConfig schema. This is a temporary escape hatch
+      to avoid a pydantic recursion loop observed on some Windows + Python 3.11
+      environments when building the capabilities schema.
+    """
     AxolotlConfigWCapabilities = AxolotlConfigWCapabilitiesBase
     AxolotlInputConfig = AxolotlInputConfigBase
 
@@ -269,6 +278,17 @@ def validate_config(
             AxolotlConfigWCapabilities,
             AxolotlInputConfig,
         ) = merge_input_args()
+
+    # Escape hatch for recursion issues in pydantic capabilities schema
+    skip_capabilities = os.environ.get("AXO_SKIP_CAPABILITIES", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if skip_capabilities:
+        LOG.warning(
+            "AXO_SKIP_CAPABILITIES set - skipping GPU/env capabilities validation."
+        )
 
     # Convert datasets to proper format if needed
     if cfg.get("datasets"):
@@ -280,7 +300,7 @@ def validate_config(
             elif not isinstance(ds_cfg, SFTDataset):
                 cfg["datasets"][idx] = SFTDataset(**dict(ds_cfg))
 
-    if capabilities or env_capabilities:
+    if not skip_capabilities and (capabilities or env_capabilities):
         if (capabilities and env_capabilities is None) or (
             env_capabilities and capabilities is None
         ):

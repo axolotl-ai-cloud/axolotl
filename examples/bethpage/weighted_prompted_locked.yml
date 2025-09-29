@@ -1,0 +1,104 @@
+# Locked training configuration for Bethpage multitask prompted dataset
+# Purpose: Reproducible fine-tune on tiny weighted multi-task set.
+# Dataset size: 60 unique records (weighted sum 135). We drive training by steps, not epochs.
+# Token budget target: ~1.5M tokens (sufficient for adapter convergence without severe overfit).
+# Assumptions: Average combined prompt+response length <= 512 tokens after tokenization.
+
+# ------------------------- Model & Output -------------------------
+base_model: meta-llama/Llama-3-8B
+output_dir: outputs/bethpage-weighted-locked
+run_name: bethpage_weighted_v1
+
+# ------------------------- Data Source ----------------------------
+datasets:
+  - path: data/bethpage_black/training_bethpage_multitask.weighted.prompted.dedup.train.jsonl
+    type: completion          # file already chat-formatted with messages; no template rewrite needed
+    field_messages: messages  # explicit for clarity (default is "messages")
+    # NOTE: Original custom block (weighted_prompted_jsonl) specified epoch_size/temperature/enforce_quota.
+    # These aren't native schema fields and are currently ignored. Effective token budget is driven by max_steps.
+    # If weighted resampling is required, preprocess the jsonl to duplicate/scale samples externally or add a custom sampler.
+
+# Manifest verification (performed externally before launch)
+# Example: python scripts/verify_prompted_manifest.py --data <path> --manifest <path>.manifest.json
+
+# ------------------------- Validation -----------------------------
+# Hold out N records manually (recommend 6-8) to a separate file:
+# data/bethpage_black/validation.weighted.prompted.jsonl
+val_set_size: 8              # logic: small fixed subset (manually curated)
+# If using explicit validation file, set `val_set_size: 0` and integrate via dataset list.
+# Keeping val_set_size placeholder for trainer compatibility.
+
+# ------------------------- Prompt Handling ------------------------
+chat_template: llama3        # Use built-in llama3 chat template; 'default' not a valid enum.
+apply_chat_template: false   # Data contains 'messages'; no reconstruction needed.
+
+# ------------------------- Tokenization & Packing -----------------
+sequence_len: 512            # Keep tight to typical length; reduces wasted padding and speeds training.
+sample_packing: true         # Schema-compliant key (was 'packing').
+
+# ------------------------- Optimization (LoRA) --------------------
+adapter: lora                # Replaces legacy 'lora: true'
+lora_r: 16                   # Slightly higher rank for stylistic + reasoning blend tasks.
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]  # broaden adaptation
+bias: none
+
+# ------------------------- Training Schedule ----------------------
+# Steps chosen instead of 'epochs' due to replacement sampling & tiny base dataset.
+max_steps: 120               # ~120 * (global_batch_tokens) ≈ ~1.0M tokens (see comment below).
+warmup_steps: 12             # 10% warmup.
+lr_scheduler: cosine         # Renamed from lr_scheduler_type
+
+# Learning Rate:
+learning_rate: 1.5e-4        # Within typical adapter range (1e-4 .. 2e-4) for 8B w/ LoRA.
+# Removed unsupported min_lr_ratio (not in schema). If a floor LR is desired, use a custom scheduler.
+weight_decay: 0.01           # Light regularization.
+adam_beta1: 0.9
+adam_beta2: 0.999
+adam_epsilon: 1e-8
+max_grad_norm: 1.0
+optimizer: adamw_torch       # Supported optimizer enum value.
+
+# ------------------------- Batching -------------------------------
+# Micro + grad accumulation define effective global batch.
+micro_batch_size: 2          # Per device micro batch.
+gradient_accumulation_steps: 8
+# Effective examples/step/device = micro_batch_size * gradient_accumulation_steps = 16
+# With packing & average 512 tokens -> ~8192 tokens/device/step.
+# Single GPU assumption; scale comments if multi-GPU.
+
+# ------------------------- Precision & Performance ----------------
+bf16: true
+gradient_checkpointing: true # Memory savings; minor compute overhead acceptable.
+flash_attention: true        # If available; otherwise falls back gracefully.
+
+# ------------------------- Logging & Checkpoints ------------------
+logging_steps: 10
+save_steps: 40               # 3 checkpoints + final.
+eval_steps: 20               # Every ~16% of total steps.
+save_total_limit: 4
+report_to: [none]
+early_stopping_patience: 3   # If ignored by core trainer, manage via external script/log review.
+
+# ------------------------- Reproducibility ------------------------
+seed: 42                     # Sets torch, python, numpy (trainer integration handles) – keep consistent.
+# Dataset sampler uses the same seed above via weighted_prompted_jsonl.seed.
+
+# ------------------------- Early Stopping (Manual) ----------------
+# Monitor eval loss; stop if no improvement over 3 evals (not enforced here—operate via external script/log review).
+
+# ------------------------- Safety / Misc --------------------------
+resume_from_checkpoint: null
+skip_steps: 0
+model_init: null
+
+# ------------------------- Notes ---------------------------------
+# Token Budget Estimate:
+#  - Packed ~8192 tokens/step * 120 steps ≈ 983K tokens (conservative, still within target range).
+#  - Adjust max_steps upward if measured average tokens/step < expectation.
+# Task Balance:
+#  - Stochastic weighting retained; set enforce_quota: true if per-step variance proves harmful.
+# Future Tweaks:
+#  - Add stratified batch mixing layer if early instability observed.
+#  - Introduce temperature annealing (start 1.1 -> 1.0) if seeking more exploration early.

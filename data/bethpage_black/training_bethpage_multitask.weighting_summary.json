@@ -1,0 +1,24 @@
+{
+  "original_counts": {
+    "strategy_selection": 15,
+    "strategy_selection_negative": 15,
+    "description_generation": 15,
+    "style_rewrite": 15
+  },
+  "weights": {
+    "description_generation": 2.0,
+    "style_rewrite": 1.5,
+    "strategy_selection": 1.0,
+    "strategy_selection_negative": 1.0
+  },
+  "replication_strategy": "ceil(weight * BASE_MULTIPLIER)",
+  "base_multiplier": 1,
+  "new_counts": {
+    "strategy_selection": 15,
+    "strategy_selection_negative": 15,
+    "description_generation": 30,
+    "style_rewrite": 30
+  },
+  "total_original": 60,
+  "total_weighted": 90
+}

@@ -2,17 +2,32 @@
 
 import ctypes
 
-import bitsandbytes as bnb
 import torch
-from bitsandbytes.functional import QuantState, get_ptr
-from packaging.version import Version
+try:  # optional bitsandbytes
+    import bitsandbytes as bnb  # type: ignore
+    from bitsandbytes.functional import QuantState, get_ptr  # type: ignore
+    from packaging.version import Version
+    _BNB_AVAILABLE = True
+except Exception:  # pragma: no cover
+    bnb = None  # type: ignore
+    QuantState = object  # type: ignore
+    def get_ptr(_):  # type: ignore
+        raise RuntimeError("bitsandbytes not available: dequantize kernels disabled")
+    class _Dummy:
+        def __getattr__(self, _):
+            raise RuntimeError("bitsandbytes not available: dequantize kernels disabled")
+    _BNB_AVAILABLE = False
 
-cdequantize_blockwise_fp32 = bnb.functional.lib.cdequantize_blockwise_fp32
-cdequantize_blockwise_fp16_nf4 = bnb.functional.lib.cdequantize_blockwise_fp16_nf4
-cdequantize_blockwise_bf16_nf4 = bnb.functional.lib.cdequantize_blockwise_bf16_nf4
-
-CUDA_STREAM: torch.cuda.Stream | None = None
-HAS_CUDA_STREAM: bool = Version(bnb.__version__) > Version("0.43.3")
+if _BNB_AVAILABLE:  # type: ignore
+    cdequantize_blockwise_fp32 = bnb.functional.lib.cdequantize_blockwise_fp32  # type: ignore[attr-defined]
+    cdequantize_blockwise_fp16_nf4 = bnb.functional.lib.cdequantize_blockwise_fp16_nf4  # type: ignore[attr-defined]
+    cdequantize_blockwise_bf16_nf4 = bnb.functional.lib.cdequantize_blockwise_bf16_nf4  # type: ignore[attr-defined]
+    CUDA_STREAM: torch.cuda.Stream | None = None
+    HAS_CUDA_STREAM: bool = Version(bnb.__version__) > Version("0.43.3")  # type: ignore
+else:
+    cdequantize_blockwise_fp32 = cdequantize_blockwise_fp16_nf4 = cdequantize_blockwise_bf16_nf4 = _Dummy()  # type: ignore
+    CUDA_STREAM = None
+    HAS_CUDA_STREAM = False
 
 
 def dequantize(
@@ -46,7 +61,7 @@ def dequantize(
         Uses CUDA streams for better performance when available in newer `bitsandbytes`
         versions (>0.43.3).
     """
-    if quant_state is None:
+    if (quant_state is None) or (not _BNB_AVAILABLE):
         return W
 
     # Get the target device from input tensor W

@@ -9,7 +9,13 @@ from typing import List, Optional, Type, Union
 import safetensors
 import torch
 from accelerate import init_empty_weights
-from bitsandbytes.nn import Linear4bit, Params4bit
+try:  # optional bitsandbytes
+    from bitsandbytes.nn import Linear4bit, Params4bit  # type: ignore
+    _BNB_AVAILABLE = True
+except Exception:  # pragma: no cover
+    Linear4bit = type("_Linear4bitUnavailable", (), {})  # dummy placeholder
+    Params4bit = type("_Params4bitUnavailable", (), {})  # dummy placeholder
+    _BNB_AVAILABLE = False
 from fastcore.parallel import parallel
 from torch import Tensor, nn
 from tqdm import tqdm
@@ -46,6 +52,9 @@ def _replace_linear(
 
         if isinstance(module, torch.nn.Linear) and name not in skip_modules:
             if issubclass(linear_replacement, Linear4bit):
+                if not _BNB_AVAILABLE:
+                    # skip replacement silently when bitsandbytes isn't present
+                    continue
                 model._modules[name] = linear_replacement(
                     module.in_features,
                     module.out_features,
@@ -102,7 +111,7 @@ def load_and_quantize(
     try:
         if quant_method == "bnb":
             param = submodule.get_parameter(value_key)
-            if isinstance(param, Params4bit):
+            if _BNB_AVAILABLE and isinstance(param, Params4bit):
                 # With `sync_module_states=True`, a meta device Params4bit needs to be the same
                 # shape as the quantized Params4bit with an initialized quant_state. However,
                 # FSDP only syncs parameters and buffers, so the quant_state isn't copied. This

@@ -992,14 +992,36 @@ class AxolotlInputConfig(
         return None
 
 
-class AxolotlConfigWCapabilities(AxolotlInputConfig):
-    """wrapper to valdiate GPU capabilities with the configured options"""
+import os  # added for capability skip detection
+
+if os.environ.get("AXO_SKIP_CAPABILITIES", "").lower() in ("1", "true", "yes"):
+    class AxolotlConfigWCapabilities(AxolotlInputConfig):  # type: ignore
+        """Lightweight config when skipping GPU/env capability validation.
+
+        Activated by setting AXO_SKIP_CAPABILITIES=1|true|yes before importing axolotl.
+        Avoids constructing the full validator-heavy model that triggers a pydantic
+        recursion loop in certain Windows environments.
+        """
+
+        capabilities: GPUCapabilities | None = None
+        env_capabilities: EnvCapabilities | None = None
+
+else:
+    class AxolotlConfigWCapabilities(AxolotlInputConfig):
+        """wrapper to valdiate GPU capabilities with the configured options"""
+
+        # NOTE: Escape hatch for Windows recursion issues.
+        # If AXO_SKIP_CAPABILITIES is set, we still declare the fields so code that
+        # accesses them does not break, but validators will early-return doing no work.
 
     capabilities: GPUCapabilities
     env_capabilities: EnvCapabilities
 
     @model_validator(mode="after")
     def check_bf16(self):
+        import os
+        if os.environ.get("AXO_SKIP_CAPABILITIES", "").lower() in ("1", "true", "yes"):
+            return self
         if self.capabilities.bf16:
             if not self.bf16 and not self.bfloat16:
                 LOG.info(
@@ -1019,6 +1041,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_sample_packing_w_sdpa_bf16(cls, data):
+        import os
+        if os.environ.get("AXO_SKIP_CAPABILITIES", "").lower() in ("1", "true", "yes"):
+            return data
         is_sm_90: bool = (
             data["capabilities"]
             and data["capabilities"].get("compute_capability") == "sm_90"
@@ -1040,6 +1065,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_multigpu_unsloth(cls, data):
+        import os
+        if os.environ.get("AXO_SKIP_CAPABILITIES", "").lower() in ("1", "true", "yes"):
+            return data
         if (
             data.get("unsloth_lora_mlp")
             or data.get("unsloth_lora_qkv")
@@ -1055,6 +1083,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_multigpu_lora_kernels(cls, data):
+        import os
+        if os.environ.get("AXO_SKIP_CAPABILITIES", "").lower() in ("1", "true", "yes"):
+            return data
         if (
             data.get("lora_mlp_kernel")
             or data.get("lora_qkv_kernel")
@@ -1074,6 +1105,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_auto_enable_lora_kernels(cls, data):
+        import os
+        if os.environ.get("AXO_SKIP_CAPABILITIES", "").lower() in ("1", "true", "yes"):
+            return data
         # Only proceed if using LoRA or QLoRA adapter
         if data.get("rl"):
             # RL trainers not tested so don't enable kernels by default
@@ -1126,6 +1160,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_adopt_torch_version(cls, data):
+        import os
+        if os.environ.get("AXO_SKIP_CAPABILITIES", "").lower() in ("1", "true", "yes"):
+            return data
         if (data.get("optimizer") is not None) and ("adopt" in data.get("optimizer")):
             env_capabilities = data.get("env_capabilities", {})
             torch_version = env_capabilities.get("torch_version")
@@ -1144,6 +1181,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_flex_torch_version(cls, data):
+        import os
+        if os.environ.get("AXO_SKIP_CAPABILITIES", "").lower() in ("1", "true", "yes"):
+            return data
         if (data.get("flex_attention") is not None) and (data.get("flex_attention")):
             env_capabilities = data.get("env_capabilities", {})
             torch_version = env_capabilities.get("torch_version")
@@ -1162,6 +1202,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_torch_compile_auto(cls, data):
+        import os
+        if os.environ.get("AXO_SKIP_CAPABILITIES", "").lower() in ("1", "true", "yes"):
+            return data
         if data.get("torch_compile") == "auto":
             env_capabilities = data.get("env_capabilities", {})
             if env_capabilities.get("torch_version"):
@@ -1181,6 +1224,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_beta_and_trl_beta_match(cls, data):
+        import os
+        if os.environ.get("AXO_SKIP_CAPABILITIES", "").lower() in ("1", "true", "yes"):
+            return data
         if data.get("beta") and data.get("trl", {}).get("beta"):
             if data["beta"] != data["trl"]["beta"]:
                 raise ValueError("beta and trl.beta must match or one must be removed")
@@ -1188,6 +1234,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="after")
     def check_min_torch_version(self):
+        import os
+        if os.environ.get("AXO_SKIP_CAPABILITIES", "").lower() in ("1", "true", "yes"):
+            return self
         if self.env_capabilities and self.env_capabilities.torch_version:
             torch_version = self.env_capabilities.torch_version
             if version.parse(torch_version) < version.parse("2.6.0"):
@@ -1200,6 +1249,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_qat_config(cls, data):
+        import os
+        if os.environ.get("AXO_SKIP_CAPABILITIES", "").lower() in ("1", "true", "yes"):
+            return data
         qat_cfg = data.get("qat", {})
         if not qat_cfg:
             return data
@@ -1229,6 +1281,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_fsdp_torch_version(cls, data):
+        import os
+        if os.environ.get("AXO_SKIP_CAPABILITIES", "").lower() in ("1", "true", "yes"):
+            return data
         env_capabilities = data.get("env_capabilities", {})
         torch_version = env_capabilities.get("torch_version")
 
@@ -1246,6 +1301,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def default_dataloader_opts(cls, data):
+        import os
+        if os.environ.get("AXO_SKIP_CAPABILITIES", "").lower() in ("1", "true", "yes"):
+            return data
         if (
             data.get("dataloader_num_workers") is None
             and data.get("dataloader_pin_memory") is None
@@ -1260,6 +1318,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def default_dataset_processes(cls, data):
+        import os
+        if os.environ.get("AXO_SKIP_CAPABILITIES", "").lower() in ("1", "true", "yes"):
+            return data
         if data.get("dataset_processes") is None:
             data["dataset_processes"] = get_default_process_count()
 

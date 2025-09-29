@@ -1,0 +1,44 @@
+{
+  "total_examples": 684,
+  "train_count": 564,
+  "val_count": 60,
+  "test_count": 60,
+  "task_type_train": {
+    "strategy_selection": 250,
+    "description_synthesis": 314
+  },
+  "task_type_val": {
+    "strategy_selection": 48,
+    "description_synthesis": 12
+  },
+  "task_type_test": {
+    "description_synthesis": 14,
+    "strategy_selection": 46
+  },
+  "yard_bucket_train": {
+    "260-290": 118,
+    "UNK": 314,
+    ">= 290": 126,
+    "< 230": 6
+  },
+  "yard_bucket_val": {
+    ">= 290": 12,
+    "230-260": 12,
+    "< 230": 12,
+    "UNK": 12,
+    "260-290": 12
+  },
+  "yard_bucket_test": {
+    "UNK": 14,
+    "< 230": 14,
+    ">= 290": 14,
+    "260-290": 14,
+    "230-260": 4
+  },
+  "leakage_direct_count": 187,
+  "leakage_any_strategy_count": 91,
+  "leakage_total_checked": 684,
+  "hash_train": "e3dbea728272ac2e",
+  "hash_val": "a770fe7ae39872b4",
+  "hash_test": "49d853613ccd2809"
+}

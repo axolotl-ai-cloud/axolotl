@@ -51,6 +51,20 @@
 
 Axolotl is a tool designed to streamline post-training for various AI models.
 
+### 📌 Project Objectives (Authoritative Reference)
+
+This section defines the canonical objectives for the embedded Bethpage Black strategy + description prototype. Refer to this list in issues, PRs, and planning; do not redefine elsewhere.
+
+1. Unified Model Interface: A single chat endpoint where the same fine‑tuned base + LoRA adapter produces BOTH tee‑shot strategy recommendations and hole descriptions.
+2. Strategy Accuracy: Predict normalized discrete cutoff yardages aligned with on-hole options; gracefully coerce outputs to the nearest valid available strategy when the raw generation drifts.
+3. Description Specificity: Generate grounded hole descriptions (par, yardage, hazards, strategic theme, preferred miss) without inventing unsupported features or yardages.
+4. Data Evolution (v3 Goal): Incorporate structured course attributes and curated ("gold") descriptions directly into training prompts and targets so the model internalizes domain grounding instead of relying on deterministic post-processing.
+5. Transparent Inference UX: Model path is the default for both tasks; deterministic description fallback remains optional for debugging / regression comparison.
+6. Reproducibility & Maintainability: Clean LoRA training script, manifest-verified datasets, evaluation metrics (MAE / exact-match for strategies), lightweight Windows-friendly environment.
+7. Extensibility: Architecture leaves room for adding approach-shot logic, expanded hazard taxonomy, and multi-course generalization without refactoring core trainer or chat surface.
+
+If an enhancement conflicts with any of these objectives, document the trade-off before merging.
+
 Features:
 
 - **Multiple Model Support**: Train various models like LLaMA, Mistral, Mixtral, Pythia, and more. We are compatible with HuggingFace transformers causal language models.
@@ -166,3 +180,185 @@ If you use Axolotl in your research or projects, please cite it as follows:
 ## 📜 License
 
 This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) file for details.
+
+## 📓 Example: Bethpage Multitask Prompted Dataset
+
+An internal example (golf course strategy) demonstrates a full pipeline:
+
+1. Enrichment & schema validation of structured hole data.
+2. Multi-task sample generation (strategy_selection, strategy_selection_negative, description_generation, style_rewrite).
+3. Style compression + QA (word cap & rationale grounding).
+4. Weighting / oversampling of narrative tasks.
+5. Chat-style prompt construction into `messages` format.
+
+Artifacts in `data/bethpage_black/`:
+- `training_bethpage_multitask.weighted.train.jsonl` – weighted raw tasks with `sample_weight`.
+- `build_prompted_dataset.py` – builds chat-formatted dataset.
+- `training_bethpage_multitask.weighted.prompted.train.jsonl` – output with `messages` list.
+- `prompt_template_spec.md` – detailed template spec.
+
+Regenerate prompted dataset:
+```bash
+python data/bethpage_black/build_prompted_dataset.py
+```
+
+JSONL line schema (abridged):
+```json
+{
+  "task": "description_generation",
+  "hole": 5,
+  "sample_weight": 2.0,
+  "messages": [
+    {"role": "system", "content": "..."},
+    {"role": "user", "content": "..."},
+    {"role": "assistant", "content": "..."}
+  ]
+}
+```
+
+Training integration: reference the prompted file with a `chat_template` dataset entry. Future improvement path: leverage `sample_weight` for probabilistic sampling instead of physical replication.
+
+### Dedupe, Normalization & Weighted Sampling (Bethpage Example)
+
+After generating the physically replicated weighted prompted dataset, we:
+
+1. Run `scripts/dedupe_normalize_prompted.py` to:
+   - Merge duplicate assistant outputs, summing `sample_weight`.
+   - Normalize mojibake artifacts (e.g., `â€™` -> `’`).
+2. Evaluate quality with `scripts/evaluate_prompted_dataset.py` to confirm:
+   - Zero encoding artifacts
+   - High 4-gram uniqueness (no replication collapse)
+3. Sample per-epoch using `scripts/sample_prompted_dataset.py` with probabilities ∝ `sample_weight`.
+
+python scripts/dedupe_normalize_prompted.py \
+  data/bethpage_black/training_bethpage_multitask.weighted.prompted.train.jsonl \
+  -o data/bethpage_black/training_bethpage_multitask.weighted.prompted.dedup.train.jsonl
+
+# Re-evaluate metrics
+python scripts/evaluate_prompted_dataset.py \
+  data/bethpage_black/training_bethpage_multitask.weighted.prompted.dedup.train.jsonl
+
+# Sample an epoch (probabilistic weighting)
+python scripts/sample_prompted_dataset.py \
+  --data data/bethpage_black/training_bethpage_multitask.weighted.prompted.dedup.train.jsonl \
+  --epoch-size 1000 --seed 7 --summary \
+  --out data/bethpage_black/epoch_sample_1000.jsonl
+```
+
+Benefits vs physical replication:
+- Preserves intended task balance while maximizing lexical diversity.
+- Eliminates duplicate gradient contributions for identical targets.
+- Normalizes text early, avoiding downstream tokenization inconsistencies.
+
+Result snapshot (before → after dedupe):
+- 4-gram uniqueness (description_generation): 0.000 → 0.947
+- Encoding artifact rate: 0.333 → 0.000
+- Duplicate assistant outputs: many → none
+
+You can adjust sampling sharpness via `--temperature` (e.g., >1 to flatten, <1 to emphasize high-weight tasks).
+
+```
+python scripts/freeze_prompted_dataset.py \
+  --data data/bethpage_black/training_bethpage_multitask.weighted.prompted.dedup.train.jsonl \
+  ### Quick Launch (Bethpage Example)
+
+  Reproduce the small multi-task fine-tune (strategy selection + description + style rewrite) with deterministic weighted sampling and manifest verification:
+
+  1. Freeze / verify dataset (already frozen if you have the manifest):
+  ```bash
+  python scripts/verify_prompted_manifest.py --data data/bethpage_black/prompted_dedup.train.jsonl \
+    --manifest data/bethpage_black/prompted_dedup.train.manifest.json
+  ```
+  2. (Optional) Validate environment & hardware:
+  ```bash
+  python scripts/validate_env.py --out-json env_report.json --output-dir outputs --min-free-gb 1 \
+    --manifest data/bethpage_black/prompted_dedup.train.manifest.json
+  ```
+  3. Launch training (locked config):
+  ```bash
+  python -m axolotl.cli.train examples/bethpage/weighted_prompted_locked.yml \
+    dataset=data/bethpage_black/prompted_dedup.train.jsonl
+  ```
+  4. For stratified per-window task diversity add:
+  ```bash
+  python -m axolotl.cli.train examples/bethpage/weighted_prompted_stratified.yml \
+    dataset=data/bethpage_black/prompted_dedup.train.jsonl
+  ```
+
+  Early stopping (patience=3) is enabled in the locked config. A manifest mismatch causes startup failure, ensuring reproducibility.
+  --out data/bethpage_black/training_bethpage_multitask.weighted.prompted.dedup.train.manifest.json
+```
+
+Manifest includes sha256, line counts, per-task weights, and a format tag for reproducibility audits.
+
+## Python 3.11 Environment (Windows) 🔧
+
+If you're on Windows and ran into build/import issues on newer Python (e.g. 3.13), use a supported 3.11 environment for full Axolotl features:
+
+1. Install Python 3.11 (verify with `py -3.11 -V`).
+2. From repo root run:
+  ```powershell
+  scripts/setup_py311.ps1
+  ```
+  Add `-ForceRecreate` to rebuild or `-SkipTests` to omit test dependencies.
+3. Activate later:
+  ```powershell
+  . .venv311\Scripts\Activate.ps1
+  ```
+4. Train (example):
+  ```powershell
+  python -m axolotl.cli.main train examples/bethpage/weighted_prompted_locked.yml `
+     dataset=data/bethpage_black/prompted_dedup.train.jsonl `
+     max_steps=50 eval_steps=50 save_steps=50 logging_steps=10
+  ```
+
+The setup script retries with a conservative NumPy pin if the first install fails. Heavy optional GPU extras (xformers, bitsandbytes) are skipped on Windows unless you manually enable them.
+
+### Using Weighted Prompted Iterable in Training
+
+Example config: `examples/bethpage/weighted_prompted.yml`
+
+Config block:
+```yaml
+weighted_prompted_jsonl:
+  path: data/bethpage_black/training_bethpage_multitask.weighted.prompted.dedup.train.jsonl
+  epoch_size: 2000
+  seed: 42
+  temperature: 1.0
+  enforce_quota: false
+```
+
+When present, the loader constructs a `WeightedPromptedIterableDataset` providing on-the-fly weighted sampling. Set `enforce_quota: true` to eliminate multinomial variance in per-task counts.
+
+### Stratified Batch / Window Mixing
+
+For very small multi-task datasets, per-batch stochastic sampling can yield batches dominated by a single task early in training. Enable stratified windows to guarantee local task diversity:
+
+Config additions:
+```yaml
+weighted_prompted_jsonl:
+  path: ...
+  epoch_size: 4000
+  seed: 42
+  stratify_window_size: 8   # emit windows containing (roughly) one sample per task
+  stratify_shuffle: true    # shuffle within each window before yielding
+```
+
+Behavior:
+- Builds windows by round-robin over tasks, sampling each example within its task by relative intra-task weight.
+- Optional shuffle randomizes order inside each window to avoid position bias.
+- Falls back to standard multinomial sampling when `stratify_window_size` unset or 0.
+- Can combine with `enforce_quota: true` to honor exact per-epoch task counts, though later windows may concentrate a single task once other quotas are exhausted (expected when quotas not divisible by window size).
+
+Demo:
+```
+python scripts/demo_stratified_windows.py \
+  --data data/bethpage_black/training_bethpage_multitask.weighted.prompted.dedup.train.jsonl \
+  --epoch-size 32 --window-size 8
+```
+Sample output:
+```
+Window 0: description_generation=2 strategy_selection=2 strategy_selection_negative=2 style_rewrite=2
+...
+```
+This ensures gradient signals per optimizer step (with packing/accumulation) reflect all tasks early, stabilizing initial loss curves. When combining with quotas, expect the final windows to skew toward tasks with remaining quota remainders.

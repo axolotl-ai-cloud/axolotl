@@ -124,6 +124,7 @@ def tokenize_example(example):
 def train_model(
     plan,
     data_file=DEFAULT_DATA_FILE,
+    val_data_file: str | None = None,
     resume=False,
     log_path=None,
     force_cpu=False,
@@ -132,6 +133,8 @@ def train_model(
     base_model_override: str | None = None,
     per_device_bs_override: int | None = None,
     grad_accum_override: int | None = None,
+    lr_override: float | None = None,
+    time_limit_min: float | None = None,
 ):
     # Configure SDP kernels before model init
     _configure_sdp_kernels(force_cpu)
@@ -151,6 +154,29 @@ def train_model(
 
     ds_raw = load_dataset("json", data_files=data_file)["train"]
 
+    # Build train/eval split
+    if val_data_file:
+        ds_train_raw = ds_raw
+        ds_eval_raw = load_dataset("json", data_files=val_data_file)["train"]
+    else:
+        has_split_col = "split" in ds_raw.column_names
+        if has_split_col:
+            def _is_train(example):
+                s = str(example.get("split", "")).lower()
+                return s in ("train", "training", "tr")
+            def _is_eval(example):
+                s = str(example.get("split", "")).lower()
+                return s in ("dev", "valid", "val", "validation", "eval")
+            ds_train_raw = ds_raw.filter(_is_train)
+            if len(ds_train_raw) == 0:
+                ds_train_raw = ds_raw
+            ds_eval_raw = ds_raw.filter(_is_eval)
+            if len(ds_eval_raw) == 0:
+                ds_eval_raw = None
+        else:
+            split = ds_raw.train_test_split(test_size=0.1, seed=42)
+            ds_train_raw, ds_eval_raw = split["train"], split["test"]
+
     # Filter out known negative examples (is_correct == False or use_for_training == False)
     def _filter_training_examples(example):
         is_correct = example.get("is_correct")
@@ -160,10 +186,12 @@ def train_model(
         if is_correct is False or use_for_training is False:
             return False
         return True
-    ds = ds_raw.filter(_filter_training_examples)
-    if len(ds) == 0:
-        print("Warning: filter removed all examples; using unfiltered dataset.")
-        ds = ds_raw
+    # Apply training-only filtering to the train split; keep eval split intact so we can compute eval_loss
+    ds_train = ds_train_raw.filter(_filter_training_examples) if ds_train_raw is not None else ds_raw
+    ds_eval = ds_eval_raw if ds_eval_raw is not None else None
+    if len(ds_train) == 0:
+        print("Warning: filter removed all training examples; using unfiltered train dataset.")
+        ds_train = ds_train_raw or ds_raw
 
     tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left")
     tokenizer.pad_token = tokenizer.eos_token
@@ -172,8 +200,15 @@ def train_model(
     _TOKENIZER = tokenizer
 
     # Ensure tokenized columns are present and drop raw fields
-    original_columns = ds.column_names
-    ds = ds.map(tokenize_example, remove_columns=original_columns)
+    original_columns = ds_train.column_names
+    ds_train = ds_train.map(tokenize_example, remove_columns=original_columns)
+    if ds_eval is not None:
+        eval_columns = ds_eval.column_names
+        ds_eval = ds_eval.map(tokenize_example, remove_columns=eval_columns)
+
+    # Determine if we actually have eval examples post-tokenization
+    has_eval = ds_eval is not None and len(ds_eval) > 0
+    print(f"Dataset sizes -> train: {len(ds_train)}, eval: {len(ds_eval) if ds_eval is not None else 0}")
 
     model = AutoModelForCausalLM.from_pretrained(model_name)
     model.resize_token_embeddings(len(tokenizer))
@@ -259,18 +294,44 @@ def train_model(
     trainer_state_path = os.path.join(ckpt_dir, "trainer_state.json")
     resume_ckpt = ckpt_dir if os.path.isfile(trainer_state_path) else None
 
+    # Ensure eval/save alignment when using load_best_model_at_end
+    eval_every = 80 if has_eval else None
+    if has_eval and save_steps % eval_every != 0:
+        # pick a divisor of save_steps
+        for cand in (50, 64, 80, 128, 160, 256):
+            if save_steps % cand == 0:
+                eval_every = cand
+                break
+        else:
+            eval_every = max(1, save_steps)
+
     training_args = TrainingArguments(
         output_dir=ckpt_dir,
+        do_train=True,
+    do_eval=True if has_eval else False,
         per_device_train_batch_size=per_device_bs,
+        per_device_eval_batch_size=per_device_bs,
         gradient_accumulation_steps=grad_accum,
         max_steps=max_steps,
         save_steps=save_steps,
         save_total_limit=1,
-        learning_rate=5e-4,
-        logging_steps=1,
+        learning_rate=(lr_override if lr_override is not None else 2e-4),
+        weight_decay=0.01,
+        max_grad_norm=0.75,
+        warmup_ratio=0.03,
+        lr_scheduler_type="cosine",
+        logging_strategy="steps",
+        logging_steps=10,
         fp16=False,
         resume_from_checkpoint=resume_ckpt,
         remove_unused_columns=False,
+    eval_strategy="steps" if has_eval else "no",
+    eval_steps=eval_every if has_eval else None,
+    prediction_loss_only=True if has_eval else False,
+    load_best_model_at_end=True if has_eval else False,
+    metric_for_best_model="eval_loss" if has_eval else None,
+    greater_is_better=False if has_eval else None,
+        save_strategy="steps",
         # Disable external trackers (e.g., trackio/wandb) to avoid gradio/pydub imports on Py 3.13
         report_to="none",
         # Force CPU when requested or when GPU is incompatible
@@ -281,6 +342,7 @@ def train_model(
 
     # Custom callback to record per-step loss
     from transformers import TrainerCallback
+    from transformers import EarlyStoppingCallback
     class LossRecorder(TrainerCallback):
         def __init__(self):
             super().__init__()
@@ -293,11 +355,38 @@ def train_model(
 
     loss_recorder = LossRecorder()
 
+    callbacks = [loss_recorder]
+    if has_eval:
+        # Attempt to read threshold from environment fallback (since CLI arg lives in main)
+        try:
+            est = float(os.environ.get('EARLY_STOP_THRESHOLD', '0.001'))
+        except ValueError:
+            est = 0.001
+        callbacks.append(EarlyStoppingCallback(early_stopping_patience=3, early_stopping_threshold=est))
+
+    # Optional wall-clock time limit auto-stop
+    if time_limit_min is not None and time_limit_min > 0:
+        import time
+        class TimeLimitCallback(TrainerCallback):
+            def __init__(self, minutes: float):
+                super().__init__()
+                self.minutes = minutes
+                self.deadline = None
+            def on_init_end(self, args, state, control, **kwargs):
+                self.deadline = time.time() + (self.minutes * 60.0)
+            def on_step_end(self, args, state, control, **kwargs):
+                if self.deadline is not None and time.time() >= self.deadline:
+                    print(f"Time limit reached ({self.minutes} min). Stopping training…")
+                    control.should_training_stop = True
+                return control
+        callbacks.append(TimeLimitCallback(time_limit_min))
+
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=ds,
-        callbacks=[loss_recorder],
+        train_dataset=ds_train,
+        eval_dataset=ds_eval if ds_eval is not None else None,
+        callbacks=callbacks,
     )
 
     train_result = trainer.train(resume_from_checkpoint=resume_ckpt)
@@ -437,6 +526,12 @@ def main():
         help="Path to training JSONL dataset."
     )
     parser.add_argument(
+        "--val-data-file",
+        type=str,
+        default=None,
+        help="Optional path to validation JSONL dataset."
+    )
+    parser.add_argument(
         "--per-device-batch",
         type=int,
         default=None,
@@ -448,6 +543,36 @@ def main():
         default=None,
         help="Override gradient_accumulation_steps."
     )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=None,
+        help="Override learning rate."
+    )
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=None,
+        help="Override max training steps (overrides mode preset)."
+    )
+    parser.add_argument(
+        "--save-steps",
+        type=int,
+        default=None,
+        help="Override checkpoint/eval save frequency in steps."
+    )
+    parser.add_argument(
+        "--time-limit-min",
+        type=float,
+        default=None,
+        help="Optional wall-clock limit in minutes (auto-stop)."
+    )
+    parser.add_argument(
+        "--early-stop-threshold",
+        type=float,
+        default=0.001,
+        help="Early stopping threshold for eval loss improvements (if eval present)."
+    )
     args = parser.parse_args()
     mode_to_plan = {"debug": 0, "debug_training": 1, "1_hour": 2, "8_hour": 3}
     plan = mode_to_plan[args.mode]
@@ -457,12 +582,17 @@ def main():
     success, ckpt_dir, metrics, grad_norm, learning_rate, losses = train_model(
         plan,
         data_file=args.data_file,
+    val_data_file=args.val_data_file,
         resume=True,
         log_path=log_path,
         force_cpu=args.cpu,
         base_model_override=args.base_model,
         per_device_bs_override=args.per_device_batch,
         grad_accum_override=args.grad_accum,
+    lr_override=args.learning_rate,
+        max_steps_override=args.max_steps,
+        save_steps_override=args.save_steps,
+        time_limit_min=args.time_limit_min,
     )
     # Basic status to console
     print({"mode": args.mode, "success": success, "ckpt_dir": ckpt_dir, "metrics": metrics})
