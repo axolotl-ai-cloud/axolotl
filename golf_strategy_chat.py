@@ -328,7 +328,7 @@ def compose_description_structured(
     preferred_miss: str | None,
     hazards: list[str] | set[str] | None,
 ) -> str:
-    """Compose a grounded paragraph from structured attributes rather than copying dataset text."""
+    """Compose a grounded paragraph from structured attributes with par-aware narrative (no copying)."""
     attrs = attrs or {}
     lead = f"Hole {hole_num} at Bethpage Black"
     if isinstance(par, int) and isinstance(yardage, int):
@@ -350,44 +350,102 @@ def compose_description_structured(
     sec_hz = attrs.get("secondary_hazard_type")
     key_hz = attrs.get("key_hazards") or []
 
-    if shape or gradient:
-        if shape and gradient:
-            bits.append(f"It’s a {shape.replace('_', ' ')} that plays {gradient.replace('_', ' ')} from the tee.")
-        elif shape:
-            bits.append(f"It’s a {shape.replace('_', ' ')} with emphasis on line and distance control.")
-        else:
-            bits.append(f"It plays {gradient.replace('_', ' ')} from the tee.")
-    if key_hz or pri_hz or sec_hz:
-        hz_list = list(sorted(set([*(key_hz or []), *(h for h in [pri_hz, sec_hz] if h)])))
-        if hz_list:
-            bits.append("Key hazards: " + ", ".join(hz_list) + ".")
-    if elev_note:
-        bits.append(f"Elevation: {elev_note}.")
-    if risk_note:
-        bits.append(f"Risk: {risk_note}.")
-    if angle_note:
-        bits.append(f"Angles: {angle_note}.")
-    # Weave strategic theme into prose rather than echoing it
-    if theme:
-        tokens = [t.strip() for t in str(theme).split("+") if t.strip()]
-        seen: set[str] = set()
-        for tok in tokens:
-            directives = THEME_DIRECTIVES.get(tok)
-            if directives:
-                for d in directives:
-                    if d not in seen:
-                        bits.append(d)
-                        seen.add(d)
-    if preferred_miss:
-        bits.append(f"Preferred miss: {preferred_miss}.")
+    # Sanitize short text attributes
+    def _clean_txt(x: str | None) -> str | None:
+        if not isinstance(x, str):
+            return None
+        return re.sub(r"\s+", " ", x).strip()
+    gradient = _clean_txt(gradient)
+    shape = _clean_txt(shape)
+    elev_note = _clean_txt(elev_note)
 
-    # If we also have hazards set from aggregate signals, summarize succinctly
-    if hazards and not key_hz:
-        hz = sorted(set(hazards))[:4]
-        if hz:
-            bits.append("Additional hazards: " + ", ".join(hz) + ".")
+    # Normalize hazards
+    hz_all = list(sorted(set([*(key_hz or []), *(h for h in [pri_hz, sec_hz] if h)])))
+    if hazards:
+        hz_all.extend(list(hazards))
+    hz_all = [h for h in {str(h).lower().strip() for h in hz_all} if h and h not in {"none", "n/a", "hazard"}]
 
-    text = header + " " + " ".join(bits)
+    if par == 3:
+        # Par-3 narrative: concise, label-free prose
+        sentences: list[str] = []
+        # Opener with shape/gradient
+        opener_bits: list[str] = []
+        if shape:
+            opener_bits.append(f"It’s a {shape.replace('_', ' ')}")
+        if gradient:
+            verb = "plays" if not opener_bits else "that plays"
+            opener_bits.append(f"{verb} {gradient.replace('_', ' ')} from the tee")
+        if opener_bits:
+            sentences.append(" ".join(opener_bits) + ".")
+        # Hazards phrase
+        hz_phrase = None
+        if hz_all:
+            has_water = any("water" in h for h in hz_all)
+            has_bunker = any("bunker" in h for h in hz_all)
+            if has_water and has_bunker:
+                hz_phrase = "The shot must carry water to a green guarded by bunkers."
+            elif has_water:
+                hz_phrase = "The shot must carry water to reach the putting surface."
+            elif has_bunker:
+                hz_phrase = "Bunkers tightly guard the green and collect misses."
+            else:
+                hz_phrase = "The green is well defended, rewarding precise distance control."
+        if hz_phrase:
+            sentences.append(hz_phrase)
+        # Elevation and theme-aware guidance
+        if elev_note or gradient:
+            if theme and any(t.strip() in (theme or "").split("+") for t in ["wind_read", "elevation_adjustment"]):
+                sentences.append("Account for the elevation when selecting the club and use spin to hold the green.")
+            else:
+                sentences.append("Club selection matters with the elevation change; favor a flight that lands softly.")
+        # Preferred miss, angles, and risk notes folded into prose
+        tail_bits: list[str] = []
+        if preferred_miss:
+            tail_bits.append(f"The safer miss is {preferred_miss}.")
+        if angle_note:
+            tail_bits.append(f"Better angles come from {angle_note}.")
+        if risk_note:
+            tail_bits.append(f"Be mindful of {risk_note}.")
+        if tail_bits:
+            sentences.append(" ".join(tail_bits))
+        text = header + " " + " ".join(sentences)
+    else:
+        # Par-4/5 narrative
+        if shape or gradient:
+            if shape and gradient:
+                bits.append(f"It’s a {shape.replace('_', ' ')} that plays {gradient.replace('_', ' ')} from the tee.")
+            elif shape:
+                bits.append(f"It’s a {shape.replace('_', ' ')} with emphasis on line and distance control.")
+            else:
+                bits.append(f"It plays {gradient.replace('_', ' ')} from the tee.")
+        if hz_all:
+            has_water = any("water" in h for h in hz_all)
+            has_bunker = any("bunker" in h for h in hz_all)
+            if has_water and has_bunker:
+                bits.append("Key trouble includes water and deep bunkers.")
+            elif has_water:
+                bits.append("Water is in play off the tee or on approach.")
+            elif has_bunker:
+                bits.append("Deep bunkers frame the landing and green complexes.")
+        if elev_note:
+            bits.append(f"Elevation: {elev_note}.")
+        if angle_note:
+            bits.append(f"Angles: {angle_note}.")
+        if risk_note:
+            bits.append(f"Risk: {risk_note}.")
+        if theme:
+            tokens = [t.strip() for t in str(theme).split("+") if t.strip()]
+            selected = []
+            for tok in tokens:
+                d = THEME_DIRECTIVES.get(tok)
+                if d:
+                    selected.append(d[0])
+            if selected:
+                bits.append(" ".join(selected[:2]))
+        if preferred_miss:
+            bits.append(f"Preferred miss: {preferred_miss}.")
+        text = header + " " + " ".join(bits)
+
     text = keep_only_official_yardage(text, yardage)
     text = sentence_boundary_trim(text, min_words=50, target_words=110, max_words=160)
     return text
@@ -452,42 +510,7 @@ class GolfStrategyChat:
                 f"Adapter folder not found: {self.adapter_path}. "
                 "Pass --adapter_dir to point at your trained checkpoint, or use --base-only to compare base model output."
             )
-
-        # Load base model and tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(self.base_model_name, padding_side="left")
-        self.tokenizer.pad_token = self.tokenizer.eos_token
-
-        # Prefer fp16 on CUDA for speed/memory, else float32
-        load_dtype = torch.float16 if (self.device.type == "cuda") else torch.float32
-        base_model = AutoModelForCausalLM.from_pretrained(self.base_model_name, torch_dtype=load_dtype)
-        base_model.resize_token_embeddings(len(self.tokenizer))
-
-        # Load LoRA adapter unless base-only
-        if self.base_only:
-            self.model = base_model.to(self.device)
-            self.model.eval()
-        else:
-            try:
-                fixed_adapter = prepare_adapter_folder(self.adapter_path)
-                self.model = PeftModel.from_pretrained(base_model, fixed_adapter, local_files_only=True)
-                self.model.eval()
-                self.model.to(self.device)
-            except Exception as e:
-                # Commonly due to hidden-size mismatch when swapping base models
-                print(f"Warning: failed to load adapter on base '{self.base_model_name}': {e}")
-                print("Falling back to base-only mode. For the trained adapter, use --base-model gpt2 (the training base).")
-                self.model = base_model.to(self.device)
-                self.model.eval()
-
-        print("Model loaded.")
-        
-    def load_hole_data(self):
-        """Load hole information from the multi-task dataset (strategies + descriptions)."""
-        if not os.path.exists(self.data_file):
-            raise FileNotFoundError(
-                f"Data file not found: {self.data_file}. Pass --data-file to point at the dataset."
-            )
-
+        # Aggregators
         pars: dict[int, Counter] = {}
         yardages: dict[int, Counter] = {}
         themes: dict[int, Counter] = {}
@@ -695,6 +718,31 @@ class GolfStrategyChat:
                             s["remaining_distance"] = rem
 
         print(f"Loaded data for {len(self.hole_data)} holes")
+        # Load tokenizer and model (+adapter) for generation
+        self.tokenizer = AutoTokenizer.from_pretrained(self.base_model_name)
+        # Ensure pad token is set for GPT-2 style models
+        if self.tokenizer.pad_token is None and self.tokenizer.eos_token is not None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        if self.base_only:
+            self.model = AutoModelForCausalLM.from_pretrained(self.base_model_name)
+        else:
+            # Prepare adapter to ensure proper keys and inference_mode
+            try:
+                tmp_adapter = prepare_adapter_folder(self.adapter_path)
+            except Exception:
+                # Fallback: try to use the adapter folder directly
+                tmp_adapter = self.adapter_path
+            base_model = AutoModelForCausalLM.from_pretrained(self.base_model_name)
+            self.model = PeftModel.from_pretrained(base_model, tmp_adapter)
+            # Keep ref to temp path for the session (no cleanup necessary during run)
+            self._adapter_tmp = tmp_adapter
+        # Move to device and eval mode
+        self.model.to(self.device)
+        self.model.eval()
+
+    # Back-compat: previously hole data was loaded in a separate method; we now do it in load_model
+    def load_hole_data(self) -> None:
+        return
     
     def extract_hole_number(self, text):
         """Extract hole number from user input"""
@@ -766,7 +814,8 @@ class GolfStrategyChat:
                     score_line = "Mode: deterministic (no model used)"
                 info += score_line + "\n"
         
-        if hole['strategies']:
+        # Suppress strategy listing on par-3 holes; tee shot is to the green
+        if hole['strategies'] and int(hole.get('par') or 0) != 3:
             info += f"\nAvailable Strategies:\n"
             for i, strategy in enumerate(hole['strategies'], 1):
                 cutoff = strategy.get('cutoff_distance')
