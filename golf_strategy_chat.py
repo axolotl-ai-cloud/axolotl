@@ -199,6 +199,52 @@ GENERIC_NOISE = [
     r"Success\s*depends",
 ]
 
+# Theme guidance: map strategic_theme tokens to natural language directives and synonyms
+THEME_DIRECTIVES: dict[str, list[str]] = {
+    "angle_priority": [
+        "Favor the side of the fairway that opens the approach angle.",
+        "Avoid positions that leave a blocked or acute angle into the green.",
+    ],
+    "positioning": [
+        "Prioritize placement over raw distance from the tee.",
+        "Choose a club that holds the chosen side of the fairway.",
+    ],
+    "risk_reward": [
+        "Outline both the safer layup line and the aggressive carry and their consequences.",
+        "Only take on the hazard if the landing zone is wide enough to hold the shot shape.",
+    ],
+    "elevation_adjustment": [
+        "Account for uphill/downhill in club selection and rollout.",
+        "Keep approaches under the hole when slopes are severe.",
+    ],
+    "wind_read": [
+        "Note prevailing or crosswinds and how they affect start lines and curvature.",
+        "Use trajectory control to hold the fairway or green into the wind.",
+    ],
+    "precision_tee": [
+        "Emphasize accuracy off the tee; less than driver is acceptable to find short grass.",
+        "Pick a target and commit to a playable miss on one side.",
+    ],
+    "layup_choice": [
+        "Describe preferred layup yardage and shelf to leave a full number into the green.",
+        "Avoid cross bunkers or narrowing in the second-shot zone.",
+    ],
+    "carry": [
+        "State the benefit and risk of carrying the primary hazard versus laying back.",
+    ],
+}
+
+THEME_SYNONYMS: dict[str, list[str]] = {
+    "angle_priority": ["angle", "approach angle", "opening angle", "better angle", "line into the green"],
+    "positioning": ["position", "placement", "line", "side of the fairway"],
+    "risk_reward": ["risk", "reward", "aggressive", "safer", "lay up", "layup", "carry"],
+    "elevation_adjustment": ["uphill", "downhill", "elevation", "slope"],
+    "wind_read": ["wind", "crosswind", "breeze", "gust"],
+    "precision_tee": ["precision", "accurate", "narrow", "find the fairway", "less than driver"],
+    "layup_choice": ["lay up", "layup", "second shot", "shelf", "lay-up"],
+    "carry": ["carry", "cover", "over the bunker", "over the hazard"],
+}
+
 def keep_only_official_yardage(text: str, official: int | None) -> str:
     if not isinstance(official, int):
         return text
@@ -321,8 +367,17 @@ def compose_description_structured(
         bits.append(f"Risk: {risk_note}.")
     if angle_note:
         bits.append(f"Angles: {angle_note}.")
+    # Weave strategic theme into prose rather than echoing it
     if theme:
-        bits.append(f"Strategic theme: {theme}.")
+        tokens = [t.strip() for t in str(theme).split("+") if t.strip()]
+        seen: set[str] = set()
+        for tok in tokens:
+            directives = THEME_DIRECTIVES.get(tok)
+            if directives:
+                for d in directives:
+                    if d not in seen:
+                        bits.append(d)
+                        seen.add(d)
     if preferred_miss:
         bits.append(f"Preferred miss: {preferred_miss}.")
 
@@ -529,10 +584,7 @@ class GolfStrategyChat:
                         bl = fix_mojibake(bl.strip())
                         if len(bl) > 8:
                             self.hole_data[hole]["insights"].add(bl)
-                        low = bl.lower()
-                        for kw in KEY_HAZARD_TERMS:
-                            if kw in low:
-                                hazards_counts[hole][kw] += 1
+                        # Do NOT boost generic hazard keywords from insights; they pollute hazards
 
                 # Parse Facts-style lines from prompts to harvest hazards/theme/miss and attributes
                 ptxt = (example.get("prompt") or "")
@@ -609,8 +661,21 @@ class GolfStrategyChat:
 
             # Finalize hazards/theme/preferred_miss
             if hazards_counts.get(h):
-                top_hz = [k for k, _ in hazards_counts[h].most_common(6)]
-                hole_data["hazards"] = set(top_hz)
+                top_hz = [k for k, _ in hazards_counts[h].most_common(10)]
+                # Clean hazards: drop 'none' and generic tokens
+                generic_drop = {"none", "n/a", "na", "no hazard", "hazard"}
+                # Also drop generic keywords we might have accumulated earlier
+                generic_drop.update(w.lower() for w in KEY_HAZARD_TERMS)
+                cleaned = []
+                for k in top_hz:
+                    kk = (k or "").strip().lower()
+                    if not kk or kk in generic_drop:
+                        continue
+                    # Too short to be meaningful
+                    if len(kk) < 3:
+                        continue
+                    cleaned.append(kk)
+                hole_data["hazards"] = set(cleaned[:6])
             if themes.get(h) and themes[h]:
                 hole_data["strategic_theme"] = themes[h].most_common(1)[0][0]
             if misses.get(h) and misses[h]:
@@ -689,11 +754,14 @@ class GolfStrategyChat:
                     fallback_used = meta.get("fallback_used")
                     threshold = meta.get("grounding_threshold")
                     disabled = meta.get("fallback_disabled", False)
+                    reason = meta.get("fallback_reason")
                     score_line = f"Grounding: {matched}/{possible} signals; Fallback: {'Yes' if fallback_used else 'No'}"
                     if disabled:
                         score_line += " (fallback disabled)"
                     else:
                         score_line += f" (threshold {threshold})"
+                    if fallback_used and reason:
+                        score_line += f"; Reason: {reason}"
                 else:
                     score_line = "Mode: deterministic (no model used)"
                 info += score_line + "\n"
@@ -749,11 +817,22 @@ class GolfStrategyChat:
         Post-process to keep it specific and within length and yardage constraints."""
         par = hole.get("par")
         yard = hole.get("yardage")
-        hz = sorted(set(hole.get("hazards") or []))[:6]
+        # Locally sanitize hazards for prompting
+        raw_hz = list(hole.get("hazards") or [])
+        bad = {"none", "n/a", "na", "no hazard", "hazard"}
+        hz = []
+        for h in raw_hz:
+            hh = (h or "").strip().lower()
+            if not hh or hh in bad:
+                continue
+            if len(hh) < 3:
+                continue
+            hz.append(hh)
+        hz = sorted(set(hz))[:6]
         theme = hole.get("strategic_theme")
         pmiss = hole.get("preferred_miss")
-        # Use a few high-signal insights as context (up to 3)
-        insights = rank_insights([fix_mojibake(s).strip() for s in hole.get("insights", [])])[:3]
+        # Use at most 1 high-signal insight to reduce noise
+        insights = rank_insights([fix_mojibake(s).strip() for s in hole.get("insights", [])])[:1]
 
         facts = []
         if isinstance(par, int) and isinstance(yard, int):
@@ -772,6 +851,7 @@ class GolfStrategyChat:
         if hz:
             facts.append("Hazards: " + ", ".join(hz))
         if theme:
+            # Keep the original stable behavior: include theme label as a Fact line
             facts.append(f"Strategic theme: {theme}")
         if pmiss:
             facts.append(f"Preferred miss: {pmiss}")
@@ -793,8 +873,7 @@ class GolfStrategyChat:
         if facts:
             prompt_parts.append("Facts: " + " | ".join(facts))
         if insights:
-            for i, s in enumerate(insights, 1):
-                prompt_parts.append(f"Insight {i}: {s}")
+            prompt_parts.append(f"Insight: {insights[0]}")
         if self.use_guidance:
             prompt_parts.append("Guidance: " + GUIDANCE)
         prompt_parts.append("Synthesized description:")
@@ -836,14 +915,37 @@ class GolfStrategyChat:
             possible = 0
             if hz:
                 possible += 1
+                # Require at least one concrete hazard mention
                 signals += 1 if any(h in low for h in hz) else 0
             if theme:
                 possible += 1
-                signals += 1 if (theme.split("+")[0] in low or theme in low) else 0
+                # Only count exact token match to avoid overfitting to generic synonyms
+                token_hits = 0
+                for tok in [t.strip() for t in theme.split("+") if t.strip()]:
+                    if tok in low:
+                        token_hits = 1
+                        break
+                signals += token_hits
             if pmiss:
                 possible += 1
                 signals += 1 if pmiss in low else 0
             return signals, possible
+
+        def _semantic_ok(txt: str) -> bool:
+            # Simple checks to catch obvious nonsense
+            low = txt.lower()
+            # Par phrasing sanity
+            if re.search(r"par\s*[-]?[\d]+\.?[\d]*", low):
+                # Reject things like par-4.5 or odd decimals
+                if re.search(r"par\s*[-]?\d+\.\d+", low):
+                    return False
+            # Hole 18 specifics: do not mention par-3s below the green, etc.
+            if re.search(r"par-?3s?\s+below\s+the\s+green", low):
+                return False
+            # Avoid bizarre phrases
+            if "center of mass" in low:
+                return False
+            return True
 
         signals_matched, signals_possible = _signals(gen_text)
         threshold = getattr(self, "desc_grounding_min_signals", 2)
@@ -852,7 +954,9 @@ class GolfStrategyChat:
         self.desc_stats["signals_possible_sum"] += signals_possible
 
         fallback_disabled = not bool(self.desc_fallback)
-        needs_fallback = (signals_matched < threshold) and (not fallback_disabled)
+        not_enough_signals = signals_matched < threshold
+        semantic_bad = not _semantic_ok(gen_text)
+        needs_fallback = (not_enough_signals or semantic_bad) and (not fallback_disabled)
         if needs_fallback:
             self.desc_stats["fallback_used"] += 1
             desc = compose_description_structured(
@@ -871,6 +975,7 @@ class GolfStrategyChat:
                 "grounding_threshold": threshold,
                 "fallback_used": True,
                 "fallback_disabled": False,
+                "fallback_reason": "semantic" if semantic_bad else "grounding",
             }
             return desc
 
@@ -1031,7 +1136,7 @@ def main():
     parser.add_argument("--no-explain", action="store_true", help="Omit rationale lines for strategies (theme/miss/hazards)")
     parser.add_argument("--desc-mode", choices=["model", "deterministic"], default="model", help="Choose description engine: model (LoRA) or deterministic composer")
     parser.add_argument("--no-desc-fallback", action="store_true", help="Disable automatic fallback to deterministic description if model output seems ungrounded")
-    parser.add_argument("--desc-grounding-min-signals", type=int, default=2, help="Minimum number of grounding signals (hazard/theme/miss) the model text must contain to avoid fallback")
+    parser.add_argument("--desc-grounding-min-signals", type=int, default=3, help="Minimum number of grounding signals (hazard/theme/miss) the model text must contain to avoid fallback")
     args = parser.parse_args()
 
     print("Golf Strategy Chat - Bethpage Black")
