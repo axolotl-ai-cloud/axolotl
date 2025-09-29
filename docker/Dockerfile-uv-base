@@ -30,7 +30,7 @@ RUN uv venv --no-project --relocatable axolotl-venv
 
 ENV PATH="/workspace/axolotl-venv/bin:${PATH}"
 
-RUN uv pip install --python "$VENV_PYTHON" packaging setuptools wheel psutil \
+RUN uv pip install --python "$VENV_PYTHON" packaging setuptools wheel psutil protobuf \
     && uv pip install --python "$VENV_PYTHON" torch==${PYTORCH_VERSION} \
     && uv pip install --python "$VENV_PYTHON" --no-build-isolation "causal_conv1d @ git+https://github.com/Dao-AILab/causal-conv1d.git@main" \
     && uv pip install --python "$VENV_PYTHON" "mamba_ssm @ git+https://github.com/state-spaces/mamba.git@main" \
