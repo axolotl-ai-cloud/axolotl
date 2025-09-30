@@ -103,10 +103,10 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run --no-sync pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
-          uv run --no-sync pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
-          uv run --no-sync pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
-          uv run --no-sync pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
+          python -m pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
+          python -m pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
+          python -m pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
+          python -m pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -177,9 +177,9 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run --no-sync pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
-          uv run --no-sync pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
-          uv run --no-sync pytest -v --durations=10 tests/cli/
+          python -m pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
+          python -m pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
+          python -m pytest -v --durations=10 tests/cli/
 
   gate-skip-e2e:
     needs: [pre-commit, pytest, pytest-sdist]
