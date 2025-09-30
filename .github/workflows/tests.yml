@@ -83,6 +83,7 @@ jobs:
         run: |
           uv pip show --system torch
           uv pip install --system wheel
+          uv pip install --system pytest
           printf "torch==${{ matrix.pytorch_version }}\n" > torch-constraints.txt
           uv pip install --system --no-build-isolation -e ".[dev]" --constraints torch-constraints.txt
           set -o pipefail
@@ -157,6 +158,7 @@ jobs:
           uv pip show --system torch
           uv pip install --system wheel
           uv pip install --system build
+          uv pip install --system pytest
           python -m build --sdist
           uv pip install --system dist/*.tar.gz
           python scripts/unsloth_install.py | sh
