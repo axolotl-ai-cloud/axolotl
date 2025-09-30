@@ -49,9 +49,9 @@ When sequence parallelism is enabled:
 To use sequence parallelism, you need:
 
 - Multiple GPUs (at least 2)
-- The `ring-flash-attn` package. Install with:
-  - `pip install axolotl[ring-flash-attn]` (preferred)
-  - `pip install ring-flash-attn>=0.1.4`
+- The `ring-flash-attn` package. Install with either `uv sync --extra ring-flash-attn`
+  (from a cloned repository) or `uv pip install ring-flash-attn>=0.1.4`.
+- Flash Attention installed separately with `uv pip install flash-attn --no-build-isolation`.
 
 ## Limitations
 

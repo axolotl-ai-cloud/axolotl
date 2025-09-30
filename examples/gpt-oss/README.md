@@ -12,8 +12,13 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 
 ```bash
 # Ensure you have Pytorch installed (Pytorch 2.6.0 min)
-pip3 install packaging==23.2 setuptools==75.8.0 wheel ninja
-pip3 install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
+# Option A: manage dependencies in your project
+uv add 'axolotl>=0.12.0'
+uv pip install flash-attn --no-build-isolation
+
+# Option B: quick install
+uv pip install 'axolotl>=0.12.0'
+uv pip install flash-attn --no-build-isolation
 ```
 
 2. Choose one of the following configs below for training the 20B model. (for 120B, see [below](#training-120b))
@@ -75,7 +80,7 @@ for more information about using a special vllm-openai docker image for inferenc
 Optionally, vLLM can be installed from nightly:
 
 ```bash
-pip install --no-build-isolation --pre -U vllm --extra-index-url https://wheels.vllm.ai/nightly
+uv pip install --no-build-isolation --pre -U vllm --extra-index-url https://wheels.vllm.ai/nightly
 ```
 and the vLLM server can be started with the following command (modify `--tensor-parallel-size 8` to match your environment):
 ```bash

@@ -83,14 +83,12 @@ dependencies = [
     "liger-kernel==0.6.1 ; sys_platform != 'darwin'",
     "torchao==0.13.0 ; sys_platform != 'darwin'",
     "bitsandbytes==0.47.0 ; sys_platform != 'darwin'",
-    "flash-attn==2.8.3 ; sys_platform == 'linux'",
     "deepspeed>=0.17.5 ; sys_platform != 'darwin'",
     "deepspeed-kernels ; sys_platform != 'darwin'",
 ]
 
 [project.optional-dependencies]
 ring-flash-attn = [
-    "flash-attn==2.8.3 ; sys_platform == 'linux'",
     "ring-flash-attn>=0.1.7",
     "yunchang==0.6.0",
 ]
@@ -109,24 +107,6 @@ optimizers = [
 ray = ["ray[train]"]
 vllm = ["vllm>=0.10.0"]
 llmcompressor = ["llmcompressor>=0.5.1"]
-dev = [
-    "pytest",
-    "pytest-cov",
-    "pytest-retry",
-    "pytest-sugar",
-    "pytest-xdist",
-    "codecov",
-    "codecov-cli",
-    "tbparse",
-    "ruff",
-    "mypy",
-    "pre-commit",
-    "types-requests",
-    "quartodoc",
-    "jupyter",
-    "blobfile",
-    "tiktoken",
-]
 
 [project.scripts]
 axolotl = "axolotl.cli.main:main"
@@ -193,12 +173,6 @@ python_files = ["test_*.py", "*_test.py"]
 addopts = "-v --tb=short"
 
 # UV specific configuration
-[tool.uv]
-find-links = [
-    "https://github.com/Dao-AILab/flash-attention/releases",
-    "https://github.com/Dao-AILab/causal-conv1d/releases",
-    "https://github.com/ModelCloud/GPTQModel/releases",
-]
 prerelease = "allow"
 default-groups = ["default"]
 conflicts = [
@@ -213,26 +187,28 @@ default = ["torch>=2.6.0"]
 dev = [
     "pytest",
     "pytest-cov",
+    "pytest-retry",
+    "pytest-sugar",
     "pytest-xdist",
-    "pre-commit",
+    "codecov",
+    "codecov-cli",
+    "tbparse",
     "ruff",
     "mypy",
+    "pre-commit",
+    "types-requests",
+    "quartodoc",
+    "jupyter",
+    "blobfile",
+    "tiktoken",
 ]
 
-# UV custom index for specific packages
 [[tool.uv.index]]
 name = "autogptq"
 url = "https://huggingface.github.io/autogptq-index/whl/"
 
-# Build dependencies for packages that don't declare them properly
 [tool.uv.extra-build-dependencies]
 mamba-ssm = ["torch", "causal_conv1d"]
-flash-attn = [
-    "packaging",
-    "wheel",
-    "setuptools",
-    { requirement = "torch", match-runtime = true },
-]
 gptqmodel = [
     { requirement = "torch", match-runtime = true },
 ]

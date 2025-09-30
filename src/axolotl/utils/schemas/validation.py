@@ -497,7 +497,9 @@ class TrainingValidationMixin:
 
             if importlib.util.find_spec("mistral_common") is None:
                 raise ImportError(
-                    "mistral-common is required for mistral models. Please install it with `pip install axolotl` or `pip install -e .`."
+                    "mistral-common is required for mistral models. "
+                    "Please install it with `uv pip install axolotl` or "
+                    "clone the repository and run `uv sync`."
                 )
 
         return tokenizer_use_mistral_common
@@ -1346,8 +1348,10 @@ class ComplexValidationMixin:
             except ImportError as exception:
                 raise ImportError(
                     "context_parallel_size > 1 but ring_flash_attn is not installed. "
-                    "Please install it with `pip install axolotl[ring-flash-attn] "
-                    "or `pip install ring-flash-attn>=0.1.4`."
+                    "Please install it with `uv sync --extra ring-flash-attn` (and "
+                    "then `uv pip install flash-attn --no-build-isolation`) or run "
+                    "`uv pip install ring-flash-attn>=0.1.4` followed by "
+                    "`uv pip install flash-attn --no-build-isolation`."
                 ) from exception
 
             LOG.warning(

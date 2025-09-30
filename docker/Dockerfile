@@ -35,6 +35,7 @@ RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
     else \
         uv pip install --python "$VENV_PYTHON" --no-build-isolation -e .[ring-flash-attn,optimizers,ray] $AXOLOTL_ARGS; \
     fi && \
+    uv pip install --python "$VENV_PYTHON" --no-build-isolation flash-attn $AXOLOTL_ARGS && \
     "$VENV_PYTHON" scripts/unsloth_install.py | sh && \
     "$VENV_PYTHON" scripts/cutcrossentropy_install.py | sh && \
     uv pip install --python "$VENV_PYTHON" pytest

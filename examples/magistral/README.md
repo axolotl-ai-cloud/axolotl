@@ -13,9 +13,14 @@ Thanks to the team at MistralAI for giving us early access to prepare for these 
     Here is an example of how to install from pip:
 
 ```bash
-# Ensure you have Pytorch installed (Pytorch 2.6.0 min)
-pip3 install packaging==23.2 setuptools==75.8.0 wheel ninja
-pip3 install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
+# Ensure you have PyTorch installed (PyTorch 2.6.0 min)
+# Option A: manage dependencies in your project
+uv add 'axolotl>=0.12.0'
+uv pip install flash-attn --no-build-isolation
+
+# Option B: quick install
+uv pip install 'axolotl>=0.12.0'
+uv pip install flash-attn --no-build-isolation
 ```
 
 2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage

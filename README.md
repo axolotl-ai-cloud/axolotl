@@ -75,18 +75,16 @@ Features:
 
 ### Installation
 
-#### Using uv (recommended)
+#### Project setup (uv add)
 
 ```bash
 # Install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# One-off usage
-uvx axolotl fetch examples
-
-# Or, in your project
+# Initialize or enter your project
 uv init my-project && cd my-project
 uv add axolotl
+uv pip install flash-attn --no-build-isolation
 source .venv/bin/activate
 
 # Download example axolotl configs, deepspeed configs
@@ -94,11 +92,14 @@ axolotl fetch examples
 axolotl fetch deepspeed_configs  # optional
 ```
 
-#### Using pip
+#### Quick try (uv pip)
 
 ```bash
-pip3 install -U packaging==23.2 setuptools==75.8.0 wheel ninja
-pip3 install --no-build-isolation axolotl
+# Install uv if needed
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+uv pip install axolotl
+uv pip install flash-attn --no-build-isolation
 
 # Download example axolotl configs, deepspeed configs
 axolotl fetch examples

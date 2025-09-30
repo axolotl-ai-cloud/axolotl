@@ -631,7 +631,7 @@ class ModelLoader:
             if is_causal_conv1d_available():
                 raise ImportError(
                     "The 'causal-conv1d' package is installed but causes compatibility issues with LFM2 models. "
-                    "Please uninstall it by running: `pip uninstall -y causal-conv1d`"
+                    "Please uninstall it by running: `uv pip uninstall -y causal-conv1d`"
                 )
 
     def _configure_zero3_memory_efficient_loading(

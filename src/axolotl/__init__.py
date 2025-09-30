@@ -1,7 +1,8 @@
-"""Axolotl - Train and fine-tune large language models"""
+"""Axolotl - Train and fine-tune large language models."""
 
 import pkgutil
 
-__path__ = pkgutil.extend_path(__path__, __name__)  # Make this a namespace package
+from ._version import __version__
 
-__version__ = "0.13.0.dev"
+__path__ = pkgutil.extend_path(__path__, __name__)
+__all__ = ["__version__"]

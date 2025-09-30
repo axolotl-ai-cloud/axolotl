@@ -15,8 +15,8 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 
-pip3 install packaging==23.2 setuptools==75.8.0 wheel ninja
-pip3 install --no-build-isolation -e '.[flash-attn]'
+uv sync
+uv pip install flash-attn --no-build-isolation
 
 # Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy
 python scripts/cutcrossentropy_install.py | sh
@@ -24,12 +24,12 @@ python scripts/cutcrossentropy_install.py | sh
 
 2. Install Qwen3-Next transformers commit
 ```bash
-pip3 uninstall -y transformers && pip3 install "git+https://github.com/huggingface/transformers.git@b9282355bea846b54ed850a066901496b19da654"
+uv pip uninstall -y transformers && uv pip install "git+https://github.com/huggingface/transformers.git@b9282355bea846b54ed850a066901496b19da654"
 ```
 
 3. Install FLA for improved performance
 ```bash
-pip3 uninstall -y causal-conv1d && pip3 install flash-linear-attention==0.3.2
+uv pip uninstall -y causal-conv1d && uv pip install flash-linear-attention==0.3.2
 ```
 
 4. Run the finetuning example:

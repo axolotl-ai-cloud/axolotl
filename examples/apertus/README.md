@@ -15,8 +15,8 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 
-pip3 install packaging==23.2 setuptools==75.8.0 wheel ninja
-pip3 install --no-build-isolation -e '.[flash-attn]'
+uv sync
+uv pip install flash-attn --no-build-isolation
 
 # Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy
 python scripts/cutcrossentropy_install.py | sh
@@ -31,7 +31,7 @@ python scripts/cutcrossentropy_install.py | sh
 # For those using our Docker image, use the below path.
 export CUDA_HOME=/usr/local/cuda
 
-pip3 install git+https://github.com/nickjbrowning/XIELU@59d6031 --no-build-isolation --no-deps
+uv pip install git+https://github.com/nickjbrowning/XIELU@59d6031 --no-build-isolation --no-deps
 ```
 
 For any installation errors, see [XIELU Installation Issues](#xielu-installation-issues)
@@ -67,7 +67,7 @@ If those didn't help, please try the below solutions:
 1. Pass env for CMAKE and try install again:
 
     ```bash
-    Python_EXECUTABLE=$(which python) pip3 install git+https://github.com/nickjbrowning/XIELU@59d6031 --no-build-isolation --no-deps
+    Python_EXECUTABLE=$(which python) uv pip install git+https://github.com/nickjbrowning/XIELU@59d6031 --no-build-isolation --no-deps
     ```
 
 2. Git clone the repo and manually hardcode python path:
@@ -92,7 +92,7 @@ If those didn't help, please try the below solutions:
     ```
 
     ```bash
-    pip3 install . --no-build-isolation --no-deps
+    uv pip install . --no-build-isolation --no-deps
     ```
 
 ## Optimization Guides

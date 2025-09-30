@@ -12,9 +12,14 @@ This guide shows how to fine-tune both the LFM2 and LFM2-VL models with Axolotl.
 
     Here is an example of how to install from pip:
     ```bash
-    # Ensure you have a compatible version of Pytorch installed
-    pip3 install packaging setuptools wheel ninja
-    pip3 install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
+    # Ensure you have a compatible version of PyTorch installed
+    # Option A: manage dependencies in your project
+    uv add 'axolotl>=0.12.0'
+    uv pip install flash-attn --no-build-isolation
+
+    # Option B: quick install
+    uv pip install 'axolotl>=0.12.0'
+    uv pip install flash-attn --no-build-isolation
     ```
 
 2.  Run one of the finetuning examples below.
@@ -35,7 +40,7 @@ This guide shows how to fine-tune both the LFM2 and LFM2-VL models with Axolotl.
 
 - **Installation Error**: If you encounter `ImportError: ... undefined symbol ...` or `ModuleNotFoundError: No module named 'causal_conv1d_cuda'`, the `causal-conv1d` package may have been installed incorrectly. Try uninstalling it:
   ```bash
-  pip uninstall -y causal-conv1d
+  uv pip uninstall -y causal-conv1d
   ```
 
 - **Dataset Loading**: Read more on how to load your own dataset in our [documentation](https://docs.axolotl.ai/docs/dataset_loading.html).

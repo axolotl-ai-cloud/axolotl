@@ -95,7 +95,7 @@ chat_template: llava
 ### Mistral-Small-3.1 {#sec-mistral-small-31}
 
 ::: {.callout-tip}
-Please make sure to install vision lib via `pip install 'mistral-common[opencv]==1.8.5'`
+Please make sure to install vision lib via `uv pip install 'mistral-common[opencv]==1.8.5'`
 :::
 
 ```yaml
@@ -105,7 +105,7 @@ base_model: mistralai/Mistral-Small-3.1-24B-Instruct-2503
 ### Magistral-Small-2509 {#sec-magistral-small-2509}
 
 ::: {.callout-tip}
-Please make sure to install vision lib via `pip install 'mistral-common[opencv]==1.8.5'`
+Please make sure to install vision lib via `uv pip install 'mistral-common[opencv]==1.8.5'`
 :::
 
 ```yaml
@@ -115,7 +115,7 @@ base_model: mistralai/Magistral-Small-2509
 ### Voxtral {#sec-voxtral}
 
 ::: {.callout-tip}
-Please make sure to install audio lib via `pip3 install librosa==0.11.0 'mistral_common[audio]==1.8.3'`
+Please make sure to install audio lib via `uv pip install librosa==0.11.0 'mistral_common[audio]==1.8.3'`
 :::
 
 ```yaml
@@ -143,7 +143,7 @@ The model's initial loss and grad norm will be very high. We suspect this to be 
 :::
 
 ::: {.callout-tip}
-Please make sure to install `timm` via `pip3 install timm==1.0.17`
+Please make sure to install `timm` via `uv pip install timm==1.0.17`
 :::
 
 ```yaml
@@ -171,7 +171,7 @@ chat_template: qwen2_vl  # same as qwen2-vl
 ### SmolVLM2 {#sec-smolvlm2}
 
 ::: {.callout-tip}
-Please make sure to install `num2words` via `pip3 install num2words==0.5.14`
+Please make sure to install `num2words` via `uv pip install num2words==0.5.14`
 :::
 
 ```yaml
@@ -181,7 +181,7 @@ base_model: HuggingFaceTB/SmolVLM2-500M-Video-Instruct
 ### LFM2-VL {#sec-lfm2-vl}
 
 ::: {.callout-warning}
-Please uninstall `causal-conv1d` via `pip3 uninstall -y causal-conv1d`
+Please uninstall `causal-conv1d` via `uv pip uninstall -y causal-conv1d`
 :::
 
 ```yaml
@@ -222,7 +222,7 @@ For audio loading, you can use the following keys within `content` alongside `"t
 
 ::: {.callout-tip}
 
-You may need to install `librosa` via `pip3 install librosa==0.11.0`.
+You may need to install `librosa` via `uv pip install librosa==0.11.0`.
 
 :::
 
