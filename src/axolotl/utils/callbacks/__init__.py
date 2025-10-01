@@ -816,15 +816,15 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                             temp_ct_file.write(str(chat_tpl))
                             temp_ct_file.flush()
 
-                    artifact = wandb.Artifact(
-                        f"chat-template-{wandb.run.id}", type="jinja-template"
-                    )
-                    artifact.add_file(temp_ct_file.name)
-                    wandb.log_artifact(artifact)
-                    wandb.save(temp_ct_file.name)
-                    LOG.info(
-                        "The chat_template_jinja has been saved to the WandB run under files."
-                    )
+                        artifact = wandb.Artifact(
+                            f"chat-template-{wandb.run.id}", type="jinja-template"
+                        )
+                        artifact.add_file(temp_ct_file.name)
+                        wandb.log_artifact(artifact)
+                        wandb.save(temp_ct_file.name)
+                        LOG.info(
+                            "The chat_template_jinja has been saved to the WandB run under files."
+                        )
             except (FileNotFoundError, ConnectionError, yaml.YAMLError) as err:
                 LOG.warning(f"Error while saving chat_template_jinja to WandB: {err}")
 
