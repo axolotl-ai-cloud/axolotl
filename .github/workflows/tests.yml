@@ -81,12 +81,12 @@ jobs:
 
       - name: Install PyTorch
         run: |
-          pip3 install torch==${{ matrix.pytorch_version }} torchvision
+          pip3 install --no-cache-dir torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Install dependencies
         run: |
           pip3 show torch
-          pip3 install --no-build-isolation -U -e .
+          pip3 install --no-cache-dir --no-build-isolation -U -e .
           python scripts/unsloth_install.py | sh
           python scripts/cutcrossentropy_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
@@ -156,13 +156,13 @@ jobs:
 
       - name: Install PyTorch
         run: |
-          pip3 install torch==${{ matrix.pytorch_version }} torchvision
+          pip3 install --no-cache-dir torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Install dependencies
         run: |
           pip3 show torch
           python -m build --no-isolation --sdist
-          pip3 install --no-build-isolation dist/axolotl*.tar.gz
+          pip3 install --no-cache-dir --no-build-isolation dist/axolotl*.tar.gz
           python scripts/unsloth_install.py | sh
           python scripts/cutcrossentropy_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
