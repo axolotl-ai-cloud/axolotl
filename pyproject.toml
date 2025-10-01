@@ -107,6 +107,24 @@ optimizers = [
 ray = ["ray[train]"]
 vllm = ["vllm>=0.10.0"]
 llmcompressor = ["llmcompressor>=0.5.1"]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "pytest-retry",
+    "pytest-sugar",
+    "pytest-xdist",
+    "codecov",
+    "codecov-cli",
+    "tbparse",
+    "ruff",
+    "mypy",
+    "pre-commit",
+    "types-requests",
+    "quartodoc",
+    "jupyter",
+    "blobfile",
+    "tiktoken",
+]
 
 [project.scripts]
 axolotl = "axolotl.cli.main:main"
@@ -173,6 +191,7 @@ python_files = ["test_*.py", "*_test.py"]
 addopts = "-v --tb=short"
 
 # UV specific configuration
+[tool.uv]
 prerelease = "allow"
 default-groups = ["default"]
 conflicts = [
