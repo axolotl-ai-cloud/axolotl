@@ -65,6 +65,7 @@ def run_cmd(cmd: str, run_folder: str):
     import subprocess  # nosec
 
     sp_env = os.environ.copy()
+    sp_env["AXOLOTL_DATASET_NUM_PROC"] = "8"
     sp_env["AXOLOTL_DATASET_PROCESSES"] = "8"
 
     # Propagate errors from subprocess.
