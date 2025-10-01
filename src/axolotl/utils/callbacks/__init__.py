@@ -804,7 +804,7 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                 chat_tpl = cfg.get("chat_template_jinja")
                 if chat_tpl:
                     with NamedTemporaryFile(
-                        mode="w", delete=False, suffix=".j2", prefix="chat_template_"
+                        mode="w", delete=True, suffix=".j2", prefix="chat_template_"
                     ) as temp_ct_file:
                         if (
                             isinstance(chat_tpl, str)
