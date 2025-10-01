@@ -26,7 +26,7 @@ if cce_spec and not importlib.util.find_spec("cut_cross_entropy.transformers"):
     commands.append(f"uv pip uninstall --python {python_path} cut-cross-entropy")
 
 commands.append(
-    f'uv pip install --python {python_path} "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@c6a32c5"'
+    f'uv pip install --python {python_path} "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@147ea28"'
 )
 
 print(" && ".join(commands))
