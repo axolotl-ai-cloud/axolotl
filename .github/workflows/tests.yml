@@ -82,8 +82,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv pip show --system torch
-          uv pip install --system wheel
-          uv pip install --system pytest
+          uv pip install --system wheel pytest pytest-xdist pytest-cov
           printf "torch==${{ matrix.pytorch_version }}\n" > torch-constraints.txt
           uv pip install --system --no-build-isolation -e ".[dev]" --constraints torch-constraints.txt
           set -o pipefail
@@ -104,10 +103,10 @@ jobs:
 
       - name: Run tests
         run: |
-          python -m pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
-          python -m pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
-          python -m pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
-          python -m pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
+          python -m pytest -v --durations=10 -n 8 --dist loadfile --cov=axolotl --cov-report=xml --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/
+          python -m pytest -v --durations=10 -n 8 --cov=axolotl --cov-append --cov-report=xml tests/monkeypatch/
+          python -m pytest -v --durations=10 -n 8 --cov=axolotl --cov-append --cov-report=xml tests/patched/
+          python -m pytest -v --durations=10 -n 8 --cov=axolotl --cov-append --cov-report=xml tests/cli/
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -156,9 +155,8 @@ jobs:
       - name: Install dependencies
         run: |
           uv pip show --system torch
-          uv pip install --system wheel
+          uv pip install --system wheel pytest pytest-xdist pytest-cov
           uv pip install --system build
-          uv pip install --system pytest
           python -m build --sdist
           uv pip install --system dist/*.tar.gz
           python scripts/unsloth_install.py | sh
@@ -179,9 +177,9 @@ jobs:
 
       - name: Run tests
         run: |
-          python -m pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
-          python -m pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
-          python -m pytest -v --durations=10 tests/cli/
+          python -m pytest -v --durations=10 -n 8 --dist loadfile --cov=axolotl --cov-report=xml --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/
+          python -m pytest -v --durations=10 -n 8 --cov=axolotl --cov-append --cov-report=xml tests/monkeypatch/
+          python -m pytest -v --durations=10 -n 8 tests/cli/
 
   gate-skip-e2e:
     needs: [pre-commit, pytest, pytest-sdist]
