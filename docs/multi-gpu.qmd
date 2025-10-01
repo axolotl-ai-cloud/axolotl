@@ -88,6 +88,7 @@ fsdp_sync_module_states | **REMOVED**
 fsdp_cpu_ram_efficient_loading | cpu_ram_efficient_loading
 fsdp_state_dict_type | state_dict_type
 fsdp_use_orig_params | **REMOVED**
+fsdp_activation_checkpointing | activation_checkpointing
 
 For more details, please see the migration guide in the [torchtitan repo](https://github.com/pytorch/torchtitan/blob/main/docs/fsdp.md). In Axolotl,
 if you were using the following FSDP1 config:
