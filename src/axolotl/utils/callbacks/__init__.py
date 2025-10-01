@@ -814,6 +814,7 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                             copyfile(chat_tpl, temp_ct_file.name)
                         else:
                             temp_ct_file.write(str(chat_tpl))
+                            temp_ct_file.flush()
 
                     artifact = wandb.Artifact(
                         f"chat-template-{wandb.run.id}", type="jinja-template"
