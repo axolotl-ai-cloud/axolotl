@@ -785,15 +785,6 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_torch_compile_deepspeed(cls, data):
-        if data.get("deepspeed") and data.get("torch_compile"):
-            raise ValueError(
-                "torch_compile should be set within your deepspeed config file"
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_xentropy_patch_conflicts(cls, data):
         if data.get("flash_attn_cross_entropy") and data.get(
             "unsloth_cross_entropy_loss"
