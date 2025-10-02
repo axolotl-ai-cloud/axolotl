@@ -465,6 +465,7 @@ class GolfStrategyChat:
         sample_desc: bool = False,
         desc_fallback: bool = True,
         desc_grounding_min_signals: int = 2,
+        verbose: bool = False,
     ) -> None:
         self.adapter_path = adapter_path
         self.data_file = data_file
@@ -481,6 +482,7 @@ class GolfStrategyChat:
         self.sample_desc = bool(sample_desc)
         self.desc_fallback = bool(desc_fallback)
         self.desc_grounding_min_signals = max(0, int(desc_grounding_min_signals))
+        self.verbose = bool(verbose)
         # metrics
         self.last_desc_meta: dict | None = None
         self.desc_stats = {
@@ -792,42 +794,49 @@ class GolfStrategyChat:
         description = self.get_hole_description(hole_num)
         if description:
             info += f"Description: {description}\n"
-            # Append concise grounding/fallback score if available
-            meta = getattr(self, "last_desc_meta", None)
-            if isinstance(meta, dict):
-                mode = meta.get("mode")
-                if mode == "model":
-                    matched = meta.get("signals_matched")
-                    possible = meta.get("signals_possible")
-                    fallback_used = meta.get("fallback_used")
-                    threshold = meta.get("grounding_threshold")
-                    disabled = meta.get("fallback_disabled", False)
-                    reason = meta.get("fallback_reason")
-                    score_line = f"Grounding: {matched}/{possible} signals; Fallback: {'Yes' if fallback_used else 'No'}"
-                    if disabled:
-                        score_line += " (fallback disabled)"
+            # Append concise grounding/fallback score if verbose mode enabled
+            if self.verbose:
+                meta = getattr(self, "last_desc_meta", None)
+                if isinstance(meta, dict):
+                    mode = meta.get("mode")
+                    if mode == "model":
+                        matched = meta.get("signals_matched")
+                        possible = meta.get("signals_possible")
+                        fallback_used = meta.get("fallback_used")
+                        threshold = meta.get("grounding_threshold")
+                        disabled = meta.get("fallback_disabled", False)
+                        reason = meta.get("fallback_reason")
+                        score_line = f"Grounding: {matched}/{possible} signals; Fallback: {'Yes' if fallback_used else 'No'}"
+                        if disabled:
+                            score_line += " (fallback disabled)"
+                        else:
+                            score_line += f" (threshold {threshold})"
+                        if fallback_used and reason:
+                            score_line += f"; Reason: {reason}"
                     else:
-                        score_line += f" (threshold {threshold})"
-                    if fallback_used and reason:
-                        score_line += f"; Reason: {reason}"
-                else:
-                    score_line = "Mode: deterministic (no model used)"
-                info += score_line + "\n"
+                        score_line = "Mode: deterministic (no model used)"
+                    info += score_line + "\n"
         
         # Suppress strategy listing on par-3 holes; tee shot is to the green
         if hole['strategies'] and int(hole.get('par') or 0) != 3:
-            info += f"\nAvailable Strategies:\n"
-            for i, strategy in enumerate(hole['strategies'], 1):
-                cutoff = strategy.get('cutoff_distance')
-                remaining = strategy.get('remaining_distance')
-                if remaining in (None, "", "null"):
-                    remaining = 'N/A'
-                advantage = strategy.get('advantage', '')
-                
-                info += f"  {i}. {cutoff} yards - Leaves {remaining} yards to pin"
-                if advantage:
-                    info += f" ({advantage})"
-                info += "\n"
+            if self.verbose:
+                info += f"\nAvailable Strategies:\n"
+                for i, strategy in enumerate(hole['strategies'], 1):
+                    cutoff = strategy.get('cutoff_distance')
+                    remaining = strategy.get('remaining_distance')
+                    if remaining in (None, "", "null"):
+                        remaining = 'N/A'
+                    advantage = strategy.get('advantage', '')
+                    
+                    info += f"  {i}. {cutoff} yards - Leaves {remaining} yards to pin"
+                    if advantage:
+                        info += f" ({advantage})"
+                    info += "\n"
+            else:
+                # In non-verbose mode, just show available cutoffs
+                cutoffs = [s.get('cutoff_distance') for s in hole['strategies'] if s.get('cutoff_distance')]
+                if cutoffs:
+                    info += f"\nAvailable strategies: {sorted(set(cutoffs))} yards\n"
         
         return info
     
@@ -1100,24 +1109,25 @@ class GolfStrategyChat:
                 f"\nRecommended Strategy: {final_choice} yards (coerced)\n" if coerced is not None else "\nRecommended Strategy: unavailable\n"
             )
 
-        rec_text += f"Available strategies: {available_cutoffs} yards\n"
-        rec_text += (
-            f"Eligible for {drive_distance}-yard drive: {eligible if eligible else ['None - using shortest option']}\n"
-        )
-        rec_text += "Logic: Choose highest available <= drive distance"
-        # Short rationale using structured fields
-        if getattr(self, "explain", True):
-            why = []
-            if hole.get("strategic_theme"):
-                why.append(f"Theme: {hole['strategic_theme']}")
-            if hole.get("preferred_miss"):
-                why.append(f"Preferred miss: {hole['preferred_miss']}")
-            if hole.get("hazards"):
-                hz = ", ".join(sorted(set(hole["hazards"]))[:4])
-                if hz:
-                    why.append(f"Hazards: {hz}")
-            if why:
-                rec_text += "\nWhy: " + "; ".join(why)
+        if self.verbose:
+            rec_text += f"Available strategies: {available_cutoffs} yards\n"
+            rec_text += (
+                f"Eligible for {drive_distance}-yard drive: {eligible if eligible else ['None - using shortest option']}\n"
+            )
+            rec_text += "Logic: Choose highest available <= drive distance"
+            # Short rationale using structured fields
+            if getattr(self, "explain", True):
+                why = []
+                if hole.get("strategic_theme"):
+                    why.append(f"Theme: {hole['strategic_theme']}")
+                if hole.get("preferred_miss"):
+                    why.append(f"Preferred miss: {hole['preferred_miss']}")
+                if hole.get("hazards"):
+                    hz = ", ".join(sorted(set(hole["hazards"]))[:4])
+                    if hz:
+                        why.append(f"Hazards: {hz}")
+                if why:
+                    rec_text += "\nWhy: " + "; ".join(why)
         return rec_text
 
     def process_input(self, user_input):
@@ -1186,6 +1196,7 @@ def main():
     parser.add_argument("--desc-mode", choices=["model", "deterministic"], default="model", help="Choose description engine: model (LoRA) or deterministic composer")
     parser.add_argument("--no-desc-fallback", action="store_true", help="Disable automatic fallback to deterministic description if model output seems ungrounded")
     parser.add_argument("--desc-grounding-min-signals", type=int, default=3, help="Minimum number of grounding signals (hazard/theme/miss) the model text must contain to avoid fallback")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Show detailed grounding scores, strategy details, and debug information")
     args = parser.parse_args()
 
     print("Golf Strategy Chat - Bethpage Black")
@@ -1205,6 +1216,7 @@ def main():
             sample_desc=args.desc_sample,
             desc_fallback=(not args.no_desc_fallback),
             desc_grounding_min_signals=args.desc_grounding_min_signals,
+            verbose=args.verbose,
         )
     except Exception as e:
         print(f"Error loading model: {e}")
