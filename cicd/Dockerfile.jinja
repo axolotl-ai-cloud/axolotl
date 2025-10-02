@@ -33,20 +33,20 @@ RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
         sed -i 's#"datasets[^"]*"#"datasets @ git+https://github.com/huggingface/datasets.git@main"#' pyproject.toml; \
     fi
 
-RUN uv pip install packaging==23.2 setuptools==75.8.0
+RUN uv pip install --system packaging==23.2 setuptools==75.8.0
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         uv sync --frozen --extra ring-flash-attn --extra optimizers --extra ray $(printf ' --extra %s' "${AXOLOTL_EXTRAS//,/ }") $AXOLOTL_ARGS; \
     else \
         uv sync --frozen --extra ring-flash-attn --extra optimizers --extra ray $AXOLOTL_ARGS; \
     fi
 
-RUN uv pip install --no-build-isolation flash-attn $AXOLOTL_ARGS
+RUN uv pip install --system --no-build-isolation flash-attn $AXOLOTL_ARGS
 
 RUN python scripts/unsloth_install.py | sh
 RUN python scripts/cutcrossentropy_install.py | sh
 
 # So we can test the Docker image
-RUN uv pip install -e ".[dev]"
+RUN uv pip install --system -e ".[dev]"
 
 # fix so that git fetch/pull from remote works
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
