@@ -34,10 +34,10 @@ RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
     fi
 
 RUN uv pip install --system packaging==23.2 setuptools==75.8.0
-RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
-        uv sync --frozen --extra ring-flash-attn --extra optimizers --extra ray $(printf ' --extra %s' "${AXOLOTL_EXTRAS//,/ }") $AXOLOTL_ARGS; \
+RUN PYTHON_BIN="$(command -v python3)" && if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
+        uv sync --frozen --python "$PYTHON_BIN" --extra ring-flash-attn --extra optimizers --extra ray $(printf ' --extra %s' "${AXOLOTL_EXTRAS//,/ }") $AXOLOTL_ARGS; \
     else \
-        uv sync --frozen --extra ring-flash-attn --extra optimizers --extra ray $AXOLOTL_ARGS; \
+        uv sync --frozen --python "$PYTHON_BIN" --extra ring-flash-attn --extra optimizers --extra ray $AXOLOTL_ARGS; \
     fi
 
 RUN uv pip install --system --no-build-isolation flash-attn $AXOLOTL_ARGS
