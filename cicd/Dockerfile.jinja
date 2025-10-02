@@ -36,15 +36,14 @@ RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
         sed -i 's#"datasets[^"]*"#"datasets @ git+https://github.com/huggingface/datasets.git@main"#' pyproject.toml; \
     fi
 
-RUN uv pip install --python "$VENV_PYTHON" packaging==23.2 setuptools==75.8.0
+RUN uv pip install --python "$VENV_PYTHON" packaging==23.2 setuptools==75.8.0 pip
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         uv pip install --python "$VENV_PYTHON" --no-build-isolation -e .[ring-flash-attn,optimizers,ray,${AXOLOTL_EXTRAS}] $AXOLOTL_ARGS; \
     else \
         uv pip install --python "$VENV_PYTHON" --no-build-isolation -e .[ring-flash-attn,optimizers,ray] $AXOLOTL_ARGS; \
     fi
 
-RUN "$VENV_PYTHON" -m pip install --upgrade pip && \
-    uv pip install --python "$VENV_PYTHON" --no-build-isolation flash-attn $AXOLOTL_ARGS
+RUN uv pip install --python "$VENV_PYTHON" --no-build-isolation flash-attn $AXOLOTL_ARGS
 
 RUN "$VENV_PYTHON" scripts/unsloth_install.py | sh
 RUN "$VENV_PYTHON" scripts/cutcrossentropy_install.py | sh
