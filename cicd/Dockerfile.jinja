@@ -2,6 +2,8 @@ FROM axolotlai/axolotl-base-uv:{{ BASE_TAG }}
 
 SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
 
+ARG VENV_PYTHON="/workspace/axolotl-venv/bin/python"
+
 ENV TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
 ENV AXOLOTL_EXTRAS="{{ AXOLOTL_EXTRAS }}"
 ENV AXOLOTL_ARGS="{{ AXOLOTL_ARGS }}"
@@ -11,6 +13,7 @@ ENV GITHUB_REF="{{ GITHUB_REF }}"
 ENV GITHUB_SHA="{{ GITHUB_SHA }}"
 ENV NIGHTLY_BUILD="{{ NIGHTLY_BUILD }}"
 ENV HF_HOME="{{ HF_HOME }}"
+ENV VENV_PYTHON=$VENV_PYTHON
 
 RUN apt-get update && \
     apt-get install -y --allow-change-held-packages vim curl nano libnccl2 libnccl-dev ibverbs-providers ibverbs-utils infiniband-diags librdmacm-dev librdmacm1 rdmacm-utils slurm-wlm
@@ -33,20 +36,20 @@ RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
         sed -i 's#"datasets[^"]*"#"datasets @ git+https://github.com/huggingface/datasets.git@main"#' pyproject.toml; \
     fi
 
-RUN uv pip install --system packaging==23.2 setuptools==75.8.0
-RUN PYTHON_BIN="$(command -v python3)" && if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
-        uv sync --frozen --python "$PYTHON_BIN" --extra ring-flash-attn --extra optimizers --extra ray $(printf ' --extra %s' "${AXOLOTL_EXTRAS//,/ }") $AXOLOTL_ARGS; \
+RUN uv pip install --python "$VENV_PYTHON" packaging==23.2 setuptools==75.8.0
+RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
+        uv pip install --python "$VENV_PYTHON" --no-build-isolation -e .[ring-flash-attn,optimizers,ray,${AXOLOTL_EXTRAS}] $AXOLOTL_ARGS; \
     else \
-        uv sync --frozen --python "$PYTHON_BIN" --extra ring-flash-attn --extra optimizers --extra ray $AXOLOTL_ARGS; \
+        uv pip install --python "$VENV_PYTHON" --no-build-isolation -e .[ring-flash-attn,optimizers,ray] $AXOLOTL_ARGS; \
     fi
 
-RUN uv pip install --system --no-build-isolation flash-attn $AXOLOTL_ARGS
+RUN uv pip install --python "$VENV_PYTHON" --no-build-isolation flash-attn $AXOLOTL_ARGS
 
-RUN python scripts/unsloth_install.py | sh
-RUN python scripts/cutcrossentropy_install.py | sh
+RUN "$VENV_PYTHON" scripts/unsloth_install.py | sh
+RUN "$VENV_PYTHON" scripts/cutcrossentropy_install.py | sh
 
 # So we can test the Docker image
-RUN uv pip install --system -e ".[dev]"
+RUN uv pip install --python "$VENV_PYTHON" -e ".[dev]"
 
 # fix so that git fetch/pull from remote works
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
