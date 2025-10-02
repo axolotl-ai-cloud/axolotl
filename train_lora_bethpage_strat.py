@@ -199,7 +199,9 @@ def train_model(
         print("Warning: filter removed all training examples; using unfiltered train dataset.")
         ds_train = ds_train_raw or ds_raw
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # Optional HF token for gated repos
+    hf_token = os.environ.get("HUGGINGFACE_HUB_TOKEN") or os.environ.get("HF_TOKEN")
+    tokenizer = AutoTokenizer.from_pretrained(model_name, token=hf_token)
     # Reasonable defaults across GPT-2/Llama/Mistral families
     if tokenizer.pad_token is None and tokenizer.eos_token is not None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -238,12 +240,13 @@ def train_model(
                 model_name,
                 quantization_config=bnb_config,
                 device_map="auto",
+                token=hf_token,
             )
         except Exception as e:
             print(f"QLoRA load failed ({e}); falling back to standard load.")
-            model = AutoModelForCausalLM.from_pretrained(model_name)
+            model = AutoModelForCausalLM.from_pretrained(model_name, token=hf_token)
     else:
-        model = AutoModelForCausalLM.from_pretrained(model_name)
+        model = AutoModelForCausalLM.from_pretrained(model_name, token=hf_token)
     try:
         model.resize_token_embeddings(len(tokenizer))
     except Exception:
