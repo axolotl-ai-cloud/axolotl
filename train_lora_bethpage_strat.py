@@ -8,6 +8,7 @@ from transformers import (
     AutoTokenizer,
     Trainer,
     TrainingArguments,
+    BitsAndBytesConfig,
 )
 from peft import get_peft_model, LoraConfig, TaskType
 import torch
@@ -135,6 +136,11 @@ def train_model(
     grad_accum_override: int | None = None,
     lr_override: float | None = None,
     time_limit_min: float | None = None,
+    qlora: bool = False,
+    seq_len_override: int | None = None,
+    lora_r_override: int | None = None,
+    lora_alpha_override: int | None = None,
+    lora_drop_override: float | None = None,
 ):
     # Configure SDP kernels before model init
     _configure_sdp_kernels(force_cpu)
@@ -193,8 +199,15 @@ def train_model(
         print("Warning: filter removed all training examples; using unfiltered train dataset.")
         ds_train = ds_train_raw or ds_raw
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left")
-    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # Reasonable defaults across GPT-2/Llama/Mistral families
+    if tokenizer.pad_token is None and tokenizer.eos_token is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+    # Prefer left padding for causal LM training when concatenating prompt+completion
+    try:
+        tokenizer.padding_side = "left"
+    except Exception:
+        pass
     # set module-level tokenizer for top-level tokenize function
     global _TOKENIZER
     _TOKENIZER = tokenizer
@@ -210,16 +223,63 @@ def train_model(
     has_eval = ds_eval is not None and len(ds_eval) > 0
     print(f"Dataset sizes -> train: {len(ds_train)}, eval: {len(ds_eval) if ds_eval is not None else 0}")
 
-    model = AutoModelForCausalLM.from_pretrained(model_name)
-    model.resize_token_embeddings(len(tokenizer))
+    # Optional QLoRA 4-bit load for large models
+    model = None
+    if qlora and not force_cpu:
+        try:
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float16,
+                bnb_4bit_use_double_quant=True,
+            )
+            # device_map="auto" spreads layers if multiple devices are available; fine on single GPU too
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                quantization_config=bnb_config,
+                device_map="auto",
+            )
+        except Exception as e:
+            print(f"QLoRA load failed ({e}); falling back to standard load.")
+            model = AutoModelForCausalLM.from_pretrained(model_name)
+    else:
+        model = AutoModelForCausalLM.from_pretrained(model_name)
+    try:
+        model.resize_token_embeddings(len(tokenizer))
+    except Exception:
+        pass
+
+    # Determine LoRA targets and scaling by architecture
+    model_type = getattr(getattr(model, "config", None), "model_type", "").lower()
+    is_llama_like = any(k in (model_type or "") for k in ["llama", "mistral", "gemma"]) or (
+        any(s in (model_name or "").lower() for s in ["llama", "mistral", "gemma"]) )
+    if is_llama_like:
+        target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    else:
+        # GPT-2 style
+        target_modules = ["c_attn", "c_proj", "c_fc"]
+
+    # Set LoRA rank/alpha/dropout with sensible defaults per regime
+    if lora_r_override is not None:
+        lora_r = int(lora_r_override)
+    else:
+        lora_r = 32 if (qlora or is_llama_like) else 16
+    if lora_alpha_override is not None:
+        lora_alpha = int(lora_alpha_override)
+    else:
+        lora_alpha = lora_r * 2
+    if lora_drop_override is not None:
+        lora_drop = float(lora_drop_override)
+    else:
+        lora_drop = 0.05 if (qlora or is_llama_like) else 0.1
 
     peft_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
         inference_mode=False,
-        r=16,              # Increased from 8 for better capacity
-        lora_alpha=32,     # Kept the same for stable learning
-        lora_dropout=0.1,  # Increased from 0.05 for better generalization
-        target_modules=["c_attn", "c_proj", "c_fc"],  # Target key attention/projection layers
+        r=lora_r,
+        lora_alpha=lora_alpha,
+        lora_dropout=lora_drop,
+        target_modules=target_modules,
     )
     model = get_peft_model(model, peft_config)
 
@@ -283,12 +343,24 @@ def train_model(
     if per_device_bs_override is not None:
         per_device_bs = per_device_bs_override
     else:
-        # Heuristic: smaller default batch for larger base models
-        if model_name in ("gpt2-medium", "gpt2-large", "gpt2-xl"):
+        # Heuristic: smaller default batch for larger bases and/or QLoRA
+        if qlora or is_llama_like:
+            per_device_bs = 1 if use_cuda else 1
+        elif model_name in ("gpt2-medium", "gpt2-large", "gpt2-xl"):
             per_device_bs = 4 if use_cuda else 2
         else:
             per_device_bs = 8 if use_cuda else 2
-    grad_accum = grad_accum_override if grad_accum_override is not None else (8 if use_cuda else 2)
+    grad_accum = grad_accum_override if grad_accum_override is not None else (
+        (16 if (qlora or is_llama_like) else 8) if use_cuda else 2
+    )
+
+    # Sequence length override (affects tokenization globals)
+    global PROMPT_MAX, COMPLETION_MAX, TOTAL_MAX
+    if isinstance(seq_len_override, int) and seq_len_override > 0:
+        # Keep a 2:1 split for prompt:completion by default
+        TOTAL_MAX = int(seq_len_override)
+        PROMPT_MAX = int(max(64, TOTAL_MAX * 2 // 3))
+        COMPLETION_MAX = int(max(32, TOTAL_MAX - PROMPT_MAX))
 
     # Only resume if trainer_state.json exists in checkpoint dir
     trainer_state_path = os.path.join(ckpt_dir, "trainer_state.json")
@@ -305,6 +377,9 @@ def train_model(
         else:
             eval_every = max(1, save_steps)
 
+    # Precision and checkpointing
+    use_bf16 = bool(torch.cuda.is_available())
+    # Some consumer GPUs support bf16; if not, fall back to fp16 where appropriate
     training_args = TrainingArguments(
         output_dir=ckpt_dir,
         do_train=True,
@@ -315,14 +390,16 @@ def train_model(
         max_steps=max_steps,
         save_steps=save_steps,
         save_total_limit=1,
-        learning_rate=(lr_override if lr_override is not None else 2e-4),
+        learning_rate=(lr_override if lr_override is not None else (1e-4 if (qlora or is_llama_like) else 2e-4)),
         weight_decay=0.01,
-        max_grad_norm=0.75,
-        warmup_ratio=0.03,
+        max_grad_norm=1.0 if (qlora or is_llama_like) else 0.75,
+        warmup_ratio=0.1 if (qlora or is_llama_like) else 0.03,
         lr_scheduler_type="cosine",
         logging_strategy="steps",
         logging_steps=10,
-        fp16=False,
+        fp16=(not use_bf16) and (qlora or is_llama_like),
+        bf16=use_bf16 and (qlora or is_llama_like),
+        gradient_checkpointing=True if (qlora or is_llama_like) else False,
         resume_from_checkpoint=resume_ckpt,
         remove_unused_columns=False,
     eval_strategy="steps" if has_eval else "no",
@@ -550,6 +627,35 @@ def main():
         help="Override learning rate."
     )
     parser.add_argument(
+        "--qlora",
+        action="store_true",
+        help="Enable QLoRA 4-bit loading for large base models (requires bitsandbytes)."
+    )
+    parser.add_argument(
+        "--seq-len",
+        type=int,
+        default=None,
+        help="Override total sequence length (tokens)."
+    )
+    parser.add_argument(
+        "--lora-r",
+        type=int,
+        default=None,
+        help="Override LoRA rank r."
+    )
+    parser.add_argument(
+        "--lora-alpha",
+        type=int,
+        default=None,
+        help="Override LoRA alpha (scaling)."
+    )
+    parser.add_argument(
+        "--lora-dropout",
+        type=float,
+        default=None,
+        help="Override LoRA dropout."
+    )
+    parser.add_argument(
         "--max-steps",
         type=int,
         default=None,
@@ -593,6 +699,11 @@ def main():
         max_steps_override=args.max_steps,
         save_steps_override=args.save_steps,
         time_limit_min=args.time_limit_min,
+        qlora=args.qlora,
+        seq_len_override=args.seq_len,
+        lora_r_override=args.lora_r,
+        lora_alpha_override=args.lora_alpha,
+        lora_drop_override=args.lora_dropout,
     )
     # Basic status to console
     print({"mode": args.mode, "success": success, "ckpt_dir": ckpt_dir, "metrics": metrics})
