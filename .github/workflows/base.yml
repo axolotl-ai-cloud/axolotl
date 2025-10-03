@@ -25,20 +25,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: "124"
-            cuda_version: 12.4.1
-            cudnn_version: ""
-            python_version: "3.11"
-            pytorch: 2.6.0
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-base"
-          - cuda: "126"
-            cuda_version: 12.6.3
-            cudnn_version: ""
-            python_version: "3.11"
-            pytorch: 2.6.0
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-base"
           - cuda: "126"
             cuda_version: 12.6.3
             cudnn_version: ""
@@ -122,13 +108,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: "126"
-            cuda_version: 12.6.3
-            cudnn_version: ""
-            python_version: "3.11"
-            pytorch: 2.6.0
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-uv-base"
           - cuda: "126"
             cuda_version: 12.6.3
             cudnn_version: ""
