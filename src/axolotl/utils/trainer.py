@@ -6,6 +6,7 @@ import os
 import random
 from contextlib import contextmanager
 from functools import partial
+from tempfile import NamedTemporaryFile
 from typing import List, Optional
 
 import numpy as np
@@ -541,6 +542,13 @@ def setup_deepspeed_env(cfg, stage=None):
         )
 
     os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
+    if isinstance(cfg.deepspeed, DictDefault):
+        with NamedTemporaryFile(
+            mode="w", delete=False, suffix=".json", prefix="deepspeed_config_"
+        ) as temp_file:
+            temp_file.write(json.dump(cfg.deepspeed.to_dict(), indent=4))
+            temp_file.close()
+            cfg.deepspeed = str(temp_file.name)
     os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
     os.environ["ACCELERATE_GRADIENT_ACCUMULATION_STEPS"] = str(
         cfg.gradient_accumulation_steps
