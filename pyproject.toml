@@ -107,6 +107,7 @@ optimizers = [
 ray = ["ray[train]"]
 vllm = ["vllm>=0.10.0"]
 llmcompressor = ["llmcompressor>=0.5.1"]
+fbgemm-gpu = ["fbgemm-gpu-genai>=1.2.0"]
 dev = [
     "pytest",
     "pytest-cov",
