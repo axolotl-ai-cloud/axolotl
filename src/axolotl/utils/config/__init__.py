@@ -88,7 +88,7 @@ def resolve_dtype(cfg):
 
     # For mixed precision, we want the base model loaded in fp32
     if cfg.fp16 or cfg.bf16:
-       cfg.torch_dtype = torch.float32
+        cfg.torch_dtype = torch.float32
     elif cfg.bfloat16:
         cfg.torch_dtype = torch.bfloat16
     elif cfg.load_in_8bit or cfg.float16:
