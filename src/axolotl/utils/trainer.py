@@ -15,6 +15,7 @@ from datasets import IterableDataset, disable_caching, enable_caching
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import init_distributed_state, reduce_and_broadcast
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.logging import get_logger
@@ -639,11 +640,15 @@ def prepare_optim_env(cfg):
         setup_fsdp_envs(cfg)
     elif cfg.deepspeed:
         stage = None
+        deepspeed_config = None
         # check if the cfg.deepspeed is a file
-        if os.path.isfile(cfg.deepspeed):
+        if isinstance(cfg.deepspeed, DictDefault):
+            deepspeed_config = cfg.deepspeed
+        elif os.path.isfile(cfg.deepspeed):
             # parse with json
             with open(cfg.deepspeed, "r", encoding="utf-8") as fin:
                 deepspeed_config = json.load(fin)
+        if deepspeed_config:
             stage = deepspeed_config.get("zero_optimization", {}).get("stage", None)
         setup_deepspeed_env(cfg, stage=stage)
 
