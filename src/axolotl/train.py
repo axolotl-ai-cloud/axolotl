@@ -525,6 +525,11 @@ def setup_model_and_trainer(
     plugin_manager = PluginManager.get_instance()
     plugin_manager.post_trainer_create(cfg, trainer)
 
+    if cfg.use_ray:
+        import ray.train.huggingface.transformers
+
+        trainer = ray.train.huggingface.transformers.prepare_trainer(trainer)
+
     return (
         trainer,
         model,
