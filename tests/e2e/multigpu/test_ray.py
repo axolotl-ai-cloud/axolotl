@@ -13,7 +13,6 @@ from axolotl.utils.dict import DictDefault
 from tests.e2e.utils import (
     check_tensorboard,
     require_torch_2_7_0,
-    require_torch_lt_2_6_0,
 )
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
@@ -24,7 +23,7 @@ class TestMultiGPURay:
     Test cases for AnyScale Ray post training
     """
 
-    @require_torch_lt_2_6_0
+    @require_torch_2_7_0
     def test_lora_ddp(self, temp_dir):
         cfg = DictDefault(
             {
@@ -83,7 +82,7 @@ class TestMultiGPURay:
             temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
-    @require_torch_lt_2_6_0
+    @require_torch_2_7_0
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
         [1, 2],
