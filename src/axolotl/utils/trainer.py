@@ -562,6 +562,7 @@ def setup_deepspeed_env(cfg, stage=None):
     if (
         int(os.environ.get("WORLD_SIZE", "1")) == 1
         and os.environ.get("AXOLOTL_IS_PREPROCESS", "0") != "1"
+        and cfg.use_ray is not True
     ):
         os.environ["WORLD_SIZE"] = "1"  # force it in case not set
         os.environ["LOCAL_RANK"] = "0"  # force it in case not set
