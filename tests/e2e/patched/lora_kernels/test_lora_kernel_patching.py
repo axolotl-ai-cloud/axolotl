@@ -160,7 +160,7 @@ def test_geglu_model_integration():
     """Test GeGLU activation with Gemma model."""
     model = AutoModelForCausalLM.from_pretrained(
         "trl-internal-testing/tiny-Gemma2ForCausalLM",
-        torch_dtype=torch.float16,
+        dtype=torch.float16,
         device_map="cuda:0",
     )
     peft_config = get_peft_config(

@@ -84,7 +84,7 @@ jobs:
           uv pip show --system torch
           uv pip install --system wheel
           printf "torch==${{ matrix.pytorch_version }}\n" > torch-constraints.txt
-          uv pip install --system --no-build-isolation -e ".[dev]" --constraints torch-constraints.txt
+          uv pip install --system --no-cache-dir --no-build-isolation -e ".[dev]" --constraints torch-constraints.txt
           set -o pipefail
           python scripts/unsloth_install.py | bash
           python scripts/cutcrossentropy_install.py | bash
@@ -155,12 +155,10 @@ jobs:
       - name: Install dependencies
         run: |
           uv pip show --system torch
-          uv pip install --system wheel
-          uv pip install --system build
+          uv pip install --system wheel build
           python -m build --sdist
-          uv pip install --system dist/*.tar.gz
           printf "torch==${{ matrix.pytorch_version }}\n" > torch-constraints.txt
-          uv pip install --system ".[dev]" --constraints torch-constraints.txt
+          uv pip install --no-cache-dir --no-build-isolation --system "dist/axolotl*.tar.gz[dev]" --constraints torch-constraints.txt
           python scripts/unsloth_install.py | sh
           python scripts/cutcrossentropy_install.py | sh
 

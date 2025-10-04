@@ -85,9 +85,7 @@ def do_cli(model: Union[Path, str], output: Union[Path, str]) -> None:
     unpatch_llama4 = patch_llama4_linearized_modeling()
     from transformers import Llama4ForConditionalGeneration
 
-    model_ = Llama4ForConditionalGeneration.from_pretrained(
-        model, torch_dtype=torch.bfloat16
-    )
+    model_ = Llama4ForConditionalGeneration.from_pretrained(model, dtype=torch.bfloat16)
     processor = AutoProcessor.from_pretrained(model)
     processor.save_pretrained(output)
 
