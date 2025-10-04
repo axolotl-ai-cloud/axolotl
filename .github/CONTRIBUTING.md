@@ -35,10 +35,12 @@ Please run the below to setup:
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 
-uv sync  # TODO(djsaunde): extras installation details
-uv run pre-commit install
+uv sync && uv pip install flash-attn --no-build-isolation
+source .venv/bin/activate
 
-pytest tests/  # optional
+pre-commit install  # install pre-commit hooks
+
+pytest tests/  # optional; run test suite
 ```
 
 ## How to Contribute
