@@ -9,7 +9,7 @@ def check_mamba_ssm_installed():
     mamba_ssm_spec = importlib.util.find_spec("mamba_ssm")
     if mamba_ssm_spec is None:
         raise ImportError(
-            "MambaLMHeadModel requires mamba_ssm. Please install it with `pip install -e .[mamba-ssm]`"
+            "MambaLMHeadModel requires mamba_ssm. Please install it with `uv pip install -e .[mamba-ssm]`"
         )
 
 

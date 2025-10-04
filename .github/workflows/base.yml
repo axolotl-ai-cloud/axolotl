@@ -43,13 +43,6 @@ jobs:
             cuda_version: 12.6.3
             cudnn_version: ""
             python_version: "3.11"
-            pytorch: 2.7.0
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-base"
-          - cuda: "126"
-            cuda_version: 12.6.3
-            cudnn_version: ""
-            python_version: "3.11"
             pytorch: 2.7.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-base"
@@ -105,7 +98,9 @@ jobs:
           context: .
           file: ./docker/${{ matrix.dockerfile }}
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.metadata.outputs.tags }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
+          tags: |
+            ${{ steps.metadata.outputs.tags }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
+            ${{ steps.metadata.outputs.tags }}-base-uv-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           labels: ${{ steps.metadata.outputs.labels }}
           build-args: |
             CUDA_VERSION=${{ matrix.cuda_version }}

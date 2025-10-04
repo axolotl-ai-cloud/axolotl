@@ -128,7 +128,8 @@ def get_state_dict(self, model, unwrap=True):
             if model.zero_gather_16bit_weights_on_model_save():
                 if tp_sharding and not compare_versions("deepspeed", ">=", "0.16.4"):
                     raise ImportError(
-                        "Deepspeed TP requires deepspeed >= 0.16.4, Please update DeepSpeed via `pip install deepspeed -U`."
+                        "Deepspeed TP requires deepspeed >= 0.16.4. Update DeepSpeed via "
+                        "`uv pip install -U deepspeed`."
                     )
                 state_dict = (
                     model._consolidated_16bit_state_dict()

@@ -14,7 +14,7 @@ def cleanup_last_run_prepared():
     yield
 
     if Path("last_run_prepared").exists():
-        shutil.rmtree("last_run_prepared")
+        shutil.rmtree("last_run_prepared", ignore_errors=True)
 
 
 def test_preprocess_config_not_found(cli_runner):

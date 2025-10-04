@@ -38,23 +38,24 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
       - name: Install dependencies
         run: |
-          pip3 install wheel packaging==23.2
-          pip3 install --no-build-isolation -e .
-          pip3 install -r requirements-dev.txt -r requirements-tests.txt
+          uv pip install --system wheel packaging==23.2
+          uv pip install --system --no-build-isolation -e ".[dev]"
 
       - name: Extract tag name
         id: tag
-        run: echo ::set-output name=TAG_NAME::$(echo $GITHUB_REF | cut -d / -f 3)
+        run: echo "TAG_NAME=$(echo "$GITHUB_REF" | cut -d / -f 3)" >> "$GITHUB_OUTPUT"
 
-      - name: Update version in setup.py
+      - name: Build package
         run: |
-          sed -i -E 's/version="([0-9.]+)",/version="${{ steps.tag.outputs.TAG_NAME }}",/g' setup.py
-
-      - name: Build a source dist
-        run: |
-          python setup.py sdist
+          uv pip install --system build
+          python -m build
 
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

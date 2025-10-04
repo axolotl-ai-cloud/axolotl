@@ -107,7 +107,7 @@ def patch_llama_rms_norm():
         transformers.models.llama.modeling_llama.LlamaRMSNorm = LlamaRMSNorm
     except ImportError:
         LOG.warning(
-            "optimized flash-attention RMSNorm not found (run `pip install 'git+https://github.com/Dao-AILab/flash-attention.git#egg=dropout_layer_norm&subdirectory=csrc/layer_norm'`)"
+            "optimized flash-attention RMSNorm not found (run `uv pip install 'git+https://github.com/Dao-AILab/flash-attention.git#egg=dropout_layer_norm&subdirectory=csrc/layer_norm'`)"
         )
 
 

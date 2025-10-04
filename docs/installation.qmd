@@ -29,19 +29,40 @@ Follow the instructions at: [https://pytorch.org/get-started/locally/](https://p
 For Blackwell GPUs, please use Pytorch 2.7.0 and CUDA 12.8.
 :::
 
-### PyPI Installation (Recommended) {#sec-pypi}
+### uv Installation (Recommended) {#sec-uv-quick}
 
 ```{.bash}
-pip3 install -U packaging setuptools wheel ninja
-pip3 install --no-build-isolation axolotl[flash-attn,deepspeed]
+# Install uv if not already installed
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Add Axolotl to a project (recommended)
+uv init my-project && cd my-project
+uv add axolotl
+uv pip install flash-attn --no-build-isolation
+source .venv/bin/activate
+```
+
+For a quick one-off install without creating a project:
+
+```{.bash}
+uv pip install axolotl
+uv pip install flash-attn --no-build-isolation
+```
+
+### pip Installation {#sec-pypi}
+
+```{.bash}
+pip install --no-build-isolation axolotl[deepspeed]
+pip install --no-build-isolation flash-attn
 ```
 
 We use `--no-build-isolation` in order to detect the installed PyTorch version (if
 installed) in order not to clobber it, and so that we set the correct version of
 dependencies that are specific to the PyTorch version or other installed
-co-dependencies.
+co-dependencies. Flash Attention is resolved separately so it can be built against
+the environment configured by the previous step.
 
-### uv Installation {#sec-uv}
+### Advanced uv Installation {#sec-uv}
 
 uv is a fast, reliable Python package installer and resolver built in Rust. It offers significant performance improvements over pip and provides better dependency resolution, making it an excellent choice for complex environments.
 
@@ -62,28 +83,38 @@ source .venv/bin/activate
 Install PyTorch
 - PyTorch 2.6.0 recommended
 ```{.bash}
-uv pip install packaging setuptools wheel
 uv pip install torch==2.6.0
 uv pip install awscli pydantic
 ```
 
 Install axolotl from PyPi
 ```{.bash}
-uv pip install --no-build-isolation axolotl[deepspeed,flash-attn]
-
+uv pip install --no-build-isolation axolotl[deepspeed]
 # optionally install with vLLM if you're using torch==2.6.0 and want to train w/ GRPO
-uv pip install --no-build-isolation axolotl[deepspeed,flash-attn,vllm]
+# uv pip install --no-build-isolation axolotl[deepspeed,vllm]
+
+uv pip install flash-attn --no-build-isolation
 ```
 
 ### Edge/Development Build {#sec-edge-build}
 
 For the latest features between releases:
 
+#### Using uv (recommended)
 ```{.bash}
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
-pip3 install -U packaging setuptools wheel ninja
-pip3 install --no-build-isolation -e '.[flash-attn,deepspeed]'
+curl -LsSf https://astral.sh/uv/install.sh | sh  # If not already installed
+uv sync
+uv pip install flash-attn --no-build-isolation
+```
+
+#### Using pip
+```{.bash}
+git clone https://github.com/axolotl-ai-cloud/axolotl.git
+cd axolotl
+pip install --no-build-isolation -e '.[deepspeed]'
+pip install --no-build-isolation flash-attn
 ```
 
 ### Docker {#sec-docker}
@@ -141,7 +172,7 @@ For providers supporting Docker:
 ### macOS {#sec-macos}
 
 ```{.bash}
-pip3 install --no-build-isolation -e '.'
+uv pip install --no-build-isolation -e '.'
 ```
 
 See @sec-troubleshooting for Mac-specific issues.
@@ -159,10 +190,15 @@ We recommend using WSL2 (Windows Subsystem for Linux) or Docker.
 1. Install Python ≥3.11
 2. Install PyTorch: https://pytorch.org/get-started/locally/
 3. Install Axolotl:
-   ```{.bash}
-   pip3 install -U packaging setuptools wheel ninja
-   pip3 install --no-build-isolation -e '.[flash-attn,deepspeed]'
-   ```
+```{.bash}
+# Option A: add Axolotl to the environment
+uv add axolotl
+uv pip install flash-attn --no-build-isolation
+
+# Option B: quick install
+uv pip install axolotl
+uv pip install flash-attn --no-build-isolation
+```
 4. (Optional) Login to Hugging Face:
    ```{.bash}
    huggingface-cli login

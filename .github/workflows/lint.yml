@@ -6,7 +6,7 @@ on:
       types: [opened, synchronize, reopened, ready_for_review]
       paths:
        - '**.py'
-       - 'requirements.txt'
+       - 'pyproject.toml'
        - '.github/workflows/*.yml'
        - "*.[q]md"
        - "examples/**/*.y[a]?ml"
@@ -23,5 +23,4 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: 'pip' # caching pip dependencies
       - uses: pre-commit/action@v3.0.1

@@ -1,14 +1,131 @@
 [build-system]
-requires = ["setuptools>=64", "wheel", "setuptools_scm>=8", "packaging==23.2"]
+requires = ["setuptools>=64", "wheel", "setuptools_scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "axolotl"
-dynamic = ["version", "dependencies", "optional-dependencies"]
+dynamic = ["version"]
 description = "LLM Trainer"
 readme = "README.md"
-requires-python = ">=3.10"
-# license = "Apache-2.0"
+requires-python = ">=3.10,<3.13"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Axolotl AI"},
+]
+maintainers = [
+    {name = "Axolotl AI"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "torch>=2.6.0",
+    "packaging>=23.2",
+    "huggingface_hub>=0.33.0",
+    "peft==0.17.0",
+    "transformers==4.56.1",
+    "tokenizers>=0.21.1",
+    "accelerate==1.10.1",
+    "datasets==4.0.0",
+    "trl==0.23.0",
+    "hf_xet==1.1.5",
+    "kernels==0.9.0",
+    "trackio",
+    "optimum==1.16.2",
+    "hf_transfer",
+    "sentencepiece",
+    "gradio==5.41.1",
+    "modal==1.0.2",
+    "pydantic>=2.10.6",
+    "addict",
+    "fire",
+    "PyYAML>=6.0",
+    "requests",
+    "wandb",
+    "einops",
+    "colorama",
+    "numba",
+    "numpy>=1.24.4,<3.0",
+    "evaluate==0.4.1",
+    "scipy",
+    "scikit-learn>=1.7.0",
+    "nvidia-ml-py==12.560.30",
+    "art",
+    "tensorboard",
+    "python-dotenv==1.0.1",
+    "s3fs>=2024.5.0",
+    "gcsfs>=2024.5.0",
+    "adlfs>=2024.5.0",
+    "ocifs==1.3.2",
+    "zstandard>=0.23.0",
+    "fastcore",
+    "lm_eval==0.4.7",
+    "langdetect==1.0.9",
+    "immutabledict==4.2.0",
+    "antlr4-python3-runtime==4.13.2",
+    "schedulefree==1.4.1",
+    "mistral-common==1.8.5",
+
+    # Axolotl contribs
+    "axolotl-contribs-lgpl @ git+https://github.com/axolotl-ai-cloud/axolotl-contribs-lgpl.git@numpy",
+    "axolotl-contribs-mit==0.0.5",
+
+    # Platform-specific dependencies (Linux by default, excluded on macOS)
+    "triton>=3.0.0 ; sys_platform != 'darwin'",
+    "xformers>=0.0.28 ; sys_platform != 'darwin'",
+    "autoawq==0.2.7.post3 ; sys_platform != 'darwin'",
+    "liger-kernel==0.6.1 ; sys_platform != 'darwin'",
+    "torchao==0.13.0 ; sys_platform != 'darwin'",
+    "bitsandbytes==0.47.0 ; sys_platform != 'darwin'",
+    "deepspeed>=0.17.5 ; sys_platform != 'darwin'",
+    "deepspeed-kernels ; sys_platform != 'darwin'",
+]
+
+[project.optional-dependencies]
+ring-flash-attn = [
+    "ring-flash-attn>=0.1.7",
+    "yunchang==0.6.0",
+]
+mamba-ssm = ["mamba-ssm>=2.2.0", "causal_conv1d>=1.4.0",]
+gptqmodel = ["gptqmodel>=4.0.0"]
+mlflow = ["mlflow"]
+galore = ["galore_torch"]
+apollo = ["apollo-torch"]
+optimizers = [
+    "galore_torch",
+    "apollo-torch",
+    "lomo-optim==0.1.1",
+    "torch-optimi==0.2.1",
+    "came_pytorch==0.1.3",
+]
+ray = ["ray[train]"]
+vllm = ["vllm>=0.10.0"]
+llmcompressor = ["llmcompressor>=0.5.1"]
+fbgemm-gpu = ["fbgemm-gpu-genai>=1.2.0"]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "pytest-retry",
+    "pytest-sugar",
+    "pytest-xdist",
+    "codecov",
+    "codecov-cli",
+    "tbparse",
+    "ruff",
+    "mypy",
+    "pre-commit",
+    "types-requests",
+    "quartodoc",
+    "jupyter",
+    "blobfile",
+    "tiktoken",
+]
 
 [project.scripts]
 axolotl = "axolotl.cli.main:main"
@@ -17,15 +134,20 @@ axolotl = "axolotl.cli.main:main"
 Homepage = "https://axolotl.ai/"
 Documentation = "https://docs.axolotl.ai/"
 Repository = "https://github.com/axolotl-ai-cloud/axolotl.git"
-
-[tool.setuptools_scm]
+Issues = "https://github.com/axolotl-ai-cloud/axolotl/issues"
 
 [tool.setuptools]
-py-modules = ["setuptools_axolotl_dynamic_dependencies"]
+package-dir = {"" = "src"}
 include-package-data = true
 
-[tool.setuptools.cmdclass]
-build_py = "setuptools_axolotl_dynamic_dependencies.BuildPyCommand"
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.yaml", "*.yml", "*.json"]
+
+[tool.setuptools_scm]
+write_to = "src/axolotl/_version.py"
 
 [tool.ruff]
 line-length = 88
@@ -57,3 +179,60 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
 docstring-code-format = false
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-v --tb=short"
+
+# UV specific configuration
+[tool.uv]
+prerelease = "allow"
+default-groups = ["default"]
+conflicts = [
+    [
+        { group = "default" },
+        { extra = "vllm" },
+    ],
+]
+
+[dependency-groups]
+default = ["torch>=2.6.0"]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "pytest-retry",
+    "pytest-sugar",
+    "pytest-xdist",
+    "codecov",
+    "codecov-cli",
+    "tbparse",
+    "ruff",
+    "mypy",
+    "pre-commit",
+    "types-requests",
+    "quartodoc",
+    "jupyter",
+    "blobfile",
+    "tiktoken",
+]
+
+[[tool.uv.index]]
+name = "autogptq"
+url = "https://huggingface.github.io/autogptq-index/whl/"
+
+[tool.uv.extra-build-dependencies]
+mamba-ssm = ["torch", "causal_conv1d"]
+gptqmodel = [
+    { requirement = "torch", match-runtime = true },
+]
+autoawq = ["torch"]
+triton = ["torch"]
+bitsandbytes = ["torch"]
+grpclib = ["wheel"]

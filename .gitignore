@@ -191,5 +191,5 @@ out/
 # vim
 *.swp
 
-# scm auto-versioning
+# setuptools-scm generated version file
 src/axolotl/_version.py

@@ -48,5 +48,5 @@ RUN git lfs install --skip-repo && \
     pip3 cache purge
 
 RUN if [ "$PYTORCH_VERSION" = "2.6.0" ] && [ "$CUDA" = "124" ] ; then \
-        FLASH_ATTENTION_FORCE_BUILD="TRUE" pip3 install --no-build-isolation flash-attn==2.8.0.post2; \
+        FLASH_ATTENTION_FORCE_BUILD="TRUE" uv pip install --no-build-isolation flash-attn==2.8.0.post2; \
     fi

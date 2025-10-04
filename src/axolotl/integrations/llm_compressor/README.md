@@ -13,7 +13,7 @@ It uses Axolotl’s plugin system to hook into the fine-tuning flows while maint
 - Axolotl with `llmcompressor` extras:
 
   ```bash
-  pip install "axolotl[llmcompressor]"
+  uv pip install "axolotl[llmcompressor]"
   ```
 
 - Requires `llmcompressor >= 0.5.1`

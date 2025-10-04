@@ -72,8 +72,8 @@ datasets:
 Make sure you have an [editable install](https://setuptools.pypa.io/en/latest/userguide/development_mode.html) of Axolotl, which ensures that changes you make to the code are reflected at runtime.  Run the following commands from the root of this project:
 
 ```bash
-pip3 install packaging
-pip3 install --no-build-isolation -e '.[flash-attn,deepspeed]'
+uv sync --extra deepspeed
+uv pip install flash-attn --no-build-isolation
 ```
 
 #### Remote Hosts
@@ -213,8 +213,8 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --
 You will now be in the container.  Next, perform an editable install of Axolotl:
 
 ```bash
-pip3 install packaging
-pip3 install --no-build-isolation -e '.[flash-attn,deepspeed]'
+uv sync --extra deepspeed
+uv pip install flash-attn --no-build-isolation
 ```
 
 ### Attach To Container
