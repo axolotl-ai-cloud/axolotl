@@ -155,10 +155,11 @@ jobs:
       - name: Install dependencies
         run: |
           uv pip show --system torch
-          uv pip install --system wheel build
+          uv pip install --system wheel build setuptools_scm
           python -m build --sdist
           printf "torch==${{ matrix.pytorch_version }}\n" > torch-constraints.txt
-          uv pip install --no-cache-dir --no-build-isolation --system "dist/axolotl*.tar.gz[dev]" --constraints torch-constraints.txt
+          tarball_path=$(echo dist/axolotl*.tar.gz)
+          uv pip install --no-cache-dir --no-build-isolation --system "${tarball_path}[dev]" --constraints torch-constraints.txt
           python scripts/unsloth_install.py | sh
           python scripts/cutcrossentropy_install.py | sh
 
