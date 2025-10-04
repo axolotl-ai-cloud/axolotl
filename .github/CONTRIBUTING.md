@@ -35,7 +35,7 @@ Please run the below to setup:
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 
-uv sync && uv pip install flash-attn --no-build-isolation
+uv sync --dev && uv pip install flash-attn --no-build-isolation
 source .venv/bin/activate
 
 pre-commit install  # install pre-commit hooks
