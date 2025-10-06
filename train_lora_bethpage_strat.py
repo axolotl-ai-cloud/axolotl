@@ -10,7 +10,7 @@ from transformers import (
     TrainingArguments,
     BitsAndBytesConfig,
 )
-from peft import get_peft_model, LoraConfig, TaskType
+from peft import get_peft_model, LoraConfig, TaskType, prepare_model_for_kbit_training
 import torch
 os.environ.setdefault("PYTORCH_SDP_KERNEL", "math")
 # Quiet HF datasets progress bars to reduce terminal noise on Windows piping
@@ -242,6 +242,25 @@ def train_model(
                 device_map="auto",
                 token=hf_token,
             )
+            # QLoRA preparation for training
+            try:
+                model.config.use_cache = False
+            except Exception:
+                pass
+            try:
+                model.gradient_checkpointing_enable()
+            except Exception:
+                pass
+            # Ensure gradients can flow through inputs when using checkpointing
+            try:
+                if hasattr(model, "enable_input_require_grads"):
+                    model.enable_input_require_grads()
+            except Exception as e:
+                print(f"Warning: enable_input_require_grads failed: {e}")
+            try:
+                model = prepare_model_for_kbit_training(model)
+            except Exception as e:
+                print(f"Warning: prepare_model_for_kbit_training failed: {e}")
         except Exception as e:
             print(f"QLoRA load failed ({e}); falling back to standard load.")
             model = AutoModelForCausalLM.from_pretrained(model_name, token=hf_token)
@@ -383,6 +402,8 @@ def train_model(
     # Precision and checkpointing
     use_bf16 = bool(torch.cuda.is_available())
     # Some consumer GPUs support bf16; if not, fall back to fp16 where appropriate
+    if qlora or is_llama_like:
+        print("Training mode: QLoRA/large-base; gradient checkpointing enabled; use_cache disabled.")
     training_args = TrainingArguments(
         output_dir=ckpt_dir,
         do_train=True,
@@ -403,8 +424,8 @@ def train_model(
         fp16=(not use_bf16) and (qlora or is_llama_like),
         bf16=use_bf16 and (qlora or is_llama_like),
         gradient_checkpointing=True if (qlora or is_llama_like) else False,
-        resume_from_checkpoint=resume_ckpt,
-        remove_unused_columns=False,
+    resume_from_checkpoint=resume_ckpt,
+    remove_unused_columns=False,
     eval_strategy="steps" if has_eval else "no",
     eval_steps=eval_every if has_eval else None,
     prediction_loss_only=True if has_eval else False,
@@ -419,6 +440,19 @@ def train_model(
         # Keep the terminal clean when piping output
         disable_tqdm=True,
     )
+
+    # Log trainable parameter ratio for sanity
+    try:
+        from peft import PeftModel
+        trainable, total = 0, 0
+        for n, p in model.named_parameters():
+            num = p.numel()
+            total += num
+            if p.requires_grad:
+                trainable += num
+        print({"trainable_params": trainable, "total_params": total, "trainable_ratio": round(trainable / max(1,total), 6)})
+    except Exception:
+        pass
 
     # Custom callback to record per-step loss
     from transformers import TrainerCallback
