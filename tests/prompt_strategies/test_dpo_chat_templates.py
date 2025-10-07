@@ -252,7 +252,7 @@ class TestArgillaChatDPOChatTemplate:
     """
 
     def test_llama3_argilla_chat(self, llama3_tokenizer, argilla_chat_dataset):
-        transform_fn = argilla_chat(
+        transform_fn, _ = argilla_chat(
             DictDefault(
                 {
                     "chat_template": "llama3",
@@ -274,7 +274,7 @@ class TestArgillaChatDPOChatTemplate:
         assert result["rejected"] == "party on<|eot_id|>"
 
     def test_phi3_argilla_chat(self, phi3_tokenizer, argilla_chat_dataset):
-        transform_fn = argilla_chat(
+        transform_fn, _ = argilla_chat(
             DictDefault(
                 {
                     "chat_template": "tokenizer_default",

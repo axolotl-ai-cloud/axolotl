@@ -124,18 +124,34 @@ def default(cfg, dataset_idx=0, **kwargs):
 
 def argilla_chat(cfg, dataset_idx=0, **kwargs):
     """
-    For argilla-style datasets where chosen/rejected contain full conversations.
-    Format:
-    {
-        "chosen": [
-            {"role": "user", "content": "..."},
-            {"role": "assistant", "content": "..."}
-        ],
-        "rejected": [
-            {"role": "user", "content": "..."},
-            {"role": "assistant", "content": "..."}
-        ]
-    }
+    DPO chat template strategy for argilla-style datasets.
+
+    For argilla-style datasets where chosen/rejected contain full conversations
+    instead of single response messages. Extracts the conversation history from
+    the chosen field and formats both chosen/rejected responses using the
+    configured chat template.
+
+    Args:
+        cfg: Configuration object containing chat_template and dataset settings
+        dataset_idx: Index of the dataset in the config (default: 0)
+        **kwargs: Additional keyword arguments (unused)
+
+    Returns:
+        tuple: (transform_fn, dataset_kwargs) where:
+            - transform_fn: Function to transform dataset samples
+            - dataset_kwargs: Dict with 'remove_columns' specifying columns to drop
+
+    Dataset format:
+        {
+            "chosen": [
+                {"role": "user", "content": "..."},
+                {"role": "assistant", "content": "..."}
+            ],
+            "rejected": [
+                {"role": "user", "content": "..."},
+                {"role": "assistant", "content": "..."}
+            ]
+        }
     """
     ds_cfg = cfg["datasets"][dataset_idx]
     ds_cfg = handle_legacy_message_fields_logic(ds_cfg)
@@ -223,4 +239,4 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
 
         return result
 
-    return transform_fn
+    return transform_fn, {"remove_columns": [field_chosen, field_rejected]}
