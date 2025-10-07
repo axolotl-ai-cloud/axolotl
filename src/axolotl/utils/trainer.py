@@ -546,7 +546,7 @@ def setup_deepspeed_env(cfg, stage=None):
         with NamedTemporaryFile(
             mode="w", delete=False, suffix=".json", prefix="deepspeed_config_"
         ) as temp_file:
-            temp_file.write(json.dump(cfg.deepspeed.to_dict(), indent=4))
+            temp_file.write(json.dumps(cfg.deepspeed.to_dict(), indent=4))
             temp_file.close()
             cfg.deepspeed = str(temp_file.name)
     os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
