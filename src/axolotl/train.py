@@ -526,9 +526,15 @@ def setup_model_and_trainer(
     plugin_manager.post_trainer_create(cfg, trainer)
 
     if cfg.use_ray:
-        import ray.train.huggingface.transformers
+        try:
+            import ray.train.huggingface.transformers
 
-        trainer = ray.train.huggingface.transformers.prepare_trainer(trainer)
+            trainer = ray.train.huggingface.transformers.prepare_trainer(trainer)
+        except ImportError:
+            LOG.warning(
+                "The Ray integration with Hugging Face Transformers is not available. "
+                "To use Ray, install the 'ray[train]' package."
+            )
 
     return (
         trainer,
