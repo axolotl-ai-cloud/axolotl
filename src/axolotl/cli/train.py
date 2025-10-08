@@ -99,7 +99,7 @@ def ray_train_func(kwargs: dict):
     resolve_dtype(cfg)
 
     # ray serializing objects gets rid of frozen attribute - HF expects dict not DefaultDict
-    if cfg.deepspeed:
+    if cfg.deepspeed and hasattr(cfg.deepspeed, "to_dict"):
         cfg.deepspeed = cfg.deepspeed.to_dict()
 
     # initialize accelerator before model instantiation
