@@ -28,7 +28,6 @@ from axolotl.processing_strategies import get_processing_strategy
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
     LossWatchDogCallback,
-    SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
     causal_lm_bench_eval_callback_factory,
     colab_inference_post_train_callback,
@@ -62,12 +61,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.relora:
             callbacks.append(ReLoRACallback(self.cfg))
-
-        if (
-            hasattr(self.model, "use_bettertransformer")
-            and self.model.use_bettertransformer is True
-        ):
-            callbacks.append(SaveBetterTransformerModelCallback())
 
         # TODO: check if can move to base class
         if self.cfg.loss_watchdog_threshold is not None:

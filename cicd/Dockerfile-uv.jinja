@@ -32,6 +32,7 @@ RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
     fi
 
 RUN uv pip install packaging==23.2 setuptools==75.8.0
+RUN uv pip install torchvision
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         uv pip install --no-build-isolation -e .[deepspeed,flash-attn,ring-flash-attn,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
     else \

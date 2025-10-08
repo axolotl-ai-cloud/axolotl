@@ -30,7 +30,7 @@ RUN uv venv --no-project --relocatable axolotl-venv
 ENV PATH="/workspace/axolotl-venv/bin:${PATH}"
 
 RUN uv pip install packaging setuptools wheel psutil \
-    && uv pip install torch==${PYTORCH_VERSION} \
+    && uv pip install torch==${PYTORCH_VERSION} torchvision \
     && uv pip install --no-build-isolation "causal_conv1d @ git+https://github.com/Dao-AILab/causal-conv1d.git@main" \
     && uv pip install "mamba_ssm @ git+https://github.com/state-spaces/mamba.git@main" \
     && uv pip install awscli pydantic

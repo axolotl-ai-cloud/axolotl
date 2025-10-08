@@ -6,8 +6,10 @@ from typing import Optional
 from PIL import Image, ImageOps
 from PIL.Image import Resampling
 from torch import Tensor, zeros_like
-from transformers import ProcessorMixin, SmolVLMProcessor, VoxtralProcessor
+from transformers import ProcessorMixin
 from transformers.image_utils import load_image
+from transformers.models.smolvlm import SmolVLMProcessor
+from transformers.models.voxtral import VoxtralProcessor
 
 from axolotl.utils.dict import remove_none_values
 from axolotl.utils.logging import get_logger

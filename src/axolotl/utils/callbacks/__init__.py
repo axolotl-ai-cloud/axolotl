@@ -17,7 +17,6 @@ import torch
 import torch.distributed as dist
 import wandb
 from datasets import load_dataset
-from optimum.bettertransformer import BetterTransformer
 from tqdm import tqdm
 from transformers import (
     GenerationConfig,
@@ -28,8 +27,6 @@ from transformers import (
     TrainingArguments,
 )
 from transformers.trainer_utils import (
-    PREFIX_CHECKPOINT_DIR,
-    IntervalStrategy,
     SaveStrategy,
 )
 from trl.models import unwrap_model_for_generation
@@ -54,40 +51,6 @@ if TYPE_CHECKING:
 
 IGNORE_INDEX = -100
 LOG = get_logger(__name__)
-
-
-class SaveBetterTransformerModelCallback(TrainerCallback):
-    """Callback to save the BetterTransformer wrapped model"""
-
-    def on_step_end(
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        **kwargs,
-    ) -> TrainerControl:
-        # Save
-        if (
-            args.save_strategy == IntervalStrategy.STEPS
-            and args.save_steps > 0
-            and state.global_step % args.save_steps == 0
-        ):
-            control.should_save = True
-
-        if control.should_save:
-            checkpoint_folder = os.path.join(
-                args.output_dir,
-                f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}",
-            )
-
-            model = BetterTransformer.reverse(kwargs["model"])
-            model.save_pretrained(checkpoint_folder)
-            # FIXME - need to cleanup old checkpoints
-
-            # since we're saving here, we don't need the trainer loop to attempt to save too b/c
-            # the trainer will raise an exception since it can't save a BetterTransformer wrapped model
-            control.should_save = False
-        return control
 
 
 class LossWatchDogCallback(TrainerCallback):
