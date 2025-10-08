@@ -106,6 +106,12 @@ class AxolotlInputConfig(
             "description": "Don't upcast the embeddings to float32 when using PEFT. Useful for low-VRAM GPUs"
         },
     )
+    reinit_weights: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Reinitialize model weights randomly instead of loading pretrained weights"
+        },
+    )
 
     trainer_cls: str | None = Field(
         default=None,
@@ -136,6 +142,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Process reward modelling: `True` or `False`"
+        },
+    )
+    center_rewards_coefficient: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Coefficient to incentivize the reward model to output mean-zero rewards (proposed by https://huggingface.co/papers/2312.09244, Eq. 2). Recommended value: `0.01`."
         },
     )
     num_labels: int | None = None
@@ -424,8 +436,8 @@ class AxolotlInputConfig(
         },
     )
     min_sample_len: int | None = None
-    max_prompt_len: int = Field(
-        default=512,
+    max_prompt_len: int | None = Field(
+        default=None,
         json_schema_extra={"description": "maximum prompt length for RL training"},
     )
     sample_packing: bool | None = Field(
@@ -849,9 +861,9 @@ class AxolotlInputConfig(
         },
     )
     include_tkps: bool | None = Field(
-        default=None,
+        default=True,
         json_schema_extra={
-            "description": "bool of whether to report tokens per second during training by measuring throughput of non-padding tokens."
+            "description": "bool of whether to report tokens per second per-gpu during training by measuring throughput of non-padding tokens."
         },
     )
     neftune_noise_alpha: float | None = Field(

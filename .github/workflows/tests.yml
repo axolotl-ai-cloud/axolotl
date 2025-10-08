@@ -55,7 +55,7 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.11"]
-        pytorch_version: ["2.6.0", "2.7.1", "2.8.0"]
+        pytorch_version: ["2.7.1", "2.8.0"]
     timeout-minutes: 20
 
     steps:
@@ -81,12 +81,12 @@ jobs:
 
       - name: Install PyTorch
         run: |
-          pip3 install torch==${{ matrix.pytorch_version }} torchvision
+          pip3 install --no-cache-dir torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Install dependencies
         run: |
           pip3 show torch
-          pip3 install --no-build-isolation -U -e .
+          pip3 install --no-cache-dir --no-build-isolation -U -e .
           python scripts/unsloth_install.py | sh
           python scripts/cutcrossentropy_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
@@ -130,7 +130,7 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.11"]
-        pytorch_version: ["2.6.0", "2.7.1", "2.8.0"]
+        pytorch_version: ["2.7.1", "2.8.0"]
     timeout-minutes: 20
 
     steps:
@@ -156,13 +156,13 @@ jobs:
 
       - name: Install PyTorch
         run: |
-          pip3 install torch==${{ matrix.pytorch_version }} torchvision
+          pip3 install --no-cache-dir torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Install dependencies
         run: |
           pip3 show torch
           python -m build --no-isolation --sdist
-          pip3 install --no-build-isolation dist/axolotl*.tar.gz
+          pip3 install --no-cache-dir --no-build-isolation dist/axolotl*.tar.gz
           python scripts/unsloth_install.py | sh
           python scripts/cutcrossentropy_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
@@ -286,12 +286,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 126
-            cuda_version: 12.6.3
-            python_version: "3.11"
-            pytorch: 2.6.0
-            num_gpus: 1
-            axolotl_extras:
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
@@ -304,7 +298,7 @@ jobs:
             pytorch: 2.8.0
             num_gpus: 1
             gpu_type: "B200"
-            axolotl_extras:
+            axolotl_extras: fbgemm-gpu
     steps:
       - name: Checkout
         uses: actions/checkout@v4

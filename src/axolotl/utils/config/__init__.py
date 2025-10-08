@@ -17,8 +17,8 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.config import (
     AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
+    AxolotlInputConfig as AxolotlInputConfigBase,
 )
-from axolotl.utils.schemas.config import AxolotlInputConfig as AxolotlInputConfigBase
 from axolotl.utils.schemas.datasets import DPODataset, KTODataset, SFTDataset
 
 LOG = get_logger(__name__)
@@ -273,7 +273,9 @@ def validate_config(
     # Convert datasets to proper format if needed
     if cfg.get("datasets"):
         for idx, ds_cfg in enumerate(cfg["datasets"]):
-            if cfg.get("rl") in ["dpo", "simpo"] and not isinstance(ds_cfg, DPODataset):
+            if cfg.get("rl") in ["dpo", "ipo", "simpo"] and not isinstance(
+                ds_cfg, DPODataset
+            ):
                 cfg["datasets"][idx] = DPODataset(**ds_cfg)
             elif cfg.get("rl") == "kto" and not isinstance(ds_cfg, KTODataset):
                 cfg["datasets"][idx] = KTODataset(**dict(ds_cfg))

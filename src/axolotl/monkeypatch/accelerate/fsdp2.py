@@ -4,6 +4,7 @@ monkeypatch for accelerate fsdp2 fix when modifying ordereddict during interatio
 
 import copy
 import functools
+import os
 import sys
 
 import torch
@@ -160,9 +161,11 @@ def get_state_dict(self, model, unwrap=True):
                 state_dict[param_name] = param.cpu()
             torch.distributed.barrier()
     elif self.distributed_type == DistributedType.FSDP:
-        from torch.distributed.fsdp import FullStateDictConfig
-        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-        from torch.distributed.fsdp import StateDictType
+        from torch.distributed.fsdp import (
+            FullStateDictConfig,
+            FullyShardedDataParallel as FSDP,
+            StateDictType,
+        )
 
         full_state_dict_config = FullStateDictConfig(
             offload_to_cpu=True, rank0_only=True
@@ -275,6 +278,11 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     mesh = getattr(accelerator.state, "device_mesh", None)
 
+    # Disable memory pinning if requested
+    offload_to_cpu = isinstance(fsdp2_plugin.cpu_offload, CPUOffloadPolicy)
+    if offload_to_cpu and os.environ.get("FSDP_CPU_OFFLOAD_PIN_MEMORY", "") == "false":
+        fsdp2_plugin.cpu_offload.pin_memory = False
+
     fsdp2_kwargs = {
         "reshard_after_forward": fsdp2_plugin.reshard_after_forward,
         "offload_policy": fsdp2_plugin.cpu_offload,
@@ -339,7 +347,6 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         )
 
     if fsdp2_plugin.cpu_ram_efficient_loading:
-        offload_to_cpu = isinstance(fsdp2_plugin.cpu_offload, CPUOffloadPolicy)
         fsdp2_load_full_state_dict(
             accelerator, model, original_sd, offload_to_cpu=offload_to_cpu
         )

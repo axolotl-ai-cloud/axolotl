@@ -3,8 +3,8 @@
 Applies pre- and post-model load patches for various fixes and optimizations.
 """
 
-import os
 import importlib.util
+import os
 from functools import cached_property
 
 import addict
@@ -68,11 +68,12 @@ class PatchManager:
         self._apply_self_attention_lora_patch()
         self._apply_fsdp2_bnb_patches()
         self._apply_patch_deepspeed_zero3()
+        self._apply_voxtral_patches()
+        self._apply_apertus_patches()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
         self._apply_tiled_mlp(self.cfg.model_config_type)
-        self._apply_voxtral_patches()
 
     def _apply_transformers_patches(self):
         from axolotl.monkeypatch.transformers.trainer_loss_calc import (
@@ -80,14 +81,15 @@ class PatchManager:
             patch_maybe_log_save_evaluate,
         )
 
-        patch_fsdp2 = (
-            self.cfg.torch_compile
-            and self.cfg.fsdp_config
-            and self.cfg.fsdp_version == 2
-        )
-
-        patch_evaluation_loop(patch_fsdp2)
+        patch_evaluation_loop()
         patch_maybe_log_save_evaluate()
+
+        if self.cfg.context_parallel_size > 1:
+            from axolotl.monkeypatch.transformers.trainer_context_parallel import (
+                patch_prepare_context_parallel_inputs,
+            )
+
+            patch_prepare_context_parallel_inputs()
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
@@ -173,6 +175,20 @@ class PatchManager:
             )
 
             patch_llama4_linearized_modeling()
+
+        if self.cfg.model_config_type == "qwen3_next" and self.cfg.sample_packing:
+            from axolotl.monkeypatch.models.qwen3_next.modeling import (
+                patch_qwen3_next_modeling_packing,
+            )
+
+            patch_qwen3_next_modeling_packing()
+
+        if self.cfg.model_config_type == "mistral3" and self.cfg.processor_type:
+            from axolotl.monkeypatch.models.mistral3.mistral_common_tokenizer import (
+                apply_mistral_tokenizer_image_patch,
+            )
+
+            apply_mistral_tokenizer_image_patch()
 
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
@@ -340,6 +356,13 @@ class PatchManager:
 
             replace_stablelm_attn_with_flash_attn(self.cfg.base_model)
 
+        if self.model_config.model_type in ("mistral3", "llava"):
+            from axolotl.monkeypatch.models.pixtral.modeling_flash_attention_utils import (
+                apply_patch_is_packed_sequence,
+            )
+
+            apply_patch_is_packed_sequence()
+
     def _patch_loss_llama(self):
         """Patch loss functions and other optimizations for LLaMA models."""
         if not self.cfg.is_llama_derived_model:
@@ -474,8 +497,9 @@ class PatchManager:
 
     def _apply_patch_deepspeed_zero3(self):
         try:
-            from axolotl.monkeypatch.deepspeed_utils import apply_deepspeed_patches
             from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
+
+            from axolotl.monkeypatch.deepspeed_utils import apply_deepspeed_patches
 
             if self.cfg.activation_offloading is True and (
                 is_deepspeed_zero3_enabled()
@@ -484,3 +508,12 @@ class PatchManager:
                 apply_deepspeed_patches()
         except ImportError as e:
             LOG.warning(f"DeepSpeed patches not applied: {e}")
+
+    def _apply_apertus_patches(self):
+        """Apply patches for Apertus model."""
+        if self.cfg.model_config_type == "apertus":
+            from axolotl.monkeypatch.models.apertus.activation import (
+                patch_apertus_xielu_activation,
+            )
+
+            patch_apertus_xielu_activation()

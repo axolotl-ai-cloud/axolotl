@@ -124,7 +124,6 @@ extras_require = {
     "ring-flash-attn": [
         "flash-attn==2.8.3",
         "ring-flash-attn>=0.1.7",
-        "yunchang==0.6.0",
     ],
     "deepspeed": [
         "deepspeed==0.17.5",
@@ -162,6 +161,7 @@ extras_require = {
     "llmcompressor": [
         "llmcompressor==0.5.1",
     ],
+    "fbgemm-gpu": ["fbgemm-gpu-genai>=1.2.0"],
 }
 install_requires, dependency_links, extras_require_build = parse_requirements(
     extras_require
