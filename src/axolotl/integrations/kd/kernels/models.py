@@ -72,9 +72,9 @@ def kldiv_forward_llama_like(
 
     # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
     # TODO, we can optimize this further by filtering hidden_states on sequence dimension using labels != -100
-    # self.loss_function should be LigerFusedLinearKLTopKLogprobLoss
+    # self._loss_function should be LigerFusedLinearKLTopKLogprobLoss
 
-    loss = self.loss_function(
+    loss = self._loss_function(
         self.lm_head.weight,
         hidden_states,
         target_token_ids,
