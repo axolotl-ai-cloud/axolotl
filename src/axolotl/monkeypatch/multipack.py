@@ -45,6 +45,8 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "gpt_oss",
     "arcee",
     "seed_oss",
+    "lfm2",
+    "lfm2_moe",
 ]
 
 

@@ -6,6 +6,8 @@ LFM2 features a new hybrid Liquid architecture with multiplicative gates, short-
 
 This guide shows how to fine-tune both the LFM2 and LFM2-VL models with Axolotl.
 
+Thanks to the team at LiquidAI for giving us early access to prepare for these releases.
+
 ## Getting Started
 
 1.  Install Axolotl following the [installation guide](https://docs.axolotl.ai/docs/installation.html).
@@ -31,6 +33,14 @@ This guide shows how to fine-tune both the LFM2 and LFM2-VL models with Axolotl.
     axolotl train examples/LiquidAI/lfm2-vl-lora.yaml
     ```
 
+    **LFM2-MoE**
+    ```bash
+    pip install git+https://github.com/huggingface/transformers.git@0c9a72e4576fe4c84077f066e585129c97bfd4e6
+
+    # LoRA SFT (1x48GB @ 16.2GiB)
+    axolotl train examples/LiquidAI/lfm2-8b-a1b-lora.yaml
+    ```
+
 ### TIPS
 
 - **Installation Error**: If you encounter `ImportError: ... undefined symbol ...` or `ModuleNotFoundError: No module named 'causal_conv1d_cuda'`, the `causal-conv1d` package may have been installed incorrectly. Try uninstalling it:
@@ -45,14 +55,13 @@ This guide shows how to fine-tune both the LFM2 and LFM2-VL models with Axolotl.
 
 ## Optimization Guides
 
-- [Multi-GPU Training](https://docs.axolotl.ai/docs/multi-gpu.html)
-- [LoRA Optimizations](https://docs.axolotl.ai/docs/lora_optims.html)
-- [Multi-Node Training](https://docs.axolotl.ai/docs/multi-node.html)
+- [Optimizations Guide](https://docs.axolotl.ai/docs/optimizations.html)
 
 ## Related Resources
 
 - [LFM2 Blog](https://www.liquid.ai/blog/liquid-foundation-models-v2-our-second-series-of-generative-ai-models)
 - [LFM2-VL Blog](https://www.liquid.ai/blog/lfm2-vl-efficient-vision-language-models)
+- [LFM2-MoE Blog](https://www.liquid.ai/blog/lfm2-8b-a1b-an-efficient-on-device-mixture-of-experts)
 - [Axolotl Docs](https://docs.axolotl.ai)
 - [Axolotl GitHub](https://github.com/axolotl-ai-cloud/axolotl)
 - [Axolotl Discord](https://discord.gg/7m9sfhzaf3)

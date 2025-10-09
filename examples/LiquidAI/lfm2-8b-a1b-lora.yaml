@@ -1,7 +1,9 @@
-base_model: LiquidAI/LFM2-350M
+base_model: LiquidAI/LFM2-8B-A1B
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+load_in_8bit: true
 
 eot_tokens:
   - "<|im_end|>"
@@ -19,6 +21,13 @@ output_dir: ./outputs/out
 sequence_len: 4096
 sample_packing: true
 
+adapter: lora
+lora_model_dir:
+
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_modules: 'model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
 
 wandb_project:
 wandb_entity:
@@ -36,7 +45,7 @@ learning_rate: 5e-5
 bf16: true
 tf32: true
 
-gradient_checkpointing: false
+gradient_checkpointing: true
 resume_from_checkpoint:
 logging_steps: 1
 flash_attention: true
