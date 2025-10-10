@@ -104,7 +104,6 @@ class TestKnowledgeDistillation:
             temp_dir + "/runs", "train/loss", 1.4, "Train Loss (%s) is too high"
         )
 
-    @pytest.mark.skip(reason="Chunked KD loss doesn't support PEFT/LoRA")
     @pytest.mark.parametrize(
         "load_in_8bit",
         [True, False],
@@ -120,6 +119,10 @@ class TestKnowledgeDistillation:
                 "lora_r": 16,
                 "lora_alpha": 32,
                 "lora_dropout": 0.0,
+                "lora_modules_to_save": ["embed_tokens", "lm_head"],
+                "lora_mlp_kernel": False,
+                "lora_qkv_kernel": False,
+                "lora_o_kernel": False,
             }
             | kd_min_cfg
         )
