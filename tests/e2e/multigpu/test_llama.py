@@ -353,7 +353,6 @@ class TestMultiGPULlama:
                     "auto_wrap",
                 ],
                 "fsdp_config": {
-                    "fsdp_limit_all_gathers": True,
                     "fsdp_offload_params": False,
                     "fsdp_sync_module_states": True,
                     "fsdp_use_orig_params": False,
@@ -431,7 +430,6 @@ class TestMultiGPULlama:
                     "auto_wrap",
                 ],
                 "fsdp_config": {
-                    "fsdp_limit_all_gathers": True,
                     "fsdp_offload_params": False,
                     "fsdp_sync_module_states": True,
                     "fsdp_use_orig_params": False,
@@ -595,7 +593,6 @@ class TestMultiGPULlama:
                     "auto_wrap",
                 ],
                 "fsdp_config": {
-                    "fsdp_limit_all_gathers": True,
                     "fsdp_offload_params": False,
                     "fsdp_sync_module_states": True,
                     "fsdp_use_orig_params": False,

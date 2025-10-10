@@ -881,7 +881,7 @@ class OptimizationValidationMixin:
             and self.fsdp_config
             and self.optimizer
             and "8bit" in self.optimizer.value
-            and self.fsdp_config["offload_params"]
+            and self.fsdp_config.offload_params
             and str(self.fsdp_version) != "2"
         ):
             raise ValueError(
