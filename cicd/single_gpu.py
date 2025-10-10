@@ -66,7 +66,6 @@ def run_cmd(cmd: str, run_folder: str):
 
     sp_env = os.environ.copy()
     sp_env["AXOLOTL_DATASET_NUM_PROC"] = "8"
-    sp_env["AXOLOTL_DATASET_PROCESSES"] = "8"
 
     # Propagate errors from subprocess.
     if exit_code := subprocess.call(cmd.split(), cwd=run_folder, env=sp_env):  # nosec
