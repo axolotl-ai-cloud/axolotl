@@ -57,7 +57,7 @@ class TestModelsUtils:
         # check torch_dtype
         assert self.cfg.torch_dtype == self.model_loader.model_kwargs["torch_dtype"]
 
-    @pytest.mark.parametrize("adapter", ["lora", "qlora", None])
+    @pytest.mark.parametrize("adapter", ["lora", "qlora", "qalora", None])
     @pytest.mark.parametrize("load_in_8bit", [True, False])
     @pytest.mark.parametrize("load_in_4bit", [True, False])
     @pytest.mark.parametrize("gptq", [True, False])

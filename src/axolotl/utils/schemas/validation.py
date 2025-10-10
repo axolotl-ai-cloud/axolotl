@@ -611,6 +611,19 @@ class LoRAValidationMixin:
 
     @model_validator(mode="after")
     def check_fused_lora(self):
+        if self.adapter in ["lora", "qlora", "qalora"] and self.flash_attn_fuse_mlp:
+            raise ValueError("Fused modules are not supported with LoRA/QLoRA/QALoRA")
+        return self
+
+    @model_validator(mode="after")
+    def validate_qalora(self):
+        if self.adapter == "qalora":
+            if not self.load_in_4bit:
+                raise ValueError("QALoRA requires load_in_4bit to be True")
+            if not hasattr(self, "qalora_group_size") or self.qalora_group_size is None:
+                raise ValueError("QALoRA requires qalora_group_size to be specified")
+            if self.merge_lora:
+                raise ValueError("QALoRA does not support merge_lora yet")
         if self.adapter in ["lora", "qlora"] and self.flash_attn_fuse_mlp:
             raise ValueError("Fused modules are not supported with LoRA/QLoRA")
         return self
@@ -619,7 +632,7 @@ class LoRAValidationMixin:
     @classmethod
     def warn_qlora_zero3_w_use_reentrant(cls, data):
         if (
-            data.get("adapter") == "qlora"
+            data.get("adapter") in ["qlora", "qalora"]
             and data.get("gradient_checkpointing_kwargs", {})
             and data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
             is False
@@ -725,7 +738,7 @@ class RLValidationMixin:
             and data.get("gradient_checkpointing_kwargs")
             and data.get("gradient_checkpointing_kwargs").get("use_reentrant")
             and data.get("load_in_4bit")
-            and data.get("adapter") == "qlora"
+            and data.get("adapter") in ["qlora", "qalora"]
             and data.get("capabilities")
             and data.get("capabilities").get("n_gpu", 1) > 1
         ):
@@ -1259,8 +1272,10 @@ class ComplexValidationMixin:
         if self.relora:
             if not self.jagged_restart_steps:
                 raise ValueError("jagged_restart_steps must be set to use ReLoRA")
-            if self.adapter not in ("lora", "qlora"):
-                raise ValueError("cfg.adapter must be lora or qlora to use ReLoRA")
+            if self.adapter not in ("lora", "qlora", "qalora"):
+                raise ValueError(
+                    "cfg.adapter must be lora, qlora, or qalora to use ReLoRA"
+                )
 
             if self.fsdp or self.fsdp_config:
                 raise ValueError("fsdp not supported with ReLoRA")

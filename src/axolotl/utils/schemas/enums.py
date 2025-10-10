@@ -22,6 +22,14 @@ class TorchAOQuantDType(Enum):
             return TorchAOQuantDType.nvfp4
 
 
+class AdapterEnum(str, Enum):
+    """Adapter type configuration subset"""
+
+    lora = "lora"
+    qlora = "qlora"
+    qalora = "qalora"
+
+
 class RLType(str, Enum):
     """RL trainer type configuration subset"""
 
