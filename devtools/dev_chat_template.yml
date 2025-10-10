@@ -13,7 +13,7 @@ datasets:
 val_set_size: 0
 output_dir: temp_debug/axolotl_outputs/model
 dataset_prepared_path: temp_debug/axolotl_outputs/data
-dataset_processes: 1
+dataset_num_proc: 1
 
 sequence_len: 4096
 sample_packing: false
