@@ -1,10 +1,7 @@
-"""
-Common logging module for axolotl
-"""
+"""Common logging module for axolotl."""
 
 import logging
 import os
-import sys
 from logging import Formatter, Logger, LogRecord
 from logging.config import dictConfig
 from typing import Any, Dict
@@ -17,9 +14,9 @@ DEFAULT_LOG_LEVEL = "WARNING"
 
 class AxolotlOrWarnErrorFilter(logging.Filter):
     """
-    Allows ANY WARNING or higher (unless overridden by LOG_LEVEL)
-    Allows axolotl.* at INFO or higher (unless overridden by AXOLOTL_LOG_LEVEL)
-    Drops all other records (i.e. non-axolotl.INFO, DEBUG, etc. by default)
+    Allows ANY WARNING or higher (unless overridden by LOG_LEVEL). Allows axolotl.* at
+    INFO or higher (unless overridden by AXOLOTL_LOG_LEVEL). Drops all other records
+    (i.e. non-axolotl.INFO, DEBUG, etc. by default).
     """
 
     def __init__(self, **kwargs):
@@ -52,13 +49,12 @@ class AxolotlOrWarnErrorFilter(logging.Filter):
 
 
 class AxolotlLogger(Logger):
-    """A Logger that automatically rejects non-axolotl INFOs."""
+    """Logger that applies filtering to non-axolotl loggers."""
 
     def __init__(self, name: str, level: int = logging.NOTSET):
         super().__init__(name, level)
-
-        # set global filter on the logger itself
-        self.addFilter(AxolotlOrWarnErrorFilter())
+        if not name.startswith("axolotl"):
+            self.addFilter(AxolotlOrWarnErrorFilter())
 
 
 class ColorfulFormatter(Formatter):
@@ -74,6 +70,7 @@ class ColorfulFormatter(Formatter):
 
     def format(self, record):
         record.rank = int(os.getenv("LOCAL_RANK", "0"))
+        record.rank_fmt = f" [RANK:{record.rank}]" if record.rank != 0 else ""
         log_message = super().format(record)
         return self.COLORS.get(record.levelname, "") + log_message + Fore.RESET
 
@@ -87,32 +84,54 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
         },
         "colorful": {
             "()": ColorfulFormatter,
-            "format": "[%(asctime)s] [%(levelname)s] [%(name)s.%(funcName)s:%(lineno)d] [PID:%(process)d] [RANK:%(rank)d] %(message)s",
+            "format": "[%(asctime)s] [%(levelname)s] [%(name)s.%(funcName)s:%(lineno)d] [PID:%(process)d]%(rank_fmt)s %(message)s",
+        },
+        "concise": {
+            "format": "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
+        },
+        "concise_color": {
+            "()": ColorfulFormatter,
+            "format": "[%(asctime)s] [%(levelname)s] [%(name)s]%(rank_fmt)s %(message)s",
         },
     },
-    "filters": {},
+    "filters": {
+        "ax_or_warn": {
+            "()": "axolotl.logging_config.AxolotlOrWarnErrorFilter",
+        },
+    },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "formatter": "simple",
-            "filters": [],
-            "stream": sys.stdout,
+            "formatter": "concise",
+            "filters": ["ax_or_warn"],
+            "stream": "ext://sys.stdout",
         },
         "color_console": {
             "class": "logging.StreamHandler",
-            "formatter": "colorful",
-            "filters": [],
-            "stream": sys.stdout,
+            "formatter": "concise_color",
+            "filters": ["ax_or_warn"],
+            "stream": "ext://sys.stdout",
+        },
+        "ax_file_only": {
+            "class": "logging.StreamHandler",
+            "level": "DEBUG",
+            "formatter": "simple",
+            "stream": "ext://axolotl.utils.tee.file_only_stream",
+        },
+        "root_file_only": {
+            "class": "logging.StreamHandler",
+            "level": "DEBUG",
+            "formatter": "simple",
+            "stream": "ext://axolotl.utils.tee.file_only_stream",
         },
     },
-    # log level will be superseded by the AxolotlLogger
     "root": {
-        "handlers": ["console"],
-        "level": os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL),
+        "handlers": ["console", "root_file_only"],
+        "level": os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL).upper(),
     },
     "loggers": {
         "axolotl": {
-            "handlers": ["color_console"],
+            "handlers": ["color_console", "ax_file_only"],
             "level": os.getenv("AXOLOTL_LOG_LEVEL", DEFAULT_AXOLOTL_LOG_LEVEL).upper(),
             "propagate": False,
         },
@@ -123,9 +142,15 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
 def configure_logging():
     """Configure with default logging"""
     init()  # Initialize colorama
+
     dictConfig(DEFAULT_LOGGING_CONFIG)
     logging.setLoggerClass(AxolotlLogger)
 
-    # set default `ACCELERATE_LOG_LEVEL` to `LOG_LEVEL` if available and not set
+    # Route Python warnings through logging so they reach file handlers
+    logging.captureWarnings(True)
+
+    # Set default `ACCELERATE_LOG_LEVEL` to `LOG_LEVEL` if available and not set
     if "ACCELERATE_LOG_LEVEL" not in os.environ:
-        os.environ["ACCELERATE_LOG_LEVEL"] = os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL)
+        os.environ["ACCELERATE_LOG_LEVEL"] = os.getenv(
+            "LOG_LEVEL", DEFAULT_LOG_LEVEL
+        ).upper()

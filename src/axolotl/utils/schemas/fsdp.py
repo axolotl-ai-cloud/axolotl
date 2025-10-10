@@ -28,6 +28,10 @@ class FSDPConfig(BaseModel):
         default=None,
         description="Enable CPU RAM efficient loading to reduce memory usage during model loading",
     )
+    cpu_offload_pin_memory: bool | None = Field(
+        default=None,
+        description="Disabling this enables swap memory usage for resource-constrained setups when offload_params is enabled.",
+    )
     use_orig_params: bool | None = Field(
         default=None,
         description="Use original parameters instead of flattened parameters",

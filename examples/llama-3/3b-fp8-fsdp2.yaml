@@ -29,7 +29,7 @@ flex_attention: true
 flex_attn_compile_kwargs:
   dynamic: false
   mode: max-autotune-no-cudagraphs
-
+save_strategy: no
 torch_compile: true
 
 wandb_project:

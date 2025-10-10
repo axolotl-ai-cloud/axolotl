@@ -16,8 +16,8 @@ import pandas as pd
 import torch
 import torch.distributed as dist
 import wandb
+import yaml
 from datasets import load_dataset
-from optimum.bettertransformer import BetterTransformer
 from tqdm import tqdm
 from transformers import (
     GenerationConfig,
@@ -28,8 +28,6 @@ from transformers import (
     TrainingArguments,
 )
 from transformers.trainer_utils import (
-    PREFIX_CHECKPOINT_DIR,
-    IntervalStrategy,
     SaveStrategy,
 )
 from trl.models import unwrap_model_for_generation
@@ -54,40 +52,6 @@ if TYPE_CHECKING:
 
 IGNORE_INDEX = -100
 LOG = get_logger(__name__)
-
-
-class SaveBetterTransformerModelCallback(TrainerCallback):
-    """Callback to save the BetterTransformer wrapped model"""
-
-    def on_step_end(
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        **kwargs,
-    ) -> TrainerControl:
-        # Save
-        if (
-            args.save_strategy == IntervalStrategy.STEPS
-            and args.save_steps > 0
-            and state.global_step % args.save_steps == 0
-        ):
-            control.should_save = True
-
-        if control.should_save:
-            checkpoint_folder = os.path.join(
-                args.output_dir,
-                f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}",
-            )
-
-            model = BetterTransformer.reverse(kwargs["model"])
-            model.save_pretrained(checkpoint_folder)
-            # FIXME - need to cleanup old checkpoints
-
-            # since we're saving here, we don't need the trainer loop to attempt to save too b/c
-            # the trainer will raise an exception since it can't save a BetterTransformer wrapped model
-            control.should_save = False
-        return control
 
 
 class LossWatchDogCallback(TrainerCallback):
@@ -795,6 +759,37 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                     )
             except (FileNotFoundError, ConnectionError) as err:
                 LOG.warning(f"Error while saving Axolotl config to WandB: {err}")
+
+            try:
+                with open(self.axolotl_config_path, "r", encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f) or {}
+
+                chat_tpl = cfg.get("chat_template_jinja")
+                if chat_tpl:
+                    with NamedTemporaryFile(
+                        mode="w", delete=True, suffix=".jinja", prefix="chat_template_"
+                    ) as temp_ct_file:
+                        if (
+                            isinstance(chat_tpl, str)
+                            and os.path.exists(chat_tpl)
+                            and os.path.isfile(chat_tpl)
+                        ):
+                            copyfile(chat_tpl, temp_ct_file.name)
+                        else:
+                            temp_ct_file.write(str(chat_tpl))
+                            temp_ct_file.flush()
+
+                        artifact = wandb.Artifact(
+                            f"chat-template-{wandb.run.id}", type="jinja-template"
+                        )
+                        artifact.add_file(temp_ct_file.name)
+                        wandb.log_artifact(artifact)
+                        wandb.save(temp_ct_file.name)
+                        LOG.info(
+                            "The chat_template_jinja has been saved to the WandB run under files."
+                        )
+            except (FileNotFoundError, ConnectionError, yaml.YAMLError) as err:
+                LOG.warning(f"Error while saving chat_template_jinja to WandB: {err}")
 
             if args.deepspeed:
                 try:

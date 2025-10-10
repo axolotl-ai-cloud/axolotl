@@ -785,15 +785,6 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_torch_compile_deepspeed(cls, data):
-        if data.get("deepspeed") and data.get("torch_compile"):
-            raise ValueError(
-                "torch_compile should be set within your deepspeed config file"
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_xentropy_patch_conflicts(cls, data):
         if data.get("flash_attn_cross_entropy") and data.get(
             "unsloth_cross_entropy_loss"
@@ -816,19 +807,22 @@ class OptimizationValidationMixin:
             )
         return data
 
-    @model_validator(mode="after")
-    def check_fsdp2_base_model_quant_ram_efficient_loading(self):
-        fsdp_config = self.fsdp_config if hasattr(self, "fsdp_config") else None
-        fsdp_version = self.fsdp_version if hasattr(self, "fsdp_version") else None
-        load_in_8bit = self.load_in_8bit if hasattr(self, "load_in_8bit") else None
-        load_in_4bit = self.load_in_4bit if hasattr(self, "load_in_4bit") else None
-        if fsdp_config and fsdp_version == 2:
-            if fsdp_config.cpu_ram_efficient_loading and (load_in_8bit or load_in_4bit):
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp2_cpu_offload_pin_memory(cls, data):
+        if not (fsdp_config := data.get("fsdp_config")):
+            return data
+
+        if fsdp_config.get("cpu_offload_pin_memory") is False:
+            if str(data.get("fsdp_version")) != "2":
                 raise ValueError(
-                    "FSDP2 does not support load_in_8bit or load_in_4bit with cpu_ram_efficient_loading. Please do one of the following: use DeepSpeed, "
-                    "set fsdp_version to 1, or disable cpu_ram_efficient_loading."
+                    "FSDP1 does not support disabling cpu_offload_pin_memory, please set `fsdp_version` to 2"
                 )
-        return self
+            if not fsdp_config.get("offload_params"):
+                raise ValueError(
+                    "disabling cpu_offload_pin_memory requires enabling offload_params"
+                )
+        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -1374,6 +1368,21 @@ class ComplexValidationMixin:
                 else RingAttnFunc.BATCH_RING
             )
 
+        return self
+
+    def hint_gradient_checkpointing_dpo_lora_ddp(self):
+        if (
+            (self.gradient_checkpointing is True or self.gradient_checkpointing is None)
+            and self.capabilities
+            and self.capabilities.get("n_gpu", 1) > 1
+            and self.adapter in ("lora", "qlora")
+            and self.rl == RLType.DPO
+            and not self.fsdp
+            and not self.deepspeed
+        ):
+            LOG.warning(
+                "gradient_checkpointing with DPO + DDP + LoRA is not recommended."
+            )
         return self
 
 

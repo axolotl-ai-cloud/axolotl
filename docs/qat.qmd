@@ -23,10 +23,18 @@ To enable QAT in axolotl, add the following to your configuration file:
 
 ```yaml
 qat:
-  activation_dtype: # Optional[str] = "int8". Fake quantization layout to use for activation quantization. Valid options are "int4" and "int8"
-  weight_dtype: # Optional[str] = "int8". Fake quantization layout to use for weight quantization. Valid options are "int4" and "int8"
+  activation_dtype: # Optional[str] = "int8". Fake quantization layout to use for activation quantization. Valid options are "int4", "int8", "float8"
+  weight_dtype: # Optional[str] = "int8". Fake quantization layout to use for weight quantization. Valid options are "int4", "fp8", and "nvfp4".
   group_size: # Optional[int] = 32. The number of elements in each group for per-group fake quantization
   fake_quant_after_n_steps: # Optional[int] = None. The number of steps to apply fake quantization after
 ```
+
+We support the following quantization schemas:
+
+- `Int4WeightOnly` (requires the `fbgemm-gpu` extra when installing Axolotl)
+- `Int8DynamicActivationInt4Weight`
+- `Float8DynamicActivationFloat8Weight`
+- `Float8DynamicActivationInt4Weight`
+- `NVFP4`
 
 Once you have finished training, you must quantize your model by using the same quantization configuration which you used to train the model with. You can use the [`quantize`](./quantize.qmd) command to do this.

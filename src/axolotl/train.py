@@ -40,11 +40,6 @@ from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.train import determine_last_checkpoint
 from axolotl.utils.trainer import setup_trainer
 
-try:
-    from optimum.bettertransformer import BetterTransformer
-except ImportError:
-    BetterTransformer = None
-
 if typing.TYPE_CHECKING:
     from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 
@@ -141,8 +136,6 @@ def setup_signal_handler(
         def terminate_handler(_, __, model_weakref):
             if model_weakref() is not None:
                 _model = model_weakref()
-                if cfg.flash_optimum and BetterTransformer:
-                    _model = BetterTransformer.reverse(_model)
                 _model.save_pretrained(
                     cfg.output_dir, safe_serialization=safe_serialization
                 )
@@ -196,10 +189,11 @@ def execute_training(
                 )
             )
 
-        LOG.info("Starting trainer...")
         # TODO: disabling for now as not compatible with FSDP2 + torchao low bit optimizers
         # if cfg.bf16:
         #     torch.set_default_dtype(torch.bfloat16)
+
+        LOG.info("Starting trainer...")
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
         plugin_manager = PluginManager.get_instance()
@@ -320,9 +314,6 @@ def save_trained_model(
             except FileNotFoundError:
                 pass
     elif cfg.local_rank == 0:
-        if cfg.flash_optimum and BetterTransformer:
-            model = BetterTransformer.reverse(model)
-
         if cfg.rl and cfg.adapter and not cfg.rl_adapter_ref_model:
             trainer.model.save_pretrained(
                 cfg.output_dir, safe_serialization=safe_serialization
@@ -533,6 +524,17 @@ def setup_model_and_trainer(
 
     plugin_manager = PluginManager.get_instance()
     plugin_manager.post_trainer_create(cfg, trainer)
+
+    if cfg.use_ray:
+        try:
+            import ray.train.huggingface.transformers
+
+            trainer = ray.train.huggingface.transformers.prepare_trainer(trainer)
+        except ImportError:
+            LOG.warning(
+                "The Ray integration with Hugging Face Transformers is not available. "
+                "To use Ray, install the 'ray[train]' package."
+            )
 
     return (
         trainer,

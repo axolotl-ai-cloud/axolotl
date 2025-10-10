@@ -6,7 +6,6 @@ import json
 
 import pytest
 from datasets import Dataset
-from transformers import AutoTokenizer
 
 from axolotl.prompt_strategies.chat_template import StrategyLoader
 from axolotl.utils.dict import DictDefault
@@ -21,15 +20,6 @@ def fixture_messages_w_tools():
     """.strip().split("\n")
     rows = [json.loads(row) for row in jsons]
     return Dataset.from_list(rows)
-
-
-@pytest.fixture(name="qwen3_tokenizer")
-def qwen3_tokenizer_fixture(
-    download_qwen3_half_billion_model,
-):
-    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
-
-    return tokenizer
 
 
 @pytest.fixture(name="qwen3_prompt_strategy")

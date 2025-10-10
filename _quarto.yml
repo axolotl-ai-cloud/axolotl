@@ -267,6 +267,7 @@ website:
             - docs/dataset_loading.qmd
             - docs/qat.qmd
             - docs/quantize.qmd
+            - docs/optimizations.qmd
 
         - section: "Core Concepts"
           contents:

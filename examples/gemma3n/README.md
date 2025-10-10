@@ -23,7 +23,15 @@ pip3 install timm==1.0.17
 pip3 install librosa==0.11.0
 ```
 
-3. Run the finetuning example:
+3. Download sample dataset files
+
+```bash
+# for text + vision + audio only
+wget https://huggingface.co/datasets/Nanobit/text-vision-audio-2k-test/resolve/main/African_elephant.jpg
+wget https://huggingface.co/datasets/Nanobit/text-vision-audio-2k-test/resolve/main/En-us-African_elephant.oga
+```
+
+4. Run the finetuning example:
 
 ```bash
 # text only

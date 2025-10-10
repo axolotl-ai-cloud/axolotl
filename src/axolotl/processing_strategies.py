@@ -6,11 +6,14 @@ from typing import Optional
 from PIL import Image, ImageOps
 from PIL.Image import Resampling
 from torch import Tensor, zeros_like
-from transformers import ProcessorMixin, SmolVLMProcessor, VoxtralProcessor
+from transformers import ProcessorMixin
 from transformers.image_utils import load_image
+from transformers.models.smolvlm import SmolVLMProcessor
+from transformers.models.voxtral import VoxtralProcessor
 
 from axolotl.utils.dict import remove_none_values
 from axolotl.utils.logging import get_logger
+from axolotl.utils.mistral.mistral3_processor import Mistral3Processor
 
 LOG = get_logger(__name__)
 
@@ -421,6 +424,36 @@ class SmolVLM2ProcessingStrategy(ProcessingStrategy):
         ]
 
 
+class Mistral3ProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for Mistral3"""
+
+    def __init__(
+        self,
+        processor: Mistral3Processor,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
+        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        special_ids = (
+            processor.tokenizer.tokenizer.instruct_tokenizer.image_encoder.special_ids
+        )
+
+        self.image_token = special_ids.img
+        self.image_break_token = special_ids.img_break
+        self.image_end_token = special_ids.img_end
+
+    def process_labels(self, input_ids):
+        labels = input_ids.clone()
+
+        labels[labels == self.processor.tokenizer.pad_token_id] = -100
+        labels[labels == self.image_token] = -100
+        labels[labels == self.image_break_token] = -100
+        labels[labels == self.image_end_token] = -100
+
+        return labels
+
+
 def get_processing_strategy(
     processor: ProcessorMixin,
     chat_template,
@@ -460,6 +493,11 @@ def get_processing_strategy(
 
     if isinstance(processor, SmolVLMProcessor):
         return SmolVLM2ProcessingStrategy(
+            **processing_kwargs,
+        )
+
+    if isinstance(processor, Mistral3Processor):
+        return Mistral3ProcessingStrategy(
             **processing_kwargs,
         )
 

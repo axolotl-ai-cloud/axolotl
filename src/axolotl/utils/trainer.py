@@ -6,6 +6,7 @@ import os
 import random
 from contextlib import contextmanager
 from functools import partial
+from tempfile import NamedTemporaryFile
 from typing import List, Optional
 
 import numpy as np
@@ -15,6 +16,7 @@ from datasets import IterableDataset, disable_caching, enable_caching
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import init_distributed_state, reduce_and_broadcast
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.logging import get_logger
@@ -540,6 +542,13 @@ def setup_deepspeed_env(cfg, stage=None):
         )
 
     os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
+    if isinstance(cfg.deepspeed, DictDefault):
+        with NamedTemporaryFile(
+            mode="w", delete=False, suffix=".json", prefix="deepspeed_config_"
+        ) as temp_file:
+            temp_file.write(json.dumps(cfg.deepspeed.to_dict(), indent=4))
+            temp_file.close()
+            cfg.deepspeed = str(temp_file.name)
     os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
     os.environ["ACCELERATE_GRADIENT_ACCUMULATION_STEPS"] = str(
         cfg.gradient_accumulation_steps
@@ -562,6 +571,7 @@ def setup_deepspeed_env(cfg, stage=None):
     if (
         int(os.environ.get("WORLD_SIZE", "1")) == 1
         and os.environ.get("AXOLOTL_IS_PREPROCESS", "0") != "1"
+        and cfg.use_ray is not True
     ):
         os.environ["WORLD_SIZE"] = "1"  # force it in case not set
         os.environ["LOCAL_RANK"] = "0"  # force it in case not set
@@ -595,6 +605,10 @@ def setup_fsdp_envs(cfg):
         os.environ["FSDP_USE_ORIG_PARAMS"] = "true"
     if cfg.fsdp_config.state_dict_type:
         os.environ["FSDP_STATE_DICT_TYPE"] = cfg.fsdp_config.state_dict_type
+    if cfg.fsdp_config.cpu_offload_pin_memory is not None:
+        os.environ["FSDP_CPU_OFFLOAD_PIN_MEMORY"] = str(
+            cfg.fsdp_config.cpu_offload_pin_memory
+        ).lower()
     if cfg.fsdp_config.auto_wrap_policy:
         os.environ["FSDP_AUTO_WRAP_POLICY"] = cfg.fsdp_config.auto_wrap_policy
     if cfg.fsdp_config.transformer_layer_cls_to_wrap:
@@ -627,6 +641,7 @@ def setup_parallelism_envs(cfg):
 def prepare_optim_env(cfg):
     if not check_cuda_p2p_ib_support():
         if os.getenv("NCCL_P2P_DISABLE") is None:
+            LOG.warning("P2P support not detected, setting `NCCL_P2P_DISABLE=1`")
             os.environ["NCCL_P2P_DISABLE"] = "1"
     # TODO @SalmanMohammadi remove the cfg.fsdp check in 0.12
     if cfg.fsdp or cfg.fsdp_config:
@@ -634,11 +649,15 @@ def prepare_optim_env(cfg):
         setup_fsdp_envs(cfg)
     elif cfg.deepspeed:
         stage = None
+        deepspeed_config = None
         # check if the cfg.deepspeed is a file
-        if os.path.isfile(cfg.deepspeed):
+        if isinstance(cfg.deepspeed, DictDefault):
+            deepspeed_config = cfg.deepspeed
+        elif os.path.isfile(cfg.deepspeed):
             # parse with json
             with open(cfg.deepspeed, "r", encoding="utf-8") as fin:
                 deepspeed_config = json.load(fin)
+        if deepspeed_config:
             stage = deepspeed_config.get("zero_optimization", {}).get("stage", None)
         setup_deepspeed_env(cfg, stage=stage)
 
@@ -653,15 +672,6 @@ def prepare_optim_env(cfg):
         os.environ["ACCELERATE_MIXED_PRECISION"] = "fp16"
     else:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "no"
-
-
-def prepare_opinionated_env(cfg):
-    if cfg.qlora_sharded_model_loading:
-        # model loading is forked after the tokenizer
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    if cfg.sample_packing:
-        # multipack parallel packing sampler defaults to using fork
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def setup_trainer(

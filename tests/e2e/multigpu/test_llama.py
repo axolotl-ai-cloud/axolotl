@@ -199,7 +199,7 @@ class TestMultiGPULlama:
                 "max_steps": 2,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 2,
-                # "gradient_checkpointing": True,
+                "gradient_checkpointing": False,
                 "output_dir": temp_dir,
                 "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "warmup_steps": 0,
@@ -278,7 +278,7 @@ class TestMultiGPULlama:
                 "max_steps": 2,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 2,
-                # "gradient_checkpointing": True,
+                "gradient_checkpointing": False,
                 "output_dir": temp_dir,
                 "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "warmup_steps": 0,
@@ -546,6 +546,7 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss (%s) is too high"
         )
 
+    @pytest.mark.skip("regression failure from v4.57.0")
     def test_fsdp_qlora_prequant_packed(self, temp_dir):
         cfg = DictDefault(
             {

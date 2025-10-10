@@ -31,6 +31,7 @@ def determine_last_checkpoint(cfg: DictDefault, update: bool = True) -> str | No
     if checkpoints:
         last_checkpoint = str(checkpoints[-1])
         if not update:
+            LOG.info(f"Resuming from last checkpoint at {last_checkpoint}")
             return last_checkpoint
 
     if (
@@ -40,6 +41,7 @@ def determine_last_checkpoint(cfg: DictDefault, update: bool = True) -> str | No
     ):
         cfg.resume_from_checkpoint = last_checkpoint
         LOG.info(
-            f"Using Auto-resume functionality to start with checkpoint at {cfg.resume_from_checkpoint}"
+            "Using auto-resume functionality to resume from checkpoint at "
+            f"{cfg.resume_from_checkpoint}"
         )
     return cfg.resume_from_checkpoint

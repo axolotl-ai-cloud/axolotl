@@ -3,6 +3,9 @@ trust_remote_code: true
 model_type: AutoModelForImageTextToText
 processor_type: AutoProcessor
 
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
 # these 3 lines are needed for now to handle vision chat templates w images
 skip_prepare_dataset: true
 remove_unused_columns: false
