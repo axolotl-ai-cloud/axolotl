@@ -157,3 +157,10 @@ def create_bidirectional_attention_mask(
 
     # Add head dimension: [batch_size, 1, seq_len, seq_len]
     return bidirectional_mask.unsqueeze(1)
+
+
+def shift_logits_to_input_positions(logits: torch.Tensor) -> torch.Tensor:
+    """Align next-token logits with their input token positions for diffusion."""
+    if logits.size(1) <= 1:
+        return logits
+    return torch.cat([logits[:, :1], logits[:, :-1]], dim=1)

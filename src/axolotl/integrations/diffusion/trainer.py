@@ -11,7 +11,7 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 from .callbacks import DiffusionGenerationCallback
-from .utils import create_bidirectional_attention_mask
+from .utils import create_bidirectional_attention_mask, shift_logits_to_input_positions
 
 LOG = get_logger(__name__)
 
@@ -207,7 +207,7 @@ class DiffusionTrainer(AxolotlTrainer):
             input_ids=noisy_batch.long(),
             attention_mask=bidirectional_mask,
         )
-        logits = outputs.logits
+        logits = shift_logits_to_input_positions(outputs.logits)
 
         if masked_indices.sum() > 0:
             valid_indices = torch.where(masked_indices)
