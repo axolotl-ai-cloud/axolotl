@@ -81,9 +81,17 @@ class TestModelsUtils:
                 and hasattr(self.model_loader.model_kwargs, "load_in_4bit")
             )
         elif load_in_8bit and self.cfg.adapter is not None:
-            assert self.model_loader.model_kwargs["load_in_8bit"]
+            assert getattr(
+                self.model_loader.model_kwargs["quantization_config"],
+                "load_in_8bit",
+                False,
+            )
         elif load_in_4bit and self.cfg.adapter is not None:
-            assert self.model_loader.model_kwargs["load_in_4bit"]
+            assert getattr(
+                self.model_loader.model_kwargs["quantization_config"],
+                "load_in_4bit",
+                False,
+            )
 
         if (self.cfg.adapter == "qlora" and load_in_4bit) or (
             self.cfg.adapter == "lora" and load_in_8bit
