@@ -9,7 +9,7 @@ ENV GITHUB_REF="{{ GITHUB_REF }}"
 ENV GITHUB_SHA="{{ GITHUB_SHA }}"
 ENV NIGHTLY_BUILD="{{ NIGHTLY_BUILD }}"
 ENV HF_HOME="{{ HF_HOME }}"
-ENV AXOLOTL_DATASET_PROCESSES="8"
+ENV AXOLOTL_DATASET_NUM_PROC="8"
 
 RUN apt-get update && \
     apt-get install -y --allow-change-held-packages vim curl nano libnccl2 libnccl-dev ibverbs-providers ibverbs-utils infiniband-diags librdmacm-dev librdmacm1 rdmacm-utils slurm-wlm

@@ -278,7 +278,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         prior_len = None
     filter_map_kwargs = {}
     if not isinstance(train_dataset, IterableDataset):
-        filter_map_kwargs["num_proc"] = cfg.dataset_processes
+        filter_map_kwargs["num_proc"] = cfg.dataset_num_proc
         filter_map_kwargs["load_from_cache_file"] = not cfg.is_preprocess
 
     drop_long_kwargs = {}
@@ -318,7 +318,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
     if cfg.group_by_length:
         train_dataset = train_dataset.map(
             add_length,
-            num_proc=cfg.dataset_processes,
+            num_proc=cfg.dataset_num_proc,
             load_from_cache_file=not cfg.is_preprocess,
             desc="Group By Length",
         )
@@ -335,7 +335,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         )
         train_dataset = train_dataset.map(
             pose_fn,
-            num_proc=cfg.dataset_processes,
+            num_proc=cfg.dataset_num_proc,
             load_from_cache_file=not cfg.is_preprocess,
             desc="Add position_id column (PoSE)",
         )
@@ -344,7 +344,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             if eval_dataset:
                 eval_dataset = eval_dataset.map(
                     pose_fn,
-                    num_proc=cfg.dataset_processes,
+                    num_proc=cfg.dataset_num_proc,
                     load_from_cache_file=not cfg.is_preprocess,
                     desc="Add position_id column (PoSE)",
                 )
@@ -469,7 +469,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 bin_size=cfg.sample_packing_bin_size,
                 sequential=cfg.sample_packing_sequentially,
                 drop_last=True,
-                num_processes=cfg.dataset_processes,
+                num_processes=cfg.dataset_prcoesses,
                 mp_start_method=cfg.sample_packing_mp_start_method or "fork",
             )
 

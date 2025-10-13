@@ -80,7 +80,7 @@ def get_dataset_wrapper(
     """
     # Common parameters for dataset wrapping
     dataset_kwargs: dict[str, Any] = {
-        "process_count": cfg.dataset_processes,
+        "process_count": cfg.dataset_num_proc,
         "keep_in_memory": cfg.dataset_keep_in_memory is True,
     }
 

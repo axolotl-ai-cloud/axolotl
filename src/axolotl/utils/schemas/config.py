@@ -234,6 +234,7 @@ class AxolotlInputConfig(
     )
     dataset_processes: int | None = Field(
         default=None,
+        deprecated="Use `dataset_num_proc` instead. This parameter will be removed in a future version.",
         json_schema_extra={
             "description": (
                 "The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set.\n"
@@ -241,6 +242,16 @@ class AxolotlInputConfig(
             )
         },
     )
+    dataset_num_proc: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set.\n"
+                "For Runpod VMs, it will default to number of vCPUs via RUNPOD_CPU_COUNT."
+            )
+        },
+    )
+
     dataset_exact_deduplication: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -1314,10 +1325,22 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def default_dataset_processes(cls, data):
-        if data.get("dataset_processes") is None:
-            data["dataset_processes"] = get_default_process_count()
-
+    def default_dataset_num_proc(cls, data):
+        if data.get("dataset_processes") is not None:
+            if data.get("dataset_num_proc") is None:
+                data["dataset_num_proc"] = data["dataset_processes"]
+                LOG.warning(
+                    "dataset_processes is deprecated and will be removed in a future version. "
+                    "Please use dataset_num_proc instead."
+                )
+            else:
+                LOG.warning(
+                    "Both dataset_processes and dataset_num_proc are set. "
+                    "Using dataset_num_proc and ignoring dataset_processes."
+                )
+            del data["dataset_processes"]
+        elif data.get("dataset_num_proc") is None:
+            data["dataset_num_proc"] = get_default_process_count()
         return data
 
     @model_validator(mode="before")
