@@ -80,25 +80,24 @@ class TestModelsUtils:
                 hasattr(self.model_loader.model_kwargs, "load_in_8bit")
                 and hasattr(self.model_loader.model_kwargs, "load_in_4bit")
             )
-        elif load_in_8bit and self.cfg.adapter is not None:
-            assert getattr(
-                self.model_loader.model_kwargs["quantization_config"],
-                "load_in_8bit",
-                False,
-            )
-        elif load_in_4bit and self.cfg.adapter is not None:
-            assert getattr(
-                self.model_loader.model_kwargs["quantization_config"],
-                "load_in_4bit",
-                False,
-            )
 
         if (self.cfg.adapter == "qlora" and load_in_4bit) or (
             self.cfg.adapter == "lora" and load_in_8bit
         ):
-            assert self.model_loader.model_kwargs.get(
-                "quantization_config", BitsAndBytesConfig
+            assert isinstance(
+                self.model_loader.model_kwargs.get("quantization_config"),
+                BitsAndBytesConfig,
             )
+
+            # Check corresponding flag set
+            if load_in_8bit:
+                assert self.model_loader.model_kwargs["quantization_config"][
+                    "_load_in_8bit"
+                ]
+            else:
+                assert self.model_loader.model_kwargs["quantization_config"][
+                    "_load_in_4bit"
+                ]
 
     def test_message_property_mapping(self):
         """Test message property mapping configuration validation"""
