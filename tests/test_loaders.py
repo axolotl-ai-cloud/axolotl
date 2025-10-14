@@ -91,13 +91,13 @@ class TestModelsUtils:
 
             # Check corresponding flag set
             if load_in_8bit:
-                assert self.model_loader.model_kwargs["quantization_config"][
-                    "_load_in_8bit"
-                ]
+                assert self.model_loader.model_kwargs[
+                    "quantization_config"
+                ]._load_in_8bit
             else:
-                assert self.model_loader.model_kwargs["quantization_config"][
-                    "_load_in_4bit"
-                ]
+                assert self.model_loader.model_kwargs[
+                    "quantization_config"
+                ]._load_in_4bit
 
     def test_message_property_mapping(self):
         """Test message property mapping configuration validation"""
