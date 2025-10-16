@@ -24,7 +24,7 @@ use_otel_metrics: true
 otel_metrics_host: "localhost"
 otel_metrics_port: 8000
 
-# Disable WandB 
+# Disable WandB
 use_wandb: false
 
 gradient_accumulation_steps: 4
