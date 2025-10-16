@@ -287,9 +287,7 @@ class TestArgillaChatDPOChatTemplate:
             )
         )
         result = transform_fn(argilla_chat_dataset[0], tokenizer=phi3_tokenizer)
-        assert result["prompt"] == (
-            "<|user|>\nhello<|end|>\n" + "<|assistant|>\n"
-        )
+        assert result["prompt"] == "<|user|>\nhello<|end|>\n" + "<|assistant|>\n"
         assert result["chosen"] == "goodbye<|end|>"
         assert result["rejected"] == "party on<|end|>"
 
