@@ -159,6 +159,12 @@ extras_require = {
         "llmcompressor==0.5.1",
     ],
     "fbgemm-gpu": ["fbgemm-gpu-genai>=1.2.0"],
+    "opentelemetry": [
+        "opentelemetry-api",
+        "opentelemetry-sdk",
+        "opentelemetry-exporter-prometheus",
+        "prometheus-client",
+    ],
 }
 install_requires, dependency_links, extras_require_build = parse_requirements(
     extras_require
