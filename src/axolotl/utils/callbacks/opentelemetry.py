@@ -1,7 +1,7 @@
 """OpenTelemetry metrics callback for Axolotl training"""
 
 import threading
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import Dict, Optional
 
 from transformers import (
     TrainerCallback,
@@ -11,9 +11,6 @@ from transformers import (
 )
 
 from axolotl.utils.logging import get_logger
-
-if TYPE_CHECKING:
-    pass
 
 LOG = get_logger(__name__)
 
@@ -52,7 +49,7 @@ class OpenTelemetryMetricsCallback(TrainerCallback):
             return
 
         self.cfg = cfg
-        self.metrics_host = getattr(cfg, "otel_metrics_host", "localhost")  # nosec B104
+        self.metrics_host = getattr(cfg, "otel_metrics_host", "localhost")
         self.metrics_port = getattr(cfg, "otel_metrics_port", 8000)
         self.metrics_enabled = True
         self.server_started = False

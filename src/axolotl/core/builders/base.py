@@ -139,7 +139,7 @@ class TrainerBuilderBase(abc.ABC):
                 SaveAxolotlConfigtoCometCallback(self.cfg.axolotl_config_path)
             )
         if self.cfg.use_otel_metrics and is_opentelemetry_available():
-            from axolotl.utils.callbacks.opentelemetry_ import (
+            from src.axolotl.utils.callbacks.opentelemetry import (
                 OpenTelemetryMetricsCallback,
             )
 
