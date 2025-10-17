@@ -29,7 +29,11 @@ from transformers.trainer_pt_utils import AcceleratorConfig
 
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
-from axolotl.utils import is_comet_available, is_mlflow_available
+from axolotl.utils import (
+    is_comet_available,
+    is_mlflow_available,
+    is_opentelemetry_available,
+)
 from axolotl.utils.callbacks import (
     GCCallback,
     SaveAxolotlConfigtoWandBCallback,
@@ -134,6 +138,12 @@ class TrainerBuilderBase(abc.ABC):
             callbacks.append(
                 SaveAxolotlConfigtoCometCallback(self.cfg.axolotl_config_path)
             )
+        if self.cfg.use_otel_metrics and is_opentelemetry_available():
+            from axolotl.utils.callbacks.opentelemetry import (
+                OpenTelemetryMetricsCallback,
+            )
+
+            callbacks.append(OpenTelemetryMetricsCallback(self.cfg))
         if self.cfg.save_first_step:
             callbacks.append(SaveModelOnFirstStepCallback())
 

@@ -176,3 +176,27 @@ class RayConfig(BaseModel):
             "help": "The resources per worker for Ray training. Default is to use 1 GPU per worker."
         },
     )
+
+
+class OpenTelemetryConfig(BaseModel):
+    """OpenTelemetry configuration subset"""
+
+    use_otel_metrics: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Enable OpenTelemetry metrics collection and Prometheus export"
+        },
+    )
+    otel_metrics_host: str | None = Field(
+        default="localhost",
+        json_schema_extra={
+            "title": "OpenTelemetry Metrics Host",
+            "description": "Host to bind the OpenTelemetry metrics server to",
+        },
+    )
+    otel_metrics_port: int | None = Field(
+        default=8000,
+        json_schema_extra={
+            "description": "Port for the Prometheus metrics HTTP server"
+        },
+    )

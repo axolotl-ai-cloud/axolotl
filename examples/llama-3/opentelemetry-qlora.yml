@@ -1,0 +1,50 @@
+base_model: NousResearch/Llama-3.2-1B
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+
+load_in_4bit: true
+
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+
+output_dir: ./outputs/opentelemetry-example
+
+adapter: qlora
+sequence_len: 512
+sample_packing: false
+
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_linear: true
+
+# OpenTelemetry Configuration
+use_otel_metrics: true
+otel_metrics_host: "localhost"
+otel_metrics_port: 8000
+
+# Disable WandB
+use_wandb: false
+
+gradient_accumulation_steps: 4
+micro_batch_size: 2
+num_epochs: 1
+optimizer: paged_adamw_32bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: false
+
+gradient_checkpointing: true
+logging_steps: 1
+flash_attention: false
+
+warmup_ratio: 0.1
+evals_per_epoch: 2
+saves_per_epoch: 1
+weight_decay: 0.0
+
+special_tokens:
+  pad_token: "<|end_of_text|>"

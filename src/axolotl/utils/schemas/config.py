@@ -30,6 +30,7 @@ from axolotl.utils.schemas.integrations import (
     GradioConfig,
     LISAConfig,
     MLFlowConfig,
+    OpenTelemetryConfig,
     RayConfig,
     WandbConfig,
 )
@@ -60,6 +61,7 @@ class AxolotlInputConfig(
     WandbConfig,
     MLFlowConfig,
     CometConfig,
+    OpenTelemetryConfig,
     LISAConfig,
     GradioConfig,
     RayConfig,
