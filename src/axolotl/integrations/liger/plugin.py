@@ -48,6 +48,33 @@ class LigerPlugin(BasePlugin):
                 "Cannot have both `liger_cross_entropy` and `liger_fused_linear_cross_entropy` set."
             )
 
+        if cfg.liger_use_token_scaling:
+            # Patch FLCE to set token_scaling=True for function and class API
+            from liger_kernel.transformers import functional
+            from liger_kernel.transformers.fused_linear_cross_entropy import (
+                LigerFusedLinearCrossEntropyLoss,
+            )
+
+            old_liger_fused_linear_cross_entropy = (
+                functional.liger_fused_linear_cross_entropy
+            )
+
+            def patched_liger_fused_linear_cross_entropy(*args, **kwargs):
+                kwargs["use_token_scaling"] = True
+                return old_liger_fused_linear_cross_entropy(*args, **kwargs)
+
+            functional.liger_fused_linear_cross_entropy = (
+                patched_liger_fused_linear_cross_entropy
+            )
+
+            old_init = LigerFusedLinearCrossEntropyLoss.__init__
+
+            def patched_init(self, *args, **kwargs):
+                kwargs["use_token_scaling"] = True
+                return old_init(self, *args, **kwargs)
+
+            LigerFusedLinearCrossEntropyLoss.__init__ = patched_init
+
         if cfg.model_config_type in MODEL_TYPE_TO_APPLY_LIGER_FN:
             apply_liger_fn = MODEL_TYPE_TO_APPLY_LIGER_FN[cfg.model_config_type]
             liger_fn_sig = inspect.signature(apply_liger_fn)
