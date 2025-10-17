@@ -7,7 +7,7 @@ import torch
 
 from axolotl.utils.logging import get_logger
 
-from .utils import create_bidirectional_attention_mask
+from .utils import create_bidirectional_attention_mask, shift_logits_to_input_positions
 
 LOG = get_logger(__name__)
 
@@ -360,7 +360,7 @@ def _diffusion_step(
 
     # Forward pass
     outputs = model(input_ids=sequence, attention_mask=attention_mask)
-    logits = outputs.logits
+    logits = shift_logits_to_input_positions(outputs.logits)
 
     # Only sample at currently masked positions
     if current_mask.any():
