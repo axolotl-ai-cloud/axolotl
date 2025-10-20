@@ -1,0 +1,59 @@
+base_model: meta-llama/Llama-3.1-8B
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+datasets:
+  - path: togethercomputer/Long-Data-Collections
+    type: completion
+    field: text
+    data_files:
+      - pretrain/rp_sub.jsonl.zst
+  - path: princeton-nlp/TextbookChapters
+    type: completion
+    field: chapter
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.0
+output_dir: ./outputs/out
+
+sequence_len: 500_000
+min_sample_len: 200_000
+sample_packing: true
+
+tiled_mlp: true
+context_parallel_size: 8
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_8bit
+lr_scheduler: cosine
+learning_rate: 2e-5
+
+bf16: auto
+tf32: true
+
+gradient_checkpointing: true
+activation_offloading: legacy
+
+resume_from_checkpoint:
+logging_steps: 1
+flash_attention: true
+
+warmup_steps: 100
+saves_per_epoch: 1
+evals_per_epoch: 2
+weight_decay: 0.0
+special_tokens:
+  pad_token: <|end_of_text|>
+
+fsdp_version: 2
+fsdp_config:
+  offload_params: false  # offloading is currently not compatible with SP + torchao optimizer
+  state_dict_type: SHARDED_STATE_DICT
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: LlamaDecoderLayer
+  reshard_after_forward: true
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

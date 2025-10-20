@@ -10,6 +10,7 @@ import transformers
 from transformers import (
     DataCollatorWithFlattening,
     EarlyStoppingCallback,
+    Trainer,
 )
 from trl.trainer.utils import RewardDataCollatorWithPadding
 
@@ -19,12 +20,6 @@ from axolotl.core.trainers import (
     AxolotlPRMTrainer,
     AxolotlRewardTrainer,
     AxolotlTrainer,
-    ReLoRATrainer,
-)
-from axolotl.core.training_args import (
-    AxolotlPRMConfig,
-    AxolotlRewardConfig,
-    AxolotlTrainingArguments,
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
@@ -32,9 +27,7 @@ from axolotl.monkeypatch.relora import ReLoRACallback
 from axolotl.processing_strategies import get_processing_strategy
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
-    EvalFirstStepCallback,
     LossWatchDogCallback,
-    SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
     causal_lm_bench_eval_callback_factory,
     colab_inference_post_train_callback,
@@ -42,6 +35,7 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.callbacks.lisa import lisa_callback_factory
 from axolotl.utils.callbacks.qat import QATCallback
+from axolotl.utils.callbacks.tokens_per_second import TokensPerSecondCallback
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
@@ -50,6 +44,7 @@ from axolotl.utils.collators import (
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
+from axolotl.utils.import_helper import get_cls_from_module_str
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -63,16 +58,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
     def get_callbacks(self):
         callbacks = super().get_callbacks()
-        callbacks.append(EvalFirstStepCallback())
 
-        if self.cfg.relora_steps:
+        if self.cfg.relora:
             callbacks.append(ReLoRACallback(self.cfg))
-
-        if (
-            hasattr(self.model, "use_bettertransformer")
-            and self.model.use_bettertransformer is True
-        ):
-            callbacks.append(SaveBetterTransformerModelCallback())
 
         # TODO: check if can move to base class
         if self.cfg.loss_watchdog_threshold is not None:
@@ -81,6 +69,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.qat:
             callbacks.append(QATCallback(self.cfg.qat))
 
+        if self.cfg.include_tkps:
+            callbacks.append(
+                TokensPerSecondCallback(
+                    self.cfg.tensor_parallel_size, self.cfg.context_parallel_size
+                )
+            )
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
@@ -130,33 +124,44 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return callbacks
 
     def _get_trainer_cls(self):
+        """
+        Gets the trainer class for the given configuration.
+        """
         if self.cfg.plugins:
             plugin_manager = PluginManager.get_instance()
             trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
             if trainer_cls:
                 return trainer_cls
-        if self.cfg.relora_steps:
-            return ReLoRATrainer
         if self.cfg.model_config_type == "mamba":
             return AxolotlMambaTrainer
         if self.cfg.reward_model:
             return AxolotlRewardTrainer
         if self.cfg.process_reward_model:
             return AxolotlPRMTrainer
+
+        if self.cfg.trainer_cls:
+            # override the trainer cls
+            try:
+                trainer_cls = get_cls_from_module_str(self.cfg.trainer_cls)
+                LOG.debug(f"Using custom trainer class: {self.cfg.trainer_cls}")
+                return trainer_cls
+            except (ImportError, AttributeError, ValueError) as e:
+                raise ValueError(
+                    f"Failed to load custom trainer class '{self.cfg.trainer_cls}': {e}"
+                ) from e
+
         return AxolotlTrainer
 
     def build(self, total_num_steps):
+        from axolotl.core.training_args import (
+            AxolotlPRMConfig,
+            AxolotlRewardConfig,
+            AxolotlTrainingArguments,
+        )
+
         training_arguments_kwargs, trainer_kwargs = self._set_base_training_args(
             total_num_steps
         )
-
-        if self.cfg.fsdp:
-            training_arguments_kwargs["fsdp"] = self.cfg.fsdp
-            if self.cfg.fsdp_config:
-                training_arguments_kwargs["fsdp_config"] = {
-                    k.lstrip("fsdp_"): v for k, v in dict(self.cfg.fsdp_config).items()
-                }
-
         if self.cfg.adapter == "qlora":
             training_arguments_kwargs["qlora"] = True
 
@@ -243,14 +248,27 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["curriculum_sampling"] = self.cfg.curriculum_sampling
 
         training_arguments_kwargs["sample_packing"] = bool(self.cfg.sample_packing)
+        training_arguments_kwargs["sample_packing_drop_attention_mask"] = bool(
+            self.cfg.flash_attention
+            or self.cfg.xformers_attention
+            or self.cfg.flex_attention
+        )
         training_arguments_kwargs["multipack_real_batches"] = (
             self.cfg.multipack_real_batches
             if self.cfg.multipack_real_batches is not None
-            else not self.cfg.flash_attention
+            else not (
+                self.cfg.flash_attention
+                or self.cfg.flex_attention
+                or self.cfg.xformers_attention
+            )
         )
         training_arguments_kwargs["eval_sample_packing"] = bool(
             self.cfg.eval_sample_packing
         )
+        if self.cfg.sample_packing_sequentially is not None:
+            training_arguments_kwargs["sample_packing_sequentially"] = (
+                self.cfg.sample_packing_sequentially
+            )
         if self.cfg.sample_packing_bin_size is not None:
             training_arguments_kwargs["sample_packing_bin_size"] = (
                 self.cfg.sample_packing_bin_size
@@ -264,18 +282,23 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.sample_packing_eff_est
             )
 
-        if self.cfg.relora_steps:
-            training_arguments_kwargs["relora_steps"] = self.cfg.relora_steps
-            training_arguments_kwargs["relora_warmup_steps"] = (
-                self.cfg.relora_warmup_steps
-            )
-            if self.cfg.relora_anneal_steps:
-                training_arguments_kwargs["relora_anneal_steps"] = (
-                    self.cfg.relora_anneal_steps
-                )
+        if self.cfg.relora and self.cfg.jagged_restart_steps:
             if self.cfg.relora_prune_ratio:
                 training_arguments_kwargs["relora_prune_ratio"] = (
                     self.cfg.relora_prune_ratio
+                )
+
+        if self.cfg.jagged_restart_steps:
+            training_arguments_kwargs["jagged_restart_steps"] = (
+                self.cfg.jagged_restart_steps
+            )
+            if self.cfg.jagged_restart_warmup_steps:
+                training_arguments_kwargs["jagged_restart_warmup_steps"] = (
+                    self.cfg.jagged_restart_warmup_steps
+                )
+            if self.cfg.jagged_restart_anneal_steps:
+                training_arguments_kwargs["jagged_restart_anneal_steps"] = (
+                    self.cfg.jagged_restart_anneal_steps
                 )
 
         if self.cfg.lisa_step_interval and self.cfg.lisa_n_layers:
@@ -303,48 +326,37 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.neftune_noise_alpha
             )
 
-        if self.cfg.accelerator_config:
-            training_arguments_kwargs["accelerator_config"] = (
-                self.cfg.accelerator_config
-            )
-
         if self.cfg.image_size:
             training_arguments_kwargs["image_size"] = self.cfg.image_size
         if self.cfg.image_resize_algorithm:
             training_arguments_kwargs["image_resize_algorithm"] = (
                 self.cfg.image_resize_algorithm
             )
-        if self.cfg.kd_ce_alpha is not None:
-            training_arguments_kwargs["kd_ce_alpha"] = self.cfg.kd_ce_alpha
-        if self.cfg.kd_alpha is not None:
-            training_arguments_kwargs["kd_alpha"] = self.cfg.kd_alpha
-        if self.cfg.kd_temperature is not None:
-            training_arguments_kwargs["kd_temperature"] = self.cfg.kd_temperature
-        if self.cfg.kd_zscore_base_temp is not None:
-            training_arguments_kwargs["kd_zscore_base_temp"] = (
-                self.cfg.kd_zscore_base_temp
-            )
-        if self.cfg.kd_top_k_before_softmax is not None:
-            training_arguments_kwargs["kd_top_k_before_softmax"] = (
-                self.cfg.kd_top_k_before_softmax
-            )
+
+        if self.cfg.plugins:
+            plugin_manager = PluginManager.get_instance()
+            plugin_training_args = plugin_manager.get_training_args(self.cfg)
+            if plugin_training_args:
+                training_arguments_kwargs.update(plugin_training_args)
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
+            if self.cfg.center_rewards_coefficient is not None:
+                training_arguments_kwargs["center_rewards_coefficient"] = (
+                    self.cfg.center_rewards_coefficient
+                )
         elif self.cfg.process_reward_model:
             training_args_cls = AxolotlPRMConfig
         else:
             training_args_cls = AxolotlTrainingArguments
-        training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
+        training_args = training_args_cls(
             **training_arguments_kwargs,
         )
         training_args = self.hook_post_create_training_args(training_args)
 
         # unset run_name so wandb sets up experiment names
         if self.cfg.use_wandb and training_args.run_name == training_args.output_dir:
-            training_args.run_name = (  # pylint: disable=attribute-defined-outside-init
-                None
-            )
+            training_args.run_name = None
 
         data_collator_kwargs = {
             "padding": True,  # True/"longest" is the default
@@ -354,7 +366,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             data_collator_kwargs["pad_to_multiple_of"] = multiple * math.ceil(
                 self.cfg.sequence_len / multiple
             )
-        else:
+        elif self.cfg.pad_to_sequence_len is None:
             # A100 is best at 64, while others at 8. Let's use the larger so we don't have to check
             # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
             data_collator_kwargs["pad_to_multiple_of"] = multiple
@@ -376,12 +388,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 **data_collator_kwargs,
             )
         sig = inspect.signature(trainer_cls)
-        if "processing_class" in sig.parameters:
+        if "processing_class" in sig.parameters or issubclass(trainer_cls, Trainer):
             trainer_kwargs["processing_class"] = self.tokenizer
         elif "tokenizer" in sig.parameters:
             trainer_kwargs["tokenizer"] = self.tokenizer
+
         if (
-            not (trainer_cls in [AxolotlRewardTrainer, AxolotlPRMTrainer])
+            trainer_cls not in [AxolotlRewardTrainer, AxolotlPRMTrainer]
             and self.cfg.datasets is not None
         ):
             trainer_kwargs["dataset_tags"] = [
@@ -397,6 +410,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             **trainer_kwargs,
         )
         trainer = self.hook_post_create_trainer(trainer)
+        # if the trainer has the `axolotl_cfg` property, set it
+        if hasattr(trainer, "axolotl_cfg"):
+            trainer.axolotl_cfg = self.cfg
         for callback in self.get_post_trainer_create_callbacks(trainer):
             trainer.add_callback(callback)
 
@@ -408,7 +424,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return trainer
 
     def build_collator(
-        self, training_args: AxolotlTrainingArguments, is_eval=False, **kwargs
+        self,
+        training_args,  # type: "AxolotlTrainingArguments"  # type: ignore
+        is_eval=False,
+        **kwargs,
     ):
         if training_args.pretraining:
             if (
@@ -416,7 +435,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 or self.cfg.micro_batch_size > 1
             ):
                 return DataCollatorForSeq2Seq(self.tokenizer, **kwargs)
-            return None
+            if not (self.cfg.sample_packing and self.cfg.pretrain_multipack_attn):
+                return None
 
         if self.cfg.model_config_type == "mamba":
             return MambaDataCollator(tokenizer=self.tokenizer)
@@ -437,7 +457,19 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ]
         ]
         collator_args = [self.tokenizer]
-        if self.cfg.reward_model:
+
+        collator_cls_and_kwargs = None
+        if self.cfg.plugins:
+            plugin_manager = PluginManager.get_instance()
+            collator_cls_and_kwargs = plugin_manager.get_collator_cls_and_kwargs(
+                self.cfg, is_eval=is_eval
+            )
+
+        if collator_cls_and_kwargs:
+            collator = collator_cls_and_kwargs[0]
+            if kwargs and isinstance(kwargs, dict):
+                kwargs.update(collator_cls_and_kwargs[1])
+        elif self.cfg.reward_model:
             collator = RewardDataCollatorWithPadding
         elif use_batch_sampler_collator:
             # Use V2BatchSamplerDataCollatorForSeq2Seq for flex attention,
@@ -468,16 +500,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 collator_args.pop(0)
                 kwargs.pop("pad_to_multiple_of", None)
                 kwargs.pop("padding", None)
-            elif self.cfg.kd_trainer:
-                from axolotl.integrations.kd.collator import (
-                    DataCollatorForKD,
-                    KDBatchSamplerDataCollatorForSeq2Seq,
-                )
-
-                if self.cfg.sample_packing:
-                    collator = KDBatchSamplerDataCollatorForSeq2Seq
-                else:
-                    collator = DataCollatorForKD
             else:
                 collator = DataCollatorForSeq2Seq
 

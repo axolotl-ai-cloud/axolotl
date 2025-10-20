@@ -1,7 +1,5 @@
 """Unit tests for axolotl.core.builders"""
 
-# pylint: disable=protected-access
-
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -12,7 +10,7 @@ from axolotl.common.datasets import load_datasets
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.loaders import ModelLoader, load_tokenizer
 from axolotl.utils.config import normalize_config
-from axolotl.utils.data.rl import load_prepare_preference_datasets
+from axolotl.utils.data import prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.enums import RLType
 
@@ -64,7 +62,8 @@ def fixture_base_cfg():
             "dataloader_num_workers": 1,
             "dataloader_pin_memory": True,
             "dataloader_prefetch_factor": 2,
-            "sequence_parallel_degree": 1,
+            "context_parallel_size": 1,
+            "tensor_parallel_size": 1,
             # Dtype
             "fp16": False,
             "bf16": False,
@@ -81,6 +80,7 @@ def fixture_base_cfg():
             "ddp_timeout": 1800,
             "ddp_bucket_cap_mb": 25,
             "ddp_broadcast_buffers": False,
+            "dataset_processes": 4,
         }
     )
 
@@ -279,7 +279,9 @@ class TestHFRLTrainerBuilder:
         # Other settings
         assert training_arguments.dataloader_num_workers == 1
         assert training_arguments.dataloader_pin_memory is True
-        assert training_arguments.gradient_checkpointing is False
+
+        # TODO(wing): restore once trl releases 0.22.0
+        # assert training_arguments.gradient_checkpointing is True
 
     def test_dpo_training_arguments(self, dpo_cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(dpo_cfg, model, tokenizer)
@@ -326,7 +328,6 @@ def rand_reward_func(prompts, completions) -> list[float]:
         )
 
     def test_grpo_training_arguments(self, grpo_cfg, model, tokenizer, tmp_path):
-
         rewards_dir = tmp_path / "rewards_test"
         self._write_rewards_file(rewards_dir)
 
@@ -439,6 +440,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
             ]
         else:
             raise ValueError(f"Unhandled cfg_string: {cfg_string}")
+        cfg["dataset_num_proc"] = 4
 
         if cfg_string == "grpo_cfg":
             rewards_dir = tmp_path / "rewards_test"
@@ -451,15 +453,19 @@ def rand_reward_func(prompts, completions) -> list[float]:
             # Only use mock for the commented out configs
             if dataset_name is not None:
                 with patch(
-                    "axolotl.utils.data.rl.load_dataset_w_config"
+                    "axolotl.utils.data.rl.load_dataset_with_config"
                 ) as mock_load_dataset:
                     mock_load_dataset.return_value = request.getfixturevalue(
                         dataset_name
                     )
-                    train_dataset, eval_dataset = load_prepare_preference_datasets(cfg)
+                    train_dataset, eval_dataset = prepare_preference_datasets(
+                        cfg, tokenizer
+                    )
             else:
                 # Load actual datasets for orpo_cfg and kto_cfg
-                train_dataset, eval_dataset = load_prepare_preference_datasets(cfg)
+                train_dataset, eval_dataset = prepare_preference_datasets(
+                    cfg, tokenizer
+                )
 
             builder.train_dataset = train_dataset
             builder.eval_dataset = eval_dataset
@@ -468,7 +474,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
 
             assert trainer.optimizer_cls_and_kwargs is not None
 
-            from axolotl.contribs.mit.muon import (  # pylint: disable=no-name-in-module
+            from axolotl.contribs.mit.muon import (
                 Muon,
                 MuonOptimizerFactory,
             )
@@ -550,7 +556,7 @@ class TestHFCausalTrainerBuilder:
 
         assert trainer.optimizer_cls_and_kwargs is not None
 
-        from axolotl.contribs.mit.muon import (  # pylint: disable=no-name-in-module
+        from axolotl.contribs.mit.muon import (
             Muon,
             MuonOptimizerFactory,
         )
@@ -590,6 +596,6 @@ class TestTrainerClsPlugin:
         except TypeError as e:
             # Error raised if trainer_cls is None
             assert "'tuple' object has no attribute 'config'" not in str(e)
-        except Exception:  # pylint: disable=broad-exception-caught
+        except Exception:
             # Another error happens, so we passed trainer_cls to builder
             pass

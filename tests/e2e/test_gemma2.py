@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
@@ -23,7 +22,6 @@ class TestGemma2:
         [True, False],
     )
     def test_lora_gemma2(self, temp_dir, sample_packing):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "axolotl-ai-co/gemma-2-33M",
@@ -69,8 +67,7 @@ class TestGemma2:
         )
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "adapter_model.safetensors").exists()
@@ -80,7 +77,6 @@ class TestGemma2:
         [True, False],
     )
     def test_fft_gemma2(self, temp_dir, sample_packing):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "axolotl-ai-co/gemma-2-33M",
@@ -121,8 +117,7 @@ class TestGemma2:
         )
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "model.safetensors").exists()

@@ -1,0 +1,82 @@
+base_model: cerebras/btlm-3b-8k-base
+# optionally might have model_type or tokenizer_type
+model_type: AutoModelForCausalLM
+tokenizer_type: GPT2Tokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+trust_remote_code: true
+tokenizer_use_fast: true
+tokenizer_legacy: true
+push_dataset_to_hub:
+hf_use_auth_token: true
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+dataset_prepared_path: last_prepared_run
+val_set_size: 0.05
+
+adapter:
+lora_model_dir:
+sequence_len: 2048
+max_packed_sequence_len:
+sample_packing: false
+sample_packing_eff_est:
+sample_packing_seq_len_multiplier:
+total_num_tokens:
+
+lora_r:
+lora_alpha:
+lora_dropout:
+lora_target_modules:
+lora_target_linear:
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+output_dir: ./outputs/btlm-out
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_fused
+adam_beta2: 0.95
+adam_eps: 0.000000001
+max_grad_norm: 1.0
+
+torchdistx_path:
+lr_scheduler: cosine
+lr_quadratic_warmup: true
+learning_rate: 0.000085
+train_on_inputs: true
+group_by_length: false
+bf16: auto
+tf32: true
+
+gradient_checkpointing: false
+resume_from_checkpoint:
+logging_steps: 1
+
+flash_attention: true
+sdp_attention:
+flash_optimum:
+
+gptq_groupsize:
+gptq_model_v1:
+
+warmup_ratio: 0.1
+evals_per_epoch: 4
+saves_per_epoch: 1
+save_total_limit:
+
+weight_decay: 0.1
+special_tokens:
+  pad_token: "<|endoftext|>"
+fsdp:
+#  - full_shard
+#  - auto_wrap
+fsdp_config:
+#  fsdp_state_dict_type: FULL_STATE_DICT
+#  fsdp_transformer_layer_cls_to_wrap: BTLMBlock

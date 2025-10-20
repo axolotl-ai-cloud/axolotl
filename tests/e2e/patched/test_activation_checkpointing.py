@@ -6,7 +6,6 @@ import pytest
 import transformers
 from torch.utils.checkpoint import checkpoint
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
@@ -33,10 +32,9 @@ class TestActivationCheckpointing:
     def test_activation_checkpointing_offload(
         self,
         temp_dir,
-        fix_checkpoint_after_test,  # pylint: disable=unused-argument,redefined-outer-name
+        fix_checkpoint_after_test,
         gradient_checkpointing,
     ):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -70,13 +68,14 @@ class TestActivationCheckpointing:
                 "bf16": True,
                 "save_safetensors": True,
                 "gradient_checkpointing": gradient_checkpointing,
+                "save_first_step": False,
+                "dataset_num_proc": 4,
             }
         )
 
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)

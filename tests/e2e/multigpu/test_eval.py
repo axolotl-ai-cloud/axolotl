@@ -21,7 +21,6 @@ class TestMultiGPUEval:
     """
 
     def test_eval_sample_packing(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -38,12 +37,13 @@ class TestMultiGPUEval:
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "lora_modules_to_save": ["embed_tokens", "lm_head"],
-                "val_set_size": 0.004,
+                "val_set_size": 0.05,
                 "special_tokens": {"pad_token": "<|endoftext|>"},
                 "datasets": [
                     {
                         "path": "teknium/GPT4-LLM-Cleaned",
                         "type": "alpaca",
+                        "split": "train[:5%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -51,6 +51,7 @@ class TestMultiGPUEval:
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
@@ -65,6 +66,7 @@ class TestMultiGPUEval:
                 "logging_steps": 1,
                 "weight_decay": 0.0,
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -90,7 +92,6 @@ class TestMultiGPUEval:
         check_tensorboard(temp_dir + "/runs", "eval/loss", 2.5, "Eval Loss is too high")
 
     def test_eval(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -107,12 +108,13 @@ class TestMultiGPUEval:
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "lora_modules_to_save": ["embed_tokens", "lm_head"],
-                "val_set_size": 0.0004,
+                "val_set_size": 0.01,
                 "special_tokens": {"pad_token": "<|endoftext|>"},
                 "datasets": [
                     {
                         "path": "teknium/GPT4-LLM-Cleaned",
                         "type": "alpaca",
+                        "split": "train[:5%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -120,6 +122,7 @@ class TestMultiGPUEval:
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
@@ -134,6 +137,7 @@ class TestMultiGPUEval:
                 "logging_steps": 1,
                 "weight_decay": 0.0,
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 

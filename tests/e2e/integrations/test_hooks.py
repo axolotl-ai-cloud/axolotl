@@ -5,7 +5,6 @@ e2e tests to make sure all the hooks are fired on the plugin
 import os
 from pathlib import Path
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.integrations.base import BasePlugin
 from axolotl.train import train
@@ -29,85 +28,81 @@ class LogHooksPlugin(BasePlugin):
         except FileNotFoundError:
             pass
 
-    def post_trainer_create(self, cfg, trainer):  # pylint: disable=unused-argument
+    def post_trainer_create(self, cfg, trainer):
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("post_trainer_create\n")
 
-    def pre_model_load(self, cfg):  # pylint: disable=unused-argument
+    def pre_model_load(self, cfg):
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("pre_model_load\n")
 
-    def post_model_build(self, cfg, model):  # pylint: disable=unused-argument
+    def post_model_build(self, cfg, model):
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("post_model_build\n")
 
-    def pre_lora_load(self, cfg, model):  # pylint: disable=unused-argument
+    def pre_lora_load(self, cfg, model):
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("pre_lora_load\n")
 
-    def post_lora_load(self, cfg, model):  # pylint: disable=unused-argument
+    def post_lora_load(self, cfg, model):
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("post_lora_load\n")
 
-    def post_model_load(self, cfg, model):  # pylint: disable=unused-argument
+    def post_model_load(self, cfg, model):
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("post_model_load\n")
 
-    def create_optimizer(self, cfg, trainer):  # pylint: disable=unused-argument
+    def create_optimizer(self, cfg, trainer):
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("create_optimizer\n")
 
-    def get_trainer_cls(self, cfg):  # pylint: disable=unused-argument
+    def get_trainer_cls(self, cfg):
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("get_trainer_cls\n")
 
-    def create_lr_scheduler(
-        self, cfg, trainer, optimizer, num_training_steps
-    ):  # pylint: disable=unused-argument
+    def create_lr_scheduler(self, cfg, trainer, optimizer, num_training_steps):
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("create_lr_scheduler\n")
 
-    def add_callbacks_pre_trainer(self, cfg, model):  # pylint: disable=unused-argument
+    def add_callbacks_pre_trainer(self, cfg, model):
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("add_callbacks_pre_trainer\n")
         return []
 
-    def add_callbacks_post_trainer(
-        self, cfg, trainer
-    ):  # pylint: disable=unused-argument
+    def add_callbacks_post_trainer(self, cfg, trainer):
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("add_callbacks_post_trainer\n")
         return []
 
-    def post_train(self, cfg, model):  # pylint: disable=unused-argument
+    def post_train(self, cfg, model):
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
             f.write("post_train\n")
 
-    def post_train_unload(self, cfg):  # pylint: disable=unused-argument
+    def post_train_unload(self, cfg):
         with open(
             self.base_dir.joinpath("plugin_hooks.log"), "a", encoding="utf-8"
         ) as f:
@@ -120,7 +115,6 @@ class TestPluginHooks:
     """
 
     def test_plugin_hooks(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -154,14 +148,14 @@ class TestPluginHooks:
                 "max_steps": 5,
                 "flash_attention": True,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
 
         cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)

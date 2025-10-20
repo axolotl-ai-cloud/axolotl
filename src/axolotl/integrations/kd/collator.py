@@ -37,7 +37,6 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
     target_logprobs. It also creates a teacher_mask to indicate which entries are valid.
     """
 
-    # pylint: disable=duplicate-code
     tokenizer: PreTrainedTokenizerBase
     model: Optional[Any] = None
     padding: Union[bool, str, PaddingStrategy] = True
@@ -47,11 +46,16 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
     position_pad_token_id: int = 0
     return_tensors: str = "pt"
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tokenizer.deprecation_warnings["Asking-to-pad-a-fast-tokenizer"] = True
+
     def __call__(self, features, return_tensors=None):
         if return_tensors is None:
             return_tensors = self.return_tensors
 
         padding_side = self.tokenizer.padding_side
+        max_len = 0
 
         # Pad labels and position_ids first
         for feature_name, pad_token_id in [
@@ -67,7 +71,7 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
                         // self.pad_to_multiple_of
                     ) * self.pad_to_multiple_of
 
-                for f in features:  # pylint: disable=invalid-name
+                for f in features:
                     remainder = [pad_token_id] * (max_len - len(f[feature_name]))
                     if isinstance(f[feature_name], list):
                         f[feature_name] = (
@@ -96,13 +100,15 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
 
         if has_teacher_data:
             # Extract and remove from features
-            for f in features:  # pylint: disable=invalid-name
+            for f in features:
                 target_logprobs_list.append(f.pop("target_logprobs"))
                 target_token_ids_list.append(f.pop("target_token_ids"))
                 target_mask_list.append(f.pop("target_mask"))
 
             # Determine max lengths
-            max_teacher_seq_len = max(len(seq) for seq in target_logprobs_list)
+            max_teacher_seq_len = max_len or max(
+                len(seq) for seq in target_logprobs_list
+            )
             max_k = max(len(seq_k) for seq in target_logprobs_list for seq_k in seq)
 
             padded_target_logprobs = []
@@ -110,24 +116,25 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
             padded_teacher_mask_list = []
 
             for t_logprobs, t_ids, t_mask in zip(
-                target_logprobs_list, target_token_ids_list, target_mask_list
+                target_logprobs_list,
+                target_token_ids_list,
+                target_mask_list,
+                strict=False,
             ):
                 t_logprobs_padded = []
                 t_ids_padded = []
                 t_mask_padded = []
 
-                for lp, ids, mask in zip(  # pylint: disable=invalid-name
-                    t_logprobs, t_ids, t_mask
-                ):
+                for lp, ids, mask in zip(t_logprobs, t_ids, t_mask, strict=False):
                     lp_len = len(lp)
                     if lp_len < max_k:
                         # Use -1e9 for padding logprobs and 0 for token_ids
                         pad_len = max_k - lp_len
-                        lp = lp + [-1e9] * pad_len  # pylint: disable=invalid-name
+                        lp = lp + [-1e9] * pad_len
                         ids = ids + [0] * pad_len
                         mask = mask + [0] * pad_len
                     else:
-                        lp = lp[:max_k]  # pylint: disable=invalid-name
+                        lp = lp[:max_k]
                         ids = ids[:max_k]
                         mask = mask[:max_k]
 
@@ -243,10 +250,15 @@ class KDBatchSamplerDataCollatorForSeq2Seq(DataCollatorForKD):
                     # For example, input_ids or labels are often arrays.
                     arrays = []
                     for feat in sub_features:
-                        if field_name in feat:
+                        if field_name in feat and isinstance(
+                            feat[field_name], (list, torch.Tensor)
+                        ):
+                            if isinstance(feat[field_name][0], (dict, str)):
+                                continue
                             arr = np.array(feat[field_name])
                             arrays.append(arr)
-                    out_features[i][field_name] = np.concatenate(arrays)
+                    if arrays:
+                        out_features[i][field_name] = np.concatenate(arrays)
 
         # 3) Now call the parent collator, which will do:
         #    - padding of labels/position_ids

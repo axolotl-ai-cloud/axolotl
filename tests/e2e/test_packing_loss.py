@@ -6,7 +6,6 @@ import unittest
 
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
@@ -22,7 +21,6 @@ class TestPackedLlama(unittest.TestCase):
 
     @with_temp_dir
     def test_loss_packed(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -49,6 +47,7 @@ class TestPackedLlama(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -58,11 +57,10 @@ class TestPackedLlama(unittest.TestCase):
 
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss is too high"
+            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss (%s) is too high"
         )

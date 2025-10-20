@@ -1,7 +1,5 @@
 """Integration tests for LoRA activation and attention kernels."""
 
-# pylint: disable=redefined-outer-name
-
 from pathlib import Path
 
 import pytest
@@ -25,7 +23,9 @@ from axolotl.loaders.model import ModelLoader
 from axolotl.loaders.tokenizer import load_tokenizer
 from axolotl.monkeypatch.lora_kernels import (
     apply_lora_kernel_patches,
+    find_self_attn_in_layer,
     get_attention_cls_from_config,
+    get_layers,
     patch_self_attn_lora,
 )
 from axolotl.utils.dict import DictDefault
@@ -86,7 +86,7 @@ def test_attention_patching_integration(model_name, attention_cls):
     cfg = DictDefault({"base_model": model_name})
 
     # Store the original implementation
-    original_forward = getattr(attention_cls, "forward")
+    original_forward = attention_cls.forward
 
     # Apply patch
     patch_self_attn_lora(cfg)
@@ -102,7 +102,7 @@ def test_attention_patching_integration(model_name, attention_cls):
     assert hasattr(attention_cls, "_original_forward")
 
     # Clean up
-    setattr(attention_cls, "forward", original_forward)
+    attention_cls.forward = original_forward
     delattr(attention_cls, "_original_forward")
 
 
@@ -160,7 +160,7 @@ def test_geglu_model_integration():
     """Test GeGLU activation with Gemma model."""
     model = AutoModelForCausalLM.from_pretrained(
         "trl-internal-testing/tiny-Gemma2ForCausalLM",
-        torch_dtype=torch.float16,
+        dtype=torch.float16,
         device_map="cuda:0",
     )
     peft_config = get_peft_config(
@@ -377,9 +377,9 @@ def test_model_architecture(model_config):
 
     # Verify correct activation function
     layer = patched_model.model.model.layers[0]
-    assert (
-        layer.mlp.forward.__func__ is model_config["expected_activation"]
-    ), f"Wrong activation for {model_config['name']}"
+    assert layer.mlp.forward.__func__ is model_config["expected_activation"], (
+        f"Wrong activation for {model_config['name']}"
+    )
 
     # Test forward pass
     inputs = get_test_inputs(model)
@@ -388,13 +388,12 @@ def test_model_architecture(model_config):
         patched_output = patched_model(inputs).logits
 
     # Check outputs match
-    assert torch.allclose(
-        original_output, patched_output, rtol=1e-4
-    ), f"Outputs don't match for {model_config['name']}"
+    assert torch.allclose(original_output, patched_output, rtol=1e-4), (
+        f"Outputs don't match for {model_config['name']}"
+    )
 
 
-# pylint: disable=duplicate-code
-def test_kernel_training_integration():
+def test_kernel_training_integration(temp_dir):
     """Test model loading with kernel patches enabled."""
     from axolotl.cli.utils import load_model_and_tokenizer
 
@@ -423,6 +422,14 @@ def test_kernel_training_integration():
             "lora_o_kernel": True,
         }
     )
+
+    # Write cfg to yaml file
+    path = Path(temp_dir) / "config.yaml"
+    with open(path, "w", encoding="utf-8") as fout:
+        fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
+
+    # Load config
+    cfg = load_cfg(str(path))
 
     # Load model
     model, _, _ = load_model_and_tokenizer(cfg=cfg)
@@ -501,3 +508,69 @@ def test_kernel_training_integration_auto_enable(temp_dir):
                 break
 
     assert found_patched_attn
+
+
+def test_kernel_training_integration_dropout_non_zero(temp_dir):
+    """Test model loading with dropout non-zero should not patch."""
+
+    from axolotl.cli.utils import load_model_and_tokenizer
+
+    # Create minimal config
+    cfg = DictDefault(
+        {
+            "base_model": "HuggingFaceTB/SmolLM2-135M",
+            "tokenizer_config": "HuggingFaceTB/SmolLM2-135M",
+            "learning_rate": 0.000001,
+            "datasets": [
+                {
+                    "path": "mhenrichsen/alpaca_2k_test",
+                    "type": "alpaca",
+                }
+            ],
+            "micro_batch_size": 1,
+            "gradient_accumulation_steps": 1,
+            "adapter": "lora",
+            "lora_r": 8,
+            "lora_alpha": 16,
+            "lora_dropout": 0.1,
+            "lora_target_linear": True,
+            "sequence_len": 1024,
+        }
+    )
+
+    # Write cfg to yaml file
+    path = Path(temp_dir) / "config.yaml"
+    with open(path, "w", encoding="utf-8") as fout:
+        fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
+
+    # Load config
+    cfg = load_cfg(str(path))
+
+    # Get original attention class
+    attention_cls = get_attention_cls_from_config(cfg)
+
+    # Store original state before patching
+    original_forward_method = attention_cls.forward
+
+    # Load model
+    model, tokenizer, _ = load_model_and_tokenizer(cfg=cfg)
+
+    # We call modelloader as that's where the patches are applied
+    # despite the fact that we're not using it to load the model
+    model_loader = ModelLoader(cfg, tokenizer)
+
+    # Apply patch
+    model_loader.patch_manager._apply_self_attention_lora_patch()
+
+    # Verify patch was not applied
+    assert attention_cls.forward == original_forward_method
+
+    # Apply apply_lora_kernel_patches
+    model_loader.patch_manager._apply_lora_kernel_patch(model)
+
+    # Verify patch was not applied
+    layers = get_layers(model)
+    for layer in layers:
+        for self_attn in find_self_attn_in_layer(layer):
+            assert not hasattr(self_attn, "apply_qkv")
+            assert not hasattr(self_attn, "apply_o")

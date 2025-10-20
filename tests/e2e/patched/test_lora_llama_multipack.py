@@ -7,7 +7,6 @@ import unittest
 import pytest
 from transformers.utils import is_auto_gptq_available, is_torch_bf16_gpu_available
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
@@ -23,7 +22,6 @@ class TestLoraLlama(unittest.TestCase):
 
     @with_temp_dir
     def test_lora_packing(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -56,6 +54,7 @@ class TestLoraLlama(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -65,8 +64,7 @@ class TestLoraLlama(unittest.TestCase):
 
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
@@ -74,7 +72,6 @@ class TestLoraLlama(unittest.TestCase):
     @pytest.mark.skipif(not is_auto_gptq_available(), reason="auto-gptq not available")
     @with_temp_dir
     def test_lora_gptq_packed(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "lilmeaty/SmolLM2-135M-Instruct-GPTQ",
@@ -110,12 +107,12 @@ class TestLoraLlama(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)

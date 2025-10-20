@@ -17,7 +17,6 @@ feedback. Various methods include, but not limited to:
 - [Kahneman-Tversky Optimization (KTO)](#kto)
 - [Odds Ratio Preference Optimization (ORPO)](#orpo)
 - [Group Relative Policy Optimization (GRPO)](#grpo)
-- Proximal Policy Optimization (PPO) (not yet supported in axolotl, if you're interested in contributing, please reach out!)
 
 
 ## RLHF using Axolotl
@@ -275,15 +274,14 @@ rl: dpo
 datasets:
   - path: ...
     split: train
-    type: user_defined.default
-
-    field_prompt: "prompt"
-    field_system: "system"
-    field_chosen: "chosen"
-    field_rejected: "rejected"
-    prompt_format: "{prompt}"
-    chosen_format: "{chosen}"
-    rejected_format: "{rejected}"
+    type:
+      field_prompt: "prompt"
+      field_system: "system"
+      field_chosen: "chosen"
+      field_rejected: "rejected"
+      prompt_format: "{prompt}"
+      chosen_format: "{chosen}"
+      rejected_format: "{rejected}"
 ```
 
 The input format is a simple JSON input with customizable fields based on the above config.
@@ -476,14 +474,13 @@ rl: kto
 datasets:
   - path: ...
     split: train
-    type: user_defined.default
-
-    field_prompt: "prompt"
-    field_system: "system"
-    field_completion: "completion"
-    field_label: "label"
-    prompt_format: "{prompt}"
-    completion_format: "{completion}"
+    type:
+      field_prompt: "prompt"
+      field_system: "system"
+      field_completion: "completion"
+      field_label: "label"
+      prompt_format: "{prompt}"
+      completion_format: "{completion}"
 ```
 
 The input format is a simple JSON input with customizable fields based on the above config.
@@ -500,7 +497,7 @@ The input format is a simple JSON input with customizable fields based on the ab
 ### GRPO
 
 ::: {.callout-tip}
-Check out our [GRPO cookbook](https://github.com/axolotl-ai-cloud/axolotl-cookbook/tree/main/grpo#training-an-r1-style-large-language-model-using-grpo).
+Check out our [GRPO cookbook](https://github.com/axolotl-ai-cloud/grpo_code).
 :::
 
 In the latest GRPO implementation, `vLLM` is used to significantly speedup trajectory generation during training. In this example, we're using 4 GPUs - 2 for training, and 2 for vLLM:

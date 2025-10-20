@@ -1,0 +1,45 @@
+base_model: TinyLlama/TinyLlama-1.1B-Chat-v1.0
+# optionally might have model_type or tokenizer_type
+model_type: LlamaForCausalLM
+tokenizer_type: LlamaTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+max_steps: 200
+pretraining_dataset:
+  - path: allenai/c4
+    name: en
+    type: pretrain
+dataset_prepared_path:
+val_set_size: 0.0
+output_dir: ./outputs/model-out
+
+sequence_len: 2048
+sample_packing: true
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 4
+micro_batch_size: 2
+num_epochs: 4
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: false
+
+gradient_checkpointing: true
+resume_from_checkpoint:
+logging_steps: 1
+flash_attention: true
+
+warmup_ratio: 0.1
+evals_per_epoch:
+saves_per_epoch: 1
+weight_decay: 0.0
+special_tokens:

@@ -2,8 +2,6 @@
 tests for chat_template prompt strategy
 """
 
-# pylint: disable=too-many-lines
-
 from copy import deepcopy
 
 import pytest
@@ -33,15 +31,14 @@ PARAMETRIZE_PARAMS = [
         "mistralv03_tokenizer_chat_template_jinja",
         "[/INST]",
     ),
-    # TODO: temporarily skip gemma due to gemma3 template
-    # Re-enable on new chat_template implementation for perf
-    # (
-    #     "gemma2_tokenizer",
-    #     "jinja",
-    #     "gemma2_tokenizer_chat_template_jinja",
-    #     "<end_of_turn>",
-    # ),
+    (
+        "gemma2_tokenizer",
+        "jinja",
+        "gemma2_tokenizer_chat_template_jinja",
+        "<end_of_turn>",
+    ),
     ("phi35_tokenizer", "phi_35", None, "<|end|>"),
+    ("phi4_tokenizer", "phi_4", None, "<|im_end|>"),
 ]
 
 
@@ -95,15 +92,11 @@ class TestChatTemplateConfigurations:
         if (
             turn_idx == 0
             and turn.get("from") in ["system", "context"]
-            and (
-                "mistral" in tokenizer.name_or_path.lower()
-                or "gemma"
-                in tokenizer.name_or_path.lower()  # temporarily skip gemma due to gemma3 template
-            )
+            and ("mistral" in tokenizer.name_or_path.lower())
         ):
-            assert (
-                start_idx == -1 and end_idx == -1
-            ), "Expected system message to be skipped"
+            assert start_idx == -1 and end_idx == -1, (
+                "Expected system message to be skipped"
+            )
             return True
         return False
 
@@ -160,7 +153,9 @@ class TestChatTemplateConfigurations:
 
             assert all(
                 label != IGNORE_TOKEN_ID for label in labels[start_idx:end_idx]
-            ), f"Expected labels for input '{response}' to be ignored, but got {labels[start_idx:end_idx]}"
+            ), (
+                f"Expected labels for input '{response}' to be ignored, but got {labels[start_idx:end_idx]}"
+            )
 
         LOG.debug("Full labels: %s", labels)
         LOG.debug("Full input_ids: %s", input_ids)
@@ -220,11 +215,15 @@ class TestChatTemplateConfigurations:
             if is_assistant:
                 assert all(
                     label != IGNORE_TOKEN_ID for label in labels[start_idx:end_idx]
-                ), f"Expected labels for assistant response '{response}' to be set, but got {labels[start_idx:end_idx]}"
+                ), (
+                    f"Expected labels for assistant response '{response}' to be set, but got {labels[start_idx:end_idx]}"
+                )
             else:
                 assert all(
                     label == IGNORE_TOKEN_ID for label in labels[start_idx:end_idx]
-                ), f"Expected labels for human input '{response}' to be IGNORE_TOKEN_ID, but got {labels[start_idx:end_idx]}"
+                ), (
+                    f"Expected labels for human input '{response}' to be IGNORE_TOKEN_ID, but got {labels[start_idx:end_idx]}"
+                )
 
     def test_roles_to_train_human_assistant_only(
         self,
@@ -281,11 +280,15 @@ class TestChatTemplateConfigurations:
             if should_be_labelled:
                 assert all(
                     label != IGNORE_TOKEN_ID for label in labels[start_idx:end_idx]
-                ), f"Expected labels for assistant response '{response}' to be set, but got {labels[start_idx:end_idx]}"
+                ), (
+                    f"Expected labels for assistant response '{response}' to be set, but got {labels[start_idx:end_idx]}"
+                )
             else:
                 assert all(
                     label == IGNORE_TOKEN_ID for label in labels[start_idx:end_idx]
-                ), f"Expected labels for human input '{response}' to be IGNORE_TOKEN_ID, but got {labels[start_idx:end_idx]}"
+                ), (
+                    f"Expected labels for human input '{response}' to be IGNORE_TOKEN_ID, but got {labels[start_idx:end_idx]}"
+                )
 
     def test_roles_to_train_all(
         self,
@@ -332,13 +335,15 @@ class TestChatTemplateConfigurations:
                 continue
 
             decoded_response = tokenizer.decode(input_ids[start_idx:end_idx])
-            assert (
-                response in decoded_response
-            ), f"Response {response} not found in index {start_idx}:{end_idx} decoded:{decoded_response}"
+            assert response in decoded_response, (
+                f"Response {response} not found in index {start_idx}:{end_idx} decoded:{decoded_response}"
+            )
 
             assert all(
                 label != IGNORE_TOKEN_ID for label in labels[start_idx:end_idx]
-            ), f"Expected labels for response '{response}' to be set, but got {labels[start_idx:end_idx]}"
+            ), (
+                f"Expected labels for response '{response}' to be set, but got {labels[start_idx:end_idx]}"
+            )
 
     def test_empty_roles_to_train(
         self,
@@ -376,9 +381,9 @@ class TestChatTemplateConfigurations:
 
         # Verify that no labels are set when roles_to_train is empty
         LOG.debug("Full labels: %s", labels)
-        assert all(
-            label == IGNORE_TOKEN_ID for label in labels
-        ), "Expected all labels to be IGNORE_TOKEN_ID when roles_to_train is empty"
+        assert all(label == IGNORE_TOKEN_ID for label in labels), (
+            "Expected all labels to be IGNORE_TOKEN_ID when roles_to_train is empty"
+        )
 
     def test_train_on_eos_all(
         self,
@@ -422,9 +427,9 @@ class TestChatTemplateConfigurations:
 
         assert len(eos_indices) > 0, "Expected at least one EOS token in the input"
         for eos_idx in eos_indices:
-            assert (
-                labels[eos_idx] != IGNORE_TOKEN_ID
-            ), f"Expected EOS token at index {eos_idx} to be labeled"
+            assert labels[eos_idx] != IGNORE_TOKEN_ID, (
+                f"Expected EOS token at index {eos_idx} to be labeled"
+            )
 
     def test_train_on_eos_turn(
         self,
@@ -482,9 +487,9 @@ class TestChatTemplateConfigurations:
             while eos_idx < len(input_ids) and input_ids[eos_idx] != eos_token_id:
                 eos_idx += 1
 
-            assert eos_idx < len(
-                input_ids
-            ), f"Could not find EOS token after '{response}'"
+            assert eos_idx < len(input_ids), (
+                f"Could not find EOS token after '{response}'"
+            )
 
             LOG.debug(
                 f"Turn {i}: role={turn['from']}, content='{turn['value']}', start_idx={start_idx}, end_idx={end_idx}, eos_idx={eos_idx}"
@@ -497,13 +502,13 @@ class TestChatTemplateConfigurations:
             # Verify EOS token labeling based on role
             is_assistant = turn["from"] == "assistant"
             if is_assistant:
-                assert (
-                    labels[eos_idx] != IGNORE_TOKEN_ID
-                ), f"Expected EOS token after assistant response '{response}' to be labeled"
+                assert labels[eos_idx] != IGNORE_TOKEN_ID, (
+                    f"Expected EOS token after assistant response '{response}' to be labeled"
+                )
             else:
-                assert (
-                    labels[eos_idx] == IGNORE_TOKEN_ID
-                ), f"Expected EOS token after non-assistant input '{response}' to not be labeled"
+                assert labels[eos_idx] == IGNORE_TOKEN_ID, (
+                    f"Expected EOS token after non-assistant input '{response}' to not be labeled"
+                )
 
     def test_train_on_eos_last(
         self,
@@ -550,12 +555,12 @@ class TestChatTemplateConfigurations:
 
         # Check that only the last EOS token is labeled
         for idx in eos_indices[:-1]:
-            assert (
-                labels[idx] == IGNORE_TOKEN_ID
-            ), f"Expected EOS token at index {idx} to not be labeled"
-        assert (
-            labels[last_eos_idx] != IGNORE_TOKEN_ID
-        ), f"Expected last EOS token at index {last_eos_idx} to be labeled"
+            assert labels[idx] == IGNORE_TOKEN_ID, (
+                f"Expected EOS token at index {idx} to not be labeled"
+            )
+        assert labels[last_eos_idx] != IGNORE_TOKEN_ID, (
+            f"Expected last EOS token at index {last_eos_idx} to be labeled"
+        )
 
     def test_train_on_eos_none(
         self,
@@ -599,9 +604,9 @@ class TestChatTemplateConfigurations:
 
         assert len(eos_indices) > 0, "Expected at least one EOS token in the input"
         for eos_idx in eos_indices:
-            assert (
-                labels[eos_idx] == IGNORE_TOKEN_ID
-            ), f"Expected EOS token at index {eos_idx} to not be labeled"
+            assert labels[eos_idx] == IGNORE_TOKEN_ID, (
+                f"Expected EOS token at index {eos_idx} to not be labeled"
+            )
 
     def test_drop_system_message(
         self,
@@ -639,9 +644,9 @@ class TestChatTemplateConfigurations:
         # Check if system message is not present in input_ids
         system_message = "You are an AI assistant."
         decoded_message = tokenizer.decode(input_ids)
-        assert (
-            system_message not in decoded_message
-        ), "Expected system message to be dropped"
+        assert system_message not in decoded_message, (
+            "Expected system message to be dropped"
+        )
 
     def test_custom_roles(
         self,
@@ -716,7 +721,9 @@ class TestChatTemplateConfigurations:
             else:
                 assert all(
                     label == IGNORE_TOKEN_ID for label in labels[start_idx:end_idx]
-                ), f"Expected labels for non-AI message '{response}' to be IGNORE_TOKEN_ID"
+                ), (
+                    f"Expected labels for non-AI message '{response}' to be IGNORE_TOKEN_ID"
+                )
 
     def test_message_field_training(
         self,
@@ -781,13 +788,13 @@ class TestChatTemplateConfigurations:
         def verify_labels(labels_span, should_train, context_message):
             """Helper to verify if a span of labels matches expected training state"""
             if should_train:
-                assert all(
-                    label != IGNORE_TOKEN_ID for label in labels_span
-                ), f"Expected all labels for {context_message} to be set, but got {labels_span}"
+                assert all(label != IGNORE_TOKEN_ID for label in labels_span), (
+                    f"Expected all labels for {context_message} to be set, but got {labels_span}"
+                )
             else:
-                assert all(
-                    label == IGNORE_TOKEN_ID for label in labels_span
-                ), f"Expected all labels for {context_message} to be {IGNORE_TOKEN_ID}, but got {labels_span}"
+                assert all(label == IGNORE_TOKEN_ID for label in labels_span), (
+                    f"Expected all labels for {context_message} to be {IGNORE_TOKEN_ID}, but got {labels_span}"
+                )
 
         # Process all turns and verify labeling
         for i, turn in enumerate(modified_dataset[0]["messages"]):
@@ -866,9 +873,9 @@ class TestChatTemplateConfigurations:
                 actual_labels = labels[
                     start_idx : start_idx + len(token_offsets_masked)
                 ]
-                assert (
-                    actual_labels == expected_labels
-                ), f"Labels mismatch for turn: {turn['value']}\nExpected: {expected_labels}\nActual: {actual_labels}"
+                assert actual_labels == expected_labels, (
+                    f"Labels mismatch for turn: {turn['value']}\nExpected: {expected_labels}\nActual: {actual_labels}"
+                )
 
                 # Verify each detail section
                 for detail in adjusted_train_details:
@@ -935,36 +942,14 @@ class TestChatTemplateConfigurations:
             "messages",
         )
 
-        if chat_template == "llama3":
-            assert variables == {"role", "content"}, (
-                f"Expected variables: {'role', 'content'} from {tokenizer}/{chat_template}\n"
-                f"Got: {variables}\n"
-                f"Chat template: {actual_jinja_template}"
-            )
-        elif chat_template == "chatml":
-            assert variables == {"role", "content"}, (
-                f"Expected variables: {'role', 'content'} from {tokenizer}/{chat_template}\n"
-                f"Got: {variables}\n"
-                f"Chat template: {actual_jinja_template}"
-            )
-        elif chat_template == "jinja" and tokenizer == "mistralv03_tokenizer":
-            assert variables == {"role", "content", "tool_call_id", "tool_calls"}, (
-                f"Expected variables: {'role', 'content', 'tool_call_id', 'tool_calls'} from {tokenizer}/{chat_template}\n"
-                f"Got: {variables}\n"
-                f"Chat template: {actual_jinja_template}"
-            )
-        elif chat_template == "jinja" and tokenizer == "gemma2_tokenizer":
-            assert variables == {"role", "content"}, (
-                f"Expected variables: {'role', 'content'} from {tokenizer}/{chat_template}\n"
-                f"Got: {variables}\n"
-                f"Chat template: {actual_jinja_template}"
-            )
-        elif chat_template == "phi_35":
-            assert variables == {"role", "content"}, (
-                f"Expected variables: {'role', 'content'} from {tokenizer}/{chat_template}\n"
-                f"Got: {variables}\n"
-                f"Chat template: {actual_jinja_template}"
-            )
+        # Special case for Mistral with additional tool variables
+        if chat_template == "jinja" and tokenizer == "mistralv03_tokenizer":
+            expected_variables = {"role", "content", "tool_call_id", "tool_calls"}
+        # Most chat templates use the standard role and content variables
+        elif chat_template in ["llama3", "chatml", "phi_35", "phi_4"] or (
+            chat_template == "jinja" and tokenizer == "gemma2_tokenizer"
+        ):
+            expected_variables = {"role", "content"}
         else:
             LOG.warning(
                 f"Unsupported chat template: {chat_template} with {chat_template_jinja}"
@@ -973,13 +958,19 @@ class TestChatTemplateConfigurations:
                 f"Unsupported chat template: {chat_template} with {chat_template_jinja}"
             )
 
+        assert variables == expected_variables, (
+            f"Expected variables: {expected_variables} from {tokenizer}/{chat_template}\n"
+            f"Got: {variables}\n"
+            f"Chat template: {actual_jinja_template}"
+        )
+
     def test_eot_tokens_conflict_with_eos_token(
         self,
         tokenizer,
         chat_template,
         chat_template_jinja,
         eos_token,
-        basic_dataset,  # pylint: disable=unused-argument
+        basic_dataset,
         request,
     ):
         """Test that an error is raised when eot_tokens contains eos_token and train_on_eot/train_on_eos conflict"""
@@ -1026,7 +1017,7 @@ class TestChatTemplateConfigurations:
         chat_template,
         chat_template_jinja,
         eos_token,
-        basic_dataset,  # pylint: disable=unused-argument
+        basic_dataset,
         request,
     ):
         """Test that eot_tokens inherits from eos_token when not specified"""
@@ -1053,12 +1044,12 @@ class TestChatTemplateConfigurations:
         )
 
         # In backward compatibility mode, eot_tokens should be derived from eos_token
-        assert strategy.eot_tokens == [
-            tokenizer.eos_token
-        ], f"Expected eot_tokens to inherit from eos_token, got {strategy.eot_tokens}"
-        assert (
-            strategy.train_on_eot == "turn"
-        ), f"Expected train_on_eot to inherit from train_on_eos, got {strategy.train_on_eot}"
+        assert strategy.eot_tokens == [tokenizer.eos_token], (
+            f"Expected eot_tokens to inherit from eos_token, got {strategy.eot_tokens}"
+        )
+        assert strategy.train_on_eot == "turn", (
+            f"Expected train_on_eot to inherit from train_on_eos, got {strategy.train_on_eot}"
+        )
 
     def test_token_not_in_template(
         self,
@@ -1112,7 +1103,7 @@ class TestChatTemplateConfigurations:
         tokenizer,
         chat_template,
         chat_template_jinja,
-        eos_token,  # pylint: disable=unused-argument
+        eos_token,
         basic_dataset,
         request,
     ):
@@ -1178,13 +1169,13 @@ class TestChatTemplateConfigurations:
             )
 
             if is_after_assistant:
-                assert (
-                    labels[eot_idx] != IGNORE_TOKEN_ID
-                ), f"Expected EOT token after assistant turn at index {eot_idx} to be labeled"
+                assert labels[eot_idx] != IGNORE_TOKEN_ID, (
+                    f"Expected EOT token after assistant turn at index {eot_idx} to be labeled"
+                )
             else:
-                assert (
-                    labels[eot_idx] == IGNORE_TOKEN_ID
-                ), f"Expected EOT token not after assistant turn at index {eot_idx} to not be labeled"
+                assert labels[eot_idx] == IGNORE_TOKEN_ID, (
+                    f"Expected EOT token not after assistant turn at index {eot_idx} to not be labeled"
+                )
 
     def test_multiple_train_on_eot_settings(
         self,
@@ -1245,9 +1236,9 @@ class TestChatTemplateConfigurations:
                 i for i, token_id in enumerate(input_ids) if token_id == eos_token_id
             ]
 
-            assert (
-                len(eos_indices) > 0
-            ), "Expected at least one EOS/EOT token in the input"
+            assert len(eos_indices) > 0, (
+                "Expected at least one EOS/EOT token in the input"
+            )
 
             # Check labeling for each EOS/EOT token
             for idx, eos_idx in enumerate(eos_indices):
@@ -1273,10 +1264,167 @@ class TestChatTemplateConfigurations:
                 )
 
                 if expected_label:
-                    assert (
-                        labels[eos_idx] == IGNORE_TOKEN_ID
-                    ), f"Expected EOT token at index {eos_idx} to not be labeled with train_on_eot='{setting}'"
+                    assert labels[eos_idx] == IGNORE_TOKEN_ID, (
+                        f"Expected EOT token at index {eos_idx} to not be labeled with train_on_eot='{setting}'"
+                    )
                 else:
-                    assert (
-                        labels[eos_idx] != IGNORE_TOKEN_ID
-                    ), f"Expected EOT token at index {eos_idx} to be labeled with train_on_eot='{setting}'"
+                    assert labels[eos_idx] != IGNORE_TOKEN_ID, (
+                        f"Expected EOT token at index {eos_idx} to be labeled with train_on_eot='{setting}'"
+                    )
+
+
+class TestChatTemplateToolCalling:
+    """
+    Test class for tool calling functionality with chat templates.
+    """
+
+    def test_tool_calling_with_llama4_template(
+        self,
+        llama3_tokenizer,
+    ):
+        LOG.info("Testing tool calling with llama3 tokenizer and llama4 chat template")
+
+        # Create tool calling dataset
+        tool_calling_dataset = [
+            {
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "xml_escape",
+                            "description": 'Replaces any "<", ">", or "&" characters in the input string with their corresponding XML entities.',
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "s": {
+                                        "type": "string",
+                                        "description": "The input string to be XML-escaped.",
+                                    }
+                                },
+                                "required": ["s"],
+                            },
+                        },
+                    },
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "multiples",
+                            "description": "Generates a list of all the multiples of a number that are less than a given limit.",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "number": {
+                                        "type": "integer",
+                                        "description": "The number to find multiples of.",
+                                    },
+                                    "limit": {
+                                        "type": "integer",
+                                        "description": "The upper limit for the multiples.",
+                                    },
+                                },
+                                "required": ["number", "limit"],
+                            },
+                        },
+                    },
+                ],
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Can you help me find multiples of 5 that are less than 20?",
+                    },
+                    {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "type": "function",
+                                "function": {
+                                    "name": "multiples",
+                                    "arguments": {
+                                        "number": 5,
+                                        "limit": 20,
+                                    },
+                                },
+                            }
+                        ],
+                    },
+                    {"role": "tool", "name": "multiples", "content": "5,10,15"},
+                    {
+                        "role": "assistant",
+                        "content": "The multiples of 5 less than 20 are: 5, 10, and 15.",
+                    },
+                ],
+            }
+        ]
+
+        # Setup tokenizer with llama4 chat template
+        tokenizer = deepcopy(llama3_tokenizer)
+
+        # Add EOS token to the tokenizer
+        eot_token = "<|eot_id|>"
+        tokenizer.add_special_tokens({"additional_special_tokens": [eot_token]})
+
+        strategy = ChatTemplateStrategy(
+            ChatTemplatePrompter(
+                tokenizer,
+                chat_template=get_chat_template("llama4"),
+                message_property_mappings={"role": "role", "content": "content"},
+                field_messages="messages",
+                field_tools="tools",
+            ),
+            tokenizer=tokenizer,
+            train_on_inputs=False,
+            sequence_len=512,
+            roles_to_train=["assistant"],
+            eot_tokens=[eot_token],
+        )
+
+        res = strategy.tokenize_prompt(tool_calling_dataset[0])
+        input_ids = res["input_ids"]
+        labels = res["labels"]
+
+        # Verify that the input_ids contain expected tokens
+        assert len(input_ids) > 0, "Input IDs should not be empty"
+        assert len(labels) == len(input_ids), "Labels should match input_ids length"
+
+        # Decode the full conversation to verify structure
+        decoded_conversation = tokenizer.decode(input_ids)
+
+        # Verify tool calling structure is present in the decoded conversation
+        assert '"type": "function",' in decoded_conversation, (
+            "Tool type function should be in conversation"
+        )
+        assert '"name": "multiples",' in decoded_conversation, (
+            "Tool function name should be in conversation"
+        )
+
+        assert (
+            '<|python_start|><|python_end|>{"name": "multiples", "parameters": {"number": 5, "limit": 20}}<|eot|>'
+            in decoded_conversation
+        ), "Assistant tool call should be in conversation"
+        assert "<|header_start|>ipython<|header_end|>" in decoded_conversation, (
+            "IPython header should be in conversation"
+        )
+        assert '"5,10,15"' in decoded_conversation, (
+            "Tool response should be in conversation"
+        )
+
+        # Get conversation turns to verify labeling
+        turns = strategy.get_conversation_thread(tool_calling_dataset[0])
+        tools = strategy._get_tools(tool_calling_dataset[0])
+
+        # Check that assistant responses are properly labeled
+        for i, turn in enumerate(tool_calling_dataset[0]["messages"]):
+            if turn["role"] == "assistant":
+                start_idx, end_idx = strategy.find_turn(
+                    turns=turns, turn_idx=i, tools=tools
+                )
+
+                assert start_idx != -1 and end_idx != -1, (
+                    f"Assistant turn {i} should be found"
+                )
+
+                # Verify that assistant responses have proper labels
+                turn_labels = labels[start_idx:end_idx]
+                assert all(label != IGNORE_TOKEN_ID for label in turn_labels), (
+                    f"Assistant turn {i} should be unmasked"
+                )

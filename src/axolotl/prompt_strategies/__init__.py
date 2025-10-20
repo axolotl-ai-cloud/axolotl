@@ -17,7 +17,10 @@ def load(strategy, tokenizer, cfg, ds_cfg, processor=None):
             return messages_load(tokenizer, cfg, ds_cfg, processor=processor)
         load_fn = "load"
         package = "axolotl.prompt_strategies"
-        if strategy.split(".")[-1].startswith("load_"):
+        if (
+            strategy.split(".")[-1].startswith("load_")
+            or strategy.split(".")[-1] == "load"
+        ):
             load_fn = strategy.split(".")[-1]
             strategy = ".".join(strategy.split(".")[:-1])
         elif len(strategy.split(".")) > 1:
@@ -45,6 +48,6 @@ def load(strategy, tokenizer, cfg, ds_cfg, processor=None):
         return func(tokenizer, cfg, **load_kwargs)
     except ModuleNotFoundError:
         return None
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:
         LOG.error(f"Failed to load prompt strategy `{strategy}`: {str(exc)}")
         raise exc

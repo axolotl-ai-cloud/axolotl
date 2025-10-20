@@ -6,7 +6,6 @@ import unittest
 
 import pytest
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
@@ -23,7 +22,6 @@ class TestMamba(unittest.TestCase):
 
     @with_temp_dir
     def test_fft(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "state-spaces/mamba-130m",
@@ -52,13 +50,13 @@ class TestMamba(unittest.TestCase):
                 "save_steps": 10,
                 "eval_steps": None,
                 "save_safetensors": False,
+                "save_first_step": False,
             }
         )
 
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)

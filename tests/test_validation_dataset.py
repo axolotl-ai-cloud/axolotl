@@ -24,7 +24,6 @@ def fixture_cfg():
     )
 
 
-# pylint: disable=too-many-public-methods (duplicate-code)
 class BaseValidation:
     """
     Base validation module to setup the log capture
@@ -73,7 +72,7 @@ class TestValidationCheckDatasetConfig(BaseValidation):
                 "compute_capability": "8.0",
             },
             env_capabilities={
-                "torch_version": "2.5.1",
+                "torch_version": "2.6.0",
             },
         )
 
@@ -128,7 +127,7 @@ class TestValidationCheckDatasetConfig(BaseValidation):
                 "compute_capability": "8.0",
             },
             env_capabilities={
-                "torch_version": "2.5.1",
+                "torch_version": "2.6.0",
             },
         )
 
@@ -184,7 +183,7 @@ class TestValidationCheckDatasetConfig(BaseValidation):
                 "compute_capability": "8.0",
             },
             env_capabilities={
-                "torch_version": "2.5.1",
+                "torch_version": "2.6.0",
             },
         )
 
@@ -241,7 +240,7 @@ class TestValidationCheckDatasetConfig(BaseValidation):
                 "compute_capability": "8.0",
             },
             env_capabilities={
-                "torch_version": "2.5.1",
+                "torch_version": "2.6.0",
             },
         )
 

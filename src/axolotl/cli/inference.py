@@ -9,16 +9,18 @@ from typing import Union
 import fire
 import torch
 import transformers
-from dotenv import load_dotenv
 from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 
 from axolotl.cli.args import InferenceCliArgs
-from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
+from axolotl.cli.utils.diffusion import (
+    diffusion_inference,
+    launch_diffusion_gradio_ui,
+)
+from axolotl.integrations.base import PluginManager
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.chat_templates import (
-    get_chat_template,
     get_chat_template_from_config,
 )
 from axolotl.utils.dict import DictDefault
@@ -35,10 +37,11 @@ def get_multi_line_input() -> str:
         Possibly multi-line, possibly empty stdin input as a string.
     """
     print("Give me an instruction (Ctrl + D to submit): ")
+    print("=" * 80)
 
     instruction = ""
     for line in sys.stdin:
-        instruction += line  # pylint: disable=consider-using-join
+        instruction += line
 
     return instruction
 
@@ -50,9 +53,9 @@ def do_inference(
     cli_args: InferenceCliArgs,
 ):
     """
-    Runs inference on the command line in a loop. User input is accepted, a chat template
-    is (optionally) applied, and the model specified in the `axolotl` config is used to
-    generate completions according to a default generation config.
+    Runs inference on the command line in a loop. User input is accepted, a chat
+    template is (optionally) applied, and the model specified in the `axolotl` config is
+    used to generate completions according to a default generation config.
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
@@ -68,17 +71,31 @@ def do_inference(
             importlib.import_module("axolotl.prompters"), prompter
         )
     elif cfg.chat_template:
-        chat_template_str = get_chat_template(cfg.chat_template)
-    elif cfg.datasets[0].type == "chat_template":
+        chat_template_str = get_chat_template_from_config(
+            cfg, ds_cfg=None, tokenizer=tokenizer
+        )
+    elif cfg.datasets and cfg.datasets[0].type == "chat_template":
         chat_template_str = get_chat_template_from_config(
             cfg=cfg, ds_cfg=cfg.datasets[0], tokenizer=tokenizer
         )
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
+    # Detect diffusion mode
+    plugin_manager = PluginManager.get_instance()
+    is_diffusion = any(
+        plugin.__class__.__name__ == "DiffusionPlugin"
+        for plugin in plugin_manager.plugins.values()
+    )
+
+    if is_diffusion:
+        print("=" * 80)
+        print("Commands:")
+        print(":complete N -> completion mode with N tokens (default 64)")
+        print(":mask R     -> random masking with ratio R (0.0–1.0)")
+
     while True:
         print("=" * 80)
-        # support for multiline inputs
         instruction = get_multi_line_input()
         if not instruction:
             return
@@ -108,9 +125,19 @@ def do_inference(
         else:
             batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
-        print("=" * 40)
+        print("=" * 80)
         model.eval()
         with torch.no_grad():
+            if is_diffusion:
+                diffusion_inference(
+                    model=model,
+                    tokenizer=tokenizer,
+                    cfg=cfg,
+                    prompt=prompt,
+                    chat_template_str=chat_template_str,
+                )
+                continue
+
             generation_config = GenerationConfig(
                 repetition_penalty=1.1,
                 max_new_tokens=1024,
@@ -133,7 +160,7 @@ def do_inference(
                 generation_config=generation_config,
                 streamer=streamer,
             )
-        print("=" * 40)
+        print("=" * 80)
         print(tokenizer.decode(generated["sequences"].cpu().tolist()[0]))
 
 
@@ -164,15 +191,37 @@ def do_inference_gradio(
             importlib.import_module("axolotl.prompters"), prompter
         )
     elif cfg.chat_template:
-        chat_template_str = get_chat_template(cfg.chat_template, tokenizer=tokenizer)
+        chat_template_str = get_chat_template_from_config(
+            cfg, ds_cfg=None, tokenizer=tokenizer
+        )
+    elif cfg.datasets and cfg.datasets[0].type == "chat_template":
+        chat_template_str = get_chat_template_from_config(
+            cfg=cfg, ds_cfg=cfg.datasets[0], tokenizer=tokenizer
+        )
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
+
+    # Detect diffusion mode
+    plugin_manager = PluginManager.get_instance()
+    is_diffusion = any(
+        plugin.__class__.__name__ == "DiffusionPlugin"
+        for plugin in plugin_manager.plugins.values()
+    )
+
+    if is_diffusion:
+        launch_diffusion_gradio_ui(
+            model=model,
+            tokenizer=tokenizer,
+            cfg=cfg,
+            prompter_module=prompter_module,
+            chat_template_str=chat_template_str,
+        )
+        return
 
     def generate(instruction):
         if not instruction:
             return
         if prompter_module:
-            # pylint: disable=stop-iteration-return
             prompt: str = next(
                 prompter_module().build_prompt(instruction=instruction.strip("\n"))
             )
@@ -257,8 +306,7 @@ def do_cli(
         config: Path to `axolotl` config YAML file.
         kwargs: Additional keyword arguments to override config file values.
     """
-    # pylint: disable=duplicate-code
-    print_axolotl_text_art()
+
     parsed_cfg = load_cfg(config, inference=True, rl=None, **kwargs)
     parsed_cfg.sample_packing = False
     parser = transformers.HfArgumentParser(InferenceCliArgs)
@@ -273,5 +321,4 @@ def do_cli(
 
 
 if __name__ == "__main__":
-    load_dotenv()
     fire.Fire(do_cli)

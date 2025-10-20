@@ -6,7 +6,6 @@ import unittest
 
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
@@ -22,7 +21,6 @@ class TestMistral(unittest.TestCase):
 
     @with_temp_dir
     def test_lora(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "trl-internal-testing/tiny-MistralForCausalLM-0.2",
@@ -56,20 +54,19 @@ class TestMistral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
 
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
 
     @with_temp_dir
     def test_ft(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "trl-internal-testing/tiny-MistralForCausalLM-0.2",
@@ -97,6 +94,7 @@ class TestMistral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -106,8 +104,7 @@ class TestMistral(unittest.TestCase):
 
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)

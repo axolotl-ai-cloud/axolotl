@@ -1,0 +1,55 @@
+base_model: HuggingFaceTB/SmolLM2-135M
+
+# Dataset configuration
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+    split: train
+
+# Streaming-specific settings
+streaming: true
+streaming_multipack_buffer_size: 10000
+shuffle_merged_datasets: true
+
+# Training configuration
+max_steps: 1000
+output_dir: ./outputs/smollm2-135m-sft-streaming
+
+# Sequence and packing settings
+sequence_len: 1024
+sample_packing: true
+flash_attention: true
+
+# Batch size settings
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+
+# Optimizer and scheduler
+optimizer: adamw_torch
+lr_scheduler: cosine
+learning_rate: 2e-4
+warmup_ratio: 0.1
+weight_decay: 0.0
+
+# Precision and performance
+bf16: auto
+tf32: true
+
+# Logging and checkpointing
+logging_steps: 10
+save_strategy: steps
+save_steps: 100
+save_total_limit: 3
+
+# Weights & Biases (optional)
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+# Special tokens
+special_tokens:
+  pad_token: "<|endoftext|>"
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

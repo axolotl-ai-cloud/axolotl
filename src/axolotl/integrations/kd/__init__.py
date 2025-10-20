@@ -15,9 +15,15 @@
 """
 Plugin init to add KD support to Axolotl.
 """
-from axolotl.integrations.base import BasePlugin
 
-from .args import KDArgs  # pylint: disable=unused-import. # noqa: F401
+from typing import Any
+
+from transformers import Trainer
+
+from axolotl.integrations.base import BasePlugin
+from axolotl.integrations.kd.callbacks import KDTemperatureSchedulerCallback
+
+from .args import KDArgs as KDArgs
 
 
 class KDPlugin(BasePlugin):
@@ -28,9 +34,75 @@ class KDPlugin(BasePlugin):
     def get_input_args(self):
         return "axolotl.integrations.kd.KDArgs"
 
+    def get_training_args_mixin(self):
+        return "axolotl.integrations.kd.args.KDTrainingArgsMixin"
+
     def get_trainer_cls(self, cfg):
         if cfg.kd_trainer:
             from .trainer import AxolotlKDTrainer
 
             return AxolotlKDTrainer
         return None
+
+    def get_training_args(self, cfg):
+        return {
+            "kd_ce_alpha": cfg.kd_ce_alpha,
+            "kd_alpha": cfg.kd_alpha,
+            "kd_temperature": cfg.kd_temperature,
+            "kd_beta": cfg.kd_beta,
+            "kd_normalize_topk": cfg.kd_normalize_topk,
+        }
+
+    def get_collator_cls_and_kwargs(self, cfg, is_eval=False):
+        if not cfg.kd_trainer:
+            return None, None
+
+        from .collator import DataCollatorForKD, KDBatchSamplerDataCollatorForSeq2Seq
+
+        use_batch_sampler_collator = False
+        if is_eval is False and cfg.sample_packing:
+            use_batch_sampler_collator = True
+        if cfg.eval_sample_packing and is_eval:
+            use_batch_sampler_collator = True
+
+        if cfg.kd_online_server_base_url:
+            from .collator_online_teacher import OnlineTeacherCollator
+
+            return OnlineTeacherCollator, {
+                "kd_online_server_base_url": cfg.kd_online_server_base_url,
+                "kd_online_topk": cfg.kd_online_topk,
+                "kd_temperature": cfg.kd_temperature,
+                "kd_online_server": cfg.kd_online_server,
+                "kd_online_timeout": cfg.kd_online_timeout,
+                "kd_normalize_topk": cfg.kd_normalize_topk,
+            }
+
+        if use_batch_sampler_collator:
+            return KDBatchSamplerDataCollatorForSeq2Seq, {}
+        return DataCollatorForKD, {}
+
+    def pre_model_load(self, cfg):
+        from .kernels.models import apply_kernel
+
+        apply_kernel(cfg.model_config_type)
+
+    def add_callbacks_post_trainer(self, cfg: Any, trainer: Trainer) -> list:
+        """
+        Adds temp scheduler callback to the Trainer instance.
+
+        Args:
+            cfg (Any): Configuration object containing the sparse recipe.
+            trainer (Trainer): Huggingface Trainer instance.
+
+        Returns:
+            list: List containing the configured callback instances.
+        """
+        if cfg.kd_temperature_min is not None and cfg.kd_online_server_base_url:
+            callback = KDTemperatureSchedulerCallback(
+                cfg.kd_temperature,
+                cfg.kd_temperature_min,
+                trainer,
+            )
+            return [callback]
+
+        return []

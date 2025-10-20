@@ -7,7 +7,6 @@ import unittest
 import torch
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
@@ -23,7 +22,6 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_qlora_w_fa2(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
@@ -62,13 +60,13 @@ class TestMixtral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
 
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         model, _, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
@@ -79,7 +77,6 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_qlora_wo_fa2(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
@@ -118,13 +115,13 @@ class TestMixtral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
 
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         model, _, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
@@ -135,7 +132,6 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_16bit_lora_w_fa2(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
@@ -173,6 +169,7 @@ class TestMixtral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -182,8 +179,7 @@ class TestMixtral(unittest.TestCase):
 
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         model, _, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
@@ -194,7 +190,6 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_16bit_lora_wo_fa2(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
@@ -232,6 +227,7 @@ class TestMixtral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
 
@@ -241,8 +237,7 @@ class TestMixtral(unittest.TestCase):
             cfg.bf16 = True
         else:
             cfg.fp16 = True
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         model, _, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
@@ -253,7 +248,6 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_ft(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
@@ -278,6 +272,7 @@ class TestMixtral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -287,8 +282,7 @@ class TestMixtral(unittest.TestCase):
 
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)

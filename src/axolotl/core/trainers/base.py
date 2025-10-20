@@ -1,17 +1,18 @@
 """Module for customized trainers"""
 
-# pylint: disable=too-many-lines
-
 from __future__ import annotations
 
 import os
 from collections import defaultdict
 from functools import partial, wraps
-from typing import Callable, Literal, Optional
+from typing import Any, Callable, Literal, Optional
 
 import datasets
+import safetensors
 import torch
+from accelerate.state import AcceleratorState
 from datasets import Dataset
+from peft import PeftModel
 from torch.utils.data import (
     BatchSampler,
     DataLoader,
@@ -19,13 +20,19 @@ from torch.utils.data import (
     Sampler,
     SequentialSampler,
 )
-from transformers import Trainer
-from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, seed_worker
+from transformers import PreTrainedModel, Trainer
+from transformers.trainer import TRAINING_ARGS_NAME
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length, seed_worker
+from transformers.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME, is_peft_available
 from trl.trainer.utils import pad_to_length
 from typing_extensions import override
 
 from axolotl.core.trainers.mixins import (
+    ActivationOffloadingMixin,
+    CheckpointSaveMixin,
+    DistributedParallelMixin,
     OptimizerMixin,
+    PackingMixin,
     RngLoaderMixin,
     SchedulerMixin,
 )
@@ -33,17 +40,46 @@ from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
     sanitize_kwargs_for_tagging,
 )
+from axolotl.utils import get_not_null
+from axolotl.utils.bench import get_gpu_memory_usage
+from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import is_main_process
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger(__name__)
 
+REDUCTION_FNS = {
+    "mean": torch.mean,
+    "min": torch.min,
+    "max": torch.max,
+    "sum": torch.sum,
+}
 
-class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
+
+class AxolotlTrainer(
+    PackingMixin,
+    SchedulerMixin,
+    OptimizerMixin,
+    RngLoaderMixin,
+    CheckpointSaveMixin,
+    ActivationOffloadingMixin,
+    DistributedParallelMixin,
+    Trainer,
+):
     """Extend the base Trainer for axolotl helpers"""
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
     tag_names = ["axolotl"]
+    _axolotl_cfg: DictDefault | None = None
+
+    @property
+    def axolotl_cfg(self):
+        return self._axolotl_cfg
+
+    @axolotl_cfg.setter
+    def axolotl_cfg(self, cfg):
+        self._axolotl_cfg = cfg
 
     def __init__(
         self,
@@ -59,23 +95,12 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
         self._signature_columns = None  # workaround for pylint
 
         super().__init__(*_args, **kwargs)
-
         self.train_data_collator = self.data_collator
-        self._stored_metrics = defaultdict(lambda: defaultdict(list))
+        self._stored_metrics = defaultdict(
+            lambda: defaultdict(lambda: {"values": [], "reduction": "mean"})
+        )
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
-
-    def _wrap_model(self, model, training=True, dataloader=None):
-        if self.args.torch_compile:
-            torch._dynamo.config.accumulated_cache_size_limit = (  # pylint: disable=protected-access
-                256
-            )
-            model = torch.compile(
-                model,
-                backend=self.args.torch_compile_backend,
-                mode=self.args.torch_compile_mode,
-            )
-        return super()._wrap_model(model, training=training, dataloader=dataloader)
 
     def _create_multipack_sampler(
         self, base_sampler: Sampler, dataset: Dataset
@@ -101,7 +126,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
             )
             batch_max_len = train_batch_size * self.args.max_seq_length
 
-        return MultipackBatchSampler(
+        sampler = MultipackBatchSampler(
             base_sampler,
             lengths=get_dataset_lengths(dataset),
             packing_efficiency_estimate=self.args.sample_packing_efficiency,
@@ -111,11 +136,16 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
             bin_size=self.args.sample_packing_bin_size,
             sequential=self.args.sample_packing_sequentially,
             drop_last=True,
+            num_processes=self.args.dataset_num_proc,
+            mp_start_method=self.args.sample_packing_mp_start_method or "fork",
         )
 
+        len(sampler)
+        return sampler
+
     def _get_train_sampler(
-        self, train_dataset: Optional[Dataset] = None
-    ) -> Optional[Sampler]:
+        self, train_dataset: Dataset | None = None
+    ) -> Sampler | None:
         """
         Helper method to get the sampler for training. Handles cases for sample packing
         and curriculum sampling (sequential).
@@ -124,16 +154,22 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
             If the dataset is non-empty, a sampler is returned, the type of which
                 depends on the passed training args.
         """
+        # from https://github.com/huggingface/transformers/blob/2166b6b4ff09f6dd3867ab982f262f66482aa968/src/transformers/trainer.py#L969C1-L972C24
+        if train_dataset is None:
+            train_dataset = self.train_dataset
+        if train_dataset is None or not has_length(train_dataset):
+            return None
+
         use_sample_packing = self.args.sample_packing and not self.args.pretraining
 
         # Determine the base sampler first
         if self.args.curriculum_sampling:
-            base_sampler = SequentialSampler(self.train_dataset)
+            base_sampler = SequentialSampler(train_dataset)
         elif use_sample_packing:
-            base_sampler = RandomSampler(self.train_dataset)
+            base_sampler = RandomSampler(train_dataset)
         else:
             # Default to parent class implementation for standard random sampling
-            return super()._get_train_sampler()
+            return super()._get_train_sampler(train_dataset)
 
         # Apply multipack wrapper if needed
         if use_sample_packing:
@@ -152,6 +188,10 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
             If the dataset is non-empty, a sampler is returned, the type of which
                 depends on the passed training args.
         """
+        # from https://github.com/huggingface/transformers/blob/2166b6b4ff09f6dd3867ab982f262f66482aa968/src/transformers/trainer.py#L1065C9-L1066C24
+        if eval_dataset is None or not has_length(eval_dataset):
+            return None
+
         # Multipacking enabled if training is enabled and eval is not explicitly disabled
         use_multipack = (
             self.args.sample_packing and self.args.eval_sample_packing is not False
@@ -187,6 +227,14 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
 
         if dataset.column_names and "length" in dataset.column_names:
             dataset = dataset.remove_columns(["length"])
+        if (
+            dataset.column_names
+            and "position_ids" in dataset.column_names
+            and "attention_mask" in dataset.column_names
+            and self.args.sample_packing
+            and self.args.sample_packing_drop_attention_mask
+        ):
+            dataset = dataset.remove_columns(["attention_mask"])
 
         if isinstance(dataset, datasets.Dataset):
             if is_training:
@@ -220,7 +268,9 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
         }
 
         if not isinstance(dataset, torch.utils.data.IterableDataset):
-            dataloader_params["drop_last"] = self.args.dataloader_drop_last
+            dataloader_params["drop_last"] = get_not_null(
+                self.args.dataloader_drop_last, True
+            )
             if sampler_fn is not None:
                 sampler = sampler_fn(dataset)
                 if isinstance(sampler, BatchSampler):
@@ -251,9 +301,9 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
         # fmt: off
         if dataloader_key is not None and self.args.dataloader_persistent_workers:
             if hasattr(self, "_eval_dataloaders"):
-                self._eval_dataloaders[dataloader_key] = dataloader  # type: ignore  # pylint: disable=access-member-before-definition
+                self._eval_dataloaders[dataloader_key] = dataloader  # type: ignore
             else:
-                self._eval_dataloaders = {dataloader_key: dataloader}  # pylint: disable=attribute-defined-outside-init
+                self._eval_dataloaders = {dataloader_key: dataloader}
         # fmt: on
 
         return self.accelerator.prepare(dataloader)
@@ -295,6 +345,17 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
         #     outputs = model(**inputs)
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
+
+        # track number of tokens for tokens per second calculation
+        if self.args.include_tkps:
+            inputs_key = "labels" if "labels" in inputs else "input_ids"
+            if hasattr(self.state, "num_tokens"):
+                self.state.num_tokens = (
+                    self.state.num_tokens + (inputs[inputs_key] != -100).sum().cpu()
+                )
+            else:
+                self.state.num_tokens = (inputs[inputs_key] != -100).sum().cpu()
+
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
                 model,
@@ -309,6 +370,11 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
             return_outputs=return_outputs,
             num_items_in_batch=num_items_in_batch,
         )
+
+    @override
+    def evaluate(self, *args, **kwargs):
+        LOG.info("Running evaluation step...")
+        return super().evaluate(*args, **kwargs)
 
     @staticmethod
     def orpo_concatenate_inputs(inputs, label_pad_token=-100, pad_token=0, device=None):
@@ -409,7 +475,7 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
         model,
         inputs,
         return_outputs=False,
-        num_items_in_batch=None,  # pylint: disable=unused-argument
+        num_items_in_batch=None,
     ):
         concat_inputs = AxolotlTrainer.orpo_concatenate_inputs(
             inputs,
@@ -486,26 +552,32 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
 
     @wraps(Trainer.create_accelerator_and_postprocess)
     def create_accelerator_and_postprocess(self):
-        res = super().create_accelerator_and_postprocess()
+        # cleanup the PartialState states so Accelerate automatically configures everything from the env vars
+        accelerator_config = self.args.accelerator_config.to_dict()
+        use_configured_state = accelerator_config.get("use_configured_state", False)
+        if not use_configured_state:
+            AcceleratorState._reset_state(reset_partial_state=True)
 
-        if self.is_fsdp_enabled:
-            if (
-                "limit_all_gathers" in self.args.fsdp_config
-                and self.args.fsdp_config["limit_all_gathers"]
-            ):
-                self.accelerator.state.fsdp_plugin.limit_all_gathers = True
-
-        return res
+        super().create_accelerator_and_postprocess()
 
     def additional_accelerator_args(
-        self, fp8=None, **kwargs
-    ):  # pylint: disable=unused-argument
+        self, fp8: bool = False, enable_fsdp_float8_all_gather: bool = False, **kwargs
+    ) -> dict[str, Any]:
         ret_kwargs = {}
         if fp8:
             from accelerate.utils import AORecipeKwargs
+            from torchao.float8 import Float8LinearConfig
+
+            # By default, Float8LinearConfig is instantiated using the "tensorwise"
+            # scaling strategy. See more details here:
+            # https://github.com/pytorch/ao/tree/main/torchao/float8.
+            config = Float8LinearConfig(
+                enable_fsdp_float8_all_gather=enable_fsdp_float8_all_gather,
+                force_recompute_fp8_weight_in_bwd=enable_fsdp_float8_all_gather is True,
+            )
 
             ret_kwargs["mixed_precision"] = "fp8"
-            ret_kwargs["kwargs_handlers"] = [AORecipeKwargs()]
+            ret_kwargs["kwargs_handlers"] = [AORecipeKwargs(config=config)]  # type: ignore
             os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
 
         return ret_kwargs
@@ -520,18 +592,61 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
         """
         # logs either has 'loss' or 'eval_loss'
         train_eval = "train" if "loss" in logs else "eval"
-        # Add averaged stored metrics to logs
-        for key, metrics in self._stored_metrics[train_eval].items():
-            logs[key] = torch.tensor(metrics).mean().item()
+
+        for key, metric_data in self._stored_metrics[train_eval].items():
+            values = torch.tensor(metric_data["values"])  # type: ignore[arg-type]
+            reduction_type = metric_data["reduction"]
+
+            fn = REDUCTION_FNS.get(reduction_type)
+            if fn is None:
+                raise NotImplementedError(
+                    "Metric reduction must be one of [mean, min, max, sum]"
+                )
+            logs[key] = round(fn(values).item(), 4)
+
+        if is_main_process():
+            # Add memory usage
+            try:
+                active, allocated, reserved = get_gpu_memory_usage()
+                logs["memory/max_active (GiB)"] = round(active, 2)
+                logs["memory/max_allocated (GiB)"] = round(allocated, 2)
+                logs["memory/device_reserved (GiB)"] = round(reserved, 2)
+            except (ValueError, TypeError, FileNotFoundError):
+                pass
+
+        if self.args.include_tkps and train_eval == "train":
+            # each rank will log its own tokens per second
+            # for logging_steps > 1 we obtain a moving average of this metric
+            logs["tokens_per_second_per_gpu"] = round(
+                self.state.last_tokens_per_second.item() / self.args.logging_steps, 2
+            )
+
         del self._stored_metrics[train_eval]
 
         return super().log(logs, start_time)
 
     def store_metrics(
-        self, metrics: dict[str, float], train_eval: Literal["train", "eval"] = "train"
+        self,
+        metrics: dict[str, float] | dict[str, tuple[int | float, str]],
+        train_eval: Literal["train", "eval"] = "train",
+        reduction: Literal["mean", "min", "max", "sum"] = "mean",
     ) -> None:
+        """
+        Store metrics with specified reduction type.
+
+        Args:
+            metrics: Dictionary of metric names to values, or metric names to (value,
+                reduction_type) tuples.
+            train_eval: Whether this is for training or evaluation.
+        """
         for key, value in metrics.items():
-            self._stored_metrics[train_eval][key].append(value)
+            if isinstance(value, tuple):
+                value, _reduction = value  # type: ignore[assignment]
+            else:
+                value, _reduction = value, reduction
+
+            self._stored_metrics[train_eval][key]["values"].append(value)
+            self._stored_metrics[train_eval][key]["reduction"] = _reduction
 
     def _save_checkpoint(self, model, trial, **kwargs):
         # make sure the checkpoint dir exists, since trainer is flakey
@@ -540,3 +655,69 @@ class AxolotlTrainer(SchedulerMixin, OptimizerMixin, RngLoaderMixin, Trainer):
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
         return super()._save_checkpoint(model, trial, **kwargs)
+
+    # TODO(wing): remove once https://github.com/huggingface/transformers/pull/39866/files is merged
+    def _save(self, output_dir: Optional[str] = None, state_dict=None):
+        # If we are executing this function, we are the process zero, so we don't check for that.
+        output_dir = output_dir if output_dir is not None else self.args.output_dir
+        os.makedirs(output_dir, exist_ok=True)
+        LOG.info(f"Saving model checkpoint to {output_dir}")
+        supported_classes = (
+            (PreTrainedModel,)
+            if not is_peft_available()
+            else (PreTrainedModel, PeftModel)
+        )
+        # Save a trained model and configuration using `save_pretrained()`.
+        # They can then be reloaded using `from_pretrained()`
+        if not isinstance(self.model, supported_classes):
+            if state_dict is None:
+                state_dict = self.model.state_dict()
+            if isinstance(
+                self.accelerator.unwrap_model(self.model, keep_torch_compile=False),
+                supported_classes,
+            ):
+                self.accelerator.unwrap_model(
+                    self.model, keep_torch_compile=False
+                ).save_pretrained(
+                    output_dir,
+                    state_dict=state_dict,
+                    safe_serialization=self.args.save_safetensors,
+                )
+            else:
+                LOG.info(
+                    "Trainer.model is not a `PreTrainedModel`, only saving its state dict."
+                )
+                if self.args.save_safetensors:
+                    safetensors.torch.save_file(
+                        state_dict,
+                        os.path.join(output_dir, SAFE_WEIGHTS_NAME),
+                        metadata={"format": "pt"},
+                    )
+                else:
+                    torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
+        else:
+            self.model.save_pretrained(
+                output_dir,
+                state_dict=state_dict,
+                safe_serialization=self.args.save_safetensors,
+                is_main_process=self.accelerator.is_main_process,
+            )
+
+            if self.processing_class is not None:
+                self.processing_class.save_pretrained(output_dir)
+            elif (
+                self.data_collator is not None
+                and hasattr(self.data_collator, "tokenizer")
+                and self.data_collator.tokenizer is not None
+            ):
+                LOG.info(
+                    "Saving Trainer.data_collator.tokenizer by default as Trainer.processing_class is `None`"
+                )
+                save_jinja_files = True
+                if self.axolotl_cfg:
+                    save_jinja_files = self.axolotl_cfg.tokenizer_save_jinja_files
+                self.data_collator.tokenizer.save_pretrained(
+                    output_dir, save_jinja_files=save_jinja_files
+                )
+            # Good practice: save your training arguments together with the trained model
+            torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))

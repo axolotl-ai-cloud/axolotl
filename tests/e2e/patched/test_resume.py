@@ -7,7 +7,6 @@ import subprocess
 
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
@@ -23,7 +22,6 @@ class TestResumeLlama:
 
     @require_torch_2_6_0
     def test_resume_lora_packed(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -59,6 +57,7 @@ class TestResumeLlama:
                 "max_steps": 15,
                 "use_tensorboard": True,
                 "save_safetensors": True,
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -67,8 +66,7 @@ class TestResumeLlama:
             cfg.fp16 = True
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
 
@@ -78,7 +76,6 @@ class TestResumeLlama:
             }
         )
         normalize_config(resume_cfg)
-        cli_args = TrainerCliArgs()
 
         train(cfg=resume_cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)

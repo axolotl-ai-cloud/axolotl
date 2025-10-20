@@ -15,9 +15,20 @@
 """
 Plugin args for KD support.
 """
-from typing import Optional
 
-from pydantic import BaseModel
+from dataclasses import dataclass
+from enum import Enum
+
+from pydantic import BaseModel, Field
+
+
+class InferenceServerType(str, Enum):
+    """
+    Online inferences server types to handle different request args
+    """
+
+    vllm = "vllm"
+    sglang = "sglang"
 
 
 class KDArgs(BaseModel):
@@ -25,13 +36,41 @@ class KDArgs(BaseModel):
     Input args for knowledge distillation.
     """
 
-    kd_trainer: Optional[bool] = None  # whether to use KD trainer
-    kd_ce_alpha: Optional[float] = (
+    kd_trainer: float | None = None  # whether to use KD trainer
+    kd_ce_alpha: float | None = (
         None  # loss coefficient for cross-entropy loss during KD
     )
-    kd_alpha: Optional[float] = None  # loss coefficient for KD loss
-    kd_temperature: Optional[float] = None  # temperature for sampling during KD
-    kd_zscore_base_temp: Optional[float] = None  # base temperature for zscore scaling
-    kd_top_k_before_softmax: Optional[bool] = (
-        None  # whether to sample top k before softmax during KD
+    kd_alpha: float | None = None  # loss coefficient for KD loss
+    kd_temperature: float | None = None  # temperature for sampling during KD
+    kd_beta: float | None = 0.0  # beta coefficient for ratio of fwd and reverse KL
+    kd_normalize_topk: bool | None = (
+        None  # whether to normalize student logits during KD
+    )
+
+    # TODO online kd
+    kd_online_server_base_url: str | None = None
+    kd_online_topk: int | None = None
+    kd_online_server: InferenceServerType | None = Field(
+        default_factory=lambda: InferenceServerType.vllm
+    )
+    kd_online_timeout: int | None = 120
+    kd_temperature_min: float | None = (
+        None  # kd temperature scheduling during online kd
+    )
+
+
+@dataclass
+class KDTrainingArgsMixin:
+    """
+    Additional args for KD training.
+    """
+
+    kd_ce_alpha: float | None = (
+        None  # loss coefficient for cross-entropy loss during KD
+    )
+    kd_alpha: float | None = None  # loss coefficient for KD loss
+    kd_temperature: float | None = None  # temperature for sampling during KD
+    kd_beta: float | None = None  # beta coefficient for ratio of fwd and reverse KL
+    kd_normalize_topk: float | None = (
+        None  # whether to normalize student logits during KD
     )

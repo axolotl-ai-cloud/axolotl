@@ -4,7 +4,6 @@ Simple end-to-end test for Cut Cross Entropy integration
 
 import pytest
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils import get_pytorch_version
@@ -12,8 +11,6 @@ from axolotl.utils.config import normalize_config, prepare_plugins, validate_con
 from axolotl.utils.dict import DictDefault
 
 from ..utils import check_model_output_exists
-
-# pylint: disable=duplicate-code
 
 
 @pytest.fixture()
@@ -45,6 +42,7 @@ def min_cfg(temp_dir):
         "save_safetensors": True,
         "max_steps": 10,
         "bf16": "auto",
+        "save_first_step": False,
     }
 
 
@@ -53,14 +51,12 @@ class TestCutCrossEntropyIntegration:
     e2e tests for cut_cross_entropy integration with Axolotl
     """
 
-    # pylint: disable=redefined-outer-name
     def test_llama_w_cce(self, min_cfg, temp_dir):
         cfg = DictDefault(min_cfg)
         cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         major, minor, _ = get_pytorch_version()
         if (major, minor) < (2, 4):
@@ -70,7 +66,6 @@ class TestCutCrossEntropyIntegration:
             train(cfg=cfg, dataset_meta=dataset_meta)
             check_model_output_exists(temp_dir, cfg)
 
-    # pylint: disable=redefined-outer-name
     def test_qwen2_w_cce(self, temp_dir):
         cfg = DictDefault(
             {
@@ -100,13 +95,13 @@ class TestCutCrossEntropyIntegration:
                 "save_safetensors": True,
                 "max_steps": 10,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         major, minor, _ = get_pytorch_version()
         if (major, minor) < (2, 4):
@@ -134,8 +129,7 @@ class TestCutCrossEntropyIntegration:
         cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         major, minor, _ = get_pytorch_version()
         if (major, minor) < (2, 4):

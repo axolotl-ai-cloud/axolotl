@@ -119,14 +119,15 @@ datasets:
 
 ## Dataset Processing
 
-| Option                        | Default                    | Description                       |
-| ----------------------------- | -------------------------- | --------------------------------- |
-| `dataset_prepared_path`       | `"data/last_run_prepared"` | Path for prepared dataset         |
-| `push_dataset_to_hub`         | `""`                       | Push dataset to HF hub            |
-| `dataset_processes`           | `4`                        | Number of preprocessing processes |
-| `dataset_keep_in_memory`      | `false`                    | Keep dataset in memory            |
-| `shuffle_merged_datasets`     | `true`                     | Shuffle merged datasets           |
-| `dataset_exact_deduplication` | `true`                     | Deduplicate datasets              |
+| Option                            | Default                    | Description                         |
+| --------------------------------- | -------------------------- | ----------------------------------- |
+| `dataset_prepared_path`           | `"data/last_run_prepared"` | Path for prepared dataset           |
+| `push_dataset_to_hub`             | `""`                       | Push dataset to HF hub              |
+| `dataset_processes`               | `4`                        | Number of preprocessing processes   |
+| `dataset_keep_in_memory`          | `false`                    | Keep dataset in memory              |
+| `shuffle_merged_datasets`         | `true`                     | Shuffle merged datasets             |
+| `shuffle_before_merging_datasets` | `false`                    | Shuffle each dataset before merging |
+| `dataset_exact_deduplication`     | `true`                     | Deduplicate datasets                |
 
 ## LoRA Configuration
 
@@ -184,7 +185,6 @@ datasets:
 | `flash_attention`          | `false` | Use flash attention           |
 | `flash_attn_cross_entropy` | `false` | Flash attention cross entropy |
 | `flash_attn_rms_norm`      | `false` | Flash attention RMS norm      |
-| `flash_attn_fuse_qkv`      | `false` | Fuse QKV operations           |
 | `flash_attn_fuse_mlp`      | `false` | Fuse MLP operations           |
 | `sdp_attention`            | `false` | Use scaled dot product        |
 | `s2_attention`             | `false` | Use shifted sparse attention  |
@@ -328,7 +328,7 @@ The following optimizers are supported:
 - Use `gradient_checkpointing: true` to reduce memory usage
 - Adjust `micro_batch_size` and `gradient_accumulation_steps` based on your GPU memory
 
-For more detailed information, please refer to the [documentation](https://axolotl-ai-cloud.github.io/axolotl/docs/config.html).
+For more detailed information, please refer to the [documentation](https://axolotl-ai-cloud.github.io/axolotl/docs/config-reference.html).
 
 ### Errors:
 

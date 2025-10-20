@@ -13,4 +13,6 @@ MOE_ARCH_BLOCK = {
     "qwen2_moe": "Qwen2MoeSparseMoeBlock",
     "qwen3_moe": "Qwen3MoeSparseMoeBlock",
     "deepseek_v2": "DeepseekV2MoE",
+    "gpt_oss": "GptOssDecoderLayer",
+    "lfm2_moe": "Lfm2MoeSparseMoeBlock",
 }

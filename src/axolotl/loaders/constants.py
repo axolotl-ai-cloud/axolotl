@@ -1,21 +1,18 @@
 """Shared constants for axolotl.loaders module"""
 
-from transformers import (
-    Gemma3ForConditionalGeneration,
-    Llama4ForConditionalGeneration,
-    LlavaForConditionalGeneration,
-    Mistral3ForConditionalGeneration,
-    MllamaForConditionalGeneration,
-    Qwen2_5_VLForConditionalGeneration,
-    Qwen2VLForConditionalGeneration,
+from transformers import AutoModelForImageTextToText
+from transformers.models.auto.modeling_auto import (
+    MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES,
 )
 
-MULTIMODAL_AUTO_MODEL_MAPPING = {
-    "mllama": MllamaForConditionalGeneration,
-    "llama4": Llama4ForConditionalGeneration,
-    "llava": LlavaForConditionalGeneration,
-    "qwen2_vl": Qwen2VLForConditionalGeneration,
-    "qwen2_5_vl": Qwen2_5_VLForConditionalGeneration,
-    "mistral3": Mistral3ForConditionalGeneration,
-    "gemma3": Gemma3ForConditionalGeneration,
-}
+MULTIMODAL_AUTO_MODEL_MAPPING = dict(MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES)
+
+MULTIMODAL_AUTO_MODEL_MAPPING["lfm2-vl"] = AutoModelForImageTextToText
+
+try:
+    from transformers import VoxtralForConditionalGeneration
+
+    # transformers >4.53.2
+    MULTIMODAL_AUTO_MODEL_MAPPING["voxtral"] = VoxtralForConditionalGeneration
+except ImportError:
+    pass

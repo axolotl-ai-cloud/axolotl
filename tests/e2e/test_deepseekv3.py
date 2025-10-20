@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from axolotl.cli.args import TrainerCliArgs
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
@@ -26,7 +25,6 @@ class TestDeepseekV3:
         [True, False],
     )
     def test_lora_deepseekv3(self, temp_dir, sample_packing):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "axolotl-ai-co/DeepSeek-V3-11M",
@@ -68,12 +66,12 @@ class TestDeepseekV3:
                 "max_steps": 5,
                 "save_safetensors": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "adapter_model.safetensors").exists()
@@ -84,7 +82,6 @@ class TestDeepseekV3:
         [True, False],
     )
     def test_fft_deepseekv3(self, temp_dir, sample_packing):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "axolotl-ai-co/DeepSeek-V3-11M",
@@ -118,12 +115,12 @@ class TestDeepseekV3:
                 "max_steps": 5,
                 "save_safetensors": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         assert (Path(temp_dir) / "model.safetensors").exists()

@@ -1,0 +1,55 @@
+base_model: mistral-community/Mixtral-8x22B-v0.1
+# optionally might have model_type or tokenizer_type
+model_type: AutoModelForCausalLM
+tokenizer_type: LlamaTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+trust_remote_code: true
+
+unfrozen_parameters:
+  - ^lm_head.weight$
+  - ^model.embed_tokens.weight$
+  - model.layers.4[4-9]+.block_sparse_moe.gate
+  - model.layers.4[4-9]+.block_sparse_moe.experts
+  - model.layers.5[0-5]+.block_sparse_moe.gate
+  - model.layers.5[0-5]+.block_sparse_moe.experts
+
+model_config:
+  output_router_logits: true
+
+datasets:
+  - path: yahma/alpaca-cleaned
+    type: alpaca
+output_dir: ./outputs/out
+
+sequence_len: 8000
+sample_packing: true
+
+
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 3
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0001
+
+bf16: auto
+tf32: false
+
+gradient_checkpointing: true
+resume_from_checkpoint:
+logging_steps: 1
+flash_attention: true
+
+save_total_limit: 1
+save_steps:
+
+deepspeed: deepspeed_configs/zero3_bf16_cpuoffload_all.json
+weight_decay: 0.0
+special_tokens:
+  eos_token: "<|im_end|>"
+tokens:
+  - "<|im_start|>"
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

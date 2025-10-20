@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import torch
-from accelerate.logging import get_logger
 from datasets import Dataset
 from transformers.trainer import Trainer
 
@@ -18,6 +17,7 @@ from axolotl.train import (
 )
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
+from axolotl.utils.logging import get_logger
 from axolotl.utils.trainer import setup_trainer
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -81,7 +81,7 @@ def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> Dict[str, f
     model, tokenizer, _, processor = setup_model_and_tokenizer(cfg)
 
     # Get datasets
-    # pylint: disable=duplicate-code
+
     train_dataset = dataset_meta.train_dataset
     eval_dataset = dataset_meta.eval_dataset
     total_num_steps = dataset_meta.total_num_steps
