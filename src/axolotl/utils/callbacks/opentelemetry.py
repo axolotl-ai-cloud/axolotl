@@ -111,6 +111,12 @@ class OpenTelemetryMetricsCallback(TrainerCallback):
             unit="1",
         )
 
+        self.memory_usage_gauge = self.meter.create_gauge(
+            name="axolotl_memory_usage",
+            description="Current memory usage in MB",
+            unit="MB",
+        )
+
     def _start_metrics_server(self):
         """Start the HTTP server for metrics exposure"""
         if self.server_started:
@@ -166,6 +172,8 @@ class OpenTelemetryMetricsCallback(TrainerCallback):
 
         if "grad_norm" in logs:
             self.grad_norm_gauge.set(logs["grad_norm"])
+        if "memory_usage" in logs:
+            self.memory_usage_gauge.set(logs["memory_usage"])
 
     def on_step_end(
         self,
