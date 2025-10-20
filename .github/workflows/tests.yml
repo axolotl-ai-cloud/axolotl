@@ -55,7 +55,7 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.11"]
-        pytorch_version: ["2.7.1", "2.8.0"]
+        pytorch_version: ["2.7.1", "2.8.0", "2.9.0"]
     timeout-minutes: 20
 
     steps:
@@ -130,7 +130,7 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.11"]
-        pytorch_version: ["2.7.1", "2.8.0"]
+        pytorch_version: ["2.7.1", "2.8.0", "2.9.0"]
     timeout-minutes: 20
 
     steps:
@@ -231,19 +231,25 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 126
-            cuda_version: 12.6.3
+          - cuda: 128
+            cuda_version: 12.8.1
             python_version: "3.11"
-            pytorch: 2.7.1
+            pytorch: 2.9.0
             num_gpus: 1
             axolotl_extras:
-          - cuda: 126
-            cuda_version: 12.6.3
-            python_version: "3.11"
-            pytorch: 2.7.1
-            num_gpus: 1
-            axolotl_extras:
-            dockerfile: "Dockerfile-uv.jinja"
+#          - cuda: 126
+#            cuda_version: 12.6.3
+#            python_version: "3.11"
+#            pytorch: 2.7.1
+#            num_gpus: 1
+#            axolotl_extras:
+#          - cuda: 126
+#            cuda_version: 12.6.3
+#            python_version: "3.11"
+#            pytorch: 2.7.1
+#            num_gpus: 1
+#            axolotl_extras:
+#            dockerfile: "Dockerfile-uv.jinja"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
