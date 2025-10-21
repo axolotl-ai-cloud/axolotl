@@ -34,3 +34,7 @@ RUN uv pip install packaging setuptools wheel psutil \
     && uv pip install --no-build-isolation "causal_conv1d @ git+https://github.com/Dao-AILab/causal-conv1d.git@main" \
     && uv pip install "mamba_ssm @ git+https://github.com/state-spaces/mamba.git@main" \
     && uv pip install awscli pydantic
+
+RUN if [ "$PYTORCH_VERSION" = "2.9.0" ] && [ "$CUDA" = "128" ] ; then \
+        FLASH_ATTENTION_FORCE_BUILD="TRUE" uv pip install --no-build-isolation flash-attn==2.8.3; \
+    fi
