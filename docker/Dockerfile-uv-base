@@ -36,5 +36,5 @@ RUN uv pip install packaging setuptools wheel psutil \
     && uv pip install awscli pydantic
 
 RUN if [ "$PYTORCH_VERSION" = "2.9.0" ] && [ "$CUDA" = "128" ] ; then \
-        FLASH_ATTENTION_FORCE_BUILD="TRUE" uv pip install --no-build-isolation flash-attn==2.8.3; \
+        MAX_JOBS="1" FLASH_ATTENTION_FORCE_BUILD="TRUE" uv pip install --no-build-isolation flash-attn==2.8.3; \
     fi
