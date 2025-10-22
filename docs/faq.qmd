@@ -69,7 +69,7 @@ description: Frequently asked questions
 
 **Q: Why is `memory/max_*` different from `nvidia-smi`?**
 
-> A: We use `torch` APIs to retrieve this information. You can see https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/bench.py for more information.
+> A: We use `torch` APIs to retrieve this information. You can see https://docs.pytorch.org/docs/stable/notes/cuda.html#cuda-memory-management for more information.
 
 ### Chat templates
 
