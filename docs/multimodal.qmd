@@ -172,6 +172,14 @@ base_model: Qwen/Qwen2.5-VL-7B-Instruct
 chat_template: qwen2_vl  # same as qwen2-vl
 ```
 
+### Qwen3-VL {#sec-qwen3-vl}
+
+```yaml
+base_model: Qwen/Qwen3-VL-4B-Instruct
+
+chat_template: qwen2_vl  # same as qwen2-vl
+```
+
 ### SmolVLM2 {#sec-smolvlm2}
 
 ::: {.callout-tip}
