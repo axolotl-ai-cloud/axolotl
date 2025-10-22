@@ -30,6 +30,6 @@ self attention `q_proj` module.
 
 ::: {.callout-note}
 
-We currently only support varying `lr` for now. If you're interested in adding support for others (`weight_decay`), we welcome PRs.
+We currently only support varying `lr` for now. If you're interested in adding support for others (`weight_decay`), we welcome PRs. See https://github.com/axolotl-ai-cloud/axolotl/blob/613bcf90e58f3ab81d3827e7fc572319908db9fb/src/axolotl/core/trainers/mixins/optimizer.py#L17
 
 :::
