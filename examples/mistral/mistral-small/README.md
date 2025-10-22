@@ -24,6 +24,8 @@ Before starting, ensure you have:
    axolotl train examples/mistral/mistral-small/mistral-small-3.1-24B-lora.yml
    ```
 
+This config uses about 29.4 GiB VRAM.
+
 ## Dataset Format
 
 The vision model requires multi-modal dataset format as documented [here](https://docs.axolotl.ai/docs/multimodal.html#dataset-format).
