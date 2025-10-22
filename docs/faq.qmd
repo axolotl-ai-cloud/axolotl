@@ -67,6 +67,10 @@ description: Frequently asked questions
 
 > A: Yes, you can for newer VLM arch. The ones that would not work are LLaVA / Pixtral arch. If you notice one not working, please let us know!
 
+**Q: Why is `memory/max_*` different from `nvidia-smi`?**
+
+> A: We use `torch` APIs to retrieve this information. You can see https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/utils/bench.py for more information.
+
 ### Chat templates
 
 **Q: `jinja2.exceptions.UndefinedError: 'dict object' has no attribute 'content' / 'role' / ____`**
