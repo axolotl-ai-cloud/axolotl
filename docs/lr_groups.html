@@ -563,6 +563,19 @@ modules in a model.</p>
 <p>In this example, we have a default learning rate of 2e-5 across the entire model, but we have a separate learning rate
 of 1e-6 for all the self attention <code>o_proj</code> modules across all layers, and a learning are of 1e-5 to the 3rd layer’s
 self attention <code>q_proj</code> module.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>We currently only support varying <code>lr</code> for now. If you’re interested in adding support for others (<code>weight_decay</code>), we welcome PRs. See https://github.com/axolotl-ai-cloud/axolotl/blob/613bcf90e58f3ab81d3827e7fc572319908db9fb/src/axolotl/core/trainers/mixins/optimizer.py#L17</p>
+</div>
+</div>
 
 
 </section>

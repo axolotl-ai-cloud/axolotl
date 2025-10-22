@@ -601,6 +601,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <blockquote class="blockquote">
 <p>A: There seems to be a wheel issue with FA2 2.8.0 on CUDA 12.4. Try CUDA 12.6 instead or downgrade to FA2 2.7.4. Please refer to the upstream issue: https://github.com/Dao-AILab/flash-attention/issues/1717.</p>
 </blockquote>
+<p><strong>Q: Can we mix text and text+image datasets for VLM training?</strong></p>
+<blockquote class="blockquote">
+<p>A: Yes, you can for newer VLM arch. The ones that would not work are LLaVA / Pixtral arch. If you notice one not working, please let us know!</p>
+</blockquote>
+<p><strong>Q: Why is <code>memory/max_*</code> different from <code>nvidia-smi</code>?</strong></p>
+<blockquote class="blockquote">
+<p>A: We use <code>torch</code> APIs to retrieve this information. You can see https://docs.pytorch.org/docs/stable/notes/cuda.html#cuda-memory-management for more information.</p>
+</blockquote>
 </section>
 <section id="chat-templates" class="level3">
 <h3 class="anchored" data-anchor-id="chat-templates">Chat templates</h3>
