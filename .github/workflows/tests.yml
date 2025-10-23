@@ -234,22 +234,10 @@ jobs:
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
-            pytorch: 2.9.0
+            pytorch: 2.8.0
             num_gpus: 1
             axolotl_extras:
-#          - cuda: 126
-#            cuda_version: 12.6.3
-#            python_version: "3.11"
-#            pytorch: 2.7.1
-#            num_gpus: 1
-#            axolotl_extras:
-#          - cuda: 126
-#            cuda_version: 12.6.3
-#            python_version: "3.11"
-#            pytorch: 2.7.1
-#            num_gpus: 1
-#            axolotl_extras:
-#            dockerfile: "Dockerfile-uv.jinja"
+            dockerfile: "Dockerfile-uv.jinja"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -292,12 +280,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 128
-            cuda_version: 12.8.1
+          - cuda: 126
+            cuda_version: 12.6.3
             python_version: "3.11"
             pytorch: 2.7.1
             num_gpus: 1
             axolotl_extras:
+#          - cuda: 128
+#            cuda_version: 12.8.1
+#            python_version: "3.11"
+#            pytorch: 2.7.1
+#            num_gpus: 1
+#            axolotl_extras:
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
@@ -305,6 +299,12 @@ jobs:
             num_gpus: 1
             gpu_type: "B200"
             axolotl_extras: fbgemm-gpu
+          - cuda: 128
+            cuda_version: 12.8.1
+            python_version: "3.11"
+            pytorch: 2.9.0
+            num_gpus: 1
+            axolotl_extras:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
