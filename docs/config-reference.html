@@ -1870,48 +1870,55 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-1333"><a href="#cb1-1333" aria-hidden="true" tabindex="-1"></a><span class="co"># Dictionary for additional configuration settings, see the doc for more details.</span></span>
 <span id="cb1-1334"><a href="#cb1-1334" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_experiment_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
 <span id="cb1-1335"><a href="#cb1-1335" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1336"><a href="#cb1-1336" aria-hidden="true" tabindex="-1"></a><span class="co"># the number of activate layers in LISA</span></span>
-<span id="cb1-1337"><a href="#cb1-1337" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_n_layers</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1338"><a href="#cb1-1338" aria-hidden="true" tabindex="-1"></a><span class="co"># how often to switch layers in LISA</span></span>
-<span id="cb1-1339"><a href="#cb1-1339" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_step_interval</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1340"><a href="#cb1-1340" aria-hidden="true" tabindex="-1"></a><span class="co"># path under the model to access the layers</span></span>
-<span id="cb1-1341"><a href="#cb1-1341" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_layers_attribute</span><span class="kw">:</span><span class="at"> str | None = model.layers</span></span>
+<span id="cb1-1336"><a href="#cb1-1336" aria-hidden="true" tabindex="-1"></a><span class="co"># Enable OpenTelemetry metrics collection and Prometheus export</span></span>
+<span id="cb1-1337"><a href="#cb1-1337" aria-hidden="true" tabindex="-1"></a><span class="fu">use_otel_metrics</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
+<span id="cb1-1338"><a href="#cb1-1338" aria-hidden="true" tabindex="-1"></a><span class="co"># Host to bind the OpenTelemetry metrics server to</span></span>
+<span id="cb1-1339"><a href="#cb1-1339" aria-hidden="true" tabindex="-1"></a><span class="fu">otel_metrics_host</span><span class="kw">:</span><span class="at"> str | None = localhost</span></span>
+<span id="cb1-1340"><a href="#cb1-1340" aria-hidden="true" tabindex="-1"></a><span class="co"># Port for the Prometheus metrics HTTP server</span></span>
+<span id="cb1-1341"><a href="#cb1-1341" aria-hidden="true" tabindex="-1"></a><span class="fu">otel_metrics_port</span><span class="kw">:</span><span class="at"> int | None = 8000</span></span>
 <span id="cb1-1342"><a href="#cb1-1342" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1343"><a href="#cb1-1343" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_title</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1344"><a href="#cb1-1344" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_share</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1345"><a href="#cb1-1345" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_server_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1346"><a href="#cb1-1346" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_server_port</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1347"><a href="#cb1-1347" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_max_new_tokens</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1348"><a href="#cb1-1348" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_temperature</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1343"><a href="#cb1-1343" aria-hidden="true" tabindex="-1"></a><span class="co"># the number of activate layers in LISA</span></span>
+<span id="cb1-1344"><a href="#cb1-1344" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_n_layers</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1345"><a href="#cb1-1345" aria-hidden="true" tabindex="-1"></a><span class="co"># how often to switch layers in LISA</span></span>
+<span id="cb1-1346"><a href="#cb1-1346" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_step_interval</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1347"><a href="#cb1-1347" aria-hidden="true" tabindex="-1"></a><span class="co"># path under the model to access the layers</span></span>
+<span id="cb1-1348"><a href="#cb1-1348" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_layers_attribute</span><span class="kw">:</span><span class="at"> str | None = model.layers</span></span>
 <span id="cb1-1349"><a href="#cb1-1349" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1350"><a href="#cb1-1350" aria-hidden="true" tabindex="-1"></a><span class="fu">use_ray</span><span class="kw">:</span><span class="at"> bool = False</span></span>
-<span id="cb1-1351"><a href="#cb1-1351" aria-hidden="true" tabindex="-1"></a><span class="fu">ray_run_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1352"><a href="#cb1-1352" aria-hidden="true" tabindex="-1"></a><span class="fu">ray_num_workers</span><span class="kw">:</span><span class="at"> int = 1</span></span>
-<span id="cb1-1353"><a href="#cb1-1353" aria-hidden="true" tabindex="-1"></a><span class="fu">resources_per_worker</span><span class="kw">:</span><span class="at"> dict</span></span>
-<span id="cb1-1354"><a href="#cb1-1354" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1355"><a href="#cb1-1355" aria-hidden="true" tabindex="-1"></a><span class="co"># The size of the image to resize to. It can be an integer (resized into padded-square</span></span>
-<span id="cb1-1356"><a href="#cb1-1356" aria-hidden="true" tabindex="-1"></a><span class="co"># image) or a tuple (width, height).If not provided, we will attempt to load from</span></span>
-<span id="cb1-1357"><a href="#cb1-1357" aria-hidden="true" tabindex="-1"></a><span class="co"># preprocessor.size, otherwise, images won't be resized.</span></span>
-<span id="cb1-1358"><a href="#cb1-1358" aria-hidden="true" tabindex="-1"></a><span class="fu">image_size</span><span class="kw">:</span><span class="at"> int | tuple[int, int] | None</span></span>
-<span id="cb1-1359"><a href="#cb1-1359" aria-hidden="true" tabindex="-1"></a><span class="co"># The resampling algorithm to use for image resizing. Default is bilinear. Please refer</span></span>
-<span id="cb1-1360"><a href="#cb1-1360" aria-hidden="true" tabindex="-1"></a><span class="co"># to PIL.Image.Resampling for more details.</span></span>
-<span id="cb1-1361"><a href="#cb1-1361" aria-hidden="true" tabindex="-1"></a><span class="fu">image_resize_algorithm</span><span class="kw">:</span><span class="at"> Literal['bilinear', 'bicubic', 'lanczos'] | Resampling | None</span></span>
-<span id="cb1-1362"><a href="#cb1-1362" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1363"><a href="#cb1-1363" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides to the base model configuration</span></span>
-<span id="cb1-1364"><a href="#cb1-1364" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
-<span id="cb1-1365"><a href="#cb1-1365" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides the base model loading from_pretrained</span></span>
-<span id="cb1-1366"><a href="#cb1-1366" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_kwargs</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
-<span id="cb1-1367"><a href="#cb1-1367" aria-hidden="true" tabindex="-1"></a><span class="co"># If you want to specify the type of model to load, AutoModelForCausalLM is a good</span></span>
-<span id="cb1-1368"><a href="#cb1-1368" aria-hidden="true" tabindex="-1"></a><span class="co"># choice too</span></span>
-<span id="cb1-1369"><a href="#cb1-1369" aria-hidden="true" tabindex="-1"></a><span class="fu">type_of_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1370"><a href="#cb1-1370" aria-hidden="true" tabindex="-1"></a><span class="co"># You can specify to choose a specific model revision from huggingface hub</span></span>
-<span id="cb1-1371"><a href="#cb1-1371" aria-hidden="true" tabindex="-1"></a><span class="fu">revision_of_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1372"><a href="#cb1-1372" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1373"><a href="#cb1-1373" aria-hidden="true" tabindex="-1"></a><span class="fu">max_packed_sequence_len</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1374"><a href="#cb1-1374" aria-hidden="true" tabindex="-1"></a><span class="fu">rope_scaling</span><span class="kw">:</span><span class="at"> Any | None</span></span>
-<span id="cb1-1375"><a href="#cb1-1375" aria-hidden="true" tabindex="-1"></a><span class="fu">noisy_embedding_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1376"><a href="#cb1-1376" aria-hidden="true" tabindex="-1"></a><span class="fu">dpo_beta</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1377"><a href="#cb1-1377" aria-hidden="true" tabindex="-1"></a><span class="fu">evaluation_strategy</span><span class="kw">:</span><span class="at"> str | None</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-1350"><a href="#cb1-1350" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_title</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1351"><a href="#cb1-1351" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_share</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1352"><a href="#cb1-1352" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_server_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1353"><a href="#cb1-1353" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_server_port</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1354"><a href="#cb1-1354" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_max_new_tokens</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1355"><a href="#cb1-1355" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_temperature</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1356"><a href="#cb1-1356" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1357"><a href="#cb1-1357" aria-hidden="true" tabindex="-1"></a><span class="fu">use_ray</span><span class="kw">:</span><span class="at"> bool = False</span></span>
+<span id="cb1-1358"><a href="#cb1-1358" aria-hidden="true" tabindex="-1"></a><span class="fu">ray_run_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1359"><a href="#cb1-1359" aria-hidden="true" tabindex="-1"></a><span class="fu">ray_num_workers</span><span class="kw">:</span><span class="at"> int = 1</span></span>
+<span id="cb1-1360"><a href="#cb1-1360" aria-hidden="true" tabindex="-1"></a><span class="fu">resources_per_worker</span><span class="kw">:</span><span class="at"> dict</span></span>
+<span id="cb1-1361"><a href="#cb1-1361" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1362"><a href="#cb1-1362" aria-hidden="true" tabindex="-1"></a><span class="co"># The size of the image to resize to. It can be an integer (resized into padded-square</span></span>
+<span id="cb1-1363"><a href="#cb1-1363" aria-hidden="true" tabindex="-1"></a><span class="co"># image) or a tuple (width, height).If not provided, we will attempt to load from</span></span>
+<span id="cb1-1364"><a href="#cb1-1364" aria-hidden="true" tabindex="-1"></a><span class="co"># preprocessor.size, otherwise, images won't be resized.</span></span>
+<span id="cb1-1365"><a href="#cb1-1365" aria-hidden="true" tabindex="-1"></a><span class="fu">image_size</span><span class="kw">:</span><span class="at"> int | tuple[int, int] | None</span></span>
+<span id="cb1-1366"><a href="#cb1-1366" aria-hidden="true" tabindex="-1"></a><span class="co"># The resampling algorithm to use for image resizing. Default is bilinear. Please refer</span></span>
+<span id="cb1-1367"><a href="#cb1-1367" aria-hidden="true" tabindex="-1"></a><span class="co"># to PIL.Image.Resampling for more details.</span></span>
+<span id="cb1-1368"><a href="#cb1-1368" aria-hidden="true" tabindex="-1"></a><span class="fu">image_resize_algorithm</span><span class="kw">:</span><span class="at"> Literal['bilinear', 'bicubic', 'lanczos'] | Resampling | None</span></span>
+<span id="cb1-1369"><a href="#cb1-1369" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1370"><a href="#cb1-1370" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides to the base model configuration</span></span>
+<span id="cb1-1371"><a href="#cb1-1371" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
+<span id="cb1-1372"><a href="#cb1-1372" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides the base model loading from_pretrained</span></span>
+<span id="cb1-1373"><a href="#cb1-1373" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_kwargs</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
+<span id="cb1-1374"><a href="#cb1-1374" aria-hidden="true" tabindex="-1"></a><span class="co"># If you want to specify the type of model to load, AutoModelForCausalLM is a good</span></span>
+<span id="cb1-1375"><a href="#cb1-1375" aria-hidden="true" tabindex="-1"></a><span class="co"># choice too</span></span>
+<span id="cb1-1376"><a href="#cb1-1376" aria-hidden="true" tabindex="-1"></a><span class="fu">type_of_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1377"><a href="#cb1-1377" aria-hidden="true" tabindex="-1"></a><span class="co"># You can specify to choose a specific model revision from huggingface hub</span></span>
+<span id="cb1-1378"><a href="#cb1-1378" aria-hidden="true" tabindex="-1"></a><span class="fu">revision_of_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1379"><a href="#cb1-1379" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1380"><a href="#cb1-1380" aria-hidden="true" tabindex="-1"></a><span class="fu">max_packed_sequence_len</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1381"><a href="#cb1-1381" aria-hidden="true" tabindex="-1"></a><span class="fu">rope_scaling</span><span class="kw">:</span><span class="at"> Any | None</span></span>
+<span id="cb1-1382"><a href="#cb1-1382" aria-hidden="true" tabindex="-1"></a><span class="fu">noisy_embedding_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1383"><a href="#cb1-1383" aria-hidden="true" tabindex="-1"></a><span class="fu">dpo_beta</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1384"><a href="#cb1-1384" aria-hidden="true" tabindex="-1"></a><span class="fu">evaluation_strategy</span><span class="kw">:</span><span class="at"> str | None</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 
 
 
