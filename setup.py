@@ -62,7 +62,9 @@ def parse_requirements(extras_require_map):
             else:
                 raise ValueError("Invalid version format")
 
-            if (major, minor) >= (2, 8):
+            if (major, minor) >= (2, 9):
+                _install_requires.pop(_install_requires.index(xformers_version))
+            elif (major, minor) >= (2, 8):
                 pass
             elif (major, minor) >= (2, 7):
                 _install_requires.pop(_install_requires.index(xformers_version))
