@@ -471,6 +471,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 kwargs.update(collator_cls_and_kwargs[1])
         elif self.cfg.reward_model:
             collator = RewardDataCollatorWithPadding
+            tokenizer = collator_args.pop(0)
+            kwargs["tokenizer"] = tokenizer
         elif use_batch_sampler_collator:
             # Use V2BatchSamplerDataCollatorForSeq2Seq for flex attention,
             # supported multipack models, or non-flash-attention llama
