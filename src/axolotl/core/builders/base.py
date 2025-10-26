@@ -114,6 +114,12 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.gc_steps:
             callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
 
+        if self.cfg.dynamic_checkpoint and self.cfg.dynamic_checkpoint.enabled:
+            from axolotl.utils.callbacks.dynamic_checkpoint import (
+                DynamicCheckpointCallback,
+            )
+            callbacks.append(DynamicCheckpointCallback(self.cfg))
+
         if self.cfg.use_wandb:
             callbacks.append(
                 SaveAxolotlConfigtoWandBCallback(self.cfg.axolotl_config_path)
