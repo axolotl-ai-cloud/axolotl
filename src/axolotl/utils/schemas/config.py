@@ -46,6 +46,7 @@ from axolotl.utils.schemas.training import HyperparametersConfig, JaggedLRConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.validation import ValidationMixin
 from axolotl.utils.schemas.vllm import VllmConfig
+from axolotl.utils.schemas.dynamic_checkpoint import DynamicCheckpointConfig
 
 LOG = get_logger(__name__)
 
@@ -138,6 +139,12 @@ class AxolotlInputConfig(
     reward_model: bool | None = Field(
         default=None,
         json_schema_extra={"description": "Reward modelling: `True` or `False`"},
+    )
+    dynamic_checkpoint: DynamicCheckpointConfig | None = Field(
+        default_factory=lambda: DynamicCheckpointConfig(),
+        json_schema_extra={
+            "description": "Configuration for dynamic checkpointing (trigger by file or signal)."
+        },
     )
     process_reward_model: bool | None = Field(
         default=None,

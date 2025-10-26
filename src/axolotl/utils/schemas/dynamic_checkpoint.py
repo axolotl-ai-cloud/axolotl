@@ -1,0 +1,36 @@
+"""Schema for dynamic checkpoint configuration."""
+
+from pydantic import BaseModel, Field
+
+
+class DynamicCheckpointConfig(BaseModel):
+    """Configuration for dynamic checkpoint triggering during training."""
+
+    enabled: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Enable dynamic checkpoint triggering during training. "
+            "Create a file '.axolotl_save_checkpoint' in output_dir to trigger. "
+            "Addresses: https://github.com/axolotl-ai-cloud/axolotl/issues/3169"
+        },
+    )
+    check_interval: int = Field(
+        default=100,
+        json_schema_extra={
+            "description": "Check for trigger file every N steps (reduces I/O overhead). "
+            "Default: 100"
+        },
+    )
+    enable_signal: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Enable SIGUSR1 signal-based checkpoint triggering (Unix/Linux only). "
+            "Useful for automated systems. Default: False"
+        },
+    )
+    trigger_file_path: str = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Path to the trigger file. Default: '.axolotl_save_checkpoint'"
+        },
+    )
