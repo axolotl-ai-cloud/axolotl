@@ -17,6 +17,13 @@ def is_comet_available():
     return importlib.util.find_spec("comet_ml") is not None
 
 
+def is_opentelemetry_available():
+    return (
+        importlib.util.find_spec("opentelemetry") is not None
+        and importlib.util.find_spec("prometheus_client") is not None
+    )
+
+
 def get_pytorch_version() -> tuple[int, int, int]:
     """
     Get Pytorch version as a tuple of (major, minor, patch).

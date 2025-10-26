@@ -134,6 +134,11 @@ def get_attention_cls_from_config(cfg: DictDefault) -> Type[nn.Module]:
 
         return Qwen2Attention
 
+    if model_type == "qwen3_vl":
+        from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLTextAttention
+
+        return Qwen3VLTextAttention
+
     if model_type == "mllama":
         from transformers.models.mllama.modeling_mllama import MllamaTextSelfAttention
 

@@ -49,7 +49,7 @@ def parse_requirements(extras_require_map):
             try:
                 torch_version = version("torch")
             except PackageNotFoundError:
-                torch_version = "2.6.0"  # default to torch 2.6
+                torch_version = "2.8.0"  # default to torch 2.8.0
             _install_requires.append(f"torch=={torch_version}")
 
             version_match = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", torch_version)
@@ -159,6 +159,12 @@ extras_require = {
         "llmcompressor==0.5.1",
     ],
     "fbgemm-gpu": ["fbgemm-gpu-genai>=1.2.0"],
+    "opentelemetry": [
+        "opentelemetry-api",
+        "opentelemetry-sdk",
+        "opentelemetry-exporter-prometheus",
+        "prometheus-client",
+    ],
 }
 install_requires, dependency_links, extras_require_build = parse_requirements(
     extras_require

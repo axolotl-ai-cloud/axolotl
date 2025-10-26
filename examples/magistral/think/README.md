@@ -12,7 +12,7 @@ Before starting, ensure you have:
 Run the thinking model fine-tuning:
 
 ```bash
-axolotl train magistral-small-think-qlora.yaml
+axolotl train examples/magistral/think/magistral-small-think-qlora.yaml
 ```
 
 This config uses about 19.1 GiB VRAM.

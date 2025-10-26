@@ -225,17 +225,6 @@ class AxolotlTrainer(
 
         data_collator = self.data_collator if is_training else self.eval_data_collator
 
-        if dataset.column_names and "length" in dataset.column_names:
-            dataset = dataset.remove_columns(["length"])
-        if (
-            dataset.column_names
-            and "position_ids" in dataset.column_names
-            and "attention_mask" in dataset.column_names
-            and self.args.sample_packing
-            and self.args.sample_packing_drop_attention_mask
-        ):
-            dataset = dataset.remove_columns(["attention_mask"])
-
         if isinstance(dataset, datasets.Dataset):
             if is_training:
                 if not self.args.sample_packing or self.args.pretraining:
@@ -293,6 +282,18 @@ class AxolotlTrainer(
             or (not is_training and self.args.eval_sample_packing is not False)
         ):
             self.accelerator.even_batches = False
+
+        if dataset.column_names and "length" in dataset.column_names:
+            dataset = dataset.remove_columns(["length"])
+
+        if (
+            dataset.column_names
+            and "position_ids" in dataset.column_names
+            and "attention_mask" in dataset.column_names
+            and self.args.sample_packing
+            and self.args.sample_packing_drop_attention_mask
+        ):
+            dataset = dataset.remove_columns(["attention_mask"])
 
         dataloader = DataLoader(dataset, **dataloader_params)
 

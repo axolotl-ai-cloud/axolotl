@@ -56,8 +56,12 @@ image_resize_algorithm: bilinear
 
 Please see [examples](https://github.com/axolotl-ai/axolotl/tree/main/examples) folder for full configs.
 
-::: {.callout-warning}
+::: {.callout-tip}
 Some of our chat_templates have been extended to support broader dataset types. This should not break any existing configs.
+:::
+
+::: {.callout-note}
+As of now, we do not truncate nor drop samples based on `sequence_len` as each arch has different ways to process non-text tokens. We are looking for help on this.
 :::
 
 ### Mllama {#sec-mllama}
@@ -164,6 +168,14 @@ chat_template: qwen2_vl
 
 ```yaml
 base_model: Qwen/Qwen2.5-VL-7B-Instruct
+
+chat_template: qwen2_vl  # same as qwen2-vl
+```
+
+### Qwen3-VL {#sec-qwen3-vl}
+
+```yaml
+base_model: Qwen/Qwen3-VL-4B-Instruct
 
 chat_template: qwen2_vl  # same as qwen2-vl
 ```
