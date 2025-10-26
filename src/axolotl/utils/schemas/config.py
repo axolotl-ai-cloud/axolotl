@@ -664,6 +664,44 @@ class AxolotlInputConfig(
 
     llama4_linearized_experts: bool | None = None
 
+    # MoE aux-loss-free (AFB) toggles
+    moe_balance_type: Literal["gshard", "noaux_tc"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "MoE load balancing strategy: 'gshard' for auxiliary loss, 'noaux_tc' for aux-loss-free bias updates affecting top-k selection only. Defaults to model's native behavior when unset.",
+        },
+    )
+    moe_update_rate: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Per-step bias update rate (gamma). Recommended: 0.005–0.05. If unset, plugin default is 0.01.",
+        },
+    )
+    moe_update_momentum: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "EMA momentum for expert load smoothing (0–1). If unset, plugin default is 0.9.",
+        },
+    )
+    moe_bias_cap: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Absolute clamp for expert bias magnitude. If unset, plugin default is 2.0.",
+        },
+    )
+    moe_afb_warmup_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of initial steps to delay aux-free bias updates, allowing routing to stabilize. If unset, plugin default is 0.",
+        },
+    )
+    moe_bias_sync_group: Literal["world", "ep"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Reduction group for expert load counts: 'world' (DP) or 'ep' (expert-parallel group if available). Defaults to 'world' when unset.",
+        },
+    )
+
     deepspeed: str | dict[str, Any] | None = Field(
         default=None,
         json_schema_extra={

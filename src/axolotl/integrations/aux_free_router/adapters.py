@@ -1,0 +1,172 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Iterable, Optional
+
+import torch
+from torch import nn
+import torch.nn.functional as F
+
+from axolotl.utils.logging import get_logger
+
+from .core import AuxFreeShim
+
+LOG = get_logger(__name__)
+
+
+@dataclass
+class LayerHandle:
+    layer: nn.Module
+    layer_idx: int
+    num_experts: int
+    top_k: int
+
+
+class BaseMoEAdapter:
+    """Base adapter that discovers MoE layers and wraps their forward.
+
+    Concrete adapters should implement discovery and per-layer attribute extraction.
+    """
+
+    family: str = "generic"
+
+    def matches(self, model: nn.Module) -> bool:  # pragma: no cover - thin shim
+        return False
+
+    def find_moe_layers(self, model: nn.Module) -> Iterable[nn.Module]:  # pragma: no cover
+        return []
+
+    def get_top_k(self, moe_layer: nn.Module) -> int:  # pragma: no cover
+        return int(getattr(moe_layer, "num_experts_per_tok", getattr(moe_layer, "top_k", 2)))
+
+    def get_num_experts(self, moe_layer: nn.Module) -> int:  # pragma: no cover
+        return int(getattr(moe_layer, "num_experts"))
+
+    def disable_aux_loss(self, model_or_layer: nn.Module) -> None:
+        # Best-effort: zero router aux loss coef if present
+        if hasattr(model_or_layer, "router_aux_loss_coef"):
+            try:
+                setattr(model_or_layer, "router_aux_loss_coef", 0.0)
+            except Exception:  # pragma: no cover - non-critical
+                pass
+
+    def prepare(self, moe_layer: nn.Module, handle: LayerHandle, shim: AuxFreeShim) -> None:
+        """Attach per-layer buffers and mark as aux-free enabled.
+
+        Note: Forward rebind happens in concrete adapters once we implement full routing.
+        For now, we only attach buffers as placeholders to minimize disturbance.
+        """
+        device = next(moe_layer.parameters(), torch.tensor(0)).device
+        if not hasattr(moe_layer, "_afb_bias"):
+            moe_layer.register_buffer("_afb_bias", torch.zeros(handle.num_experts, device=device))
+        if not hasattr(moe_layer, "_afb_counts"):
+            moe_layer.register_buffer("_afb_counts", torch.zeros(handle.num_experts, device=device))
+        if not hasattr(moe_layer, "_afb_ema"):
+            moe_layer.register_buffer("_afb_ema", torch.zeros(handle.num_experts, device=device))
+        moe_layer._afb_layer_idx = handle.layer_idx  # type: ignore[attr-defined]
+        moe_layer._afb_top_k = handle.top_k  # type: ignore[attr-defined]
+        self._patch_forward_with_aux_free(moe_layer)
+
+    def _patch_forward_with_aux_free(self, moe_layer: nn.Module) -> None:
+        """Replace the layer's forward with an aux-free gating version.
+
+        Assumes the layer exposes attributes:
+          - gate: linear router projecting hidden to num_experts
+          - num_experts: int
+          - experts: iterable of expert modules taking (tokens, H) -> (tokens, H)
+        """
+        if getattr(moe_layer, "_afb_patched", False):
+            return
+
+        if not hasattr(moe_layer, "gate") or not hasattr(moe_layer, "experts"):
+            LOG.info("AuxFreeMoE: layer missing gate/experts; skipping forward patch")
+            return
+
+        def afb_forward(self, hidden_states: torch.Tensor):  # type: ignore[no-redef]
+            # hidden_states: (B, T, H)
+            bsz, seqlen, hdim = hidden_states.shape
+            hs = hidden_states.view(-1, hdim)
+            logits = self.gate(hs)
+            # selection uses biased logits; weights from unbiased logits
+            bias = getattr(self, "_afb_bias")
+            top_k = int(getattr(self, "_afb_top_k", 2))
+            biased = logits + bias  # broadcast over tokens
+            topk_vals, topk_idx = torch.topk(biased, k=top_k, dim=-1, sorted=False)
+            chosen_logits = torch.gather(logits, -1, topk_idx)
+            weights = torch.softmax(chosen_logits.float(), dim=-1)
+            weights = weights.to(hs.dtype)
+
+            # accumulate counts for bias update callback
+            flat_idx = topk_idx.reshape(-1)
+            counts = torch.bincount(flat_idx, minlength=int(self.num_experts))
+            getattr(self, "_afb_counts").add_(counts.to(getattr(self, "_afb_counts").dtype))
+
+            # dispatch tokens to experts
+            hs_rep = hs.repeat_interleave(top_k, dim=0)
+            y = torch.empty_like(hs_rep)
+            for eid in range(int(self.num_experts)):
+                mask = flat_idx == eid
+                if mask.any():
+                    y[mask] = self.experts[eid](hs_rep[mask])
+
+            y = (y.view(-1, top_k, hdim) * weights.unsqueeze(-1)).sum(dim=1)
+            out = y.view(bsz, seqlen, hdim)
+            return (out, logits)
+
+        moe_layer.forward = afb_forward.__get__(moe_layer, moe_layer.__class__)  # type: ignore[attr-defined]
+        setattr(moe_layer, "_afb_patched", True)
+
+
+class MixtralAdapter(BaseMoEAdapter):
+    family = "mixtral"
+
+    def matches(self, model: nn.Module) -> bool:
+        return getattr(getattr(model, "config", object()), "model_type", "") == "mixtral"
+
+    def find_moe_layers(self, model: nn.Module) -> Iterable[nn.Module]:
+        for m in model.modules():
+            if m.__class__.__name__.endswith("SparseMoeBlock"):
+                yield m
+
+
+class Qwen3Adapter(MixtralAdapter):
+    family = "qwen3_moe"
+
+    def matches(self, model: nn.Module) -> bool:
+        return getattr(getattr(model, "config", object()), "model_type", "") in ("qwen3_moe", "qwen2_moe")
+
+
+def discover_and_prepare_layers(model: nn.Module, adapters: list[BaseMoEAdapter], shim: AuxFreeShim) -> list[LayerHandle]:
+    """Discover MoE layers using the first matching adapter and attach per-layer buffers.
+
+    Returns a list of layer handles for later routing patching and updates.
+    """
+    handles: list[LayerHandle] = []
+    adapter: Optional[BaseMoEAdapter] = None
+    for a in adapters:
+        if a.matches(model):
+            adapter = a
+            break
+
+    if adapter is None:
+        LOG.info("AuxFreeMoE: no matching adapter found; skipping aux-free routing")
+        return handles
+
+    # disable aux loss at model level if possible
+    adapter.disable_aux_loss(getattr(model, "config", model))
+
+    idx = 0
+    for layer in adapter.find_moe_layers(model):
+        try:
+            top_k = adapter.get_top_k(layer)
+            nE = adapter.get_num_experts(layer)
+        except Exception:
+            continue
+
+        handle = LayerHandle(layer=layer, layer_idx=idx, num_experts=nE, top_k=top_k)
+        adapter.prepare(layer, handle, shim)
+        handles.append(handle)
+        idx += 1
+
+    LOG.info(f"AuxFreeMoE: prepared {len(handles)} {adapter.family} layers for aux-free routing")
+    return handles
