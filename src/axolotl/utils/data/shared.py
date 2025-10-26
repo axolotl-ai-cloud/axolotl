@@ -239,6 +239,11 @@ def _load_from_local_path(
             return load_dataset(dataset_config.path, **load_dataset_kwargs)
     elif local_path.is_file():
         dataset_type = get_dataset_type(dataset_config)
+
+        # For single file datasets, HF always creates only a "train" split
+        if dataset_type in ("json", "csv", "text"):
+            load_dataset_kwargs["split"] = "train"
+
         return load_dataset(
             dataset_type,
             data_files=dataset_config.path,
