@@ -10,10 +10,10 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import posthog
 import psutil
 import torch
 import yaml
-from posthog import PostHog
 
 LOG = logging.getLogger(__name__)
 
@@ -240,7 +240,9 @@ class TelemetryManager:
 
     def _init_posthog(self):
         """Initialize PostHog client"""
-        self.posthog = PostHog(POSTHOG_WRITE_KEY, host=POSTHOG_HOST)
+        posthog.api_key = POSTHOG_WRITE_KEY
+        posthog.project_api_key = POSTHOG_WRITE_KEY
+        posthog.host = POSTHOG_HOST
 
     def _redact_paths(self, properties: dict[str, Any]) -> dict[str, Any]:
         """
@@ -389,7 +391,7 @@ class TelemetryManager:
         # Wrap PostHog errors in try / except to not raise errors during Axolotl usage
         try:
             # Send event via PostHog
-            self.posthog.capture(
+            posthog.capture(
                 distinct_id=self.run_id,
                 event=event_type,
                 properties=properties,
@@ -411,4 +413,4 @@ class TelemetryManager:
     def shutdown(self):
         """Ensure all queued events are processed before shutdown"""
         if self.enabled:
-            self.posthog.shutdown()
+            posthog.shutdown()
