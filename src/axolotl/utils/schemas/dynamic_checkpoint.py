@@ -28,7 +28,7 @@ class DynamicCheckpointConfig(BaseModel):
             "Useful for automated systems. Default: False"
         },
     )
-    trigger_file_path: str = Field(
+    trigger_file_path: str | None = Field(
         default=None,
         json_schema_extra={
             "description": "Path to the trigger file. Default: '.axolotl_save_checkpoint'"

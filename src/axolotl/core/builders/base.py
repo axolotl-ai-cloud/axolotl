@@ -122,6 +122,7 @@ class TrainerBuilderBase(abc.ABC):
             from axolotl.utils.callbacks.dynamic_checkpoint import (
                 DynamicCheckpointCallback,
             )
+
             callbacks.append(DynamicCheckpointCallback(self.cfg))
 
         if self.cfg.use_wandb:
