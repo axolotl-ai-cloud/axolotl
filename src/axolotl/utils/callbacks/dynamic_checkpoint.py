@@ -53,11 +53,13 @@ class DynamicCheckpointCallback(TrainerCallback):
         dc_config = cfg.dynamic_checkpoint
 
         trigger_path = self._get_config_value(dc_config, "trigger_file_path")
-        self.trigger_filename = trigger_path if trigger_path else DEFAULT_TRIGGER_FILENAME
-        
+        self.trigger_filename = (
+            trigger_path if trigger_path else DEFAULT_TRIGGER_FILENAME
+        )
+
         check_interval = self._get_config_value(dc_config, "check_interval")
         self.check_interval = check_interval if check_interval is not None else 100
-        
+
         enable_signal = self._get_config_value(dc_config, "enable_signal")
         self.enable_signal = enable_signal if enable_signal is not None else False
         self.should_save_checkpoint = False
