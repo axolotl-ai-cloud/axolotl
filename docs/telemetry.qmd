@@ -1,6 +1,6 @@
 ---
 title: Telemetry
-description: A description of the opt-in telemetry implementation in Axolotl.
+description: A description of the telemetry implementation in Axolotl.
 ---
 
 # Telemetry in Axolotl
@@ -39,15 +39,14 @@ runtime metrics telemetry.
 The telemetry system will block training startup for 15 seconds to ensure users are
 aware of data collection, unless telemetry is explicitly enabled or disabled.
 
-## Opt-In Mechanism
+## Opt-Out Mechanism
 
-Telemetry is **disabled by default** on an opt-in basis. To enable it, set `AXOLOTL_DO_NOT_TRACK=0`.
+Telemetry is **enabled by default** on an opt-out basis. To disable it, set
+`AXOLOTL_DO_NOT_TRACK=1` or `DO_NOT_TRACK=1`.
 
 To remove the warning message about telemetry that is displayed on train, etc. startup,
 explicitly set: `AXOLOTL_DO_NOT_TRACK=0` (enable telemetry) or `AXOLOTL_DO_NOT_TRACK=1`
 (explicitly disable telemetry).
-
-**Note**: Telemetry will move to an opt-out model in a later release.
 
 ## Privacy
 
