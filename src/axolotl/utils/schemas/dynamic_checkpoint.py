@@ -16,6 +16,7 @@ class DynamicCheckpointConfig(BaseModel):
     )
     check_interval: int = Field(
         default=100,
+        ge=1,
         json_schema_extra={
             "description": "Check for trigger file every N steps (reduces I/O overhead). "
             "Default: 100"
