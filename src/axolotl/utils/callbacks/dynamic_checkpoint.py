@@ -1,17 +1,18 @@
-import signal
 import os
+import signal
 from pathlib import Path
-from typing import Optional
+
 from transformers import (
     TrainerCallback,
     TrainerControl,
     TrainerState,
     TrainingArguments,
 )
+
 from axolotl.utils.distributed import (
-    is_main_process,
     barrier,
     is_distributed,
+    is_main_process,
 )
 from axolotl.utils.logging import get_logger
 
@@ -38,17 +39,33 @@ class DynamicCheckpointCallback(TrainerCallback):
 
     def __init__(self, cfg):
         self.cfg = cfg
-        self.enabled = cfg.dynamic_checkpoint.enabled
-
-        if not self.enabled:
+        if not cfg.dynamic_checkpoint or not cfg.dynamic_checkpoint.enabled:
+            self.enabled = False
             return
 
-        self.trigger_filename = (
-            cfg.dynamic_checkpoint.trigger_file_path or DEFAULT_TRIGGER_FILENAME
-        )
+        self.enabled = True
+        dc_config = cfg.dynamic_checkpoint
 
-        self.check_interval = cfg.dynamic_checkpoint.check_interval
-        self.enable_signal = cfg.dynamic_checkpoint.enable_signal
+        trigger_path = None
+        if isinstance(dc_config, dict):
+            trigger_path = dc_config.get("trigger_file_path")
+        else:
+            trigger_path = getattr(dc_config, "trigger_file_path", None)
+        self.trigger_filename = trigger_path or DEFAULT_TRIGGER_FILENAME
+
+        check_interval = None
+        if isinstance(dc_config, dict):
+            check_interval = dc_config.get("check_interval")
+        else:
+            check_interval = getattr(dc_config, "check_interval", None)
+        self.check_interval = check_interval if check_interval is not None else 100
+
+        enable_signal = None
+        if isinstance(dc_config, dict):
+            enable_signal = dc_config.get("enable_signal")
+        else:
+            enable_signal = getattr(dc_config, "enable_signal", None)
+        self.enable_signal = enable_signal if enable_signal is not None else False
 
         self.should_save_checkpoint = False
 
