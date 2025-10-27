@@ -48,9 +48,11 @@ def parse_requirements(extras_require_map):
             # and set it so dependencies don't clobber the torch version
             try:
                 torch_version = version("torch")
+                _install_requires.append(f"torch=={torch_version}")
             except PackageNotFoundError:
-                torch_version = "2.8.0"  # default to torch 2.8.0
-            _install_requires.append(f"torch=={torch_version}")
+                # Use flexible version range to support FlexAI torch 2.8
+                _install_requires.append("torch>=2.6.0,<=2.8.1")
+                torch_version = "2.8.0"  # default to torch 2.8 for FlexAI
 
             version_match = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", torch_version)
             if version_match:
