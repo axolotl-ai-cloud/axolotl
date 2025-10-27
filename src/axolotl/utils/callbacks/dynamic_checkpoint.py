@@ -37,6 +37,12 @@ class DynamicCheckpointCallback(TrainerCallback):
         kill -SIGUSR1 <training_pid>
     """
 
+    def _get_config_value(self, config, key, default=None):
+        """Helper to get config value from dict or object."""
+        if isinstance(config, dict):
+            return config.get(key, default)
+        return getattr(config, key, default)
+
     def __init__(self, cfg):
         self.cfg = cfg
         if not cfg.dynamic_checkpoint or not cfg.dynamic_checkpoint.enabled:
@@ -46,27 +52,14 @@ class DynamicCheckpointCallback(TrainerCallback):
         self.enabled = True
         dc_config = cfg.dynamic_checkpoint
 
-        trigger_path = None
-        if isinstance(dc_config, dict):
-            trigger_path = dc_config.get("trigger_file_path")
-        else:
-            trigger_path = getattr(dc_config, "trigger_file_path", None)
-        self.trigger_filename = trigger_path or DEFAULT_TRIGGER_FILENAME
-
-        check_interval = None
-        if isinstance(dc_config, dict):
-            check_interval = dc_config.get("check_interval")
-        else:
-            check_interval = getattr(dc_config, "check_interval", None)
+        trigger_path = self._get_config_value(dc_config, "trigger_file_path")
+        self.trigger_filename = trigger_path if trigger_path else DEFAULT_TRIGGER_FILENAME
+        
+        check_interval = self._get_config_value(dc_config, "check_interval")
         self.check_interval = check_interval if check_interval is not None else 100
-
-        enable_signal = None
-        if isinstance(dc_config, dict):
-            enable_signal = dc_config.get("enable_signal")
-        else:
-            enable_signal = getattr(dc_config, "enable_signal", None)
+        
+        enable_signal = self._get_config_value(dc_config, "enable_signal")
         self.enable_signal = enable_signal if enable_signal is not None else False
-
         self.should_save_checkpoint = False
 
         if self.enable_signal and hasattr(signal, "SIGUSR1") and is_main_process():
