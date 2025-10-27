@@ -19,7 +19,8 @@ Enable
   moe_update_momentum: 0.9     # default if unset
   moe_bias_cap: 2.0            # default if unset
   moe_afb_warmup_steps: 100    # optional
-  moe_bias_sync_group: world   # or 'ep' if expert-parallel is configured
+  moe_bias_sync_group: world   # or 'ep' if expert_parallel_size > 1
+  expert_parallel_size: 1      # set to your EP width when using moe_bias_sync_group: ep
 
 Config keys
 - moe_balance_type: gshard (auxiliary loss) | noaux_tc (aux-free). Default: model native.
@@ -28,9 +29,10 @@ Config keys
 - moe_bias_cap: absolute clamp for bias. Default: 2.0.
 - moe_afb_warmup_steps: delay before applying updates. Default: 0.
 - moe_bias_sync_group: reduction group for counts, 'world' (DP) or 'ep' (expert-parallel). Default: world.
+- expert_parallel_size: number of ranks per expert-parallel group when using `moe_bias_sync_group: ep`. Defaults to 1 (world).
 
 Compatibility
-- Targeted families: Mixtral, Qwen3-MoE. Jamba optional.
+- Targeted families: Mixtral, Qwen3-MoE, Bailing/Ring 2.0, and Llama 4 text MoE layers.
 - Pass-through: Models with native aux-free routing (e.g., DeepSeek-V3) are left unmodified; only telemetry may be added in future.
 
 Notes
