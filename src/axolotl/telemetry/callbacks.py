@@ -15,7 +15,7 @@ from axolotl.telemetry.runtime_metrics import RuntimeMetricsTracker
 
 LOG = logging.getLogger(__name__)
 
-TIME_SINCE_LAST = 30
+TIME_SINCE_LAST = 60
 
 
 class TelemetryCallback(TrainerCallback):
