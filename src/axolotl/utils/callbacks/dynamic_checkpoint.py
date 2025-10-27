@@ -78,7 +78,7 @@ class DynamicCheckpointCallback(TrainerCallback):
             main_process_only=True,
         )
 
-    def _signal_handler(self, signum, frame):
+    def _signal_handler(self, _signum, _frame):
         """Handle SIGUSR1 signal to trigger checkpoint (rank 0 only)"""
         self.should_save_checkpoint = True
         LOG.info(
@@ -114,7 +114,7 @@ class DynamicCheckpointCallback(TrainerCallback):
                             f"at step {state.global_step}",
                             main_process_only=True,
                         )
-                    except Exception as exc:
+                    except OSError as exc:
                         LOG.warning(
                             f"Failed to delete trigger file: {exc}",
                             main_process_only=True,
@@ -128,10 +128,18 @@ class DynamicCheckpointCallback(TrainerCallback):
                 import torch
                 import torch.distributed as dist
 
+                if hasattr(args, "device"):
+                    device = args.device
+                else:
+                    device = (
+                        torch.device("cuda", torch.cuda.current_device())
+                        if torch.cuda.is_available()
+                        else torch.device("cpu")
+                    )
                 trigger_tensor = torch.tensor(
                     1 if trigger_detected else 0,
                     dtype=torch.long,
-                    device=f"cuda:{torch.cuda.current_device()}",
+                    device=device,
                 )
 
                 dist.broadcast(trigger_tensor, src=0)
