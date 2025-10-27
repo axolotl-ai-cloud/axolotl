@@ -780,6 +780,12 @@ class AxolotlInputConfig(
             "description": "Number of tensor parallel processes in TP group. Only supported with DeepSpeed AutoTP."
         },
     )
+    expert_parallel_size: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of processes participating in expert-parallel collectives. Set >1 to form EP groups for aux-free reductions; defaults to world when unset."
+        },
+    )
     special_tokens: SpecialTokensConfig | None = Field(
         default=None,
         json_schema_extra={

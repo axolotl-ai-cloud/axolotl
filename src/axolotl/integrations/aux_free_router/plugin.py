@@ -9,13 +9,20 @@ from __future__ import annotations
 from typing import Optional
 
 import torch
+import torch.distributed as dist
 from transformers.trainer_callback import TrainerCallback
 
 from axolotl.integrations.base import BasePlugin
-from axolotl.utils.distributed import is_distributed
 from axolotl.utils.logging import get_logger
 
-from .adapters import BaseMoEAdapter, MixtralAdapter, Qwen3Adapter, discover_and_prepare_layers
+from .adapters import (
+    BailingAdapter,
+    BaseMoEAdapter,
+    Llama4Adapter,
+    MixtralAdapter,
+    Qwen3Adapter,
+    discover_and_prepare_layers,
+)
 from .core import AuxFreeConfig, AuxFreeShim, AuxFreeState
 
 LOG = get_logger(__name__)
@@ -70,6 +77,7 @@ class AuxFreeMoEPlugin(BasePlugin):
         super().__init__()
         self._handles: list = []
         self._shim: Optional[AuxFreeShim] = None
+        self._ep_group_cache: dict[tuple[int, ...], dist.ProcessGroup] = {}
 
     def post_model_build(self, cfg, model):
         # Enable only when explicitly requested
@@ -98,7 +106,12 @@ class AuxFreeMoEPlugin(BasePlugin):
         )
 
         # Discover layers to count the number and experts for state sizing
-        adapters: list[BaseMoEAdapter] = [MixtralAdapter(), Qwen3Adapter()]
+        adapters: list[BaseMoEAdapter] = [
+            MixtralAdapter(),
+            Qwen3Adapter(),
+            BailingAdapter(),
+            Llama4Adapter(),
+        ]
 
         # For initial state sizing, we conservatively assume the first discovered layer defines nE
         n_layers = 0
@@ -112,7 +125,8 @@ class AuxFreeMoEPlugin(BasePlugin):
             # we'll set a minimal placeholder; prepare() will conceptually use module buffers instead
             n_experts = 2
         state = AuxFreeState(num_layers=n_layers, num_experts=n_experts, device=device, cfg=af_cfg)
-        self._shim = AuxFreeShim(state=state, ep_group=None)
+        ep_group = self._resolve_ep_group(cfg) if sync_group == "ep" else None
+        self._shim = AuxFreeShim(state=state, ep_group=ep_group)
 
         # Discover and prepare layers (attach per-layer buffers)
         self._handles = discover_and_prepare_layers(model, adapters, self._shim)
@@ -120,6 +134,32 @@ class AuxFreeMoEPlugin(BasePlugin):
         LOG.info(
             f"AuxFreeMoE: enabled with rate={rate}, momentum={momentum}, cap={bias_cap}, warmup={warmup}, group={sync_group}"
         )
+
+    def _resolve_ep_group(self, cfg) -> Optional[dist.ProcessGroup]:
+        if not dist.is_available() or not dist.is_initialized():
+            LOG.warning("AuxFreeMoE: EP sync requested but torch.distributed is not initialized; defaulting to world")
+            return None
+        ep_size = getattr(cfg, "expert_parallel_size", None)
+        if not ep_size or ep_size <= 1:
+            LOG.warning("AuxFreeMoE: moe_bias_sync_group='ep' but expert_parallel_size<=1; defaulting to world")
+            return None
+        world = dist.get_world_size()
+        if world % ep_size != 0:
+            LOG.warning(
+                "AuxFreeMoE: expert_parallel_size %s does not divide world size %s; defaulting to world",
+                ep_size,
+                world,
+            )
+            return None
+        if ep_size == world:
+            return dist.group.WORLD
+
+        rank = dist.get_rank()
+        group_start = (rank // ep_size) * ep_size
+        ranks = tuple(range(group_start, group_start + ep_size))
+        if ranks not in self._ep_group_cache:
+            self._ep_group_cache[ranks] = dist.new_group(ranks)
+        return self._ep_group_cache[ranks]
 
     def add_callbacks_post_trainer(self, cfg, trainer):
         if getattr(cfg, "moe_balance_type", None) != "noaux_tc":

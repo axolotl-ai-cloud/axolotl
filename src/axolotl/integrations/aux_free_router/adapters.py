@@ -50,12 +50,7 @@ class BaseMoEAdapter:
             except Exception:  # pragma: no cover - non-critical
                 pass
 
-    def prepare(self, moe_layer: nn.Module, handle: LayerHandle, shim: AuxFreeShim) -> None:
-        """Attach per-layer buffers and mark as aux-free enabled.
-
-        Note: Forward rebind happens in concrete adapters once we implement full routing.
-        For now, we only attach buffers as placeholders to minimize disturbance.
-        """
+    def _register_aux_buffers(self, moe_layer: nn.Module, handle: LayerHandle) -> None:
         device = next(moe_layer.parameters(), torch.tensor(0)).device
         if not hasattr(moe_layer, "_afb_bias"):
             moe_layer.register_buffer("_afb_bias", torch.zeros(handle.num_experts, device=device))
@@ -65,6 +60,10 @@ class BaseMoEAdapter:
             moe_layer.register_buffer("_afb_ema", torch.zeros(handle.num_experts, device=device))
         moe_layer._afb_layer_idx = handle.layer_idx  # type: ignore[attr-defined]
         moe_layer._afb_top_k = handle.top_k  # type: ignore[attr-defined]
+
+    def prepare(self, moe_layer: nn.Module, handle: LayerHandle, shim: AuxFreeShim) -> None:
+        """Attach per-layer buffers and mark as aux-free enabled."""
+        self._register_aux_buffers(moe_layer, handle)
         self._patch_forward_with_aux_free(moe_layer)
 
     def _patch_forward_with_aux_free(self, moe_layer: nn.Module) -> None:
@@ -134,6 +133,102 @@ class Qwen3Adapter(MixtralAdapter):
 
     def matches(self, model: nn.Module) -> bool:
         return getattr(getattr(model, "config", object()), "model_type", "") in ("qwen3_moe", "qwen2_moe")
+
+
+class BailingAdapter(BaseMoEAdapter):
+    family = "bailing_moe"
+
+    def matches(self, model: nn.Module) -> bool:
+        model_type = getattr(getattr(model, "config", object()), "model_type", "")
+        return model_type in ("bailing_moe", "bailing_moe_v2")
+
+    def find_moe_layers(self, model: nn.Module) -> Iterable[nn.Module]:
+        for m in model.modules():
+            if m.__class__.__name__ == "BailingMoeV2SparseMoeBlock":
+                yield m
+
+    def get_num_experts(self, moe_layer: nn.Module) -> int:
+        if hasattr(moe_layer, "num_experts"):
+            return int(getattr(moe_layer, "num_experts"))
+        cfg = getattr(moe_layer, "config", None)
+        return int(getattr(cfg, "num_experts"))
+
+    def prepare(self, moe_layer: nn.Module, handle: LayerHandle, shim: AuxFreeShim) -> None:
+        self._register_aux_buffers(moe_layer, handle)
+        self._patch_bailing_gate(moe_layer)
+
+    def _patch_bailing_gate(self, moe_layer: nn.Module) -> None:
+        gate = getattr(moe_layer, "gate", None)
+        if gate is None:
+            LOG.info("BailingAdapter: layer missing gate; skipping aux-free patch")
+            return
+        if getattr(gate, "_afb_patched", False):
+            return
+
+        def afb_gate_forward(self, hidden_states: torch.Tensor):
+            flat = hidden_states.view(-1, hidden_states.shape[-1])
+            logits = F.linear(flat.float(), self.weight.float())
+            scores_unbiased = torch.sigmoid(logits.float()).to(logits.dtype)
+            bias = getattr(moe_layer, "_afb_bias")
+            biased_scores = scores_unbiased + bias
+            topk_vals, topk_idx = self.group_limited_topk(biased_scores)
+            weights = torch.gather(scores_unbiased, 1, topk_idx)
+            if self.top_k > 1:
+                denom = weights.sum(dim=-1, keepdim=True).clamp_min_(1e-20)
+                weights = weights / denom
+            weights = weights * self.routed_scaling_factor
+
+            flat_topk = topk_idx.reshape(-1)
+            counts = torch.bincount(flat_topk, minlength=bias.numel())
+            getattr(moe_layer, "_afb_counts").add_(counts.to(moe_layer._afb_counts.dtype))
+
+            return topk_idx, weights.to(hidden_states.dtype), logits
+
+        gate.forward = afb_gate_forward.__get__(gate, gate.__class__)  # type: ignore[attr-defined]
+        setattr(gate, "_afb_patched", True)
+
+
+class Llama4Adapter(BaseMoEAdapter):
+    family = "llama4"
+
+    def matches(self, model: nn.Module) -> bool:
+        return getattr(getattr(model, "config", object()), "model_type", "") == "llama4"
+
+    def find_moe_layers(self, model: nn.Module) -> Iterable[nn.Module]:
+        for m in model.modules():
+            if m.__class__.__name__ == "Llama4TextMoe":
+                yield m
+
+    def prepare(self, moe_layer: nn.Module, handle: LayerHandle, shim: AuxFreeShim) -> None:
+        self._register_aux_buffers(moe_layer, handle)
+        self._patch_llama4_router(moe_layer)
+
+    def _patch_llama4_router(self, moe_layer: nn.Module) -> None:
+        router = getattr(moe_layer, "router", None)
+        if router is None:
+            LOG.info("Llama4Adapter: layer missing router; skipping aux-free patch")
+            return
+        if getattr(router, "_afb_patched", False):
+            return
+
+        def afb_router_forward(self, hidden_states: torch.Tensor):
+            flat = hidden_states if hidden_states.dim() == 2 else hidden_states.view(-1, hidden_states.shape[-1])
+            router_logits = F.linear(flat, self.weight, self.bias)
+            bias = getattr(moe_layer, "_afb_bias")
+            biased_logits = router_logits + bias
+            _, router_indices = torch.topk(biased_logits, self.top_k, dim=1)
+            unbiased_top = torch.gather(router_logits, 1, router_indices)
+            router_scores = torch.full_like(router_logits, float("-inf"))
+            router_scores.scatter_(1, router_indices, unbiased_top)
+            router_scores = torch.sigmoid(router_scores.float()).to(router_scores.dtype)
+
+            counts = torch.bincount(router_indices.reshape(-1), minlength=bias.numel())
+            getattr(moe_layer, "_afb_counts").add_(counts.to(moe_layer._afb_counts.dtype))
+
+            return router_scores, router_logits
+
+        router.forward = afb_router_forward.__get__(router, router.__class__)  # type: ignore[attr-defined]
+        setattr(router, "_afb_patched", True)
 
 
 def discover_and_prepare_layers(model: nn.Module, adapters: list[BaseMoEAdapter], shim: AuxFreeShim) -> list[LayerHandle]:
