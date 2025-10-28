@@ -50,7 +50,7 @@ class BaseMoEAdapter:
             except Exception:  # pragma: no cover - non-critical
                 pass
 
-    def _register_aux_buffers(self, moe_layer: nn.Module, handle: LayerHandle) -> None:
+    def _register_aux_buffers(self, moe_layer: nn.Module, handle: LayerHandle, shim: AuxFreeShim) -> None:
         device = next(moe_layer.parameters(), torch.tensor(0)).device
         if not hasattr(moe_layer, "_afb_bias"):
             moe_layer.register_buffer("_afb_bias", torch.zeros(handle.num_experts, device=device))
@@ -60,10 +60,11 @@ class BaseMoEAdapter:
             moe_layer.register_buffer("_afb_ema", torch.zeros(handle.num_experts, device=device))
         moe_layer._afb_layer_idx = handle.layer_idx  # type: ignore[attr-defined]
         moe_layer._afb_top_k = handle.top_k  # type: ignore[attr-defined]
+        shim.register_layer_buffers(handle.layer_idx, moe_layer)
 
     def prepare(self, moe_layer: nn.Module, handle: LayerHandle, shim: AuxFreeShim) -> None:
         """Attach per-layer buffers and mark as aux-free enabled."""
-        self._register_aux_buffers(moe_layer, handle)
+        self._register_aux_buffers(moe_layer, handle, shim)
         self._patch_forward_with_aux_free(moe_layer)
 
     def _patch_forward_with_aux_free(self, moe_layer: nn.Module) -> None:
@@ -122,10 +123,59 @@ class MixtralAdapter(BaseMoEAdapter):
     def matches(self, model: nn.Module) -> bool:
         return getattr(getattr(model, "config", object()), "model_type", "") == "mixtral"
 
+    def prepare(self, moe_layer: nn.Module, handle: LayerHandle, shim: AuxFreeShim) -> None:
+        self._register_aux_buffers(moe_layer, handle, shim)
+        self._patch_mixtral_forward(moe_layer, shim)
+
     def find_moe_layers(self, model: nn.Module) -> Iterable[nn.Module]:
         for m in model.modules():
             if m.__class__.__name__.endswith("SparseMoeBlock"):
                 yield m
+
+    def _patch_mixtral_forward(self, moe_layer: nn.Module, shim: AuxFreeShim) -> None:
+        if getattr(moe_layer, "_afb_patched", False):
+            return
+
+        shim_ref = shim
+
+        def afb_forward(self, hidden_states: torch.Tensor):  # type: ignore[no-redef]
+            batch_size, sequence_length, hidden_dim = hidden_states.shape
+            if self.training and getattr(self, "jitter_noise", 0) > 0:
+                hidden_states = hidden_states * torch.empty_like(hidden_states).uniform_(
+                    1.0 - self.jitter_noise, 1.0 + self.jitter_noise
+                )
+            flat_states = hidden_states.view(-1, hidden_dim)
+            router_logits = self.gate(flat_states)
+
+            layer_idx = int(getattr(self, "_afb_layer_idx", 0))
+            top_k = int(getattr(self, "_afb_top_k", self.top_k))
+            selected_experts, routing_weights = shim_ref.select_experts(layer_idx, router_logits, top_k)
+            routing_weights = routing_weights.to(flat_states.dtype)
+
+            flat_idx = selected_experts.reshape(-1)
+            counts = torch.bincount(flat_idx, minlength=int(self.num_experts))
+            self._afb_counts.add_(counts.to(self._afb_counts.dtype))
+
+            final_hidden_states = torch.zeros(
+                (batch_size * sequence_length, hidden_dim),
+                dtype=flat_states.dtype,
+                device=flat_states.device,
+            )
+
+            expert_mask = F.one_hot(selected_experts, num_classes=self.num_experts).permute(2, 1, 0)
+            expert_hit = torch.greater(expert_mask.sum(dim=(-1, -2)), 0).nonzero()
+            for expert_idx in expert_hit:
+                expert_layer = self.experts[expert_idx]
+                idx, top_x = torch.where(expert_mask[expert_idx].squeeze(0))
+                current_state = flat_states[None, top_x].reshape(-1, hidden_dim)
+                current_hidden_states = expert_layer(current_state) * routing_weights[top_x, idx, None]
+                final_hidden_states.index_add_(0, top_x, current_hidden_states.to(flat_states.dtype))
+
+            final_hidden_states = final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
+            return final_hidden_states, router_logits
+
+        moe_layer.forward = afb_forward.__get__(moe_layer, moe_layer.__class__)  # type: ignore[attr-defined]
+        setattr(moe_layer, "_afb_patched", True)
 
 
 class Qwen3Adapter(MixtralAdapter):
@@ -154,7 +204,7 @@ class BailingAdapter(BaseMoEAdapter):
         return int(getattr(cfg, "num_experts"))
 
     def prepare(self, moe_layer: nn.Module, handle: LayerHandle, shim: AuxFreeShim) -> None:
-        self._register_aux_buffers(moe_layer, handle)
+        self._register_aux_buffers(moe_layer, handle, shim)
         self._patch_bailing_gate(moe_layer)
 
     def _patch_bailing_gate(self, moe_layer: nn.Module) -> None:
@@ -200,7 +250,7 @@ class Llama4Adapter(BaseMoEAdapter):
                 yield m
 
     def prepare(self, moe_layer: nn.Module, handle: LayerHandle, shim: AuxFreeShim) -> None:
-        self._register_aux_buffers(moe_layer, handle)
+        self._register_aux_buffers(moe_layer, handle, shim)
         self._patch_llama4_router(moe_layer)
 
     def _patch_llama4_router(self, moe_layer: nn.Module) -> None:
