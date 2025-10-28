@@ -39,3 +39,13 @@ Compatibility
 Notes
 - If you also enable Liger’s aux-loss paths, the plugin neutralizes aux loss when aux-free is on.
 - Telemetry: logs per-layer min/mean/max token loads, `|bias| max`, and bias sign flip fraction at the configured interval.
+- Sample packing: packed batches are compatible with aux-free routing. Because load counts are accumulated on-device per expert before reduction, packing tends to smooth token histograms and reduce bias oscillation. Keep `pad_to_sequence_len: true` when packing to preserve the target token budget per expert.
+
+Telemetry metrics
+- `moe_afb/l{idx}_load_min|mean|max`: token frequency per expert after reduction (0–1 range, sums to 1).
+- `moe_afb/l{idx}_bias_abs_max`: absolute maximum of the learned bias for the layer.
+- `moe_afb/l{idx}_bias_sign_flip_frac`: fraction of experts whose bias sign changed since the previous step (simple oscillation indicator).
+
+Usage tips
+- Leave `moe_afb_telemetry_interval` unset to log on the Trainer’s `logging_steps`. Increase the interval for large jobs to reduce log volume.
+- Compare aux-free vs. aux-loss load metrics by plotting the `load_*` series; aux-free typically tightens min/max spread without the auxiliary loss term.
