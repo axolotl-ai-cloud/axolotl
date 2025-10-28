@@ -189,8 +189,14 @@ class BailingAdapter(BaseMoEAdapter):
     family = "bailing_moe"
 
     def matches(self, model: nn.Module) -> bool:
-        model_type = getattr(getattr(model, "config", object()), "model_type", "")
-        return model_type in ("bailing_moe", "bailing_moe_v2")
+        cfg = getattr(model, "config", None)
+        if cfg is None:
+            return False
+        model_type = getattr(cfg, "model_type", "") or ""
+        if model_type in ("bailing_moe", "bailing_moe_v2", "ring_moe", "ring"):
+            return True
+        cfg_name = cfg.__class__.__name__.lower()
+        return "bailingmoev2" in cfg_name or "ring" in cfg_name
 
     def find_moe_layers(self, model: nn.Module) -> Iterable[nn.Module]:
         for m in model.modules():
