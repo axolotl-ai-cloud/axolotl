@@ -42,29 +42,23 @@ class MoeAuxFreeBiasUpdateCallback(TrainerCallback):
 
     def on_step_end(self, args, state, control, **kwargs):  # noqa: D401
         # Iterate prepared MoE layers and apply the bias update rule.
-        cfg = self.shim.state.cfg
+        self.shim.begin_step()
         for layer in self.layer_modules:
             if not hasattr(layer, "_afb_counts") or not hasattr(layer, "_afb_layer_idx"):
                 continue
             counts = getattr(layer, "_afb_counts")
             if counts is None:
                 continue
-            counts = counts.to(counts.device)
             counts = self.shim.all_reduce_counts(counts)
-            tokens_seen = int(counts.sum().item())
+            layer_idx = getattr(layer, "_afb_layer_idx", None)
+            if layer_idx is None:
+                counts.zero_()
+                continue
+            bias = getattr(layer, "_afb_bias")
+            counts_for_update = counts.to(bias.device)
+            tokens_seen = int(counts_for_update.sum().item())
             # local layer-state EMA and bias update
-            if tokens_seen > 0:
-                freq = counts.float() / float(tokens_seen)
-                ema = getattr(layer, "_afb_ema")
-                ema.mul_(cfg.momentum).add_((1.0 - cfg.momentum) * freq)
-                nE = counts.numel()
-                target = 1.0 / float(nE)
-                delta = cfg.rate * (target - ema)
-                delta = delta - delta.mean()
-                bias = getattr(layer, "_afb_bias")
-                bias.add_(delta)
-                if cfg.bias_cap is not None and cfg.bias_cap > 0:
-                    bias.clamp_(-cfg.bias_cap, cfg.bias_cap)
+            self.shim.update_bias(layer_idx, counts_for_update, tokens_seen)
             # reset step counts
             counts.zero_()
         return control
@@ -125,8 +119,16 @@ class AuxFreeMoEPlugin(BasePlugin):
             # we'll set a minimal placeholder; prepare() will conceptually use module buffers instead
             n_experts = 2
         state = AuxFreeState(num_layers=n_layers, num_experts=n_experts, device=device, cfg=af_cfg)
-        ep_group = self._resolve_ep_group(cfg) if sync_group == "ep" else None
-        self._shim = AuxFreeShim(state=state, ep_group=ep_group)
+        ep_size = getattr(cfg, "expert_parallel_size", None)
+        ep_group = None
+        if sync_group == "ep":
+            if dist.is_available() and dist.is_initialized():
+                ep_group = self._resolve_ep_group(cfg)
+            else:
+                LOG.info(
+                    "AuxFreeMoE: deferring expert-parallel group resolution until torch.distributed initializes"
+                )
+        self._shim = AuxFreeShim(state=state, ep_group=ep_group, ep_size=ep_size)
 
         # Discover and prepare layers (attach per-layer buffers)
         self._handles = discover_and_prepare_layers(model, adapters, self._shim)
