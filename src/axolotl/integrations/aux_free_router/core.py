@@ -17,6 +17,7 @@ class AuxFreeConfig:
     bias_cap: float = 2.0
     warmup_steps: int = 0
     sync_group: str = "world"  # or "ep"
+    telemetry_interval: Optional[int] = None
 
 
 class AuxFreeState:
@@ -45,6 +46,7 @@ class AuxFreeShim:
             self.state.cfg.sync_group == "ep" and self.ep_group is None
         )
         self._layer_modules: dict[int, torch.nn.Module] = {}
+        self._prev_bias_sign: dict[int, torch.Tensor] = {}
 
     @torch.no_grad()
     def select_experts(self, layer_idx: int, logits: torch.Tensor, top_k: int) -> tuple[torch.Tensor, torch.Tensor]:
@@ -74,6 +76,9 @@ class AuxFreeShim:
     def begin_step(self) -> None:
         """Call once per optimizer step before per-layer updates."""
         self.state.steps += 1
+
+    def get_prev_bias_sign(self, layer_idx: int) -> Optional[torch.Tensor]:
+        return self._prev_bias_sign.get(layer_idx)
 
     @torch.no_grad()
     def all_reduce_counts(self, counts: torch.Tensor) -> torch.Tensor:
@@ -111,6 +116,7 @@ class AuxFreeShim:
         bias.add_(delta)
         if cfg.bias_cap is not None and cfg.bias_cap > 0:
             bias.clamp_(-cfg.bias_cap, cfg.bias_cap)
+        self._prev_bias_sign[layer_idx] = torch.sign(bias.detach())
 
     def _maybe_init_ep_group(self) -> None:
         if not self._ep_group_pending:

@@ -36,9 +36,17 @@ class MoeAuxFreeBiasUpdateCallback(TrainerCallback):
     routing patches in a follow-up).
     """
 
-    def __init__(self, shim: AuxFreeShim, layer_modules: list[torch.nn.Module]):
+    def __init__(
+        self,
+        shim: AuxFreeShim,
+        layer_modules: list[torch.nn.Module],
+        telemetry_interval: Optional[int] = None,
+    ):
         self.shim = shim
         self.layer_modules = layer_modules
+        self.telemetry_interval = telemetry_interval
+        self._prev_bias_sign: dict[int, torch.Tensor] = {}
+        self._telemetry_buffer: dict[int, dict[str, float]] = {}
 
     def on_step_end(self, args, state, control, **kwargs):  # noqa: D401
         # Iterate prepared MoE layers and apply the bias update rule.
@@ -59,9 +67,71 @@ class MoeAuxFreeBiasUpdateCallback(TrainerCallback):
             tokens_seen = int(counts_for_update.sum().item())
             # local layer-state EMA and bias update
             self.shim.update_bias(layer_idx, counts_for_update, tokens_seen)
+            self._collect_telemetry(layer_idx, counts_for_update, tokens_seen, bias)
             # reset step counts
             counts.zero_()
+
+        if self._should_log(args, state):
+            if self._telemetry_buffer:
+                if not hasattr(state, "log_history"):
+                    state.log_history = []
+                log_entry = {"step": state.global_step}
+                for layer_idx, metrics in sorted(self._telemetry_buffer.items()):
+                    prefix = f"moe_afb/l{layer_idx}_"
+                    for key, value in metrics.items():
+                        log_entry[f"{prefix}{key}"] = value
+                state.log_history.append(log_entry)
+                control.should_log = True
+            self._telemetry_buffer.clear()
         return control
+
+    def _collect_telemetry(
+        self,
+        layer_idx: int,
+        counts: torch.Tensor,
+        tokens_seen: int,
+        bias: torch.Tensor,
+    ) -> None:
+        if tokens_seen <= 0:
+            return
+        freq = counts.float() / float(tokens_seen)
+        load_min = freq.min().item()
+        load_mean = freq.mean().item()
+        load_max = freq.max().item()
+        bias_abs_max = bias.abs().max().item()
+
+        prev_sign = self._prev_bias_sign.get(layer_idx)
+        current_sign = torch.sign(bias.detach())
+        if prev_sign is None or prev_sign.shape != current_sign.shape:
+            oscillation = 0.0
+        else:
+            changed = (current_sign != prev_sign) & (
+                (current_sign != 0) | (prev_sign != 0)
+            )
+            if changed.numel() == 0:
+                oscillation = 0.0
+            else:
+                oscillation = changed.float().mean().item()
+        self._prev_bias_sign[layer_idx] = current_sign.clone()
+
+        self._telemetry_buffer[layer_idx] = {
+            "load_min": load_min,
+            "load_mean": load_mean,
+            "load_max": load_max,
+            "bias_abs_max": bias_abs_max,
+            "bias_sign_flip_frac": oscillation,
+        }
+
+    def _should_log(self, args, state) -> bool:
+        interval = (
+            self.telemetry_interval
+            if self.telemetry_interval is not None and self.telemetry_interval > 0
+            else getattr(args, "logging_steps", 0)
+        )
+        interval = max(1, int(interval)) if interval else 0
+        if interval == 0:
+            return False
+        return state.global_step % interval == 0
 
 
 class AuxFreeMoEPlugin(BasePlugin):
@@ -95,8 +165,14 @@ class AuxFreeMoEPlugin(BasePlugin):
         bias_cap = cfg.moe_bias_cap if cfg.moe_bias_cap is not None else 2.0
         warmup = cfg.moe_afb_warmup_steps if cfg.moe_afb_warmup_steps is not None else 0
         sync_group = cfg.moe_bias_sync_group if cfg.moe_bias_sync_group else "world"
+        telemetry_interval = getattr(cfg, "moe_afb_telemetry_interval", None)
         af_cfg = AuxFreeConfig(
-            rate=rate, momentum=momentum, bias_cap=bias_cap, warmup_steps=warmup, sync_group=sync_group
+            rate=rate,
+            momentum=momentum,
+            bias_cap=bias_cap,
+            warmup_steps=warmup,
+            sync_group=sync_group,
+            telemetry_interval=telemetry_interval,
         )
 
         # Discover layers to count the number and experts for state sizing
@@ -170,6 +246,10 @@ class AuxFreeMoEPlugin(BasePlugin):
             return []
         # gather concrete layer modules from handles
         layers = [h.layer for h in self._handles]
-        cb = MoeAuxFreeBiasUpdateCallback(self._shim, layers)
+        cb = MoeAuxFreeBiasUpdateCallback(
+            self._shim,
+            layers,
+            telemetry_interval=self._shim.state.cfg.telemetry_interval,
+        )
         LOG.info("AuxFreeMoE: registering post-step bias update callback")
         return [cb]

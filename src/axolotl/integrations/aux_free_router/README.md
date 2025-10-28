@@ -30,6 +30,7 @@ Config keys
 - moe_afb_warmup_steps: delay before applying updates. Default: 0.
 - moe_bias_sync_group: reduction group for counts, 'world' (DP) or 'ep' (expert-parallel). Default: world.
 - expert_parallel_size: number of ranks per expert-parallel group when using `moe_bias_sync_group: ep`. Defaults to 1 (world).
+- moe_afb_telemetry_interval: emit router telemetry every N optimizer steps (defaults to `logging_steps` when unset).
 
 Compatibility
 - Targeted families: Mixtral, Qwen3-MoE, Bailing/Ring 2.0, and Llama 4 text MoE layers.
@@ -37,4 +38,4 @@ Compatibility
 
 Notes
 - If you also enable Liger’s aux-loss paths, the plugin neutralizes aux loss when aux-free is on.
-- Telemetry: future updates will log per-expert loads and bias magnitudes.
+- Telemetry: logs per-layer min/mean/max token loads, `|bias| max`, and bias sign flip fraction at the configured interval.
