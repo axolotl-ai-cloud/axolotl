@@ -473,6 +473,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             collator = DataCollatorForPreference
             tokenizer = collator_args.pop(0)
             kwargs["pad_token_id"] = tokenizer.pad_token_id
+            kwargs.pop("padding")
         elif use_batch_sampler_collator:
             # Use V2BatchSamplerDataCollatorForSeq2Seq for flex attention,
             # supported multipack models, or non-flash-attention llama
