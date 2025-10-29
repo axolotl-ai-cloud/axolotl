@@ -12,7 +12,7 @@ from transformers import (
     EarlyStoppingCallback,
     Trainer,
 )
-from trl.trainer.utils import RewardDataCollatorWithPadding
+from trl.trainer.reward_trainer import DataCollatorForPreference
 
 from axolotl.core.builders.base import TrainerBuilderBase
 from axolotl.core.trainers import (
@@ -453,7 +453,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 BatchSamplerDataCollatorForSeq2Seq,
                 DataCollatorForSeq2Seq,
                 DataCollatorWithFlattening,
-                RewardDataCollatorWithPadding,
+                DataCollatorForPreference,
             ]
         ]
         collator_args = [self.tokenizer]
@@ -470,7 +470,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             if kwargs and isinstance(kwargs, dict):
                 kwargs.update(collator_cls_and_kwargs[1])
         elif self.cfg.reward_model:
-            collator = RewardDataCollatorWithPadding
+            collator = DataCollatorForPreference
+            tokenizer = collator_args.pop(0)
+            kwargs["pad_token_id"] = tokenizer.pad_token_id
+            kwargs.pop("padding")
         elif use_batch_sampler_collator:
             # Use V2BatchSamplerDataCollatorForSeq2Seq for flex attention,
             # supported multipack models, or non-flash-attention llama
