@@ -10,7 +10,7 @@ liger-kernel==0.6.1
 
 packaging==23.2
 
-huggingface_hub>=0.33.0
+huggingface_hub>=1.0.1
 peft>=0.17.1
 tokenizers>=0.21.1
 transformers==4.57.1
