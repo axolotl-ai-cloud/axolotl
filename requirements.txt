@@ -66,7 +66,7 @@ antlr4-python3-runtime==4.13.2
 torchao==0.13.0
 schedulefree==1.4.1
 
-axolotl-contribs-lgpl==0.0.6
+axolotl-contribs-lgpl==0.0.7
 axolotl-contribs-mit==0.0.5
 
 mistral-common==1.8.5
