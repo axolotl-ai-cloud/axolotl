@@ -162,7 +162,7 @@ extras_require = {
     "llmcompressor": [
         "llmcompressor==0.5.1",
     ],
-    "fbgemm-gpu": ["fbgemm-gpu-genai>=1.2.0"],
+    "fbgemm-gpu": ["fbgemm-gpu-genai==1.3.0"],
     "opentelemetry": [
         "opentelemetry-api",
         "opentelemetry-sdk",
