@@ -49,7 +49,7 @@ def parse_requirements(extras_require_map):
             try:
                 torch_version = version("torch")
             except PackageNotFoundError:
-                torch_version = "2.6.0"  # default to torch 2.6
+                torch_version = "2.8.0"  # default to torch 2.8.0
             _install_requires.append(f"torch=={torch_version}")
 
             version_match = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", torch_version)
@@ -62,8 +62,12 @@ def parse_requirements(extras_require_map):
             else:
                 raise ValueError("Invalid version format")
 
-            if (major, minor) >= (2, 8):
-                pass
+            if (major, minor) >= (2, 9):
+                extras_require_map.pop("fbgemm-gpu")
+                extras_require_map["fbgemm-gpu"] = ["fbgemm-gpu-genai==1.4.1"]
+            elif (major, minor) >= (2, 8):
+                extras_require_map.pop("fbgemm-gpu")
+                extras_require_map["fbgemm-gpu"] = ["fbgemm-gpu-genai==1.3.0"]
             elif (major, minor) >= (2, 7):
                 _install_requires.pop(_install_requires.index(xformers_version))
                 if patch == 0:
@@ -158,7 +162,13 @@ extras_require = {
     "llmcompressor": [
         "llmcompressor==0.5.1",
     ],
-    "fbgemm-gpu": ["fbgemm-gpu-genai>=1.2.0"],
+    "fbgemm-gpu": ["fbgemm-gpu-genai==1.3.0"],
+    "opentelemetry": [
+        "opentelemetry-api",
+        "opentelemetry-sdk",
+        "opentelemetry-exporter-prometheus",
+        "prometheus-client",
+    ],
 }
 install_requires, dependency_links, extras_require_build = parse_requirements(
     extras_require
