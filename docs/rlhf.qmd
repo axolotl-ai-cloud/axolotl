@@ -219,6 +219,21 @@ DPO supports the following types with the following dataset format:
 }
 ```
 
+#### chat_template.argilla_chat
+
+```json
+{
+    "chosen": [
+        {"role": "user", "content": "..."},
+        {"role": "assistant", "content": "..."}
+    ],
+    "rejected": [
+        {"role": "user", "content": "..."},
+        {"role": "assistant", "content": "..."}
+    ]
+}
+```
+
 #### chat_template.default
 
 ```yaml

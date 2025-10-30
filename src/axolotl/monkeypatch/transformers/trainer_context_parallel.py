@@ -13,9 +13,7 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 GUARD_PATTERN = 'if model.config._attn_implementation != "sdpa":'
-PATCHED_GUARD = (
-    'if model.config._attn_implementation not in ("sdpa", "flash_attention_2"):'
-)
+PATCHED_GUARD = 'if (attn_impl := (getattr(model.config, "_attn_implementation", None) or getattr(model.model.config, "_attn_implementation", None))) and attn_impl not in ("sdpa", "flash_attention_2"):'
 
 
 def patch_prepare_context_parallel_inputs() -> None:
