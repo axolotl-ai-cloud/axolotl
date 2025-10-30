@@ -1,13 +1,13 @@
-# Magistral Small Vision Fine-tuning
+# Mistral Small 3.1/3.2 Fine-tuning
 
-This guide covers fine-tuning [Magistral Small 2509](https://huggingface.co/mistralai/Magistral-Small-2509) with vision capabilities using Axolotl.
+This guide covers fine-tuning [Mistral Small 3.1](mistralai/Mistral-Small-3.1-24B-Instruct-2503) and [Mistral Small 3.2](mistralai/Mistral-Small-3.2-24B-Instruct-2506) with vision capabilities using Axolotl.
 
 ## Prerequisites
 
 Before starting, ensure you have:
-- Installed Axolotl from source (see [main README](../README.md#getting-started))
+- Installed Axolotl (see [Installation docs](https://docs.axolotl.ai/docs/installation.html))
 
-## Getting started
+## Getting Started
 
 1. Install the required vision lib:
     ```bash
@@ -21,19 +21,10 @@ Before starting, ensure you have:
 
 3. Run the fine-tuning:
    ```bash
-   axolotl train examples/magistral/vision/magistral-small-vision-24B-qlora.yml
+   axolotl train examples/mistral/mistral-small/mistral-small-3.1-24B-lora.yml
    ```
 
-This config uses about 17GiB VRAM.
-
-WARNING: The loss and grad norm will be much higher than normal at first. We suspect this to be inherent to the model as of the moment. If anyone would like to submit a fix for this, we are happy to take a look.
-
-### Tips
-
-Key differences from text-only model:
-- `max_tokens: 131072` for inference
-- Multi-modal dataset format required
-- Sample packing not supported
+This config uses about 29.4 GiB VRAM.
 
 ## Dataset Format
 
