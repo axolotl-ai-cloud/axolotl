@@ -1028,6 +1028,50 @@ class AxolotlInputConfig(
             "description": "Add plugins to extend the pipeline. See `src/axolotl/integrations` for the available plugins or doc below for more details. https://docs.axolotl.ai/docs/custom_integrations.html"
         },
     )
+    generate_samples: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Enable sample generation during training for monitoring"
+        },
+    )
+    generation_interval: int | None = Field(
+        default=100,
+        json_schema_extra={"description": "Generate samples every N training steps"},
+    )
+    num_generation_samples: int | None = Field(
+        default=3,
+        json_schema_extra={
+            "description": "Number of samples to generate at each interval"
+        },
+    )
+    generation_max_new_tokens: int | None = Field(
+        default=50,
+        json_schema_extra={"description": "Maximum new tokens to generate per sample"},
+    )
+    generation_temperature: float | None = Field(
+        default=0.7,
+        json_schema_extra={
+            "description": "Temperature for sample generation (0.0 = greedy)"
+        },
+    )
+    generation_top_p: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "Nucleus sampling parameter for generation"},
+    )
+    generation_top_k: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "Top-k sampling parameter for generation"},
+    )
+    generation_prompt_ratio: float | None = Field(
+        default=0.5,
+        json_schema_extra={"description": "Ratio of input to use as prompt (0.0-1.0)"},
+    )
+    generation_do_sample: bool | None = Field(
+        default=True,
+        json_schema_extra={
+            "description": "Whether to use sampling (vs greedy decoding)"
+        },
+    )
 
     @field_serializer("datasets")
     def datasets_serializer(
