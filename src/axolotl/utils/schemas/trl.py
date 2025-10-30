@@ -178,4 +178,4 @@ class TRLConfig(BaseModel):
         json_schema_extra={
             "description": "Path to custom rollout function. Must be importable from current dir."
         },
-)
+    )
