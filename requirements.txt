@@ -36,7 +36,7 @@ requests
 wandb
 einops
 colorama
-numba
+numba==0.62.1
 numpy==2.3.4
 
 # qlora things
