@@ -28,7 +28,6 @@ class DynamicCheckpointCallback(TrainerCallback):
     2. Signal-based trigger (Unix/Linux only, rank 0 sets flag)
 
     Thread-safe for multi-GPU distributed training.
-    Addresses issue: https://github.com/axolotl-ai-cloud/axolotl/issues/3169
 
     Usage:
         # File-based:
