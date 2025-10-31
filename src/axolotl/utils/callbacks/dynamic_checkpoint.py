@@ -153,6 +153,6 @@ class DynamicCheckpointCallback(TrainerCallback):
             control.should_save = True
             LOG.info(
                 f"Saving dynamic checkpoint at step {state.global_step}",
-                main_process_only=False,  # Log on all ranks for debugging
+                main_process_only=True,
             )
         return control
