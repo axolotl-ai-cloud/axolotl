@@ -66,6 +66,16 @@ axolotl merge-sharded-fsdp-weights examples/gpt-oss/gpt-oss-120b-fft-fsdp2-offlo
 mv ./outputs/gpt-oss-out/merged/* ./outputs/gpt-oss-out/
 ```
 
+### How to set reasoning_effort in template?
+
+The harmony template has a feature to set the `reasoning_effort` during prompt building. The default is `medium`. If you would like to adjust this, you can add the following to your config:
+
+```yaml
+chat_template_kwargs:
+  reasoning_effort: "high"  # low | medium | high
+```
+
+Currently, this applies globally. There is no method to apply per sample yet. If you are interested in adding this, please feel free to create an Issue to discuss.
 
 ### Inferencing your fine-tuned model
 
