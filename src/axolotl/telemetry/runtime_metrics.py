@@ -118,6 +118,7 @@ class RuntimeMetricsTracker:
         """Initialize the runtime metrics tracker."""
         self.metrics = RuntimeMetrics(start_time=time.time())
         self.telemetry_manager = TelemetryManager.get_instance()
+        self._process = psutil.Process()
 
     def start_epoch(self, epoch: int):
         """Record the start of a new epoch."""
@@ -181,7 +182,7 @@ class RuntimeMetricsTracker:
     def update_memory_metrics(self):
         """Update peak memory usage metrics."""
         # CPU memory
-        cpu_memory = psutil.Process().memory_info().rss
+        cpu_memory = self._process.memory_info().rss
         self.metrics.peak_cpu_memory = max(self.metrics.peak_cpu_memory, cpu_memory)
 
         # GPU memory (if available)
@@ -194,7 +195,7 @@ class RuntimeMetricsTracker:
     def get_memory_metrics(self) -> dict[str, Any]:
         """Get the current memory metrics as a dictionary."""
         memory_metrics = {
-            "cpu_memory_bytes": psutil.Process().memory_info().rss,
+            "cpu_memory_bytes": self._process.memory_info().rss,
             "peak_cpu_memory_bytes": self.metrics.peak_cpu_memory,
         }
 
