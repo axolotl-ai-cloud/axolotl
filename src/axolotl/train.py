@@ -212,8 +212,7 @@ def execute_training(
         LOG.info("Starting trainer...")
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
-        plugin_manager = PluginManager.get_instance()
-        plugin_manager.post_train(cfg, trainer.model)
+        PLUGIN_MANAGER.post_train(cfg, trainer.model)
 
 
 def save_trained_model(
@@ -538,9 +537,6 @@ def setup_model_and_trainer(
         peft_config=peft_config,
     )
     PLUGIN_MANAGER.post_trainer_create(cfg, trainer)
-
-    plugin_manager = PluginManager.get_instance()
-    plugin_manager.post_trainer_create(cfg, trainer)
 
     if cfg.use_ray:
         try:
