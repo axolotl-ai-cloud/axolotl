@@ -11,7 +11,6 @@ class DynamicCheckpointConfig(BaseModel):
         json_schema_extra={
             "description": "Enable dynamic checkpoint triggering during training. "
             "Create a file '.axolotl_save_checkpoint' in output_dir to trigger. "
-            "Addresses: https://github.com/axolotl-ai-cloud/axolotl/issues/3169"
         },
     )
     check_interval: int = Field(
