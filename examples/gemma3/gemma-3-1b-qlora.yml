@@ -1,5 +1,7 @@
 base_model: google/gemma-3-1b-it
 
+model_type: Gemma3ForCausalLM
+
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
