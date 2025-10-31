@@ -1,0 +1,67 @@
+base_model: openai/gpt-oss-safeguard-20b
+use_kernels: true
+model_quantization_config: Mxfp4Config
+model_quantization_config_kwargs:
+  dequantize: true
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+experimental_skip_move_to_device: true  # prevent OOM by not putting model to GPU before sharding
+
+datasets:
+  - path: HuggingFaceH4/Multilingual-Thinking
+    type: chat_template
+    field_thinking: thinking
+    template_thinking_key: thinking
+
+dataset_prepared_path: last_run_prepared
+val_set_size: 0
+output_dir: ./outputs/gpt-oss-safeguard-out/
+
+sequence_len: 4096
+sample_packing: true
+
+adapter: lora
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.0  # dropout not supported when using LoRA over expert parameters
+lora_target_linear: true
+
+# TODO: not supported for now, see peft#2710
+#lora_target_parameters:  # target the experts in the last two layers
+#  - "22._checkpoint_wrapped_module.mlp.experts.gate_up_proj"
+#  - "22._checkpoint_wrapped_module.mlp.experts.down_proj"
+#  - "23._checkpoint_wrapped_module.mlp.experts.gate_up_proj"
+#  - "23._checkpoint_wrapped_module.mlp.experts.down_proj"
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 8
+micro_batch_size: 1
+num_epochs: 1
+
+optimizer: adamw_torch_8bit
+lr_scheduler: constant_with_warmup
+learning_rate: 2e-4
+
+bf16: true
+tf32: true
+
+flash_attention: true
+attn_implementation: kernels-community/vllm-flash-attn3  # this is not needed if using flash_attn >= 2.8.3
+
+gradient_checkpointing: true
+activation_offloading: true
+
+logging_steps: 1
+saves_per_epoch: 1
+warmup_ratio: 0.1
+
+special_tokens:
+eot_tokens:
+  - "<|end|>"
