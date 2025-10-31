@@ -40,6 +40,13 @@ jobs:
             axolotl_extras: fbgemm-gpu
             num_gpus: 2
             nightly_build: "true"
+          - cuda: 128
+            cuda_version: 12.8.1
+            python_version: "3.11"
+            pytorch: 2.9.0
+            axolotl_extras: fbgemm-gpu
+            num_gpus: 2
+            nightly_build: "true"
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
     steps:

@@ -60,6 +60,13 @@ jobs:
             pytorch: 2.9.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-base"
+          - cuda: "130"
+            cuda_version: 13.0.0
+            cudnn_version: ""
+            python_version: "3.11"
+            pytorch: 2.9.0
+            torch_cuda_arch_list: "9.0+PTX"
+            dockerfile: "Dockerfile-base"
 #          - cuda: "128"
 #            cuda_version: 12.8.1
 #            cudnn_version: ""
@@ -142,6 +149,13 @@ jobs:
             python_version: "3.11"
             pytorch: 2.9.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-uv-base"
+          - cuda: "130"
+            cuda_version: 13.0.0
+            cudnn_version: ""
+            python_version: "3.11"
+            pytorch: 2.9.0
+            torch_cuda_arch_list: "9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
     steps:
       - name: Checkout
