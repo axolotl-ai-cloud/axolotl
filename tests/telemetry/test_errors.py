@@ -297,10 +297,9 @@ def test_send_errors_telemetry_disable():
         mock_manager.send_event.assert_not_called()
 
 
-def test_error_handled_reset():
-    """Test that ERROR_HANDLED flag is properly reset"""
+def test_error_handled_tracking():
+    """Test that exceptions are properly tracked in ERROR_HANDLED WeakSet"""
     with patch("axolotl.telemetry.errors.TelemetryManager") as mock_manager_class:
-        # Create and configure the mock manager
         mock_manager = MagicMock()
         mock_manager.enabled = True
         mock_manager_class.get_instance.return_value = mock_manager
@@ -311,14 +310,31 @@ def test_error_handled_reset():
         def test_func():
             raise ValueError("Test error")
 
-        assert not ERROR_HANDLED
+        assert len(ERROR_HANDLED) == 0
+
+        exception_raised = None
+        try:
+            test_func()
+        except ValueError as e:
+            exception_raised = e
+
+        assert len(ERROR_HANDLED) == 1
+        assert exception_raised in ERROR_HANDLED
+
+        assert mock_manager.send_event.call_count == 1
+
+        # If we raise the same exception again (simulating nested call),
+        # it shouldn't send telemetry again
+        mock_manager.send_event.reset_mock()
+
+        @send_errors
+        def test_func_nested():
+            raise exception_raised
 
         with pytest.raises(ValueError):
-            test_func()
+            test_func_nested()
 
-        from axolotl.telemetry.errors import ERROR_HANDLED
-
-        assert ERROR_HANDLED
+        assert mock_manager.send_event.call_count == 0
 
 
 def test_module_path_resolution(mock_telemetry_manager):

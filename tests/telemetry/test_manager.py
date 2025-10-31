@@ -65,15 +65,15 @@ def test_singleton_instance(telemetry_manager_class):
         assert telemetry_manager_class.get_instance() is first
 
 
-def test_telemetry_disabled_by_default(telemetry_manager_class):
-    """Test that telemetry is disabled by default (opt-in)"""
+def test_telemetry_enabled_by_default(telemetry_manager_class):
+    """Test that telemetry is enabled by default (opt-out)"""
     with (
         patch.dict(os.environ, {"RANK": "0"}, clear=True),
         patch("time.sleep"),
         patch("logging.Logger.info"),
     ):
         manager = telemetry_manager_class()
-        assert not manager.enabled
+        assert manager.enabled
 
 
 def test_telemetry_enabled_with_explicit_opt_in(telemetry_manager_class):
@@ -126,13 +126,10 @@ def test_opt_in_info_displayed(telemetry_manager_class):
         patch("time.sleep"),
     ):
         telemetry_manager_class()
-        info_displayed = False
-        for call in mock_warning.call_args_list:
-            print(f"call: {call}")
-            if "Telemetry is currently disabled by default" in str(call):
-                info_displayed = True
-                break
-        assert info_displayed
+        assert any(
+            "Telemetry is now enabled by default" in str(call)
+            for call in mock_warning.call_args_list
+        )
 
 
 def test_is_whitelisted(telemetry_manager_class, mock_whitelist):
@@ -273,6 +270,6 @@ def test_exception_handling_during_send(manager):
 
 def test_shutdown(manager):
     """Test shutdown behavior"""
-    with patch("posthog.flush") as mock_flush:
+    with patch("posthog.shutdown") as mock_shutdown:
         manager.shutdown()
-        assert mock_flush.called
+        assert mock_shutdown.called
