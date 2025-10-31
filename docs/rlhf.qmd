@@ -615,7 +615,7 @@ def math_solver_rollout(model, processing_class, prompts, generation_config=None
 
     Args:
         model: The language model
-        processing_class: The tokenizer/processing_class 
+        processing_class: The tokenizer/processing_class
         prompts: List of prompt dicts (with 'messages' key for chat format)
         generation_config: Optional generation configuration
 
