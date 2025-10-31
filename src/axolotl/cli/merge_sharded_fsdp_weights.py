@@ -23,6 +23,7 @@ from safetensors.torch import save_file as safe_save_file
 from torch.distributed.checkpoint.format_utils import _EmptyStateDictLoadPlanner
 
 from axolotl.cli.config import load_cfg
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.logging import get_logger
 from axolotl.utils.train import determine_last_checkpoint
 
@@ -118,6 +119,7 @@ def _distributed_checkpoint_to_merged_weights(
     return save_path_
 
 
+@send_errors
 def merge_fsdp_weights(
     checkpoint_dir: str,
     output_path: str,
