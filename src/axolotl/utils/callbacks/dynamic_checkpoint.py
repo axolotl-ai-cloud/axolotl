@@ -129,14 +129,12 @@ class DynamicCheckpointCallback(TrainerCallback):
                 import torch
                 import torch.distributed as dist
 
-                if hasattr(args, "device"):
-                    device = args.device
-                else:
-                    device = (
-                        torch.device("cuda", torch.cuda.current_device())
-                        if torch.cuda.is_available()
-                        else torch.device("cpu")
-                    )
+                device = getattr(
+                    args,
+                    "device",
+                    torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+                )
+
                 trigger_tensor = torch.tensor(
                     1 if trigger_detected else 0,
                     dtype=torch.long,
