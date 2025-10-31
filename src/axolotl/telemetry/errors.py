@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import traceback
+import weakref
 from functools import wraps
 from inspect import getmodule
 from typing import Any, Callable
@@ -12,7 +13,9 @@ from axolotl.telemetry.manager import TelemetryManager
 
 LOG = logging.getLogger(__name__)
 
-ERROR_HANDLED = False
+# Use WeakSet to track handled exceptions without preventing garbage collection
+# This allows deduplication of nested calls while still reporting new errors
+ERROR_HANDLED: weakref.WeakSet = weakref.WeakSet()
 
 
 def sanitize_stack_trace(stack_trace: str) -> str:
@@ -126,11 +129,11 @@ def send_errors(func: Callable) -> Callable:
         try:
             return func(*args, **kwargs)
         except Exception as exception:
-            # Only track if we're not already handling an error. This prevents us from
-            # capturing an error more than once in nested decorated function calls.
-            global ERROR_HANDLED  # pylint: disable=global-statement
-            if not ERROR_HANDLED:
-                ERROR_HANDLED = True
+            # Only track if we haven't already handled this specific exception.
+            # This prevents us from capturing the same exception more than once
+            # in nested decorated function calls.
+            if exception not in ERROR_HANDLED:
+                ERROR_HANDLED.add(exception)
 
                 # Get function module path
                 module = getmodule(func)
