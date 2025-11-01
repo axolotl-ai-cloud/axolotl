@@ -12,6 +12,7 @@ import torch.nn as nn
 from transformers.activations import ACT2FN
 
 from axolotl.utils.logging import get_logger
+from axolotl.monkeypatch.models.utils import clone_expert_parameter
 
 LOG = get_logger(__name__)
 
@@ -93,9 +94,9 @@ class BailingMoeV2GroupedExperts(nn.Module):
         up_dims = tuple(getattr(experts[0].up_proj.weight, "ds_shape", experts[0].up_proj.weight.shape))
         down_dims = tuple(getattr(experts[0].down_proj.weight, "ds_shape", experts[0].down_proj.weight.shape))
 
-        gate_weights = []
-        up_weights = []
-        down_weights = []
+        gate_weights: list[torch.Tensor] = []
+        up_weights: list[torch.Tensor] = []
+        down_weights: list[torch.Tensor] = []
         gate_bias = experts[0].gate_proj.bias
         up_bias = experts[0].up_proj.bias
         down_bias = experts[0].down_proj.bias
@@ -104,22 +105,6 @@ class BailingMoeV2GroupedExperts(nn.Module):
             raise ValueError(
                 f"Config expects {self.num_experts} experts, but received {len(experts)}."
             )
-
-        def _clone_param_tensor(param: torch.Tensor) -> torch.Tensor:
-            ds_shape = getattr(param, "ds_shape", None)
-            if ds_shape is not None and param.numel() != int(torch.tensor(ds_shape).prod().item()):
-                # Zero3 partitions may report mismatched numel; fall back to ds_shape for allocation
-                pass
-            if param.numel() == 0 and ds_shape is not None and param.__class__.__name__ == "Parameter":
-                try:
-                    from deepspeed import zero
-
-                    with zero.GatheredParameters([param], modifier_rank=None):
-                        return param.data.detach().clone()
-                except Exception:
-                    LOG.debug("Failed to gather ZeRO parameter; returning zero tensor", exc_info=True)
-                    return param.detach().clone()
-            return param.detach().clone()
 
         for expert in experts:
             if expert.gate_proj.weight.numel() == 0 or expert.up_proj.weight.numel() == 0 or expert.down_proj.weight.numel() == 0:
@@ -136,9 +121,9 @@ class BailingMoeV2GroupedExperts(nn.Module):
                     expert.gate_proj.weight.__class__.__name__,
                     getattr(expert.gate_proj.weight, "ds_shape", None),
                 )
-            gate_weights.append(_clone_param_tensor(expert.gate_proj.weight))
-            up_weights.append(_clone_param_tensor(expert.up_proj.weight))
-            down_weights.append(_clone_param_tensor(expert.down_proj.weight))
+            gate_weights.append(clone_expert_parameter(expert.gate_proj.weight))
+            up_weights.append(clone_expert_parameter(expert.up_proj.weight))
+            down_weights.append(clone_expert_parameter(expert.down_proj.weight))
 
         gate_stack = torch.stack(gate_weights, dim=0).to(device=device, dtype=dtype)
         up_stack = torch.stack(up_weights, dim=0).to(device=device, dtype=dtype)
@@ -157,7 +142,7 @@ class BailingMoeV2GroupedExperts(nn.Module):
 
         if gate_bias is not None:
             stacked = torch.stack(
-                [_clone_param_tensor(expert.gate_proj.bias) for expert in experts], dim=0
+                [clone_expert_parameter(expert.gate_proj.bias) for expert in experts], dim=0
             ).to(device=device, dtype=gate_bias.dtype)
             self.gate_bias = nn.Parameter(stacked)
         else:
@@ -165,7 +150,7 @@ class BailingMoeV2GroupedExperts(nn.Module):
 
         if up_bias is not None:
             stacked = torch.stack(
-                [_clone_param_tensor(expert.up_proj.bias) for expert in experts], dim=0
+                [clone_expert_parameter(expert.up_proj.bias) for expert in experts], dim=0
             ).to(device=device, dtype=up_bias.dtype)
             self.up_bias = nn.Parameter(stacked)
         else:
@@ -173,7 +158,7 @@ class BailingMoeV2GroupedExperts(nn.Module):
 
         if down_bias is not None:
             stacked = torch.stack(
-                [_clone_param_tensor(expert.down_proj.bias) for expert in experts], dim=0
+                [clone_expert_parameter(expert.down_proj.bias) for expert in experts], dim=0
             ).to(device=device, dtype=down_bias.dtype)
             self.down_bias = nn.Parameter(stacked)
         else:
