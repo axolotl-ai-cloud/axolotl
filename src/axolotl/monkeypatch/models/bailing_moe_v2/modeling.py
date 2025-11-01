@@ -36,37 +36,18 @@ def _load_megablocks_backend() -> Optional[object]:
     except ImportError:
         pass
 
-    search_roots: list[Path] = []
-
     env_path = os.environ.get("MEGABLOCKS_HIP_PATH")
     if env_path:
-        search_roots.append(Path(env_path))
-
-    root = Path(__file__).resolve().parents[6]
-    workspace_repo = root / "better-moe-training" / "megablocks-hip"
-    home_repo = Path.home() / "axolotl" / "megablocks-hip"
-
-    def _append_repo_paths(repo_root: Path) -> None:
-        if not repo_root.exists():
-            return
-        try:
-            from kernels.utils import build_variant  # type: ignore
-
-            variant = build_variant()
-        except Exception:
-            variant = None
-
-        if variant:
-            search_roots.append(repo_root / "build" / variant)
-        search_roots.append(repo_root / "torch-ext")
-
-    _append_repo_paths(workspace_repo)
-    _append_repo_paths(home_repo)
-
-    for path in search_roots:
-        if path.exists():
-            if str(path) not in sys.path:
-                sys.path.append(str(path))
+        build_root = Path(env_path)
+        if build_root.exists():
+            if str(build_root) not in sys.path:
+                sys.path.append(str(build_root))
+    else:
+        LOG.warning(
+            "MEGABLOCKS_HIP_PATH is not set. MegaBlocks HIP kernels will not be available. "
+            "Clone https://huggingface.co/shisa-ai/megablocks-hip, run `python build.py`, "
+            "and export MEGABLOCKS_HIP_PATH to the resulting build directory."
+        )
 
     try:
         from megablocks.grouped_gemm import backend as mb_backend  # type: ignore
