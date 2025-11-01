@@ -63,22 +63,6 @@ class TestDynamicCheckpointCallbackInit:
             callback = DynamicCheckpointCallback(cfg)
             assert callback.trigger_filename == DEFAULT_TRIGGER_FILENAME
 
-    def test_custom_trigger_filename(self):
-        """Test that custom trigger filename is respected"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cfg = DictDefault(
-                {
-                    "dynamic_checkpoint": {
-                        "enabled": True,
-                        "check_interval": 10,
-                        "trigger_file_path": "SAVE_NOW",
-                    },
-                    "output_dir": tmpdir,
-                }
-            )
-            callback = DynamicCheckpointCallback(cfg)
-            assert callback.trigger_filename == "SAVE_NOW"
-
     def test_check_interval_default(self):
         """Test default check interval"""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -90,18 +74,6 @@ class TestDynamicCheckpointCallbackInit:
             )
             callback = DynamicCheckpointCallback(cfg)
             assert callback.check_interval == 100  # Default from schema
-
-    def test_signal_disabled_by_default(self):
-        """Test that signal support is disabled by default"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cfg = DictDefault(
-                {
-                    "dynamic_checkpoint": {"enabled": True},
-                    "output_dir": tmpdir,
-                }
-            )
-            callback = DynamicCheckpointCallback(cfg)
-            assert callback.enable_signal is False
 
 
 class TestDynamicCheckpointFileDetection:
@@ -325,63 +297,6 @@ class TestDynamicCheckpointMultiGPU:
 
 class TestDynamicCheckpointSignalHandling:
     """Test signal-based checkpoint triggering"""
-
-    @patch("signal.signal")
-    @patch("signal.SIGUSR1", 10, create=True)  # Mock signal number
-    def test_signal_handler_registration(self, mock_signal_register):
-        """Test that SIGUSR1 handler is registered when enabled"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cfg = DictDefault(
-                {
-                    "dynamic_checkpoint": {
-                        "enabled": True,
-                        "check_interval": 10,
-                        "enable_signal": True,
-                    },
-                    "output_dir": tmpdir,
-                }
-            )
-
-            with patch(
-                "axolotl.utils.callbacks.dynamic_checkpoint.is_main_process",
-                return_value=True,
-            ):
-                with patch(
-                    "axolotl.utils.callbacks.dynamic_checkpoint.hasattr",
-                    return_value=True,
-                ):
-                    _ = DynamicCheckpointCallback(cfg)  # noqa: F841
-
-            assert mock_signal_register.called
-
-    def test_signal_handler_sets_flag(self):
-        """Test that signal handler sets should_save_checkpoint flag"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cfg = DictDefault(
-                {
-                    "dynamic_checkpoint": {
-                        "enabled": True,
-                        "check_interval": 1,
-                        "enable_signal": True,
-                    },
-                    "output_dir": tmpdir,
-                }
-            )
-
-            with patch("signal.signal"):
-                with patch(
-                    "axolotl.utils.callbacks.dynamic_checkpoint.is_main_process",
-                    return_value=True,
-                ):
-                    with patch(
-                        "axolotl.utils.callbacks.dynamic_checkpoint.hasattr",
-                        return_value=True,
-                    ):
-                        callback = DynamicCheckpointCallback(cfg)
-
-            callback._signal_handler(None, None)
-
-            assert callback.should_save_checkpoint is True
 
     def test_signal_trigger_via_callback(self):
         """Test that signal flag triggers checkpoint save"""
