@@ -11,6 +11,7 @@ import random
 import shutil
 import tempfile
 import unittest
+import importlib
 from contextlib import nullcontext
 from functools import wraps
 from pathlib import Path
@@ -93,6 +94,48 @@ class GatingStatsCollector:
         }
 
 
+def _ensure_vanilla_dtype_patch() -> None:
+    """Patch HF Bailing MoE MLP to preserve bf16 outputs for vanilla parity runs."""
+    import sys
+    from pathlib import Path
+
+    module = None
+    for name, loaded in sys.modules.items():
+        if name.endswith("modeling_bailing_moe_v2"):
+            module = loaded
+            break
+
+    if module is None:
+        cache_root = Path.home() / ".cache" / "huggingface" / "modules" / "transformers_modules"
+        if cache_root.exists():
+            for path in cache_root.rglob("modeling_bailing_moe_v2.py"):
+                rel = path.relative_to(cache_root).with_suffix("")
+                module_name = ".".join(("transformers_modules",) + rel.parts)
+                try:
+                    module = importlib.import_module(module_name)
+                    break
+                except ImportError:
+                    continue
+
+    if module is None:
+        return
+
+    mlp_cls = getattr(module, "BailingMoeV2MLP", None)
+    if mlp_cls is None or getattr(mlp_cls, "_axolotl_dtype_patch", False):
+        return
+
+    orig_forward = mlp_cls.forward
+
+    def forward(self, hidden_states, *args, **kwargs):  # type: ignore[override]
+        outputs = orig_forward(self, hidden_states, *args, **kwargs)
+        if isinstance(outputs, torch.Tensor) and outputs.dtype != hidden_states.dtype:
+            outputs = outputs.to(hidden_states.dtype)
+        return outputs
+
+    mlp_cls.forward = forward  # type: ignore[assignment]
+    mlp_cls._axolotl_dtype_patch = True  # type: ignore[attr-defined]
+
+
 class TestRingMoeGrouped(unittest.TestCase):
     """Ensure grouped torch._grouped_mm backend trains identically to vanilla loops."""
 
@@ -146,6 +189,9 @@ class TestRingMoeGrouped(unittest.TestCase):
         seed: int | None = None,
         record_gating: bool = False,
     ) -> tuple[int, list[tuple[int, float]], Optional[dict[str, Any]]]:
+        if mlp_impl == "vanilla":
+            _ensure_vanilla_dtype_patch()
+
         cfg_dict = copy.deepcopy(self._BASE_CFG)
         cfg_dict["output_dir"] = os.path.join(temp_dir, mlp_impl)
 
