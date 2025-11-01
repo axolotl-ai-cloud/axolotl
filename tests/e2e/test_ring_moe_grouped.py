@@ -121,19 +121,33 @@ def _ensure_vanilla_dtype_patch() -> None:
         return
 
     mlp_cls = getattr(module, "BailingMoeV2MLP", None)
-    if mlp_cls is None or getattr(mlp_cls, "_axolotl_dtype_patch", False):
-        return
+    if mlp_cls is not None and not getattr(mlp_cls, "_axolotl_dtype_patch", False):
+        orig_forward = mlp_cls.forward
 
-    orig_forward = mlp_cls.forward
+        def forward(self, hidden_states, *args, **kwargs):  # type: ignore[override]
+            outputs = orig_forward(self, hidden_states, *args, **kwargs)
+            if isinstance(outputs, torch.Tensor) and outputs.dtype != hidden_states.dtype:
+                outputs = outputs.to(hidden_states.dtype)
+            return outputs
 
-    def forward(self, hidden_states, *args, **kwargs):  # type: ignore[override]
-        outputs = orig_forward(self, hidden_states, *args, **kwargs)
-        if isinstance(outputs, torch.Tensor) and outputs.dtype != hidden_states.dtype:
-            outputs = outputs.to(hidden_states.dtype)
-        return outputs
+        mlp_cls.forward = forward  # type: ignore[assignment]
+        mlp_cls._axolotl_dtype_patch = True  # type: ignore[attr-defined]
 
-    mlp_cls.forward = forward  # type: ignore[assignment]
-    mlp_cls._axolotl_dtype_patch = True  # type: ignore[attr-defined]
+    attn_cls = getattr(module, "BailingMoeV2Attention", None)
+    if attn_cls is not None and not getattr(attn_cls, "_axolotl_dtype_patch", False):
+        orig_attn_forward = attn_cls.forward
+
+        def attn_forward(self, hidden_states, *args, **kwargs):  # type: ignore[override]
+            qkv_weight = getattr(self, "query_key_value", None)
+            if isinstance(qkv_weight, torch.nn.Module):
+                weight = getattr(qkv_weight, "weight", None)
+                if isinstance(weight, torch.Tensor) and hidden_states.dtype != weight.dtype:
+                    hidden_states = hidden_states.to(weight.dtype)
+            outputs = orig_attn_forward(self, hidden_states, *args, **kwargs)
+            return outputs
+
+        attn_cls.forward = attn_forward  # type: ignore[assignment]
+        attn_cls._axolotl_dtype_patch = True  # type: ignore[attr-defined]
 
 
 class TestRingMoeGrouped(unittest.TestCase):
