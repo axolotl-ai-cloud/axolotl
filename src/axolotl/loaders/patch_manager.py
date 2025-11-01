@@ -96,6 +96,7 @@ class PatchManager:
         self._apply_llama_flash_attn_patches(model)
         self._apply_unsloth_patches(model)
         self._apply_lora_kernel_patch(model)
+        self._apply_bailing_moe_grouped_patch(model)
 
     def _apply_flash_attention_patches(self):
         """Apply patches related to Flash Attention."""
@@ -494,6 +495,59 @@ class PatchManager:
             from axolotl.monkeypatch.lora_kernels import apply_lora_kernel_patches
 
             apply_lora_kernel_patches(model=model, cfg=self.cfg)
+
+    def _apply_bailing_moe_grouped_patch(self, model: PreTrainedModel):
+        """Enable grouped MoE kernels for Bailing/Ring architectures when requested."""
+        model_type = getattr(self.model_config, "model_type", None)
+        if model_type is None and isinstance(self.model_config, dict):
+            model_type = self.model_config.get("model_type")
+
+        supported_types = {"bailing_moe", "bailing_moe_v2"}
+        config_class_name = ""
+        if hasattr(self.model_config, "__class__"):
+            config_class_name = self.model_config.__class__.__name__.lower()
+
+        def _looks_like_bailing_config() -> bool:
+            cfg_obj = self.model_config
+            if cfg_obj is None:
+                return False
+            attrs = ("n_group", "topk_group", "num_shared_experts", "routed_scaling_factor")
+            return any(hasattr(cfg_obj, attr) for attr in attrs)
+
+        if (
+            model_type not in supported_types
+            and self.cfg.model_config_type not in supported_types
+            and "bailingmoe" not in config_class_name
+            and not _looks_like_bailing_config()
+        ):
+            return
+
+        mlp_impl = self.cfg.mlp_impl
+        if mlp_impl is None and self.cfg.use_grouped_moe_kernels:
+            mlp_impl = "grouped"
+
+        if mlp_impl is None:
+            return
+
+        if mlp_impl not in {"grouped", "megablocks"}:
+            LOG.warning("Unsupported mlp_impl=%s for Bailing MoE grouped patch.", mlp_impl)
+            return
+
+        try:
+            from axolotl.monkeypatch.models.bailing_moe_v2.modeling import (
+                patch_model_with_grouped_experts,
+            )
+        except ImportError as exc:
+            LOG.warning("Unable to import grouped MoE patch for Bailing MoE: %s", exc)
+            return
+
+        patched = patch_model_with_grouped_experts(model, mlp_impl=mlp_impl)
+        if patched:
+            LOG.info("Applied grouped MoE kernels to %d Bailing MoE blocks.", patched)
+        else:
+            LOG.warning(
+                "Requested grouped MoE kernels but no Bailing MoE blocks were patched."
+            )
 
     def _apply_patch_deepspeed_zero3(self):
         try:

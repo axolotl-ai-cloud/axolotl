@@ -17,4 +17,6 @@ MOE_ARCH_BLOCK = {
     "deepseek_v3": "DeepseekV3MoE",
     "gpt_oss": "GptOssDecoderLayer",
     "lfm2_moe": "Lfm2MoeSparseMoeBlock",
+    "bailing_moe": "BailingMoeV2SparseMoeBlock",
+    "bailing_moe_v2": "BailingMoeV2SparseMoeBlock",
 }
