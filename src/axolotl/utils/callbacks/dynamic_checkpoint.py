@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 from transformers import (
@@ -60,7 +59,6 @@ class DynamicCheckpointCallback(TrainerCallback):
             f"  • Check interval: every {self.check_interval} steps",
             main_process_only=True,
         )
-
 
     def on_step_end(
         self,

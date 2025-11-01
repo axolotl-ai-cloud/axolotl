@@ -21,4 +21,3 @@ class DynamicCheckpointConfig(BaseModel):
             "Default: 100"
         },
     )
-
