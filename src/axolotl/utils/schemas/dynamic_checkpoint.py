@@ -21,16 +21,4 @@ class DynamicCheckpointConfig(BaseModel):
             "Default: 100"
         },
     )
-    enable_signal: bool = Field(
-        default=False,
-        json_schema_extra={
-            "description": "Enable SIGUSR1 signal-based checkpoint triggering (Unix/Linux only). "
-            "Useful for automated systems. Default: False"
-        },
-    )
-    trigger_file_path: str | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Path to the trigger file. Default: '.axolotl_save_checkpoint'"
-        },
-    )
+

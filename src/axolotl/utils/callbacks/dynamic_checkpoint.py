@@ -1,5 +1,4 @@
 import os
-import signal
 from pathlib import Path
 
 from transformers import (
@@ -25,14 +24,12 @@ class DynamicCheckpointCallback(TrainerCallback):
     """
     Callback to save checkpoints on-demand during training via:
     1. File-based trigger (works everywhere, rank 0 checks file)
-    2. Signal-based trigger (Unix/Linux only, rank 0 sets flag)
 
     Thread-safe for multi-GPU distributed training.
 
     Usage:
         # File-based:
         touch /path/to/output_dir/.axolotl_save_checkpoint
-        # Signal-based (Unix/Linux):
         kill -SIGUSR1 <training_pid>
     """
 
@@ -51,40 +48,19 @@ class DynamicCheckpointCallback(TrainerCallback):
         self.enabled = True
         dc_config = cfg.dynamic_checkpoint
 
-        trigger_path = self._get_config_value(dc_config, "trigger_file_path")
-        self.trigger_filename = (
-            trigger_path if trigger_path else DEFAULT_TRIGGER_FILENAME
-        )
+        self.trigger_filename = DEFAULT_TRIGGER_FILENAME
 
         check_interval = self._get_config_value(dc_config, "check_interval")
         self.check_interval = check_interval if check_interval is not None else 100
-
-        enable_signal = self._get_config_value(dc_config, "enable_signal")
-        self.enable_signal = enable_signal if enable_signal is not None else False
         self.should_save_checkpoint = False
-
-        if self.enable_signal and hasattr(signal, "SIGUSR1") and is_main_process():
-            signal.signal(signal.SIGUSR1, self._signal_handler)
-            LOG.info(
-                f"Dynamic checkpoint: Signal handler registered on rank 0 (SIGUSR1). "
-                f"Trigger with: kill -SIGUSR1 {os.getpid()}",
-                main_process_only=True,
-            )
 
         LOG.info(
             f"Dynamic checkpoint enabled. To trigger checkpoint save:\n"
             f"  • File: touch {cfg.output_dir}/{self.trigger_filename}\n"
-            f"  • Signal: kill -SIGUSR1 <pid> {'(enabled)' if self.enable_signal else '(disabled)'}\n"
             f"  • Check interval: every {self.check_interval} steps",
             main_process_only=True,
         )
 
-    def _signal_handler(self, _signum, _frame):
-        """Handle SIGUSR1 signal to trigger checkpoint (rank 0 only)"""
-        self.should_save_checkpoint = True
-        LOG.info(
-            "Dynamic checkpoint triggered via SIGUSR1 signal", main_process_only=True
-        )
 
     def on_step_end(
         self,
