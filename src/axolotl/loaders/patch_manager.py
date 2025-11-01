@@ -503,6 +503,12 @@ class PatchManager:
         if model_type is None and isinstance(self.model_config, dict):
             model_type = self.model_config.get("model_type")
 
+        try:
+            from axolotl.monkeypatch.models.bailing_moe_v2.modeling import ensure_bailing_attention_dtype_alignment
+            ensure_bailing_attention_dtype_alignment(model)
+        except ImportError:
+            pass
+
         supported_types = {"bailing_moe", "bailing_moe_v2"}
         config_class_name = ""
         if hasattr(self.model_config, "__class__"):
@@ -523,6 +529,17 @@ class PatchManager:
         ):
             return
 
+        try:
+            from axolotl.monkeypatch.models.bailing_moe_v2.modeling import (
+                patch_model_with_grouped_experts,
+                ensure_bailing_attention_dtype_alignment,
+            )
+        except ImportError as exc:
+            LOG.warning("Unable to import grouped MoE patch for Bailing MoE: %s", exc)
+            return
+
+        ensure_bailing_attention_dtype_alignment(model)
+
         mlp_impl = self.cfg.mlp_impl
         if mlp_impl is None and self.cfg.use_grouped_moe_kernels:
             mlp_impl = "grouped"
@@ -532,14 +549,6 @@ class PatchManager:
 
         if mlp_impl not in {"grouped", "megablocks"}:
             LOG.warning("Unsupported mlp_impl=%s for Bailing MoE grouped patch.", mlp_impl)
-            return
-
-        try:
-            from axolotl.monkeypatch.models.bailing_moe_v2.modeling import (
-                patch_model_with_grouped_experts,
-            )
-        except ImportError as exc:
-            LOG.warning("Unable to import grouped MoE patch for Bailing MoE: %s", exc)
             return
 
         patched = patch_model_with_grouped_experts(model, mlp_impl=mlp_impl)

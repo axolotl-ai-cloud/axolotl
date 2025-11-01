@@ -353,12 +353,46 @@ def _grouped_moe_infer(self, hidden_states: torch.Tensor, topk_idx: torch.Tensor
     return expert_out.view(seq_len, hidden)
 
 
+
+
+
+
+
+
+
+
+
+def ensure_bailing_attention_dtype_alignment(model: nn.Module) -> None:
+    """Ensure Bailing MoE attention layers cast inputs to the weight dtype."""
+    for module in model.modules():
+        if module.__class__.__name__ != "BailingMoeV2Attention":
+            continue
+        if getattr(module, "_axolotl_dtype_hook", False):
+            continue
+
+        def pre_hook(mod, inputs):
+            if not inputs:
+                return inputs
+            hidden_states = inputs[0]
+            qkv_weight_module = getattr(mod, "query_key_value", None)
+            weight = getattr(qkv_weight_module, "weight", None) if isinstance(qkv_weight_module, torch.nn.Module) else None
+            if isinstance(weight, torch.Tensor) and hidden_states.dtype != weight.dtype:
+                hidden_states = hidden_states.to(weight.dtype)
+                inputs = (hidden_states,) + inputs[1:]
+            return inputs
+
+        module.register_forward_pre_hook(pre_hook)
+        module._axolotl_dtype_hook = True  # type: ignore[attr-defined]
+
+
+
 def patch_model_with_grouped_experts(model: nn.Module, mlp_impl: str = "grouped") -> int:
     """Convert BailingMoeV2SparseMoeBlock modules to grouped expert implementations.
 
     Returns:
         Number of blocks patched.
     """
+
 
     if mlp_impl not in {"grouped", "megablocks"}:
         raise ValueError(f"Unsupported mlp_impl={mlp_impl} for grouped experts patch.")

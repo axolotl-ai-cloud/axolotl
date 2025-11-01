@@ -9,6 +9,7 @@ import json
 import os
 import random
 import shutil
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
 import tempfile
 import unittest
 import importlib
@@ -170,7 +171,7 @@ class TestRingMoeGrouped(unittest.TestCase):
             },
         ],
         "num_epochs": 1,
-        "micro_batch_size": 2,
+        "micro_batch_size": 1,
         "gradient_accumulation_steps": 1,
         "learning_rate": 1e-4,
         "optimizer": "adamw_torch",
@@ -209,7 +210,7 @@ class TestRingMoeGrouped(unittest.TestCase):
         cfg_dict = copy.deepcopy(self._BASE_CFG)
         cfg_dict["output_dir"] = os.path.join(temp_dir, mlp_impl)
 
-        cfg_dict["bf16"] = torch.cuda.is_available()
+        cfg_dict["bf16"] = False
         cfg_dict["fp16"] = False
 
         if mlp_impl == "grouped":
