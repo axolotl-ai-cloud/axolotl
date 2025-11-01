@@ -97,6 +97,7 @@ class PatchManager:
         self._apply_unsloth_patches(model)
         self._apply_lora_kernel_patch(model)
         self._apply_bailing_moe_grouped_patch(model)
+        self._apply_qwen3_moe_grouped_patch(model)
 
     def _apply_flash_attention_patches(self):
         """Apply patches related to Flash Attention."""
@@ -547,6 +548,47 @@ class PatchManager:
         else:
             LOG.warning(
                 "Requested grouped MoE kernels but no Bailing MoE blocks were patched."
+            )
+
+    def _apply_qwen3_moe_grouped_patch(self, model: PreTrainedModel):
+        """Enable grouped MoE kernels for Qwen3 MoE architectures when requested."""
+        model_type = getattr(self.model_config, "model_type", None)
+        if model_type is None and isinstance(self.model_config, dict):
+            model_type = self.model_config.get("model_type")
+
+        supported_types = {"qwen3_moe"}
+        config_class_name = ""
+        if hasattr(self.model_config, "__class__"):
+            config_class_name = self.model_config.__class__.__name__.lower()
+
+        if (
+            model_type not in supported_types
+            and self.cfg.model_config_type not in supported_types
+            and "qwen3moe" not in config_class_name
+        ):
+            return
+
+        mlp_impl = self.cfg.mlp_impl
+        if mlp_impl is None and self.cfg.use_grouped_moe_kernels:
+            mlp_impl = "grouped"
+
+        if mlp_impl != "grouped":
+            return
+
+        try:
+            from axolotl.monkeypatch.models.qwen3_moe.modeling import (
+                patch_qwen3_moe_grouped_experts,
+            )
+        except ImportError as exc:
+            LOG.warning("Unable to import grouped MoE patch for Qwen3 MoE: %s", exc)
+            return
+
+        patched = patch_qwen3_moe_grouped_experts(model, mlp_impl=mlp_impl)
+        if patched:
+            LOG.info("Applied grouped MoE kernels to %d Qwen3 MoE blocks.", patched)
+        else:
+            LOG.warning(
+                "Requested grouped MoE kernels but no Qwen3 MoE blocks were patched."
             )
 
     def _apply_patch_deepspeed_zero3(self):
