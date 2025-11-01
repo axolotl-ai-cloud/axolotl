@@ -23,6 +23,7 @@ from axolotl.utils.schemas.datasets import (
     StepwiseSupervisedDataset,
 )
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
+from axolotl.utils.schemas.dynamic_checkpoint import DynamicCheckpointConfig
 from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
 from axolotl.utils.schemas.fsdp import FSDPConfig
 from axolotl.utils.schemas.integrations import (
@@ -140,6 +141,13 @@ class AxolotlInputConfig(
     reward_model: bool | None = Field(
         default=None,
         json_schema_extra={"description": "Reward modelling: `True` or `False`"},
+    )
+    dynamic_checkpoint: DynamicCheckpointConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Configuration for dynamic checkpointing (trigger by file or signal). "
+            "Set 'enabled: true' to activate this feature."
+        },
     )
     process_reward_model: bool | None = Field(
         default=None,
