@@ -89,6 +89,9 @@ class BailingMoeV2GroupedExperts(nn.Module):
 
         device = experts[0].gate_proj.weight.device
         dtype = experts[0].gate_proj.weight.dtype
+        gate_dims = tuple(getattr(experts[0].gate_proj.weight, "ds_shape", experts[0].gate_proj.weight.shape))
+        up_dims = tuple(getattr(experts[0].up_proj.weight, "ds_shape", experts[0].up_proj.weight.shape))
+        down_dims = tuple(getattr(experts[0].down_proj.weight, "ds_shape", experts[0].down_proj.weight.shape))
 
         gate_weights = []
         up_weights = []
@@ -102,18 +105,59 @@ class BailingMoeV2GroupedExperts(nn.Module):
                 f"Config expects {self.num_experts} experts, but received {len(experts)}."
             )
 
-        for expert in experts:
-            gate_weights.append(expert.gate_proj.weight.detach().clone())
-            up_weights.append(expert.up_proj.weight.detach().clone())
-            down_weights.append(expert.down_proj.weight.detach().clone())
+        def _clone_param_tensor(param: torch.Tensor) -> torch.Tensor:
+            ds_shape = getattr(param, "ds_shape", None)
+            if ds_shape is not None and param.numel() != int(torch.tensor(ds_shape).prod().item()):
+                # Zero3 partitions may report mismatched numel; fall back to ds_shape for allocation
+                pass
+            if param.numel() == 0 and ds_shape is not None and param.__class__.__name__ == "Parameter":
+                try:
+                    from deepspeed import zero
 
-        self.gate_weight = nn.Parameter(torch.stack(gate_weights, dim=0).to(device=device, dtype=dtype))
-        self.up_weight = nn.Parameter(torch.stack(up_weights, dim=0).to(device=device, dtype=dtype))
-        self.down_weight = nn.Parameter(torch.stack(down_weights, dim=0).to(device=device, dtype=dtype))
+                    with zero.GatheredParameters([param], modifier_rank=None):
+                        return param.data.detach().clone()
+                except Exception:
+                    LOG.debug("Failed to gather ZeRO parameter; returning zero tensor", exc_info=True)
+                    return param.detach().clone()
+            return param.detach().clone()
+
+        for expert in experts:
+            if expert.gate_proj.weight.numel() == 0 or expert.up_proj.weight.numel() == 0 or expert.down_proj.weight.numel() == 0:
+                LOG.warning(
+                    "Encountered expert with empty weights: gate=%s, up=%s, down=%s (dtype=%s, device=%s, gate_proj=%s, up_proj=%s, down_proj=%s, gate_param=%s, gate_ds_shape=%s)",
+                    tuple(expert.gate_proj.weight.shape),
+                    tuple(expert.up_proj.weight.shape),
+                    tuple(expert.down_proj.weight.shape),
+                    expert.gate_proj.weight.dtype,
+                    expert.gate_proj.weight.device,
+                    expert.gate_proj.__class__.__name__,
+                    expert.up_proj.__class__.__name__,
+                    expert.down_proj.__class__.__name__,
+                    expert.gate_proj.weight.__class__.__name__,
+                    getattr(expert.gate_proj.weight, "ds_shape", None),
+                )
+            gate_weights.append(_clone_param_tensor(expert.gate_proj.weight))
+            up_weights.append(_clone_param_tensor(expert.up_proj.weight))
+            down_weights.append(_clone_param_tensor(expert.down_proj.weight))
+
+        gate_stack = torch.stack(gate_weights, dim=0).to(device=device, dtype=dtype)
+        up_stack = torch.stack(up_weights, dim=0).to(device=device, dtype=dtype)
+        down_stack = torch.stack(down_weights, dim=0).to(device=device, dtype=dtype)
+
+        if gate_stack.numel() == 0 and all(dim > 0 for dim in gate_dims):
+            gate_stack = torch.zeros((self.num_experts,) + gate_dims, device=device, dtype=dtype)
+        if up_stack.numel() == 0 and all(dim > 0 for dim in up_dims):
+            up_stack = torch.zeros((self.num_experts,) + up_dims, device=device, dtype=dtype)
+        if down_stack.numel() == 0 and all(dim > 0 for dim in down_dims):
+            down_stack = torch.zeros((self.num_experts,) + down_dims, device=device, dtype=dtype)
+
+        self.gate_weight = nn.Parameter(gate_stack)
+        self.up_weight = nn.Parameter(up_stack)
+        self.down_weight = nn.Parameter(down_stack)
 
         if gate_bias is not None:
             stacked = torch.stack(
-                [expert.gate_proj.bias.detach().clone() for expert in experts], dim=0
+                [_clone_param_tensor(expert.gate_proj.bias) for expert in experts], dim=0
             ).to(device=device, dtype=gate_bias.dtype)
             self.gate_bias = nn.Parameter(stacked)
         else:
@@ -121,7 +165,7 @@ class BailingMoeV2GroupedExperts(nn.Module):
 
         if up_bias is not None:
             stacked = torch.stack(
-                [expert.up_proj.bias.detach().clone() for expert in experts], dim=0
+                [_clone_param_tensor(expert.up_proj.bias) for expert in experts], dim=0
             ).to(device=device, dtype=up_bias.dtype)
             self.up_bias = nn.Parameter(stacked)
         else:
@@ -129,7 +173,7 @@ class BailingMoeV2GroupedExperts(nn.Module):
 
         if down_bias is not None:
             stacked = torch.stack(
-                [expert.down_proj.bias.detach().clone() for expert in experts], dim=0
+                [_clone_param_tensor(expert.down_proj.bias) for expert in experts], dim=0
             ).to(device=device, dtype=down_bias.dtype)
             self.down_bias = nn.Parameter(stacked)
         else:
@@ -359,5 +403,16 @@ def patch_model_with_grouped_experts(model: nn.Module, mlp_impl: str = "grouped"
         module.moe_infer = MethodType(_grouped_moe_infer, module)
         module._axolotl_grouped_moe = True
         module._axolotl_mlp_impl = mlp_impl
+        try:
+            LOG.info(
+                "Grouped MoE block converted: gate_weight=%s (%s, %s), up_weight=%s, down_weight=%s",
+                tuple(grouped.gate_weight.shape),
+                grouped.gate_weight.dtype,
+                grouped.gate_weight.device,
+                tuple(grouped.up_weight.shape),
+                tuple(grouped.down_weight.shape),
+            )
+        except Exception:  # pragma: no cover - debug logging safeguard
+            LOG.debug("Failed to log grouped MoE block shapes", exc_info=True)
         patched += 1
     return patched
