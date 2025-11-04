@@ -53,80 +53,80 @@ def generate_samples(
         with torch.no_grad():
             samples_collected = 0
 
-        for batch in dataloader:
-            if samples_collected >= num_generation_samples:
-                break
-
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch.get("attention_mask")
-            if attention_mask is not None:
-                attention_mask = attention_mask.to(device)
-            batch_size = input_ids.shape[0]
-
-            indices = torch.randperm(batch_size)[
-                : num_generation_samples - samples_collected
-            ]
-
-            for idx in indices:
+            for batch in dataloader:
                 if samples_collected >= num_generation_samples:
                     break
 
-                sequence = input_ids[idx]
-
+                input_ids = batch["input_ids"].to(device)
+                attention_mask = batch.get("attention_mask")
                 if attention_mask is not None:
-                    seq_len = attention_mask[idx].sum().item()
-                else:
-                    seq_len = sequence.shape[0]
+                    attention_mask = attention_mask.to(device)
+                batch_size = input_ids.shape[0]
 
-                if seq_len < 5:
-                    continue
+                indices = torch.randperm(batch_size)[
+                    : num_generation_samples - samples_collected
+                ]
 
-                prompt_len = max(1, int(seq_len * prompt_ratio))
-                prompt_ids = sequence[:prompt_len].unsqueeze(0)
+                for idx in indices:
+                    if samples_collected >= num_generation_samples:
+                        break
 
-                try:
-                    generation_config = {
-                        "max_new_tokens": max_new_tokens,
-                        "do_sample": do_sample,
-                        "pad_token_id": tokenizer.pad_token_id
-                        if tokenizer.pad_token_id is not None
-                        else tokenizer.eos_token_id,
-                    }
+                    sequence = input_ids[idx]
 
-                    if do_sample:
-                        generation_config["temperature"] = temperature
-                        if top_p is not None:
-                            generation_config["top_p"] = top_p
-                        if top_k is not None:
-                            generation_config["top_k"] = top_k
+                    if attention_mask is not None:
+                        seq_len = attention_mask[idx].sum().item()
+                    else:
+                        seq_len = sequence.shape[0]
 
-                    generated_ids = unwrapped_model.generate(
-                        prompt_ids, **generation_config
-                    )
+                    if seq_len < 5:
+                        continue
 
-                    prompt_text = tokenizer.decode(
-                        prompt_ids[0], skip_special_tokens=True
-                    )
-                    generated_text = tokenizer.decode(
-                        generated_ids[0][prompt_len:], skip_special_tokens=True
-                    )
-                    full_text = tokenizer.decode(
-                        generated_ids[0], skip_special_tokens=True
-                    )
+                    prompt_len = max(1, int(seq_len * prompt_ratio))
+                    prompt_ids = sequence[:prompt_len].unsqueeze(0)
 
-                    generations.append(
-                        {
-                            "prompt": prompt_text,
-                            "generated": generated_text,
-                            "full_text": full_text,
+                    try:
+                        generation_config = {
+                            "max_new_tokens": max_new_tokens,
+                            "do_sample": do_sample,
+                            "pad_token_id": tokenizer.pad_token_id
+                            if tokenizer.pad_token_id is not None
+                            else tokenizer.eos_token_id,
                         }
-                    )
 
-                    samples_collected += 1
+                        if do_sample:
+                            generation_config["temperature"] = temperature
+                            if top_p is not None:
+                                generation_config["top_p"] = top_p
+                            if top_k is not None:
+                                generation_config["top_k"] = top_k
 
-                except Exception as e:
-                    LOG.warning(f"Failed to generate sample: {e}", exc_info=True)
-                    continue
+                        generated_ids = unwrapped_model.generate(
+                            prompt_ids, **generation_config
+                        )
+
+                        prompt_text = tokenizer.decode(
+                            prompt_ids[0], skip_special_tokens=True
+                        )
+                        generated_text = tokenizer.decode(
+                            generated_ids[0][prompt_len:], skip_special_tokens=True
+                        )
+                        full_text = tokenizer.decode(
+                            generated_ids[0], skip_special_tokens=True
+                        )
+
+                        generations.append(
+                            {
+                                "prompt": prompt_text,
+                                "generated": generated_text,
+                                "full_text": full_text,
+                            }
+                        )
+
+                        samples_collected += 1
+
+                    except Exception as e:
+                        LOG.warning(f"Failed to generate sample: {e}", exc_info=True)
+                        continue
 
     except Exception as e:
         LOG.warning(f"Error during sample generation: {e}", exc_info=True)
