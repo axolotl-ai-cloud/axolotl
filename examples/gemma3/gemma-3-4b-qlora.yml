@@ -1,5 +1,8 @@
 base_model: google/gemma-3-4b-it
 
+# Need to set else transformers tries to load vision too
+model_type: Gemma3ForCausalLM
+
 load_in_4bit: true
 
 # gemma3 doesn't seem to play nice with ddp
