@@ -9,7 +9,6 @@ from transformers import (
 
 from axolotl.utils.distributed import (
     barrier,
-    is_distributed,
     is_main_process,
 )
 from axolotl.utils.logging import get_logger
