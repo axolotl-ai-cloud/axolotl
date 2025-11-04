@@ -2,7 +2,7 @@ name: Pre-commit auto-update
 
 on:
   schedule:
-    - cron: '0 0 * * 0'  # Run weekly
+    - cron: '0 0 1 * *'  # Run monthly
   workflow_dispatch:  # Manual kickoff
 
 jobs:
