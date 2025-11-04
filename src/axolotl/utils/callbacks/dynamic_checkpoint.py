@@ -99,7 +99,7 @@ class DynamicCheckpointCallback(TrainerCallback):
                     trigger_detected = True
                     self.should_save_checkpoint = False  # Reset flag
 
-            if is_distributed():
+            if is_main_process():
                 import torch
                 import torch.distributed as dist
 
