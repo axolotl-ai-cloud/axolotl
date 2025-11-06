@@ -9,6 +9,7 @@ from transformers import (
 
 from axolotl.utils.distributed import (
     barrier,
+    is_distributed,
     is_main_process,
 )
 from axolotl.utils.logging import get_logger
@@ -98,7 +99,8 @@ class DynamicCheckpointCallback(TrainerCallback):
                     trigger_detected = True
                     self.should_save_checkpoint = False  # Reset flag
 
-            if is_main_process():
+            # In distributed mode, synchronize the trigger decision across all ranks
+            if is_distributed():
                 import torch
                 import torch.distributed as dist
 
@@ -108,11 +110,18 @@ class DynamicCheckpointCallback(TrainerCallback):
                     torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                 )
 
-                trigger_tensor = torch.tensor(
-                    1 if trigger_detected else 0,
-                    dtype=torch.long,
-                    device=device,
-                )
+                if is_main_process():
+                    trigger_tensor = torch.tensor(
+                        1 if trigger_detected else 0,
+                        dtype=torch.long,
+                        device=device,
+                    )
+                else:
+                    trigger_tensor = torch.tensor(
+                        0,
+                        dtype=torch.long,
+                        device=device,
+                    )
 
                 dist.broadcast(trigger_tensor, src=0)
 
