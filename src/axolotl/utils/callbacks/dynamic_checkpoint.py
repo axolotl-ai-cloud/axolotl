@@ -99,7 +99,6 @@ class DynamicCheckpointCallback(TrainerCallback):
                     trigger_detected = True
                     self.should_save_checkpoint = False  # Reset flag
 
-            # In distributed mode, synchronize the trigger decision across all ranks
             if is_distributed():
                 import torch
                 import torch.distributed as dist
@@ -110,18 +109,11 @@ class DynamicCheckpointCallback(TrainerCallback):
                     torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                 )
 
-                if is_main_process():
-                    trigger_tensor = torch.tensor(
-                        1 if trigger_detected else 0,
-                        dtype=torch.long,
-                        device=device,
-                    )
-                else:
-                    trigger_tensor = torch.tensor(
-                        0,
-                        dtype=torch.long,
-                        device=device,
-                    )
+                trigger_tensor = torch.tensor(
+                    1 if trigger_detected else 0,
+                    dtype=torch.long,
+                    device=device,
+                )
 
                 dist.broadcast(trigger_tensor, src=0)
 
