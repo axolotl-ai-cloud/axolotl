@@ -126,6 +126,9 @@ class GRPOStrategy:
         if trl.use_liger_loss is not None:
             grpo_args_kwargs["use_liger_loss"] = trl.use_liger_loss
 
+        if trl.rollout_func:
+            grpo_args_kwargs["rollout_func"] = cls.get_rollout_func(trl.rollout_func)
+
         return grpo_args_kwargs
 
     @classmethod
@@ -201,3 +204,32 @@ class GRPOStrategy:
                 raise ValueError(
                     f"Reward function {reward_func_fqn} not found."
                 ) from exc
+
+    @classmethod
+    def get_rollout_func(cls, rollout_func_fqn: str):
+        """
+        Returns the rollout function from the given fully qualified name.
+
+        Args:
+            rollout_func_fqn (str): Fully qualified name of the rollout function
+                                    (e.g. my_module.my_rollout_func)
+
+        Returns:
+            Callable rollout function
+        """
+        try:
+            rollout_func_module_name = rollout_func_fqn.split(".")[-1]
+            rollout_func_module = importlib.import_module(
+                ".".join(rollout_func_fqn.split(".")[:-1])
+            )
+            rollout_func = getattr(rollout_func_module, rollout_func_module_name)
+
+            if not callable(rollout_func):
+                raise ValueError(
+                    f"Rollout function {rollout_func_fqn} must be callable"
+                )
+
+            return rollout_func
+
+        except ModuleNotFoundError as exc:
+            raise ValueError(f"Rollout function {rollout_func_fqn} not found.") from exc
