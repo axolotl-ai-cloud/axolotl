@@ -144,7 +144,7 @@ def recursive_kill(process: subprocess.Popen):
 @pytest.mark.skip(reason="flaky vllm tests in modal")
 class TestGRPO:
     """
-    Test case for GRPO training using multilpe GPUs
+    Test case for GRPO training using multiple GPUs
     """
 
     def _utils_write_yaml_and_rewards(self, cfg, temp_dir, suffix=""):

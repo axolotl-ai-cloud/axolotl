@@ -457,7 +457,7 @@ class PatchManager:
             and self.cfg.flash_attention
             and not self.inference
         ):
-            # TODO(MengqingCao): split these patches seperately
+            # TODO(MengqingCao): split these patches separately
             from axolotl.monkeypatch.llama_attn_hijack_flash import (
                 is_xformers_swiglu_available,
                 replace_llama_mlp_with_swiglu,
