@@ -43,7 +43,7 @@ from axolotl.core.trainers.utils import (
 from axolotl.utils import get_not_null
 from axolotl.utils.bench import get_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import is_main_process
+from axolotl.utils.distributed import is_distributed, is_main_process
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
@@ -351,7 +351,7 @@ class AxolotlTrainer(
         if self.args.include_tkps:
             inputs_key = "labels" if "labels" in inputs else "input_ids"
             num_tokens = (inputs[inputs_key] != -100).sum()
-            if torch.distributed.is_initialized():
+            if is_distributed():
                 torch.distributed.all_reduce(
                     num_tokens, op=torch.distributed.ReduceOp.SUM
                 )
