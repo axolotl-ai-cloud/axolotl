@@ -1,13 +1,14 @@
 """Sample generation utilities for SFT/Pretrain training."""
 
-import logging
 from typing import Any, List, Optional
 
 import torch
 from accelerate.utils import extract_model_from_parallel
 from colorama import Fore, Style
 
-LOG = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 def generate_samples(
