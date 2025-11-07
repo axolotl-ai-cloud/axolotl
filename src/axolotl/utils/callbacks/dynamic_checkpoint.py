@@ -16,7 +16,7 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-DEFAULT_TRIGGER_FILENAME = ".axolotl_save_checkpoint"
+DEFAULT_TRIGGER_FILENAME = "axolotl_checkpoint.save"
 
 
 class DynamicCheckpointCallback(TrainerCallback):
@@ -28,8 +28,7 @@ class DynamicCheckpointCallback(TrainerCallback):
 
     Usage:
         # File-based:
-        touch /path/to/output_dir/.axolotl_save_checkpoint
-        kill -SIGUSR1 <training_pid>
+        touch /path/to/output_dir/axolotl_checkpoint.save
     """
 
     def _get_config_value(self, config, key, default=None):
@@ -47,7 +46,10 @@ class DynamicCheckpointCallback(TrainerCallback):
         self.enabled = True
         dc_config = cfg.dynamic_checkpoint
 
-        self.trigger_filename = DEFAULT_TRIGGER_FILENAME
+        trigger_file_path = self._get_config_value(dc_config, "trigger_file_path")
+        self.trigger_filename = (
+            trigger_file_path if trigger_file_path else DEFAULT_TRIGGER_FILENAME
+        )
 
         check_interval = self._get_config_value(dc_config, "check_interval")
         self.check_interval = check_interval if check_interval is not None else 100
