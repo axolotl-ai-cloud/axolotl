@@ -598,8 +598,6 @@ To see other examples of custom reward functions, please see [TRL GRPO Docs](htt
 To see all configs, please see [TRLConfig](https://github.com/axolotl-ai-cloud/axolotl/blob/v0.9.2/src/axolotl/utils/schemas/trl.py).
 
 #### OpenEnv Rollout Functions
-```bash
-pip insatll openenv-core```
 
 GRPO supports custom rollout functions for OpenEnv-style environments, enabling interactive tasks like web browsing, code execution, or tool use. This allows you to implement custom generation logic that interacts with external environments.
 
