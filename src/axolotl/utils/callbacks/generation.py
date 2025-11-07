@@ -1,20 +1,12 @@
 """Callback for generating samples during SFT/Pretrain training."""
 
-import logging
-import sys
-
 from transformers.trainer_callback import TrainerCallback, TrainerControl, TrainerState
 from transformers.training_args import TrainingArguments
 
 from axolotl.utils.generation.sft import generate_samples
+from axolotl.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
-if not logger.handlers:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(logging.Formatter("%(message)s"))
-    logger.addHandler(handler)
-    logger.propagate = False
-logger.setLevel(logging.INFO)
+LOG = get_logger(__name__)
 
 
 class SFTGenerationCallback(TrainerCallback):
@@ -46,16 +38,16 @@ class SFTGenerationCallback(TrainerCallback):
             try:
                 if getattr(self.trainer, "eval_dataset", None) is not None:
                     dataloader = self.trainer.get_eval_dataloader()
-                    logger.info(
+                    LOG.info(
                         f"Using eval dataloader for generation at step {state.global_step}"
                     )
             except Exception as e:
-                logger.warning(f"Could not get eval dataloader: {e}")
+                LOG.warning(f"Could not get eval dataloader: {e}")
                 dataloader = None
 
             if dataloader is None:
                 dataloader = self.trainer.get_train_dataloader()
-                logger.info(
+                LOG.info(
                     f"Using train dataloader for generation at step {state.global_step}"
                 )
 
@@ -80,7 +72,7 @@ class SFTGenerationCallback(TrainerCallback):
         for i, sample in enumerate(samples):
             console_text, wandb_text = format_generation_for_logging(sample, i, step)
 
-            logger.info(console_text)
+            LOG.info(console_text)
 
             try:
                 import wandb
