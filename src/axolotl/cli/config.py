@@ -26,6 +26,7 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.tee import prepare_debug_log
+from axolotl.utils.trackio_ import setup_trackio_env_vars
 from axolotl.utils.trainer import prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
@@ -245,6 +246,7 @@ def load_cfg(
     setup_wandb_env_vars(cfg)
     setup_mlflow_env_vars(cfg)
     setup_comet_env_vars(cfg)
+    setup_trackio_env_vars(cfg)
     plugin_set_cfg(cfg)
 
     TELEMETRY_MANAGER.send_event(event_type="config-processed", properties=cfg)

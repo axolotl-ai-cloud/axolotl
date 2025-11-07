@@ -35,6 +35,7 @@ from axolotl.utils import (
     is_comet_available,
     is_mlflow_available,
     is_opentelemetry_available,
+    is_trackio_available,
 )
 from axolotl.utils.callbacks import (
     GCCallback,
@@ -146,6 +147,14 @@ class TrainerBuilderBase(abc.ABC):
 
             callbacks.append(
                 SaveAxolotlConfigtoCometCallback(self.cfg.axolotl_config_path)
+            )
+        if self.cfg.use_trackio and is_trackio_available():
+            from axolotl.utils.callbacks.trackio_ import (
+                SaveAxolotlConfigtoTrackioCallback,
+            )
+
+            callbacks.append(
+                SaveAxolotlConfigtoTrackioCallback(self.cfg.axolotl_config_path)
             )
         if self.cfg.use_otel_metrics and is_opentelemetry_available():
             from axolotl.utils.callbacks.opentelemetry import (
@@ -434,6 +443,8 @@ class TrainerBuilderBase(abc.ABC):
             report_to.append("tensorboard")
         if self.cfg.use_comet:
             report_to.append("comet_ml")
+        if self.cfg.use_trackio:
+            report_to.append("trackio")
 
         training_args_kwargs["report_to"] = report_to
 
@@ -441,6 +452,8 @@ class TrainerBuilderBase(abc.ABC):
             training_args_kwargs["run_name"] = self.cfg.wandb_name
         elif self.cfg.use_mlflow:
             training_args_kwargs["run_name"] = self.cfg.mlflow_run_name
+        elif self.cfg.use_trackio:
+            training_args_kwargs["run_name"] = self.cfg.trackio_run_name
         else:
             training_args_kwargs["run_name"] = None
 
