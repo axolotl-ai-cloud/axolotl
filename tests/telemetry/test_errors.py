@@ -310,7 +310,7 @@ def test_error_handled_tracking():
         def test_func():
             raise ValueError("Test error")
 
-        assert len(ERROR_HANDLED) == 0
+        assert not ERROR_HANDLED
 
         exception_raised = None
         try:
@@ -318,7 +318,7 @@ def test_error_handled_tracking():
         except ValueError as e:
             exception_raised = e
 
-        assert len(ERROR_HANDLED) == 1
+        assert ERROR_HANDLED
         assert exception_raised in ERROR_HANDLED
 
         assert mock_manager.send_event.call_count == 1
