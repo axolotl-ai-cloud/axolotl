@@ -22,9 +22,19 @@ pip3 install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
 # audio
 pip3 install librosa==0.11.0
 pip3 install 'mistral_common[audio]==1.8.3'
+
+# Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy
+python scripts/cutcrossentropy_install.py | sh
 ```
 
-3. Run the finetuning example:
+3. Download sample dataset files
+
+```bash
+# for text + audio only
+wget https://huggingface.co/datasets/Nanobit/text-audio-2k-test/resolve/main/En-us-African_elephant.oga
+```
+
+4. Run the finetuning example:
 
 ```bash
 # text only

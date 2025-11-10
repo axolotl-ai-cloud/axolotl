@@ -1,4 +1,4 @@
-"""data handling specific to pretraining"""
+"""Data handling specific to streaming datasets."""
 
 import functools
 from collections import defaultdict
@@ -17,10 +17,10 @@ from axolotl.utils.trainer import process_pretraining_datasets_for_packing
 LOG = get_logger(__name__)
 
 
-def encode_pretraining(
+def encode_streaming(
+    examples: Dict[str, List],
     tokenizer: PreTrainedTokenizerBase,
     max_tokens: int,
-    examples: Dict[str, List],
     text_column: str = "text",
     concatenate: bool = True,
 ) -> Dict[str, List]:
@@ -67,7 +67,7 @@ def encode_pretraining(
     buffer_labels = torch.tensor([], dtype=torch.long)
     buffer_attention_mask = torch.tensor([], dtype=torch.long)
 
-    for ids, labels, mask in zip(input_ids, targets, attention_mask):
+    for ids, labels, mask in zip(input_ids, targets, attention_mask, strict=False):
         if buffer_input_ids.numel() == max_tokens:
             new_input_ids.append(buffer_input_ids)
             new_labels.append(buffer_labels)
@@ -176,45 +176,57 @@ def encode_pretraining(
     return ret
 
 
-def wrap_pretraining_dataset(
+def wrap_streaming_dataset(
     dataset,
     tokenizer,
     cfg,
     ds_wrapper_fn,
-    max_tokens=2048,
-    batch_size=1,
-    seed=42,
-    buffer_size=10_000,
 ):
     if cfg.sample_packing:
+        # For SFT (non-pretraining) datasets, always use multipack_attn=True to ensure
+        # attention isolation between packed sequences
+        multipack_attn = (
+            True if not cfg.pretraining_dataset else cfg.pretrain_multipack_attn
+        )
+
         collate_fn = PretrainingBatchSamplerDataCollatorForSeq2Seq(
             tokenizer,
             return_tensors="pt",
             padding=True,
-            pad_to_multiple_of=max_tokens,
-            multipack_attn=cfg.pretrain_multipack_attn,
+            pad_to_multiple_of=cfg.sequence_len,
+            multipack_attn=multipack_attn,
         )
         encode = functools.partial(
-            encode_packed_pretraining,
+            encode_packed_streaming,
             collate_fn,
             ds_wrapper_fn,
-            max_seq_length=max_tokens,
-            batch_size=batch_size,
-            multipack_attn=cfg.pretrain_multipack_attn,
+            max_seq_length=cfg.sequence_len,
+            batch_size=cfg.micro_batch_size,
+            multipack_attn=multipack_attn,
         )
-        # set this to 1 so downstream data_loader doesn't try to increase the batch again
+
+        # Set this to 1 so downstream data_loader doesn't try to increase the batch size
+        # again
         cfg.micro_batch_size = 1
     else:
+        # NOTE: This is not reachable for SFT datasets since we use the pre-existing
+        # loading function for non-packed streaming datasets. Refer to
+        # _prepare_streaming_datasets in sft.py for that code path.
+        text_column = (
+            getattr(cfg.pretraining_dataset[0], "text_column", "text") or "text"
+        )
         encode = functools.partial(
-            encode_pretraining,
-            tokenizer,
-            max_tokens,
-            text_column=cfg.pretraining_dataset[0].text_column or "text",
+            encode_streaming,
+            tokenizer=tokenizer,
+            max_tokens=cfg.sequence_len,
+            text_column=text_column,
             concatenate=cfg.pretraining_sample_concatenation is True,
         )
 
     if cfg.shuffle_merged_datasets:
-        dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
+        dataset = dataset.shuffle(
+            seed=cfg.seed, buffer_size=cfg.streaming_multipack_buffer_size
+        )
     else:
         LOG.debug("NOT shuffling merged pretraining datasets")
 
@@ -232,14 +244,13 @@ def wrap_pretraining_dataset(
     dataset = dataset.map(
         encode,
         batched=True,
-        batch_size=buffer_size,
-        # input_columns="text",
+        batch_size=cfg.streaming_multipack_buffer_size,
         remove_columns=remove_columns,
     )
     return dataset
 
 
-def encode_packed_pretraining(
+def encode_packed_streaming(
     collate_fn,
     ds_wrapper: Callable,
     examples: Dict[str, List],
@@ -247,7 +258,6 @@ def encode_packed_pretraining(
     batch_size: int = 4,
     multipack_attn: Optional[bool] = True,
 ) -> Dict[str, List]:
-    # pylint: disable=duplicate-code
     # tokenize all the examples
     # rows get split with stride (overlap)
     train_dataset = ds_wrapper(dataset=Dataset.from_dict(examples))[0]
@@ -275,8 +285,6 @@ def encode_packed_pretraining(
     for batch in sampler:
         for data in batch:
             features = train_dataset[data]
-            if "num_truncated_tokens" in features:
-                del features["num_truncated_tokens"]
             if "num_truncated_tokens" in features:
                 del features["num_truncated_tokens"]
             if "overflow_to_sample_mapping" in features:

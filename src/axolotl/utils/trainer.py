@@ -6,6 +6,7 @@ import os
 import random
 from contextlib import contextmanager
 from functools import partial
+from tempfile import NamedTemporaryFile
 from typing import List, Optional
 
 import numpy as np
@@ -15,6 +16,7 @@ from datasets import IterableDataset, disable_caching, enable_caching
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import init_distributed_state, reduce_and_broadcast
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.logging import get_logger
@@ -276,7 +278,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         prior_len = None
     filter_map_kwargs = {}
     if not isinstance(train_dataset, IterableDataset):
-        filter_map_kwargs["num_proc"] = cfg.dataset_processes
+        filter_map_kwargs["num_proc"] = cfg.dataset_num_proc
         filter_map_kwargs["load_from_cache_file"] = not cfg.is_preprocess
 
     drop_long_kwargs = {}
@@ -316,7 +318,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
     if cfg.group_by_length:
         train_dataset = train_dataset.map(
             add_length,
-            num_proc=cfg.dataset_processes,
+            num_proc=cfg.dataset_num_proc,
             load_from_cache_file=not cfg.is_preprocess,
             desc="Group By Length",
         )
@@ -333,7 +335,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         )
         train_dataset = train_dataset.map(
             pose_fn,
-            num_proc=cfg.dataset_processes,
+            num_proc=cfg.dataset_num_proc,
             load_from_cache_file=not cfg.is_preprocess,
             desc="Add position_id column (PoSE)",
         )
@@ -342,7 +344,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             if eval_dataset:
                 eval_dataset = eval_dataset.map(
                     pose_fn,
-                    num_proc=cfg.dataset_processes,
+                    num_proc=cfg.dataset_num_proc,
                     load_from_cache_file=not cfg.is_preprocess,
                     desc="Add position_id column (PoSE)",
                 )
@@ -467,7 +469,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 bin_size=cfg.sample_packing_bin_size,
                 sequential=cfg.sample_packing_sequentially,
                 drop_last=True,
-                num_processes=cfg.dataset_processes,
+                num_processes=cfg.dataset_prcoesses,
                 mp_start_method=cfg.sample_packing_mp_start_method or "fork",
             )
 
@@ -475,7 +477,9 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 train_dataset.remove_columns(["length"]),
                 batch_sampler=sampler,
             )
-            data_loader_len = len(data_loader) * cfg.micro_batch_size // cfg.batch_size
+            data_loader_len = max(
+                1, len(data_loader) * cfg.micro_batch_size // cfg.batch_size
+            )
             LOG.debug(f"data_loader_len: {data_loader_len}")
             # FIXME: is there a bug here somewhere? the total num steps depends
             # on the agreed on value for sample_packing_eff_est
@@ -496,7 +500,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 return max(estimates)
 
             sample_packing_actual_eff_all = reduce_and_broadcast(
-                lambda: sampler.efficiency(),  # pylint: disable=unnecessary-lambda
+                lambda: sampler.efficiency(),
                 calc_sample_packing_eff_est,
             )
             sample_packing_eff_est = (
@@ -538,6 +542,13 @@ def setup_deepspeed_env(cfg, stage=None):
         )
 
     os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
+    if isinstance(cfg.deepspeed, DictDefault):
+        with NamedTemporaryFile(
+            mode="w", delete=False, suffix=".json", prefix="deepspeed_config_"
+        ) as temp_file:
+            temp_file.write(json.dumps(cfg.deepspeed.to_dict(), indent=4))
+            temp_file.close()
+            cfg.deepspeed = str(temp_file.name)
     os.environ["ACCELERATE_DEEPSPEED_CONFIG_FILE"] = cfg.deepspeed
     os.environ["ACCELERATE_GRADIENT_ACCUMULATION_STEPS"] = str(
         cfg.gradient_accumulation_steps
@@ -547,12 +558,20 @@ def setup_deepspeed_env(cfg, stage=None):
         if stage == 3:
             os.environ["ACCELERATE_DEEPSPEED_ZERO3_INIT"] = "true"
 
+    device_count = torch.cuda.device_count()
+    if device_count == 1:
+        os.environ.setdefault("WORLD_SIZE", "1")
+        os.environ.setdefault("LOCAL_RANK", "0")
+        os.environ.setdefault("MASTER_ADDR", "0.0.0.0")  # nosec B104
+        os.environ.setdefault("MASTER_PORT", "29500")
+
     # NOTE(djsaunde): The distribued state cannot be initialized prior to the
     # ACCELERATE_USE_DEEPSPEED assignment, but it must be initialized some time prior
     # to model load.
     if (
         int(os.environ.get("WORLD_SIZE", "1")) == 1
         and os.environ.get("AXOLOTL_IS_PREPROCESS", "0") != "1"
+        and cfg.use_ray is not True
     ):
         os.environ["WORLD_SIZE"] = "1"  # force it in case not set
         os.environ["LOCAL_RANK"] = "0"  # force it in case not set
@@ -586,6 +605,10 @@ def setup_fsdp_envs(cfg):
         os.environ["FSDP_USE_ORIG_PARAMS"] = "true"
     if cfg.fsdp_config.state_dict_type:
         os.environ["FSDP_STATE_DICT_TYPE"] = cfg.fsdp_config.state_dict_type
+    if cfg.fsdp_config.cpu_offload_pin_memory is not None:
+        os.environ["FSDP_CPU_OFFLOAD_PIN_MEMORY"] = str(
+            cfg.fsdp_config.cpu_offload_pin_memory
+        ).lower()
     if cfg.fsdp_config.auto_wrap_policy:
         os.environ["FSDP_AUTO_WRAP_POLICY"] = cfg.fsdp_config.auto_wrap_policy
     if cfg.fsdp_config.transformer_layer_cls_to_wrap:
@@ -618,6 +641,7 @@ def setup_parallelism_envs(cfg):
 def prepare_optim_env(cfg):
     if not check_cuda_p2p_ib_support():
         if os.getenv("NCCL_P2P_DISABLE") is None:
+            LOG.warning("P2P support not detected, setting `NCCL_P2P_DISABLE=1`")
             os.environ["NCCL_P2P_DISABLE"] = "1"
     # TODO @SalmanMohammadi remove the cfg.fsdp check in 0.12
     if cfg.fsdp or cfg.fsdp_config:
@@ -625,11 +649,15 @@ def prepare_optim_env(cfg):
         setup_fsdp_envs(cfg)
     elif cfg.deepspeed:
         stage = None
+        deepspeed_config = None
         # check if the cfg.deepspeed is a file
-        if os.path.isfile(cfg.deepspeed):
+        if isinstance(cfg.deepspeed, DictDefault):
+            deepspeed_config = cfg.deepspeed
+        elif os.path.isfile(cfg.deepspeed):
             # parse with json
             with open(cfg.deepspeed, "r", encoding="utf-8") as fin:
                 deepspeed_config = json.load(fin)
+        if deepspeed_config:
             stage = deepspeed_config.get("zero_optimization", {}).get("stage", None)
         setup_deepspeed_env(cfg, stage=stage)
 
@@ -644,15 +672,6 @@ def prepare_optim_env(cfg):
         os.environ["ACCELERATE_MIXED_PRECISION"] = "fp16"
     else:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "no"
-
-
-def prepare_opinionated_env(cfg):
-    if cfg.qlora_sharded_model_loading:
-        # model loading is forked after the tokenizer
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    if cfg.sample_packing:
-        # multipack parallel packing sampler defaults to using fork
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def setup_trainer(

@@ -26,7 +26,6 @@ def parse_requirements(extras_require_map):
                 _install_requires.append(line)
     try:
         xformers_version = [req for req in _install_requires if "xformers" in req][0]
-        autoawq_version = [req for req in _install_requires if "autoawq" in req][0]
         if "Darwin" in platform.system():
             # skip packages not compatible with OSX
             skip_packages = [
@@ -34,7 +33,6 @@ def parse_requirements(extras_require_map):
                 "triton",
                 "mamba-ssm",
                 "xformers",
-                "autoawq",
                 "liger-kernel",
             ]
             _install_requires = [
@@ -51,7 +49,7 @@ def parse_requirements(extras_require_map):
             try:
                 torch_version = version("torch")
             except PackageNotFoundError:
-                torch_version = "2.6.0"  # default to torch 2.6
+                torch_version = "2.8.0"  # default to torch 2.8.0
             _install_requires.append(f"torch=={torch_version}")
 
             version_match = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", torch_version)
@@ -64,7 +62,16 @@ def parse_requirements(extras_require_map):
             else:
                 raise ValueError("Invalid version format")
 
-            if (major, minor) >= (2, 7):
+            if (major, minor) >= (2, 9):
+                extras_require_map.pop("fbgemm-gpu")
+                extras_require_map["fbgemm-gpu"] = ["fbgemm-gpu-genai==1.4.1"]
+                extras_require_map["vllm"] = ["vllm==0.11.1"]
+                _install_requires.pop(_install_requires.index(xformers_version))
+            elif (major, minor) >= (2, 8):
+                extras_require_map.pop("fbgemm-gpu")
+                extras_require_map["fbgemm-gpu"] = ["fbgemm-gpu-genai==1.3.0"]
+                extras_require_map["vllm"] = ["vllm==0.11.0"]
+            elif (major, minor) >= (2, 7):
                 _install_requires.pop(_install_requires.index(xformers_version))
                 if patch == 0:
                     _install_requires.append("xformers==0.0.30")
@@ -72,7 +79,7 @@ def parse_requirements(extras_require_map):
                     extras_require_map.pop("vllm")
                 else:
                     _install_requires.append("xformers==0.0.31")
-                    extras_require_map["vllm"] = ["vllm>=0.10.0"]
+                    extras_require_map["vllm"] = ["vllm==0.10.1"]
             elif (major, minor) >= (2, 6):
                 _install_requires.pop(_install_requires.index(xformers_version))
                 _install_requires.append("xformers==0.0.29.post3")
@@ -85,7 +92,6 @@ def parse_requirements(extras_require_map):
                     _install_requires.append("xformers==0.0.28.post2")
                 else:
                     _install_requires.append("xformers>=0.0.28.post3")
-                _install_requires.pop(_install_requires.index(autoawq_version))
                 extras_require_map.pop("vllm")
             elif (major, minor) >= (2, 4):
                 extras_require_map.pop("vllm")
@@ -118,14 +124,13 @@ def get_package_version():
 
 
 extras_require = {
-    "flash-attn": ["flash-attn==2.8.2"],
+    "flash-attn": ["flash-attn==2.8.3"],
     "ring-flash-attn": [
-        "flash-attn==2.8.2",
+        "flash-attn==2.8.3",
         "ring-flash-attn>=0.1.7",
-        "yunchang==0.6.0",
     ],
     "deepspeed": [
-        "deepspeed==0.17.2",
+        "deepspeed==0.17.5",
         "deepspeed-kernels",
     ],
     "mamba-ssm": [
@@ -159,6 +164,13 @@ extras_require = {
     ],
     "llmcompressor": [
         "llmcompressor==0.5.1",
+    ],
+    "fbgemm-gpu": ["fbgemm-gpu-genai==1.3.0"],
+    "opentelemetry": [
+        "opentelemetry-api",
+        "opentelemetry-sdk",
+        "opentelemetry-exporter-prometheus",
+        "prometheus-client",
     ],
 }
 install_requires, dependency_links, extras_require_build = parse_requirements(

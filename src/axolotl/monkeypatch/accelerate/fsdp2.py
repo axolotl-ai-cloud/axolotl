@@ -4,6 +4,7 @@ monkeypatch for accelerate fsdp2 fix when modifying ordereddict during interatio
 
 import copy
 import functools
+import os
 import sys
 
 import torch
@@ -130,9 +131,9 @@ def get_state_dict(self, model, unwrap=True):
                         "Deepspeed TP requires deepspeed >= 0.16.4, Please update DeepSpeed via `pip install deepspeed -U`."
                     )
                 state_dict = (
-                    model._consolidated_16bit_state_dict()  # pylint: disable=protected-access
+                    model._consolidated_16bit_state_dict()
                     if tp_sharding
-                    else model._zero3_consolidated_16bit_state_dict()  # pylint: disable=protected-access
+                    else model._zero3_consolidated_16bit_state_dict()
                 )
             else:
                 raise ValueError(
@@ -160,9 +161,11 @@ def get_state_dict(self, model, unwrap=True):
                 state_dict[param_name] = param.cpu()
             torch.distributed.barrier()
     elif self.distributed_type == DistributedType.FSDP:
-        from torch.distributed.fsdp import FullStateDictConfig
-        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-        from torch.distributed.fsdp import StateDictType
+        from torch.distributed.fsdp import (
+            FullStateDictConfig,
+            FullyShardedDataParallel as FSDP,
+            StateDictType,
+        )
 
         full_state_dict_config = FullStateDictConfig(
             offload_to_cpu=True, rank0_only=True
@@ -187,7 +190,7 @@ def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
 
     # Linear4Bit will keep it's bias term in fp32. If the weight dtype is in bf16 we are not able to
     # wrap this. Therefore we must ensure the bias has the same dtype as the weight
-    if module.base_layer.bias is not None:
+    if hasattr(module.base_layer, "bias") and module.base_layer.bias is not None:
         if module.base_layer.weight.dtype != module.base_layer.bias.dtype:
             log_bias_dtype_mismatch = True
             module.base_layer.bias.data = module.base_layer.bias.data.to(
@@ -231,8 +234,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     )
 
     is_type_fsdp = isinstance(model, FSDPModule) or (
-        is_compiled_module(model)
-        and isinstance(model._orig_mod, FSDPModule)  # pylint: disable=protected-access
+        is_compiled_module(model) and isinstance(model._orig_mod, FSDPModule)
     )
     if is_type_fsdp:
         return model
@@ -275,6 +277,11 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         )
 
     mesh = getattr(accelerator.state, "device_mesh", None)
+
+    # Disable memory pinning if requested
+    offload_to_cpu = isinstance(fsdp2_plugin.cpu_offload, CPUOffloadPolicy)
+    if offload_to_cpu and os.environ.get("FSDP_CPU_OFFLOAD_PIN_MEMORY", "") == "false":
+        fsdp2_plugin.cpu_offload.pin_memory = False
 
     fsdp2_kwargs = {
         "reshard_after_forward": fsdp2_plugin.reshard_after_forward,
@@ -340,7 +347,6 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         )
 
     if fsdp2_plugin.cpu_ram_efficient_loading:
-        offload_to_cpu = isinstance(fsdp2_plugin.cpu_offload, CPUOffloadPolicy)
         fsdp2_load_full_state_dict(
             accelerator, model, original_sd, offload_to_cpu=offload_to_cpu
         )

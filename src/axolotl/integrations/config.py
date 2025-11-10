@@ -20,8 +20,8 @@ from typing import Any, Dict, List, Type
 
 from axolotl.utils.schemas.config import (
     AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
+    AxolotlInputConfig as AxolotlInputConfigBase,
 )
-from axolotl.utils.schemas.config import AxolotlInputConfig as AxolotlInputConfigBase
 
 
 def merge_input_args():
@@ -50,15 +50,9 @@ def merge_input_args():
         dynamic_input += f"class AxolotlInputConfig(AxolotlInputConfigBase, {', '.join(plugin_classes)}):\n    pass\n"
 
         namespace: Dict[Any, Any] = {}
-        exec(  # pylint: disable=exec-used  # nosec B102
-            dynamic_input, globals(), namespace
-        )
-        AxolotlInputConfig = namespace[  # pylint: disable=invalid-name
-            "AxolotlInputConfig"
-        ]
-        AxolotlConfigWCapabilities = namespace[  # pylint: disable=invalid-name
-            "AxolotlConfigWCapabilities"
-        ]
+        exec(dynamic_input, globals(), namespace)  # nosec B102
+        AxolotlInputConfig = namespace["AxolotlInputConfig"]
+        AxolotlConfigWCapabilities = namespace["AxolotlConfigWCapabilities"]
         return AxolotlConfigWCapabilities, AxolotlInputConfig
     return AxolotlConfigWCapabilitiesBase, AxolotlInputConfigBase
 
@@ -74,7 +68,7 @@ def merge_training_args() -> Type:
     Returns:
     tuple: A tuple containing the newly created classes, AxolotlTrainingMixins.
     """
-    # pylint: disable=duplicate-code
+
     from axolotl.core.training_args_base import (
         AxolotlTrainingMixins as AxolotlTrainingMixinsBase,
     )
@@ -93,11 +87,7 @@ def merge_training_args() -> Type:
 
         namespace: Dict[Any, Any] = {}
         local_vars = {"AxolotlTrainingMixinsBase": AxolotlTrainingMixinsBase}
-        exec(  # pylint: disable=exec-used  # nosec B102
-            dynamic_input, {**globals(), **local_vars}, namespace
-        )
-        AxolotlTrainingMixins = namespace[  # pylint: disable=invalid-name
-            "AxolotlTrainingMixins"
-        ]
+        exec(dynamic_input, {**globals(), **local_vars}, namespace)  # nosec B102
+        AxolotlTrainingMixins = namespace["AxolotlTrainingMixins"]
         return AxolotlTrainingMixins
     return AxolotlTrainingMixinsBase

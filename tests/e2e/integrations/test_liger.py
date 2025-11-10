@@ -2,6 +2,7 @@
 Simple end-to-end test for Liger integration
 """
 
+import pytest
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
@@ -17,7 +18,6 @@ class LigerIntegrationTestCase:
 
     @require_torch_2_4_1
     def test_llama_wo_flce(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -53,7 +53,7 @@ class LigerIntegrationTestCase:
                 "save_first_step": False,
             }
         )
-        # pylint: disable=duplicate-code
+
         cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)
@@ -63,8 +63,11 @@ class LigerIntegrationTestCase:
         check_model_output_exists(temp_dir, cfg)
 
     @require_torch_2_4_1
-    def test_llama_w_flce(self, temp_dir):
-        # pylint: disable=duplicate-code
+    @pytest.mark.parametrize(
+        "liger_use_token_scaling",
+        [True, False],
+    )
+    def test_llama_w_flce(self, temp_dir, liger_use_token_scaling):
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -76,6 +79,7 @@ class LigerIntegrationTestCase:
                 "liger_glu_activation": True,
                 "liger_cross_entropy": False,
                 "liger_fused_linear_cross_entropy": True,
+                "liger_use_token_scaling": liger_use_token_scaling,
                 "sequence_len": 1024,
                 "val_set_size": 0.05,
                 "special_tokens": {
@@ -100,7 +104,7 @@ class LigerIntegrationTestCase:
                 "save_first_step": False,
             }
         )
-        # pylint: disable=duplicate-code
+
         cfg = validate_config(cfg)
         prepare_plugins(cfg)
         normalize_config(cfg)

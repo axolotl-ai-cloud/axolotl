@@ -46,13 +46,11 @@ def _replace_linear(
 
         if isinstance(module, torch.nn.Linear) and name not in skip_modules:
             if issubclass(linear_replacement, Linear4bit):
-                model._modules[name] = (  # pylint: disable=protected-access
-                    linear_replacement(
-                        module.in_features,
-                        module.out_features,
-                        module.bias is not None,
-                        **kwargs,
-                    )
+                model._modules[name] = linear_replacement(
+                    module.in_features,
+                    module.out_features,
+                    module.bias is not None,
+                    **kwargs,
                 )
             else:
                 raise ValueError(
@@ -150,8 +148,8 @@ def load_sharded_model(
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             use_cache=False,
-            torch_dtype=torch.float32,
-            _attn_implementation=model_config._attn_implementation,  # pylint: disable=protected-access
+            dtype=torch.float32,
+            _attn_implementation=model_config._attn_implementation,
             trust_remote_code=cfg.trust_remote_code,
         )
         dtype = torch_dtype if not cfg.float32 else None
@@ -160,7 +158,7 @@ def load_sharded_model(
         with init_empty_weights():
             model = AutoModelForCausalLM.from_config(
                 model_config,
-                torch_dtype=torch_dtype,
+                dtype=torch_dtype,
                 trust_remote_code=cfg.trust_remote_code,
             )
     return model

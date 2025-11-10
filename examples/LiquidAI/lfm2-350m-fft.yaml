@@ -1,8 +1,8 @@
 base_model: LiquidAI/LFM2-350M
 
-chunked_cross_entropy: true
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
 
-chat_template: tokenizer_default
 eot_tokens:
   - "<|im_end|>"
 datasets:

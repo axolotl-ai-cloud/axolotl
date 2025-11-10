@@ -80,7 +80,7 @@ def start_vllm(
     cmd_env = env.copy()
     cmd_env.update({"VLLM_LOGGING_CONFIG_PATH": vllm_logging_json})
     # start `trl vllm-serve` command in the background and capture the process id
-    process = subprocess.Popen(  # pylint: disable=consider-using-with
+    process = subprocess.Popen(
         cmd,
         env=cmd_env,
         stdout=subprocess.DEVNULL if quiet else subprocess.PIPE,
@@ -144,7 +144,7 @@ def recursive_kill(process: subprocess.Popen):
 @pytest.mark.skip(reason="flaky vllm tests in modal")
 class TestGRPO:
     """
-    Test case for GRPO training using multilpe GPUs
+    Test case for GRPO training using multiple GPUs
     """
 
     def _utils_write_yaml_and_rewards(self, cfg, temp_dir, suffix=""):

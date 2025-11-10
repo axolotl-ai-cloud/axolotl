@@ -167,3 +167,15 @@ class TRLConfig(BaseModel):
             "description": "Whether to exclude truncated completions from loss calculation."
         },
     )
+    vllm_enable_sleep_mode: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable sleep mode for vLLM to offload VRAM when idle"
+        },
+    )
+    rollout_func: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Path to custom rollout function. Must be importable from current dir."
+        },
+    )

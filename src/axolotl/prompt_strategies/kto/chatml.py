@@ -2,13 +2,11 @@
 KTO strategies for chatml
 """
 
-# pylint: disable=duplicate-code
-
 
 def argilla(
     cfg,
     **kwargs,
-):  # pylint: disable=possibly-unused-variable,unused-argument
+):
     def transform_fn(sample):
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
@@ -28,7 +26,7 @@ def argilla(
 def argilla_chat(
     cfg,
     **kwargs,
-):  # pylint: disable=possibly-unused-variable,unused-argument
+):
     """
     for argilla/kto-mix-15k conversations
     """
@@ -43,7 +41,7 @@ def argilla_chat(
     return transform_fn
 
 
-def intel(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
+def intel(cfg, **kwargs):
     """
     For Intel Orca KTO
     ex: argilla/distilabel-intel-orca-kto
@@ -65,9 +63,7 @@ def intel(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
     return transform_fn
 
 
-def prompt_pairs(
-    cfg, **kwargs
-):  # pylint: disable=possibly-unused-variable,unused-argument
+def prompt_pairs(cfg, **kwargs):
     def transform_fn(sample):
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
@@ -84,7 +80,7 @@ def prompt_pairs(
     return transform_fn
 
 
-def ultra(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
+def ultra(cfg, **kwargs):
     """
     for ultrafeedback binarized conversations
     ex: argilla/ultrafeedback-binarized-preferences-cleaned-kto

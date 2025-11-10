@@ -5,6 +5,7 @@ into fixed-capacity batches to optimize memory usage and training throughput.
 
 import gc
 import math
+import os
 import time
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import cpu_count, get_context
@@ -268,7 +269,7 @@ class MultipackBatchSampler(BatchSampler):
         num_processes: int | None = None,  # Number of processes for parallel packing
         safe_mode: bool = True,  # Conservative packing to prevent training instability
         mp_start_method: str = "fork",
-        **kwargs,  # pylint: disable=unused-argument
+        **kwargs,
     ):
         super().__init__(sampler, batch_size, drop_last)
         self.batch_size = batch_size
@@ -291,7 +292,10 @@ class MultipackBatchSampler(BatchSampler):
         self.total_token_slots = 0
 
         # The number of times to calculate batches to determine minimum packed dataset length
-        self.num_count_samples = num_count_samples
+        world_size = int(os.environ.get("WORLD_SIZE", "1"))
+        self.num_count_samples = (
+            1 if world_size >= num_count_samples else num_count_samples
+        )
 
         if self.sequential and not isinstance(sampler, SequentialSampler):
             LOG.warning(
@@ -317,9 +321,7 @@ class MultipackBatchSampler(BatchSampler):
             return self._batches
 
         # Get indices from the sampler
-        indices = [  # pylint: disable=unnecessary-comprehension
-            idx for idx in self.sampler
-        ]
+        indices = [idx for idx in self.sampler]
 
         # Get lengths of the selected sequences
         lengths = self.lengths[indices]
@@ -417,7 +419,7 @@ class MultipackBatchSampler(BatchSampler):
 
         # Gather efficiency from all ranks and apply the calculation function
         sample_packing_actual_eff_all = reduce_and_broadcast(
-            lambda: float(self.efficiency()),  # pylint: disable=unnecessary-lambda
+            lambda: float(self.efficiency()),
             calc_sample_packing_eff_est,
         )
 

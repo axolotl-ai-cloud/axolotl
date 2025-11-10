@@ -25,7 +25,7 @@ def min_cfg(temp_dir):
         "liger_rms_norm": True,
         "liger_glu_activation": True,
         "torch_compile": True,
-        "chat_template": "llama3",
+        "chat_template": "qwen3",
         "kd_trainer": True,
         "kd_ce_alpha": 0.1,
         "kd_alpha": 0.9,
@@ -81,7 +81,7 @@ class TestKnowledgeDistillation:
     @require_torch_2_5_1
     def test_llama_kd(self, temp_dir, kd_min_cfg):
         cfg = DictDefault(kd_min_cfg)
-        # pylint: disable=duplicate-code
+
         # write cfg to yaml file
         Path(temp_dir).mkdir(parents=True, exist_ok=True)
         with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
@@ -104,7 +104,6 @@ class TestKnowledgeDistillation:
             temp_dir + "/runs", "train/loss", 1.4, "Train Loss (%s) is too high"
         )
 
-    @pytest.mark.skip(reason="Chunked KD loss doesn't support PEFT/LoRA")
     @pytest.mark.parametrize(
         "load_in_8bit",
         [True, False],
@@ -120,10 +119,14 @@ class TestKnowledgeDistillation:
                 "lora_r": 16,
                 "lora_alpha": 32,
                 "lora_dropout": 0.0,
+                "lora_modules_to_save": ["embed_tokens", "lm_head"],
+                "lora_mlp_kernel": False,
+                "lora_qkv_kernel": False,
+                "lora_o_kernel": False,
             }
             | kd_min_cfg
         )
-        # pylint: disable=duplicate-code
+
         # write cfg to yaml file
         Path(temp_dir).mkdir(parents=True, exist_ok=True)
         with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:

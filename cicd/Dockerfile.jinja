@@ -1,6 +1,6 @@
 FROM axolotlai/axolotl-base:{{ BASE_TAG }}
 
-ENV TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
+ENV TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
 ENV AXOLOTL_EXTRAS="{{ AXOLOTL_EXTRAS }}"
 ENV AXOLOTL_ARGS="{{ AXOLOTL_ARGS }}"
 ENV CUDA="{{ CUDA }}"
@@ -9,7 +9,7 @@ ENV GITHUB_REF="{{ GITHUB_REF }}"
 ENV GITHUB_SHA="{{ GITHUB_SHA }}"
 ENV NIGHTLY_BUILD="{{ NIGHTLY_BUILD }}"
 ENV HF_HOME="{{ HF_HOME }}"
-ENV AXOLOTL_DATASET_PROCESSES="8"
+ENV AXOLOTL_DATASET_NUM_PROC="8"
 
 RUN apt-get update && \
     apt-get install -y --allow-change-held-packages vim curl nano libnccl2 libnccl-dev ibverbs-providers ibverbs-utils infiniband-diags librdmacm-dev librdmacm1 rdmacm-utils slurm-wlm
@@ -32,7 +32,7 @@ RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
         sed -i 's#^datasets.*#datasets @ git+https://github.com/huggingface/datasets.git@main#' requirements.txt; \
     fi
 
-RUN pip install packaging==23.2 setuptools==75.8.0
+RUN pip install packaging==23.2 setuptools==75.8.0 psutil
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         pip install --no-build-isolation -e .[deepspeed,flash-attn,ring-flash-attn,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
     else \

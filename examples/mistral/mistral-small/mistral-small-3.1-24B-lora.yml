@@ -1,0 +1,62 @@
+base_model: mistralai/Mistral-Small-3.1-24B-Instruct-2503
+processor_type: AutoProcessor
+
+# Enable to use mistral-common tokenizer
+tokenizer_use_mistral_common: true
+
+load_in_8bit: true
+
+# these 3 lines are needed for now to handle vision chat templates w images
+skip_prepare_dataset: true
+remove_unused_columns: false
+sample_packing: false
+
+# sample dataset below requires downloading image in advance
+# wget https://huggingface.co/datasets/Nanobit/text-vision-2k-test/resolve/main/African_elephant.jpg
+datasets:
+  - path: Nanobit/text-vision-2k-test
+    type: chat_template
+
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.01
+output_dir: ./outputs/out
+
+adapter: lora
+lora_model_dir:
+
+sequence_len: 2048
+pad_to_sequence_len: false
+
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 1
+micro_batch_size: 2
+num_epochs: 1
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: true
+fp16:
+tf32: true
+
+gradient_checkpointing: true
+logging_steps: 1
+flash_attention: true
+
+warmup_ratio: 0.1
+evals_per_epoch: 1
+saves_per_epoch: 1
+weight_decay: 0.0
+special_tokens:
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

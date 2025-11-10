@@ -16,8 +16,8 @@ import pandas as pd
 import torch
 import torch.distributed as dist
 import wandb
+import yaml
 from datasets import load_dataset
-from optimum.bettertransformer import BetterTransformer
 from tqdm import tqdm
 from transformers import (
     GenerationConfig,
@@ -28,8 +28,6 @@ from transformers import (
     TrainingArguments,
 )
 from transformers.trainer_utils import (
-    PREFIX_CHECKPOINT_DIR,
-    IntervalStrategy,
     SaveStrategy,
 )
 from trl.models import unwrap_model_for_generation
@@ -56,42 +54,6 @@ IGNORE_INDEX = -100
 LOG = get_logger(__name__)
 
 
-class SaveBetterTransformerModelCallback(
-    TrainerCallback
-):  # pylint: disable=too-few-public-methods
-    """Callback to save the BetterTransformer wrapped model"""
-
-    def on_step_end(
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        **kwargs,
-    ) -> TrainerControl:
-        # Save
-        if (
-            args.save_strategy == IntervalStrategy.STEPS
-            and args.save_steps > 0
-            and state.global_step % args.save_steps == 0
-        ):
-            control.should_save = True
-
-        if control.should_save:
-            checkpoint_folder = os.path.join(
-                args.output_dir,
-                f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}",
-            )
-
-            model = BetterTransformer.reverse(kwargs["model"])
-            model.save_pretrained(checkpoint_folder)
-            # FIXME - need to cleanup old checkpoints
-
-            # since we're saving here, we don't need the trainer loop to attempt to save too b/c
-            # the trainer will raise an exception since it can't save a BetterTransformer wrapped model
-            control.should_save = False
-        return control
-
-
 class LossWatchDogCallback(TrainerCallback):
     """Callback to track loss and stop training if loss is too high"""
 
@@ -103,7 +65,7 @@ class LossWatchDogCallback(TrainerCallback):
 
     def on_step_end(
         self,
-        args: TrainingArguments,  # pylint: disable=unused-argument
+        args: TrainingArguments,
         state: TrainerState,
         control: TrainerControl,
         **_kwargs,
@@ -126,7 +88,7 @@ class SaveModelOnFirstStepCallback(TrainerCallback):
 
     def on_step_end(
         self,
-        args: TrainingArguments,  # pylint: disable=unused-argument
+        args: TrainingArguments,
         state: TrainerState,
         control: TrainerControl,
         **_kwargs,
@@ -239,10 +201,10 @@ def bench_eval_callback_factory(trainer, tokenizer):
         def on_evaluate(
             self,
             args: AxolotlTrainingArguments,
-            state: TrainerState,  # pylint: disable=unused-argument
-            control: TrainerControl,  # pylint: disable=unused-argument
-            metrics: Dict[str, float],  # pylint: disable=unused-argument
-            **kwargs,  # pylint: disable=unused-argument
+            state: TrainerState,
+            control: TrainerControl,
+            metrics: Dict[str, float],
+            **kwargs,
         ):
             data_loader = trainer.get_bench_dataloader(
                 bench_dataset.remove_columns(["input", "subject", "output", "name"])
@@ -272,7 +234,7 @@ def bench_eval_callback_factory(trainer, tokenizer):
             # Extract results by subject.
             bench_name = bench_dataset["name"]
             bench_names: dict = {s: {"refs": [], "preds": []} for s in set(bench_name)}
-            for s, p, r in zip(bench_name, preds, refs):  # pylint: disable=invalid-name
+            for s, p, r in zip(bench_name, preds, refs, strict=False):
                 bench_names[s]["preds"].append(p)
                 bench_names[s]["refs"].append(r)
             barrier()
@@ -310,9 +272,7 @@ def bench_eval_callback_factory(trainer, tokenizer):
                 bench_scores = []
                 bench_refs = []
                 bench_preds = []
-                for (
-                    bench_name
-                ) in combined_bench_names:  # pylint: disable=consider-using-dict-items
+                for bench_name in combined_bench_names:
                     bench_score = accuracy.compute(
                         references=combined_bench_names[bench_name]["refs"],
                         predictions=combined_bench_names[bench_name]["preds"],
@@ -361,18 +321,18 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                 else:
                     try:
                         metrics[metric] = evaluate.load(metric)
-                    except Exception as exc:  # pylint: disable=broad-exception-caught
+                    except Exception as exc:
                         LOG.warning(f"{metric}: {exc.args}")
             return metrics
 
         def on_evaluate(
             self,
-            args: AxolotlTrainingArguments,  # pylint: disable=unused-argument
+            args: AxolotlTrainingArguments,
             state: TrainerState,
             control: TrainerControl,
-            train_dataloader,  # pylint: disable=unused-argument
+            train_dataloader,
             eval_dataloader,
-            **kwargs,  # pylint: disable=unused-argument
+            **kwargs,
         ):
             trainer.model_wrapped.eval()
 
@@ -380,7 +340,6 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                 self.cfg.device
             )  # Use this instead of trainer.model_wrapped.device as it may return cpu if fsdp offloaded
 
-            # pylint: disable=duplicate-code
             generation_config = GenerationConfig(
                 max_new_tokens=self.cfg.eval_max_new_tokens,
                 bos_token_id=tokenizer.bos_token_id,
@@ -411,9 +370,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                 try:
                     # Only pass the kwargs that are in the metric's feature list
                     metric_kwargs = {
-                        k: kwargs[k]
-                        for k in metric._feature_names()  # pylint: disable=protected-access
-                        if k in kwargs
+                        k: kwargs[k] for k in metric._feature_names() if k in kwargs
                     }
 
                     if isinstance(metric, Perplexity):
@@ -425,7 +382,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                         if "score" in metric_score
                         else metric_score["mean_score"]
                     )
-                except Exception:  # pylint: disable=broad-exception-caught
+                except Exception:
                     traceback.print_exc()
                     LOG.debug(
                         f"Failed to compute metric {metric.name} with kwargs {kwargs.keys()}"
@@ -473,6 +430,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                             batch_input_ids,
                             batch_labels,
                             batch_pos_ids,
+                            strict=False,
                         ):
                             if pos_ids is None:
                                 pos_ranges = [(0, len(input_ids_all) - 1)]
@@ -523,7 +481,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                         prediction_all_tokens = predictions["sequences"].cpu().tolist()
                         prediction_without_prompt_tokens_list = []
                         for prompt_token_ids, prediction_tokens in zip(
-                            prompt_token_ids_list, prediction_all_tokens
+                            prompt_token_ids_list, prediction_all_tokens, strict=False
                         ):
                             prediction_without_prompt_tokens = prediction_tokens[
                                 len(prompt_token_ids) :
@@ -561,12 +519,12 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
 
         def on_evaluate(
             self,
-            args: AxolotlTrainingArguments,  # pylint: disable=unused-argument
+            args: AxolotlTrainingArguments,
             state: TrainerState,
             control: TrainerControl,
-            train_dataloader,  # pylint: disable=unused-argument
+            train_dataloader,
             eval_dataloader,
-            **kwargs,  # pylint: disable=unused-argument
+            **kwargs,
         ):
             eval_table_size = self.cfg.eval_table_size
 
@@ -576,7 +534,6 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
             trainer.model.eval()
             device = torch.device(self.cfg.device)
 
-            # pylint: disable=duplicate-code
             generation_config = GenerationConfig(
                 max_new_tokens=self.cfg.eval_max_new_tokens,
                 bos_token_id=tokenizer.bos_token_id,
@@ -644,6 +601,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         batch_labels,
                         batch_pos_ids,
                         batch_logits,
+                        strict=False,
                     ):
                         if pos_ids is None:
                             pos_ranges = [(0, len(input_ids_all) - 1)]
@@ -697,7 +655,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                     prediction_all_tokens = predictions["sequences"].cpu().tolist()
                     prediction_without_prompt_tokens_list = []
                     for prompt_token_ids, prediction_tokens in zip(
-                        prompt_token_ids_list, prediction_all_tokens
+                        prompt_token_ids_list, prediction_all_tokens, strict=False
                     ):
                         prediction_without_prompt_tokens = prediction_tokens[
                             len(prompt_token_ids) :
@@ -716,7 +674,11 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         prediction_text,
                         pred_step_text,
                     ) in zip(
-                        prompt_texts, completion_texts, predicted_texts, pred_step_texts
+                        prompt_texts,
+                        completion_texts,
+                        predicted_texts,
+                        pred_step_texts,
+                        strict=False,
                     ):
                         table_data["id"].append(row_index)
                         table_data["Prompt"].append(prompt_text)
@@ -774,10 +736,10 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
 
     def on_train_begin(
         self,
-        args: AxolotlTrainingArguments,  # pylint: disable=unused-argument
-        state: TrainerState,  # pylint: disable=unused-argument
+        args: AxolotlTrainingArguments,
+        state: TrainerState,
         control: TrainerControl,
-        **kwargs,  # pylint: disable=unused-argument
+        **kwargs,
     ):
         if state.is_world_process_zero:
             try:
@@ -797,6 +759,37 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                     )
             except (FileNotFoundError, ConnectionError) as err:
                 LOG.warning(f"Error while saving Axolotl config to WandB: {err}")
+
+            try:
+                with open(self.axolotl_config_path, "r", encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f) or {}
+
+                chat_tpl = cfg.get("chat_template_jinja")
+                if chat_tpl:
+                    with NamedTemporaryFile(
+                        mode="w", delete=True, suffix=".jinja", prefix="chat_template_"
+                    ) as temp_ct_file:
+                        if (
+                            isinstance(chat_tpl, str)
+                            and os.path.exists(chat_tpl)
+                            and os.path.isfile(chat_tpl)
+                        ):
+                            copyfile(chat_tpl, temp_ct_file.name)
+                        else:
+                            temp_ct_file.write(str(chat_tpl))
+                            temp_ct_file.flush()
+
+                        artifact = wandb.Artifact(
+                            f"chat-template-{wandb.run.id}", type="jinja-template"
+                        )
+                        artifact.add_file(temp_ct_file.name)
+                        wandb.log_artifact(artifact)
+                        wandb.save(temp_ct_file.name)
+                        LOG.info(
+                            "The chat_template_jinja has been saved to the WandB run under files."
+                        )
+            except (FileNotFoundError, ConnectionError, yaml.YAMLError) as err:
+                LOG.warning(f"Error while saving chat_template_jinja to WandB: {err}")
 
             if args.deepspeed:
                 try:
@@ -845,19 +838,30 @@ class GCCallback(TrainerCallback):
         gc.collect()
 
     def on_train_begin(
-        self, args, state, control, **kwargs  # pylint: disable=unused-argument
+        self,
+        args,
+        state,
+        control,
+        **kwargs,
     ):
         self._gc()
 
     def on_step_begin(
-        self, args, state, control, **kwargs  # pylint: disable=unused-argument
+        self,
+        args,
+        state,
+        control,
+        **kwargs,
     ):
-        # pylint: disable=consider-using-in
         if self.next_gc_on_begin_step == state.global_step or state.global_step == 0:
             self._gc()
 
     def on_step_end(
-        self, args, state, control, **kwargs  # pylint: disable=unused-argument
+        self,
+        args,
+        state,
+        control,
+        **kwargs,
     ):
         if control.should_evaluate:
             # automatically GC before evals so the eval memory spike from the CEL doesn't OOM the trainer
@@ -879,7 +883,11 @@ class GCCallback(TrainerCallback):
                 self._gc()
 
     def on_epoch_end(
-        self, args, state, control, **kwargs  # pylint: disable=unused-argument
+        self,
+        args,
+        state,
+        control,
+        **kwargs,
     ):
         self._gc()
 
@@ -892,16 +900,12 @@ def colab_inference_post_train_callback(trainer: Trainer):
             self.gpu_name = torch.cuda.get_device_name(0)
             self.cfg = cfg
 
-        def on_train_end(
-            self, args, state, control, **kwargs
-        ):  # pylint: disable=unused-argument
+        def on_train_end(self, args, state, control, **kwargs):
             """
             handle T4 gpu, we need to convert attention to eager for inference
             """
             if "Tesla T4" in self.gpu_name and self.cfg.xformers_attention:
-                trainer.model.config._attn_implementation = (  # pylint: disable=protected-access
-                    "eager"
-                )
+                trainer.model.config._attn_implementation = "eager"
             trainer.model.gradient_checkpointing_disable()
             trainer.model.config.use_cache = True
             trainer.model.eval()

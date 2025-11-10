@@ -1,7 +1,5 @@
 """Module for customized trainers"""
 
-# pylint: disable=too-many-lines
-
 from __future__ import annotations
 
 import os
@@ -44,11 +42,19 @@ from axolotl.core.trainers.utils import (
 )
 from axolotl.utils import get_not_null
 from axolotl.utils.bench import get_gpu_memory_usage
-from axolotl.utils.distributed import is_main_process
+from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import is_distributed, is_main_process
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger(__name__)
+
+REDUCTION_FNS = {
+    "mean": torch.mean,
+    "min": torch.min,
+    "max": torch.max,
+    "sum": torch.sum,
+}
 
 
 class AxolotlTrainer(
@@ -65,6 +71,15 @@ class AxolotlTrainer(
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
     tag_names = ["axolotl"]
+    _axolotl_cfg: DictDefault | None = None
+
+    @property
+    def axolotl_cfg(self):
+        return self._axolotl_cfg
+
+    @axolotl_cfg.setter
+    def axolotl_cfg(self, cfg):
+        self._axolotl_cfg = cfg
 
     def __init__(
         self,
@@ -80,9 +95,10 @@ class AxolotlTrainer(
         self._signature_columns = None  # workaround for pylint
 
         super().__init__(*_args, **kwargs)
-
         self.train_data_collator = self.data_collator
-        self._stored_metrics = defaultdict(lambda: defaultdict(list))
+        self._stored_metrics = defaultdict(
+            lambda: defaultdict(lambda: {"values": [], "reduction": "mean"})
+        )
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
 
@@ -209,17 +225,6 @@ class AxolotlTrainer(
 
         data_collator = self.data_collator if is_training else self.eval_data_collator
 
-        if dataset.column_names and "length" in dataset.column_names:
-            dataset = dataset.remove_columns(["length"])
-        if (
-            dataset.column_names
-            and "position_ids" in dataset.column_names
-            and "attention_mask" in dataset.column_names
-            and self.args.sample_packing
-            and self.args.sample_packing_drop_attention_mask
-        ):
-            dataset = dataset.remove_columns(["attention_mask"])
-
         if isinstance(dataset, datasets.Dataset):
             if is_training:
                 if not self.args.sample_packing or self.args.pretraining:
@@ -278,6 +283,18 @@ class AxolotlTrainer(
         ):
             self.accelerator.even_batches = False
 
+        if dataset.column_names and "length" in dataset.column_names:
+            dataset = dataset.remove_columns(["length"])
+
+        if (
+            dataset.column_names
+            and "position_ids" in dataset.column_names
+            and "attention_mask" in dataset.column_names
+            and self.args.sample_packing
+            and self.args.sample_packing_drop_attention_mask
+        ):
+            dataset = dataset.remove_columns(["attention_mask"])
+
         dataloader = DataLoader(dataset, **dataloader_params)
 
         # Accelerator.free_memory() will destroy the references, so
@@ -285,9 +302,9 @@ class AxolotlTrainer(
         # fmt: off
         if dataloader_key is not None and self.args.dataloader_persistent_workers:
             if hasattr(self, "_eval_dataloaders"):
-                self._eval_dataloaders[dataloader_key] = dataloader  # type: ignore  # pylint: disable=access-member-before-definition
+                self._eval_dataloaders[dataloader_key] = dataloader  # type: ignore
             else:
-                self._eval_dataloaders = {dataloader_key: dataloader}  # pylint: disable=attribute-defined-outside-init
+                self._eval_dataloaders = {dataloader_key: dataloader}
         # fmt: on
 
         return self.accelerator.prepare(dataloader)
@@ -329,6 +346,27 @@ class AxolotlTrainer(
         #     outputs = model(**inputs)
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
+
+        # track number of tokens for tokens per second calculation
+        if self.args.include_tkps:
+            inputs_key = "labels" if "labels" in inputs else "input_ids"
+            num_tokens = (inputs[inputs_key] != -100).sum()
+            if is_distributed():
+                torch.distributed.all_reduce(
+                    num_tokens, op=torch.distributed.ReduceOp.SUM
+                )
+            if hasattr(self.state, "num_tokens"):
+                self.state.num_tokens = (
+                    self.state.num_tokens + (inputs[inputs_key] != -100).sum().cpu()
+                )
+            else:
+                self.state.num_tokens = (inputs[inputs_key] != -100).sum().cpu()
+
+            if hasattr(self.state, "total_tokens"):
+                self.state.total_tokens += num_tokens
+            else:
+                self.state.total_tokens = num_tokens
+
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
                 model,
@@ -343,6 +381,11 @@ class AxolotlTrainer(
             return_outputs=return_outputs,
             num_items_in_batch=num_items_in_batch,
         )
+
+    @override
+    def evaluate(self, *args, **kwargs):
+        LOG.info("Running evaluation step...")
+        return super().evaluate(*args, **kwargs)
 
     @staticmethod
     def orpo_concatenate_inputs(inputs, label_pad_token=-100, pad_token=0, device=None):
@@ -443,7 +486,7 @@ class AxolotlTrainer(
         model,
         inputs,
         return_outputs=False,
-        num_items_in_batch=None,  # pylint: disable=unused-argument
+        num_items_in_batch=None,
     ):
         concat_inputs = AxolotlTrainer.orpo_concatenate_inputs(
             inputs,
@@ -524,23 +567,10 @@ class AxolotlTrainer(
         accelerator_config = self.args.accelerator_config.to_dict()
         use_configured_state = accelerator_config.get("use_configured_state", False)
         if not use_configured_state:
-            AcceleratorState._reset_state(  # pylint: disable=protected-access
-                reset_partial_state=True
-            )
+            AcceleratorState._reset_state(reset_partial_state=True)
 
         super().create_accelerator_and_postprocess()
 
-        # now we need to put parallelism_config back on the PartialState since we rely on that info in other places
-        # PartialState().parallelism_config = self.accelerator.state.parallelism_config
-
-        if self.is_fsdp_enabled:
-            if (
-                "limit_all_gathers" in self.args.fsdp_config
-                and self.args.fsdp_config["limit_all_gathers"]
-            ):
-                self.accelerator.state.fsdp_plugin.limit_all_gathers = True
-
-    # pylint: disable=unused-argument
     def additional_accelerator_args(
         self, fp8: bool = False, enable_fsdp_float8_all_gather: bool = False, **kwargs
     ) -> dict[str, Any]:
@@ -573,29 +603,62 @@ class AxolotlTrainer(
         """
         # logs either has 'loss' or 'eval_loss'
         train_eval = "train" if "loss" in logs else "eval"
-        # Add averaged stored metrics to logs
-        for key, metrics in self._stored_metrics[train_eval].items():
-            logs[key] = torch.tensor(metrics).mean().item()
+
+        for key, metric_data in self._stored_metrics[train_eval].items():
+            values = torch.tensor(metric_data["values"])  # type: ignore[arg-type]
+            reduction_type = metric_data["reduction"]
+
+            fn = REDUCTION_FNS.get(reduction_type)
+            if fn is None:
+                raise NotImplementedError(
+                    "Metric reduction must be one of [mean, min, max, sum]"
+                )
+            logs[key] = round(fn(values).item(), 4)
 
         if is_main_process():
             # Add memory usage
             try:
                 active, allocated, reserved = get_gpu_memory_usage()
-                logs["memory/max_mem_active(gib)"] = round(active, 2)
-                logs["memory/max_mem_allocated(gib)"] = round(allocated, 2)
-                logs["memory/device_mem_reserved(gib)"] = round(reserved, 2)
+                logs["memory/max_active (GiB)"] = round(active, 2)
+                logs["memory/max_allocated (GiB)"] = round(allocated, 2)
+                logs["memory/device_reserved (GiB)"] = round(reserved, 2)
             except (ValueError, TypeError, FileNotFoundError):
                 pass
+
+        if self.args.include_tkps and train_eval == "train":
+            # each rank will log its own tokens per second
+            # for logging_steps > 1 we obtain a moving average of this metric
+            logs["tokens_per_second_per_gpu"] = round(
+                self.state.last_tokens_per_second.item() / self.args.logging_steps, 2
+            )
+            logs["total_tokens"] = int(self.state.total_tokens.item())
 
         del self._stored_metrics[train_eval]
 
         return super().log(logs, start_time)
 
     def store_metrics(
-        self, metrics: dict[str, float], train_eval: Literal["train", "eval"] = "train"
+        self,
+        metrics: dict[str, float] | dict[str, tuple[int | float, str]],
+        train_eval: Literal["train", "eval"] = "train",
+        reduction: Literal["mean", "min", "max", "sum"] = "mean",
     ) -> None:
+        """
+        Store metrics with specified reduction type.
+
+        Args:
+            metrics: Dictionary of metric names to values, or metric names to (value,
+                reduction_type) tuples.
+            train_eval: Whether this is for training or evaluation.
+        """
         for key, value in metrics.items():
-            self._stored_metrics[train_eval][key].append(value)
+            if isinstance(value, tuple):
+                value, _reduction = value  # type: ignore[assignment]
+            else:
+                value, _reduction = value, reduction
+
+            self._stored_metrics[train_eval][key]["values"].append(value)
+            self._stored_metrics[train_eval][key]["reduction"] = _reduction
 
     def _save_checkpoint(self, model, trial, **kwargs):
         # make sure the checkpoint dir exists, since trainer is flakey
@@ -662,6 +725,11 @@ class AxolotlTrainer(
                 LOG.info(
                     "Saving Trainer.data_collator.tokenizer by default as Trainer.processing_class is `None`"
                 )
-                self.data_collator.tokenizer.save_pretrained(output_dir)
+                save_jinja_files = True
+                if self.axolotl_cfg:
+                    save_jinja_files = self.axolotl_cfg.tokenizer_save_jinja_files
+                self.data_collator.tokenizer.save_pretrained(
+                    output_dir, save_jinja_files=save_jinja_files
+                )
             # Good practice: save your training arguments together with the trained model
             torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))

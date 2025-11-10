@@ -14,6 +14,7 @@ from peft import (
     PeftConfig,
     PeftMixedModel,
     PeftModel,
+    TaskType,
     get_peft_model,
 )
 from transformers import PreTrainedModel
@@ -28,14 +29,12 @@ LOG = get_logger(__name__)
 def setup_quantized_meta_for_peft(model: torch.nn.Module):
     """Replaces `quant_state.to` with a dummy function to prevent PEFT from moving `quant_state` to meta device"""
 
-    def temp_to_method(self, *args, **kwargs):  # pylint: disable=unused-argument
+    def temp_to_method(self, *args, **kwargs):
         return self
 
     for param in model.parameters():
         if isinstance(param, Params4bit):
-            param.quant_state._orig_to = (  # pylint: disable=protected-access
-                param.quant_state.to
-            )
+            param.quant_state._orig_to = param.quant_state.to
             param.quant_state.to = types.MethodType(temp_to_method, param.quant_state)
 
 
@@ -43,10 +42,8 @@ def setup_quantized_peft_meta_for_training(model: torch.nn.Module):
     """Replaces dummy `quant_state.to` method with the original function to allow training to continue"""
     for param in model.parameters():
         if isinstance(param, Params4bit) and hasattr(param.quant_state, "_orig_to"):
-            param.quant_state.to = (
-                param.quant_state._orig_to  # pylint: disable=protected-access
-            )
-            param.quant_state._orig_to = None  # pylint: disable=protected-access
+            param.quant_state.to = param.quant_state._orig_to
+            param.quant_state._orig_to = None
 
 
 def find_all_linear_names(model):
@@ -102,6 +99,17 @@ def load_lora(
         lora_config_kwargs["use_rslora"] = cfg.peft_use_rslora
     if cfg.peft_layer_replication:
         lora_config_kwargs["layer_replication"] = cfg.peft_layer_replication
+    if cfg.peft_trainable_token_indices:
+        lora_config_kwargs["trainable_token_indices"] = cfg.peft_trainable_token_indices
+
+    # Determine the correct PEFT task type
+    model_cls = type(model).__name__
+    if "SequenceClassification" in model_cls:
+        task_type = TaskType.SEQ_CLS
+    elif "TokenClassification" in model_cls:
+        task_type = TaskType.TOKEN_CLS
+    else:
+        task_type = TaskType.CAUSAL_LM
 
     lora_config = LoraConfig(
         r=cfg.lora_r,
@@ -114,7 +122,7 @@ def load_lora(
         fan_in_fan_out=cfg.lora_fan_in_fan_out,
         modules_to_save=cfg.lora_modules_to_save if cfg.lora_modules_to_save else None,
         bias="none",
-        task_type="CAUSAL_LM",
+        task_type=task_type,
         **lora_config_kwargs,
     )
 

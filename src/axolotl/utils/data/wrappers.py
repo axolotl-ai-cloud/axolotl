@@ -54,7 +54,6 @@ def handle_unknown_dataset_strategy(dataset_config: DictDefault) -> NoReturn:
     raise ValueError(error_message)
 
 
-# pylint: disable=too-many-return-statements
 def get_dataset_wrapper(
     dataset_config: DictDefault,
     tokenizer: PreTrainedTokenizer,
@@ -62,7 +61,7 @@ def get_dataset_wrapper(
     dataset_base_type: str | None,
     dataset: Dataset | IterableDataset,
     dataset_prompt_style: str | None = None,
-    processor: ProcessorMixin | None = None,  # pylint: disable=unused-argument
+    processor: ProcessorMixin | None = None,
 ) -> tuple[Dataset | IterableDataset, Prompter | None]:
     """Create an appropriate dataset wrapper and prompter based on dataset
     configuration.
@@ -81,7 +80,7 @@ def get_dataset_wrapper(
     """
     # Common parameters for dataset wrapping
     dataset_kwargs: dict[str, Any] = {
-        "process_count": cfg.dataset_processes,
+        "process_count": cfg.dataset_num_proc,
         "keep_in_memory": cfg.dataset_keep_in_memory is True,
     }
 

@@ -24,14 +24,16 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from transformers import (
-    TrainerCallback,
-)
+from transformers import TrainerCallback
 from transformers.trainer_pt_utils import AcceleratorConfig
 
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
-from axolotl.utils import is_comet_available, is_mlflow_available
+from axolotl.utils import (
+    is_comet_available,
+    is_mlflow_available,
+    is_opentelemetry_available,
+)
 from axolotl.utils.callbacks import (
     GCCallback,
     SaveAxolotlConfigtoWandBCallback,
@@ -44,7 +46,7 @@ from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 LOG = logging.getLogger(__name__)
 
 with suppress(ImportError):
-    import torch._dynamo  # pylint: disable=ungrouped-imports
+    import torch._dynamo
 
 
 class TrainerBuilderBase(abc.ABC):
@@ -136,6 +138,12 @@ class TrainerBuilderBase(abc.ABC):
             callbacks.append(
                 SaveAxolotlConfigtoCometCallback(self.cfg.axolotl_config_path)
             )
+        if self.cfg.use_otel_metrics and is_opentelemetry_available():
+            from axolotl.utils.callbacks.opentelemetry import (
+                OpenTelemetryMetricsCallback,
+            )
+
+            callbacks.append(OpenTelemetryMetricsCallback(self.cfg))
         if self.cfg.save_first_step:
             callbacks.append(SaveModelOnFirstStepCallback())
 
@@ -260,14 +268,14 @@ class TrainerBuilderBase(abc.ABC):
                 adam_kwargs["eps"] = training_args_kwargs.get("adam_epsilon")
 
             if self.cfg.optimizer == "muon":
-                from axolotl.contribs.mit.muon import (  # pylint: disable=no-name-in-module
+                from axolotl.contribs.mit.muon import (
                     MuonOptimizerFactory,
                 )
 
                 optimizer_cls = MuonOptimizerFactory
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "dion":
-                from axolotl.contribs.mit.dion import (  # pylint: disable=no-name-in-module
+                from axolotl.contribs.mit.dion import (
                     DionOptimizerFactory,
                 )
 
@@ -414,12 +422,8 @@ class TrainerBuilderBase(abc.ABC):
 
     def _configure_torch_compile(self, training_args_kwargs: dict):
         if self.cfg.torch_compile and getattr(torch, "_dynamo", None):
-            torch._dynamo.config.suppress_errors = (  # pylint: disable=protected-access
-                True
-            )
-            torch._dynamo.config.accumulated_cache_size_limit = (  # pylint: disable=protected-access
-                256
-            )
+            torch._dynamo.config.suppress_errors = True
+            torch._dynamo.config.accumulated_cache_size_limit = 256
             training_args_kwargs["torch_compile"] = self.cfg.torch_compile
             if self.cfg.torch_compile_backend:
                 training_args_kwargs["torch_compile_backend"] = (
@@ -441,7 +445,7 @@ class TrainerBuilderBase(abc.ABC):
             # don't use the HF gradient checkpointing, manually wrap
             training_args_kwargs["gradient_checkpointing"] = False
             training_args_kwargs["activation_offloading"] = True
-        elif self.cfg.gradient_checkpointing:
+        elif self.cfg.gradient_checkpointing is not None:
             training_args_kwargs["gradient_checkpointing"] = (
                 self.cfg.gradient_checkpointing
             )
@@ -497,6 +501,7 @@ class TrainerBuilderBase(abc.ABC):
             "dion_momentum",
             "dion_rank_fraction",
             "dion_rank_multiple_of",
+            "dataset_num_proc",
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
                 training_args_kwargs[arg] = getattr(self.cfg, arg)
@@ -516,11 +521,9 @@ class TrainerBuilderBase(abc.ABC):
                 self.cfg.eval_batch_size
             )
 
+        training_args_kwargs["include_tkps"] = self.cfg.include_tkps
         training_args_kwargs["max_steps"] = self.cfg.max_steps or total_num_steps or -1
         training_args_kwargs["num_train_epochs"] = self.cfg.num_epochs
-
-        if self.cfg.dataset_processes:
-            training_args_kwargs["dataset_num_proc"] = self.cfg.dataset_processes
 
         # max_length is not used in CausalTrainer
         if self.cfg.reward_model or self.cfg.rl:

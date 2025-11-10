@@ -47,9 +47,7 @@ def patch_create_accelerate_code_for_fp8(enable_fsdp_float8_all_gather: bool):
         create_code = get_create_accelerate_code()
     except OSError:
         return
-    Trainer._original_create_accelerator_and_postprocess = (  # pylint: disable=protected-access
-        create_code
-    )
+    Trainer._original_create_accelerator_and_postprocess = create_code
     create_code, _ = detab_code(create_code)
     if ORIGINAL_TRAINER_CODE not in create_code:
         return
@@ -72,12 +70,14 @@ def patch_create_accelerate_code_for_fp8(enable_fsdp_float8_all_gather: bool):
         if item in create_code:
             items_to_import.append(item)
 
-    exec(  # pylint: disable=exec-used  # nosec B102
+    exec(
         "from transformers.trainer import ("
         + ", ".join(x for x in items_to_import)
         + ")",
         globals(),
     )
-    exec(create_code, globals())  # pylint: disable=exec-used  # nosec B102
+    exec(create_code, globals())
     LOG.info("patching create_accelerator_and_postprocess to allow for overrides")
-    Trainer.create_accelerator_and_postprocess = fixed_create_accelerator_and_postprocess  # pylint: disable=protected-access  # pylint: disable=undefined-variable  # noqa: F821
+    Trainer.create_accelerator_and_postprocess = (
+        fixed_create_accelerator_and_postprocess
+    )

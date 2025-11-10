@@ -236,11 +236,14 @@ def _load_from_local_path(
         try:
             return load_from_disk(dataset_config.path)
         except FileNotFoundError:
-            load_dataset_kwargs["streaming"] = False
             return load_dataset(dataset_config.path, **load_dataset_kwargs)
     elif local_path.is_file():
         dataset_type = get_dataset_type(dataset_config)
-        load_dataset_kwargs["streaming"] = False
+
+        # For single file datasets, HF always creates only a "train" split
+        if dataset_type in ("json", "csv", "text"):
+            load_dataset_kwargs["split"] = "train"
+
         return load_dataset(
             dataset_type,
             data_files=dataset_config.path,
@@ -337,7 +340,7 @@ def generate_split_fingerprints(
     dataset: Dataset, val_set_size: int | float, seed: int
 ) -> tuple[str, str]:
     """Generate consistent fingerprints for train/test splits."""
-    fingerprint = dataset._fingerprint  # pylint: disable=protected-access
+    fingerprint = dataset._fingerprint
 
     train_hash_input = f"{fingerprint}|{val_set_size}|train|{seed}"
     test_hash_input = f"{fingerprint}|{val_set_size}|test|{seed}"
@@ -411,7 +414,7 @@ def save_preprocessed_dataset(
 ) -> None:
     """Save preprocessed dataset to disk and optionally push to the HF Hub."""
     prepared_ds_path = get_prepared_dataset_path(cfg, dataset_hash)
-    num_workers = cfg.dataset_processes or get_default_process_count()
+    num_workers = cfg.dataset_num_proc or get_default_process_count()
     if isinstance(dataset, IterableDataset):
         ds_from_iter = Dataset.from_generator(
             functools.partial(_generate_from_iterable_dataset, dataset),
@@ -497,7 +500,7 @@ def try_load_from_hub(
             token=cfg.hf_use_auth_token,
         )
         return dataset[split]
-    except Exception:  # pylint: disable=broad-except # nosec
+    except Exception:
         LOG.info("Unable to find prepared dataset in HuggingFace Hub")
         return None
 

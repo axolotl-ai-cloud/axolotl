@@ -1,7 +1,5 @@
 """Modal app to run axolotl GPU tests"""
 
-# pylint: disable=duplicate-code
-
 import os
 import pathlib
 import tempfile
@@ -59,15 +57,21 @@ VOLUME_CONFIG = {
 }
 
 N_GPUS = int(os.environ.get("N_GPUS", 1))
-GPU_CONFIG = f"L40S:{N_GPUS}"
+GPU_TYPE = os.environ.get("GPU_TYPE", "L40S")
+GPU_CONFIG = f"{GPU_TYPE}:{N_GPUS}"
 
 
 def run_cmd(cmd: str, run_folder: str):
     import subprocess  # nosec
 
     sp_env = os.environ.copy()
-    sp_env["AXOLOTL_DATASET_PROCESSES"] = "8"
+    sp_env["AXOLOTL_DATASET_NUM_PROC"] = "8"
 
     # Propagate errors from subprocess.
-    if exit_code := subprocess.call(cmd.split(), cwd=run_folder, env=sp_env):  # nosec
-        exit(exit_code)  # pylint: disable=consider-using-sys-exit
+    try:
+        exit_code = subprocess.call(cmd.split(), cwd=run_folder, env=sp_env)  # nosec
+        if exit_code:
+            print(f"Command '{cmd}' failed with exit code {exit_code}")
+            return exit_code
+    except Exception as e:  # pylint: disable=broad-except
+        print(f"Command '{cmd}' failed with exception {e}")

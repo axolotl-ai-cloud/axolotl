@@ -1,7 +1,5 @@
 """Click CLI definitions for various axolotl commands."""
 
-# pylint: disable=redefined-outer-name
-
 import os
 import subprocess  # nosec B404
 from typing import Literal, Optional
@@ -28,7 +26,7 @@ from axolotl.cli.utils import (
     launch_training,
 )
 from axolotl.integrations.lm_eval.cli import lm_eval
-from axolotl.utils import patch_optimized_env
+from axolotl.utils import set_pytorch_cuda_alloc_conf
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.config import AxolotlInputConfig
 
@@ -46,7 +44,7 @@ def cli():
     """Axolotl CLI - Train and fine-tune large language models"""
     print_axolotl_text_art()
     load_dotenv()
-    patch_optimized_env()
+    set_pytorch_cuda_alloc_conf()
 
 
 @cli.command()

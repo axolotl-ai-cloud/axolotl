@@ -2,6 +2,7 @@
 helper utils for tests
 """
 
+import importlib.util
 import os
 import shutil
 import tempfile
@@ -89,6 +90,18 @@ def require_torch_2_7_0(test_case):
     return unittest.skipUnless(is_min_2_7_0(), "test requires torch>=2.7.0")(test_case)
 
 
+def require_torch_2_8_0(test_case):
+    """
+    Decorator marking a test that requires torch >= 2.7.0
+    """
+
+    def is_min_2_8_0():
+        torch_version = version.parse(torch.__version__)
+        return torch_version >= version.parse("2.8.0")
+
+    return unittest.skipUnless(is_min_2_8_0(), "test requires torch>=2.8.0")(test_case)
+
+
 def require_torch_lt_2_6_0(test_case):
     """
     Decorator marking a test that requires torch < 2.6.0
@@ -107,12 +120,7 @@ def require_vllm(test_case):
     """
 
     def is_vllm_installed():
-        try:
-            import vllm  # pylint: disable=unused-import  # noqa: F401
-
-            return True
-        except ImportError:
-            return False
+        return importlib.util.find_spec("vllm") is not None
 
     return unittest.skipUnless(
         is_vllm_installed(), "test requires vllm to be installed"
@@ -125,16 +133,29 @@ def require_llmcompressor(test_case):
     """
 
     def is_llmcompressor_installed():
-        try:
-            import llmcompressor  # pylint: disable=unused-import  # noqa: F401
-
-            return True
-        except ImportError:
-            return False
+        return importlib.util.find_spec("llmcompressor") is not None
 
     return unittest.skipUnless(
         is_llmcompressor_installed(), "test requires llmcompressor to be installed"
     )(test_case)
+
+
+def requires_sm_ge_100(test_case):
+    is_sm_ge_100 = (
+        torch.cuda.is_available()
+        and torch.version.cuda
+        and torch.cuda.get_device_capability() >= (10, 0)
+    )
+    return unittest.skipUnless(is_sm_ge_100, "test requires sm>=100")(test_case)
+
+
+def requires_cuda_ge_8_9(test_case):
+    is_cuda_ge_8_9 = (
+        torch.cuda.is_available()
+        and torch.version.cuda
+        and torch.cuda.get_device_capability() >= (8, 9)
+    )
+    return unittest.skipUnless(is_cuda_ge_8_9, "test requires cuda>=8.9")(test_case)
 
 
 def is_hopper():
@@ -147,7 +168,11 @@ def require_hopper(test_case):
 
 
 def check_tensorboard(
-    temp_run_dir: str, tag: str, lt_val: float, assertion_err: str
+    temp_run_dir: str,
+    tag: str,
+    lt_val: float,
+    assertion_err: str,
+    rtol: float = 0.02,
 ) -> None:
     """
     helper function to parse and check tensorboard logs
@@ -155,8 +180,9 @@ def check_tensorboard(
     tb_log_path = most_recent_subdir(temp_run_dir)
     event_file = os.path.join(tb_log_path, sorted(os.listdir(tb_log_path))[0])
     reader = SummaryReader(event_file)
-    df = reader.scalars  # pylint: disable=invalid-name
-    df = df[(df.tag == tag)]  # pylint: disable=invalid-name
+    df = reader.scalars
+    df = df[(df.tag == tag)]
+    lt_val = (1 + rtol) * lt_val
     if "%s" in assertion_err:
         assert df.value.values[-1] < lt_val, assertion_err % df.value.values[-1]
     else:

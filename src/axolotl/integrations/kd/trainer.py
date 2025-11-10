@@ -21,7 +21,6 @@ from axolotl.core.trainers.base import AxolotlTrainer
 from .kernels.liger import LigerFusedLinearKLTopKLogprobLoss
 
 
-# pylint: disable=too-many-ancestors
 class AxolotlKDTrainer(AxolotlTrainer):
     """
     Custom trainer subclass for Knowledge Distillation (KD)
@@ -30,7 +29,8 @@ class AxolotlKDTrainer(AxolotlTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model_accepts_loss_kwargs = True
-        self.model._loss_function = LigerFusedLinearKLTopKLogprobLoss(
+
+        loss_fn = LigerFusedLinearKLTopKLogprobLoss(
             self.args.kd_ce_alpha,  # hard label loss
             self.args.kd_alpha,  # kd loss
             self.args.kd_temperature,
@@ -38,6 +38,14 @@ class AxolotlKDTrainer(AxolotlTrainer):
             compute_ce_loss=bool(self.args.kd_ce_alpha),
             normalize_topk=self.args.kd_normalize_topk,
         )
+        target = self.model
+
+        # Unwrap PEFT wrapper
+        if hasattr(target, "get_base_model"):
+            target = target.get_base_model()
+
+        # Set on the actual model instance
+        target._loss_function = loss_fn
 
     def _set_signature_columns_if_needed(self):
         super()._set_signature_columns_if_needed()

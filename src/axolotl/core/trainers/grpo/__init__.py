@@ -52,6 +52,7 @@ class GRPOStrategy:
             if trl.vllm_mode:
                 grpo_args_kwargs["vllm_mode"] = trl.vllm_mode
             if trl.vllm_mode == "colocate":
+                grpo_args_kwargs["vllm_enable_sleep_mode"] = trl.vllm_enable_sleep_mode  # type: ignore[attr-defined]
                 grpo_args_kwargs["vllm_gpu_memory_utilization"] = (
                     vllm_cfg.gpu_memory_utilization
                 )
@@ -125,12 +126,13 @@ class GRPOStrategy:
         if trl.use_liger_loss is not None:
             grpo_args_kwargs["use_liger_loss"] = trl.use_liger_loss
 
+        if trl.rollout_func:
+            grpo_args_kwargs["rollout_func"] = cls.get_rollout_func(trl.rollout_func)
+
         return grpo_args_kwargs
 
     @classmethod
-    def set_trainer_args(
-        cls, cfg: DictDefault
-    ) -> list[Any]:  # pylint: disable=unused-argument
+    def set_trainer_args(cls, cfg: DictDefault) -> list[Any]:
         trainer_args = []
         if cfg.trl and cfg.trl.reward_funcs:
             reward_funcs = []
@@ -151,7 +153,7 @@ class GRPOStrategy:
         return trainer_kwargs
 
     @classmethod
-    def get_collator(cls, *args, **kwargs):  # pylint: disable=unused-argument
+    def get_collator(cls, *args, **kwargs):
         # No data collation is needed in GRPO, handled by trl's trainer __init__
         return None
 
@@ -202,3 +204,32 @@ class GRPOStrategy:
                 raise ValueError(
                     f"Reward function {reward_func_fqn} not found."
                 ) from exc
+
+    @classmethod
+    def get_rollout_func(cls, rollout_func_fqn: str):
+        """
+        Returns the rollout function from the given fully qualified name.
+
+        Args:
+            rollout_func_fqn (str): Fully qualified name of the rollout function
+                                    (e.g. my_module.my_rollout_func)
+
+        Returns:
+            Callable rollout function
+        """
+        try:
+            rollout_func_module_name = rollout_func_fqn.split(".")[-1]
+            rollout_func_module = importlib.import_module(
+                ".".join(rollout_func_fqn.split(".")[:-1])
+            )
+            rollout_func = getattr(rollout_func_module, rollout_func_module_name)
+
+            if not callable(rollout_func):
+                raise ValueError(
+                    f"Rollout function {rollout_func_fqn} must be callable"
+                )
+
+            return rollout_func
+
+        except ModuleNotFoundError as exc:
+            raise ValueError(f"Rollout function {rollout_func_fqn} not found.") from exc

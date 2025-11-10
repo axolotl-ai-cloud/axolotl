@@ -66,6 +66,7 @@ fsdp_config:
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
   fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
   fsdp_state_dict_type: FULL_STATE_DICT
+  # fsdp_cpu_offload_pin_memory: false  # uncomment to enable swap memory usage when RAM is insufficient
 special_tokens:
 
 # save_first_step: true  # uncomment this to validate checkpoint saving works with your config

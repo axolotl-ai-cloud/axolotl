@@ -17,7 +17,13 @@ def is_comet_available():
     return importlib.util.find_spec("comet_ml") is not None
 
 
-# pylint: disable=duplicate-code
+def is_opentelemetry_available():
+    return (
+        importlib.util.find_spec("opentelemetry") is not None
+        and importlib.util.find_spec("prometheus_client") is not None
+    )
+
+
 def get_pytorch_version() -> tuple[int, int, int]:
     """
     Get Pytorch version as a tuple of (major, minor, patch).
@@ -43,15 +49,6 @@ def set_pytorch_cuda_alloc_conf():
             os.environ["PYTORCH_CUDA_ALLOC_CONF"] = (
                 "expandable_segments:True,roundup_power2_divisions:16"
             )
-
-
-def patch_optimized_env():
-    """
-    Patch environment variables to improve VRAM usage and increase download speed
-    """
-    if os.getenv("HF_HUB_ENABLE_HF_TRANSFER") is None:
-        os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
-    set_pytorch_cuda_alloc_conf()
 
 
 def get_not_null(value, default=None):
