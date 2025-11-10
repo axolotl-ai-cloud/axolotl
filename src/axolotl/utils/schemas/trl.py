@@ -173,3 +173,9 @@ class TRLConfig(BaseModel):
             "description": "Enable sleep mode for vLLM to offload VRAM when idle"
         },
     )
+    rollout_func: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Path to custom rollout function. Must be importable from current dir."
+        },
+    )

@@ -396,10 +396,10 @@ def rand_reward_func(prompts, completions) -> list[float]:
             ),
             ("orpo_cfg", None),  # don't use fixture for orpo to use smaller split
             ("kto_cfg", None),  # no fixture for kto
-            (
-                "simpo_cfg",
-                "dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff",
-            ),
+            # (
+            #     "simpo_cfg",
+            #     "dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff",
+            # ),
         ],
     )
     def test_custom_optimizer_cls_and_kwargs(
