@@ -42,7 +42,6 @@ lr_scheduler: cosine
 learning_rate: 0.0002
 
 bfloat16: true
-bf16: true
 fp16:
 tf32: false
 

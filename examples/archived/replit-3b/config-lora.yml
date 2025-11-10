@@ -33,7 +33,7 @@ optimizer:
 torchdistx_path:
 lr_scheduler:
 learning_rate: 0.00001
-bf16: auto
+bfloat16: auto
 tf32: true
 gradient_checkpointing:
 resume_from_checkpoint:

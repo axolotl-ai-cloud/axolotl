@@ -42,7 +42,7 @@ optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
-bf16: auto
+bfloat16: auto
 tf32: false
 
 gradient_checkpointing: true

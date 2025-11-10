@@ -35,7 +35,7 @@ optimizer: adamw_torch_fused
 lr_scheduler: constant_with_warmup
 learning_rate: 2e-6
 
-bf16: true
+bfloat16: true
 tf32: true
 
 logging_steps: 1

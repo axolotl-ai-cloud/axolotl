@@ -46,7 +46,7 @@ torchdistx_path:
 lr_scheduler: cosine
 lr_quadratic_warmup: true
 learning_rate: 0.000017
-bf16: false
+bfloat16: false
 fp16: false
 float16: true
 tf32: true

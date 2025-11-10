@@ -48,7 +48,7 @@ cosine_constant_lr_ratio: 0
 cosine_min_lr_ratio: 1.0
 learning_rate: 2e-5
 save_only_model: true
-bf16: true
+bfloat16: true
 
 resume_from_checkpoint:
 logging_steps: 1

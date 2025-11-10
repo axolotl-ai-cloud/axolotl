@@ -37,7 +37,7 @@ optimizer: adamw_torch_fused  # 8bit optimizers do not work with FSDP2 offload
 lr_scheduler: constant_with_warmup
 learning_rate: 2e-5
 
-bf16: true
+bfloat16: true
 tf32: true
 
 flash_attention: true

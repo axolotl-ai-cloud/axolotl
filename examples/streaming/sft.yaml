@@ -32,7 +32,7 @@ warmup_ratio: 0.1
 weight_decay: 0.0
 
 # Precision and performance
-bf16: auto
+bfloat16: auto
 tf32: true
 
 # Logging and checkpointing
