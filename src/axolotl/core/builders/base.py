@@ -196,9 +196,9 @@ class TrainerBuilderBase(abc.ABC):
     ):
         warmup_steps = 0
         warmup_ratio = 0.0
-        if self.cfg.warmup_steps:
+        if self.cfg.warmup_steps is not None:
             warmup_steps = self.cfg.warmup_steps
-        elif self.cfg.warmup_ratio:
+        elif self.cfg.warmup_ratio is not None:
             if total_num_steps:
                 warmup_steps = max(int(self.cfg.warmup_ratio * total_num_steps), 0)
             else:
