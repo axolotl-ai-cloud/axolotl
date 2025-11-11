@@ -30,7 +30,6 @@ Config keys
 - moe_afb_warmup_steps: delay before applying updates. Default: 0.
 - moe_bias_sync_group: reduction group for counts, 'world' (DP) or 'ep' (expert-parallel). Default: world.
 - expert_parallel_size: number of ranks per expert-parallel group when using `moe_bias_sync_group: ep`. Defaults to 1 (world).
-- moe_afb_telemetry_interval: emit router telemetry every N optimizer steps (defaults to `logging_steps` when unset).
 
 Compatibility
 - Targeted families: Mixtral, Qwen3-MoE, Bailing/Ring 2.0, and Llama 4 text MoE layers.
@@ -38,7 +37,7 @@ Compatibility
 
 Notes
 - If you also enable Liger’s aux-loss paths, the plugin neutralizes aux loss when aux-free is on.
-- Telemetry: logs per-layer min/mean/max token loads, `|bias| max`, and bias sign flip fraction at the configured interval.
+- Telemetry: logs per-layer min/mean/max token loads, `|bias| max`, and bias sign flip fraction using the Trainer’s `logging_steps` cadence.
 - Sample packing: packed batches are compatible with aux-free routing. Because load counts are accumulated on-device per expert before reduction, packing tends to smooth token histograms and reduce bias oscillation. Keep `pad_to_sequence_len: true` when packing to preserve the target token budget per expert.
 
 Telemetry metrics
@@ -47,5 +46,5 @@ Telemetry metrics
 - `moe_afb/l{idx}_bias_sign_flip_frac`: fraction of experts whose bias sign changed since the previous step (simple oscillation indicator).
 
 Usage tips
-- Leave `moe_afb_telemetry_interval` unset to log on the Trainer’s `logging_steps`. Increase the interval for large jobs to reduce log volume.
+- Increase `logging_steps` if router telemetry becomes noisy for large jobs—the plugin follows the Trainer’s logging cadence.
 - Compare aux-free vs. aux-loss load metrics by plotting the `load_*` series; aux-free typically tightens min/max spread without the auxiliary loss term.
