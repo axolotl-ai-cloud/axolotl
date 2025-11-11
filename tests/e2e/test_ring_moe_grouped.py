@@ -9,7 +9,6 @@ import json
 import os
 import random
 import shutil
-os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
 import tempfile
 import unittest
 import importlib
