@@ -190,42 +190,6 @@ class PatchManager:
 
             apply_mistral_tokenizer_image_patch()
 
-        if self.cfg.model_config_type == "kimi_linear":
-            tokenizer_for_class_loading = AutoTokenizer.from_pretrained(
-                self.cfg.tokenizer_config, trust_remote_code=True
-            )
-            tokenizer_class = tokenizer_for_class_loading.__class__
-            del tokenizer_for_class_loading
-
-            def patched_apply_chat_template(
-                self,
-                conversation,
-                tools: Optional[list[dict]] = None,
-                tokenize: bool = True,  # <-- FIXED DEFAULT
-                add_generation_prompt: bool = False,  # <-- FIXED DEFAULT
-                **kwargs,
-            ):
-                """
-                A patched version of apply_chat_template with corrected defaults and no
-                external dependencies like deep_sort_dict.
-                """
-                # The line `tools = deep_sort_dict(tools)` has been removed.
-                # Now we just call the superclass method, passing all arguments along.
-                return super(tokenizer_class, self).apply_chat_template(
-                    conversation=conversation,
-                    tools=tools,
-                    tokenize=tokenize,
-                    add_generation_prompt=add_generation_prompt,
-                    **kwargs,
-                )
-
-            tokenizer_class.apply_chat_template = patched_apply_chat_template
-
-            print(
-                f"Successfully patched 'apply_chat_template' on class '{tokenizer_class.__name__}' "
-                "with new defaults (tokenize=True, add_generation_prompt=False)."
-            )
-
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
         if self.cfg.fp8:
