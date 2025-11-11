@@ -6,7 +6,7 @@ unbiased logits for mixture weights and per-expert biases for top-k selection.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Any
 
 import torch
 import torch.distributed as dist
@@ -29,22 +29,17 @@ LOG = get_logger(__name__)
 
 
 class MoeAuxFreeBiasUpdateCallback(TrainerCallback):
-    """Post-step callback to update aux-free biases from accumulated expert counts.
-
-    Note: The current revision expects per-layer counts to be accumulated on each
-    MoE layer as a buffer named `_afb_counts` during forward (to be added with
-    routing patches in a follow-up).
-    """
+    """Post-step callback to update aux-free biases from accumulated expert counts."""
 
     def __init__(
         self,
         shim: AuxFreeShim,
         layer_modules: list[torch.nn.Module],
-        telemetry_interval: Optional[int] = None,
+        trainer: Any,
     ):
         self.shim = shim
         self.layer_modules = layer_modules
-        self.telemetry_interval = telemetry_interval
+        self.trainer = trainer
         self._prev_bias_sign: dict[int, torch.Tensor] = {}
         self._telemetry_buffer: dict[int, dict[str, float]] = {}
 
@@ -71,17 +66,14 @@ class MoeAuxFreeBiasUpdateCallback(TrainerCallback):
             # reset step counts
             counts.zero_()
 
-        if self._should_log(args, state):
-            if self._telemetry_buffer:
-                if not hasattr(state, "log_history"):
-                    state.log_history = []
-                log_entry = {"step": state.global_step}
-                for layer_idx, metrics in sorted(self._telemetry_buffer.items()):
-                    prefix = f"moe_afb/l{layer_idx}_"
-                    for key, value in metrics.items():
-                        log_entry[f"{prefix}{key}"] = value
-                state.log_history.append(log_entry)
-                control.should_log = True
+        if self._should_log(args, state) and self._telemetry_buffer:
+            logs: dict[str, float] = {}
+            for layer_idx, metrics in sorted(self._telemetry_buffer.items()):
+                prefix = f"moe_afb/l{layer_idx}_"
+                for key, value in metrics.items():
+                    logs[f"{prefix}{key}"] = value
+            if logs and hasattr(self.trainer, "log"):
+                self.trainer.log(logs)
             self._telemetry_buffer.clear()
         return control
 
@@ -123,15 +115,14 @@ class MoeAuxFreeBiasUpdateCallback(TrainerCallback):
         }
 
     def _should_log(self, args, state) -> bool:
-        interval = (
-            self.telemetry_interval
-            if self.telemetry_interval is not None and self.telemetry_interval > 0
-            else getattr(args, "logging_steps", 0)
-        )
-        interval = max(1, int(interval)) if interval else 0
-        if interval == 0:
+        interval = getattr(args, "logging_steps", 0)
+        if not interval:
             return False
-        return state.global_step % interval == 0
+        try:
+            interval = max(1, int(interval))
+        except (TypeError, ValueError):
+            return False
+        return interval > 0 and state.global_step % interval == 0
 
 
 class AuxFreeMoEPlugin(BasePlugin):
@@ -165,14 +156,12 @@ class AuxFreeMoEPlugin(BasePlugin):
         bias_cap = cfg.moe_bias_cap if cfg.moe_bias_cap is not None else 2.0
         warmup = cfg.moe_afb_warmup_steps if cfg.moe_afb_warmup_steps is not None else 0
         sync_group = cfg.moe_bias_sync_group if cfg.moe_bias_sync_group else "world"
-        telemetry_interval = getattr(cfg, "moe_afb_telemetry_interval", None)
         af_cfg = AuxFreeConfig(
             rate=rate,
             momentum=momentum,
             bias_cap=bias_cap,
             warmup_steps=warmup,
             sync_group=sync_group,
-            telemetry_interval=telemetry_interval,
         )
 
         # Discover layers to count the number and experts for state sizing
@@ -249,7 +238,7 @@ class AuxFreeMoEPlugin(BasePlugin):
         cb = MoeAuxFreeBiasUpdateCallback(
             self._shim,
             layers,
-            telemetry_interval=self._shim.state.cfg.telemetry_interval,
+            trainer,
         )
         LOG.info("AuxFreeMoE: registering post-step bias update callback")
         return [cb]

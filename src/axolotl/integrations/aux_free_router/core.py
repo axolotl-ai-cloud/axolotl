@@ -17,7 +17,6 @@ class AuxFreeConfig:
     bias_cap: float = 2.0
     warmup_steps: int = 0
     sync_group: str = "world"  # or "ep"
-    telemetry_interval: Optional[int] = None
 
 
 class AuxFreeState:

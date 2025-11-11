@@ -52,7 +52,6 @@ class TestLlama4MoeAuxFree(unittest.TestCase):
                 "moe_update_rate": 0.01,
                 "moe_update_momentum": 0.9,
                 "moe_bias_cap": 2.0,
-                "moe_afb_telemetry_interval": 1,
             }
         )
 
