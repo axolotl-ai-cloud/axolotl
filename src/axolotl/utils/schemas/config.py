@@ -1065,6 +1065,27 @@ class AxolotlInputConfig(
                     )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_sageattn_wo_sample_packing(cls, data):
+        if (not data.get("sample_packing", False)) and data.get("sage_attention"):
+            if not data.get("pad_to_sequence_len", False):
+                LOG.warning(
+                    "We recommend turning on `pad_to_sequence_len` for SageAttention without packing."
+                    "This is because there has been signs that the loss explodes after a few steps."
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_sageattn_fft(cls, data):
+        if (not data.get("adapter", False)) and data.get("sage_attention"):
+            LOG.warning(
+                "We found loss to drop to 0 with SageAttention full finetuning."
+                "Please observe the loss, otherwise switch to LoRA/QLoRA or another attention method."
+            )
+        return data
+
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """wrapper to valdiate GPU capabilities with the configured options"""
@@ -1109,17 +1130,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 "This may work on H100s."
             )
 
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_sageattn_wo_sample_packing(cls, data):
-        if (not data.get("sample_packing", False)) and data.get("sage_attention"):
-            if not data.get("pad_to_sequence_len", False):
-                LOG.warning(
-                    "We recommend turning on `pad_to_sequence_len` for SageAttention without packing."
-                    "This is because there has been signs that the loss explodes after a few steps."
-                )
         return data
 
     @model_validator(mode="before")
