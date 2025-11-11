@@ -1,3 +1,10 @@
+"""
+Adapted Kimi-Linear modeling to enable MoE differentiable.
+
+Source: https://huggingface.co/moonshotai/Kimi-Linear-48B-A3B-Instruct/blob/main/modeling_kimi.py
+Revision: 6e163f3
+"""
+
 import math
 from collections.abc import Callable
 from typing import Any, List, Optional, Tuple, Union
@@ -38,7 +45,7 @@ except ImportError as err:
         "Plese run `pip uninstall fla-core flash-linear-attention -y && pip install git+https://github.com/fla-org/flash-linear-attention@v0.4.0`"
     ) from err
 
-from .configuration_kimi import KimiLinearConfig
+from axolotl.monkeypatch.models.kimi_linear.configuration_kimi import KimiLinearConfig
 
 assert version.parse(transformers.__version__) >= version.parse("4.56.0"), (
     "Please upgrade transformers to >= 4.56.0"
