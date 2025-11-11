@@ -12,15 +12,6 @@ chat_template: phi_3
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_test
     type: chat_template
-    field_messages: messages
-    message_property_mappings:
-      role: role
-      content: content
-    roles:
-      user:
-        - user
-      assistant:
-        - assistant
 
 dataset_prepared_path:
 val_set_size: 0.05
@@ -28,7 +19,7 @@ output_dir: ./outputs/lora-out
 
 sequence_len: 4096
 sample_packing: false
-pad_to_sequence_len: true
+
 
 adapter: lora
 lora_model_dir:
@@ -59,7 +50,9 @@ gradient_checkpointing: true
 resume_from_checkpoint:
 logging_steps: 1
 
-warmup_steps: 10
+warmup_ratio: 0.1
 evals_per_epoch: 4
 saves_per_epoch: 4
 weight_decay: 0.0
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

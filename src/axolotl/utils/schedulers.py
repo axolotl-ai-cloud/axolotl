@@ -2,7 +2,9 @@
 
 import math
 from functools import partial
+from typing import Sequence
 
+from torch import Tensor
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR, LRScheduler
 
@@ -44,8 +46,10 @@ class RexLR(LRScheduler):
 
         # Ensure each parameter group has an "initial_lr" key to avoid issues when resuming.
         for group in optimizer.param_groups:
-            group.setdefault("initial_lr", group["lr"])
-
+            initial_lr = group["lr"]
+            if isinstance(initial_lr, Tensor):
+                initial_lr = initial_lr.clone()
+            group.setdefault("initial_lr", initial_lr)
         # Pass self.last_step as last_epoch to the parent.
         super().__init__(optimizer, last_epoch=self.last_step)
 
@@ -103,9 +107,7 @@ class InterpolatingLogScheduler(LRScheduler):
         self.num_steps = num_steps
         self.min_lr = min_lr
         self.max_lr = max_lr
-        self.q = (max_lr / min_lr) ** (  # pylint: disable=invalid-name
-            1 / (num_steps - 1)
-        )
+        self.q = (max_lr / min_lr) ** (1 / (num_steps - 1))
         super().__init__(optimizer, last_epoch)
 
     def get_lr(self):
@@ -292,3 +294,49 @@ def get_cosine_schedule_with_warmup_decay_constant(
         num_cycles=num_cycles,
     )
     return LambdaLR(optimizer, lr_lambda, last_epoch)
+
+
+class JaggedLRRestartScheduler(LRScheduler):
+    """Wraps another scheduler to apply per-lora-restart learning rate warmups."""
+
+    def __init__(
+        self,
+        optimizer: Optimizer,
+        inner_schedule: LRScheduler,
+        jagged_restart_steps: int,
+        jagged_restart_warmup_steps: int,
+        jagged_restart_anneal_steps: int = 1,
+        min_lr_scale: float = 0.001,
+    ) -> None:
+        self.inner_schedule = inner_schedule
+        self.restarts_steps = jagged_restart_steps
+        self.warmup_steps = jagged_restart_warmup_steps
+        self.anneal_steps = jagged_restart_anneal_steps
+        self.min_lr_scale = min_lr_scale
+        super().__init__(optimizer, inner_schedule.last_epoch)
+
+    def get_lr(self) -> float | Sequence[float]:
+        self.inner_schedule.last_epoch = self.last_epoch
+
+        original = self.inner_schedule.get_lr()
+        step = self.last_epoch
+
+        if step < self.restarts_steps - self.anneal_steps:
+            scale = 1
+        else:
+            per_restart_progress = step % self.restarts_steps
+            if per_restart_progress < self.warmup_steps:
+                cycle_t = min(1.0, (per_restart_progress) / self.warmup_steps)
+            elif per_restart_progress > (self.restarts_steps - self.anneal_steps):
+                cycle_t = min(
+                    1.0,
+                    (self.restarts_steps - per_restart_progress) / self.anneal_steps,
+                )
+            else:
+                cycle_t = 1
+            scale = cycle_t * (1 - self.min_lr_scale) + self.min_lr_scale
+
+        if isinstance(original, Sequence):
+            return [lr * scale for lr in original]
+
+        return original * scale

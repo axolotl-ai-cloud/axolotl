@@ -9,6 +9,7 @@ from transformers.utils.import_utils import is_torch_mps_available
 
 from axolotl.loaders import ModelLoader
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import _get_parallel_config_kwargs
 
 
 class TestModelsUtils:
@@ -16,7 +17,7 @@ class TestModelsUtils:
 
     def setup_method(self) -> None:
         # load config
-        self.cfg = DictDefault(  # pylint: disable=attribute-defined-outside-init
+        self.cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "model_type": "AutoModelForCausalLM",
@@ -29,20 +30,16 @@ class TestModelsUtils:
                 "device_map": "auto",
             }
         )
-        self.tokenizer = MagicMock(  # pylint: disable=attribute-defined-outside-init
-            spec=PreTrainedTokenizerBase
-        )
-        self.inference = False  # pylint: disable=attribute-defined-outside-init
-        self.reference_model = True  # pylint: disable=attribute-defined-outside-init
+        self.tokenizer = MagicMock(spec=PreTrainedTokenizerBase)
+        self.inference = False
+        self.reference_model = True
 
         # init ModelLoader
-        self.model_loader = (  # pylint: disable=attribute-defined-outside-init
-            ModelLoader(
-                cfg=self.cfg,
-                tokenizer=self.tokenizer,
-                inference=self.inference,
-                reference_model=self.reference_model,
-            )
+        self.model_loader = ModelLoader(
+            cfg=self.cfg,
+            tokenizer=self.tokenizer,
+            inference=self.inference,
+            reference_model=self.reference_model,
         )
 
     def test_set_device_map_config(self):
@@ -50,7 +47,7 @@ class TestModelsUtils:
         device_map = self.cfg.device_map
         if is_torch_mps_available():
             device_map = "mps"
-        # pylint: disable=protected-access
+
         self.model_loader._set_device_map_config()
         if is_deepspeed_zero3_enabled():
             assert "device_map" not in self.model_loader.model_kwargs
@@ -77,23 +74,32 @@ class TestModelsUtils:
         self.cfg.gptq = gptq
         self.cfg.adapter = adapter
 
-        # pylint: disable=protected-access
         self.model_loader._set_quantization_config()
         if "quantization_config" in self.model_loader.model_kwargs or self.cfg.gptq:
             assert not (
                 hasattr(self.model_loader.model_kwargs, "load_in_8bit")
                 and hasattr(self.model_loader.model_kwargs, "load_in_4bit")
             )
-        elif load_in_8bit and self.cfg.adapter is not None:
-            assert self.model_loader.model_kwargs["load_in_8bit"]
-        elif load_in_4bit and self.cfg.adapter is not None:
-            assert self.model_loader.model_kwargs["load_in_4bit"]
 
-        if (self.cfg.adapter == "qlora" and load_in_4bit) or (
-            self.cfg.adapter == "lora" and load_in_8bit
-        ):
-            assert self.model_loader.model_kwargs.get(
-                "quantization_config", BitsAndBytesConfig
+        if self.cfg.adapter == "qlora" and load_in_4bit:
+            assert isinstance(
+                self.model_loader.model_kwargs.get("quantization_config"),
+                BitsAndBytesConfig,
+            )
+
+            assert (
+                self.model_loader.model_kwargs["quantization_config"]._load_in_4bit
+                is True
+            )
+        if self.cfg.adapter == "lora" and load_in_8bit:
+            assert isinstance(
+                self.model_loader.model_kwargs.get("quantization_config"),
+                BitsAndBytesConfig,
+            )
+
+            assert (
+                self.model_loader.model_kwargs["quantization_config"]._load_in_8bit
+                is True
             )
 
     def test_message_property_mapping(self):
@@ -171,3 +177,42 @@ class TestModelsUtils:
                 message_property_mappings={"content": "different_content"},
             )
         assert "Conflicting message content fields" in str(exc_info.value)
+
+    @pytest.mark.parametrize(
+        "world_size, tensor_parallel_size, context_parallel_size, dp_shard_size, dp_replicate_size, is_fsdp, expected",
+        [
+            (16, 2, 2, 2, 2, True, (2, 2, 2, 2)),
+            (16, 1, 1, None, None, True, (0, 0, 16, 1)),
+            (16, 2, 2, 2, None, True, (2, 2, 2, 2)),
+            (16, 2, 2, None, 2, True, (2, 2, 2, 2)),
+            (16, 1, 1, None, 2, True, (0, 0, 8, 2)),
+            (2, 1, 1, None, None, True, (0, 0, 2, 1)),
+        ],
+    )
+    def test_get_parallel_config_kwargs(
+        self,
+        world_size,
+        tensor_parallel_size,
+        context_parallel_size,
+        dp_shard_size,
+        dp_replicate_size,
+        is_fsdp,
+        expected,
+    ):
+        res = _get_parallel_config_kwargs(
+            world_size,
+            tensor_parallel_size,
+            context_parallel_size,
+            dp_shard_size,
+            dp_replicate_size,
+            is_fsdp,
+        )
+
+        if expected[0] > 1:
+            assert res["tp_size"] == expected[0]
+        if expected[1] > 1:
+            assert res["cp_size"] == expected[1]
+        if expected[2] > 1:
+            assert res["dp_shard_size"] == expected[2]
+        if expected[3] > 1:
+            assert res["dp_replicate_size"] == expected[3]

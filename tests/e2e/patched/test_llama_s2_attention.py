@@ -22,7 +22,6 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
 
     @with_temp_dir
     def test_lora_s2_attn(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -58,6 +57,7 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
                 "save_steps": 5,
                 "eval_steps": 5,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
 
@@ -70,7 +70,6 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
 
     @with_temp_dir
     def test_fft_s2_attn(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -100,6 +99,7 @@ class TestLlamaShiftedSparseAttention(unittest.TestCase):
                 "save_steps": 5,
                 "eval_steps": 5,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
 

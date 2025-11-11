@@ -25,6 +25,7 @@ from huggingface_hub.errors import (
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
+from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
@@ -235,11 +236,14 @@ def _load_from_local_path(
         try:
             return load_from_disk(dataset_config.path)
         except FileNotFoundError:
-            load_dataset_kwargs["streaming"] = False
             return load_dataset(dataset_config.path, **load_dataset_kwargs)
     elif local_path.is_file():
         dataset_type = get_dataset_type(dataset_config)
-        load_dataset_kwargs["streaming"] = False
+
+        # For single file datasets, HF always creates only a "train" split
+        if dataset_type in ("json", "csv", "text"):
+            load_dataset_kwargs["split"] = "train"
+
         return load_dataset(
             dataset_type,
             data_files=dataset_config.path,
@@ -336,7 +340,7 @@ def generate_split_fingerprints(
     dataset: Dataset, val_set_size: int | float, seed: int
 ) -> tuple[str, str]:
     """Generate consistent fingerprints for train/test splits."""
-    fingerprint = dataset._fingerprint  # pylint: disable=protected-access
+    fingerprint = dataset._fingerprint
 
     train_hash_input = f"{fingerprint}|{val_set_size}|train|{seed}"
     test_hash_input = f"{fingerprint}|{val_set_size}|test|{seed}"
@@ -410,9 +414,8 @@ def save_preprocessed_dataset(
 ) -> None:
     """Save preprocessed dataset to disk and optionally push to the HF Hub."""
     prepared_ds_path = get_prepared_dataset_path(cfg, dataset_hash)
+    num_workers = cfg.dataset_num_proc or get_default_process_count()
     if isinstance(dataset, IterableDataset):
-        num_workers = cfg.dataset_processes
-
         ds_from_iter = Dataset.from_generator(
             functools.partial(_generate_from_iterable_dataset, dataset),
             features=dataset.features,
@@ -423,10 +426,21 @@ def save_preprocessed_dataset(
                 "num_workers": [num_workers] * num_workers,
             },
         )
-        ds_from_iter.save_to_disk(str(prepared_ds_path))
+        ds_from_iter.save_to_disk(
+            str(prepared_ds_path),
+            num_proc=num_workers,
+            max_shard_size=None,
+            num_shards=cfg.num_dataset_shards_to_save,
+        )
     else:
+        min_rows_per_proc = 256
         os.makedirs(prepared_ds_path, exist_ok=True)
-        dataset.save_to_disk(str(prepared_ds_path))
+        dataset.save_to_disk(
+            str(prepared_ds_path),
+            num_proc=min(max(1, len(dataset) // min_rows_per_proc), num_workers),
+            max_shard_size=None,
+            num_shards=cfg.num_dataset_shards_to_save,
+        )
     if cfg.push_dataset_to_hub:
         LOG.info(
             "Pushing merged prepared dataset to Huggingface hub at "
@@ -460,13 +474,13 @@ def load_preprocessed_dataset(cfg: DictDefault, dataset_hash: str) -> Dataset | 
     ):
         LOG.info(
             f"Loading prepared dataset from disk at {prepared_ds_path}...",
-            main_process_only=False,
+            main_process_only=True,
         )
         return load_from_disk(str(prepared_ds_path))
 
     LOG.info(
         f"Unable to find prepared dataset in {prepared_ds_path}",
-        main_process_only=False,
+        main_process_only=True,
     )
     return None
 
@@ -486,7 +500,7 @@ def try_load_from_hub(
             token=cfg.hf_use_auth_token,
         )
         return dataset[split]
-    except Exception:  # pylint: disable=broad-except # nosec
+    except Exception:
         LOG.info("Unable to find prepared dataset in HuggingFace Hub")
         return None
 
@@ -524,13 +538,31 @@ def merge_datasets(datasets: list[Dataset], cfg: DictDefault) -> Dataset:
         Merged dataset.
     """
     if len(datasets) == 1:
-        return datasets[0]
+        ds = datasets[0]
+
+        # Do not shuffle if curriculum sampling is enabled or
+        # shuffle_merged_datasets is disabled
+        if cfg.curriculum_sampling or not cfg.shuffle_merged_datasets:
+            return ds
+
+        return ds.shuffle(seed=cfg.seed)
+
+    # If enabled, shuffle each dataset independently before merging.
+    # This allows curriculum learning strategies to be applied at the dataset level.
+    if cfg.shuffle_before_merging_datasets:
+        LOG.info("Shuffling each dataset individually before merging...")
+        datasets = [ds.shuffle(seed=cfg.seed) for ds in datasets]
 
     LOG.info("Merging datasets...")
     merged_dataset = concatenate_datasets(datasets)
 
     if cfg.shuffle_merged_datasets:
         LOG.debug("Shuffling merged datasets...")
+        if cfg.curriculum_sampling:
+            LOG.warning(
+                "Shuffling merged datasets with curriculum sampling is not recommended. "
+                "This will randomize the order of samples."
+            )
         merged_dataset = merged_dataset.shuffle(seed=cfg.seed)
     else:
         LOG.debug("Not shuffling merged datasets.")

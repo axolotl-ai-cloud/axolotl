@@ -51,7 +51,7 @@ output_dir: ./outputs/out
 
 sequence_len: 4096  # up to 8k will work on a single H100
 sample_packing: true
-pad_to_sequence_len: true
+
 
 wandb_project:
 wandb_entity:
@@ -76,10 +76,12 @@ gradient_checkpointing: offload
 gradient_checkpointing_kwargs:
   use_reentrant: false
 
-warmup_steps: 20
+warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
 weight_decay: 0.0
 special_tokens:
-  pad_token: <|finetune_right_pad_id|>
+  pad_token: <|finetune_right_pad|>
   eos_token: <|eot|>
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

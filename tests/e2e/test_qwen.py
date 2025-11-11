@@ -19,7 +19,6 @@ class TestE2eQwen:
 
     @pytest.mark.parametrize("base_model", ["Qwen/Qwen2-0.5B", "Qwen/Qwen2.5-0.5B"])
     def test_dpo(self, base_model, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": base_model,
@@ -59,6 +58,7 @@ class TestE2eQwen:
                 "bf16": "auto",
                 "tf32": True,
                 "gradient_checkpointing": True,
+                "save_first_step": False,
             }
         )
 

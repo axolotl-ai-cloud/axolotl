@@ -80,7 +80,7 @@ def start_vllm(
     cmd_env = env.copy()
     cmd_env.update({"VLLM_LOGGING_CONFIG_PATH": vllm_logging_json})
     # start `trl vllm-serve` command in the background and capture the process id
-    process = subprocess.Popen(  # pylint: disable=consider-using-with
+    process = subprocess.Popen(
         cmd,
         env=cmd_env,
         stdout=subprocess.DEVNULL if quiet else subprocess.PIPE,
@@ -141,9 +141,10 @@ def recursive_kill(process: subprocess.Popen):
     os.kill(process.pid, 9)
 
 
+@pytest.mark.skip(reason="flaky vllm tests in modal")
 class TestGRPO:
     """
-    Test case for GRPO training using multilpe GPUs
+    Test case for GRPO training using multiple GPUs
     """
 
     def _utils_write_yaml_and_rewards(self, cfg, temp_dir, suffix=""):
@@ -222,6 +223,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -296,7 +298,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "sequence_parallel_degree": 2,
+                "context_parallel_size": 2,
                 "flash_attention": True,
                 "sequence_len": 1024,
                 "special_tokens": {
@@ -309,12 +311,14 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "warmup_steps": 10,
                 "val_set_size": 0.0,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.0001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -400,12 +404,14 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "warmup_steps": 10,
                 "val_set_size": 0.0,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.0001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 

@@ -18,116 +18,26 @@ jobs:
         env:
           SKIP: no-commit-to-branch
 
-  preload-cache:
-    name: Preload HF cache
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python_version: ["3.11"]
-        pytorch_version: ["2.6.0"]
-    timeout-minutes: 20
-
-    env:
-      AXOLOTL_IS_CI_CACHE_PRELOAD: "1"
-
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v4
-
-      - name: Restore HF cache
-        id: hf-cache-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            /home/runner/.cache/huggingface/hub/datasets--*
-            /home/runner/.cache/huggingface/hub/models--*
-          key: ${{ runner.os }}-hf-hub-cache-v2
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python_version }}
-          cache: 'pip' # caching pip dependencies
-
-      - name: upgrade pip
-        run: |
-          pip3 install --upgrade pip
-          pip3 install --upgrade packaging==23.2 setuptools==75.8.0 wheel
-
-      - name: Install PyTorch
-        run: |
-          pip3 install torch==${{ matrix.pytorch_version }}
-
-      - name: Install dependencies
-        run: |
-          pip3 show torch
-          pip3 install --no-build-isolation -U -e .
-          python scripts/unsloth_install.py | sh
-          python scripts/cutcrossentropy_install.py | sh
-          pip3 install -r requirements-dev.txt -r requirements-tests.txt
-
-      - name: Make sure PyTorch version wasn't clobbered
-        run: |
-          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__"
-
-      - name: Ensure axolotl CLI was installed
-        run: |
-          axolotl --help
-
-      - name: Pre-Download dataset fixture
-        run: |
-          huggingface-cli download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
-
-      - name: Run tests
-        run: |
-          pytest -v tests/conftest.py
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.xml
-          flags: unittests,pytorch-${{ matrix.pytorch_version }}
-          fail_ci_if_error: false
-
-      - name: cleanup pip cache
-        run: |
-          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
-
-      - name: Save HF cache
-        id: hf-cache
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            /home/runner/.cache/huggingface/hub/datasets--*
-            /home/runner/.cache/huggingface/hub/models--*
-          key: ${{ steps.hf-cache-restore.outputs.cache-primary-key }}
-
   pytest:
     name: PyTest
     runs-on: ubuntu-latest
-    needs: [preload-cache]
     strategy:
       fail-fast: false
       max-parallel: 2
       matrix:
         python_version: ["3.11"]
-        pytorch_version: ["2.5.1", "2.6.0", "2.7.0"]
+        pytorch_version: ["2.7.1", "2.8.0"]
     timeout-minutes: 20
 
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
 
-      - name: Restore HF cache
-        id: hf-cache-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            /home/runner/.cache/huggingface/hub/datasets--*
-            /home/runner/.cache/huggingface/hub/models--*
-          key: ${{ runner.os }}-hf-hub-cache-v2
+      - name: Restore Cache from S3
+        id: hf-cache-restore-s3
+        run: |
+          mkdir -p /home/runner/.cache/huggingface/hub
+          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C /home/runner/.cache/huggingface/hub/  --use-compress-program unzstd
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -142,7 +52,7 @@ jobs:
 
       - name: Install PyTorch
         run: |
-          pip3 install torch==${{ matrix.pytorch_version }}
+          pip3 install torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Update requirements.txt
         run: |
@@ -168,15 +78,11 @@ jobs:
         run: |
           axolotl --help
 
-      - name: Pre-Download dataset fixture
-        run: |
-          huggingface-cli download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
-
       - name: Run tests
         run: |
-          pytest -v -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/
-          pytest -v tests/patched/
-          pytest -v tests/cli/
+          pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/
+          pytest -v --durations=10 tests/patched/
+          pytest -v --durations=10 tests/cli/
 
       - name: cleanup pip cache
         run: |
@@ -186,24 +92,24 @@ jobs:
     if: github.repository_owner == 'axolotl-ai-cloud'
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
-    timeout-minutes: 60
+    timeout-minutes: 120
     needs: [pre-commit, pytest]
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          - cuda: 124
-            cuda_version: 12.4.1
+          - cuda: 126
+            cuda_version: 12.6.3
             python_version: "3.11"
-            pytorch: 2.5.1
+            pytorch: 2.7.1
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
-          - cuda: 124
-            cuda_version: 12.4.1
+          - cuda: 128
+            cuda_version: 12.8.1
             python_version: "3.11"
-            pytorch: 2.6.0
+            pytorch: 2.8.0
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
@@ -217,7 +123,7 @@ jobs:
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
-          pip install modal==0.71.8 jinja2
+          pip install modal==1.0.2 jinja2
       - name: Update env vars
         run: |
           echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
@@ -231,3 +137,45 @@ jobs:
       - name: Run tests job on Modal
         run: |
           modal run cicd.e2e_tests
+  docker-e2e-multigpu-tests:
+    if: github.repository_owner == 'axolotl-ai-cloud'
+    # this job needs to be run on self-hosted GPU runners...
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 120
+    needs: [pre-commit, pytest, docker-e2e-tests]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 126
+            cuda_version: 12.6.3
+            python_version: "3.11"
+            pytorch: 2.7.1
+            num_gpus: 2
+            axolotl_extras:
+            nightly_build: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Modal
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==1.0.2 jinja2
+      - name: Update env vars
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
+          echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
+      - name: Run tests job on Modal
+        run: |
+          modal run cicd.multigpu

@@ -19,7 +19,6 @@ class TestLoraLlama(unittest.TestCase):
 
     @with_temp_dir
     def test_lora(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -49,6 +48,7 @@ class TestLoraLlama(unittest.TestCase):
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
+                "save_first_step": False,
             }
         )
 

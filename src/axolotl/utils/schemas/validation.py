@@ -1,8 +1,9 @@
 """Module with validation methods for config pydantic model."""
 
-# pylint: disable=too-many-lines
-
-import logging
+import json
+import sys
+import tempfile
+from pathlib import Path
 
 from pydantic import (
     field_validator,
@@ -10,9 +11,10 @@ from pydantic import (
 )
 from transformers.utils.import_utils import is_torch_npu_available
 
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
 
@@ -55,6 +57,20 @@ class DatasetValidationMixin:
     def check_dataset_or_pretraining_dataset(cls, data):
         if data.get("datasets") is None and data.get("pretraining_dataset") is None:
             raise ValueError("either datasets or pretraining_dataset is required")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_pretraining_streaming_deprecation(cls, data):
+        # TODO(djsaunde): remove this check + implement change for 0.13.0 release
+        if data.get("pretraining_dataset") and not data.get("streaming"):
+            LOG.warning(
+                "Setting `pretraining_dataset` without explicitly setting `streaming: "
+                "true` is deprecated. In a future release, streaming will not be "
+                "automatically enabled when using pretraining_dataset. Please "
+                "explicitly set `streaming: true` in your configuration to maintain "
+                "current behavior."
+            )
         return data
 
     @model_validator(mode="before")
@@ -111,7 +127,8 @@ class DatasetValidationMixin:
             and not data.get("eval_table_size")
         ):
             LOG.info(
-                "explicitly setting `eval_sample_packing` to match `sample_packing`"
+                "explicitly setting `eval_sample_packing` to match `sample_packing`",
+                main_process_only=True,
             )
             data["eval_sample_packing"] = True
 
@@ -336,10 +353,33 @@ class TrainingValidationMixin:
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_multipack_buffer_size(cls, data):
+        if data.get("pretrain_multipack_buffer_size") and not data.get(
+            "streaming_multipack_buffer_size"
+        ):
+            LOG.warning(
+                "`pretrain_multipack_buffer_size` is deprecated in v0.13.0, will be "
+                "removed in v0.14.0. Use `streaming_multipack_buffer_size` instead."
+            )
+            data["streaming_multipack_buffer_size"] = data[
+                "pretrain_multipack_buffer_size"
+            ]
+            del data["pretrain_multipack_buffer_size"]
+        elif data.get("pretrain_multipack_buffer_size") and data.get(
+            "streaming_multipack_buffer_size"
+        ):
+            raise ValueError(
+                "pretrain_multipack_buffer_size is deprecated, use "
+                "streaming_multipack_buffer_size; both are set, please remove the "
+                "deprecated pretrain_multipack_buffer_size setting"
+            )
+        return data
+
     @model_validator(mode="after")
     def check_fft_possible_bad_config(self):
         if (
-            # pylint: disable=too-many-boolean-expressions
             not (self.bf16 or self.bfloat16)
             and (self.fp16 or self.float16)
             and not self.adapter
@@ -353,6 +393,36 @@ class TrainingValidationMixin:
             # OR
             # RuntimeError: expected mat1 and mat2 to have the same dtype, but got: float != c10::Half
         return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fp8_config(cls, data):
+        if data.get("fp8") and not data.get("torch_compile"):
+            LOG.warning(
+                "torch_compile is strongly recommended for FP8 training in order to "
+                "see speed improvements. Please consider setting `torch_compile: "
+                "true` in your config."
+            )
+        fsdp_config = data.get("fsdp_config") or {}
+        if data.get("fp8") and (
+            fsdp_config.get("activation_checkpointing", False) is True
+            or fsdp_config.get("fsdp_activation_checkpointing", False) is True
+        ):
+            LOG.warning(
+                "FP8 + FSDP2 + activation checkpointing may be slower than BF16 "
+                "training. Please considering setting `activation_checkpointing: false` "
+                "in your FSDP config."
+            )
+        if (
+            data.get("fp8_enable_fsdp_float8_all_gather")
+            and not data.get("fsdp_version", None) == 2
+        ):
+            raise ValueError(
+                "fp8_enable_fsdp_float8_all_gather requires FSDP2 (fsdp_version: 2) "
+                "to be used."
+            )
+
+        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -423,12 +493,12 @@ class TrainingValidationMixin:
     @classmethod
     def check_mistral_common_import(cls, tokenizer_use_mistral_common):
         if tokenizer_use_mistral_common:
-            try:
-                import mistral_common  # noqa: F401 # pylint:disable=unused-import
-            except ImportError as exception:
+            import importlib.util
+
+            if importlib.util.find_spec("mistral_common") is None:
                 raise ImportError(
                     "mistral-common is required for mistral models. Please install it with `pip install axolotl` or `pip install -e .`."
-                ) from exception
+                )
 
         return tokenizer_use_mistral_common
 
@@ -458,6 +528,20 @@ class TrainingValidationMixin:
         if data.get("chat_template"):
             raise ValueError(
                 "Setting chat_template is not supported with mistral-common tokenizer"
+            )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def pretrain_with_tps(cls, data):
+        if data.get("pretraining_dataset") and data.get(
+            "include_tokens_per_second", False
+        ):
+            # combining these would raise `TypeError: cannot pickle 'dict_keys' object`
+            # due to trying to count the number of tokens total in the dataset
+            raise ValueError(
+                "pretraining_dataset and include_tokens_per_second cannot be used together."
             )
 
         return data
@@ -511,20 +595,6 @@ class LoRAValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_lora_8bit(cls, data):
-        if (
-            data.get("lora_mlp_kernel")
-            or data.get("lora_qkv_kernel")
-            or data.get("lora_o_kernel")
-        ):
-            if data.get("adapter") == "lora" and data.get("load_in_8bit"):
-                raise ValueError(
-                    "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with 8-bit LoRA"
-                )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_lora_axolotl_unsloth(cls, data):
         is_lora_kernel = any(
             data.get(k) for k in ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
@@ -541,19 +611,8 @@ class LoRAValidationMixin:
 
     @model_validator(mode="after")
     def check_fused_lora(self):
-        if self.adapter in ["lora", "qlora"] and (
-            self.flash_attn_fuse_qkv or self.flash_attn_fuse_mlp
-        ):
+        if self.adapter in ["lora", "qlora"] and self.flash_attn_fuse_mlp:
             raise ValueError("Fused modules are not supported with LoRA/QLoRA")
-        return self
-
-    @model_validator(mode="after")
-    def hint_lora_8bit(self):
-        loftq = (
-            self.peft and self.peft.loftq_config and self.peft.loftq_config.loftq_bits
-        )
-        if not self.load_in_8bit and self.adapter == "lora" and not loftq:
-            LOG.warning("We recommend setting `load_in_8bit: true` for LORA finetuning")
         return self
 
     @model_validator(mode="before")
@@ -578,7 +637,7 @@ class LoRAValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_lora_kernel_8bit(cls, data):
+    def check_lora_kernels_8bit(cls, data):
         if (
             data.get("lora_mlp_kernel")
             or data.get("lora_qkv_kernel")
@@ -586,20 +645,36 @@ class LoRAValidationMixin:
         ):
             if data.get("adapter") == "lora" and data.get("load_in_8bit"):
                 raise ValueError(
-                    "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with 8-bit LoRA"
+                    "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
+                    "compatible with 8-bit LoRA a the moment."
                 )
         return data
 
     @model_validator(mode="before")
     @classmethod
-    def check_lora_kernel_rl(cls, data):
+    def check_lora_kernels_dora(cls, data):
+        if (
+            data.get("lora_mlp_kernel")
+            or data.get("lora_qkv_kernel")
+            or data.get("lora_o_kernel")
+        ) and data.get("peft_use_dora"):
+            raise ValueError(
+                "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
+                "compatible with DoRA at the moment."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_lora_kernels_rl(cls, data):
         if (
             data.get("lora_mlp_kernel")
             or data.get("lora_qkv_kernel")
             or data.get("lora_o_kernel")
         ) and data.get("rl"):
             raise ValueError(
-                "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with RL at the moment."
+                "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
+                "compatible with RL at the moment."
             )
         return data
 
@@ -632,7 +707,7 @@ class RLValidationMixin:
             data.get("rl") == "grpo"
             and data.get("trl", {})
             and data.get("trl").get("use_liger_loss")
-            and data.get("sequence_parallel_degree", 1) > 1
+            and data.get("context_parallel_size", 1) > 1
         ):
             raise ValueError("GRPO + SP + Liger not currently supported")
         return data
@@ -643,7 +718,7 @@ class RLValidationMixin:
         # TODO: SalmanMohammadi
         # Distributed RL with QLoRA + gradient checkpointing
         # and use_reentrant = True is broken upstream in TRL
-        # pylint: disable=too-many-boolean-expressions
+
         if (
             data.get("rl")
             and data.get("gradient_checkpointing")
@@ -710,15 +785,6 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_torch_compile_deepspeed(cls, data):
-        if data.get("deepspeed") and data.get("torch_compile"):
-            raise ValueError(
-                "torch_compile should be set within your deepspeed config file"
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_xentropy_patch_conflicts(cls, data):
         if data.get("flash_attn_cross_entropy") and data.get(
             "unsloth_cross_entropy_loss"
@@ -730,43 +796,183 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_fsdp_offload_w_8bit_optimizer(cls, data):
-        if (
-            data.get("fsdp")
-            and "8bit" in data.get("optimizer", "")
-            and data.get("fsdp_config")
-            and data["fsdp_config"].get("fsdp_offload_params")
-            and str(data["fsdp_config"].get("fsdp_version")) != "2"
-        ):
-            raise ValueError(
-                f"FSDP Offload not compatible with {data.get('optimizer')}"
+    def check_fsdp_version(cls, data):
+        fsdp_config = data.get("fsdp_config", {})
+        if fsdp_config and str(data.get("fsdp_version")) != "2":
+            LOG.info(
+                "FSDP1 will be deprecated in an upcoming release of Axolotl."
+                "We recommend that you use FSDP version 2 for better performance and compatibility. "
+                "Please see this link for more details: https://docs.axolotl.ai/docs/multi-gpu.html#sec-fsdp "
+                "For more details on migrating your config. "
             )
-        if (
-            data.get("fsdp")
-            and "8bit" in data.get("optimizer", "")
-            and data.get("fsdp_config")
-            and str(data["fsdp_config"].get("fsdp_version")) == "2"
-        ):
-            if data.get("optimizer", "") in ["adamw_8bit", "adamw_bnb_8bit"]:
-                # CUDA ops errors with bnb 8bit optimizer + FSDP2
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp2_cpu_offload_pin_memory(cls, data):
+        if not (fsdp_config := data.get("fsdp_config")):
+            return data
+
+        if fsdp_config.get("cpu_offload_pin_memory") is False:
+            if str(data.get("fsdp_version")) != "2":
                 raise ValueError(
-                    f"FSDP2 not compatible with {data.get('optimizer')}, use `adamw_torch_8bit` instead"
+                    "FSDP1 does not support disabling cpu_offload_pin_memory, please set `fsdp_version` to 2"
+                )
+            if not fsdp_config.get("offload_params"):
+                raise ValueError(
+                    "disabling cpu_offload_pin_memory requires enabling offload_params"
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp2_base_model_quant_rl(cls, data):
+        if data.get("fsdp_version") == 2 and data.get("rl") in [
+            RLType.DPO,
+            RLType.KTO,
+            RLType.ORPO,
+            RLType.IPO,
+        ]:
+            if data.get("load_in_8bit") or data.get("load_in_4bit"):
+                raise ValueError(
+                    f"FSDP2 does not support load_in_8bit or load_in_4bit with {data.get('rl')}. Please use DeepSpeed or set `fsdp_version` to 1."
                 )
 
         return data
 
     @model_validator(mode="before")
     @classmethod
-    def check_fsdp_sharded_state_dict_w_safetensors(cls, data):
+    def check_fsdp_version_in_fsdp_config(cls, data):
+        fsdp_config = data.get("fsdp_config") or {}
+        if fsdp_config and fsdp_config.get("fsdp_version"):
+            LOG.warning(
+                "Configuring `fsdp_version` in `fsdp_config` is deprecated. "
+                "Please configure `fsdp_version` as a top-level field."
+            )
+            data["fsdp_version"] = fsdp_config.pop("fsdp_version")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_config_kwargs_prefix(cls, data):
+        if fsdp_config := data.get("fsdp_config"):
+            should_fix = False
+            for key, _ in fsdp_config.items():
+                if key.startswith("fsdp_"):
+                    should_fix = True
+                    LOG.warning_once(
+                        "Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
+                        "Please omit the `fsdp_` prefix from the any fields in `fsdp_config`."
+                    )
+            if should_fix:
+                update_fsdp_config = {}
+                for key, value in fsdp_config.items():
+                    if key.startswith("fsdp_") and key != "fsdp_version":
+                        update_fsdp_config[key.replace("fsdp_", "")] = value
+                    else:
+                        update_fsdp_config[key] = value
+                data["fsdp_config"] = update_fsdp_config
+        return data
+
+    @model_validator(mode="after")
+    def check_fsdp_offload_w_8bit_optimizer(self):
         if (
-            data.get("fsdp")
-            and data.get("save_safetensors")
-            and data.get("fsdp_config")
-            and data["fsdp_config"].get("fsdp_state_dict_type") == "SHARDED_STATE_DICT"
+            hasattr(self, "fsdp_config")
+            and self.fsdp_config
+            and self.optimizer
+            and "8bit" in self.optimizer.value
+            and self.fsdp_config.offload_params
+            and str(self.fsdp_version) != "2"
         ):
             raise ValueError(
-                "FSDP SHARDED_STATE_DICT not compatible with save_safetensors"
+                f"FSDP Offload not compatible with {str(self.optimizer.value)}"
             )
+        return self
+
+    @model_validator(mode="after")
+    def check_fsdp2_w_8bit_optimizer(self):
+        if (
+            hasattr(self, "fsdp_config")
+            and self.fsdp_config
+            and self.optimizer
+            and "8bit" in self.optimizer.value
+            and str(self.fsdp_version) == "2"
+        ):
+            if self.optimizer in ["adamw_8bit", "adamw_bnb_8bit"]:
+                # CUDA ops errors with bnb 8bit optimizer + FSDP2
+                raise ValueError(
+                    f"FSDP2 not compatible with {self.optimizer.value}, use `adamw_torch_8bit` instead"
+                )
+
+        return self
+
+    @model_validator(mode="after")
+    def lr_groups_ao_optimizer(self):
+        if (
+            self.loraplus_lr_ratio is not None
+            or self.embedding_lr_scale is not None
+            or self.embedding_lr is not None
+            or self.lr_groups is not None
+        ) and self.optimizer.value in ["adamw_torch_8bit", "adamw_torch_4bit"]:
+            # TODO(wing): remove this once ao>0.12.0
+            # requires https://github.com/pytorch/ao/pull/2606 in an ao release
+            raise ValueError(
+                "lr groups (`loraplus_lr_ratio`, `embedding_lr_scale`, `embedding_lr`, `lr_groups`) are not "
+                "supported with ao low-bit optimizers until ao>0.12.0. "
+                "Please refer to https://github.com/pytorch/ao/pull/2606."
+            )
+        return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_tensor_parallel_size_update_ds_json(cls, data):
+        tensor_parallel_size = data.get("tensor_parallel_size")
+        if tensor_parallel_size is not None and tensor_parallel_size > 1:
+            if data.get("deepspeed"):
+                with open(data.get("deepspeed"), "r", encoding="utf-8") as ds_fin:
+                    ds_config = json.load(ds_fin)
+                    should_save = False
+                    if "tensor_parallel" not in ds_config:
+                        ds_config["tensor_parallel"] = {
+                            "autotp_size": tensor_parallel_size
+                        }
+                        should_save = True
+                    if (
+                        "gather_16bit_weights_on_model_save"
+                        not in ds_config["zero_optimization"]
+                    ):
+                        ds_config["zero_optimization"][
+                            "gather_16bit_weights_on_model_save"
+                        ] = True
+                        should_save = True
+                    if should_save:
+                        temp_dir = tempfile.mkdtemp()
+                        with open(
+                            Path(temp_dir) / "autotp_ds.json", "w", encoding="utf-8"
+                        ) as ds_fout:
+                            json.dump(ds_config, ds_fout, indent=4)
+                        data["deepspeed"] = str(Path(temp_dir) / "autotp_ds.json")
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_deepcompile(cls, data):
+        deepcompile = data.get("deepcompile")
+        if deepcompile:
+            if not data.get("deepspeed"):
+                raise ValueError("DeepCompile is only supported with DeepSpeed")
+            with open(data.get("deepspeed"), "r", encoding="utf-8") as ds_fin:
+                ds_config = json.load(ds_fin)
+                if "compile" not in ds_config:
+                    ds_config["compile"] = {"deepcompile": True}
+                    temp_dir = tempfile.mkdtemp()
+                    with open(
+                        Path(temp_dir) / "deepcompile_ds.json", "w", encoding="utf-8"
+                    ) as ds_fout:
+                        json.dump(ds_config, ds_fout, indent=4)
+                    data["deepspeed"] = str(Path(temp_dir) / "deepcompile_ds.json")
+
         return data
 
 
@@ -790,6 +996,16 @@ class SystemValidationMixin:
     def check_fsdp_deepspeed(cls, data):
         if data.get("deepspeed") and data.get("fsdp"):
             raise ValueError("deepspeed and fsdp cannot be used together.")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_model_quantization_config_vs_bnb(cls, data):
+        if data.get("model_quantization_config"):
+            if data.get("load_in_8bit") or data.get("load_in_4bit"):
+                raise ValueError(
+                    "model_quantization_config and load_in_8bit or load_in_4bit cannot be used together."
+                )
         return data
 
     @model_validator(mode="before")
@@ -887,6 +1103,50 @@ class PretrainingValidationMixin:
                     data["accelerator_config"]["dispatch_batches"] = False
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_pretraining_w_val_set_size(cls, data):
+        if data.get("pretraining_dataset") and data.get("val_set_size"):
+            raise ValueError(
+                "val_set_size is not supported with pretraining_dataset. "
+                "Use test_datasets to specify evaluation datasets for pretraining."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_streaming_w_val_set_size(cls, data):
+        if data.get("streaming") and data.get("val_set_size"):
+            raise ValueError(
+                "val_set_size is not supported with streaming datasets. "
+                "Use test_datasets to specify evaluation datasets when streaming is enabled."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_streaming_w_max_steps(cls, data):
+        if data.get("streaming") and not data.get("max_steps"):
+            raise ValueError(
+                "max_steps must be set when using streaming datasets. "
+                "Trainer cannot infer dataset length for iterable datasets."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_streaming_w_multiple_datasets(cls, data):
+        if (
+            data.get("streaming")
+            and data.get("sample_packing")
+            and data.get("datasets")
+            and len(data.get("datasets")) > 1
+        ):
+            raise NotImplementedError(
+                "Sample packing with multiple streaming datasets is not yet supported"
+            )
+        return data
+
 
 class ModelCompatibilityValidationMixin:
     """Validation methods for specific model compatibility."""
@@ -906,12 +1166,28 @@ class ModelCompatibilityValidationMixin:
         return self
 
     @model_validator(mode="after")
-    def check_offload_grad_checkpointing(self):
-        if self.gradient_checkpointing and self.gradient_checkpointing == "unsloth":
+    def check_gradient_checkpointing_w_offload(self):
+        if self.gradient_checkpointing == "offload":
             LOG.warning(
-                "`unsloth` is deprecated for gradient_checkpointing, use `offload`"
+                "`offload` is deprecated for gradient_checkpointing, use `activation_offloading: true` or `activation_offloading: legacy`"
             )
-            self.gradient_checkpointing = "offload"
+            self.gradient_checkpointing = True
+            LOG.warning(
+                "`offload` now uses a new stream implementation; to use the previous implementation, use `activation_offloading: legacy`"
+            )
+            self.activation_offloading = True
+        if self.gradient_checkpointing == "offload_disk":
+            LOG.warning(
+                "`offload_disk` is deprecated for gradient_checkpointing, use `activation_offloading: disk`"
+            )
+            self.gradient_checkpointing = True
+            self.activation_offloading = "disk"
+        return self
+
+    @model_validator(mode="after")
+    def check_activation_offloading_wo_gc(self):
+        if self.activation_offloading and not self.gradient_checkpointing:
+            raise ValueError("activation_offloading requires gradient_checkpointing")
         return self
 
     @model_validator(mode="after")
@@ -939,6 +1215,17 @@ class ModelCompatibilityValidationMixin:
                 + "Please download the model from HuggingFace Hub manually for correct branch, "
                 + "point to its path, and remove revision_of_model from the config."
             )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_gpt_oss_fsdp_loading(cls, data):
+        if data.get("model_quantization_config", "") == "Mxfp4Config":
+            fsdp_config = data.get("fsdp_config") or {}
+            if fsdp_config.get("cpu_ram_efficient_loading", False) is True:
+                raise ValueError(
+                    "FSDP cpu_ram_efficient_loading is not supported for Mxfp4Config model quantization."
+                )
         return data
 
 
@@ -969,11 +1256,13 @@ class ComplexValidationMixin:
 
     @model_validator(mode="after")
     def check_relora(self):
-        if self.relora_steps:
+        if self.relora:
+            if not self.jagged_restart_steps:
+                raise ValueError("jagged_restart_steps must be set to use ReLoRA")
             if self.adapter not in ("lora", "qlora"):
                 raise ValueError("cfg.adapter must be lora or qlora to use ReLoRA")
 
-            if self.fsdp:
+            if self.fsdp or self.fsdp_config:
                 raise ValueError("fsdp not supported with ReLoRA")
 
             if self.deepspeed:
@@ -984,7 +1273,7 @@ class ComplexValidationMixin:
                     "ReLoRA is not compatible with the one_cycle scheduler"
                 )
 
-            if self.flash_attn_fuse_qkv or self.flash_attn_fuse_mlp:
+            if self.flash_attn_fuse_mlp:
                 raise ValueError("Fused modules are not supported with ReLoRA")
         return self
 
@@ -1002,13 +1291,24 @@ class ComplexValidationMixin:
         return self
 
     @model_validator(mode="after")
-    def check_sequence_parallel_degree(self):
-        if not self.sequence_parallel_degree:
-            self.sequence_parallel_degree = 1
-        elif self.sequence_parallel_degree > 1:
+    def check_tensor_parallel_size(self):
+        if not self.tensor_parallel_size:
+            self.tensor_parallel_size = 1
+        return self
+
+    @model_validator(mode="after")
+    def check_context_parallel_size(self):
+        if self.sequence_parallel_degree and not self.context_parallel_size:
+            LOG.warning(
+                "`sequence_parallel_degree` is deprecated, use `context_parallel_size`"
+            )
+            self.context_parallel_size = self.sequence_parallel_degree
+        if not self.context_parallel_size:
+            self.context_parallel_size = 1
+        elif self.context_parallel_size > 1:
             if not self.flash_attention:
                 raise ValueError(
-                    "flash_attention: true must be set with sequence_parallel_degree > 1"
+                    "flash_attention: true must be set with context_parallel_size > 1"
                 )
 
             if self.sample_packing and self.micro_batch_size > 1:
@@ -1018,17 +1318,32 @@ class ComplexValidationMixin:
                 )
 
             try:
-                import ring_flash_attn  # noqa: F401 # pylint:disable=unused-import
+                import transformers.modeling_flash_attention_utils
+                from transformers.utils import is_flash_attn_greater_or_equal
+
+                transformers.modeling_flash_attention_utils._flash_supports_window = (
+                    True
+                )
+                sys.modules[
+                    "transformers.modeling_flash_attention_utils"
+                ]._flash_supports_window = True
+                sys.modules[
+                    "transformers.modeling_flash_attention_utils"
+                ]._flash_supports_window_size = True
+                sys.modules[
+                    "transformers.modeling_flash_attention_utils"
+                ].is_flash_attn_greater_or_equal = is_flash_attn_greater_or_equal
+                import ring_flash_attn  # noqa: F401  # Required after monkey-patching
             except ImportError as exception:
                 raise ImportError(
-                    "sequence_parallel_degree > 1 but ring_flash_attn is not installed. "
+                    "context_parallel_size > 1 but ring_flash_attn is not installed. "
                     "Please install it with `pip install axolotl[ring-flash-attn] "
                     "or `pip install ring-flash-attn>=0.1.4`."
                 ) from exception
 
             LOG.warning(
                 "Sequence parallelism (SP) is enabled with "
-                f"sequence_parallel_degree={self.sequence_parallel_degree}. "
+                f"context_parallel_size={self.context_parallel_size}. "
                 "Please note that logged losses may differ slightly to the non-SP "
                 "losses due to transformers Trainer implementation details. "
                 "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
@@ -1039,7 +1354,7 @@ class ComplexValidationMixin:
 
     @model_validator(mode="after")
     def validate_ring_attn_func(self):
-        if getattr(self, "sequence_parallel_degree", 1) == 1:
+        if getattr(self, "context_parallel_size", 1) == 1:
             return self
 
         if self.ring_attn_func is not None:
@@ -1055,8 +1370,49 @@ class ComplexValidationMixin:
 
         return self
 
+    def hint_gradient_checkpointing_dpo_lora_ddp(self):
+        if (
+            (self.gradient_checkpointing is True or self.gradient_checkpointing is None)
+            and self.capabilities
+            and self.capabilities.get("n_gpu", 1) > 1
+            and self.adapter in ("lora", "qlora")
+            and self.rl == RLType.DPO
+            and not self.fsdp
+            and not self.deepspeed
+        ):
+            LOG.warning(
+                "gradient_checkpointing with DPO + DDP + LoRA is not recommended."
+            )
+        return self
 
-# pylint: disable=too-many-ancestors
+
+class DistributedValidationMixin:
+    """validation for distributed training."""
+
+    @model_validator(mode="after")
+    def check_tensor_parallel_optimizer(self):
+        if self.tensor_parallel_size > 1:
+            if self.optimizer in ["paged_adamw_8bit", "adamw_8bit", "adamw_bnb_8bit"]:
+                raise ValueError(
+                    "tensor_parallel_size is not supported with paged_adamw_8bit, adamw_8bit, and adamw_bnb_8bit optimizers"
+                )
+
+        return self
+
+
+class GRPOVllmValidationMixin:
+    """Validation mixin for vllm when using GRPO."""
+
+    @model_validator(mode="after")
+    def check_vllm_mode_set(self):
+        if self.trl and self.trl.use_vllm and not self.trl.vllm_mode:
+            LOG.warning(
+                "vllm_mode must be set to either `server` or `colocate` when using vllm, using default value `server`"
+            )
+            self.trl.vllm_mode = "server"
+        return self
+
+
 class ValidationMixin(
     DatasetValidationMixin,
     AttentionValidationMixin,
@@ -1069,5 +1425,6 @@ class ValidationMixin(
     PretrainingValidationMixin,
     ModelCompatibilityValidationMixin,
     ComplexValidationMixin,
+    GRPOVllmValidationMixin,
 ):
     """Full validation mixin for Axolotl configuration."""

@@ -11,8 +11,7 @@ datasets:
   - path: HuggingFaceH4/llava-instruct-mix-vsft
     type: chat_template
     split: train[:1%]
-    field_messages: messages
-dataset_prepared_path: last_run_prepared
+dataset_prepared_path:
 val_set_size: 0.0
 output_dir: ./outputs/out
 
@@ -46,8 +45,7 @@ tf32: true
 
 gradient_checkpointing: true
 logging_steps: 1
-flash_attention: false # PixtralVisionModel does not support Flash Attention 2.0 yet
-eager_attention:
+flash_attention: true
 
 warmup_ratio: 0.1
 evals_per_epoch: 1
@@ -55,3 +53,5 @@ saves_per_epoch: 1
 weight_decay: 0.0
 special_tokens:
   pad_token: <pad>
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

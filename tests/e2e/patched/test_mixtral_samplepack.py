@@ -19,7 +19,6 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_qlora(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
@@ -52,6 +51,7 @@ class TestMixtral(unittest.TestCase):
                 "save_steps": 3,
                 "eval_steps": 4,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
@@ -63,7 +63,6 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_ft(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
@@ -90,6 +89,7 @@ class TestMixtral(unittest.TestCase):
                 "save_steps": 3,
                 "eval_steps": 4,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

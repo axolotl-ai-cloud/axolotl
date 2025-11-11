@@ -17,8 +17,8 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.config import (
     AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
+    AxolotlInputConfig as AxolotlInputConfigBase,
 )
-from axolotl.utils.schemas.config import AxolotlInputConfig as AxolotlInputConfigBase
 from axolotl.utils.schemas.datasets import DPODataset, KTODataset, SFTDataset
 
 LOG = get_logger(__name__)
@@ -37,7 +37,7 @@ def choose_device(cfg):
                 return f"npu:{cfg.local_rank}"
 
             raise SystemError("No CUDA/mps/npu device found")
-        except Exception:  # pylint: disable=broad-exception-caught
+        except Exception:
             return "cpu"
 
     cfg.device = get_device()
@@ -77,7 +77,7 @@ def resolve_dtype(cfg):
     if cfg.device == "mps":
         cfg.load_in_8bit = False
         cfg.tf32 = False
-        if cfg.bf16:
+        if cfg.bf16 and cfg.fp16 is not False:
             cfg.fp16 = True
         cfg.bf16 = False
     else:
@@ -116,9 +116,10 @@ def normalize_config(cfg):
     ]
     choose_device(cfg)
     cfg.ddp = cfg.ddp if cfg.ddp is not None else cfg.world_size != 1
-    if cfg.ddp:
+    if cfg.world_size != 1:
         cfg.device_map = {"": int(os.environ.get("LOCAL_RANK", 0))}
-        cfg.batch_size = cfg.batch_size * cfg.world_size
+        if cfg.fsdp or cfg.fsdp_config or cfg.ddp:
+            cfg.batch_size = cfg.batch_size * cfg.world_size
 
     if not cfg.use_ray:
         # delay resolving dtype until on worker node when launching with ray
@@ -146,8 +147,6 @@ def normalize_config(cfg):
             LOG.warning(
                 f"Invalid value for eval_steps ({eval_steps}) from evals_per_epoch and/or num_epochs. Skipping evaluations."
             )
-
-    cfg.dataset_processes = cfg.dataset_processes or os.cpu_count()
 
     if not cfg.base_model_config:
         cfg.base_model_config = cfg.base_model
@@ -267,14 +266,16 @@ def validate_config(
 
     if cfg.plugins:
         (
-            AxolotlConfigWCapabilities,  # pylint: disable=invalid-name
-            AxolotlInputConfig,  # pylint: disable=invalid-name
+            AxolotlConfigWCapabilities,
+            AxolotlInputConfig,
         ) = merge_input_args()
 
     # Convert datasets to proper format if needed
     if cfg.get("datasets"):
         for idx, ds_cfg in enumerate(cfg["datasets"]):
-            if cfg.get("rl") == "dpo" and not isinstance(ds_cfg, DPODataset):
+            if cfg.get("rl") in ["dpo", "ipo", "simpo"] and not isinstance(
+                ds_cfg, DPODataset
+            ):
                 cfg["datasets"][idx] = DPODataset(**ds_cfg)
             elif cfg.get("rl") == "kto" and not isinstance(ds_cfg, KTODataset):
                 cfg["datasets"][idx] = KTODataset(**dict(ds_cfg))

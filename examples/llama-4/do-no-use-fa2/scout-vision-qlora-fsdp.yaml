@@ -46,7 +46,6 @@ datasets:
   - path: HuggingFaceH4/llava-instruct-mix-vsft
     type: chat_template
     split: train[:1%]
-    field_messages: messages
 
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.0
@@ -65,7 +64,7 @@ tf32: true
 logging_steps: 1
 flash_attention: true
 
-warmup_steps: 100
+warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
 weight_decay: 0.0
@@ -84,5 +83,7 @@ fsdp_config:
   fsdp_sharding_strategy: FULL_SHARD
   fsdp_activation_checkpointing: true
 special_tokens:
-  pad_token: <|finetune_right_pad_id|>
+  pad_token: <|finetune_right_pad|>
   eos_token: <|eot|>
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

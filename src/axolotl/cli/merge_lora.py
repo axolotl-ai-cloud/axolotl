@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Union
 
 import fire
-from dotenv import load_dotenv
 
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
@@ -44,7 +43,10 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
             safe_serialization=safe_serialization,
             progressbar=True,
         )
-        tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
+        tokenizer.save_pretrained(
+            str(Path(cfg.output_dir) / "merged"),
+            save_jinja_files=cfg.tokenizer_save_jinja_files,
+        )
 
         if processor:
             processor.save_pretrained(str(Path(cfg.output_dir) / "merged"))
@@ -70,7 +72,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
         load_in_8bit=False,
         load_in_4bit=False,
         flash_attention=False,
-        sequence_parallel_degree=None,
+        context_parallel_size=None,
         deepspeed=None,
         fsdp=None,
         fsdp_config=None,
@@ -88,5 +90,4 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
 
 
 if __name__ == "__main__":
-    load_dotenv()
     fire.Fire(do_cli)

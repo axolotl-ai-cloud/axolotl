@@ -97,7 +97,7 @@
 #       # 'no_input_format' cannot include {input}
 #       no_input_format: "{instruction} "
 
-#       # For `completion` datsets only, uses the provided field instead of `text` column
+#       # For `completion` datasets only, uses the provided field instead of `text` column
 #       field:
 
 # # Axolotl attempts to save the dataset as an arrow after packing the data together so
@@ -296,7 +296,6 @@
 # flash_attention:
 # flash_attn_cross_entropy:  # Whether to use flash-attention cross entropy implementation - advanced use only
 # flash_attn_rms_norm:  # Whether to use flash-attention rms norm implementation - advanced use only
-# flash_attn_fuse_qkv: # Whether to fuse QKV into a single operation
 # flash_attn_fuse_mlp: # Whether to fuse part of the MLP into a single operation
 # # Whether to use scaled-dot-product attention
 # # https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
@@ -541,7 +540,6 @@ xformers_attention: ${XFORMERS_ATTENTION}
 flash_attention: ${FLASH_ATTENTION}
 flash_attn_cross_entropy: ${FLASH_ATTN_CROSS_ENTROPY}
 flash_attn_rms_norm: ${FLASH_ATTN_RMS_NORM}
-flash_attn_fuse_qkv: ${FLASH_ATTN_FUSE_QKV}
 flash_attn_fuse_mlp: ${FLASH_ATTN_FUSE_MLP}
 sdp_attention: ${SDP_ATTENTION}
 s2_attention: ${S2_ATTENTION}

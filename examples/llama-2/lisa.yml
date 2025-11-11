@@ -14,7 +14,7 @@ output_dir: ./outputs/lisa-out
 
 sequence_len: 4096
 sample_packing: true
-pad_to_sequence_len: true
+
 
 adapter:
 lora_model_dir:
@@ -49,10 +49,9 @@ logging_steps: 1
 flash_attention: true
 flash_attn_cross_entropy: false
 flash_attn_rms_norm: true
-flash_attn_fuse_qkv: false
 flash_attn_fuse_mlp: true
 
-warmup_steps: 100
+warmup_ratio: 0.1
 evals_per_epoch: 4
 saves_per_epoch: 1
 weight_decay: 0.1
@@ -60,3 +59,5 @@ special_tokens:
   bos_token: "<s>"
   eos_token: "</s>"
   unk_token: "<unk>"
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

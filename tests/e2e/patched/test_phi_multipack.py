@@ -19,7 +19,6 @@ class TestPhiMultipack(unittest.TestCase):
 
     @with_temp_dir
     def test_ft_packed(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "microsoft/phi-1_5",
@@ -54,6 +53,7 @@ class TestPhiMultipack(unittest.TestCase):
                 "eval_steps": 3,
                 "save_steps": 4,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
 
@@ -66,7 +66,6 @@ class TestPhiMultipack(unittest.TestCase):
 
     @with_temp_dir
     def test_qlora_packed(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "microsoft/phi-1_5",
@@ -105,6 +104,7 @@ class TestPhiMultipack(unittest.TestCase):
                 "eval_steps": 3,
                 "save_steps": 4,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
 

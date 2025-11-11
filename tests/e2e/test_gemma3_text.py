@@ -22,7 +22,6 @@ class TestGemma3Text:
         [True, False],
     )
     def test_lora_gemma3_text(self, temp_dir, sample_packing):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "axolotl-ai-co/gemma-3-34M",
@@ -63,6 +62,7 @@ class TestGemma3Text:
                 "max_steps": 5,
                 "save_safetensors": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
@@ -77,7 +77,6 @@ class TestGemma3Text:
         [True, False],
     )
     def test_fft_gemma3_text(self, temp_dir, sample_packing):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "axolotl-ai-co/gemma-3-34M",
@@ -113,6 +112,7 @@ class TestGemma3Text:
                 "max_steps": 5,
                 "save_safetensors": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

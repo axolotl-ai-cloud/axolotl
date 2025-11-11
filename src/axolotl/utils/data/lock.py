@@ -46,7 +46,8 @@ class FileLockLoader:
     def _increment_counter(self):
         """Safely increment the process counter."""
         if self.counter_path.exists():
-            count = int(self.counter_path.read_text().strip())
+            counter_content = self.counter_path.read_text().strip()
+            count = int(counter_content) if counter_content else 0
         else:
             count = 0
         self.counter_path.write_text(str(count + 1))
@@ -54,10 +55,11 @@ class FileLockLoader:
     def cleanup(self):
         """Clean up ready flag when last process is done."""
         with FileLock(str(self.lock_file_path)):
-            count = int(self.counter_path.read_text().strip())
+            counter_content = self.counter_path.read_text().strip()
+            count = int(counter_content) if counter_content else 0
             count -= 1
 
-            if count == 0:
+            if count <= 0:
                 # Last process cleans everything up
                 self.ready_flag_path.unlink(missing_ok=True)
                 self.counter_path.unlink(missing_ok=True)

@@ -21,30 +21,30 @@ concurrency:
 
 jobs:
   test-axolotl-multigpu:
-    if: ${{ ! contains(github.event.commits[0].message, '[skip e2e]') && github.repository_owner == 'axolotl-ai-cloud' }}
+    if: ${{ ! contains(github.event.commits[0].message, '[skip e2e]') && github.repository_owner == 'axolotl-ai-cloud' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - cuda: 124
-            cuda_version: 12.4.1
-            python_version: "3.11"
-            pytorch: 2.6.0
-            axolotl_extras: vllm
-            num_gpus: 2
-            nightly_build: "true"
-          - cuda: 124
-            cuda_version: 12.4.1
-            python_version: "3.11"
-            pytorch: 2.5.1
-            axolotl_extras:
-            num_gpus: 2
-            nightly_build: "true"
           - cuda: 126
             cuda_version: 12.6.3
             python_version: "3.11"
             pytorch: 2.7.1
-            axolotl_extras:
+            axolotl_extras: vllm
+            num_gpus: 2
+            nightly_build: "true"
+          - cuda: 128
+            cuda_version: 12.8.1
+            python_version: "3.11"
+            pytorch: 2.8.0
+            axolotl_extras: fbgemm-gpu
+            num_gpus: 2
+            nightly_build: "true"
+          - cuda: 128
+            cuda_version: 12.8.1
+            python_version: "3.11"
+            pytorch: 2.9.0
+            axolotl_extras: fbgemm-gpu
             num_gpus: 2
             nightly_build: "true"
     runs-on: [self-hosted, modal]

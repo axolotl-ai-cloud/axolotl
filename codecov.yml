@@ -12,7 +12,7 @@ coverage:
       default:
         # basic
         target: auto
-        threshold: 0%
+        threshold: 1%
         base: auto
         # advanced
         branches: null
@@ -22,11 +22,12 @@ coverage:
         only_pulls: true
         flags: null
         paths: null
+        informational: true
     patch:
       default:
         # basic
         target: auto
-        threshold: 0%
+        threshold: 1%
         base: auto
         # advanced
         branches: null

@@ -15,6 +15,7 @@
 """
 Chat template prompt strategy loader with KD support
 """
+
 import logging
 from typing import Any, Dict
 
@@ -192,7 +193,6 @@ class ChatTemplateStrategyWithKDv2(ChatTemplateStrategyWithKD):
         """
         Transform logprobs to target format for KD training
         """
-        # pylint: disable=duplicate-code
 
         logprobs = sample.pop(self.logprobs_field)
         target_seq_len = len(logprobs)
@@ -240,7 +240,7 @@ class ChatTemplateStrategyWithKDv2(ChatTemplateStrategyWithKD):
                 target_mask.append([1] * top_k)
 
         for token_pos_logprobs, pos_target_token_ids in zip(
-            logprobs, sample["target_token_ids"]
+            logprobs, sample["target_token_ids"], strict=False
         ):
             # Convert to a tensor for easier manipulation
             position_logprobs_tensor = torch.tensor(
@@ -284,12 +284,12 @@ class ChatTemplateStrategyWithKDv2(ChatTemplateStrategyWithKD):
         return sample
 
     def _tokenize_single_prompt(self, prompt):
-        logprobs = prompt.pop(self.logprobs_field)
-        target_token_ids = prompt.pop("target_token_ids")
+        target_token_ids = prompt.get("target_token_ids", None)
+
         tokenized_prompt = super()._tokenize_single_prompt(prompt)
-        tokenized_prompt[self.logprobs_field] = logprobs
-        tokenized_prompt["target_token_ids"] = target_token_ids
-        tokenized_prompt = self.transform_logprobs(tokenized_prompt)
+
+        if target_token_ids is not None:
+            tokenized_prompt["target_token_ids"] = target_token_ids
 
         return tokenized_prompt
 
@@ -299,7 +299,7 @@ class KDStrategyLoader(StrategyLoader):
     Load ChatTemplateStrategy with KD support using StrategyLoader.
     """
 
-    def _get_strategy_cls(self, cfg):  # pylint: disable=unused-argument
+    def _get_strategy_cls(self, cfg):
         return ChatTemplateStrategyWithKD
 
     def _get_strategy_params(self, cfg, ds_cfg: Dict[str, Any]):
@@ -319,7 +319,7 @@ class KDStrategyLoaderV2(KDStrategyLoader):
     Load KD chat template datasets with pre-tokenized logprob data
     """
 
-    def _get_strategy_cls(self, cfg):  # pylint: disable=unused-argument
+    def _get_strategy_cls(self, cfg):
         return ChatTemplateStrategyWithKDv2
 
 

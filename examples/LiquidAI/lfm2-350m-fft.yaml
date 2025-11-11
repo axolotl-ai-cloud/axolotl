@@ -1,0 +1,50 @@
+base_model: LiquidAI/LFM2-350M
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+eot_tokens:
+  - "<|im_end|>"
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:20%]
+    field_messages: conversations
+    message_field_role: from
+    message_field_content: value
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.05
+output_dir: ./outputs/out
+
+sequence_len: 4096
+sample_packing: true
+
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 2
+micro_batch_size: 4
+num_epochs: 1
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 5e-5
+
+bf16: true
+tf32: true
+
+gradient_checkpointing: false
+resume_from_checkpoint:
+logging_steps: 1
+flash_attention: true
+
+warmup_ratio: 0.1
+evals_per_epoch: 2
+saves_per_epoch: 1
+
+weight_decay: 0.0
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

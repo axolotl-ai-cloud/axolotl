@@ -12,8 +12,6 @@ from axolotl.utils.dict import DictDefault
 
 from ..utils import check_model_output_exists
 
-# pylint: disable=duplicate-code
-
 
 @pytest.fixture()
 def min_cfg(temp_dir):
@@ -44,6 +42,7 @@ def min_cfg(temp_dir):
         "save_safetensors": True,
         "max_steps": 10,
         "bf16": "auto",
+        "save_first_step": False,
     }
 
 
@@ -52,7 +51,6 @@ class TestCutCrossEntropyIntegration:
     e2e tests for cut_cross_entropy integration with Axolotl
     """
 
-    # pylint: disable=redefined-outer-name
     def test_llama_w_cce(self, min_cfg, temp_dir):
         cfg = DictDefault(min_cfg)
         cfg = validate_config(cfg)
@@ -68,7 +66,6 @@ class TestCutCrossEntropyIntegration:
             train(cfg=cfg, dataset_meta=dataset_meta)
             check_model_output_exists(temp_dir, cfg)
 
-    # pylint: disable=redefined-outer-name
     def test_qwen2_w_cce(self, temp_dir):
         cfg = DictDefault(
             {
@@ -98,6 +95,7 @@ class TestCutCrossEntropyIntegration:
                 "save_safetensors": True,
                 "max_steps": 10,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

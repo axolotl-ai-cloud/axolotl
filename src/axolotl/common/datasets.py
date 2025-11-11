@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from datasets import Dataset
 
-import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
+import axolotl.monkeypatch.data.batch_dataset_fetcher  # noqa: F401
 from axolotl.cli.args import PreprocessCliArgs, TrainerCliArgs
 from axolotl.loaders import load_processor, load_tokenizer
 from axolotl.utils.data import prepare_datasets, prepare_preference_datasets
@@ -55,13 +55,11 @@ def load_datasets(
     """
     tokenizer = load_tokenizer(cfg)
     processor = load_processor(cfg, tokenizer=tokenizer) if cfg.processor_type else None
-    preprocess_iterable = getattr(cli_args, "iterable", False)
 
     train_dataset, eval_dataset, total_num_steps, prompters = prepare_datasets(
         cfg,
         tokenizer,
         processor=processor,
-        preprocess_iterable=preprocess_iterable,
     )
 
     if (
@@ -75,13 +73,17 @@ def load_datasets(
 
         num_examples = cli_args.debug_num_examples if cli_args else 1
         text_only = cli_args.debug_text_only if cli_args else False
-        train_samples = sample_dataset(train_dataset, num_examples)
-        check_dataset_labels(
-            train_samples,
-            tokenizer,
-            num_examples=num_examples,
-            text_only=text_only,
-        )
+        try:
+            train_samples = sample_dataset(train_dataset, num_examples)
+            check_dataset_labels(
+                train_samples,
+                tokenizer,
+                num_examples=num_examples,
+                text_only=text_only,
+            )
+        except AttributeError:
+            # can't sample iterable datasets
+            pass
 
         LOG.info("printing prompters...")
         for prompter in prompters:
@@ -118,7 +120,7 @@ def load_preference_datasets(
             math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
         )
 
-    if (cli_args and cli_args.debug) or cfg.debug:
+    if ((cli_args and cli_args.debug) or cfg.debug) and cfg.rl != RLType.ORPO:
         LOG.info("check_dataset_labels...")
 
         num_examples = cli_args.debug_num_examples if cli_args else 1

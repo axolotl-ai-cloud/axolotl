@@ -1,8 +1,5 @@
 """Module with Pydantic models for configuration."""
 
-# pylint: disable=too-many-lines
-
-import os
 from typing import Annotated, Any, Literal
 
 from annotated_types import MinLen
@@ -15,6 +12,7 @@ from pydantic import (
     model_validator,
 )
 
+from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
@@ -26,11 +24,13 @@ from axolotl.utils.schemas.datasets import (
 )
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
 from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
+from axolotl.utils.schemas.fsdp import FSDPConfig
 from axolotl.utils.schemas.integrations import (
     CometConfig,
     GradioConfig,
     LISAConfig,
     MLFlowConfig,
+    OpenTelemetryConfig,
     RayConfig,
     WandbConfig,
 )
@@ -43,7 +43,7 @@ from axolotl.utils.schemas.model import (
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
 from axolotl.utils.schemas.quantization import PTQConfig, QATConfig
-from axolotl.utils.schemas.training import HyperparametersConfig
+from axolotl.utils.schemas.training import HyperparametersConfig, JaggedLRConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.validation import ValidationMixin
 from axolotl.utils.schemas.vllm import VllmConfig
@@ -51,16 +51,17 @@ from axolotl.utils.schemas.vllm import VllmConfig
 LOG = get_logger(__name__)
 
 
-# pylint: disable=too-many-ancestors
 class AxolotlInputConfig(
     ModelInputConfig,
     ModelOutputConfig,
     LoraConfig,
     ReLoRAConfig,
+    JaggedLRConfig,
     HyperparametersConfig,
     WandbConfig,
     MLFlowConfig,
     CometConfig,
+    OpenTelemetryConfig,
     LISAConfig,
     GradioConfig,
     RayConfig,
@@ -108,6 +109,19 @@ class AxolotlInputConfig(
             "description": "Don't upcast the embeddings to float32 when using PEFT. Useful for low-VRAM GPUs"
         },
     )
+    reinit_weights: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Reinitialize model weights randomly instead of loading pretrained weights"
+        },
+    )
+
+    trainer_cls: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "module to custom trainer class to use for training"
+        },
+    )
 
     rl: RLType | None = Field(
         default=None,
@@ -116,10 +130,10 @@ class AxolotlInputConfig(
         },
     )
     trl: TRLConfig | None = Field(
-        default_factory=lambda: TRLConfig(),  # pylint: disable=unnecessary-lambda
+        default_factory=lambda: TRLConfig(),
     )
     vllm: VllmConfig | None = Field(
-        default_factory=lambda: VllmConfig(),  # pylint: disable=unnecessary-lambda
+        default_factory=lambda: VllmConfig(),
     )
     qat: QATConfig | None = None
     quantization: PTQConfig | None = None
@@ -131,6 +145,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Process reward modelling: `True` or `False`"
+        },
+    )
+    center_rewards_coefficient: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Coefficient to incentivize the reward model to output mean-zero rewards (proposed by https://huggingface.co/papers/2312.09244, Eq. 2). Recommended value: `0.01`."
         },
     )
     num_labels: int | None = None
@@ -146,6 +166,7 @@ class AxolotlInputConfig(
     dpo_label_smoothing: float | None = None
     dpo_norm_loss: bool | None = None
     dpo_padding_free: bool | None = None
+    dpo_generate_during_eval: bool | None = None
 
     datasets: (
         Annotated[
@@ -178,6 +199,12 @@ class AxolotlInputConfig(
             "description": "If false, the datasets will not be shuffled and will keep their original order in `datasets`. The same applies to the `test_datasets` option and the `pretraining_dataset` option. Default is true."
         },
     )
+    shuffle_before_merging_datasets: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "If true, each dataset in `datasets` will be shuffled before merging. This allows curriculum learning strategies to be applied at the dataset level. Default is false."
+        },
+    )
     dataset_prepared_path: str | None = Field(
         default=None,
         json_schema_extra={
@@ -192,6 +219,12 @@ class AxolotlInputConfig(
         json_schema_extra={"description": "Index of shard to use for whole dataset"},
     )
     skip_prepare_dataset: bool | None = False
+    num_dataset_shards_to_save: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of shards to save the prepared dataset"
+        },
+    )
 
     pretraining_dataset: (
         Annotated[list[PretrainingDataset | SFTDataset], MinLen(1)] | None
@@ -202,11 +235,25 @@ class AxolotlInputConfig(
         },
     )
     dataset_processes: int | None = Field(
-        default=min(32, os.cpu_count()),  # type: ignore[type-var]
+        default=None,
+        deprecated="Use `dataset_num_proc` instead. This parameter will be removed in a future version.",
         json_schema_extra={
-            "description": "The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set."
+            "description": (
+                "The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set.\n"
+                "For Runpod VMs, it will default to number of vCPUs via RUNPOD_CPU_COUNT."
+            )
         },
     )
+    dataset_num_proc: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()` if not set.\n"
+                "For Runpod VMs, it will default to number of vCPUs via RUNPOD_CPU_COUNT."
+            )
+        },
+    )
+
     dataset_exact_deduplication: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -317,7 +364,12 @@ class AxolotlInputConfig(
         },
     )
 
-    gc_steps: int | None = None
+    gc_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Run garbage collection every `gc_steps` steps. -1 will run on epoch end and before evaluations. Default is 0 (disabled)."
+        },
+    )
 
     bf16: Literal["auto"] | bool | None = Field(
         default="auto",
@@ -328,7 +380,20 @@ class AxolotlInputConfig(
     fp16: bool | None = Field(
         default=None, json_schema_extra={"description": "Use CUDA fp16"}
     )
-    fp8: bool | None = None
+    fp8: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable FP8 mixed precision training using TorchAO. Best "
+            "used in combination with torch.compile."
+        },
+    )
+    fp8_enable_fsdp_float8_all_gather: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable FSDP float8 all-gather optimization for FP8 training. Can "
+            "improve training speed by 10-15% when FSDP is enabled."
+        },
+    )
     bfloat16: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -357,6 +422,12 @@ class AxolotlInputConfig(
             "description": "Additional kwargs to pass to the trainer for gradient checkpointing"
         },
     )
+    activation_offloading: Literal["legacy", "disk"] | bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Whether to offload activations. Available options are: true, false, 'legacy', 'disk'."
+        },
+    )
 
     unfrozen_parameters: list[str] | None = None
 
@@ -366,9 +437,21 @@ class AxolotlInputConfig(
             "description": "The maximum length of an input to train with, this should typically be less than 2048 as most models have a token/context limit of 2048"
         },
     )
+    excess_length_strategy: Literal["drop", "truncate"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "What to do when a tokenized row exceeds sequence_len. 'drop' removes the row; 'truncate' slices tensors to sequence_len. Defaults to 'drop' for backward compatibility."
+        },
+    )
+    eval_sequence_len: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "The maximum length of an input for evaluation. If not specified, defaults to sequence_len"
+        },
+    )
     min_sample_len: int | None = None
-    max_prompt_len: int = Field(
-        default=512,
+    max_prompt_len: int | None = Field(
+        default=None,
         json_schema_extra={"description": "maximum prompt length for RL training"},
     )
     sample_packing: bool | None = Field(
@@ -408,7 +491,7 @@ class AxolotlInputConfig(
     pad_to_sequence_len: bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Pad inputs so each step uses constant sized buffers. This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently"
+            "description": "Pad inputs so each step uses constant sized buffers. This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently. Defaults to True if `sample_packing` enabled"
         },
     )
     curriculum_sampling: bool | None = Field(
@@ -418,12 +501,6 @@ class AxolotlInputConfig(
         },
     )
     multipack_real_batches: bool | None = None
-    pretraining_sample_concatenation: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "whether to concatenate samples during pretraining",
-        },
-    )
 
     batch_flattening: Literal["auto"] | bool | None = Field(
         default=None,
@@ -438,11 +515,32 @@ class AxolotlInputConfig(
     pose_max_context_len: int | None = None
     pose_num_chunks: int | None = None
 
-    pretrain_multipack_buffer_size: int | None = 10_000
+    # Deprecated: Use streaming_multipack_buffer_size instead
+    pretrain_multipack_buffer_size: int | None = Field(
+        default=None,
+        deprecated="Deprecated in v0.13.0, will be removed in v0.14.0. Use streaming_multipack_buffer_size instead",
+    )
     pretrain_multipack_attn: bool | None = Field(
         default=True,
         json_schema_extra={
             "description": "whether to prevent cross attention for packed sequences during pretraining",
+        },
+    )
+    pretraining_sample_concatenation: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "whether to concatenate samples during pretraining",
+        },
+    )
+
+    streaming: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Use streaming mode for loading datasets"},
+    )
+    streaming_multipack_buffer_size: int | None = Field(
+        default=10_000,
+        json_schema_extra={
+            "description": "Buffer size for multipack streaming datasets"
         },
     )
 
@@ -484,12 +582,6 @@ class AxolotlInputConfig(
             "description": "Whether to use flash-attention rms norm implementation - advanced use only"
         },
     )
-    flash_attn_fuse_qkv: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Whether to fuse QKV into a single operation"
-        },
-    )
     flash_attn_fuse_mlp: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -508,6 +600,13 @@ class AxolotlInputConfig(
     )
 
     eager_attention: bool | None = None
+
+    attn_implementation: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Specify a custom attention implementation, used mostly for kernels."
+        },
+    )
 
     unsloth_cross_entropy_loss: bool | None = None
     unsloth_lora_mlp: bool | None = None
@@ -548,6 +647,27 @@ class AxolotlInputConfig(
         },
     )
 
+    tiled_mlp: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use ALST tiled mlp for memory efficient long context"
+        },
+    )
+
+    tiled_mlp_num_shards: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of shards to use for ALST tiled mlp. If unset, it will be set based on seqlen/hidden_size"
+        },
+    )
+
+    tiled_mlp_use_original_mlp: bool | None = Field(
+        default=True,
+        json_schema_extra={
+            "description": "Whether to use original mlp for ALST tiled mlp. Otherwise uses a generic MLP based on llama."
+        },
+    )
+
     llama4_linearized_experts: bool | None = None
 
     deepspeed: str | dict[str, Any] | None = Field(
@@ -556,15 +676,30 @@ class AxolotlInputConfig(
             "description": "Deepspeed config path. e.g., deepspeed_configs/zero3.json"
         },
     )
-    fsdp: list[str] | None = Field(
-        default=None, json_schema_extra={"description": "FSDP configuration"}
+    deepcompile: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use deepcompile for faster training with deepspeed"
+        },
     )
-    fsdp_config: dict[str, Any] | None = Field(
+    fsdp: list[str] | None = Field(
+        default=None,
+        json_schema_extra={"description": "FSDP configuration"},
+        deprecated="Configuring FSDP using `fsdp` is deprecated. Please use `fsdp_config` instead. ",
+    )
+    fsdp_config: FSDPConfig | None = Field(
         default=None, json_schema_extra={"description": "FSDP configuration options"}
+    )
+    fsdp_version: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "FSDP version"},
     )
     fsdp_final_state_dict_type: (
         Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None
-    ) = None
+    ) = Field(
+        default=None,
+        deprecated="Configuring FSDP final state dict type using `fsdp_final_state_dict_type` is deprecated. Please use `fsdp_config.final_state_dict_type` instead.",
+    )
 
     val_set_size: float | None = Field(
         default=0.0,
@@ -573,7 +708,23 @@ class AxolotlInputConfig(
         },
     )
 
+    dp_shard_size: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of devices to shard across. If not set, will use all available devices."
+        },
+    )
+    dp_replicate_size: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "Number of devices to replicate across."},
+    )
     sequence_parallel_degree: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Deprecated: use `context_parallel_size` instead"
+        },
+    )
+    context_parallel_size: int | None = Field(
         default=None,
         json_schema_extra={
             "description": "Set to a divisor of the number of GPUs available to split sequences into chunks of equal size. Use in long context training to prevent OOM when sequences cannot fit into a single GPU's VRAM. E.g., if 4 GPUs are available, set this value to 2 to split each sequence into two equal-sized subsequences, or set to 4 to split into four equal-sized subsequences. See https://docs.axolotl.ai/docs/sequence_parallelism.html for more details."
@@ -591,7 +742,12 @@ class AxolotlInputConfig(
             "description": "One of 'varlen_llama3', 'batch_ring', 'batch_zigzag', 'batch_stripe'. Defaults to 'varlen_llama3' in the sample packing case, and 'batch_ring' in the non-sample packing case."
         },
     )
-
+    tensor_parallel_size: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of tensor parallel processes in TP group. Only supported with DeepSpeed AutoTP."
+        },
+    )
     special_tokens: SpecialTokensConfig | None = Field(
         default=None,
         json_schema_extra={
@@ -612,7 +768,7 @@ class AxolotlInputConfig(
     torch_compile: Literal["auto"] | bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Whether to use torch.compile and which backend to use. setting to `auto` will enable torch compile when torch>=2.5.1"
+            "description": "Whether to use torch.compile and which backend to use. setting to `auto` will enable torch compile when torch>=2.6.0"
         },
     )
     torch_compile_backend: str | None = Field(
@@ -657,6 +813,7 @@ class AxolotlInputConfig(
             "description": "Set to `no` to skip evaluation, `epoch` at end of each epoch, leave empty to infer from `eval_steps`"
         },
     )
+
     save_steps: int | float | None = Field(
         default=None,
         json_schema_extra={
@@ -678,6 +835,13 @@ class AxolotlInputConfig(
     save_total_limit: int | None = Field(
         default=None, json_schema_extra={"description": "Checkpoints saved at a time"}
     )
+    save_first_step: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to checkpoint a model after the first step of training. Defaults to False."
+        },
+    )
+
     logging_steps: int | None = Field(
         default=None, json_schema_extra={"description": "Logging frequency"}
     )
@@ -703,13 +867,24 @@ class AxolotlInputConfig(
             "description": "Enable the pytorch profiler to capture the first N steps of training to the output_dir. see https://pytorch.org/blog/understanding-gpu-memory-1/ for more information. Snapshots can be visualized @ https://pytorch.org/memory_viz"
         },
     )
+    profiler_steps_start: int | None = Field(
+        default=0,
+        json_schema_extra={
+            "description": "Which step to start the profiler at. Useful for only capturing a few steps mid-run."
+        },
+    )
     include_tokens_per_second: bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "bool of whether to include tokens trainer per second in the training metrics. This iterates over the entire dataset once, so it takes some time."
+            "description": "bool of whether to report tokens per second at the end of training. This is not supported with pre-training datasets."
         },
     )
-
+    include_tkps: bool | None = Field(
+        default=True,
+        json_schema_extra={
+            "description": "bool of whether to report tokens per second per-gpu during training by measuring throughput of non-padding tokens."
+        },
+    )
     neftune_noise_alpha: float | None = Field(
         default=None,
         json_schema_extra={
@@ -781,7 +956,13 @@ class AxolotlInputConfig(
     chat_template_jinja: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Custom jinja template for chat template. This will be only used if chat_template is set to `jinja` or `null` (in which case chat_template is automatically set to `jinja`). Default is null."
+            "description": "Custom jinja template or path to jinja file for chat template. This will be only used if chat_template is set to `jinja` or `null` (in which case chat_template is automatically set to `jinja`). Default is null."
+        },
+    )
+    chat_template_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Additional kwargs to pass to the chat template. This is useful for customizing the chat template. For example, you can pass `thinking=False` to add a generation prompt to the chat template."
         },
     )
     eot_tokens: list[str] | None = Field(
@@ -797,7 +978,15 @@ class AxolotlInputConfig(
         },
     )
 
-    fix_untrained_tokens: int | list[int] | None = None
+    fix_untrained_tokens: int | list[int] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Token index or indices to adjust embedding weights to the mean of the other tokens. "
+                "This is useful when the model has untrained embeddings."
+            )
+        },
+    )
 
     # INTERNALS - document for now, generally not set externally
     is_preprocess: bool | None = None
@@ -855,6 +1044,26 @@ class AxolotlInputConfig(
         if ds_configs:
             return [ds_config.model_dump(exclude_none=True) for ds_config in ds_configs]
         return None
+
+    @model_validator(mode="before")
+    @classmethod
+    def warn_peft_trainable_token_to_fix_untrained(cls, data):
+        if (
+            peft_trainable_token_indices := data.get("peft_trainable_token_indices")
+        ) and (fix_untrained_tokens := data.get("fix_untrained_tokens")):
+            if isinstance(fix_untrained_tokens, int):
+                fix_untrained_tokens = (fix_untrained_tokens,)
+
+            if isinstance(peft_trainable_token_indices, int):
+                peft_trainable_token_indices = (peft_trainable_token_indices,)
+
+            for untrained_token_id in fix_untrained_tokens:
+                if untrained_token_id not in peft_trainable_token_indices:
+                    LOG.warning_once(
+                        f"Token {untrained_token_id} is fixed via `fix_untrained_tokens`, yet not in `peft_trainable_token_indices: ` list. "
+                        "Please add it, otherwise the token won't be trained on."
+                    )
+        return data
 
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
@@ -928,7 +1137,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             )
         return data
 
-    # pylint: disable=duplicate-code
     @model_validator(mode="before")
     @classmethod
     def check_multigpu_unsloth(cls, data):
@@ -944,7 +1152,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
         return data
 
-    # pylint: disable=duplicate-code
     @model_validator(mode="before")
     @classmethod
     def check_multigpu_lora_kernels(cls, data):
@@ -954,11 +1161,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             or data.get("lora_o_kernel")
         ):
             capabilities = data.get("capabilities")
-            is_fsdp = data.get("fsdp") is not None
-            is_fsdp2 = (
-                data.get("fsdp_config") is not None
-                and str(data.get("fsdp_config").get("fsdp_version")) == "2"
-            )
+            is_fsdp = data.get("fsdp_config") is not None
+            is_fsdp2 = is_fsdp and str(data.get("fsdp_version")) == "2"
+
             if capabilities and capabilities.get("n_gpu", 0) > 1 and not is_fsdp2:
                 if is_fsdp:
                     raise ValueError(
@@ -992,11 +1197,8 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             # Check multi-GPU compatibility
             capabilities = data.get("capabilities")
             is_multi_gpu = capabilities and capabilities.get("n_gpu", 0) > 1
-            is_fsdp = data.get("fsdp") is not None
-            is_fsdp2 = (
-                data.get("fsdp_config") is not None
-                and str(data.get("fsdp_config").get("fsdp_version")) == "2"
-            )
+            is_fsdp = data.get("fsdp_config") is not None
+            is_fsdp2 = is_fsdp and str(data.get("fsdp_version")) == "2"
 
             if (
                 not is_multi_gpu
@@ -1088,9 +1290,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     def check_min_torch_version(self):
         if self.env_capabilities and self.env_capabilities.torch_version:
             torch_version = self.env_capabilities.torch_version
-            if version.parse(torch_version) < version.parse("2.5.1"):
+            if version.parse(torch_version) < version.parse("2.6.0"):
                 LOG.warning(
-                    f"torch=={torch_version} may not be supported in future versions. Please consider upgrading to torch>=2.5.1."
+                    f"torch=={torch_version} not be supported. Please upgrade to torch>=2.6.0."
                 )
 
         return self
@@ -1119,17 +1321,69 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
             torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
 
-        if (
-            data.get("fsdp")
-            and data.get("fsdp_config")
-            and str(data["fsdp_config"].get("fsdp_version")) == "2"
-        ):
-            if version.parse(torch_version) < version.parse("2.7.0"):
-                raise ValueError(
-                    "FSDP2 and QAT are not supported on torch version < 2.7.0"
-                )
-
         if version.parse(torch_version) < version.parse("2.6.0"):
             raise ValueError("QAT is not supported on torch version < 2.6.0")
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_torch_version(cls, data):
+        env_capabilities = data.get("env_capabilities", {})
+        torch_version = env_capabilities.get("torch_version")
+
+        if torch_version is None:
+            import torch
+
+            torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+
+        if data.get("fsdp_config") and str(data.get("fsdp_version")) == "2":
+            if version.parse(torch_version) < version.parse("2.7.0"):
+                raise ValueError("FSDP2 is not supported on torch version < 2.7.0")
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_dataloader_opts(cls, data):
+        if (
+            data.get("dataloader_num_workers") is None
+            and data.get("dataloader_pin_memory") is None
+            and data.get("dataloader_prefetch_factor") is None
+        ):
+            data["dataloader_num_workers"] = data.get("capabilities").get("n_gpu", 1)
+            data["dataloader_pin_memory"] = True
+            data["dataloader_prefetch_factor"] = 256
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_dataset_num_proc(cls, data):
+        if data.get("dataset_processes") is not None:
+            if data.get("dataset_num_proc") is None:
+                data["dataset_num_proc"] = data["dataset_processes"]
+                LOG.warning(
+                    "dataset_processes is deprecated and will be removed in a future version. "
+                    "Please use dataset_num_proc instead."
+                )
+            else:
+                LOG.warning(
+                    "Both dataset_processes and dataset_num_proc are set. "
+                    "Using dataset_num_proc and ignoring dataset_processes."
+                )
+            del data["dataset_processes"]
+        elif data.get("dataset_num_proc") is None:
+            data["dataset_num_proc"] = get_default_process_count()
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_deduplication_with_streaming(cls, data):
+        if data.get("dataset_exact_deduplication") and (
+            data.get("streaming") or data.get("pretraining_dataset")
+        ):
+            raise NotImplementedError(
+                "dataset_exact_deduplication is not available for streaming datasets. "
+            )
         return data

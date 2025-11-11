@@ -46,7 +46,7 @@ output_dir: ./outputs/out
 
 sequence_len: 4096
 sample_packing: true
-pad_to_sequence_len: true
+
 
 gradient_accumulation_steps: 1
 micro_batch_size: 2
@@ -64,7 +64,7 @@ flex_attn_compile_kwargs:
   dynamic: false
   mode: max-autotune-no-cudagraphs
 
-warmup_steps: 10
+warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
 weight_decay: 0.0
@@ -74,7 +74,7 @@ fsdp:
 fsdp_config:
   fsdp_version: 2
   fsdp_offload_params: false
-  fsdp_cpu_ram_efficient_loading: true
+  # fsdp_cpu_ram_efficient_loading: true # does not work with load_in_8bit/4bit
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
   fsdp_transformer_layer_cls_to_wrap: Llama4TextDecoderLayer
   fsdp_state_dict_type: SHARDED_STATE_DICT
@@ -82,5 +82,7 @@ fsdp_config:
   fsdp_reshard_after_forward: true
   fsdp_activation_checkpointing: true
 special_tokens:
-  pad_token: <|finetune_right_pad_id|>
+  pad_token: <|finetune_right_pad|>
   eos_token: <|eot|>
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

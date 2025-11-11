@@ -9,7 +9,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import check_model_output_exists, with_temp_dir
+from ..utils import check_model_output_exists, require_torch_2_6_0, with_temp_dir
 
 
 class TestMistral(unittest.TestCase):
@@ -17,9 +17,9 @@ class TestMistral(unittest.TestCase):
     Test case for Llama models using LoRA
     """
 
+    @require_torch_2_6_0
     @with_temp_dir
     def test_lora_packing(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "trl-internal-testing/tiny-MistralForCausalLM-0.2",
@@ -55,6 +55,7 @@ class TestMistral(unittest.TestCase):
                 "save_steps": 3,
                 "eval_steps": 4,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)
@@ -66,7 +67,6 @@ class TestMistral(unittest.TestCase):
 
     @with_temp_dir
     def test_ft_packing(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "trl-internal-testing/tiny-MistralForCausalLM-0.2",
@@ -96,6 +96,7 @@ class TestMistral(unittest.TestCase):
                 "save_steps": 3,
                 "eval_steps": 4,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

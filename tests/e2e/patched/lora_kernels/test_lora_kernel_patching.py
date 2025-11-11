@@ -1,7 +1,5 @@
 """Integration tests for LoRA activation and attention kernels."""
 
-# pylint: disable=redefined-outer-name
-
 from pathlib import Path
 
 import pytest
@@ -88,7 +86,7 @@ def test_attention_patching_integration(model_name, attention_cls):
     cfg = DictDefault({"base_model": model_name})
 
     # Store the original implementation
-    original_forward = getattr(attention_cls, "forward")
+    original_forward = attention_cls.forward
 
     # Apply patch
     patch_self_attn_lora(cfg)
@@ -104,7 +102,7 @@ def test_attention_patching_integration(model_name, attention_cls):
     assert hasattr(attention_cls, "_original_forward")
 
     # Clean up
-    setattr(attention_cls, "forward", original_forward)
+    attention_cls.forward = original_forward
     delattr(attention_cls, "_original_forward")
 
 
@@ -162,7 +160,7 @@ def test_geglu_model_integration():
     """Test GeGLU activation with Gemma model."""
     model = AutoModelForCausalLM.from_pretrained(
         "trl-internal-testing/tiny-Gemma2ForCausalLM",
-        torch_dtype=torch.float16,
+        dtype=torch.float16,
         device_map="cuda:0",
     )
     peft_config = get_peft_config(
@@ -379,9 +377,9 @@ def test_model_architecture(model_config):
 
     # Verify correct activation function
     layer = patched_model.model.model.layers[0]
-    assert (
-        layer.mlp.forward.__func__ is model_config["expected_activation"]
-    ), f"Wrong activation for {model_config['name']}"
+    assert layer.mlp.forward.__func__ is model_config["expected_activation"], (
+        f"Wrong activation for {model_config['name']}"
+    )
 
     # Test forward pass
     inputs = get_test_inputs(model)
@@ -390,13 +388,12 @@ def test_model_architecture(model_config):
         patched_output = patched_model(inputs).logits
 
     # Check outputs match
-    assert torch.allclose(
-        original_output, patched_output, rtol=1e-4
-    ), f"Outputs don't match for {model_config['name']}"
+    assert torch.allclose(original_output, patched_output, rtol=1e-4), (
+        f"Outputs don't match for {model_config['name']}"
+    )
 
 
-# pylint: disable=duplicate-code
-def test_kernel_training_integration():
+def test_kernel_training_integration(temp_dir):
     """Test model loading with kernel patches enabled."""
     from axolotl.cli.utils import load_model_and_tokenizer
 
@@ -425,6 +422,14 @@ def test_kernel_training_integration():
             "lora_o_kernel": True,
         }
     )
+
+    # Write cfg to yaml file
+    path = Path(temp_dir) / "config.yaml"
+    with open(path, "w", encoding="utf-8") as fout:
+        fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
+
+    # Load config
+    cfg = load_cfg(str(path))
 
     # Load model
     model, _, _ = load_model_and_tokenizer(cfg=cfg)
@@ -505,7 +510,7 @@ def test_kernel_training_integration_auto_enable(temp_dir):
     assert found_patched_attn
 
 
-def test_kernel_training_integration_dropout_non_zero():
+def test_kernel_training_integration_dropout_non_zero(temp_dir):
     """Test model loading with dropout non-zero should not patch."""
 
     from axolotl.cli.utils import load_model_and_tokenizer
@@ -533,6 +538,14 @@ def test_kernel_training_integration_dropout_non_zero():
         }
     )
 
+    # Write cfg to yaml file
+    path = Path(temp_dir) / "config.yaml"
+    with open(path, "w", encoding="utf-8") as fout:
+        fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
+
+    # Load config
+    cfg = load_cfg(str(path))
+
     # Get original attention class
     attention_cls = get_attention_cls_from_config(cfg)
 
@@ -547,15 +560,13 @@ def test_kernel_training_integration_dropout_non_zero():
     model_loader = ModelLoader(cfg, tokenizer)
 
     # Apply patch
-    model_loader.patch_manager._apply_self_attention_lora_patch()  # pylint: disable=protected-access
+    model_loader.patch_manager._apply_self_attention_lora_patch()
 
     # Verify patch was not applied
     assert attention_cls.forward == original_forward_method
 
     # Apply apply_lora_kernel_patches
-    model_loader.patch_manager._apply_lora_kernel_patch(  # pylint: disable=protected-access
-        model
-    )
+    model_loader.patch_manager._apply_lora_kernel_patch(model)
 
     # Verify patch was not applied
     layers = get_layers(model)

@@ -141,6 +141,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_num_proc": 4,
                 }
             )
 
@@ -179,6 +180,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_num_proc": 4,
                 }
             )
 
@@ -217,6 +219,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_num_proc": 4,
                 }
             )
 
@@ -249,6 +252,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_num_proc": 4,
                 }
             )
 
@@ -281,6 +285,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_num_proc": 4,
                 }
             )
 
@@ -365,10 +370,10 @@ class TestDatasetPreparation:
                 "rl": "dpo",
                 "chat_template": "llama3",
                 "datasets": [ALPACA_MESSAGES_CONFIG_REVISION],
+                "dataset_num_proc": 4,
             }
         )
 
-        # pylint: disable=duplicate-code
         with patch(
             "axolotl.utils.data.rl.load_dataset_with_config"
         ) as mock_load_dataset:
@@ -466,6 +471,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_num_proc": 4,
                 }
             )
 

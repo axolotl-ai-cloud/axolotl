@@ -13,9 +13,14 @@ format:
 - [Pixtral](#sec-pixtral)
 - [Llava-1.5](#sec-llava-15)
 - [Mistral-Small-3.1](#sec-mistral-small-31)
+- [Magistral-Small-2509](#sec-magistral-small-2509)
+- [Voxtral](#sec-voxtral)
 - [Gemma-3](#sec-gemma-3)
+- [Gemma-3n](#sec-gemma-3n)
 - [Qwen2-VL](#sec-qwen2-vl)
 - [Qwen2.5-VL](#sec-qwen25-vl)
+- [SmolVLM2](#sec-smolvlm2)
+- [LFM2-VL](#sec-lfm2-vl)
 
 ## Usage
 
@@ -30,14 +35,13 @@ skip_prepare_dataset: true
 remove_unused_columns: false  # leave columns in place as they are needed to handle image embeddings during training
 sample_packing: false  # not yet supported with multimodal
 
-chat_template:  # see in next section
+chat_template:  # see in next section if specified
 
 # example dataset
 datasets:
   - path: HuggingFaceH4/llava-instruct-mix-vsft
     type: chat_template
     split: train[:1%]
-    field_messages: messages
 
 # (optional) if doing lora, only finetune the Language model,
 # leave the vision model and vision tower frozen
@@ -52,8 +56,12 @@ image_resize_algorithm: bilinear
 
 Please see [examples](https://github.com/axolotl-ai/axolotl/tree/main/examples) folder for full configs.
 
-::: {.callout-warning}
+::: {.callout-tip}
 Some of our chat_templates have been extended to support broader dataset types. This should not break any existing configs.
+:::
+
+::: {.callout-note}
+As of now, we do not truncate nor drop samples based on `sequence_len` as each arch has different ways to process non-text tokens. We are looking for help on this.
 :::
 
 ### Mllama {#sec-mllama}
@@ -90,10 +98,32 @@ chat_template: llava
 
 ### Mistral-Small-3.1 {#sec-mistral-small-31}
 
+::: {.callout-tip}
+Please make sure to install vision lib via `pip install 'mistral-common[opencv]==1.8.5'`
+:::
+
 ```yaml
 base_model: mistralai/Mistral-Small-3.1-24B-Instruct-2503
+```
 
-chat_template: mistral_v7_tekken
+### Magistral-Small-2509 {#sec-magistral-small-2509}
+
+::: {.callout-tip}
+Please make sure to install vision lib via `pip install 'mistral-common[opencv]==1.8.5'`
+:::
+
+```yaml
+base_model: mistralai/Magistral-Small-2509
+```
+
+### Voxtral {#sec-voxtral}
+
+::: {.callout-tip}
+Please make sure to install audio lib via `pip3 install librosa==0.11.0 'mistral_common[audio]==1.8.3'`
+:::
+
+```yaml
+base_model: mistralai/Voxtral-Mini-3B-2507
 ```
 
 ### Gemma-3 {#sec-gemma-3}
@@ -108,6 +138,22 @@ For multi-modal 4B/12B/27B models, use the following config:
 base_model: google/gemma-3-4b-it
 
 chat_template: gemma3
+```
+
+### Gemma-3n {#sec-gemma-3n}
+
+::: {.callout-warning}
+The model's initial loss and grad norm will be very high. We suspect this to be due to the Conv in the vision layers.
+:::
+
+::: {.callout-tip}
+Please make sure to install `timm` via `pip3 install timm==1.0.17`
+:::
+
+```yaml
+base_model: google/gemma-3n-E2B-it
+
+chat_template: gemma3n
 ```
 
 ### Qwen2-VL {#sec-qwen2-vl}
@@ -126,13 +172,43 @@ base_model: Qwen/Qwen2.5-VL-7B-Instruct
 chat_template: qwen2_vl  # same as qwen2-vl
 ```
 
+### Qwen3-VL {#sec-qwen3-vl}
+
+```yaml
+base_model: Qwen/Qwen3-VL-4B-Instruct
+
+chat_template: qwen2_vl  # same as qwen2-vl
+```
+
+### SmolVLM2 {#sec-smolvlm2}
+
+::: {.callout-tip}
+Please make sure to install `num2words` via `pip3 install num2words==0.5.14`
+:::
+
+```yaml
+base_model: HuggingFaceTB/SmolVLM2-500M-Video-Instruct
+```
+
+### LFM2-VL {#sec-lfm2-vl}
+
+::: {.callout-warning}
+Please uninstall `causal-conv1d` via `pip3 uninstall -y causal-conv1d`
+:::
+
+```yaml
+base_model: LiquidAI/LFM2-VL-450M
+```
+
 ## Dataset Format
 
 For multi-modal datasets, we adopt an extended `chat_template` format similar to OpenAI's Message format.
 
 - A message is a list of `role` and `content`.
 - `role` can be `system`, `user`, `assistant`, etc.
-- `content` is a list of `type` and (`text` or `image` or `path` or `url` or `base64`).
+- `content` is a list of `type` and (`text`, `image`, `path`, `url`, `base64`, or `audio`).
+
+### Image
 
 ::: {.callout-note}
 For backwards compatibility:
@@ -141,14 +217,42 @@ For backwards compatibility:
 - If `content` is a string, it will be converted to a list with `type` as `text`.
 :::
 
-::: {.callout-tip}
 For image loading, you can use the following keys within `content` alongside `"type": "image"`:
 
 - `"path": "/path/to/image.jpg"`
 - `"url": "https://example.com/image.jpg"`
 - `"base64": "..."`
 - `"image": PIL.Image`
+
+### Audio
+
+For audio loading, you can use the following keys within `content` alongside `"type": "audio"`:
+
+- `"path": "/path/to/audio.mp3"`
+- `"url": "https://example.com/audio.mp3"`
+- `"audio": np.ndarray`
+
+::: {.callout-tip}
+
+You may need to install `librosa` via `pip3 install librosa==0.11.0`.
+
 :::
+
+### Video
+
+::: {.callout-warning}
+
+This is not well tested at the moment. We welcome contributors!
+
+:::
+
+For video loading, you can use the following keys within `content` alongside `"type": "video"`:
+
+- `"path": "/path/to/video.mp4"`
+- `"url": "https://example.com/video.mp4"`
+- `"video": np.ndarray | list[PIL.Image.Image] | torch.Tensor` (or list of the aforementioned)
+
+### Example
 
 Here is an example of a multi-modal dataset:
 ```json
@@ -178,3 +282,9 @@ Here is an example of a multi-modal dataset:
   }
 ]
 ```
+
+## FAQ
+
+1. `PIL.UnidentifiedImageError: cannot identify image file ...`
+
+`PIL` could not retrieve the file at `url` using `requests`. Please check for typo. One alternative reason is that the request is blocked by the server.

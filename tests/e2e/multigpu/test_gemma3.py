@@ -29,7 +29,6 @@ class TestMultiGPUGemma3:
     """
 
     def test_lora_ddp_packed(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "axolotl-mirrors/gemma-3-4b-pt",
@@ -64,12 +63,14 @@ class TestMultiGPUGemma3:
                 },
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.0001,
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "save_first_step": False,
             }
         )
 

@@ -8,13 +8,14 @@ from datetime import timedelta
 import torch
 import torch.distributed as dist
 from accelerate import PartialState
+from accelerate.utils import ParallelismConfig
 from transformers.utils.import_utils import (
     is_torch_cuda_available,
     is_torch_mps_available,
     is_torch_npu_available,
 )
 
-distributed_state = None  # pylint: disable=invalid-name
+distributed_state = None
 
 
 def get_device_type() -> torch.device:
@@ -47,10 +48,13 @@ def get_current_device() -> int:
 
 
 def init_distributed_state():
-    global distributed_state  # pylint: disable=global-statement
+    global distributed_state
     if distributed_state is None:
         timeout = int(os.environ.get("AXOLOTL_NCCL_TIMEOUT", 1800))
-        distributed_state = PartialState(timeout=timedelta(seconds=timeout))
+        try:
+            distributed_state = PartialState(timeout=timedelta(seconds=timeout))
+        except ValueError:
+            pass
 
 
 def get_distributed_state() -> PartialState | None:
@@ -133,7 +137,7 @@ def zero_first(is_main: bool):
         barrier()
 
 
-def gather_scalar_from_all_ranks(fn, world_size=1):  # pylint: disable=invalid-name
+def gather_scalar_from_all_ranks(fn, world_size=1):
     """
     Run a callable 'fn' on all ranks and gather the results on the specified rank.
 
@@ -197,7 +201,7 @@ def broadcast_dict(vals: dict):
     return vals
 
 
-def compute_and_broadcast(fn):  # pylint: disable=invalid-name
+def compute_and_broadcast(fn):
     """
     Compute a value using the function 'fn' only on the specified rank (default is 0).
     The value is then broadcasted to all other ranks.
@@ -230,7 +234,7 @@ def compute_and_broadcast(fn):  # pylint: disable=invalid-name
     return float(value_tensor.item())
 
 
-def gather_from_all_ranks(fn, world_size=1):  # pylint: disable=invalid-name
+def gather_from_all_ranks(fn, world_size=1):
     """
     Run a callable 'fn' on all ranks and gather the results on the specified rank.
 
@@ -290,3 +294,77 @@ def reduce_and_broadcast(fn1, fn2):
     # Use compute_and_broadcast to compute the reduced value on the main process
     # and then broadcast it to all ranks
     return compute_and_broadcast(lambda: fn2(gathered_values))
+
+
+def build_parallelism_config(cfg):
+    pc_kwargs = _get_parallel_config_kwargs(
+        get_world_size(),
+        cfg.tensor_parallel_size,
+        cfg.context_parallel_size,
+        cfg.dp_shard_size,
+        cfg.dp_replicate_size,
+        bool(cfg.fsdp or cfg.fsdp_config),
+    )
+
+    if pc_kwargs:
+        parallelism_config = ParallelismConfig(
+            **pc_kwargs,
+        )
+        device_mesh = parallelism_config.build_device_mesh("cuda")
+
+        return parallelism_config, device_mesh
+    return None, None
+
+
+def _get_parallel_config_kwargs(
+    world_size: int,
+    tensor_parallel_size: int = 1,
+    context_parallel_size: int = 1,
+    dp_shard_size: int | None = None,
+    dp_replicate_size: int | None = None,
+    is_fsdp: bool = False,
+):
+    pc_kwargs = {}
+    remaining_world_size = world_size
+
+    if tensor_parallel_size and tensor_parallel_size > 1:
+        pc_kwargs["tp_size"] = tensor_parallel_size
+        remaining_world_size = remaining_world_size // tensor_parallel_size
+
+    if context_parallel_size and context_parallel_size > 1:
+        pc_kwargs["cp_size"] = context_parallel_size
+        remaining_world_size = remaining_world_size // context_parallel_size
+
+    if dp_shard_size is None and dp_replicate_size in (None, 1):
+        if remaining_world_size > 1:
+            pc_kwargs["dp_shard_size"] = remaining_world_size
+            remaining_world_size = 1
+
+    if dp_replicate_size and dp_replicate_size > 1:
+        pc_kwargs["dp_replicate_size"] = dp_replicate_size
+        remaining_world_size = remaining_world_size // dp_replicate_size
+
+    if remaining_world_size > 1 and dp_shard_size and dp_shard_size > 1:
+        if not is_fsdp:
+            raise ValueError(
+                "dp_shard_size was configured without a corresponding fsdp_config! "
+                "Please ensure you have configured FSDP using fsdp_config."
+            )
+        pc_kwargs["dp_shard_size"] = dp_shard_size
+        remaining_world_size = remaining_world_size // dp_shard_size
+        if remaining_world_size > 1 and "dp_replicate_size" not in pc_kwargs:
+            pc_kwargs["dp_replicate_size"] = remaining_world_size
+            remaining_world_size = 1
+
+    if remaining_world_size > 1:
+        if "dp_shard_size" not in pc_kwargs and is_fsdp:
+            pc_kwargs["dp_shard_size"] = remaining_world_size
+            remaining_world_size = 1
+
+    if remaining_world_size > 1:
+        raise ValueError(
+            f"The configured parallelisms are incompatible with the current world size ({get_world_size()})!\n"
+            f"{pc_kwargs}"
+        )
+
+    return pc_kwargs

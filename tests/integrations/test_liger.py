@@ -10,7 +10,6 @@ from axolotl.utils.config import prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
 
-# pylint: disable=duplicate-code
 @pytest.fixture(name="minimal_liger_cfg")
 def fixture_cfg():
     return DictDefault(
@@ -30,7 +29,6 @@ def fixture_cfg():
     )
 
 
-# pylint: disable=too-many-public-methods
 class TestValidation:
     """
     Test the validation module for liger
@@ -74,6 +72,22 @@ class TestValidation:
         with pytest.raises(
             ValueError,
             match=r".*You cannot have both `liger_swiglu` and `liger_glu_activation` set.*",
+        ):
+            prepare_plugins(test_cfg)
+            validate_config(test_cfg)
+
+    def test_use_token_scaling_require_flce(self, minimal_liger_cfg):
+        test_cfg = DictDefault(
+            {
+                "liger_fused_linear_cross_entropy": False,
+                "liger_use_token_scaling": True,
+            }
+            | minimal_liger_cfg
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=r"`liger_use_token_scaling: true` requires `liger_fused_linear_cross_entropy` enabled.",
         ):
             prepare_plugins(test_cfg)
             validate_config(test_cfg)

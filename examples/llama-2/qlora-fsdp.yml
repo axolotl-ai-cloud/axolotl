@@ -20,7 +20,7 @@ lora_model_dir:
 
 sequence_len: 512
 sample_packing: false
-pad_to_sequence_len: true
+
 
 lora_r: 32
 lora_alpha: 16
@@ -50,7 +50,7 @@ resume_from_checkpoint:
 logging_steps: 1
 flash_attention: true
 
-warmup_steps: 10
+warmup_ratio: 0.1
 evals_per_epoch: 4
 saves_per_epoch: 1
 weight_decay: 0.0
@@ -66,4 +66,7 @@ fsdp_config:
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
   fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
   fsdp_state_dict_type: FULL_STATE_DICT
+  # fsdp_cpu_offload_pin_memory: false  # uncomment to enable swap memory usage when RAM is insufficient
 special_tokens:
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

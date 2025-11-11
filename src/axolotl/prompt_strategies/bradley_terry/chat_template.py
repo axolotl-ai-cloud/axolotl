@@ -34,7 +34,6 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
 
         max_length = self.prompter.max_length
 
-        # pylint: disable=duplicate-code
         prompt["messages"] = []
         if prompt["system"]:
             prompt["messages"].append({"role": "system", "content": prompt["system"]})
@@ -52,7 +51,6 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
                 :max_length
             ]
 
-        # pylint: disable=duplicate-code
         prompt["messages"] = []
         if prompt["system"]:
             prompt["messages"].append({"role": "system", "content": prompt["system"]})
@@ -73,10 +71,10 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
             ]
 
         return {
-            "input_ids_chosen": chosen_tokenized["input_ids"],
+            "chosen_input_ids": chosen_tokenized["input_ids"],
             "attention_mask_chosen": chosen_tokenized["attention_mask"],
             "labels_chosen": 1.0,
-            "input_ids_rejected": rejected_tokenized["input_ids"],
+            "rejected_input_ids": rejected_tokenized["input_ids"],
             "attention_mask_rejected": rejected_tokenized["attention_mask"],
             "labels_rejected": 0.0,
         }

@@ -21,7 +21,6 @@ class TestMistral(unittest.TestCase):
 
     @with_temp_dir
     def test_lora(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "trl-internal-testing/tiny-MistralForCausalLM-0.2",
@@ -55,6 +54,7 @@ class TestMistral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
 
@@ -67,7 +67,6 @@ class TestMistral(unittest.TestCase):
 
     @with_temp_dir
     def test_ft(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "trl-internal-testing/tiny-MistralForCausalLM-0.2",
@@ -95,6 +94,7 @@ class TestMistral(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():

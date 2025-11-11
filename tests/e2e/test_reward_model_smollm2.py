@@ -19,7 +19,6 @@ class TestRewardModelLoraSmolLM2(unittest.TestCase):
 
     @with_temp_dir
     def test_rm_lora(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -58,6 +57,7 @@ class TestRewardModelLoraSmolLM2(unittest.TestCase):
                 "gradient_checkpointing": True,
                 "warmup_ratio": 0.1,
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
         cfg = validate_config(cfg)

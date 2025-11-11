@@ -8,7 +8,7 @@ import pytest
 from datasets import Dataset
 from transformers import AutoTokenizer
 
-from axolotl.prompt_strategies.dpo.chat_template import default
+from axolotl.prompt_strategies.dpo.chat_template import argilla_chat, default
 from axolotl.utils.dict import DictDefault
 
 from tests.hf_offline_utils import enable_hf_offline
@@ -16,7 +16,6 @@ from tests.hf_offline_utils import enable_hf_offline
 
 @pytest.fixture(name="assistant_dataset")
 def fixture_assistant_dataset():
-    # pylint: disable=duplicate-code
     return Dataset.from_list(
         [
             {
@@ -49,7 +48,6 @@ def fixture_assistant_dataset():
 
 @pytest.fixture(name="custom_assistant_dataset")
 def fixture_custom_assistant_dataset():
-    # pylint: disable=duplicate-code
     return Dataset.from_list(
         [
             {
@@ -80,6 +78,36 @@ def fixture_custom_assistant_dataset():
     )
 
 
+@pytest.fixture(name="argilla_chat_dataset")
+def fixture_argilla_chat_dataset():
+    return Dataset.from_list(
+        [
+            {
+                "chosen": [
+                    {
+                        "role": "user",
+                        "content": "hello",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "goodbye",
+                    },
+                ],
+                "rejected": [
+                    {
+                        "role": "user",
+                        "content": "hello",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "party on",
+                    },
+                ],
+            }
+        ]
+    )
+
+
 @pytest.fixture(name="phi3_tokenizer")
 @enable_hf_offline
 def fixture_phi3_tokenizer():
@@ -102,7 +130,6 @@ class TestAssistantDPOChatTemplateLlama3:
     """
 
     def test_llama3_defaults(self, llama3_tokenizer, assistant_dataset):
-        # pylint: disable=duplicate-code
         transform_fn, _ = default(
             DictDefault(
                 {
@@ -127,7 +154,6 @@ class TestAssistantDPOChatTemplateLlama3:
         assert result["rejected"] == "party on<|eot_id|>"
 
     def test_llama3_configured(self, llama3_tokenizer, custom_assistant_dataset):
-        # pylint: disable=duplicate-code
         transform_fn, _ = default(
             DictDefault(
                 {
@@ -168,7 +194,6 @@ class TestAssistantDPOChatTemplatePhi3:
     """
 
     def test_phi3_defaults(self, phi3_tokenizer, assistant_dataset):
-        # pylint: disable=duplicate-code
         transform_fn, _ = default(
             DictDefault(
                 {
@@ -198,7 +223,6 @@ class TestAssistantDPOChatTemplateGemma:
     """
 
     def test_gemma_defaults(self, gemma_tokenizer, assistant_dataset):
-        # pylint: disable=duplicate-code
         transform_fn, _ = default(
             DictDefault(
                 {
@@ -220,6 +244,52 @@ class TestAssistantDPOChatTemplateGemma:
         )
         assert result["chosen"] == "goodbye<end_of_turn>"
         assert result["rejected"] == "party on<end_of_turn>"
+
+
+class TestArgillaChatDPOChatTemplate:
+    """
+    Test class for argilla_chat style datasets (chosen/rejected contain full conversations).
+    """
+
+    def test_llama3_argilla_chat(self, llama3_tokenizer, argilla_chat_dataset):
+        transform_fn, _ = argilla_chat(
+            DictDefault(
+                {
+                    "chat_template": "llama3",
+                    "datasets": [
+                        {
+                            "type": "chat_template.argilla_chat",
+                        }
+                    ],
+                }
+            )
+        )
+        result = transform_fn(argilla_chat_dataset[0], tokenizer=llama3_tokenizer)
+        assert result["prompt"] == (
+            "<|begin_of_text|>"
+            + "<|start_header_id|>user<|end_header_id|>\n\nhello<|eot_id|>"
+            + "<|start_header_id|>assistant<|end_header_id|>\n\n"
+        )
+        assert result["chosen"] == "goodbye<|eot_id|>"
+        assert result["rejected"] == "party on<|eot_id|>"
+
+    def test_phi3_argilla_chat(self, phi3_tokenizer, argilla_chat_dataset):
+        transform_fn, _ = argilla_chat(
+            DictDefault(
+                {
+                    "chat_template": "tokenizer_default",
+                    "datasets": [
+                        {
+                            "type": "chat_template.argilla_chat",
+                        }
+                    ],
+                }
+            )
+        )
+        result = transform_fn(argilla_chat_dataset[0], tokenizer=phi3_tokenizer)
+        assert result["prompt"] == "<|user|>\nhello<|end|>\n" + "<|assistant|>\n"
+        assert result["chosen"] == "goodbye<|end|>"
+        assert result["rejected"] == "party on<|end|>"
 
 
 if __name__ == "__main__":

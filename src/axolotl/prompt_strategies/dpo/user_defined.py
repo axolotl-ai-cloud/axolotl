@@ -3,7 +3,7 @@ User-defined DPO strategies
 """
 
 
-def default(cfg, dataset_idx=0, **kwargs):  # pylint: disable=unused-argument
+def default(cfg, dataset_idx=0, **kwargs):
     ds_cfg = cfg["datasets"][dataset_idx]["type"]
     if not isinstance(ds_cfg, dict):
         raise ValueError(
@@ -33,7 +33,7 @@ def default(cfg, dataset_idx=0, **kwargs):  # pylint: disable=unused-argument
                 system=sample[field_system], prompt=sample[field_prompt]
             )
         else:
-            sample["prompt"] = prompt_format.format(prompt=sample["prompt"])
+            sample["prompt"] = prompt_format.format(prompt=sample[field_prompt])
         sample["chosen"] = chosen_format.format(chosen=sample[field_chosen])
         sample["rejected"] = rejected_format.format(rejected=sample[field_rejected])
         return sample

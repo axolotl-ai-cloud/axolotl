@@ -5,17 +5,19 @@ on:
     branches:
       - "main"
     paths:
-      - 'Dockerfile-base'
+      - 'docker/Dockerfile-base'
+      - 'docker/Dockerfile-uv-base'
       - '.github/workflows/base.yml'
   pull_request:
     paths:
-      - 'Dockerfile-base'
+      - 'docker/Dockerfile-base'
+      - 'docker/Dockerfile-uv-base'
       - '.github/workflows/base.yml'
   workflow_dispatch:
 
 jobs:
   build-base:
-    if: github.repository_owner == 'axolotl-ai-cloud'
+    if: ${{ github.repository_owner == 'axolotl-ai-cloud' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     timeout-minutes: 480
     # this job needs to be run on self-hosted GPU runners...
     runs-on: ubuntu-latest-m
@@ -23,35 +25,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: "124"
-            cuda_version: 12.4.1
-            cudnn_version: ""
-            python_version: "3.11"
-            pytorch: 2.5.1
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-base"
-          - cuda: "124"
-            cuda_version: 12.4.1
-            cudnn_version: ""
-            python_version: "3.11"
-            pytorch: 2.6.0
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-base"
           - cuda: "126"
             cuda_version: 12.6.3
             cudnn_version: ""
             python_version: "3.11"
-            pytorch: 2.6.0
+            pytorch: 2.7.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-base"
           - cuda: "126"
-            cuda_version: 12.6.3
-            cudnn_version: ""
-            python_version: "3.11"
-            pytorch: 2.7.1
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-base"
-          - cuda: "128"
             cuda_version: 12.6.3
             cudnn_version: ""
             python_version: "3.11"
@@ -62,9 +43,37 @@ jobs:
             cuda_version: 12.8.1
             cudnn_version: ""
             python_version: "3.11"
-            pytorch: nightly
+            pytorch: 2.7.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-base-nightly"
+            dockerfile: "Dockerfile-base"
+          - cuda: "128"
+            cuda_version: 12.8.1
+            cudnn_version: ""
+            python_version: "3.11"
+            pytorch: 2.8.0
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-base"
+          - cuda: "128"
+            cuda_version: 12.8.1
+            cudnn_version: ""
+            python_version: "3.11"
+            pytorch: 2.9.0
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-base"
+          - cuda: "130"
+            cuda_version: 13.0.0
+            cudnn_version: ""
+            python_version: "3.11"
+            pytorch: 2.9.0
+            torch_cuda_arch_list: "9.0+PTX"
+            dockerfile: "Dockerfile-base"
+#          - cuda: "128"
+#            cuda_version: 12.8.1
+#            cudnn_version: ""
+#            python_version: "3.11"
+#            pytorch: nightly
+#            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+#            dockerfile: "Dockerfile-base-nightly"
 #          # "next" is for release candidates of pytorch
 #          - cuda: "128"
 #            cuda_version: 12.8.1
@@ -106,7 +115,7 @@ jobs:
             PYTORCH_VERSION=${{ matrix.pytorch }}
             TORCH_CUDA_ARCH_LIST=${{ matrix.torch_cuda_arch_list }}
   build-base-uv:
-    if: github.repository_owner == 'axolotl-ai-cloud'
+    if: ${{ github.repository_owner == 'axolotl-ai-cloud' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     timeout-minutes: 480
     runs-on: ubuntu-latest-m
     strategy:
@@ -117,7 +126,7 @@ jobs:
             cuda_version: 12.6.3
             cudnn_version: ""
             python_version: "3.11"
-            pytorch: 2.6.0
+            pytorch: 2.7.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
           - cuda: "128"
@@ -126,6 +135,27 @@ jobs:
             python_version: "3.11"
             pytorch: 2.7.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-uv-base"
+          - cuda: "128"
+            cuda_version: 12.8.1
+            cudnn_version: ""
+            python_version: "3.11"
+            pytorch: 2.8.0
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-uv-base"
+          - cuda: "128"
+            cuda_version: 12.8.1
+            cudnn_version: ""
+            python_version: "3.11"
+            pytorch: 2.9.0
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-uv-base"
+          - cuda: "130"
+            cuda_version: 13.0.0
+            cudnn_version: ""
+            python_version: "3.11"
+            pytorch: 2.9.0
+            torch_cuda_arch_list: "9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
     steps:
       - name: Checkout

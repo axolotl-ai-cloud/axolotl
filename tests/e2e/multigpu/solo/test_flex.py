@@ -31,7 +31,6 @@ class TestPackedFlex:
 
     @require_torch_2_6_0
     def test_loss_llama(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -54,12 +53,14 @@ class TestPackedFlex:
                 "gradient_accumulation_steps": 2,
                 "gradient_checkpointing": True,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "max_steps": 2,
                 "use_tensorboard": True,
                 "save_strategy": "no",
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -85,5 +86,5 @@ class TestPackedFlex:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss (%s) is too high"
         )

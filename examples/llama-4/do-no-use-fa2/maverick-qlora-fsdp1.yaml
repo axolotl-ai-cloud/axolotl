@@ -47,7 +47,7 @@ output_dir: ./outputs/out
 
 sequence_len: 4096
 sample_packing: true
-pad_to_sequence_len: true
+
 
 gradient_accumulation_steps: 1
 micro_batch_size: 1
@@ -66,7 +66,7 @@ gradient_checkpointing: offload
 gradient_checkpointing_kwargs:
   use_reentrant: false
 
-warmup_steps: 20
+warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
 weight_decay: 0.0
@@ -84,5 +84,7 @@ fsdp_config:
   fsdp_state_dict_type: FULL_STATE_DICT
   fsdp_sharding_strategy: FULL_SHARD
 special_tokens:
-  pad_token: <|finetune_right_pad_id|>
+  pad_token: <|finetune_right_pad|>
   eos_token: <|eot|>
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

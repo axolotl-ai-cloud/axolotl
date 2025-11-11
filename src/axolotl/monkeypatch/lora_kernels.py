@@ -18,6 +18,7 @@ from axolotl.kernels.lora import (
     apply_lora_qkv,
 )
 from axolotl.monkeypatch.utils import detab_code
+from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
@@ -29,48 +30,36 @@ QKV_PATCHES = [
     query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
     key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
     value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-""".lstrip(
-            "\n"
-        ),
+""".lstrip("\n"),
         """
     query_states, key_states, value_states = self.apply_qkv(hidden_states)
     query_states = query_states.view(hidden_shape).transpose(1, 2)
     key_states = key_states.view(hidden_shape).transpose(1, 2)
     value_states = value_states.view(hidden_shape).transpose(1, 2)
-""".lstrip(
-            "\n"
-        ),
+""".lstrip("\n"),
     ),
     (
         """
     query_states = self.q_norm(self.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
     key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
     value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-""".lstrip(
-            "\n"
-        ),
+""".lstrip("\n"),
         """
     query_states, key_states, value_states = self.apply_qkv(hidden_states)
     query_states = self.q_norm(query_states.view(hidden_shape)).transpose(1, 2)
     key_states = self.k_norm(key_states.view(hidden_shape)).transpose(1, 2)
     value_states = value_states.view(hidden_shape).transpose(1, 2)
-""".lstrip(
-            "\n"
-        ),
+""".lstrip("\n"),
     ),
 ]
 
 ORIGINAL_O_CODE = """
     attn_output = self.o_proj(attn_output)
-""".lstrip(
-    "\n"
-)
+""".lstrip("\n")
 
 PATCHED_O_CODE = """
     attn_output = self.apply_o(attn_output)
-""".lstrip(
-    "\n"
-)
+""".lstrip("\n")
 
 SUPPORTED_ACTIVATIONS = ["silu", "gelu"]
 APPLY_FN_MAPPING = {
@@ -145,17 +134,35 @@ def get_attention_cls_from_config(cfg: DictDefault) -> Type[nn.Module]:
 
         return Qwen2Attention
 
+    if model_type == "qwen3_vl":
+        from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLTextAttention
+
+        return Qwen3VLTextAttention
+
     if model_type == "mllama":
         from transformers.models.mllama.modeling_mllama import MllamaTextSelfAttention
 
         return MllamaTextSelfAttention
 
+    if model_type == "llama4":
+        from transformers.models.llama4.modeling_llama4 import Llama4TextAttention
+
+        return Llama4TextAttention
+
+    if model_type == "mistral3":
+        from transformers.models.mistral.modeling_mistral import MistralAttention
+
+        return MistralAttention
+
+    if model_type == "gemma3_text":
+        from transformers.models.gemma3.modeling_gemma3 import Gemma3Attention
+
+        return Gemma3Attention
+
     try:
         # Dynamically import the module and attention class
         module_path = f"transformers.models.{model_type}.modeling_{model_type}"
-        model_cls_prefix = "".join(
-            [part.capitalize() for part in model_type.split("_")]
-        )
+        model_cls_prefix, _ = get_causal_lm_model_cls_prefix(model_type)
         module = __import__(module_path, fromlist=[f"{model_cls_prefix}Attention"])
         attention_cls = getattr(module, f"{model_cls_prefix}Attention")
 
@@ -167,7 +174,6 @@ def get_attention_cls_from_config(cfg: DictDefault) -> Type[nn.Module]:
         ) from e
 
 
-# pylint: disable=protected-access
 def patch_self_attn_lora(cfg: DictDefault):
     """
     Given an `axolotl` config, this method patches the inferred attention class forward
@@ -194,9 +200,9 @@ def patch_self_attn_lora(cfg: DictDefault):
     attention_cls._original_forward = self_attn_forward
     self_attn_forward, _ = detab_code(self_attn_forward)
 
-    assert any(
-        qkv_options[0] in self_attn_forward for qkv_options in QKV_PATCHES
-    ), "Original QKV code not found"
+    assert any(qkv_options[0] in self_attn_forward for qkv_options in QKV_PATCHES), (
+        "Original QKV code not found"
+    )
     assert ORIGINAL_O_CODE in self_attn_forward, "Original O code not found"
 
     for qkv_orig, qkv_patched in QKV_PATCHES:
@@ -222,16 +228,14 @@ def patch_self_attn_lora(cfg: DictDefault):
         if item in self_attn_forward:
             items_to_import.append(item)
 
-    exec(  # pylint: disable=exec-used  # nosec B102
+    exec(
         f"from {module_name} import ({', '.join(items_to_import)})",
         globals(),
     )
-    exec(self_attn_forward, globals())  # pylint: disable=exec-used  # nosec B102
+    exec(self_attn_forward, globals())
 
     LOG.info(f"Patched attention class with LoRA optims: {attention_cls.__name__}")
-    attention_cls.forward = (
-        axolotl_attn_forward  # pylint: disable=undefined-variable  # noqa: F821
-    )
+    attention_cls.forward = axolotl_attn_forward
 
 
 def find_self_attn_in_layer(
@@ -268,9 +272,13 @@ def find_mlp_in_layer(
                 layer.feedforward.experts.gate_projs,
                 layer.feedforward.experts.up_projs,
                 layer.feedforward.experts.down_projs,
+                strict=False,
             ):
-                yield gate_proj, up_proj, down_proj, FakeMLP(
-                    gate_proj, up_proj, down_proj
+                yield (
+                    gate_proj,
+                    up_proj,
+                    down_proj,
+                    FakeMLP(gate_proj, up_proj, down_proj),
                 )
 
 
@@ -328,9 +336,9 @@ def apply_lora_kernel_patches(
 
     # Get active LoRA adapter config
     if hasattr(model, "active_adapters"):
-        assert (
-            len(model.active_adapters) == 1
-        ), "Axolotl currently does not support LoRA Triton kernels for multiple adapters"
+        assert len(model.active_adapters) == 1, (
+            "Axolotl currently does not support LoRA Triton kernels for multiple adapters"
+        )
         active_adapter = model.active_adapters[0]
     else:
         active_adapter = model.active_adapter
@@ -386,7 +394,6 @@ def apply_lora_kernel_patches(
                 ]
                 can_patch_qkv = all(
                     hasattr(module, "lora_A")
-                    and getattr(module, "base_layer", module).bias is None
                     and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
                     for module in layer_modules
                 )
@@ -396,7 +403,8 @@ def apply_lora_kernel_patches(
                     self_attn.apply_qkv = types.MethodType(apply_lora_qkv, self_attn)
                 else:
                     LOG.warning_once(
-                        "Cannot patch some attention QKV projections - requires LoRA adapters with no bias"
+                        "Cannot patch some attention QKV projections - requires LoRA "
+                        "adapters and no lora_magnitude_vector (DoRA)"
                     )
             if cfg.lora_o_kernel:
                 # Output patching
@@ -405,7 +413,6 @@ def apply_lora_kernel_patches(
                 ]
                 can_patch_o = all(
                     hasattr(module, "lora_A")
-                    and getattr(module, "base_layer", module).bias is None
                     and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
                     for module in layer_modules
                 )
@@ -414,14 +421,14 @@ def apply_lora_kernel_patches(
                     self_attn.apply_o = types.MethodType(apply_lora_o, self_attn)
                 else:
                     LOG.warning_once(
-                        "Cannot patch some attention output projection - requires LoRA adapters with no bias"
+                        "Cannot patch some attention output projection - requires LoRA "
+                        "adapters and no lora_magnitude_vector (DoRA)"
                     )
         for gate_proj, up_proj, down_proj, mlp in find_mlp_in_layer(layer):
             if cfg.lora_mlp_kernel:
                 # MLP patching
                 can_patch_mlp = all(
                     hasattr(proj, "lora_A")
-                    and getattr(proj, "base_layer", proj).bias is None
                     and len(getattr(proj, "lora_magnitude_vector", []) or []) == 0
                     for proj in (gate_proj, up_proj, down_proj)
                 )
@@ -431,7 +438,8 @@ def apply_lora_kernel_patches(
                     layer.mlp.forward = types.MethodType(apply_fn, mlp)
                 else:
                     LOG.warning_once(
-                        "Cannot patch some MLP layers - requires LoRA adapters with no bias"
+                        "Cannot patch some MLP layers - requires LoRA adapters and no "
+                        "lora_magnitude_vector (DoRA)"
                     )
 
     LOG.setLevel(original_level)

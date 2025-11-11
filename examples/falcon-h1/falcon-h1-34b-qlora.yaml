@@ -38,7 +38,7 @@ lora_target_modules:
 sequence_len: 2048
 sample_packing: false
 eval_sample_packing: false
-pad_to_sequence_len: true
+
 
 wandb_project:
 wandb_entity:
@@ -69,3 +69,5 @@ evals_per_epoch:
 saves_per_epoch: 1
 weight_decay: 0.0
 special_tokens:
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

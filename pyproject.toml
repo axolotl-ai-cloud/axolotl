@@ -26,3 +26,34 @@ include-package-data = true
 
 [tool.setuptools.cmdclass]
 build_py = "setuptools_axolotl_dynamic_dependencies.BuildPyCommand"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "C90", "B", "I"]
+ignore = [
+    "E203",  # Whitespace before ':'
+    "E501",  # Line too long
+    "C901",  # Too complex
+    "B019",  # Use of functools.cache on methods
+    "E722",  # Bare except
+    "F821",  # Undefined name (for dynamic exec)
+]
+
+[tool.ruff.lint.isort]
+known-third-party = ["wandb", "comet_ml"]
+known-local-folder = ["src", "tests"]
+# Black-compatible isort settings
+force-single-line = false
+combine-as-imports = true
+split-on-trailing-comma = true
+
+[tool.ruff.format]
+# Use black's formatting style exactly
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = false

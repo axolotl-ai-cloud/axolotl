@@ -22,7 +22,7 @@ class TestCosineConstantLr(unittest.TestCase):
         self.constant_lr_ratio = 0.8
         self._lr = 0.01
         self.optimizer = SGD([torch.tensor(1)], lr=self._lr)
-        self.lr_scheduler = get_cosine_schedule_with_warmup_decay_constant(  # pylint: disable=attribute-defined-outside-init
+        self.lr_scheduler = get_cosine_schedule_with_warmup_decay_constant(
             self.optimizer,
             num_warmup_steps=self.warmup_steps,
             num_training_steps=self.train_steps,

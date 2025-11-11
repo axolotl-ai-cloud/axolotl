@@ -14,8 +14,8 @@ class AxolotlMambaTrainer(AxolotlTrainer):
         self,
         model,
         inputs,
-        return_outputs=False,  # pylint: disable=unused-argument
-        num_items_in_batch=None,  # pylint: disable=unused-argument
+        return_outputs=False,
+        num_items_in_batch=None,
     ):
         input_ids = inputs.pop("input_ids")
         lm_logits = model(input_ids).logits

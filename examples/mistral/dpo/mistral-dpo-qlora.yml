@@ -1,0 +1,84 @@
+#Note that we are switching from the regular chat template to chatml.
+#If you experience problems with the special tokens, training for more epochs can help.
+#After training, merge the model before inference otherwise you might
+#face problems with the special tokens.
+
+base_model: mistralai/Mistral-7B-Instruct-v0.2
+# optionally might have model_type or tokenizer_type
+model_type: MistralForCausalLM
+tokenizer_type: LlamaTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+load_in_8bit: false
+load_in_4bit: true
+
+chat_template: chatml
+rl: dpo
+datasets:
+  - path: olivermolenschot/alpaca_messages_dpo_test
+    type: chat_template.default
+    field_messages: conversation
+    field_chosen: chosen
+    field_rejected: rejected
+    message_property_mappings:
+      role: role
+      content: content
+
+dataset_prepared_path:
+val_set_size: 0.05
+output_dir: ./outputs/dpo-qlora
+
+sequence_len: 2048
+sample_packing: false
+
+
+adapter: qlora
+lora_model_dir:
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.2
+lora_target_linear: true
+
+lora_target_modules:
+  - gate_proj
+  - down_proj
+  - up_proj
+  - q_proj
+  - v_proj
+  - k_proj
+  - o_proj
+lora_modules_to_save:
+ - embed_tokens
+ - lm_head
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 4
+micro_batch_size: 16
+num_epochs: 6
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0001
+
+bf16: auto
+tf32: false
+
+gradient_checkpointing: true
+resume_from_checkpoint:
+logging_steps: 1
+flash_attention: false
+
+warmup_ratio: 0.1
+evals_per_epoch: 4
+saves_per_epoch: 1
+weight_decay: 0.0
+special_tokens:
+  bos_token: "<|im_start|>"
+  eos_token: "<|im_end|>"
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

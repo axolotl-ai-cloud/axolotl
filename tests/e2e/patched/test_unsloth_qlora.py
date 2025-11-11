@@ -12,7 +12,6 @@ from axolotl.utils.dict import DictDefault
 from ..utils import check_model_output_exists, check_tensorboard
 
 
-# pylint: disable=duplicate-code
 @pytest.mark.skip(
     reason="Unsloth integration will be broken going into latest transformers"
 )
@@ -62,6 +61,7 @@ class TestUnslothQLoRA:
                 "lr_scheduler": "cosine",
                 "use_tensorboard": True,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
 
@@ -112,6 +112,7 @@ class TestUnslothQLoRA:
                 "lr_scheduler": "cosine",
                 "use_tensorboard": True,
                 "bf16": "auto",
+                "save_first_step": False,
             }
         )
 
@@ -167,6 +168,7 @@ class TestUnslothQLoRA:
                 "lr_scheduler": "cosine",
                 "use_tensorboard": True,
                 "fp16": True,
+                "save_first_step": False,
             }
         )
 

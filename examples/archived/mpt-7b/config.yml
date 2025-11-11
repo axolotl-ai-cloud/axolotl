@@ -1,0 +1,53 @@
+base_model: mosaicml/mpt-7b
+# optionally might have model_type or tokenizer_type
+tokenizer_type: AutoTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+trust_remote_code: true  # required for mpt as their model class is not merged into transformers yet
+load_in_8bit: false
+datasets:
+  - path: vicgalle/alpaca-gpt4
+    type: alpaca
+dataset_prepared_path:
+val_set_size: 0.02
+adapter:
+lora_model_dir:
+sequence_len: 2048
+max_packed_sequence_len:
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_modules:
+  - q_proj
+  - v_proj
+lora_fan_in_fan_out: false
+wandb_project: mpt-alpaca-7b
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+output_dir: ./outputs/mpt-alpaca-7b
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 4
+optimizer: adamw_bnb_8bit
+torchdistx_path:
+lr_scheduler: cosine
+learning_rate: 0.0000002
+bf16: auto
+tf32: true
+resume_from_checkpoint:
+logging_steps: 5
+flash_attention:
+gptq_groupsize:
+gptq_model_v1:
+warmup_ratio: 0.1
+evals_per_epoch: 4
+saves_per_epoch: 1
+weight_decay: 0.0001
+tokens:
+  pad_token: "<|padding|>"
+  bos_token: "<|endoftext|>"
+  eos_token: "<|endoftext|>"
+  unk_token: "<|endoftext|>"

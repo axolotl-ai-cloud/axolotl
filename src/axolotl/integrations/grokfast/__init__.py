@@ -7,7 +7,7 @@ from transformers.trainer_callback import TrainerCallback
 from axolotl.utils.logging import get_logger
 
 from ..base import BasePlugin
-from .args import GrokfastArgs  # pylint: disable=unused-import. # noqa: F401
+from .args import GrokfastArgs as GrokfastArgs
 from .optimizer import gradfilter_ema
 
 LOG = get_logger(__name__)
@@ -24,12 +24,10 @@ class GrokfastCallbackHandler(TrainerCallback):
         self.alpha = alpha
         self.lamb = lamb
 
-    def on_train_begin(self, *args_, **kwargs):  # pylint: disable=unused-argument
+    def on_train_begin(self, *args_, **kwargs):
         self.grads = None
 
-    def on_pre_optimizer_step(
-        self, args_, state, control, **kwargs
-    ):  # pylint: disable=unused-argument
+    def on_pre_optimizer_step(self, args_, state, control, **kwargs):
         model = kwargs.pop("model")
         self.grads = gradfilter_ema(model, self.grads, alpha=self.alpha, lamb=self.lamb)
         return control

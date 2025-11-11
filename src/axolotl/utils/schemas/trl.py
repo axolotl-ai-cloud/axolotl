@@ -1,5 +1,7 @@
 """Pydantic models for TRL trainer configuration"""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -26,6 +28,12 @@ class TRLConfig(BaseModel):
     use_vllm: bool = Field(
         default=False,
         json_schema_extra={"description": "Whether to use VLLM for RL training."},
+    )
+    vllm_mode: Literal["server", "colocate"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "VLLM mode to use, one of 'server' or 'colocate'"
+        },
     )
     vllm_server_host: str | None = Field(
         default="0.0.0.0",  # nosec B104
@@ -72,6 +80,14 @@ class TRLConfig(BaseModel):
             "description": "Number of completions to print when log_completions is True."
         },
     )
+    importance_sampling_level: Literal["sequence", "token"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Controls whether importance sampling ratios are computed at the `'token'` or `'sequence'` level. "
+            "For GSPO, use `sequence`, default is None which corresponds to the original GRPO paper."
+        },
+    )
+
     sync_ref_model: bool | None = Field(
         default=False,
         json_schema_extra={"description": "Whether to sync the reference model."},
@@ -149,5 +165,17 @@ class TRLConfig(BaseModel):
         default=False,
         json_schema_extra={
             "description": "Whether to exclude truncated completions from loss calculation."
+        },
+    )
+    vllm_enable_sleep_mode: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable sleep mode for vLLM to offload VRAM when idle"
+        },
+    )
+    rollout_func: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Path to custom rollout function. Must be importable from current dir."
         },
     )

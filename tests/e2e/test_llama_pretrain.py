@@ -22,7 +22,6 @@ class TestPretrainLlama:
         ],
     )
     def test_pretrain(self, temp_dir, sample_packing, pretrain_multipack_attn):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -30,7 +29,7 @@ class TestPretrainLlama:
                 "sequence_len": 1024,
                 "sample_packing": sample_packing,
                 "pretrain_multipack_attn": pretrain_multipack_attn,
-                "dataset_processes": 1,
+                "dataset_num_proc": 1,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -53,6 +52,7 @@ class TestPretrainLlama:
                 "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 

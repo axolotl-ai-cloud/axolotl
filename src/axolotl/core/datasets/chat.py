@@ -2,7 +2,6 @@
 chat dataset module
 """
 
-import os
 from typing import Callable, Optional, Union
 
 from datasets import Dataset
@@ -41,14 +40,10 @@ class TokenizedChatDataset(Dataset):
                 )
             return ex.tokenized(model_transform)
 
-        process_or_cpu_count: int = (
-            process_count or os.cpu_count()  # type: ignore[assignment]
-        )
-        num_proc = min(32, process_or_cpu_count)
         features = data.features.keys()
         tokenized_data = data.map(
             map_fn,
-            num_proc=num_proc,
+            num_proc=process_count,
             keep_in_memory=keep_in_memory,
             remove_columns=features,
             desc="Tokenizing Chats",

@@ -5,11 +5,15 @@ from typing import Optional
 
 from PIL import Image, ImageOps
 from PIL.Image import Resampling
-from torch import Tensor
+from torch import Tensor, zeros_like
 from transformers import ProcessorMixin
 from transformers.image_utils import load_image
+from transformers.models.smolvlm import SmolVLMProcessor
+from transformers.models.voxtral import VoxtralProcessor
 
+from axolotl.utils.dict import remove_none_values
 from axolotl.utils.logging import get_logger
+from axolotl.utils.mistral.mistral3_processor import Mistral3Processor
 
 LOG = get_logger(__name__)
 
@@ -137,7 +141,7 @@ class ProcessingStrategy:
                     image_key = key
                     break
 
-            # if the image key exists, add the image to the first message
+            # if the image key exists, add the image to the first user message
             if image_key is not None and processed_example[image_key] is not None:
                 # TODO: check if it's normal to be single image only for common datasets
                 # From observation, it's usually a list of single image but some datasets may have several columns for images
@@ -155,9 +159,9 @@ class ProcessingStrategy:
                 image_value = load_image(image_value)
 
                 if self.image_size is not None:
-                    assert hasattr(
-                        image_value, "resize"
-                    ), "Image does not have a resize method"
+                    assert hasattr(image_value, "resize"), (
+                        "Image does not have a resize method"
+                    )
 
                     if isinstance(self.image_size, tuple):
                         image_value = image_value.resize(
@@ -178,38 +182,55 @@ class ProcessingStrategy:
 
                 # Look for any image type in the first message
                 # some dataset have an {type: "image"} in the first message
+                msg_ind_to_add = None
                 ind_to_add = None
+                first_user_idx = None
 
-                for i, content in enumerate(
-                    processed_example["messages"][0]["content"]
-                ):
-                    # Usually datasets created with image columns, don't have it in the messages itself
-                    if content["type"] == "image" and all(
-                        k not in content for k in ["image", "url", "path", "base64"]
+                for msg_idx, msg_content in enumerate(processed_example["messages"]):
+                    if first_user_idx is None and msg_content["role"] == "user":
+                        first_user_idx = msg_idx
+                    for i, content in enumerate(
+                        processed_example["messages"][msg_idx]["content"]
                     ):
-                        ind_to_add = i
-                        break
+                        # Usually datasets created with image columns, don't have it in the messages itself
+                        if content["type"] == "image" and all(
+                            k not in content for k in ["image", "url", "path", "base64"]
+                        ):
+                            msg_ind_to_add = msg_idx
+                            ind_to_add = i
+                            break
 
                 # If an image type is found, add the image to that index
-                if ind_to_add is not None:
-                    processed_example["messages"][0]["content"][ind_to_add][
-                        "image"
-                    ] = image_value
+                if ind_to_add is not None and msg_ind_to_add is not None:
+                    processed_example["messages"][msg_ind_to_add]["content"][
+                        ind_to_add
+                    ]["image"] = image_value
                 else:
-                    # if no image type is found, add it to end of the first message
-                    processed_example["messages"][0]["content"].append(
+                    # if no image type is found, add it to end of the first user message
+                    if first_user_idx is None:
+                        first_user_idx = 0
+                    processed_example["messages"][first_user_idx]["content"].append(
                         {
                             "type": "image",
                             "image": image_value,
                         }
                     )
 
-            processed_examples.append(processed_example)
+            processed_examples.append(remove_none_values(processed_example))
 
         return processed_examples
 
+    def _mask_non_assistant(self, labels: Tensor) -> Tensor:
+        """
+        Mask non assistant regions to -100.
+        To be implemented per subclass.
+        """
+        return labels
+
     def process_labels(self, input_ids: Tensor) -> Tensor:
         labels = input_ids.clone()
+
+        labels = self._mask_non_assistant(labels)
 
         # The labels are the input_ids, and we mask the padding tokens in the loss computation
         labels[labels == self.processor.tokenizer.pad_token_id] = -100
@@ -264,6 +285,175 @@ class Gemma3ProcessingStrategy(ProcessingStrategy):
         return labels
 
 
+class Gemma3nProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for Gemma3n"""
+
+    def _mask_non_assistant(self, labels: Tensor) -> Tensor:
+        def _find_token_sequence(label, start_pos, token_sequence):
+            """Check if token_sequence appears at start_pos in label"""
+            if start_pos + len(token_sequence) > len(label):
+                return False
+            if label[start_pos] != token_sequence[0]:
+                return False
+            return (
+                label[start_pos : start_pos + len(token_sequence)].tolist()
+                == token_sequence
+            )
+
+        def _find_assistant_end(label, start_pos, assistant_end_tok, mask, i):
+            """
+            Find the end of assistant response and update mask accordingly
+
+            Returns new position to continue from and whether the end seq is found
+            """
+            k = start_pos
+            while k < len(label):
+                if not _find_token_sequence(label, k, assistant_end_tok):
+                    mask[i][k] = 1
+                    k += 1
+                    continue
+
+                return k + len(assistant_end_tok), True
+
+            return k, False
+
+        mask = zeros_like(labels)
+
+        assistant_start_str = "<start_of_turn>model"
+        assistant_end_str = "<end_of_turn>"
+        include_assistant_start_tok = False
+        include_assistant_end_tok = True
+
+        # str to tokens
+        assistant_start_tok = self.processor.tokenizer.encode(
+            assistant_start_str, add_special_tokens=False
+        )
+        assistant_end_tok = self.processor.tokenizer.encode(
+            assistant_end_str, add_special_tokens=False
+        )
+
+        for i, label in enumerate(labels):
+            j = 0
+            # while loop through each tok index in labels[i]
+            while j < len(label):
+                # Check until match start seq
+                if not _find_token_sequence(label, j, assistant_start_tok):
+                    j += 1
+                    continue
+
+                if include_assistant_start_tok:
+                    mask[i][j : j + len(assistant_start_tok)] = 1
+
+                # Find where the assistant response ends
+                start_of_content = j + len(assistant_start_tok)
+                end_pos, found_end_seq = _find_assistant_end(
+                    label, start_of_content, assistant_end_tok, mask, i
+                )
+
+                # Include end token if requested
+                if include_assistant_end_tok and found_end_seq:
+                    mask[i][end_pos - len(assistant_end_tok) : end_pos] = 1
+
+                j = end_pos
+
+            labels[i][mask[i] == 0] = -100
+
+        return labels
+
+    def process_labels(self, input_ids):
+        labels = input_ids.clone()
+        labels = self._mask_non_assistant(labels)
+
+        # Follows https://colab.research.google.com/github/huggingface/huggingface-gemma-recipes/blob/main/notebooks/fine_tune_gemma3n_on_t4.ipynb
+        labels[labels == self.processor.tokenizer.pad_token_id] = -100
+        if hasattr(self.processor.tokenizer, "image_token_id"):
+            labels[labels == self.processor.tokenizer.image_token_id] = -100
+        if hasattr(self.processor.tokenizer, "audio_token_id"):
+            labels[labels == self.processor.tokenizer.audio_token_id] = -100
+        if hasattr(self.processor.tokenizer, "boi_token_id"):
+            labels[labels == self.processor.tokenizer.boi_token_id] = -100
+        if hasattr(self.processor.tokenizer, "eoi_token_id"):
+            labels[labels == self.processor.tokenizer.eoi_token_id] = -100
+
+        return labels
+
+
+class VoxtralProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for Voxtral"""
+
+    def __init__(
+        self,
+        processor: VoxtralProcessor,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
+        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        special_ids = (
+            processor.tokenizer.tokenizer.instruct_tokenizer.audio_encoder.special_ids
+        )
+
+        self.audio_token = special_ids.audio
+        self.begin_audio_token = special_ids.begin_audio
+
+    def process_labels(self, input_ids):
+        labels = input_ids.clone()
+
+        labels[labels == self.processor.tokenizer.pad_token_id] = -100
+        labels[labels == self.audio_token] = -100
+        labels[labels == self.begin_audio_token] = -100
+
+        return labels
+
+
+class SmolVLM2ProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for SmolVLM2"""
+
+    def __init__(
+        self,
+        processor: ProcessorMixin,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
+        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        self.image_token = "<image>"  # nosec
+
+        self.image_token_id = processor.tokenizer.additional_special_tokens_ids[
+            processor.tokenizer.additional_special_tokens.index(self.image_token)
+        ]
+
+
+class Mistral3ProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for Mistral3"""
+
+    def __init__(
+        self,
+        processor: Mistral3Processor,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
+        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        special_ids = (
+            processor.tokenizer.tokenizer.instruct_tokenizer.image_encoder.special_ids
+        )
+
+        self.image_token = special_ids.img
+        self.image_break_token = special_ids.img_break
+        self.image_end_token = special_ids.img_end
+
+    def process_labels(self, input_ids):
+        labels = input_ids.clone()
+
+        labels[labels == self.processor.tokenizer.pad_token_id] = -100
+        labels[labels == self.image_token] = -100
+        labels[labels == self.image_break_token] = -100
+        labels[labels == self.image_end_token] = -100
+
+        return labels
+
+
 def get_processing_strategy(
     processor: ProcessorMixin,
     chat_template,
@@ -271,22 +461,48 @@ def get_processing_strategy(
     image_size: int | tuple[int, int] | None = None,
     image_resize_algorithm: Resampling | None = None,
 ):
+    processing_kwargs = {
+        "processor": processor,
+        "chat_template": chat_template,
+        "image_size": image_size,
+        "image_resize_algorithm": image_resize_algorithm,
+    }
+
+    if chat_template_type in [None, "tokenizer_default"] and hasattr(
+        processor.tokenizer, "chat_template"
+    ):
+        processing_kwargs["chat_template"] = processor.tokenizer.chat_template
+
     if chat_template_type == "qwen2_vl":
         return Qwen2VLProcessingStrategy(
-            processor, chat_template, image_size, image_resize_algorithm
+            **processing_kwargs,
         )
     if chat_template_type == "gemma3":
         return Gemma3ProcessingStrategy(
-            processor, chat_template, image_size, image_resize_algorithm
+            **processing_kwargs,
         )
-    if chat_template_type in [
-        "llama3_2_vision",
-        "llama4",
-        "llava",
-        "mistral_v7_tekken",
-        "pixtral",
-    ]:
-        return ProcessingStrategy(
-            processor, chat_template, image_size, image_resize_algorithm
+    if chat_template_type == "gemma3n":
+        return Gemma3nProcessingStrategy(
+            **processing_kwargs,
         )
-    raise ValueError(f"Unsupported chat template type: {chat_template_type}")
+
+    if isinstance(processor, VoxtralProcessor):
+        return VoxtralProcessingStrategy(
+            **processing_kwargs,
+        )
+
+    if isinstance(processor, SmolVLMProcessor):
+        return SmolVLM2ProcessingStrategy(
+            **processing_kwargs,
+        )
+
+    if isinstance(processor, Mistral3Processor):
+        return Mistral3ProcessingStrategy(
+            **processing_kwargs,
+        )
+
+    # llama3_2_vision, llama4, llava
+    # mistral_v7_tekken, pixtral, lfm2vl
+    return ProcessingStrategy(
+        **processing_kwargs,
+    )

@@ -15,6 +15,7 @@ from axolotl.core.trainers.grpo import GRPOStrategy
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import ensure_dtype
 from axolotl.utils.callbacks.qat import QATCallback
+from axolotl.utils.import_helper import get_cls_from_module_str
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
 
@@ -53,7 +54,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.rl is RLType.GRPO:
             trainer_cls = GRPOStrategy.get_trainer_class(
-                sequence_parallel=self.cfg.sequence_parallel_degree > 1
+                sequence_parallel=self.cfg.context_parallel_size > 1
             )
             trainer_cls_args.extend(GRPOStrategy.set_trainer_args(self.cfg))
 
@@ -71,6 +72,16 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             trainer_cls = AxolotlCPOTrainer
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
+
+        if self.cfg.trainer_cls:
+            # override the trainer cls
+            try:
+                trainer_cls = get_cls_from_module_str(self.cfg.trainer_cls)
+                LOG.debug(f"Using custom trainer class: {self.cfg.trainer_cls}")
+            except (ImportError, AttributeError, ValueError) as e:
+                raise ValueError(
+                    f"Failed to load custom trainer class '{self.cfg.trainer_cls}': {e}"
+                ) from e
 
         return trainer_cls, trainer_cls_args
 
@@ -109,6 +120,11 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.use_wandb:
             training_args_kwargs["run_name"] = self.cfg.wandb_name
 
+        if self.cfg.max_prompt_len:
+            training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
+        else:
+            training_args_kwargs["max_prompt_length"] = self.cfg.sequence_len
+
         training_args_cls = None
         blocklist_args_kwargs = []
         if self.cfg.rl is RLType.SIMPO:
@@ -118,10 +134,16 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if self.cfg.cpo_alpha is not None:
                 training_args_kwargs["cpo_alpha"] = self.cfg.cpo_alpha
 
+            # Handle when max_prompt_length == max_length from defaults
+            # CPOTrainer requires strictly less than
+            if (
+                training_args_kwargs["max_prompt_length"]
+                == training_args_kwargs["max_length"]
+            ):
+                training_args_kwargs["max_prompt_length"] -= 1
+
         elif self.cfg.rl is RLType.ORPO:
             training_args_cls = AxolotlORPOConfig
-            if self.cfg.max_prompt_len:
-                training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
         elif self.cfg.rl is RLType.KTO:
             training_args_cls = AxolotlKTOConfig
@@ -132,9 +154,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_kwargs["undesirable_weight"] = (
                 self.cfg.kto_undesirable_weight or 1.0
             )
-
-            if self.cfg.max_prompt_len:
-                training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
 
         elif self.cfg.rl is RLType.GRPO:
             training_args_cls = GRPOStrategy.get_training_args_class()
@@ -157,16 +176,14 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if plugin_training_args:
                 training_args_kwargs.update(plugin_training_args)
 
-        training_args = training_args_cls(  # pylint: disable=unexpected-keyword-arg
+        training_args = training_args_cls(
             logging_first_step=True,
             **training_args_kwargs,
         )
 
         # unset run_name so wandb sets up experiment names
         if self.cfg.use_wandb and training_args.run_name == training_args.output_dir:
-            training_args.run_name = (  # pylint: disable=attribute-defined-outside-init
-                None
-            )
+            training_args.run_name = None
 
         return training_args, trainer_kwargs
 
@@ -208,7 +225,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             callbacks=self.get_callbacks(),
             **trainer_kwargs,
         )
-        if self.cfg.fsdp:
+        if self.cfg.fsdp_config or self.cfg.fsdp:
             ensure_dtype(trainer.model, dtype=self.cfg.torch_dtype)
             if self.cfg.rl in [RLType.DPO, RLType.IPO] and trainer.ref_model:
                 ensure_dtype(trainer.ref_model, dtype=self.cfg.torch_dtype)
@@ -218,21 +235,3 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             trainer.add_callback(callback)
 
         return trainer
-
-
-class HFPPOTrainerBuilder(TrainerBuilderBase):
-    """
-    HF Factory class for PPO Trainer
-    """
-
-    def get_callbacks(self):
-        callbacks = super().get_callbacks()
-        return callbacks
-
-    def get_post_trainer_create_callbacks(self, trainer):
-        callbacks = super().get_post_trainer_create_callbacks(trainer=trainer)
-        return callbacks
-
-    def build(self, total_num_steps):
-        # TODO: build PPOConfig
-        raise NotImplementedError("PPO trainer builder is not implemented yet.")

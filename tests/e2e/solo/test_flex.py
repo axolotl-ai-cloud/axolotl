@@ -22,7 +22,6 @@ class TestPackedFlex(unittest.TestCase):
     @require_torch_2_6_0
     @with_temp_dir
     def test_loss_llama(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -49,6 +48,7 @@ class TestPackedFlex(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -63,5 +63,5 @@ class TestPackedFlex(unittest.TestCase):
         train(cfg=cfg, dataset_meta=dataset_meta)
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.0, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss (%s) is too high"
         )

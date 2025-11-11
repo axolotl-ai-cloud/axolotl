@@ -1,23 +1,17 @@
 """
-This module contains a function that builds a transform that takes a row from the dataset and converts it to a Chat.
+This module contains a function that builds a transform that takes a row from the
+dataset and converts it to a Chat.
 """
 
-from typing import Any, Mapping, Union
+from typing import Any, Mapping
 
 
-def chat_message_transform_builder(  # pylint: disable=dangerous-default-value
+def chat_message_transform_builder(
     train_on_inputs=False,
-    conversations_field: str = "conversations",
-    message_field_role: Union[str, list[str]] = ["role", "from"],  # commonly "role"
-    message_field_content: Union[str, list[str]] = [
-        "value",
-        "text",
-        "content",
-    ],  # commonly "content"
-    message_field_training: Union[str, list[str]] = [
-        "train",
-        "weight",
-    ],  # commonly "weight"
+    conversations_field: str = "messages",
+    message_field_role: str | list[str] | None = None,  # commonly "role"
+    message_field_content: str | list[str] | None = None,  # commonly "content"
+    message_field_training: str | list[str] | None = None,  # commonly "weight"
 ):
     """Builds a transform that takes a row from the dataset and converts it to a Chat
 
@@ -26,19 +20,25 @@ def chat_message_transform_builder(  # pylint: disable=dangerous-default-value
             If True, the transform will train on the inputs. If False, the transform will train on the targets.
             Defaults to False.
         conversations_field (str, optional):
-            The field name of the conversations. Defaults to "conversations".
+            The field name of the conversations. Defaults to "messages".
         message_field_role (str | list[str], optional):
-            The field name of the role. Defaults to "role".
+            The field name of the role.
         message_field_content (str | list[str], optional):
-            The field name of the message content. Defaults to "content".
+            The field name of the message content.
         message_field_training (str | list[str], optional):
-            The field name of the train/weight. Defaults to "weight".
+            The field name of the train/weight.
 
     Returns:
         Callable:
             A function that takes a list of conversations and returns a list of messages.
     """
 
+    if message_field_training is None:
+        message_field_training = ["train", "weight"]
+    if message_field_content is None:
+        message_field_content = ["value", "text", "content"]
+    if message_field_role is None:
+        message_field_role = ["role", "from"]
     message_field_role = (
         [message_field_role]
         if isinstance(message_field_role, str)

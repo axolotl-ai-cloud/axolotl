@@ -20,7 +20,6 @@ class TestReLoraLlama(unittest.TestCase):
 
     @with_temp_dir
     def test_relora(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -34,9 +33,10 @@ class TestReLoraLlama(unittest.TestCase):
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_modules": ["q_proj", "v_proj"],
-                "relora_steps": 50,
-                "relora_warmup_steps": 10,
-                "relora_anneal_steps": 10,
+                "relora": True,
+                "jagged_restart_steps": 50,
+                "jagged_restart_warmup_steps": 10,
+                "jagged_restart_anneal_steps": 10,
                 "relora_prune_ratio": 0.9,
                 "relora_cpu_offload": True,
                 "val_set_size": 0.0,
@@ -65,6 +65,7 @@ class TestReLoraLlama(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "save_safetensors": True,
                 "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -74,9 +75,9 @@ class TestReLoraLlama(unittest.TestCase):
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(Path(temp_dir) / "checkpoint-100/adapter", cfg)
-        assert (
-            Path(temp_dir) / "checkpoint-100/relora/model.safetensors"
-        ).exists(), "Relora model checkpoint not found"
+        assert (Path(temp_dir) / "checkpoint-100/relora/model.safetensors").exists(), (
+            "Relora model checkpoint not found"
+        )
 
         check_tensorboard(
             temp_dir + "/runs", "train/grad_norm", 0.2, "grad_norm is too high"
