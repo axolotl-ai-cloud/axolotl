@@ -77,7 +77,7 @@ For more details: [PyTorch docs](https://pytorch.org/blog/flexattention/)
 
 ## SageAttention
 
-Attention kernels with QK Int8.
+Attention kernels with QK Int8 and PV FP16 accumulator.
 
 ```yaml
 sage_attention: true
