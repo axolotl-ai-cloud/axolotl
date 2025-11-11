@@ -220,6 +220,24 @@ class BailingMoeV2GroupedExperts(nn.Module):
             self.down_bias.index_select(0, active_expert_indices) if self.down_bias is not None else None
         )
 
+        def _fallback_linear(inputs: torch.Tensor, weight_bank: torch.Tensor, bias_bank: torch.Tensor | None) -> torch.Tensor:
+            outputs_list: list[torch.Tensor] = []
+            start_idx = 0
+            bias_iter = bias_bank if bias_bank is not None else [None] * weight_bank.size(0)
+            for count, weight, bias in zip(repeat_sizes.tolist(), weight_bank, bias_iter):
+                if count == 0:
+                    continue
+                end_idx = start_idx + count
+                chunk = inputs[start_idx:end_idx]
+                result = torch.matmul(chunk, weight.transpose(0, 1))
+                if bias is not None:
+                    result = result + bias
+                outputs_list.append(result)
+                start_idx = end_idx
+            if outputs_list:
+                return torch.cat(outputs_list, dim=0)
+            return inputs.new_empty((0, weight_bank.size(1)))
+
         def _run_linear(inputs: torch.Tensor, weight_bank: torch.Tensor, bias_bank: torch.Tensor | None) -> torch.Tensor:
             weight_t = weight_bank.transpose(-2, -1).contiguous()
             batch_sizes_cpu = repeat_sizes.to(device="cpu", dtype=torch.long)
@@ -256,16 +274,23 @@ class BailingMoeV2GroupedExperts(nn.Module):
                         ).to(outputs.dtype)
                     return outputs
 
-            try:
-                outputs = torch._grouped_mm(inputs, weight_t, offs=offsets)
-                if bias_bank is not None:
-                    expanded_bias = torch.repeat_interleave(bias_bank, repeat_sizes, dim=0).to(outputs.dtype)
-                    outputs = outputs + expanded_bias
-                return outputs
-            except RuntimeError as exc:
-                if "grouped gemm is not supported" in str(exc).lower():
+            if inputs.is_cuda and hasattr(torch, "_grouped_mm"):
+                try:
+                    outputs = torch._grouped_mm(inputs, weight_t, offs=offsets)
+                    if bias_bank is not None:
+                        expanded_bias = torch.repeat_interleave(bias_bank, repeat_sizes, dim=0).to(outputs.dtype)
+                        outputs = outputs + expanded_bias
+                    return outputs
+                except (RuntimeError, NotImplementedError) as exc:
+                    if isinstance(exc, RuntimeError) and "grouped gemm is not supported" not in str(exc).lower():
+                        raise
                     mb_backend = _load_megablocks_backend()
-                    if mb_backend is not None and inputs.is_cuda and inputs.dtype == torch.bfloat16 and weight_t.dtype == torch.bfloat16:
+                    if (
+                        mb_backend is not None
+                        and inputs.is_cuda
+                        and inputs.dtype == torch.bfloat16
+                        and weight_t.dtype == torch.bfloat16
+                    ):
                         outputs = mb_backend.gmm(
                             inputs,
                             weight_t,
@@ -283,27 +308,8 @@ class BailingMoeV2GroupedExperts(nn.Module):
                             exc,
                         )
                         self._warned_grouped_mm_fallback = True
-                else:
-                    raise
 
-                outputs_list: list[torch.Tensor] = []
-                start_idx = 0
-                bias_iter = (
-                    bias_bank if bias_bank is not None else [None] * weight_bank.size(0)
-                )
-                for count, weight, bias in zip(repeat_sizes.tolist(), weight_bank, bias_iter):
-                    if count == 0:
-                        continue
-                    end_idx = start_idx + count
-                    chunk = inputs[start_idx:end_idx]
-                    result = torch.matmul(chunk, weight.transpose(0, 1))
-                    if bias is not None:
-                        result = result + bias
-                    outputs_list.append(result)
-                    start_idx = end_idx
-                if outputs_list:
-                    return torch.cat(outputs_list, dim=0)
-                return inputs.new_empty((0, weight_bank.size(1)))
+            return _fallback_linear(inputs, weight_bank, bias_bank)
 
         gate_out = _run_linear(expert_inputs, gate_active, gate_bias_active)
         up_out = _run_linear(expert_inputs, up_active, up_bias_active)
@@ -397,7 +403,7 @@ def patch_model_with_grouped_experts(model: nn.Module, mlp_impl: str = "grouped"
     if mlp_impl not in {"grouped", "megablocks"}:
         raise ValueError(f"Unsupported mlp_impl={mlp_impl} for grouped experts patch.")
 
-    if not hasattr(torch, "_grouped_mm"):
+    if mlp_impl == "grouped" and not hasattr(torch, "_grouped_mm"):
         raise RuntimeError(
             "torch._grouped_mm is required for grouped MoE kernels but is unavailable in this torch build."
         )
