@@ -134,6 +134,9 @@ class AuxFreeMoEPlugin(BasePlugin):
         self._shim: Optional[AuxFreeShim] = None
         self._ep_group_cache: dict[tuple[int, ...], dist.ProcessGroup] = {}
 
+    def get_input_args(self):
+        return "axolotl.integrations.aux_free_router.AuxFreeRouterArgs"
+
     def post_model_build(self, cfg, model):
         # Enable only when explicitly requested
         if getattr(cfg, "moe_balance_type", None) != "noaux_tc":
