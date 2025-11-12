@@ -15,7 +15,7 @@ class SFTGenerationCallback(TrainerCallback):
     def __init__(self, trainer):
         self.trainer = trainer
 
-    def on_step_end(
+    def on_evaluate(
         self,
         args: TrainingArguments,
         state: TrainerState,
@@ -28,11 +28,6 @@ class SFTGenerationCallback(TrainerCallback):
         if not getattr(cfg, "generate_samples", False):
             return
 
-        generation_interval = getattr(cfg, "generation_interval", 100)
-
-        if state.global_step > 0 and state.global_step % generation_interval == 0:
-            if not self.trainer.state.is_world_process_zero:
-                return
 
             dataloader = None
             try:

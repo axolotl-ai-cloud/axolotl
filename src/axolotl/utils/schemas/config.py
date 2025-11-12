@@ -1036,10 +1036,6 @@ class AxolotlInputConfig(
             "description": "Enable sample generation during training for monitoring"
         },
     )
-    generation_interval: int | None = Field(
-        default=100,
-        json_schema_extra={"description": "Generate samples every N training steps"},
-    )
     num_generation_samples: int | None = Field(
         default=3,
         json_schema_extra={
