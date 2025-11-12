@@ -28,7 +28,6 @@ class SFTGenerationCallback(TrainerCallback):
         if not getattr(cfg, "generate_samples", False):
             return
 
-
             dataloader = None
             try:
                 if getattr(self.trainer, "eval_dataset", None) is not None:
