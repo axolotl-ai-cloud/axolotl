@@ -16,7 +16,7 @@ from contextlib import nullcontext
 from functools import wraps
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import numpy as np
 import torch
@@ -40,11 +40,22 @@ def with_temp_dir(test_func):
     return wrapper
 
 
+ForwardFn = Callable[
+    [
+        Any,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ],
+    torch.Tensor,
+]
+
+
 class GatingStatsCollector:
     """Monkeypatch grouped experts to record per-expert token counts each forward."""
 
     def __init__(self) -> None:
-        self._orig_forward = None
+        self._orig_forward: Optional[ForwardFn] = None
         self._per_step: list[torch.Tensor] = []
 
     def __enter__(self) -> "GatingStatsCollector":
