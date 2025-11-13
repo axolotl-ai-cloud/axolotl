@@ -25,7 +25,6 @@ jobs:
             python_version: "3.11"
             pytorch: 2.7.1
             axolotl_extras: vllm
-            is_latest: true
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
@@ -36,6 +35,7 @@ jobs:
             python_version: "3.11"
             pytorch: 2.8.0
             axolotl_extras:
+            is_latest: true
     runs-on: axolotl-gpu-runner
     steps:
       - name: Checkout
@@ -99,7 +99,6 @@ jobs:
             python_version: "3.11"
             pytorch: 2.7.1
             axolotl_extras: vllm
-            is_latest: true
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
@@ -110,6 +109,7 @@ jobs:
             python_version: "3.11"
             pytorch: 2.8.0
             axolotl_extras:
+            is_latest: true
     runs-on: axolotl-gpu-runner
     steps:
       - name: Checkout

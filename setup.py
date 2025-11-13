@@ -130,7 +130,7 @@ extras_require = {
         "ring-flash-attn>=0.1.7",
     ],
     "deepspeed": [
-        "deepspeed==0.17.5",
+        "deepspeed==0.18.2",
         "deepspeed-kernels",
     ],
     "mamba-ssm": [
