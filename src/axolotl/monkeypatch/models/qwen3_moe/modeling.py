@@ -169,7 +169,12 @@ class Qwen3MoeGroupedExperts(nn.Module):
             outputs: list[torch.Tensor] = []
             start_idx = 0
             bias_iter = bias_bank if bias_bank is not None else [None] * weight_bank.size(0)
-            for count, weight, bias in zip(repeat_sizes.tolist(), weight_bank, bias_iter):
+            for count, weight, bias in zip(
+                repeat_sizes.tolist(),
+                weight_bank,
+                bias_iter,
+                strict=True,
+            ):
                 if count == 0:
                     continue
                 end_idx = start_idx + count
