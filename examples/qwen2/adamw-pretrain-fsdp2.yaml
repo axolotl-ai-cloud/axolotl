@@ -40,7 +40,6 @@ optimizer: adamw_torch_fused
 learning_rate: 0.0002
 weight_decay: 0.01
 lr_scheduler: cosine
-lr_scheduler_kwargs:
 
 train_on_inputs: true
 group_by_length: false
@@ -49,26 +48,15 @@ fp16: false
 tf32: false
 
 gradient_checkpointing: false
-early_stopping_patience:
-resume_from_checkpoint:
-local_rank:
 logging_steps: 1
-xformers_attention:
 flash_attention: true
 
 warmup_steps: 10
 evals_per_epoch: 0
-eval_table_size:
 saves_per_epoch: 1
-debug:
-deepspeed:
 
 # Reproducibility
 seed: 42
-
-fsdp:
-  - full_shard
-  - auto_wrap
 
 fsdp_config:
   fsdp_version: 2
@@ -77,7 +65,6 @@ fsdp_config:
   fsdp_transformer_layer_cls_to_wrap: Qwen2DecoderLayer
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
   fsdp_cpu_ram_efficient_loading: false
-  fsdp_sharding_strategy: FULL_SHARD
   fsdp_reshard_after_forward: true
 
 special_tokens:
