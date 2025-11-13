@@ -751,12 +751,20 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_muon_deepspeed_fsdp(cls, data):
-        if data.get("optimizer") == "muon" and (
-            data.get("deepspeed") or data.get("fsdp") or data.get("fsdp_config")
-        ):
-            raise ValueError(
-                "Muon optimizer is currently incompatible with DeepSpeed and FSDP"
-            )
+        # Muon is compatible with FSDP2, but not FSDP1 or DeepSpeed
+        if data.get("optimizer") == "muon":
+            # Check for DeepSpeed
+            if data.get("deepspeed"):
+                raise ValueError(
+                    "Muon optimizer is currently incompatible with DeepSpeed"
+                )
+            # Check for FSDP1 (fsdp without fsdp_version=2)
+            if data.get("fsdp") or data.get("fsdp_config"):
+                fsdp_version = data.get("fsdp_version", 1)
+                if fsdp_version != 2:
+                    raise ValueError(
+                        "Muon optimizer is only compatible with FSDP2. Set fsdp_version: 2 to use Muon with FSDP."
+                    )
         return data
 
     @model_validator(mode="before")
