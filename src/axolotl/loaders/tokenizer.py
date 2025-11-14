@@ -122,6 +122,42 @@ def modify_tokenizer_files(
 def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     """Load and configure the tokenizer based on the provided config."""
 
+    # if self.cfg.model_config_type == "kimi_linear":
+    tokenizer_for_class_loading = AutoTokenizer.from_pretrained(
+        cfg.tokenizer_config, trust_remote_code=True
+    )
+    tokenizer_class = tokenizer_for_class_loading.__class__
+    del tokenizer_for_class_loading
+
+    def patched_apply_chat_template(
+        self,
+        conversation,
+        tools=None,
+        tokenize: bool = True,  # <-- FIXED DEFAULT
+        add_generation_prompt: bool = False,  # <-- FIXED DEFAULT
+        **kwargs,
+    ):
+        """
+        A patched version of apply_chat_template with corrected defaults and no
+        external dependencies like deep_sort_dict.
+        """
+        # The line `tools = deep_sort_dict(tools)` has been removed.
+        # Now we just call the superclass method, passing all arguments along.
+        return super(tokenizer_class, self).apply_chat_template(
+            conversation=conversation,
+            tools=tools,
+            tokenize=tokenize,
+            add_generation_prompt=add_generation_prompt,
+            **kwargs,
+        )
+
+    tokenizer_class.apply_chat_template = patched_apply_chat_template
+
+    print(
+        f"Successfully patched 'apply_chat_template' on class '{tokenizer_class.__name__}' "
+        "with new defaults (tokenize=True, add_generation_prompt=False)."
+    )
+
     def _load_mistral_common_tokenizer(cfg: DictDefault):
         """Load mistral-common tokenizer"""
         from axolotl.utils.mistral import HFMistralTokenizer
