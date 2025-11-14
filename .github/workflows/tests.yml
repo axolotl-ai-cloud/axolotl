@@ -59,6 +59,10 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: cleanup node
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
       - name: Check out repository code
         uses: actions/checkout@v4
 
@@ -91,6 +95,10 @@ jobs:
           python scripts/cutcrossentropy_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
 
+      - name: cleanup pip cache
+        run: |
+          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
+
       - name: Make sure PyTorch version wasn't clobbered
         run: |
           python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__"
@@ -118,10 +126,6 @@ jobs:
           flags: unittests,pytorch-${{ matrix.pytorch_version }}
           fail_ci_if_error: false
 
-      - name: cleanup pip cache
-        run: |
-          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
-
   pytest-sdist:
     name: PyTest from Source Dist
     runs-on: ubuntu-latest
@@ -134,6 +138,10 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: cleanup node
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
       - name: Check out repository code
         uses: actions/checkout@v4
 
@@ -167,6 +175,10 @@ jobs:
           python scripts/cutcrossentropy_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
 
+      - name: cleanup pip cache
+        run: |
+          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
+
       - name: Make sure PyTorch version wasn't clobbered
         run: |
           python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__"
@@ -183,10 +195,6 @@ jobs:
           pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
           pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/
-
-      - name: cleanup pip cache
-        run: |
-          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
 
   gate-skip-e2e:
     needs: [pre-commit, pytest, pytest-sdist]
