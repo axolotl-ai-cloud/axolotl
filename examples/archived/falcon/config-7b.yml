@@ -35,7 +35,7 @@ optimizer: adamw_bnb_8bit
 torchdistx_path:
 lr_scheduler: cosine
 learning_rate: 0.00003
-bf16: auto
+bfloat16: auto
 tf32: true
 gradient_checkpointing: true
 resume_from_checkpoint:

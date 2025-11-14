@@ -34,7 +34,7 @@ optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
-bf16: true
+bfloat16: true
 fp16:
 tf32: true
 

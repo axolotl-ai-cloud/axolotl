@@ -57,7 +57,7 @@ optimizer: adamw_torch_4bit
 lr_scheduler: cosine
 learning_rate: 1e-4
 
-bf16: true
+bfloat16: true
 tf32: true
 
 logging_steps: 1

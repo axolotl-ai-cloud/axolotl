@@ -8,7 +8,7 @@ tokenizer_type: LlamaTokenizer
 load_in_8bit: false
 load_in_4bit: true
 sequence_len: 1024
-bf16: auto
+bfloat16: auto
 tf32: false
 flash_attention: true
 special_tokens:
