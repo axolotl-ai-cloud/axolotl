@@ -71,9 +71,9 @@ class TestMoeAuxParity(unittest.TestCase):
         cfg1.moe_update_rate = 0.01
         cfg1.moe_update_momentum = 0.9
         cfg1.moe_bias_cap = 2.0
+        prepare_plugins(cfg1)
         cfg1 = validate_config(cfg1)
         normalize_config(cfg1)
-        prepare_plugins(cfg1)
         dataset_meta1 = load_datasets(cfg=cfg1)
         model1, _, trainer1 = train(cfg=cfg1, dataset_meta=dataset_meta1)
         loss1 = _last_logged_loss(trainer1)
