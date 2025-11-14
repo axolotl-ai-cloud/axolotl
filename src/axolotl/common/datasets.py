@@ -9,6 +9,7 @@ from datasets import Dataset
 import axolotl.monkeypatch.data.batch_dataset_fetcher  # noqa: F401
 from axolotl.cli.args import PreprocessCliArgs, TrainerCliArgs
 from axolotl.loaders import load_processor, load_tokenizer
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.data import prepare_datasets, prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
@@ -34,6 +35,7 @@ def sample_dataset(dataset: Dataset, num_samples: int) -> Dataset:
     )
 
 
+@send_errors
 def load_datasets(
     *,
     cfg: DictDefault,
@@ -96,6 +98,7 @@ def load_datasets(
     )
 
 
+@send_errors
 def load_preference_datasets(
     *, cfg: DictDefault, cli_args: PreprocessCliArgs | TrainerCliArgs | None = None
 ) -> TrainDatasetMeta:

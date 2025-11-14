@@ -10,6 +10,7 @@ import torch
 from datasets import Dataset
 from transformers.trainer import Trainer
 
+from axolotl.telemetry.errors import send_errors
 from axolotl.train import (
     TrainDatasetMeta,
     setup_model_and_tokenizer,
@@ -63,6 +64,7 @@ def evaluate_dataset(
     return metrics
 
 
+@send_errors
 def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> Dict[str, float]:
     """
     Evaluate a model on training and validation datasets.

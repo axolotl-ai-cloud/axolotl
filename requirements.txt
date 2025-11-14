@@ -70,4 +70,7 @@ schedulefree==1.4.1
 axolotl-contribs-lgpl==0.0.7
 axolotl-contribs-mit==0.0.5
 
+# telemetry
+posthog==6.7.11
+
 mistral-common==1.8.5

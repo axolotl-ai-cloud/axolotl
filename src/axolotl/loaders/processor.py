@@ -6,12 +6,14 @@ from transformers import (
     PreTrainedTokenizerBase,
 )
 
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
 
+@send_errors
 def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
     processor_cls = AutoProcessor
     if cfg.processor_type:
