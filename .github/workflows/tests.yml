@@ -59,6 +59,10 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: cleanup node
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
       - name: Check out repository code
         uses: actions/checkout@v4
 
