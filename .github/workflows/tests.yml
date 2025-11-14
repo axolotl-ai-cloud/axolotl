@@ -91,6 +91,10 @@ jobs:
           python scripts/cutcrossentropy_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
 
+      - name: cleanup pip cache
+        run: |
+          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
+
       - name: Make sure PyTorch version wasn't clobbered
         run: |
           python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__"
@@ -117,10 +121,6 @@ jobs:
           files: ./coverage.xml
           flags: unittests,pytorch-${{ matrix.pytorch_version }}
           fail_ci_if_error: false
-
-      - name: cleanup pip cache
-        run: |
-          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
 
   pytest-sdist:
     name: PyTest from Source Dist
