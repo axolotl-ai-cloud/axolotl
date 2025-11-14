@@ -28,6 +28,14 @@ from transformers import TrainerCallback
 from transformers.trainer_pt_utils import AcceleratorConfig
 
 from axolotl.integrations.base import PluginManager
+from axolotl.muonclip import (
+    MuonClipController,
+    MuonStateStore,
+    auto_register_llama_attention,
+    ensure_llama_attention_instrumentation,
+    ensure_qwen_attention_instrumentation,
+    tag_parameters_for_muon,
+)
 from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
 from axolotl.utils import (
     is_comet_available,
@@ -39,9 +47,11 @@ from axolotl.utils.callbacks import (
     SaveAxolotlConfigtoWandBCallback,
     SaveModelOnFirstStepCallback,
 )
+from axolotl.utils.callbacks.muonclip import MuonClipCallback
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
 from axolotl.utils.distributed import build_parallelism_config
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
+from axolotl.utils.schemas.muon import MuonClipConfig
 
 LOG = logging.getLogger(__name__)
 
@@ -62,6 +72,10 @@ class TrainerBuilderBase(abc.ABC):
         self._eval_dataset = None
         self._model_ref = None
         self._peft_config = None
+        self._muon_param_metadata = None
+        self._muon_param_summary = None
+        self._muon_state_store: MuonStateStore | None = None
+        self._muon_controller: MuonClipController | None = None
 
         # If the model supports tagging, add the axolotl tag.
         # This makes sure the tag is correctly pushed even if a user calls
@@ -162,6 +176,14 @@ class TrainerBuilderBase(abc.ABC):
                 )
             )
 
+        if (
+            self.cfg.optimizer == "muon"
+            and getattr(self.cfg, "muonclip", None)
+            and self.cfg.muonclip.enabled
+        ):
+            controller = self._get_muon_controller()
+            callbacks.append(MuonClipCallback(controller))
+
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
@@ -252,6 +274,76 @@ class TrainerBuilderBase(abc.ABC):
             self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
         )
 
+    def _ensure_muon_param_tags(self):
+        """
+        Lazily tag model parameters with `use_muon` metadata so DeepSpeed/FSDP can split paths.
+        """
+
+        if self._muon_param_metadata is not None:
+            return self._muon_param_metadata, self._muon_param_summary
+
+        muonclip_cfg = getattr(self.cfg, "muonclip", None)
+        if isinstance(muonclip_cfg, dict):
+            muonclip_cfg = MuonClipConfig.model_validate(muonclip_cfg)
+            setattr(self.cfg, "muonclip", muonclip_cfg)
+        elif muonclip_cfg is None:
+            muonclip_cfg = MuonClipConfig()
+            setattr(self.cfg, "muonclip", muonclip_cfg)
+        elif not isinstance(muonclip_cfg, MuonClipConfig):
+            muonclip_cfg = MuonClipConfig.model_validate(muonclip_cfg)
+            setattr(self.cfg, "muonclip", muonclip_cfg)
+
+        metadata, summary = tag_parameters_for_muon(self.model, muonclip_cfg)
+        self._muon_param_metadata = metadata
+        self._muon_param_summary = summary
+        LOG.info(
+            "MuonClip tagging initialized: %s total params (%s muon / %s fallback)",
+            summary.total,
+            summary.muon,
+            summary.non_muon,
+        )
+        return metadata, summary
+
+    def _get_muon_state_store(self) -> MuonStateStore:
+        if self._muon_state_store is not None:
+            return self._muon_state_store
+
+        try:
+            example_param = next(self.model.parameters())
+        except StopIteration as exc:  # pragma: no cover - safety guard
+            raise RuntimeError("Model has no parameters to initialize Muon state") from exc
+
+        self._muon_state_store = MuonStateStore(
+            device=example_param.device,
+            dtype=example_param.dtype,
+        )
+        return self._muon_state_store
+
+    def _get_muon_controller(self) -> MuonClipController:
+        if self._muon_controller is not None:
+            return self._muon_controller
+
+        self._ensure_muon_param_tags()
+        controller = MuonClipController(
+            self.model,
+            self.cfg.muonclip,
+            state_store=self._get_muon_state_store(),
+            learning_rate=self.cfg.learning_rate or 1e-4,
+        )
+        if getattr(self.cfg.muonclip, "qk_clip", False):
+            ensure_llama_attention_instrumentation()
+            ensure_qwen_attention_instrumentation()
+            count = auto_register_llama_attention(self.model, controller)
+            if count == 0:
+                LOG.warning(
+                    "MuonClip QK-Clip enabled but no supported attention modules were found; "
+                    "logit clipping will be skipped."
+                )
+            else:
+                LOG.info("MuonClip registered %s attention modules for QK-Clip", count)
+        self._muon_controller = controller
+        return controller
+
     def _configure_optimizer(self, training_args_kwargs: dict, trainer_kwargs: dict):
         def _configure_custom_optimizer(
             training_args_kwargs: dict, trainer_kwargs: dict
@@ -275,11 +367,23 @@ class TrainerBuilderBase(abc.ABC):
                 adam_kwargs["eps"] = training_args_kwargs.get("adam_epsilon")
 
             if self.cfg.optimizer == "muon":
-                from axolotl.contribs.mit.muon import (
-                    MuonOptimizerFactory,
-                )
+                muonclip_cfg = getattr(self.cfg, "muonclip", None)
+                if isinstance(muonclip_cfg, dict):
+                    muonclip_cfg = MuonClipConfig(**muonclip_cfg)
+                    setattr(self.cfg, "muonclip", muonclip_cfg)
+                elif not isinstance(muonclip_cfg, MuonClipConfig):
+                    muonclip_cfg = MuonClipConfig()
+                    setattr(self.cfg, "muonclip", muonclip_cfg)
 
-                optimizer_cls = MuonOptimizerFactory
+                if not muonclip_cfg.enabled:
+                    raise ValueError(
+                        "optimizer: muon now always runs via MuonClip; set `muonclip.enabled: true` "
+                        "or remove the block to accept the default."
+                    )
+
+                self._ensure_muon_param_tags()
+                self._get_muon_controller()
+                optimizer_cls = torch.optim.AdamW
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "dion":
                 from axolotl.contribs.mit.dion import (

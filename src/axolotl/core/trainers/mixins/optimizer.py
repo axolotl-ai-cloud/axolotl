@@ -61,6 +61,15 @@ class OptimizerMixin(Trainer):
             else:
                 params["no_weight_decay"][name] = param
         optimizer_grouped_parameters = []
+        muon_optimizer_active = bool(
+            getattr(getattr(self, "axolotl_cfg", None), "optimizer", None) == "muon"
+        )
+        muon_param_bucket: list[nn.Parameter] = []
+        if muon_optimizer_active:
+            for bucket in params.values():
+                if isinstance(bucket, dict):
+                    muon_param_bucket.extend(self._pop_muon_params(bucket))
+
         if params["to_weight_decay"]:
             optimizer_grouped_parameters.append(
                 {
@@ -102,7 +111,25 @@ class OptimizerMixin(Trainer):
                     }
                 )
 
+        if muon_param_bucket:
+            optimizer_grouped_parameters.append(
+                {
+                    "params": muon_param_bucket,
+                    "weight_decay": 0.0,
+                    "lr": 0.0,
+                }
+            )
+
         return optimizer_grouped_parameters
+
+    @staticmethod
+    def _pop_muon_params(bucket: dict[str, nn.Parameter]) -> list[nn.Parameter]:
+        muon_params: list[nn.Parameter] = []
+        for name in list(bucket.keys()):
+            param = bucket[name]
+            if getattr(param, "use_muon", False):
+                muon_params.append(bucket.pop(name))
+        return muon_params
 
     def create_optimizer(self):
         if (

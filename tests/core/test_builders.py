@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from torch.optim import AdamW
 
 from axolotl.common.datasets import load_datasets
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
@@ -474,13 +475,8 @@ def rand_reward_func(prompts, completions) -> list[float]:
 
             assert trainer.optimizer_cls_and_kwargs is not None
 
-            from axolotl.contribs.mit.muon import (
-                Muon,
-                MuonOptimizerFactory,
-            )
-
             optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
-            assert optimizer_cls is MuonOptimizerFactory
+            assert optimizer_cls is AdamW
             assert optimizer_kwargs["lr"] == 0.00005
             assert optimizer_kwargs["weight_decay"] == 0.01
             assert optimizer_kwargs["betas"] == (0.998, 0.9)
@@ -488,7 +484,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
 
             # Ensure optimizer is created with correct class
             optim = trainer.create_optimizer()
-            assert isinstance(optim, Muon)
+            assert isinstance(optim, AdamW)
 
         finally:
             # remove imported module from path
@@ -556,13 +552,8 @@ class TestHFCausalTrainerBuilder:
 
         assert trainer.optimizer_cls_and_kwargs is not None
 
-        from axolotl.contribs.mit.muon import (
-            Muon,
-            MuonOptimizerFactory,
-        )
-
         optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
-        assert optimizer_cls is MuonOptimizerFactory
+        assert optimizer_cls is AdamW
         assert optimizer_kwargs["lr"] == 0.00005
         assert optimizer_kwargs["weight_decay"] == 0.01
         assert optimizer_kwargs["betas"] == (0.998, 0.9)
@@ -570,7 +561,29 @@ class TestHFCausalTrainerBuilder:
 
         # Ensure optimizer is created with correct class
         optim = trainer.create_optimizer()
-        assert isinstance(optim, Muon)
+        assert isinstance(optim, AdamW)
+
+    def test_muon_optimizer_skips_muon_params(self, sft_cfg, model, tokenizer):
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "muon"
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(10)
+
+        optimizer = trainer.create_optimizer()
+        muon_param_ids = {
+            id(param)
+            for param in trainer.model.parameters()
+            if getattr(param, "use_muon", False)
+        }
+        assert muon_param_ids
+
+        for group in optimizer.param_groups:
+            contains_muon = any(id(p) in muon_param_ids for p in group["params"])
+            if contains_muon:
+                assert group["lr"] == 0.0
+                assert group.get("weight_decay", 0.0) == 0.0
+            else:
+                assert group["lr"] > 0
 
 
 class TestTrainerClsPlugin:

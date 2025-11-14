@@ -31,6 +31,15 @@ from tests.hf_offline_utils import (
 
 logging.getLogger("filelock").setLevel(logging.CRITICAL)
 
+SKIP_REMOTE_DOWNLOADS = os.environ.get("AXOLOTL_SKIP_REMOTE_DOWNLOADS", "").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+_OFFLINE_PLACEHOLDER = Path(
+    os.environ.get("AXOLOTL_SKIP_REMOTE_DIR", tempfile.gettempdir())
+) / "axolotl-tests-offline"
+
 
 def retry_on_request_exceptions(max_retries=3, delay=1):
     def decorator(func):
@@ -62,6 +71,9 @@ def snapshot_download_w_retry(*args, **kwargs):
     cache first using hf_hub_offline to avoid hitting HF Hub API rate limits. If it doesn't exist in the cache,
     disable hf_hub_offline and actually fetch from the hub
     """
+    if SKIP_REMOTE_DOWNLOADS:
+        _OFFLINE_PLACEHOLDER.mkdir(parents=True, exist_ok=True)
+        return str(_OFFLINE_PLACEHOLDER)
     with hf_offline_context(True):
         try:
             return snapshot_download(*args, **kwargs)
