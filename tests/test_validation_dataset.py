@@ -1,6 +1,7 @@
 """Module for testing the validation module for the dataset config"""
 
 import warnings
+from pathlib import Path
 from typing import Optional
 
 import pytest
@@ -8,6 +9,9 @@ import pytest
 from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.datasets import ChatTemplate
+
+AXOLOTL_ROOT = Path(__file__).resolve().parents[1]
+DEEPSPEED_CONFIG_DIR = AXOLOTL_ROOT / "deepspeed_configs"
 
 warnings.filterwarnings("error")
 
@@ -327,7 +331,7 @@ class TestOptimizerValidation(BaseValidation):
     Test muon optimizer validation
     """
 
-    def test_muon_deepspeed(self, minimal_cfg):
+    def test_muon_deepspeed_stage3_without_muonclip(self, minimal_cfg):
         cfg = DictDefault(
             minimal_cfg
             | {
@@ -338,12 +342,49 @@ class TestOptimizerValidation(BaseValidation):
                     }
                 ],
                 "optimizer": "muon",
-                "deepspeed": "deepspeed_configs/zero3.json",
+                "deepspeed": str(DEEPSPEED_CONFIG_DIR / "zero3.json"),
             }
         )
 
-        with pytest.raises(ValueError, match=r".*is currently incompatible with*"):
-            validate_config(cfg)
+        result = validate_config(cfg)
+        assert result.muonclip.enabled is True
+
+    def test_muon_deepspeed_stage2(self, minimal_cfg):
+        cfg = DictDefault(
+            minimal_cfg
+            | {
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    }
+                ],
+                "optimizer": "muon",
+                "deepspeed": str(DEEPSPEED_CONFIG_DIR / "zero2.json"),
+            }
+        )
+
+        result = validate_config(cfg)
+        assert result.muonclip.enabled is True
+
+    def test_muon_deepspeed_stage3_with_muonclip(self, minimal_cfg):
+        cfg = DictDefault(
+            minimal_cfg
+            | {
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    }
+                ],
+                "optimizer": "muon",
+                "muonclip": {"enabled": True},
+                "deepspeed": str(DEEPSPEED_CONFIG_DIR / "zero3.json"),
+            }
+        )
+
+        result = validate_config(cfg)
+        assert result.muonclip.enabled is True
 
     def test_muon_fsdp(self, minimal_cfg):
         cfg = DictDefault(
@@ -363,5 +404,45 @@ class TestOptimizerValidation(BaseValidation):
             }
         )
 
-        with pytest.raises(ValueError, match=r".*is currently incompatible with*"):
+        result = validate_config(cfg)
+        assert result.muonclip.enabled is True
+
+    def test_muon_fsdp_with_muonclip(self, minimal_cfg):
+        cfg = DictDefault(
+            minimal_cfg
+            | {
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    }
+                ],
+                "optimizer": "muon",
+                "muonclip": {"enabled": True},
+                "fsdp": ["full_shard"],
+                "fsdp_config": {
+                    "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                },
+            }
+        )
+
+        result = validate_config(cfg)
+        assert result.muonclip.enabled is True
+
+    def test_muon_raises_when_muonclip_disabled(self, minimal_cfg):
+        cfg = DictDefault(
+            minimal_cfg
+            | {
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    }
+                ],
+                "optimizer": "muon",
+                "muonclip": {"enabled": False},
+            }
+        )
+
+        with pytest.raises(ValueError, match=r".*muonclip\.enabled: true.*"):
             validate_config(cfg)

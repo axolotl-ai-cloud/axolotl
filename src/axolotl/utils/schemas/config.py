@@ -41,6 +41,7 @@ from axolotl.utils.schemas.model import (
     SpecialTokensConfig,
 )
 from axolotl.utils.schemas.multimodal import MultiModalConfig
+from axolotl.utils.schemas.muon import MuonClipConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
 from axolotl.utils.schemas.quantization import PTQConfig, QATConfig
 from axolotl.utils.schemas.training import HyperparametersConfig, JaggedLRConfig
@@ -137,6 +138,12 @@ class AxolotlInputConfig(
     )
     qat: QATConfig | None = None
     quantization: PTQConfig | None = None
+    muonclip: MuonClipConfig = Field(
+        default_factory=MuonClipConfig,
+        json_schema_extra={
+            "description": "MuonClip controller configuration enabling Muon/QK-Clip under ZeRO-3 or FSDP"
+        },
+    )
     reward_model: bool | None = Field(
         default=None,
         json_schema_extra={"description": "Reward modelling: `True` or `False`"},

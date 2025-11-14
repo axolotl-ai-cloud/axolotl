@@ -740,6 +740,30 @@ class RLValidationMixin:
 class OptimizationValidationMixin:
     """Validation methods related to optimization and performance."""
 
+    @staticmethod
+    def _get_deepspeed_zero_stage(deepspeed_cfg):
+        if not deepspeed_cfg:
+            return None
+
+        if isinstance(deepspeed_cfg, (str, Path)):
+            try:
+                with open(deepspeed_cfg, "r", encoding="utf-8") as ds_fin:
+                    ds_config = json.load(ds_fin)
+            except (OSError, json.JSONDecodeError) as exc:
+                LOG.warning("Unable to read DeepSpeed config %s: %s", deepspeed_cfg, exc)
+                return None
+        elif isinstance(deepspeed_cfg, dict):
+            ds_config = deepspeed_cfg
+        else:
+            return None
+
+        zero_opts = ds_config.get("zero_optimization", {})
+        stage = zero_opts.get("stage")
+        try:
+            return int(stage)
+        except (TypeError, ValueError):
+            return None
+
     @model_validator(mode="after")
     def check_adamw_optimizer_params(self):
         if any([self.adam_beta1, self.adam_beta2, self.adam_epsilon]) and (
@@ -751,12 +775,35 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_muon_deepspeed_fsdp(cls, data):
-        if data.get("optimizer") == "muon" and (
-            data.get("deepspeed") or data.get("fsdp") or data.get("fsdp_config")
-        ):
+        if data.get("optimizer") != "muon":
+            return data
+
+        muonclip_cfg = data.get("muonclip")
+        muonclip_enabled = None
+        if isinstance(muonclip_cfg, dict):
+            muonclip_enabled = muonclip_cfg.get("enabled")
+        elif muonclip_cfg is not None:
+            muonclip_enabled = getattr(muonclip_cfg, "enabled", None)
+
+        if muonclip_enabled is None:
+            muonclip_enabled = True
+            if isinstance(muonclip_cfg, dict):
+                muonclip_cfg["enabled"] = True
+            elif muonclip_cfg is None:
+                data["muonclip"] = {"enabled": True}
+
+        if muonclip_enabled is False:
             raise ValueError(
-                "Muon optimizer is currently incompatible with DeepSpeed and FSDP"
+                "optimizer: muon now routes through MuonClip; please set `muonclip.enabled: true` "
+                "or omit the block to accept the default."
             )
+
+        if data.get("deepspeed"):
+            stage = cls._get_deepspeed_zero_stage(data.get("deepspeed"))
+            if stage is None:
+                raise ValueError(
+                    "MuonClip requires `zero_optimization.stage` to be set in the DeepSpeed config."
+                )
         return data
 
     @model_validator(mode="before")
