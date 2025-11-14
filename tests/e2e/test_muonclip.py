@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import torch
+
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
@@ -85,6 +87,22 @@ class TestMuonClipE2E(unittest.TestCase):
                 return json.load(state_fin)
         return {"global_step": cfg.max_steps}
 
+    def _muon_cfg(self, output_dir: Path) -> DictDefault:
+        cfg = self._base_cfg(output_dir)
+        cfg.optimizer = "muon"
+        cfg.muonclip = {
+            "enabled": True,
+            "momentum": 0.95,
+            "weight_decay": 0.0,
+            "qk_clip": True,
+            "qk_clip_tau": 10.0,
+        }
+        cfg.save_steps = 1
+        cfg.save_strategy = "steps"
+        cfg.save_total_limit = 2
+        cfg.save_first_step = True
+        return cfg
+
     @with_temp_dir
     @unittest.skipIf(
         SKIP_REMOTE, "MuonClip smoke test requires model artifacts from HuggingFace"
@@ -111,3 +129,43 @@ class TestMuonClipE2E(unittest.TestCase):
             == muon_state["global_step"]
             == muon_cfg.max_steps
         )
+
+    @with_temp_dir
+    @unittest.skipIf(
+        SKIP_REMOTE, "MuonClip smoke test requires model artifacts from HuggingFace"
+    )
+    def test_muonclip_checkpoint_resume(self, temp_dir):
+        temp_dir = Path(temp_dir)
+        output_dir = temp_dir / "muonclip_resume"
+
+        stage1_cfg = self._muon_cfg(output_dir)
+        stage1_cfg.max_steps = 1
+        stage1_state = self._run_training(stage1_cfg)
+        assert stage1_state["global_step"] == 1
+
+        checkpoint_dir = output_dir / "checkpoint-1"
+        assert checkpoint_dir.exists()
+        muon_state_path = checkpoint_dir / "muonclip_state_rank0.pt"
+        assert muon_state_path.exists()
+        first_buffers = torch.load(muon_state_path, map_location="cpu")
+        assert first_buffers, "Expected Muon buffers in checkpoint"
+
+        stage2_cfg = self._muon_cfg(output_dir)
+        stage2_cfg.max_steps = 2
+        stage2_cfg.resume_from_checkpoint = str(checkpoint_dir)
+        stage2_state = self._run_training(stage2_cfg)
+        assert stage2_state["global_step"] == stage2_cfg.max_steps == 2
+
+        final_checkpoint = output_dir / "checkpoint-2"
+        assert final_checkpoint.exists()
+        final_state_path = final_checkpoint / "muonclip_state_rank0.pt"
+        assert final_state_path.exists()
+        final_buffers = torch.load(final_state_path, map_location="cpu")
+        assert final_buffers
+
+        overlap = set(first_buffers.keys()) & set(final_buffers.keys())
+        assert overlap
+        assert any(
+            not torch.allclose(first_buffers[key], final_buffers[key])
+            for key in overlap
+        ), "Muon state should change after additional training steps"
