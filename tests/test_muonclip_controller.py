@@ -1,9 +1,8 @@
 """Smoke tests for the MuonClipController skeleton."""
 
-import torch.nn as nn
-
 import torch
 import torch.nn as nn
+import pytest
 
 from axolotl.muonclip import MuonClipController
 from axolotl.muonclip.attention import BUFFER_NAME
@@ -23,6 +22,16 @@ class _TinyModel(nn.Module):
         super().__init__()
         self.linear = nn.Linear(4, 4)
         self.attn = _FakeAttention()
+
+
+class _DummyOptimizer:
+    def __init__(self, params, lr: float):
+        self.param_groups = [
+            {
+                "params": params,
+                "lr": lr,
+            }
+        ]
 
 
 def test_controller_initializes_metadata_and_state_store():
@@ -90,3 +99,26 @@ def test_qk_clip_deactivates_after_max_steps():
     controller.post_optimizer_step()
     after_second = model.attn.q_proj.weight.clone()
     assert torch.allclose(after_first, after_second), "QK-Clip should be inactive after max steps"
+
+
+def _run_muon_step_with_lr(lr_value: float) -> float:
+    model = _TinyModel()
+    cfg = MuonClipConfig(enabled=True, momentum=0.0, weight_decay=0.0)
+    controller = MuonClipController(model, cfg, learning_rate=1.0)
+    param = model.linear.weight
+    param.data.fill_(0.5)
+    param.grad = torch.ones_like(param)
+    before = param.detach().clone()
+    optimizer = _DummyOptimizer([param], lr_value)
+    controller.post_optimizer_step(optimizer=optimizer)
+    delta = before - param.detach()
+    return delta.norm().item()
+
+
+def test_controller_uses_optimizer_learning_rate_overrides():
+    slow = _run_muon_step_with_lr(0.01)
+    fast = _run_muon_step_with_lr(0.1)
+
+    assert slow > 0
+    assert fast > slow
+    assert fast == pytest.approx(slow * 10, rel=1e-5)

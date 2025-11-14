@@ -51,16 +51,17 @@ class MuonClipController:
         )
         self.attention_trackers: dict[str, AttentionTracker] = {}
         self.attention_modules: dict[str, nn.Module] = {}
-        self.learning_rate = learning_rate or 1e-4
+        self.learning_rate = 1e-4 if learning_rate is None else learning_rate
         self._steps = 0
         self._qk_clip_active = bool(config.qk_clip)
 
-    def post_optimizer_step(self):
+    def post_optimizer_step(self, *, optimizer: torch.optim.Optimizer | None = None):
         if not self.config.enabled:
             return
 
         self._steps += 1
-        self._apply_muon_updates()
+        lr_map = self._build_lr_map(optimizer)
+        self._apply_muon_updates(lr_map)
         if self._qk_clip_active and self.attention_trackers:
             self._apply_qk_clip()
             self._maybe_deactivate_qk_clip()
@@ -71,12 +72,44 @@ class MuonClipController:
         self.attention_modules[name] = module
         return tracker
 
-    def _apply_muon_updates(self):
+    def _build_lr_map(self, optimizer) -> dict[int, float] | None:
+        if optimizer is None:
+            return None
+        param_groups = getattr(optimizer, "param_groups", None)
+        if not param_groups:
+            return None
+
+        lr_map: dict[int, float] = {}
+        for group in param_groups:
+            lr = group.get("lr")
+            if lr is None:
+                continue
+            try:
+                lr_value = float(lr)
+            except (TypeError, ValueError):
+                continue
+            for param in group.get("params", []):
+                if param is None:
+                    continue
+                lr_map[id(param)] = lr_value
+        return lr_map or None
+
+    def _resolve_learning_rate(
+        self, param: torch.nn.Parameter, lr_map: dict[int, float] | None
+    ) -> float:
+        if lr_map:
+            lr = lr_map.get(id(param))
+            if lr is not None:
+                return lr
+        return self.learning_rate
+
+    def _apply_muon_updates(self, lr_map: dict[int, float] | None):
         for name, param in self.model.named_parameters():
             info = self.metadata.get(name)
             if not info or not info.use_muon or param.grad is None:
                 continue
 
+            lr = self._resolve_learning_rate(param, lr_map)
             with gather_full_param(param):
                 state = self.state_store.get_or_create(param)
                 update = muon_orthogonal_update(
@@ -87,8 +120,8 @@ class MuonClipController:
                     rms_scale=self.config.rms_scale,
                 )
                 if self.config.weight_decay:
-                    param.data.mul_(1 - self.learning_rate * self.config.weight_decay)
-                param.data.add_(update, alpha=-self.learning_rate)
+                    param.data.mul_(1 - lr * self.config.weight_decay)
+                param.data.add_(update, alpha=-lr)
 
     def _apply_qk_clip(self):
         tau = self.config.qk_clip_tau

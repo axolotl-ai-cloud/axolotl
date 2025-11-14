@@ -24,7 +24,8 @@ class MuonClipCallback(TrainerCallback):
         **kwargs,
     ) -> TrainerControl:
         try:
-            self.controller.post_optimizer_step()
+            optimizer = kwargs.get("optimizer")
+            self.controller.post_optimizer_step(optimizer=optimizer)
         except Exception as exc:  # pragma: no cover - defensive logging
             LOG.exception("MuonClip controller failed during optimizer step: %s", exc)
             raise
