@@ -55,9 +55,9 @@ class TestLlama4MoeAuxFree(unittest.TestCase):
             }
         )
 
+        prepare_plugins(cfg)
         cfg = validate_config(cfg)
         normalize_config(cfg)
-        prepare_plugins(cfg)
         dataset_meta = load_datasets(cfg=cfg)
 
         model, _, _ = train(cfg=cfg, dataset_meta=dataset_meta)
