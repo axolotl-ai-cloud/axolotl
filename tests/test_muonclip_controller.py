@@ -115,6 +115,19 @@ def _run_muon_step_with_lr(lr_value: float) -> float:
     return delta.norm().item()
 
 
+def _run_muon_step_without_optimizer() -> float:
+    model = _TinyModel()
+    cfg = MuonClipConfig(enabled=True, momentum=0.0, weight_decay=0.0)
+    controller = MuonClipController(model, cfg, learning_rate=1.0)
+    param = model.linear.weight
+    param.data.fill_(0.5)
+    param.grad = torch.ones_like(param)
+    before = param.detach().clone()
+    controller.post_optimizer_step()
+    delta = before - param.detach()
+    return delta.norm().item()
+
+
 def test_controller_uses_optimizer_learning_rate_overrides():
     slow = _run_muon_step_with_lr(0.01)
     fast = _run_muon_step_with_lr(0.1)
@@ -122,6 +135,15 @@ def test_controller_uses_optimizer_learning_rate_overrides():
     assert slow > 0
     assert fast > slow
     assert fast == pytest.approx(slow * 10, rel=1e-5)
+
+
+def test_controller_uses_fallback_lr_when_optimizer_group_zero():
+    baseline = _run_muon_step_without_optimizer()
+    zero_lr = _run_muon_step_with_lr(0.0)
+
+    assert baseline > 0
+    assert zero_lr > 0
+    assert zero_lr == pytest.approx(baseline, rel=1e-6)
 
 
 def test_controller_state_dict_round_trip():

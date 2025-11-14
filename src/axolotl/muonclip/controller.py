@@ -91,6 +91,8 @@ class MuonClipController:
             for param in group.get("params", []):
                 if param is None:
                     continue
+                if getattr(param, "use_muon", False) and lr_value == 0:
+                    continue
                 lr_map[id(param)] = lr_value
         return lr_map or None
 

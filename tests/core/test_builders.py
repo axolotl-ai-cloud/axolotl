@@ -563,6 +563,28 @@ class TestHFCausalTrainerBuilder:
         optim = trainer.create_optimizer()
         assert isinstance(optim, AdamW)
 
+    def test_muon_optimizer_skips_muon_params(self, sft_cfg, model, tokenizer):
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "muon"
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(10)
+
+        optimizer = trainer.create_optimizer()
+        muon_param_ids = {
+            id(param)
+            for param in trainer.model.parameters()
+            if getattr(param, "use_muon", False)
+        }
+        assert muon_param_ids
+
+        for group in optimizer.param_groups:
+            contains_muon = any(id(p) in muon_param_ids for p in group["params"])
+            if contains_muon:
+                assert group["lr"] == 0.0
+                assert group.get("weight_decay", 0.0) == 0.0
+            else:
+                assert group["lr"] > 0
+
 
 class TestTrainerClsPlugin:
     """
