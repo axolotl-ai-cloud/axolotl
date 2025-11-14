@@ -276,8 +276,15 @@ class TrainerBuilderBase(abc.ABC):
             return self._muon_param_metadata, self._muon_param_summary
 
         muonclip_cfg = getattr(self.cfg, "muonclip", None)
-        if not isinstance(muonclip_cfg, MuonClipConfig):
+        if isinstance(muonclip_cfg, dict):
+            muonclip_cfg = MuonClipConfig.model_validate(muonclip_cfg)
+            setattr(self.cfg, "muonclip", muonclip_cfg)
+        elif muonclip_cfg is None:
             muonclip_cfg = MuonClipConfig()
+            setattr(self.cfg, "muonclip", muonclip_cfg)
+        elif not isinstance(muonclip_cfg, MuonClipConfig):
+            muonclip_cfg = MuonClipConfig.model_validate(muonclip_cfg)
+            setattr(self.cfg, "muonclip", muonclip_cfg)
 
         metadata, summary = tag_parameters_for_muon(self.model, muonclip_cfg)
         self._muon_param_metadata = metadata
