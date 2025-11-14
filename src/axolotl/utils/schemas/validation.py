@@ -740,6 +740,31 @@ class RLValidationMixin:
 class OptimizationValidationMixin:
     """Validation methods related to optimization and performance."""
 
+    @staticmethod
+    def _get_deepspeed_zero_stage(deepspeed_cfg):
+        if not deepspeed_cfg:
+            return None
+
+        ds_config = None
+        if isinstance(deepspeed_cfg, (str, Path)):
+            try:
+                with open(deepspeed_cfg, "r", encoding="utf-8") as ds_fin:
+                    ds_config = json.load(ds_fin)
+            except (OSError, json.JSONDecodeError) as exc:
+                LOG.warning("Unable to read DeepSpeed config %s: %s", deepspeed_cfg, exc)
+                return None
+        elif isinstance(deepspeed_cfg, dict):
+            ds_config = deepspeed_cfg
+        else:
+            return None
+
+        zero_cfg = ds_config.get("zero_optimization", {})
+        stage = zero_cfg.get("stage")
+        try:
+            return int(stage)
+        except (TypeError, ValueError):
+            return None
+
     @model_validator(mode="after")
     def check_adamw_optimizer_params(self):
         if any([self.adam_beta1, self.adam_beta2, self.adam_epsilon]) and (
@@ -751,12 +776,23 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_muon_deepspeed_fsdp(cls, data):
-        if data.get("optimizer") == "muon" and (
-            data.get("deepspeed") or data.get("fsdp") or data.get("fsdp_config")
-        ):
-            raise ValueError(
-                "Muon optimizer is currently incompatible with DeepSpeed and FSDP"
-            )
+        if data.get("optimizer") != "muon":
+            return data
+
+        if data.get("fsdp") or data.get("fsdp_config"):
+            raise ValueError("Muon optimizer is currently incompatible with FSDP")
+
+        if data.get("deepspeed"):
+            stage = cls._get_deepspeed_zero_stage(data.get("deepspeed"))
+            if stage is None:
+                raise ValueError(
+                    "Muon optimizer with DeepSpeed requires `zero_optimization.stage` "
+                    "to be explicitly set to 1 or 2."
+                )
+            if stage >= 3:
+                raise ValueError(
+                    "Muon optimizer is only supported with DeepSpeed ZeRO stages 1-2"
+                )
         return data
 
     @model_validator(mode="before")
