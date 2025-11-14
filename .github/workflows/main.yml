@@ -45,7 +45,6 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            winglian/axolotl
             axolotlai/axolotl
           tags: |
             type=ref,event=branch
@@ -119,7 +118,6 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            winglian/axolotl-cloud
             axolotlai/axolotl-cloud
           tags: |
             type=ref,event=branch
@@ -179,7 +177,6 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            winglian/axolotl-cloud-term
             axolotlai/axolotl-cloud-term
           tags: |
             type=ref,event=branch
