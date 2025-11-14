@@ -44,10 +44,13 @@ class MuonClipController:
         self.config = config
         metadata, _ = tag_parameters_for_muon(model, config)
         self.metadata = metadata
-        ref_param = next(model.parameters())
+        try:
+            ref_param = next(model.parameters())
+        except StopIteration:  # pragma: no cover - models without parameters
+            ref_param = None
         self.state_store = state_store or MuonStateStore(
-            device=ref_param.device,
-            dtype=ref_param.dtype,
+            device=ref_param.device if ref_param else None,
+            dtype=ref_param.dtype if ref_param else None,
         )
         self.attention_trackers: dict[str, AttentionTracker] = {}
         self.attention_modules: dict[str, nn.Module] = {}
