@@ -31,6 +31,7 @@ class CutCrossEntropyArgs(BaseModel):
     """
 
     cut_cross_entropy: Optional[bool] = True
+    cut_cross_entropy_model_path: Optional[str] = None
 
     @model_validator(mode="before")
     @classmethod
