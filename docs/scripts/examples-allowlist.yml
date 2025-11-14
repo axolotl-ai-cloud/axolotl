@@ -1,0 +1,5 @@
+examples:
+  - distributed-parallel
+  - slurm
+  - llama-3
+  - gpt-oss
