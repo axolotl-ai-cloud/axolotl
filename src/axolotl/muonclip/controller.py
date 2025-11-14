@@ -123,6 +123,59 @@ class MuonClipController:
                     param.data.mul_(1 - lr * self.config.weight_decay)
                 param.data.add_(update, alpha=-lr)
 
+    def state_dict(self) -> dict[str, torch.Tensor]:
+        """
+        Serialize Muon optimizer buffers keyed by parameter name.
+        """
+
+        result: dict[str, torch.Tensor] = {}
+        params = dict(self.model.named_parameters())
+        for name, info in self.metadata.items():
+            if not info.use_muon:
+                continue
+            param = params.get(name)
+            if param is None:
+                continue
+            state = self.state_store.peek(param)
+            if state is None:
+                continue
+            if state.momentum is not None:
+                result[f"{name}:momentum"] = self._clone_to_cpu(state.momentum)
+            if state.rms is not None:
+                result[f"{name}:rms"] = self._clone_to_cpu(state.rms)
+        return result
+
+    def load_state_dict(self, buffers: Mapping[str, torch.Tensor]) -> None:
+        """
+        Restore Muon optimizer buffers from `buffers`.
+        """
+
+        if not buffers:
+            return
+
+        params = dict(self.model.named_parameters())
+        for key, tensor in buffers.items():
+            try:
+                name, kind = key.rsplit(":", 1)
+            except ValueError:
+                continue
+            param = params.get(name)
+            if param is None:
+                continue
+            with gather_full_param(param):
+                state = self.state_store.get_or_create(param, with_rms=(kind == "rms"))
+                target = state.momentum if kind == "momentum" else state.rms
+                if target is None:
+                    continue
+                target.copy_(tensor.to(target.device, dtype=target.dtype))
+
+    @staticmethod
+    def _clone_to_cpu(tensor: torch.Tensor) -> torch.Tensor:
+        clone = tensor.detach().clone()
+        if clone.device.type != "cpu":
+            clone = clone.to("cpu")
+        return clone
+
     def _apply_qk_clip(self):
         tau = self.config.qk_clip_tau
         alpha = self.config.qk_clip_alpha

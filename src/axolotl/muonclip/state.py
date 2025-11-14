@@ -56,6 +56,13 @@ class MuonStateStore:
         self._ensure_device(state, param)
         return state
 
+    def peek(self, param: torch.nn.Parameter) -> MuonParameterState | None:
+        """
+        Return the existing state entry for `param` without creating new buffers.
+        """
+
+        return self._states.get(id(param))
+
     def _ensure_device(self, state: MuonParameterState, param: torch.nn.Parameter):
         target_device = param.device
         if state.momentum.device != target_device:

@@ -37,6 +37,7 @@ from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
+from axolotl.utils.callbacks.muonclip import MuonClipCallback
 from axolotl.utils.train import determine_last_checkpoint
 from axolotl.utils.trainer import setup_trainer
 
@@ -145,9 +146,29 @@ def setup_signal_handler(
 
         _model_weakref = weakref.ref(model)
         signal.signal(
-            signal.SIGINT,
-            lambda signum, frame: terminate_handler(signum, frame, _model_weakref),
-        )
+        signal.SIGINT,
+        lambda signum, frame: terminate_handler(signum, frame, _model_weakref),
+    )
+
+
+def _restore_muonclip_state_if_available(
+    trainer: Trainer,
+    resume_from_checkpoint: str | None,
+):
+    if not resume_from_checkpoint:
+        return
+
+    callback_handler = getattr(trainer, "callback_handler", None)
+    if not callback_handler:
+        return
+
+    for callback in getattr(callback_handler, "callbacks", []):
+        if isinstance(callback, MuonClipCallback):
+            process_index = getattr(getattr(trainer, "state", None), "process_index", 0)
+            callback.load_state_from_checkpoint(
+                resume_from_checkpoint, process_index=process_index
+            )
+            break
 
 
 def execute_training(
@@ -194,6 +215,7 @@ def execute_training(
         #     torch.set_default_dtype(torch.bfloat16)
 
         LOG.info("Starting trainer...")
+        _restore_muonclip_state_if_available(trainer, resume_from_checkpoint)
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
         plugin_manager = PluginManager.get_instance()

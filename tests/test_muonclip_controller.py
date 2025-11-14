@@ -122,3 +122,23 @@ def test_controller_uses_optimizer_learning_rate_overrides():
     assert slow > 0
     assert fast > slow
     assert fast == pytest.approx(slow * 10, rel=1e-5)
+
+
+def test_controller_state_dict_round_trip():
+    model = _TinyModel()
+    cfg = MuonClipConfig(enabled=True, momentum=0.9)
+    controller = MuonClipController(model, cfg, learning_rate=0.05)
+
+    param = model.linear.weight
+    param.grad = torch.ones_like(param)
+    controller.post_optimizer_step()
+
+    saved_buffers = controller.state_dict()
+    assert any(key.endswith(":momentum") for key in saved_buffers)
+
+    momentum_before = controller.state_store.get_or_create(param).momentum.clone()
+    controller.state_store.get_or_create(param).momentum.zero_()
+    controller.load_state_dict(saved_buffers)
+    momentum_after = controller.state_store.get_or_create(param).momentum
+
+    assert torch.allclose(momentum_before, momentum_after)
