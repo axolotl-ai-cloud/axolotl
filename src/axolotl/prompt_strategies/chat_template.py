@@ -823,6 +823,23 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             return None
 
         if isinstance(tools, list):
+            # Process each tool to handle JSON string parameters
+            for tool in tools:
+                if isinstance(tool, dict) and "function" in tool:
+                    function = tool["function"]
+                    if "parameters" in function:
+                        params = function["parameters"]
+                        if isinstance(params, str):
+                            try:
+                                function["parameters"] = json.loads(params)
+                            except json.JSONDecodeError as e:
+                                LOG.error(
+                                    f"Error parsing tool parameters as JSON. "
+                                    f"Function: {function.get('name', 'unknown')}, "
+                                    f"Parameters string: {params!r}, "
+                                    f"Error: {e}"
+                                )
+                                raise
             return tools
 
         raise ValueError(
