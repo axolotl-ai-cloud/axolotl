@@ -6,8 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
+<meta name="description" content="A description of the telemetry implementation in Axolotl.">
 
-<title>monkeypatch.utils – Axolotl</title>
+<title>Telemetry – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -20,62 +21,27 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
-/* CSS for syntax highlighting */
-html { -webkit-text-size-adjust: 100%; }
-pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
-pre > code.sourceCode > span:empty { height: 1.2em; }
-.sourceCode { overflow: visible; }
-code.sourceCode > span { color: inherit; text-decoration: inherit; }
-div.sourceCode { margin: 1em 0; }
-pre.sourceCode { margin: 0; }
-@media screen {
-div.sourceCode { overflow: auto; }
-}
-@media print {
-pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
-}
-pre.numberSource code
-  { counter-reset: source-line 0; }
-pre.numberSource code > span
-  { position: relative; left: -4em; counter-increment: source-line; }
-pre.numberSource code > span > a:first-child::before
-  { content: counter(source-line);
-    position: relative; left: -1em; text-align: right; vertical-align: baseline;
-    border: none; display: inline-block;
-    -webkit-touch-callout: none; -webkit-user-select: none;
-    -khtml-user-select: none; -moz-user-select: none;
-    -ms-user-select: none; user-select: none;
-    padding: 0 4px; width: 4em;
-  }
-pre.numberSource { margin-left: 3em;  padding-left: 4px; }
-div.sourceCode
-  {   }
-@media screen {
-pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
-}
 </style>
 
 
-<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
-<script src="../../site_libs/clipboard/clipboard.min.js"></script>
-<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
-<script src="../../site_libs/quarto-search/fuse.min.js"></script>
-<script src="../../site_libs/quarto-search/quarto-search.js"></script>
-<meta name="quarto:offset" content="../../">
-<link href="../../favicon.jpg" rel="icon" type="image/jpeg">
-<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
-<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
-<script src="../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
-<script src="../../site_libs/quarto-html/popper.min.js"></script>
-<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
-<script src="../../site_libs/quarto-html/anchor.min.js"></script>
-<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b758ccaa5987ceb1b75504551e579abf.css" rel="stylesheet" id="quarto-text-highlighting-styles">
-<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
-<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-08d9eb451d58809f35fda8b852d737d8.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../favicon.jpg" rel="icon" type="image/jpeg">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b758ccaa5987ceb1b75504551e579abf.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-08d9eb451d58809f35fda8b852d737d8.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -114,7 +80,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </script>
 
 
-<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../styles.css">
 </head>
 
 <body class="nav-sidebar docked nav-fixed quarto-light">
@@ -124,9 +90,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <nav class="navbar navbar-expand " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
-    <a href="../../index.html" class="navbar-brand navbar-brand-logo">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
     </a>
   </div>
         <div class="quarto-navbar-tools tools-wide tools-end">
@@ -142,7 +108,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../docs/telemetry.html">Telemetry</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -156,7 +122,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../index.html" class="sidebar-item-text sidebar-link">
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Home</span></a>
   </div>
 </li>
@@ -171,43 +137,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/getting-started.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/getting-started.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quickstart</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/installation.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/installation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Installation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/inference.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/inference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Inference and Merging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/cli.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/telemetry.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/telemetry.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Telemetry</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/config-reference.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/config-reference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/api" class="sidebar-item-text sidebar-link">
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
  <span class="menu-text">API Reference</span></a>
   </div>
 </li>
@@ -215,7 +181,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a href="../../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
+            <a href="../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Formats</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
@@ -224,37 +190,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Pre-training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Instruction Tuning</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Conversation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Stepwise Supervised Format</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-Free</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Pre-Tokenized Dataset</span></a>
   </div>
 </li>
@@ -271,37 +237,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/docker.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/docker.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Docker</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi-GPU</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-node.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi Node</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ray Train</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mac.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/mac.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mac M-series</span></a>
   </div>
 </li>
@@ -318,55 +284,55 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multimodal.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multimodal.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MultiModal / Vision Language Models (BETA)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">RLHF (Beta)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Reward Modelling</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Learning Rate Groups</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Loading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/qat.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/qat.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization Aware Training (QAT)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/quantize.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/quantize.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization with torchao</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/optimizations.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/optimizations.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Optimizations Guide</span></a>
   </div>
 </li>
@@ -383,37 +349,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Batch size vs Gradient accumulation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Preprocessing</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/streaming.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/streaming.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Streaming Datasets</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multipack.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multipack (Sample Packing)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mixed Precision Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/optimizers.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/optimizers.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Optimizers</span></a>
   </div>
 </li>
@@ -430,43 +396,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FSDP + QLoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/unsloth.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/unsloth.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Unsloth</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/torchao.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/torchao.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">PyTorch ao</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Integrations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Sequence Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gradient Checkpointing and Activation Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">N-D Parallelism (Beta)</span></a>
   </div>
 </li>
@@ -483,19 +449,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/faq.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/faq.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FAQ</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/debugging.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Debugging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nccl.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NCCL</span></a>
   </div>
 </li>
@@ -511,72 +477,104 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.monkeypatch.utils" id="toc-axolotl.monkeypatch.utils" class="nav-link active" data-scroll-target="#axolotl.monkeypatch.utils">monkeypatch.utils</a>
+  <li><a href="#telemetry-in-axolotl" id="toc-telemetry-in-axolotl" class="nav-link active" data-scroll-target="#telemetry-in-axolotl">Telemetry in Axolotl</a>
   <ul class="collapse">
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.monkeypatch.utils.get_cu_seqlens" id="toc-axolotl.monkeypatch.utils.get_cu_seqlens" class="nav-link" data-scroll-target="#axolotl.monkeypatch.utils.get_cu_seqlens">get_cu_seqlens</a></li>
-  <li><a href="#axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids" id="toc-axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids" class="nav-link" data-scroll-target="#axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids">get_cu_seqlens_from_pos_ids</a></li>
-  <li><a href="#axolotl.monkeypatch.utils.mask_2d_to_4d" id="toc-axolotl.monkeypatch.utils.mask_2d_to_4d" class="nav-link" data-scroll-target="#axolotl.monkeypatch.utils.mask_2d_to_4d">mask_2d_to_4d</a></li>
-  </ul></li>
+  <li><a href="#data-collection" id="toc-data-collection" class="nav-link" data-scroll-target="#data-collection">Data Collection</a></li>
+  <li><a href="#implementation" id="toc-implementation" class="nav-link" data-scroll-target="#implementation">Implementation</a></li>
+  <li><a href="#opt-out-mechanism" id="toc-opt-out-mechanism" class="nav-link" data-scroll-target="#opt-out-mechanism">Opt-Out Mechanism</a></li>
+  <li><a href="#privacy" id="toc-privacy" class="nav-link" data-scroll-target="#privacy">Privacy</a></li>
   </ul></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../docs/telemetry.html">Telemetry</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Telemetry</h1>
+</div>
+
+<div>
+  <div class="description">
+    A description of the telemetry implementation in Axolotl.
+  </div>
+</div>
 
 
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
 
 
-<section id="axolotl.monkeypatch.utils" class="level1">
-<h1>monkeypatch.utils</h1>
-<p><code>monkeypatch.utils</code></p>
-<p>Shared utils for the monkeypatches</p>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.monkeypatch.utils.get_cu_seqlens">get_cu_seqlens</a></td>
-<td>generate a cumulative sequence length mask for flash attention using attn mask</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids">get_cu_seqlens_from_pos_ids</a></td>
-<td>generate a cumulative sequence length mask for flash attention using pos ids</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.monkeypatch.utils.mask_2d_to_4d">mask_2d_to_4d</a></td>
-<td>Expands attention_mask from <code>[bsz, seq_len]</code> to <code>[bsz, 1, tgt_seq_len, src_seq_len]</code>.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.monkeypatch.utils.get_cu_seqlens" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.utils.get_cu_seqlens">get_cu_seqlens</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.utils.get_cu_seqlens(attn_mask)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>generate a cumulative sequence length mask for flash attention using attn mask</p>
+</header>
+
+
+<section id="telemetry-in-axolotl" class="level1">
+<h1>Telemetry in Axolotl</h1>
+<p>Axolotl implements anonymous telemetry to help maintainers understand how the library
+is used and where users encounter issues. This data helps prioritize features, optimize
+performance, and fix bugs.</p>
+<section id="data-collection" class="level2">
+<h2 class="anchored" data-anchor-id="data-collection">Data Collection</h2>
+<p>We collect:</p>
+<ul>
+<li>System info: OS, Python version, Axolotl version, PyTorch version, Transformers
+version, etc.</li>
+<li>Hardware info: CPU count, memory, GPU count and models</li>
+<li>Runtime metrics: Training progress, memory usage, timing information</li>
+<li>Usage patterns: Models (from a whitelist) and configurations used</li>
+<li>Error tracking: Stack traces and error messages (sanitized to remove personal
+information)</li>
+</ul>
+<p>Personally identifiable information (PII) is not collected.</p>
 </section>
-<section id="axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids">get_cu_seqlens_from_pos_ids</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.utils.get_cu_seqlens_from_pos_ids(position_ids)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>generate a cumulative sequence length mask for flash attention using pos ids</p>
+<section id="implementation" class="level2">
+<h2 class="anchored" data-anchor-id="implementation">Implementation</h2>
+<p>Telemetry is implemented using PostHog and consists of:</p>
+<ul>
+<li><code>axolotl.telemetry.TelemetryManager</code>: A singleton class that initializes the
+telemetry system and provides methods for tracking events.</li>
+<li><code>axolotl.telemetry.errors.send_errors</code>: A decorator that captures exceptions and
+sends sanitized stack traces.</li>
+<li><code>axolotl.telemetry.runtime_metrics.RuntimeMetricsTracker</code>: A class that tracks
+runtime metrics during training.</li>
+<li><code>axolotl.telemetry.callbacks.TelemetryCallback</code>: A Trainer callback that sends
+runtime metrics telemetry.</li>
+</ul>
+<p>The telemetry system will block training startup for 10 seconds to ensure users are
+aware of data collection, unless telemetry is explicitly enabled or disabled.</p>
 </section>
-<section id="axolotl.monkeypatch.utils.mask_2d_to_4d" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.utils.mask_2d_to_4d">mask_2d_to_4d</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.utils.mask_2d_to_4d(mask, dtype, tgt_len<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Expands attention_mask from <code>[bsz, seq_len]</code> to <code>[bsz, 1, tgt_seq_len, src_seq_len]</code>.
-This expansion handles packed sequences so that sequences share the same attention mask integer value
-when they attend to each other within that sequence.
-This expansion transforms the mask to lower triangular form to prevent future peeking.</p>
+<section id="opt-out-mechanism" class="level2">
+<h2 class="anchored" data-anchor-id="opt-out-mechanism">Opt-Out Mechanism</h2>
+<p>Telemetry is <strong>enabled by default</strong> on an opt-out basis. To disable it, set
+<code>AXOLOTL_DO_NOT_TRACK=1</code> or <code>DO_NOT_TRACK=1</code>.</p>
+<p>A warning message will be logged on start to clearly inform users about telemetry.
+We will remove this after some period.</p>
+<p>To hide the warning message about telemetry that is displayed on train, etc. startup,
+explicitly set: <code>AXOLOTL_DO_NOT_TRACK=0</code> (enable telemetry) or <code>AXOLOTL_DO_NOT_TRACK=1</code>
+(explicitly disable telemetry).</p>
+</section>
+<section id="privacy" class="level2">
+<h2 class="anchored" data-anchor-id="privacy">Privacy</h2>
+<ul>
+<li>All path-like config information is automatically redacted from telemetry data</li>
+<li>Model information is only collected for whitelisted organizations
+<ul>
+<li>See <code>axolotl/telemetry/whitelist.yaml</code> for the set of whitelisted organizations</li>
+</ul></li>
+<li>Each run generates a unique anonymous ID
+<ul>
+<li>This allows us to link different telemetry events in a single same training run</li>
+</ul></li>
+<li>Telemetry is only sent from the main process to avoid duplicate events</li>
+</ul>
 
 
-</section>
 </section>
 </section>
 
