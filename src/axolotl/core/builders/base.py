@@ -29,6 +29,8 @@ from transformers.trainer_pt_utils import AcceleratorConfig
 
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
+from axolotl.telemetry.callbacks import TelemetryCallback
+from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils import (
     is_comet_available,
     is_mlflow_available,
@@ -161,6 +163,10 @@ class TrainerBuilderBase(abc.ABC):
                     profiler_steps_start=self.cfg.profiler_steps_start,
                 )
             )
+
+        telemetry_manager = TelemetryManager.get_instance()
+        if telemetry_manager.enabled:
+            callbacks.append(TelemetryCallback())
 
         return callbacks
 

@@ -154,6 +154,13 @@ That's it! Check out our [Getting Started Guide](https://docs.axolotl.ai/docs/ge
 
 Contributions are welcome! Please see our [Contributing Guide](https://github.com/axolotl-ai-cloud/axolotl/blob/main/.github/CONTRIBUTING.md) for details.
 
+## 📈 Telemetry
+
+Axolotl has opt-out telemetry that helps us understand how the project is being used
+and prioritize improvements. We collect basic system information, model types, and
+error rates—never personal data or file paths. Telemetry is enabled by default. To
+disable it, set AXOLOTL_DO_NOT_TRACK=1. For more details, see our [telemetry documentation](https://docs.axolotl.ai/docs/telemetry.html).
+
 ## ❤️ Sponsors
 
 Interested in sponsoring? Contact us at [wing@axolotl.ai](mailto:wing@axolotl.ai)
