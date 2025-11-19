@@ -276,6 +276,7 @@ class TrainerBuilderBase(abc.ABC):
                     from axolotl.contribs.mit.muon.dist_muon import (
                         DistMuonOptimizerFactory,
                     )
+
                     optimizer_cls = DistMuonOptimizerFactory
                     optimizer_kwargs["device_mesh"] = device_mesh
                 else:
@@ -283,6 +284,7 @@ class TrainerBuilderBase(abc.ABC):
                     from axolotl.contribs.mit.muon import (
                         MuonOptimizerFactory,
                     )
+
                     optimizer_cls = MuonOptimizerFactory
 
                 optimizer_kwargs.update(adam_kwargs)
