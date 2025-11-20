@@ -1297,6 +1297,14 @@ class ComplexValidationMixin:
         return self
 
     @model_validator(mode="after")
+    def check_expert_parallel_size(self):
+        if not getattr(self, "expert_parallel_size", None):
+            self.expert_parallel_size = 1
+        elif self.expert_parallel_size < 1:
+            raise ValueError("expert_parallel_size must be >= 1")
+        return self
+
+    @model_validator(mode="after")
     def check_context_parallel_size(self):
         if self.sequence_parallel_degree and not self.context_parallel_size:
             LOG.warning(
