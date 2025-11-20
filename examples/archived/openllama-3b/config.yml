@@ -33,7 +33,7 @@ torchdistx_path:
 lr_scheduler: cosine
 learning_rate: 0.000003
 float16: true
-bf16: false
+bfloat16: false
 fp16: false
 tf32: false
 gradient_checkpointing: true
