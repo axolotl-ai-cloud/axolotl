@@ -44,7 +44,7 @@ def check_user_token() -> bool:
         return bool(user_info)
     except LocalTokenNotFoundError:
         LOG.warning(
-            "Error verifying HuggingFace token. Remember to log in using `huggingface-cli login` and get your access token from https://huggingface.co/settings/tokens if you want to use gated models or datasets."
+            "Error verifying HuggingFace token. Remember to log in using `hf auth login` and get your access token from https://huggingface.co/settings/tokens if you want to use gated models or datasets."
         )
         return False
     except HTTPError:
