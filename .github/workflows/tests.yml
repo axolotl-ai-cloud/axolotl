@@ -110,7 +110,7 @@ jobs:
 
       - name: Pre-Download dataset fixture
         run: |
-          huggingface-cli download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
+          hf download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
 
       - name: Show HF cache
         run: hf cache scan
