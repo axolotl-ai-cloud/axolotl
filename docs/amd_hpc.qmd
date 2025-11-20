@@ -86,7 +86,7 @@ export HF_DATASETS_OFFLINE=1
 Download a base model using the Hugging Face CLI:
 
 ```bash
-huggingface-cli download meta-llama/Meta-Llama-3.1-8B --local-dir ~/hfdata/llama3.1-8B
+hf download meta-llama/Meta-Llama-3.1-8B --local-dir ~/hfdata/llama3.1-8B
 ```
 
 ### 10. Create Axolotl Configuration
