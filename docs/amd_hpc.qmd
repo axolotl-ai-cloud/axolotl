@@ -106,3 +106,15 @@ CUDA_VISIBLE_DEVICES="" python -m axolotl.cli.preprocess /path/to/your/config.ya
 ### 12. Train
 
 You are now ready to submit your previously prepared job script. 🚂
+
+## MegaBlocks Grouped MoE on MI300X
+
+Axolotl ships a MegaBlocks HIP backend that replaces the per-expert Python loop in Ring/Bailing MoE blocks. To enable it on ROCm:
+
+- In your training config set `mlp_impl: megablocks` (or legacy `use_grouped_moe_kernels: true`). The patch manager will automatically stack expert weights and route all MoE layers through the grouped kernels.
+- Run the bundled parity tests before scaling up:  
+  `RUN_SLOW_MEGABLOCKS_PARITY=1 MEGABLOCKS_CAPTURE_GATING=1 python -m pytest axolotl.shisa/tests/e2e/test_ring_moe_grouped.py -k megablocks -s`  
+  This verifies grouped torch vs MegaBlocks loss and gradient parity on MI300X.
+- **Do not** export `MEGABLOCKS_GG_USE_HIPBLASLT=1` yet. The hipBLASLt path currently triggers MI300X GPU page faults (`gfxhub0 retry page fault` in dmesg). Leave the flag unset to keep using the proven fallback HIP kernel.
+
+For ad-hoc validation we also provide `better-moe-training/tools/run_ring_moe_parity.py`, which records loss traces and routing histograms for grouped vs MegaBlocks runs and saves them as JSON.

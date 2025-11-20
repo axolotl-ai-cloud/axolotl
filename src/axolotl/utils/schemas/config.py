@@ -750,6 +750,18 @@ class AxolotlInputConfig(
             "description": "Number of tensor parallel processes in TP group. Only supported with DeepSpeed AutoTP."
         },
     )
+    mlp_impl: Literal["vanilla", "grouped", "megablocks"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Select expert MLP backend for MoE blocks. `grouped` enables torch._grouped_mm kernels, `megablocks` reserved for future dropless integration."
+        },
+    )
+    use_grouped_moe_kernels: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Backwards-compatible toggle for enabling grouped MoE kernels on supported architectures."
+        },
+    )
     special_tokens: SpecialTokensConfig | None = Field(
         default=None,
         json_schema_extra={
