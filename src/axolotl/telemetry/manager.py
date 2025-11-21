@@ -4,6 +4,7 @@ import atexit
 import importlib
 import logging
 import os
+import sys
 import platform
 import time
 import uuid
@@ -20,19 +21,16 @@ LOG = logging.getLogger(__name__)
 POSTHOG_HOST = "https://app.posthog.com"
 POSTHOG_WRITE_KEY = "phc_1kUR0o04oJKKTTeSsIz2Mfm5mpiVsQEf2WOlzljMD7y"
 
-OPT_OUT_WARNING_SLEEP_SECONDS = 10
 OPT_OUT_WARNING = (
-    "\nTelemetry is now enabled by default to help improve Axolotl. "
-    "If you'd like to disable it, set AXOLOTL_DO_NOT_TRACK=1 in your environment.\n\n"
+    "\nAnonymous telemetry helps improve Axolotl. "
+    "If you'd like to continue, set AXOLOTL_DO_NOT_TRACK=0 or AXOLOTL_DO_NOT_TRACK=1 in your environment.\n\n"
     "Telemetry data helps us understand:\n"
     "- Which features are most used\n"
     "- What hardware configurations to prioritize\n"
     "- Where users encounter errors\n\n"
     "Personally identifiable information (PII) is not collected.\n\n"
-    "To remove this warning, explicitly set AXOLOTL_DO_NOT_TRACK=0 (enable telemetry) "
-    "or AXOLOTL_DO_NOT_TRACK=1 (disable telemetry).\n\n"
+    "To remove this warning, explicitly set AXOLOTL_DO_NOT_TRACK to a valid value.\n\n"
     "For details, see: https://docs.axolotl.ai/docs/telemetry.html\n\n"
-    f"Sleeping for {OPT_OUT_WARNING_SLEEP_SECONDS}s..."
 )
 
 WHITELIST_PATH = str(Path(__file__).parent / "whitelist.yaml")
@@ -165,8 +163,8 @@ class TelemetryManager:
         whether this is the main process (for the distributed setting and to avoid
         sending duplicate PostHog events per GPU).
 
-        Note: This is enabled by default on an opt-out basis. Set
-        `AXOLOTL_DO_NOT_TRACK=1` to disable telemetry. For more details, see
+        Note: if DO_NOT_TRACK is not set, the software will exit without collecting
+        any data by default. For more information, see:
         https://axolotl-ai-cloud.github.io/axolotl/docs/telemetry.html.
 
         Returns:
@@ -183,12 +181,12 @@ class TelemetryManager:
             "false",
             "true",
         ):
-            # Print opt-out info message for main process only
+            # Print telemetry info message for main process only
             if is_main_process():
                 LOG.warning(OPT_OUT_WARNING)
-            time.sleep(OPT_OUT_WARNING_SLEEP_SECONDS)
 
-            return True
+            # Exit if a decision was not made
+            sys.exit(1)
 
         # Only rank 0 will send telemetry
         if not is_main_process():

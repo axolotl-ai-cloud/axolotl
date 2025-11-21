@@ -41,15 +41,16 @@ aware of data collection, unless telemetry is explicitly enabled or disabled.
 
 ## Opt-Out Mechanism
 
-Telemetry is **enabled by default** on an opt-out basis. To disable it, set
+Telemetry must be **decided upon** before using axolotl. To enable it, set
+`AXOLOTL_DO_NOT_TRACK=0` or `DO_NOT_TRACK=0`. To disable it, set 
 `AXOLOTL_DO_NOT_TRACK=1` or `DO_NOT_TRACK=1`.
 
 A warning message will be logged on start to clearly inform users about telemetry.
-We will remove this after some period.
+The software will exit without collecting any data if a decision is not made.
 
 To hide the warning message about telemetry that is displayed on train, etc. startup,
-explicitly set: `AXOLOTL_DO_NOT_TRACK=0` (enable telemetry) or `AXOLOTL_DO_NOT_TRACK=1`
-(explicitly disable telemetry).
+and use the software explicitly set: `AXOLOTL_DO_NOT_TRACK=0` (enable telemetry) 
+or `AXOLOTL_DO_NOT_TRACK=1` (disable telemetry).
 
 ## Privacy
 
