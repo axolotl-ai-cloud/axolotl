@@ -20,6 +20,9 @@ from axolotl.core.trainers.base import AxolotlTrainer
 
 from .kernels.liger import LigerFusedLinearKLTopKLogprobLoss
 
+import torch
+
+from typing_extensions import override
 
 class AxolotlKDTrainer(AxolotlTrainer):
     """
@@ -60,6 +63,7 @@ class AxolotlKDTrainer(AxolotlTrainer):
             if columns_to_add:
                 self._signature_columns += columns_to_add
 
+    @override
     def compute_loss(
         self,
         model,
@@ -85,4 +89,58 @@ class AxolotlKDTrainer(AxolotlTrainer):
                 loss_kwargs["num_items_in_batch"] = num_items_in_batch
             inputs = {**inputs, **loss_kwargs}
         outputs = model(**inputs)
-        return outputs[0]
+
+        # Extract loss from outputs
+        if isinstance(outputs, tuple):
+            loss = outputs[0]
+        elif hasattr(outputs, 'loss'):
+            loss = outputs.loss
+        else:
+            loss = outputs
+        
+        return (loss, outputs) if return_outputs else loss
+
+    @override
+    def prediction_step(
+        self,
+        model,
+        inputs,
+        prediction_loss_only,
+        ignore_keys=None,
+    ):
+        """
+        Perform an evaluation step on model using inputs.
+        Fixed to properly normalize loss with num_items_in_batch.
+        """
+        # Calculate num_items_in_batch for proper loss normalization
+        if "labels" in inputs:
+            labels = inputs["labels"]
+            # Count non-padding tokens
+            num_items_in_batch = (labels != -100).sum().item()
+        else:
+            num_items_in_batch = None
+        
+        has_labels = "labels" in inputs
+        inputs = self._prepare_inputs(inputs)
+        
+        with torch.no_grad():
+            if has_labels:
+                # Pass num_items_in_batch for proper normalization
+                loss, outputs = self.compute_loss(
+                    model, 
+                    inputs, 
+                    return_outputs=True,
+                    num_items_in_batch=num_items_in_batch
+                )
+            else:
+                loss = None
+                outputs = model(**inputs)
+        
+        if prediction_loss_only:
+            return (loss, None, None)
+        
+        # Extract logits and labels
+        logits = outputs.logits if hasattr(outputs, "logits") else None
+        labels = inputs.get("labels")
+        
+        return (loss, logits, labels)
