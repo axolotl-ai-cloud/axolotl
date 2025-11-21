@@ -123,6 +123,15 @@ class TestFSDPValidation:
         assert cfg.fsdp_config.transformer_layer_cls_to_wrap == "LlamaDecoderLayer"
         assert cfg.fsdp_config.reshard_after_forward is True
 
+    def test_muon_fsdp1_rejected(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            optimizer="muon",
+            fsdp_version=1,
+            fsdp_config={"reshard_after_forward": True},
+        )
+        with pytest.raises(ValueError, match="Muon optimizer is only compatible with FSDP2"):
+            validate_config(cfg)
+
     @pytest.mark.parametrize(
         "rl",
         [
