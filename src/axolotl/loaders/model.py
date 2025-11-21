@@ -49,6 +49,7 @@ from axolotl.loaders.utils import (
     load_model_config,
 )
 from axolotl.models.mamba import fix_mamba_attn_for_loss
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
@@ -158,6 +159,7 @@ class ModelLoader:
         """Property that determines if FSDP with QLoRA is enabled."""
         return self.is_fsdp_enabled and self.cfg.adapter == "qlora"
 
+    @send_errors
     def load(self) -> tuple[PreTrainedModel | PeftModelForCausalLM, PeftConfig | None]:
         """Load and prepare the model with all configurations and patches.
 
