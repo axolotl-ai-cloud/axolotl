@@ -68,6 +68,6 @@ openenv-core==0.1.0
 schedulefree==1.4.1
 
 axolotl-contribs-lgpl==0.0.7
-axolotl-contribs-mit==0.0.5
+axolotl-contribs-mit @ git+https://github.com/axolotl-ai-cloud/axolotl-contribs-mit.git@dist_muon
 
 mistral-common==1.8.5
