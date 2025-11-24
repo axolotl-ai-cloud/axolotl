@@ -759,7 +759,7 @@ class OptimizationValidationMixin:
             if data.get("fsdp") or data.get("fsdp_config"):
                 fsdp_version = data.get("fsdp_version")
                 if fsdp_version is None:
-                    fsdp_version = fsdp_config.get("fsdp_version", 1)
+                    fsdp_version = data.get("fsdp_config", {}).get("fsdp_version", 1)
                 if str(fsdp_version) != "2":
                     raise ValueError(
                         "Muon optimizer is only compatible with FSDP2. Set fsdp_version: 2 to use Muon with FSDP."
