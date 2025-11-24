@@ -281,11 +281,9 @@ class TrainerBuilderBase(abc.ABC):
                 adam_kwargs["eps"] = training_args_kwargs.get("adam_epsilon")
 
             if self.cfg.optimizer == "muon":
-                # check if we need distributed muon (fsdp or tensor parallel)
                 _, device_mesh = build_parallelism_config(self.cfg)
 
                 if device_mesh is not None:
-                    # use distributed muon for fsdp/tp
                     from axolotl.contribs.mit.muon.dist_muon import (
                         DistMuonOptimizerFactory,
                     )
@@ -293,7 +291,6 @@ class TrainerBuilderBase(abc.ABC):
                     optimizer_cls = DistMuonOptimizerFactory
                     optimizer_kwargs["device_mesh"] = device_mesh
                 else:
-                    # use simple muon for single gpu
                     from axolotl.contribs.mit.muon import (
                         MuonOptimizerFactory,
                     )
