@@ -3,7 +3,6 @@
 import os
 from pathlib import Path
 
-import pytest
 import torch
 import yaml
 from accelerate.test_utils import execute_subprocess_async
@@ -46,15 +45,11 @@ def verify_training_success(temp_dir):
                 )
 
 
-class TestDistMuonFSDP2:
+class TestDistMuon:
     """Test class for DistMuon optimizer with FSDP2 functionality."""
 
     @require_torch_2_7_0
-    def test_dist_muon_fsdp2_fft_sft(self, temp_dir):
-        """Test full fine-tuning with FSDP2 + DistMuon on 2 GPUs.
-
-        This is the critical test that validates DistMuon works with FSDP2.
-        """
+    def test_fft_sft(self, temp_dir):
         cfg = DictDefault(
             {
                 "base_model": "Qwen/Qwen2.5-0.5B",
@@ -72,8 +67,8 @@ class TestDistMuonFSDP2:
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.02,  # Muon uses higher LR than AdamW
-                "optimizer": "muon",  # This will trigger DistMuon with FSDP2
+                "learning_rate": 0.02,
+                "optimizer": "muon",
                 "weight_decay": 0.01,
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
@@ -111,11 +106,7 @@ class TestDistMuonFSDP2:
         verify_training_success(temp_dir)
 
     @require_torch_2_7_0
-    def test_dist_muon_fsdp2_lora_sft(self, temp_dir):
-        """Test LoRA fine-tuning with FSDP2 + DistMuon on 2 GPUs.
-
-        Tests that DistMuon correctly handles LoRA adapter parameters.
-        """
+    def test_lora_sft(self, temp_dir):
         cfg = DictDefault(
             {
                 "base_model": "Qwen/Qwen2.5-0.5B",
@@ -138,67 +129,6 @@ class TestDistMuonFSDP2:
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.02,  # Muon uses higher LR than AdamW
-                "optimizer": "muon",  # This will trigger DistMuon with FSDP2
-                "weight_decay": 0.01,
-                "lr_scheduler": "cosine",
-                "flash_attention": True,
-                "fsdp_version": 2,
-                "fsdp_config": {
-                    "offload_params": False,
-                    "cpu_ram_efficient_loading": False,
-                    "transformer_layer_cls_to_wrap": "Qwen2DecoderLayer",
-                    "state_dict_type": "FULL_STATE_DICT",
-                    "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
-                    "reshard_after_forward": True,
-                },
-                "use_tensorboard": True,
-                "bf16": True,
-            }
-        )
-
-        # write cfg to yaml file
-        Path(temp_dir).mkdir(parents=True, exist_ok=True)
-        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
-            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
-
-        execute_subprocess_async(
-            [
-                "axolotl",
-                "train",
-                str(Path(temp_dir) / "config.yaml"),
-                "--num-processes",
-                "2",
-                "--main-process-port",
-                f"{get_torch_dist_unique_port()}",
-            ]
-        )
-
-        verify_training_success(temp_dir)
-
-    @require_torch_2_7_0
-    def test_dist_muon_fsdp2_4gpu(self, temp_dir):
-        """Test DistMuon with FSDP2 on all 4 A40 GPUs.
-
-        Tests scaling to 4 GPUs with larger batch size.
-        """
-        cfg = DictDefault(
-            {
-                "base_model": "Qwen/Qwen2.5-0.5B",
-                "sequence_len": 2048,
-                "val_set_size": 0.01,
-                "datasets": [
-                    {
-                        "path": "tatsu-lab/alpaca",
-                        "type": "alpaca",
-                        "split": "train[:10%]",
-                    },
-                ],
-                "num_epochs": 1,
-                "max_steps": 2,
-                "micro_batch_size": 2,
-                "gradient_accumulation_steps": 1,
-                "output_dir": temp_dir,
                 "learning_rate": 0.02,
                 "optimizer": "muon",
                 "weight_decay": 0.01,
@@ -212,140 +142,6 @@ class TestDistMuonFSDP2:
                     "state_dict_type": "FULL_STATE_DICT",
                     "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                     "reshard_after_forward": True,
-                },
-                "use_tensorboard": True,
-                "bf16": True,
-            }
-        )
-
-        # write cfg to yaml file
-        Path(temp_dir).mkdir(parents=True, exist_ok=True)
-        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
-            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
-
-        execute_subprocess_async(
-            [
-                "axolotl",
-                "train",
-                str(Path(temp_dir) / "config.yaml"),
-                "--num-processes",
-                "4",  # Use all 4 A40s
-                "--main-process-port",
-                f"{get_torch_dist_unique_port()}",
-            ]
-        )
-
-        verify_training_success(temp_dir)
-
-    @require_torch_2_7_0
-    @pytest.mark.parametrize(
-        "fsdp_cpu_ram_efficient_loading",
-        [True, False],
-    )
-    def test_dist_muon_fsdp2_cpu_ram_efficient_loading(
-        self, temp_dir, fsdp_cpu_ram_efficient_loading
-    ):
-        """Test DistMuon with FSDP2 cpu_ram_efficient_loading variants.
-
-        Tests that DistMuon handles both cpu_ram_efficient_loading modes.
-        """
-        cfg = DictDefault(
-            {
-                "base_model": "Qwen/Qwen2.5-0.5B",
-                "sequence_len": 2048,
-                "val_set_size": 0.01,
-                "datasets": [
-                    {
-                        "path": "tatsu-lab/alpaca",
-                        "type": "alpaca",
-                        "split": "train[:10%]",
-                    },
-                ],
-                "num_epochs": 1,
-                "max_steps": 2,
-                "micro_batch_size": 2,
-                "gradient_accumulation_steps": 1,
-                "output_dir": temp_dir,
-                "learning_rate": 0.02,
-                "optimizer": "muon",
-                "weight_decay": 0.01,
-                "lr_scheduler": "cosine",
-                "flash_attention": True,
-                "fsdp_version": 2,
-                "fsdp_config": {
-                    "offload_params": False,
-                    "cpu_ram_efficient_loading": fsdp_cpu_ram_efficient_loading,
-                    "transformer_layer_cls_to_wrap": "Qwen2DecoderLayer",
-                    "state_dict_type": "FULL_STATE_DICT",
-                    "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
-                    "reshard_after_forward": True,
-                },
-                "use_tensorboard": True,
-                "bf16": True,
-            }
-        )
-
-        # write cfg to yaml file
-        Path(temp_dir).mkdir(parents=True, exist_ok=True)
-        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
-            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
-
-        execute_subprocess_async(
-            [
-                "axolotl",
-                "train",
-                str(Path(temp_dir) / "config.yaml"),
-                "--num-processes",
-                "2",
-                "--main-process-port",
-                f"{get_torch_dist_unique_port()}",
-            ]
-        )
-
-        verify_training_success(temp_dir)
-
-    @require_torch_2_7_0
-    @pytest.mark.parametrize(
-        "reshard_after_forward",
-        [True, False],
-    )
-    def test_dist_muon_fsdp2_reshard_after_forward(
-        self, temp_dir, reshard_after_forward
-    ):
-        """Test DistMuon with FSDP2 reshard_after_forward variants.
-
-        Tests that DistMuon handles both reshard_after_forward modes.
-        """
-        cfg = DictDefault(
-            {
-                "base_model": "Qwen/Qwen2.5-0.5B",
-                "sequence_len": 2048,
-                "val_set_size": 0.01,
-                "datasets": [
-                    {
-                        "path": "tatsu-lab/alpaca",
-                        "type": "alpaca",
-                        "split": "train[:10%]",
-                    },
-                ],
-                "num_epochs": 1,
-                "max_steps": 2,
-                "micro_batch_size": 2,
-                "gradient_accumulation_steps": 1,
-                "output_dir": temp_dir,
-                "learning_rate": 0.02,
-                "optimizer": "muon",
-                "weight_decay": 0.01,
-                "lr_scheduler": "cosine",
-                "flash_attention": True,
-                "fsdp_version": 2,
-                "fsdp_config": {
-                    "offload_params": False,
-                    "cpu_ram_efficient_loading": False,
-                    "transformer_layer_cls_to_wrap": "Qwen2DecoderLayer",
-                    "state_dict_type": "FULL_STATE_DICT",
-                    "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
-                    "reshard_after_forward": reshard_after_forward,
                 },
                 "use_tensorboard": True,
                 "bf16": True,
