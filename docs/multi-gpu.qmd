@@ -20,8 +20,7 @@ You generally cannot combine these strategies; they are mutually exclusive.
 
 1.  **DeepSpeed**: Powerful optimization library, supports ZeRO stages 1-3.
 2.  **FSDP (Fully Sharded Data Parallel)**: PyTorch's native sharding implementation (Recommended).
-
-*   *Note: If neither is selected, standard DDP (Distributed Data Parallel) is used.*
+3.  **DDP (Distributed Data Parallel)**: PyTorch's native parallelism implementation (Default if neither of the above are selected).
 
 These features can often be combined with the strategies above:
 
