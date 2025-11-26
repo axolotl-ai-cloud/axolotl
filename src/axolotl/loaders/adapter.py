@@ -102,6 +102,8 @@ def load_lora(
         lora_config_kwargs["layer_replication"] = cfg.peft_layer_replication
     if cfg.peft_trainable_token_indices:
         lora_config_kwargs["trainable_token_indices"] = cfg.peft_trainable_token_indices
+    if cfg.peft_ensure_weight_tying is not None:
+        lora_config_kwargs["ensure_weight_tying"] = cfg.peft_ensure_weight_tying
 
     # Determine the correct PEFT task type
     model_cls = type(model).__name__
@@ -122,9 +124,6 @@ def load_lora(
         lora_dropout=cfg.lora_dropout,
         fan_in_fan_out=cfg.lora_fan_in_fan_out,
         modules_to_save=cfg.lora_modules_to_save if cfg.lora_modules_to_save else None,
-        ensure_weight_tying=(
-            cfg.peft_ensure_weight_tying if cfg.peft_ensure_weight_tying else False
-        ),
         bias="none",
         task_type=task_type,
         **lora_config_kwargs,
