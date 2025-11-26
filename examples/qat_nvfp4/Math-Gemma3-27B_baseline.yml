@@ -50,10 +50,9 @@ tf32: true
 
 resume_from_checkpoint:
 logging_steps: 1
-save_strategy: "no"
 
 # evals_per_epoch: 1
-# saves_per_epoch: 1
+saves_per_epoch: 1
 
 warmup_ratio: 0.1
 weight_decay: 0.0
