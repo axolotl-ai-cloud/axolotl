@@ -239,14 +239,15 @@ def wrap_multiple_datasets_for_work_queue_tokenized_prompt(
     dataset_boundaries = []
     current_idx = 0
 
-    # Add all examples to work queue with dataset info
+    # Add all examples to work queue with dataset info (but NOT the strategy)
     for dataset_idx, (strategy, dataset) in enumerate(datasets_with_strategies):
         dataset_start = current_idx
         examples = list(dataset)
 
         for example_idx, example in enumerate(examples):
-            # Store global index, dataset index, local index, example, and strategy
-            work_queue.put((current_idx, dataset_idx, example_idx, example, strategy))
+            # Store global index, dataset index, local index, and example only
+            # Strategy will be looked up by dataset_idx in the worker
+            work_queue.put((current_idx, dataset_idx, example_idx, example))
             current_idx += 1
 
         dataset_end = current_idx - 1
@@ -259,15 +260,18 @@ def wrap_multiple_datasets_for_work_queue_tokenized_prompt(
             while True:
                 try:
                     # Get work with timeout
-                    global_idx, dataset_idx, local_idx, example, strategy = work_queue.get(timeout=1)
+                    global_idx, dataset_idx, example_idx, example = work_queue.get(timeout=1)
+
+                    # Get the strategy for this dataset
+                    strategy = datasets_with_strategies[dataset_idx][0]
 
                     # Tokenize the example with its specific strategy
                     try:
                         tokenized = strategy.tokenize_prompt(example)
-                        result_queue.put((global_idx, dataset_idx, local_idx, tokenized, None))  # None = no error
+                        result_queue.put((global_idx, dataset_idx, example_idx, tokenized, None))  # None = no error
                     except Exception as e:
                         LOG.error(f"Worker {worker_id}: Error tokenizing example {global_idx} from dataset {dataset_idx}: {e}")
-                        result_queue.put((global_idx, dataset_idx, local_idx, None, str(e)))  # Include error
+                        result_queue.put((global_idx, dataset_idx, example_idx, None, str(e)))  # Include error
 
                 except Exception:
                     # queue.Empty or any other exception - no more work
@@ -304,15 +308,15 @@ def wrap_multiple_datasets_for_work_queue_tokenized_prompt(
     while completed < total_examples:
         try:
             # Get result with timeout
-            global_idx, dataset_idx, local_idx, tokenized, error = result_queue.get(timeout=10)
+            global_idx, dataset_idx, example_idx, tokenized, error = result_queue.get(timeout=10)
 
             if error:
-                errors.append(f"Dataset {dataset_idx}, Example {local_idx}: {error}")
+                errors.append(f"Dataset {dataset_idx}, Example {example_idx}: {error}")
                 # Create empty result for failed example
                 empty_result = {"input_ids": [], "attention_mask": [], "labels": []}
-                results_by_dataset[dataset_idx].append((local_idx, empty_result))
+                results_by_dataset[dataset_idx].append((example_idx, empty_result))
             else:
-                results_by_dataset[dataset_idx].append((local_idx, tokenized))
+                results_by_dataset[dataset_idx].append((example_idx, tokenized))
 
             completed += 1
             pbar.update(1)
