@@ -123,7 +123,7 @@ def load_lora(
         fan_in_fan_out=cfg.lora_fan_in_fan_out,
         modules_to_save=cfg.lora_modules_to_save if cfg.lora_modules_to_save else None,
         ensure_weight_tying=(
-            cfg.peft_ensure_weight_tying if cfg.peft_ensure_weight_tying else None
+            cfg.peft_ensure_weight_tying if cfg.peft_ensure_weight_tying else False
         ),
         bias="none",
         task_type=task_type,
