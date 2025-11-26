@@ -331,7 +331,7 @@ def _load_raw_datasets(
     # Check if we should use multi-dataset work queue processing
     use_multi_dataset_queue = (
         not streaming and
-        cfg.dataset_num_proc and cfg.dataset_num_proc > 16 and
+        cfg.dataset_num_proc and cfg.dataset_num_proc > 4 and
         len(datasets_configs) > 1
     )
 
