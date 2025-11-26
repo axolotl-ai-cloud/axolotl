@@ -57,7 +57,7 @@
                 {%- set content = msg.content.split('</think>')[-1].strip() %}
                 {%- set reasoning_content = msg.content.split('</think>')[0].strip() %}
                 {%- if reasoning_content.startswith("<think>") %}
-                    {%- set reasoning_content = reasoning_content[9:].strip() %}
+                    {%- set reasoning_content = reasoning_content[7:].strip() %}
                 {%- endif %}
             {%- else %}
                 {%- set content = msg.content %}
