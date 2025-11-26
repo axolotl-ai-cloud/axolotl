@@ -34,17 +34,17 @@
     {%- if role not in role_indicators %}
         {{- raise_exception('Unknown role: ' ~ role) }}
     {%- endif %}
-    
-    {%- if i == 0 %}
-        {%- if role == 'system' %}
+    {# ---- Case A: If the first message is "system", handle it here alone (without continue) ---- #}
+    {%- if i == 0 and role == 'system' %}
             {{- role_indicators['system'] }}
             {{- msg.content }}
             {%- if tools is defined and tools %}
                 {{- "\n\n" }}{{- available_tools(tools) }}
             {%- endif %}
             {{- end_of_turn -}}
-            {# ---- Jinja2 does not support 'continue' in loops, so this line was removed from the original e4 chat_template. ---- #}
-        {%- elif tools is defined and tools %}            
+    {%- else %}
+    {# ---- Case B: If the first message is tools instead of system, inject the system tools preamble ---- #}
+        {%- if i == 0 and tools is defined and tools %}
             {{- role_indicators['system'] }}
             {{- available_tools(tools) }}
             {{- end_of_turn -}}            
