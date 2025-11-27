@@ -545,6 +545,7 @@ class TrainerBuilderBase(abc.ABC):
 
         arg_map = {
             "dion_learning_rate": "dion_lr",
+            "include_num_input_tokens_seen": "include_tokens_per_second",
         }
         for kwarg, cfg_arg in arg_map.items():
             if hasattr(self.cfg, cfg_arg) and getattr(self.cfg, cfg_arg) is not None:
