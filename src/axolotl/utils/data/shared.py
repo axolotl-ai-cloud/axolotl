@@ -28,6 +28,7 @@ from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
 from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
+from axolotl.utils.data.json_loader import is_mixed_content_dataset, load_mixed_content_jsonl
 
 if TYPE_CHECKING:
     from adlfs import AzureBlobFileSystem
@@ -240,6 +241,15 @@ def _load_from_local_path(
     elif local_path.is_file():
         dataset_type = get_dataset_type(dataset_config)
 
+        # Check if this needs special handling for mixed content
+        if dataset_type == "json" and is_mixed_content_dataset(dataset_config):
+            # Use custom loader for mixed content JSONL files
+            LOG.info("Using mixed content JSON loader for multimodal dataset")
+            return load_mixed_content_jsonl(
+                dataset_config.path,
+                **load_dataset_kwargs
+            )
+        
         # For single file datasets, HF always creates only a "train" split
         if dataset_type in ("json", "csv", "text"):
             load_dataset_kwargs["split"] = "train"

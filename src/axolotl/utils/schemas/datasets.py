@@ -194,6 +194,18 @@ class SFTDataset(BaseModel):
             "description": "The specific revision of the dataset to use when loading from the Hugging Face Hub. This can be a commit hash, tag, or branch name. If not specified, the latest version will be used. This parameter is ignored for local datasets."
         },
     )
+    mixed_content_messages: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable handling of mixed content types (string/array) in messages. Useful for Qwen-VL datasets where system messages have string content while user messages have array content for multimodal data."
+        },
+    )
+    field_images: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Key containing the images list for multimodal datasets (default: 'images')."
+        },
+    )
 
     @model_validator(mode="before")
     @classmethod

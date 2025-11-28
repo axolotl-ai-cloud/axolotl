@@ -180,6 +180,12 @@ chat_template: qwen2_vl  # same as qwen2-vl
 base_model: Qwen/Qwen3-VL-4B-Instruct
 
 chat_template: qwen2_vl  # same as qwen2-vl
+
+# For datasets with mixed content types (string/array)
+datasets:
+  - path: your_dataset.jsonl
+    type: chat_template
+    mixed_content_messages: true  # Enable mixed content handling
 ```
 
 ### SmolVLM2 {#sec-smolvlm2}
@@ -284,6 +290,47 @@ Here is an example of a multi-modal dataset:
   }
 ]
 ```
+
+### Mixed Content Types
+
+Some datasets, particularly for Qwen-VL models, may have mixed content types where system messages have string content while user messages have array content for multimodal data. This can cause JSON parsing errors.
+
+To handle such datasets, enable the `mixed_content_messages` flag:
+
+```yaml
+datasets:
+  - path: your_dataset.jsonl
+    type: chat_template
+    mixed_content_messages: true  # Enable mixed content handling
+```
+
+This feature automatically normalizes content types during loading, ensuring compatibility with Axolotl's training pipeline.
+
+#### Example Mixed Content Dataset
+
+```json
+{
+  "messages": [
+    {
+      "role": "system", 
+      "content": "You are a helpful assistant."  // String content
+    },
+    {
+      "role": "user",
+      "content": [  // Array content for multimodal
+        {"type": "image", "image": "path/to/image.jpg"},
+        {"type": "text", "text": "What's in this image?"}
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": "I can see a beautiful landscape with mountains."  // String content
+    }
+  ]
+}
+```
+
+The mixed content handler will normalize all content to a consistent format internally while preserving the original semantics.
 
 ## FAQ
 
