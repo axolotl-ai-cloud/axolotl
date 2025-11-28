@@ -1,27 +1,47 @@
 """Processor loading functionality for multi-modal models"""
 
-from typing import Any
-
 import transformers
 from transformers import (
     AutoProcessor,
     PreTrainedTokenizerBase,
 )
 
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
 
+@send_errors
 def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
-    processor_kwargs: dict[str, Any] = {}  # Do we actually need this?
-
     processor_cls = AutoProcessor
     if cfg.processor_type:
         processor_cls = getattr(transformers, cfg.processor_type)
 
     if cfg.tokenizer_use_mistral_common:
+
+        def _patch_mistralcommontokenizer():
+            """
+            Transformers v5 stops reading the sub-processor.
+
+            We need to patch this, so both processors use this.
+            """
+            import transformers.tokenization_mistral_common as tokenization_mistral_common
+
+            from axolotl.utils.mistral import HFMistralTokenizer
+
+            tokenization_mistral_common.MistralCommonTokenizer = HFMistralTokenizer
+
+        _patch_mistralcommontokenizer()
+
+        from transformers import VoxtralProcessor
+
+        if processor_cls == VoxtralProcessor:
+            return VoxtralProcessor.from_pretrained(
+                cfg.processor_config,
+            )
+
         from axolotl.utils.mistral import Mistral3Processor
 
         return Mistral3Processor(
@@ -32,7 +52,6 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
         cfg.processor_config,
         trust_remote_code=cfg.trust_remote_code or False,
         tokenizer=tokenizer,
-        **processor_kwargs,
     )
 
     # Attempt to load image size from processor if available

@@ -15,7 +15,7 @@ peft>=0.17.1
 tokenizers>=0.22.1
 transformers==4.57.1
 accelerate==1.11.0
-datasets==4.3.0
+datasets==4.4.1
 deepspeed>=0.17.0
 trl==0.25.0
 hf_xet==1.2.0
@@ -42,7 +42,6 @@ numpy>=2.2.6
 # qlora things
 evaluate==0.4.1
 scipy
-scikit-learn==1.4.2
 nvidia-ml-py==12.560.30
 art
 tensorboard
@@ -69,5 +68,8 @@ schedulefree==1.4.1
 
 axolotl-contribs-lgpl==0.0.7
 axolotl-contribs-mit==0.0.5
+
+# telemetry
+posthog==6.7.11
 
 mistral-common==1.8.5

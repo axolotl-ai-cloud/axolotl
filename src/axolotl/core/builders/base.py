@@ -29,6 +29,8 @@ from transformers.trainer_pt_utils import AcceleratorConfig
 
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
+from axolotl.telemetry.callbacks import TelemetryCallback
+from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils import (
     is_comet_available,
     is_mlflow_available,
@@ -118,6 +120,13 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.gc_steps:
             callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
 
+        if self.cfg.dynamic_checkpoint and self.cfg.dynamic_checkpoint.enabled:
+            from axolotl.utils.callbacks.dynamic_checkpoint import (
+                DynamicCheckpointCallback,
+            )
+
+            callbacks.append(DynamicCheckpointCallback(self.cfg))
+
         if self.cfg.use_wandb:
             callbacks.append(
                 SaveAxolotlConfigtoWandBCallback(self.cfg.axolotl_config_path)
@@ -154,6 +163,10 @@ class TrainerBuilderBase(abc.ABC):
                     profiler_steps_start=self.cfg.profiler_steps_start,
                 )
             )
+
+        telemetry_manager = TelemetryManager.get_instance()
+        if telemetry_manager.enabled:
+            callbacks.append(TelemetryCallback())
 
         return callbacks
 
@@ -196,9 +209,9 @@ class TrainerBuilderBase(abc.ABC):
     ):
         warmup_steps = 0
         warmup_ratio = 0.0
-        if self.cfg.warmup_steps:
+        if self.cfg.warmup_steps is not None:
             warmup_steps = self.cfg.warmup_steps
-        elif self.cfg.warmup_ratio:
+        elif self.cfg.warmup_ratio is not None:
             if total_num_steps:
                 warmup_steps = max(int(self.cfg.warmup_ratio * total_num_steps), 0)
             else:

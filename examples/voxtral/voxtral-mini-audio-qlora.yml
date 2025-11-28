@@ -1,5 +1,5 @@
 base_model: mistralai/Voxtral-Mini-3B-2507
-processor_type: AutoProcessor
+processor_type: VoxtralProcessor
 
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
