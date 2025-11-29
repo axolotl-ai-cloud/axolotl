@@ -168,6 +168,22 @@ class LigerPlugin(BasePlugin):
                 rms_norm=cfg.liger_rms_norm,
                 layer_norm=cfg.liger_layer_norm,
             )
+        elif cfg.model_config_type == "qwen3_vl":
+            """
+            Apply Liger kernels for Qwen3 Vision-Language models.
+            
+            Note: The parameter 'swiglu' is used instead of 'glu_activation' to match
+            the Liger kernel API for vision-language models.
+            """
+            from liger_kernel.transformers import apply_liger_kernel_to_qwen3_vl
+
+            apply_liger_kernel_to_qwen3_vl(
+                rope=cfg.liger_rope,
+                cross_entropy=cfg.liger_cross_entropy,
+                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
+                rms_norm=cfg.liger_rms_norm,
+                swiglu=cfg.liger_glu_activation,  # Note: qwen3_vl uses swiglu parameter name
+            )
         elif cfg.model_config_type == "qwen3_moe":
             from axolotl.integrations.liger.models.qwen3_moe import (
                 apply_liger_kernel_to_qwen3_moe,
