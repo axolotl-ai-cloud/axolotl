@@ -28,6 +28,7 @@ from axolotl.utils.data.utils import deduplicate_and_log_datasets, md5
 from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
+from axolotl.utils.data.json_loader import is_mixed_content_dataset, load_mixed_content_jsonl
 
 if TYPE_CHECKING:
     from adlfs import AzureBlobFileSystem
@@ -222,7 +223,25 @@ def _get_remote_filesystem(
 def _load_from_local_path(
     dataset_config: DictDefault, load_dataset_kwargs: dict
 ) -> Dataset | IterableDataset | DatasetDict | IterableDatasetDict:
-    """Load a dataset from a local path."""
+    """
+    Load a dataset from a local filesystem path, handling directories, single files, and mixed-content JSONL.
+    
+    This function:
+    - Loads from a directory using load_from_disk or via dataset-type-specific load_dataset when data_files is provided.
+    - For single files, selects the dataset type and:
+      - Uses a special mixed-content JSONL loader when the dataset is JSON and marked as mixed content.
+      - Sets the split to "train" for single-file JSON/CSV/TEXT datasets before calling load_dataset.
+    
+    Parameters:
+        dataset_config (DictDefault): Configuration object containing at least `path` (local path as a string) and optionally `data_files` and dataset type metadata used to infer loading behavior.
+        load_dataset_kwargs (dict): Keyword arguments forwarded to the underlying dataset loading functions.
+    
+    Returns:
+        Dataset | IterableDataset | DatasetDict | IterableDatasetDict: The loaded dataset object(s) appropriate to the dataset contents.
+    
+    Raises:
+        ValueError: If the local path exists but is neither a directory nor a file.
+    """
     local_path = Path(dataset_config.path)
 
     if local_path.is_dir():
@@ -240,6 +259,15 @@ def _load_from_local_path(
     elif local_path.is_file():
         dataset_type = get_dataset_type(dataset_config)
 
+        # Check if this needs special handling for mixed content
+        if dataset_type == "json" and is_mixed_content_dataset(dataset_config):
+            # Use custom loader for mixed content JSONL files
+            LOG.info("Using mixed content JSON loader for multimodal dataset")
+            return load_mixed_content_jsonl(
+                dataset_config.path,
+                **load_dataset_kwargs
+            )
+        
         # For single file datasets, HF always creates only a "train" split
         if dataset_type in ("json", "csv", "text"):
             load_dataset_kwargs["split"] = "train"

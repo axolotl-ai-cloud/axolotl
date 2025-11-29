@@ -1,5 +1,6 @@
 """Module containing ProcessingStrategy classes and its derivative for different MultiModal Model types"""
 
+import json
 from copy import deepcopy
 from typing import Optional
 
@@ -28,10 +29,24 @@ class ProcessingStrategy:
         image_size: int | tuple[int, int] | None = None,
         image_resize_algorithm: Resampling | None = None,
     ):
+        """
+        Initialize the processing strategy with a processor, optional chat template, and image resizing configuration.
+        
+        Parameters:
+            processor (ProcessorMixin): The processor/tokenizer wrapper used for token and image handling.
+            chat_template (Optional[str]): Optional chat template identifier or content to guide message formatting.
+            image_size (int | tuple[int, int] | None): Target image size; an int indicates square padding to that size, a (width, height) tuple specifies explicit resize dimensions, and None disables resizing.
+            image_resize_algorithm (Resampling | None): PIL resampling algorithm to use when resizing images; defaults to Image.Resampling.BILINEAR if not provided.
+        
+        Notes:
+            - The instance attribute `supports_multi_images` is initialized to False and may be set to True by subclasses that support multiple images.
+            - If the provided processor exposes an `image_token` attribute, this token is stored on the instance and its token id is computed and stored as `image_token_id`.
+        """
         self.processor = processor
         self.chat_template = chat_template
         self.image_token = None
         self.image_token_id = None
+        self.supports_multi_images = False  # Override in subclasses that support multiple images
 
         self.image_size = image_size
         self.image_resize_algorithm = (
@@ -46,20 +61,18 @@ class ProcessingStrategy:
 
     def __call__(self, examples: list[dict]) -> list[dict]:
         """
-        Preprocess conversation examples to ensure consistent format.
-        Converts different conversation formats to OpenAI format with 'messages'.
-        Supports two formats:
-        1. OpenAI format with 'messages'
-        2. Legacy format with 'conversations'
-
-        Args:
-            examples: list of conversation dictionaries
-
+        Normalize and preprocess conversation examples into a unified multimedia OpenAI-like `messages` format.
+        
+        Converts legacy `conversations` entries to `messages`, normalizes each message's content into typed content blocks (e.g., text or image), deserializes JSON-encoded message content when multi-image Qwen2-VL processing is enabled, loads and optionally resizes image values, and attaches loaded images into message content (mapping to image placeholders when present or appending to the first user message). Multi-image handling is controlled by the instance's `supports_multi_images` attribute.
+        
+        Parameters:
+            examples (list[dict]): Input conversation examples. Each example must contain either a `messages` key (OpenAI format) or a `conversations` key (legacy format). If present, an `images` or `image` key may contain one or more image references (PIL Image, URL, path, or base64) to be loaded.
+        
         Returns:
-            list of dicts in OpenAI format with 'messages' key
-
+            list[dict]: Processed examples where each example contains a `messages` key with content items normalized to typed content blocks (e.g., {"type": "text", "text": ...} or {"type": "image", "image": <PIL.Image>}), and where image values have been loaded and resized according to the instance configuration.
+        
         Raises:
-            ValueError: If the conversation format is not supported
+            ValueError: If an example contains neither `messages` nor `conversations`.
         """
         role_mapping = {
             "human": "user",
@@ -71,7 +84,16 @@ class ProcessingStrategy:
             return role_mapping.get(role, role)
 
         def convert_legacy_format(example: dict) -> dict:
-            """Convert legacy 'conversations' format to OpenAI 'messages' format."""
+            """
+            Convert a legacy example using a 'conversations' list into an OpenAI-style 'messages' list.
+            
+            Parameters:
+                example (dict): Input example containing a "conversations" key where each item has "from" and "value".
+            
+            Returns:
+                dict: A shallow copy of `example` with the "conversations" key removed and a "messages" key added.
+                      Each message is a dict with "role" (normalized from the conversation "from") and "content" (the conversation "value").
+            """
             messages = [
                 {"role": normalize_role(convo["from"]), "content": convo["value"]}
                 for convo in example["conversations"]
@@ -83,26 +105,49 @@ class ProcessingStrategy:
             result["messages"] = messages
             return result
 
-        def convert_messages_to_multimedia_messages(messages: list[dict]) -> list[dict]:
-            """Convert regular messages format to Messages format with content type"""
+        def convert_messages_to_multimedia_messages(messages: list[dict], is_qwen2_vl: bool = False) -> list[dict]:
+            """
+            Normalize a sequence of messages into a multimedia-aware messages format.
+            
+            Parameters:
+                messages (list[dict]): Input messages where each item contains at least "role" and "content".
+                    Content may be a string or a list of content blocks.
+                is_qwen2_vl (bool): If True, attempt to JSON-deserialize string content that begins with '[' or '{'
+                    so JSON-encoded mixed content becomes native Python structures; invalid JSON remains a string.
+            
+            Returns:
+                list[dict]: A list of messages where each message has the same "role" and a "content" value that is a
+                list of content blocks. Plain string content is converted to a single text block:
+                    {"type": "text", "text": <original string>}.
+                If the original content is already a list, it is returned unchanged.
+            """
 
             new_messages = []
             for message in messages:
-                if isinstance(message["content"], str):
+                content = message["content"]
+                
+                # Only try to deserialize JSON-encoded content for qwen2_vl models
+                # This is because we normalized mixed content to JSON strings during loading
+                if is_qwen2_vl and isinstance(content, str) and (content.startswith('[') or content.startswith('{')):
+                    try:
+                        content = json.loads(content)
+                    except json.JSONDecodeError:
+                        # Not JSON, treat as regular string
+                        pass
+                
+                if isinstance(content, str):
                     new_messages.append(
                         {
                             "role": message["role"],
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": message["content"],
+                                    "text": content,
                                 }
                             ],
                         }
                     )
-                elif isinstance(message["content"], list):
-                    content = message["content"]
-
+                elif isinstance(content, list):
                     new_messages.append(
                         {
                             "role": message["role"],
@@ -129,8 +174,9 @@ class ProcessingStrategy:
 
             # convert regular messages format to Messages format with content type
             # for compatibility with apply_chat_template
+            # Check if this model supports multi-images and needs special handling
             processed_example["messages"] = convert_messages_to_multimedia_messages(
-                processed_example["messages"]
+                processed_example["messages"], is_qwen2_vl=self.supports_multi_images
             )
 
             # find the image key if it exists
@@ -141,80 +187,133 @@ class ProcessingStrategy:
                     image_key = key
                     break
 
-            # if the image key exists, add the image to the first user message
+            # if the image key exists, add the images to the message
             if image_key is not None and processed_example[image_key] is not None:
-                # TODO: check if it's normal to be single image only for common datasets
-                # From observation, it's usually a list of single image but some datasets may have several columns for images
-                # Temporary solution: take the first image and suggest people convert their datasets to use multi-content Messages
+                # Check if we should handle multiple images
+                # Debug logging
                 if len(processed_example[image_key]) > 1:
-                    LOG.warning(
-                        f"Found {len(processed_example[image_key])} images in a sample. Using the first one."
-                        "If you are using a dataset with multiple images per sample, please convert it to use multi-content Messages."
-                        "See https://docs.axolotl.ai/docs/multimodal.html#dataset-format"
-                    )
-
-                image_value = processed_example[image_key][0]
-
-                # Handle image loading (Image, url, path, base64)
-                image_value = load_image(image_value)
-
-                if self.image_size is not None:
-                    assert hasattr(image_value, "resize"), (
-                        "Image does not have a resize method"
-                    )
-
-                    if isinstance(self.image_size, tuple):
-                        image_value = image_value.resize(
-                            self.image_size, self.image_resize_algorithm
-                        )
-                    else:
-                        # Set the padding value; here we use black (0, 0, 0) for RGB images
-                        padding_color = (0, 0, 0)
-
-                        # When image_size is an int (square target), preserve aspect ratio then pad
-                        # This is to prevent aspect ratio distortion when resizing to square
-                        image_value = ImageOps.pad(
-                            image_value,
-                            (self.image_size, self.image_size),
-                            method=self.image_resize_algorithm,
-                            color=padding_color,
-                        )
-
-                # Look for any image type in the first message
-                # some dataset have an {type: "image"} in the first message
-                msg_ind_to_add = None
-                ind_to_add = None
-                first_user_idx = None
-
-                for msg_idx, msg_content in enumerate(processed_example["messages"]):
-                    if first_user_idx is None and msg_content["role"] == "user":
-                        first_user_idx = msg_idx
-                    for i, content in enumerate(
-                        processed_example["messages"][msg_idx]["content"]
-                    ):
-                        # Usually datasets created with image columns, don't have it in the messages itself
-                        if content["type"] == "image" and all(
-                            k not in content for k in ["image", "url", "path", "base64"]
-                        ):
-                            msg_ind_to_add = msg_idx
-                            ind_to_add = i
-                            break
-
-                # If an image type is found, add the image to that index
-                if ind_to_add is not None and msg_ind_to_add is not None:
-                    processed_example["messages"][msg_ind_to_add]["content"][
-                        ind_to_add
-                    ]["image"] = image_value
+                    LOG.debug(f"Multiple images detected. Strategy type: {type(self).__name__}, supports_multi_images={self.supports_multi_images}")
+                
+                if self.supports_multi_images and len(processed_example[image_key]) > 1:
+                    # Qwen2-VL: Load all images
+                    loaded_images = []
+                    for img in processed_example[image_key]:
+                        loaded_img = load_image(img)
+                        loaded_images.append(loaded_img)
+                    
+                    # Log multi-image usage for debugging
+                    LOG.debug(f"Processing {len(loaded_images)} images in sample for Qwen2-VL")
                 else:
-                    # if no image type is found, add it to end of the first user message
-                    if first_user_idx is None:
-                        first_user_idx = 0
-                    processed_example["messages"][first_user_idx]["content"].append(
-                        {
-                            "type": "image",
-                            "image": image_value,
-                        }
-                    )
+                    # Original behavior: take first image and warn if multiple
+                    if len(processed_example[image_key]) > 1:
+                        LOG.warning(
+                            f"Found {len(processed_example[image_key])} images in a sample. Using the first one."
+                            "If you are using a dataset with multiple images per sample, please convert it to use multi-content Messages."
+                            "See https://docs.axolotl.ai/docs/multimodal.html#dataset-format"
+                        )
+                    
+                    image_value = processed_example[image_key][0]
+                    # Handle image loading (Image, url, path, base64)
+                    image_value = load_image(image_value)
+                    loaded_images = [image_value]
+
+                # Resize all loaded images if needed
+                if self.image_size is not None:
+                    resized_images = []
+                    for image_value in loaded_images:
+                        assert hasattr(image_value, "resize"), (
+                            "Image does not have a resize method"
+                        )
+
+                        if isinstance(self.image_size, tuple):
+                            resized_img = image_value.resize(
+                                self.image_size, self.image_resize_algorithm
+                            )
+                        else:
+                            # Set the padding value; here we use black (0, 0, 0) for RGB images
+                            padding_color = (0, 0, 0)
+
+                            # When image_size is an int (square target), preserve aspect ratio then pad
+                            # This is to prevent aspect ratio distortion when resizing to square
+                            resized_img = ImageOps.pad(
+                                image_value,
+                                (self.image_size, self.image_size),
+                                method=self.image_resize_algorithm,
+                                color=padding_color,
+                            )
+                        resized_images.append(resized_img)
+                    loaded_images = resized_images
+
+                # Look for image placeholders in messages
+                if self.supports_multi_images and len(loaded_images) > 1:
+                    # Qwen2-VL: Map multiple images to their placeholders
+                    image_placeholders = []
+                    first_user_idx = None
+
+                    for msg_idx, msg_content in enumerate(processed_example["messages"]):
+                        if first_user_idx is None and msg_content["role"] == "user":
+                            first_user_idx = msg_idx
+                        for i, content in enumerate(
+                            processed_example["messages"][msg_idx]["content"]
+                        ):
+                            # Find image placeholders
+                            if content["type"] == "image" and all(
+                                k not in content for k in ["image", "url", "path", "base64"]
+                            ):
+                                image_placeholders.append((msg_idx, i))
+
+                    # Map loaded images to placeholders
+                    if image_placeholders:
+                        # If we have placeholders, map images to them in order
+                        for idx, (msg_idx, content_idx) in enumerate(image_placeholders):
+                            if idx < len(loaded_images):
+                                processed_example["messages"][msg_idx]["content"][content_idx]["image"] = loaded_images[idx]
+                    else:
+                        # If no placeholders found, add all images to end of first user message
+                        if first_user_idx is None:
+                            first_user_idx = 0
+                        for image_value in loaded_images:
+                            processed_example["messages"][first_user_idx]["content"].append(
+                                {
+                                    "type": "image",
+                                    "image": image_value,
+                                }
+                            )
+                else:
+                    # Original single image behavior
+                    msg_ind_to_add = None
+                    ind_to_add = None
+                    first_user_idx = None
+                    
+                    for msg_idx, msg_content in enumerate(processed_example["messages"]):
+                        if first_user_idx is None and msg_content["role"] == "user":
+                            first_user_idx = msg_idx
+                        for i, content in enumerate(
+                            processed_example["messages"][msg_idx]["content"]
+                        ):
+                            # Usually datasets created with image columns, don't have it in the messages itself
+                            if content["type"] == "image" and all(
+                                k not in content for k in ["image", "url", "path", "base64"]
+                            ):
+                                msg_ind_to_add = msg_idx
+                                ind_to_add = i
+                                break
+
+                    # If an image type is found, add the image to that index
+                    if ind_to_add is not None and msg_ind_to_add is not None:
+                        processed_example["messages"][msg_ind_to_add]["content"][
+                            ind_to_add
+                        ]["image"] = loaded_images[0]
+                    else:
+                        # if no image type is found, add it to end of the first user message
+                        if first_user_idx is None:
+                            first_user_idx = 0
+                        processed_example["messages"][first_user_idx]["content"].append(
+                            {
+                                "type": "image",
+                                "image": loaded_images[0],
+                            }
+                        )
 
             processed_examples.append(remove_none_values(processed_example))
 
@@ -251,7 +350,19 @@ class Qwen2VLProcessingStrategy(ProcessingStrategy):
         image_size: int | tuple[int, int] | None = None,
         image_resize_algorithm: Resampling | None = None,
     ):
+        """
+        Initialize a Qwen2-VL-specific processing strategy and configure multi-image and image token settings.
+        
+        Sets supports_multi_images to True, sets the image token placeholder to "<|image_pad|>", and computes its token id from the provided processor's tokenizer.
+        
+        Parameters:
+            processor (ProcessorMixin): Tokenizer/processor used to derive special token ids.
+            chat_template (Optional[str]): Optional chat template identifier or content.
+            image_size (int | tuple[int, int] | None): Optional target image size used for resizing.
+            image_resize_algorithm (Resampling | None): Optional resampling algorithm for image resizing.
+        """
         super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        self.supports_multi_images = True  # Qwen2-VL supports multiple images
         self.image_token = "<|image_pad|>"  # nosec
         self.image_token_id = processor.tokenizer.convert_tokens_to_ids(
             self.image_token
