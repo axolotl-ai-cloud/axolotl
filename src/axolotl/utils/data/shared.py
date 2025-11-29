@@ -245,10 +245,14 @@ def _load_from_local_path(
         if dataset_type == "json" and is_mixed_content_dataset(dataset_config):
             # Use custom loader for mixed content JSONL files
             LOG.info("Using mixed content JSON loader for multimodal dataset")
-            return load_mixed_content_jsonl(
-                dataset_config.path,
-                **load_dataset_kwargs
-            )
+            
+            # Warn about unsupported options
+            if load_dataset_kwargs.get("split"):
+                LOG.warning(f"Split '{load_dataset_kwargs['split']}' is not supported by mixed content loader. Loading entire dataset.")
+            if load_dataset_kwargs.get("streaming"):
+                LOG.warning("Streaming is not supported by mixed content loader. Loading entire dataset into memory.")
+            
+            return load_mixed_content_jsonl(dataset_config.path)
         
         # For single file datasets, HF always creates only a "train" split
         if dataset_type in ("json", "csv", "text"):

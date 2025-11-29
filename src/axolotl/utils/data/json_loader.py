@@ -2,12 +2,12 @@
 import json
 from typing import Dict, Any, List, Optional
 from datasets import Dataset
-import logging
+from axolotl.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
-def load_mixed_content_jsonl(file_path: str, **kwargs) -> Dataset:
+def load_mixed_content_jsonl(file_path: str) -> Dataset:
     """
     Load JSONL file with mixed content types (string and array) in messages.
     
@@ -18,7 +18,6 @@ def load_mixed_content_jsonl(file_path: str, **kwargs) -> Dataset:
     
     Args:
         file_path: Path to JSONL file
-        **kwargs: Additional arguments passed to Dataset
         
     Returns:
         Dataset object with loaded data
@@ -38,23 +37,26 @@ def load_mixed_content_jsonl(file_path: str, **kwargs) -> Dataset:
                 if 'messages' in item:
                     normalized_messages = []
                     for message in item['messages']:
-                        normalized_message = {
-                            'role': message['role'],
-                            'content': json.dumps(message['content']) if isinstance(message['content'], (list, dict)) else message['content']
-                        }
+                        # Preserve all fields from the original message
+                        normalized_message = message.copy()
+                        
+                        # Only normalize the content field if it exists
+                        if 'content' in message:
+                            normalized_message['content'] = json.dumps(message['content']) if isinstance(message['content'], (list, dict)) else message['content']
+                        
                         normalized_messages.append(normalized_message)
                     item['messages'] = normalized_messages
                 
                 data.append(item)
                 
             except json.JSONDecodeError as e:
-                logger.warning(f"Skipping malformed JSON at line {line_num}: {e}")
+                LOG.warning(f"Skipping malformed JSON at line {line_num}: {e}")
                 continue
-            except Exception as e:
-                logger.warning(f"Error processing line {line_num}: {e}")
+            except (KeyError, TypeError, ValueError) as e:
+                LOG.warning(f"Error processing line {line_num}: {e}")
                 continue
     
-    logger.info(f"Loaded {len(data)} examples from {file_path}")
+    LOG.info(f"Loaded {len(data)} examples from {file_path}")
     
     # Create dataset using from_list with normalized data
     # All content fields are now consistently strings

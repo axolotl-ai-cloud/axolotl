@@ -85,21 +85,27 @@ class ProcessingStrategy:
             result["messages"] = messages
             return result
 
-        def convert_messages_to_multimedia_messages(messages: list[dict], is_qwen2_vl: bool = False) -> list[dict]:
+        def convert_messages_to_multimedia_messages(messages: list[dict], deserialize_json_content: bool = False) -> list[dict]:
             """Convert regular messages format to Messages format with content type"""
 
             new_messages = []
             for message in messages:
                 content = message["content"]
                 
-                # Only try to deserialize JSON-encoded content for qwen2_vl models
+                # Only try to deserialize JSON-encoded content when deserialize_json_content is True
                 # This is because we normalized mixed content to JSON strings during loading
-                if is_qwen2_vl and isinstance(content, str) and (content.startswith('[') or content.startswith('{')):
-                    try:
-                        content = json.loads(content)
-                    except json.JSONDecodeError:
-                        # Not JSON, treat as regular string
-                        pass
+                if deserialize_json_content and isinstance(content, str):
+                    # Improved JSON detection: check for valid JSON structure
+                    content_stripped = content.strip()
+                    if content_stripped and (
+                        (content_stripped.startswith('[') and content_stripped.endswith(']')) or
+                        (content_stripped.startswith('{') and content_stripped.endswith('}'))
+                    ):
+                        try:
+                            content = json.loads(content)
+                        except json.JSONDecodeError:
+                            # Not valid JSON, treat as regular string
+                            pass
                 
                 if isinstance(content, str):
                     new_messages.append(
@@ -142,7 +148,7 @@ class ProcessingStrategy:
             # for compatibility with apply_chat_template
             # Check if this model supports multi-images and needs special handling
             processed_example["messages"] = convert_messages_to_multimedia_messages(
-                processed_example["messages"], is_qwen2_vl=self.supports_multi_images
+                processed_example["messages"], deserialize_json_content=self.supports_multi_images
             )
 
             # find the image key if it exists
@@ -173,8 +179,8 @@ class ProcessingStrategy:
                     # Original behavior: take first image and warn if multiple
                     if len(processed_example[image_key]) > 1:
                         LOG.warning(
-                            f"Found {len(processed_example[image_key])} images in a sample. Using the first one."
-                            "If you are using a dataset with multiple images per sample, please convert it to use multi-content Messages."
+                            f"Found {len(processed_example[image_key])} images in a sample. Using the first one. "
+                            "If you are using a dataset with multiple images per sample, please convert it to use multi-content Messages. "
                             "See https://docs.axolotl.ai/docs/multimodal.html#dataset-format"
                         )
                     
