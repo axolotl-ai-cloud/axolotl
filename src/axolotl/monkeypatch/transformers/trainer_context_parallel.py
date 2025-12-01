@@ -52,9 +52,15 @@ def patch_prepare_context_parallel_inputs() -> None:
         if item in patched_source:
             items_to_import.append(item)
 
-    exec(f"from {module_name} import ({', '.join(items_to_import)})", globals())
-    exec(patched_source, globals())
+    # Use a separate namespace to capture the exec'd function
+    namespace = {}
+    exec(f"from {module_name} import ({', '.join(items_to_import)})", namespace)
+    exec(patched_source, namespace)
 
+    # Explicitly get the function from the namespace
+    axolotl_prepare_context_parallel_inputs = namespace[
+        "axolotl_prepare_context_parallel_inputs"
+    ]
     Trainer._original_prepare_context_parallel_inputs = (
         Trainer._prepare_context_parallel_inputs
     )
