@@ -16,13 +16,12 @@
 KD trainer
 """
 
+from typing_extensions import override
+
 from axolotl.core.trainers.base import AxolotlTrainer
 
 from .kernels.liger import LigerFusedLinearKLTopKLogprobLoss
 
-import torch
-
-from typing_extensions import override
 
 class AxolotlKDTrainer(AxolotlTrainer):
     """
@@ -83,64 +82,20 @@ class AxolotlKDTrainer(AxolotlTrainer):
         ):
             del inputs["attention_mask"]
 
+        if num_items_in_batch is None and "labels" in inputs:
+            num_items_in_batch = (inputs["labels"] != -100).sum().item()
+
         if self.model_accepts_loss_kwargs:
             loss_kwargs = {}
             if num_items_in_batch is not None:
                 loss_kwargs["num_items_in_batch"] = num_items_in_batch
             inputs = {**inputs, **loss_kwargs}
-        outputs = model(**inputs)
 
-        # Extract loss from outputs
-        if isinstance(outputs, tuple):
+        if isinstance(outputs, dict):
+            loss = outputs["loss"]
+        elif isinstance(outputs, tuple):
             loss = outputs[0]
-        elif hasattr(outputs, 'loss'):
-            loss = outputs.loss
         else:
-            loss = outputs
-        
-        return (loss, outputs) if return_outputs else loss
+            loss = outputs.loss if hasattr(outputs, "loss") else outputs
 
-    @override
-    def prediction_step(
-        self,
-        model,
-        inputs,
-        prediction_loss_only,
-        ignore_keys=None,
-    ):
-        """
-        Perform an evaluation step on model using inputs.
-        Fixed to properly normalize loss with num_items_in_batch.
-        """
-        # Calculate num_items_in_batch for proper loss normalization
-        if "labels" in inputs:
-            labels = inputs["labels"]
-            # Count non-padding tokens
-            num_items_in_batch = (labels != -100).sum().item()
-        else:
-            num_items_in_batch = None
-        
-        has_labels = "labels" in inputs
-        inputs = self._prepare_inputs(inputs)
-        
-        with torch.no_grad():
-            if has_labels:
-                # Pass num_items_in_batch for proper normalization
-                loss, outputs = self.compute_loss(
-                    model, 
-                    inputs, 
-                    return_outputs=True,
-                    num_items_in_batch=num_items_in_batch
-                )
-            else:
-                loss = None
-                outputs = model(**inputs)
-        
-        if prediction_loss_only:
-            return (loss, None, None)
-        
-        # Extract logits and labels
-        logits = outputs.logits if hasattr(outputs, "logits") else None
-        labels = inputs.get("labels")
-        
-        return (loss, logits, labels)
+        return (loss, outputs) if return_outputs else loss
