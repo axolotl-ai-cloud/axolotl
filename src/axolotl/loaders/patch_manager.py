@@ -183,13 +183,6 @@ class PatchManager:
 
             patch_qwen3_next_modeling_packing()
 
-        if self.cfg.model_config_type == "mistral3" and self.cfg.processor_type:
-            from axolotl.monkeypatch.models.mistral3.mistral_common_tokenizer import (
-                apply_mistral_tokenizer_image_patch,
-            )
-
-            apply_mistral_tokenizer_image_patch()
-
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
         if self.cfg.fp8:
