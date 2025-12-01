@@ -207,7 +207,7 @@ class TrainerBuilderBase(abc.ABC):
     def _configure_warmup_and_logging(
         self, total_num_steps: int, training_args_kwargs: dict
     ):
-        warmup_steps = 0
+        warmup_steps: int | float = 0
         warmup_ratio = 0.0
         if self.cfg.warmup_steps is not None:
             warmup_steps = self.cfg.warmup_steps
@@ -221,6 +221,10 @@ class TrainerBuilderBase(abc.ABC):
         else:
             warmup_ratio = 0.03
 
+        # transformers v5
+        if warmup_ratio > 0.0 and warmup_steps == 0:
+            warmup_steps = warmup_ratio
+
         if warmup_steps == 1:
             warmup_steps = 2
 
@@ -233,7 +237,6 @@ class TrainerBuilderBase(abc.ABC):
                 else max(min(int(0.005 * total_num_steps), 10), 1)
             )
 
-        training_args_kwargs["warmup_ratio"] = warmup_ratio
         training_args_kwargs["warmup_steps"] = warmup_steps
 
     def _configure_precision_settings(self, training_args_kwargs: dict):
