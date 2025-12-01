@@ -25,14 +25,12 @@ class Perplexity:
         return ["references"]
 
     def compute(
-        self,
-        model: PreTrainedModel,
-        eval_dataloader=None,
-        **kwargs,
+        self, model: PreTrainedModel, eval_dataloader=None, **_kwargs
     ) -> Dict[str, float]:
         model.eval()
 
-        scores = []
+        total_loss_sum = 0.0
+        total_token_count = 0
         for batch in tqdm(eval_dataloader, disable=not is_main_process()):
             if "position_ids" not in batch:
                 input_ids = batch["input_ids"].to(model.device)
@@ -52,16 +50,20 @@ class Perplexity:
                         labels=labels,
                     ).loss
 
-                scores.append(torch.exp(model_loss).item())
+                batch_token_count = (labels != -100).sum().item()
+                total_loss_sum += model_loss.item() * batch_token_count
+                total_token_count += batch_token_count
             else:
-                # do_causal_lm_eval + sample_packing already gives ValidationError. Extra protection.
+                # do_causal_lm_eval + sample_packing_packing already gives ValidationError. Extra protection.
                 LOG.debug(
                     "Packed evaluation samples not supported with perplexity metric"
                 )
                 return {"score": float("nan")}
 
-        if len(scores) == 0:
+        if total_token_count == 0:
             LOG.debug("No valid tokens found for perplexity metric")
             return {"score": float("nan")}
 
-        return {"score": sum(scores) / len(scores)}
+        return {
+            "score": float(torch.exp(torch.tensor(total_loss_sum / total_token_count)))
+        }

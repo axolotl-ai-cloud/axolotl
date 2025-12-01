@@ -375,7 +375,13 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
 
                     if isinstance(metric, Perplexity):
                         metric_kwargs["model"] = trainer.model_wrapped
-                        metric_kwargs["eval_dataloader"] = eval_dataloader
+                        # Use the existing eval_dataloader when perplexity is the only metric,
+                        # otherwise recreate it so we don't consume the same iterator twice.
+                        if self.cfg.eval_causal_lm_metrics == ["perplexity"]:
+                            ppl_eval_dataloader = eval_dataloader
+                        else:
+                            ppl_eval_dataloader = trainer.get_eval_dataloader()
+                        metric_kwargs["eval_dataloader"] = ppl_eval_dataloader
 
                     metric_score = metric.compute(**metric_kwargs)
                     return (
