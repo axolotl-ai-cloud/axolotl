@@ -31,7 +31,7 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
 
             from axolotl.utils.mistral import HFMistralTokenizer
 
-            tokenization_mistral_common.MistralCommonTokenizer = HFMistralTokenizer
+            tokenization_mistral_common.MistralCommonBackend = HFMistralTokenizer
 
         _patch_mistralcommontokenizer()
 
