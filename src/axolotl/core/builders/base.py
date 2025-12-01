@@ -508,7 +508,6 @@ class TrainerBuilderBase(abc.ABC):
             "output_dir",
             "save_safetensors",
             "save_only_model",
-            "include_tokens_per_second",
             "weight_decay",
             "seed",
             "dion_momentum",
