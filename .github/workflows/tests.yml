@@ -192,7 +192,7 @@ jobs:
           axolotl --help
 
       - name: Show HF cache
-        run: hf cache scan
+        run: hf cache ls
 
       - name: Run tests
         run: |
