@@ -349,6 +349,10 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                 output_scores=False,
             )
 
+            eval_src: List[str]
+            eval_pred: List[str]
+            eval_ref: List[str]
+
             def find_ranges(lst):
                 ranges = []
                 start = 0
@@ -500,10 +504,11 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
 
             # Skip predicting if only perplexity is used
             if self.cfg.eval_causal_lm_metrics == ["perplexity"]:
-                eval_preds = [], [], []
+                eval_src, eval_pred, eval_ref = [], [], []
             else:
-                eval_preds = predict_with_generate()
-            trainer.log(evaluate_preds(*eval_preds))
+                eval_src, eval_pred, eval_ref = predict_with_generate()
+
+            trainer.log(evaluate_preds(eval_src, eval_pred, eval_ref))
 
             return control
 
