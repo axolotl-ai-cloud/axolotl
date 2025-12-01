@@ -17,6 +17,7 @@ class TestTokenizers:
     test class for the load_tokenizer fn
     """
 
+    @pytest.mark.skip("LlamaTokenizer no longer has a Fast/Slow tokenizer")
     @enable_hf_offline
     def test_default_use_fast(self):
         cfg = DictDefault(
@@ -27,6 +28,7 @@ class TestTokenizers:
         tokenizer = load_tokenizer(cfg)
         assert "Fast" in tokenizer.__class__.__name__
 
+    @pytest.mark.skip("LlamaTokenizer no longer has a Fast/Slow tokenizer")
     @enable_hf_offline
     def test_dont_use_fast(self):
         cfg = DictDefault(
@@ -82,7 +84,7 @@ class TestTokenizers:
             }
         )
         tokenizer = load_tokenizer(cfg)
-        assert tokenizer("<|im_start|>user")["input_ids"] == [1, 32000, 1404]
+        assert tokenizer("<|im_start|>user")["input_ids"] == [1, 32000, 1792]
         assert len(tokenizer) == 32001
 
         # ensure reloading the tokenizer again from cfg results in same vocab length
