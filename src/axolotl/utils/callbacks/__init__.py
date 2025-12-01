@@ -313,11 +313,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
             metrics = {}
             for metric in self.cfg.eval_causal_lm_metrics:
                 if metric == "perplexity":
-                    max_seq_len = self.cfg.eval_max_new_tokens
-                    metrics[metric] = Perplexity(
-                        tokenizer=tokenizer,
-                        max_seq_len=max_seq_len,
-                    )
+                    metrics[metric] = Perplexity()
                 else:
                     try:
                         metrics[metric] = evaluate.load(metric)
@@ -375,6 +371,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
 
                     if isinstance(metric, Perplexity):
                         metric_kwargs["model"] = trainer.model_wrapped
+                        metric_kwargs["eval_dataloader"] = eval_dataloader
 
                     metric_score = metric.compute(**metric_kwargs)
                     return (
@@ -501,7 +498,11 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
 
                 return eval_src, eval_pred, eval_ref
 
-            eval_preds = predict_with_generate()
+            # Skip predicting if only perplexity is used
+            if self.cfg.eval_causal_lm_metrics == ["perplexity"]:
+                eval_preds = [], [], []
+            else:
+                eval_preds = predict_with_generate()
             trainer.log(evaluate_preds(*eval_preds))
 
             return control
