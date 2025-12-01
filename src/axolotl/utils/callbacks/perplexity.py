@@ -27,10 +27,9 @@ class Perplexity:
     def compute(
         self,
         model: PreTrainedModel,
-        eval_dataloader = None,
+        eval_dataloader=None,
         **kwargs,
     ) -> Dict[str, float]:
-
         model.eval()
 
         scores = []
@@ -56,7 +55,9 @@ class Perplexity:
                 scores.append(torch.exp(model_loss).item())
             else:
                 # do_causal_lm_eval + sample_packing already gives ValidationError. Extra protection.
-                LOG.debug("Packed evaluation samples not supported with perplexity metric")
+                LOG.debug(
+                    "Packed evaluation samples not supported with perplexity metric"
+                )
                 return {"score": float("nan")}
 
         if len(scores) == 0:
