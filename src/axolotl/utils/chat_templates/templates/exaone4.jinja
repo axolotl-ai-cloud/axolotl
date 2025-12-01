@@ -47,12 +47,12 @@
         {%- if i == 0 and tools is defined and tools %}
             {{- role_indicators['system'] }}
             {{- available_tools(tools) }}
-            {{- end_of_turn -}}            
+            {{- end_of_turn -}}
         {%- endif %}
     {%- endif %}
     {%- if role == 'assistant' %}
         {{- role_indicators['assistant'] }}
-        {%- if msg.content %}        
+        {%- if msg.content %}
             {%- if "</think>" in msg.content %}
                 {%- set content = msg.content.split('</think>')[-1].strip() %}
                 {%- set reasoning_content = msg.content.split('</think>')[0].strip() %}
@@ -102,8 +102,8 @@
         {%- if i == 0 or messages[i - 1].role != "tool" %}
             {{- role_indicators['tool'] }}
         {%- endif %}
-        {%- if msg.content is defined %}            
-            {{- "<tool_result>" }}{"result": {{ msg.content | tojson(ensure_ascii=False) | safe }}}{{- "</tool_result>" }}            
+        {%- if msg.content is defined %}
+            {{- "<tool_result>" }}{"result": {{ msg.content | tojson(ensure_ascii=False) | safe }}}{{- "</tool_result>" }}
         {%- endif %}
         {%- if loop.last or messages[i + 1].role != "tool" %}
             {{- end_of_turn -}}
