@@ -20,16 +20,11 @@ datasets:
   - path: AI-MO/NuminaMath-CoT
     type: chat_template
 
-output_dir: ./outputs/qat_out_math_gemma27/
+output_dir: ./outputs/out_math_gemma27/
 
 sequence_len: 4096
 sample_packing: true
 flash_attention: true
-
-qat:
-  activation_dtype: nvfp4
-  weight_dtype: nvfp4
-  group_size: 16 # only group_size of 16 is supported with nvfp4
 
 wandb_entity:
 wandb_watch:
