@@ -22,10 +22,12 @@ class Perplexity:
         self.name = "perplexity"
 
     def _feature_names(self) -> List[str]:
-        return ["references"]
+        return []
 
     def compute(
-        self, model: PreTrainedModel, eval_dataloader=None, **_kwargs
+        self,
+        model: PreTrainedModel,
+        eval_dataloader=None,
     ) -> Dict[str, float]:
         model.eval()
 
@@ -34,11 +36,18 @@ class Perplexity:
         for batch in tqdm(eval_dataloader, disable=not is_main_process()):
             if "position_ids" not in batch:
                 input_ids = batch["input_ids"].to(model.device)
+                attention_mask = (
+                    batch["attention_mask"].to(model.device)
+                    if "attention_mask" in batch
+                    else None
+                )
                 labels = batch["labels"].to(model.device)
 
                 # Drop any that are just -100
                 valid_rows_mask = (labels != -100).any(dim=1)
                 input_ids = input_ids[valid_rows_mask]
+                if attention_mask is not None:
+                    attention_mask = attention_mask[valid_rows_mask]
                 labels = labels[valid_rows_mask]
 
                 if input_ids.shape[0] == 0:
@@ -47,6 +56,7 @@ class Perplexity:
                 with torch.no_grad():
                     model_loss = model(
                         input_ids=input_ids,
+                        attention_mask=attention_mask,
                         labels=labels,
                     ).loss
 
@@ -54,7 +64,7 @@ class Perplexity:
                 total_loss_sum += model_loss.item() * batch_token_count
                 total_token_count += batch_token_count
             else:
-                # do_causal_lm_eval + sample_packing_packing already gives ValidationError. Extra protection.
+                # do_causal_lm_eval + eval_sample_packing already gives ValidationError. Extra protection.
                 LOG.debug(
                     "Packed evaluation samples not supported with perplexity metric"
                 )
@@ -65,5 +75,5 @@ class Perplexity:
             return {"score": float("nan")}
 
         return {
-            "score": float(torch.exp(torch.tensor(total_loss_sum / total_token_count)))
+            "score": torch.exp(torch.tensor(total_loss_sum / total_token_count)).item()
         }
