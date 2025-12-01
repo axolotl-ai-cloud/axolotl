@@ -220,13 +220,6 @@ class PatchManager:
 
             patch_qwen3_next_modeling_packing()
 
-        if self.cfg.model_config_type == "mistral3" and self.cfg.processor_type:
-            from axolotl.monkeypatch.models.mistral3.mistral_common_tokenizer import (
-                apply_mistral_tokenizer_image_patch,
-            )
-
-            apply_mistral_tokenizer_image_patch()
-
         if self.cfg.model_config_type == "kimi_linear":
             from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
                 patch_kimi_model,
