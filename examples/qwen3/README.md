@@ -18,6 +18,14 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 
 Let us know how it goes. Happy finetuning! 🚀
 
+### Chat template masking a few tokens off
+
+If you notice that the `chat_template` masking for assistant prompts are off by a few tokens, please ensure that you are adding the below to the yaml.
+
+```yaml
+chat_template: qwen3
+```
+
 ### TIPS
 
 - For inference, please check the official model card as it depends on your reasoning mode.
