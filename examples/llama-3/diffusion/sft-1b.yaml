@@ -44,7 +44,7 @@ resume_from_checkpoint:
 sdp_attention: true
 
 logging_steps: 1
-save_strategy: best
+save_strategy: epoch
 eval_strategy: epoch
 
 special_tokens:
