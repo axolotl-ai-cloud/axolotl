@@ -222,7 +222,7 @@ jobs:
         run: hf cache scan
 
   gate-skip-e2e:
-    needs: [pre-commit, pytest, pytest-sdist]
+    needs: [pre-commit, pytest]
     runs-on: ubuntu-latest
     outputs:
       skip: ${{ steps.compute.outputs.skip }}
@@ -258,7 +258,7 @@ jobs:
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
-    needs: [pre-commit, pytest, pytest-sdist, gate-skip-e2e]
+    needs: [pre-commit, pytest, gate-skip-e2e]
 
     strategy:
       fail-fast: false
