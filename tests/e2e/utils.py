@@ -167,6 +167,13 @@ def require_hopper(test_case):
     return unittest.skipUnless(is_hopper(), "test requires h100/hopper GPU")(test_case)
 
 
+def supports_fp8(test_case):
+    compute_capability = torch.cuda.get_device_capability()
+    return unittest.skipUnless(
+        compute_capability >= (9, 0), "test requires h100 or newer GPU"
+    )(test_case)
+
+
 def check_tensorboard(
     temp_run_dir: str,
     tag: str,
