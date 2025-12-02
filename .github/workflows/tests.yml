@@ -258,7 +258,7 @@ jobs:
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
-    needs: [pre-commit, pytest, gate-skip-e2e]
+    needs: [pre-commit, pytest]
 
     strategy:
       fail-fast: false
