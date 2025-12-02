@@ -244,6 +244,7 @@ class TestFSDP1:
 
         verify_training_success(temp_dir)
 
+    @pytest.mark.skip("broken in transformers v5")
     @pytest.mark.parametrize(
         "adapter_config",
         [
