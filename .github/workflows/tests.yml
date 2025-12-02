@@ -222,7 +222,7 @@ jobs:
         run: hf cache scan
 
   gate-skip-e2e:
-    needs: [pre-commit, pytest]
+    needs: [pre-commit]
     runs-on: ubuntu-latest
     outputs:
       skip: ${{ steps.compute.outputs.skip }}
