@@ -28,7 +28,8 @@ Before starting, ensure you have:
 3. Swap to the Axolotl transformers v5 branch
 
     ```bash
-    # make sure to copy examples/ministral/think/ministral3-small-think-qlora.yaml somewhere
+    # copy examples/ministral/think/ministral3-small-think-qlora.yaml somewhere
+    cp examples/ministral/think/ministral3-small-think-qlora.yaml ministral3-small-think-qlora.yaml
 
     git fetch
     git checkout transformers-v5
@@ -37,7 +38,7 @@ Before starting, ensure you have:
 4. Run the thinking model fine-tuning:
 
     ```bash
-    axolotl train examples/ministral/think/ministral3-small-think-qlora.yaml
+    axolotl train ministral3-small-think-qlora.yaml
     ```
 
 This config uses about 4.76 GiB VRAM.
