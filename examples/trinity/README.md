@@ -14,7 +14,7 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
     axolotl train examples/trinity/trinity-nano-preview-qlora.yaml
     ```
 
-This config uses about (XY) GiB VRAM.
+This config uses about 24.9 GiB VRAM.
 
 Let us know how it goes. Happy finetuning! 🚀
 
