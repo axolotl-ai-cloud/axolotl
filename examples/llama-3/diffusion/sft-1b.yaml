@@ -30,7 +30,7 @@ eval_sample_packing: true
 gradient_accumulation_steps: 4
 micro_batch_size: 4
 num_epochs: 1
-warmup_steps: 0.1
+warmup_ratio: 0.1
 
 optimizer: adamw_8bit
 lr_scheduler: cosine
