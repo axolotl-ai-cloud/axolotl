@@ -13,17 +13,29 @@ class TestFSDPValidation:
     test class for pydantic fsdp validation
     """
 
-    def test_fsdp_version_in_fsdp_config(self, min_base_cfg):
+    def test_fsdp_version_from_fsdp_config(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(
             fsdp_config={
-                "fsdp_version": 2,
+                "version": 2,
             },
         )
         cfg = validate_config(
             cfg,
         )
         assert cfg.fsdp_version == 2
-        assert cfg.fsdp_config.fsdp_version is None
+
+    def test_fsdp_version_in_fsdp_config(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            fsdp_version=2,
+            fsdp_config={
+                "reshard_after_forward": True,
+            },
+        )
+        cfg = validate_config(
+            cfg,
+        )
+        assert cfg.fsdp_version == 2
+        assert cfg.fsdp_config.version == 2
 
     def test_fsdp_offload_w_8bit_optim(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(
