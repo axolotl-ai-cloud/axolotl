@@ -348,7 +348,7 @@ class AxolotlTrainer(
         #     return (loss, outputs) if return_outputs else loss
 
         # track number of tokens for tokens per second calculation
-        if self.args.include_tkps:
+        if self.args.include_tkps and model.training:
             inputs_key = "labels" if "labels" in inputs else "input_ids"
             num_tokens = (inputs[inputs_key] != -100).sum()
             if is_distributed():
