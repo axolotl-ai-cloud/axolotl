@@ -16,7 +16,7 @@ Thanks to the team at MistralAI for giving us early access to prepare for these 
     axolotl train examples/ministral/ministral-small-qlora.yaml
     ```
 
-This config uses about (XY)GiB VRAM.
+This config uses about 8.76 GiB VRAM.
 
 Let us know how it goes. Happy finetuning! 🚀
 
