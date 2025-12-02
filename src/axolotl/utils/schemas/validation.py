@@ -900,6 +900,39 @@ class OptimizationValidationMixin:
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_version_in_fsdp_config(cls, data):
+        fsdp_config = data.get("fsdp_config") or {}
+        fsdp_version = data.get("fsdp_version", None)
+        if not fsdp_version and fsdp_config and fsdp_config.get("version"):
+            data["fsdp_version"] = fsdp_config.get("version")
+        elif fsdp_version and fsdp_config and not fsdp_config.get("version"):
+            data["fsdp_config"]["version"] = fsdp_version
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_config_kwargs_prefix(cls, data):
+        if fsdp_config := data.get("fsdp_config"):
+            should_fix = False
+            for key, _ in fsdp_config.items():
+                if key.startswith("fsdp_"):
+                    should_fix = True
+                    LOG.warning_once(
+                        "Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
+                        "Please omit the `fsdp_` prefix from the any fields in `fsdp_config`."
+                    )
+            if should_fix:
+                update_fsdp_config = {}
+                for key, value in fsdp_config.items():
+                    if key.startswith("fsdp_") and key != "fsdp_version":
+                        update_fsdp_config[key.replace("fsdp_", "")] = value
+                    else:
+                        update_fsdp_config[key] = value
+                data["fsdp_config"] = update_fsdp_config
+        return data
+
     @model_validator(mode="after")
     def check_fsdp_offload_w_8bit_optimizer(self):
         if (
