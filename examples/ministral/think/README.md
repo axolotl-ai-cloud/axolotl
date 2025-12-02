@@ -1,6 +1,8 @@
-# Magistral Small Thinking Fine-tuning
+# Ministral3 2512 Thinking Fine-tuning
 
-This guide covers fine-tuning [Ministral 3 2512](https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512) with thinking capabilities using Axolotl. The thinking model enables explicit Chain-of-Thought reasoning with separate thinking and response sections.
+This guide covers fine-tuning [Ministral3 2512](https://huggingface.co/collections/mistralai/ministral-3) with thinking capabilities using Axolotl. The thinking model enables explicit Chain-of-Thought reasoning with separate thinking and response sections.
+
+Thanks to the team at MistralAI for giving us early access to prepare for these releases.
 
 ## Prerequisites
 
@@ -9,11 +11,25 @@ Before starting, ensure you have:
 
 ## Getting Started
 
-Run the thinking model fine-tuning:
+1. Install transformers v5
 
-```bash
-axolotl train examples/ministral/think/ministral3-small-think-qlora.yaml
-```
+    ```bash
+    pip install transformers==5.0.0rc0
+    ```
+
+    Note: This is still experimental in Axolotl. Other stuff may break.
+
+2. Upgrade `mistral-common`
+
+    ```bash
+    pip install mistral-common==1.8.6
+    ```
+
+3. Run the thinking model fine-tuning:
+
+    ```bash
+    axolotl train examples/ministral/think/ministral3-small-think-qlora.yaml
+    ```
 
 This config uses about (XY) GiB VRAM.
 

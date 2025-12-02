@@ -1,8 +1,6 @@
 # Finetune Ministral with Axolotl
 
-Ministral is a family of openweight models from MistralAI found on HuggingFace at [2410](mistralai/Ministral-8B-Instruct-2410) and [2512](https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512) (see [Thinking](#thinking)). This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.
-
-Thanks to the team at MistralAI for giving us early access to prepare for these releases.
+Ministral is a family of openweight models from MistralAI found on HuggingFace at [2410](mistralai/Ministral-8B-Instruct-2410) and [2512](https://huggingface.co/collections/mistralai/ministral-3) (see [Thinking](#thinking)). This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.
 
 ## Getting started
 
@@ -22,9 +20,11 @@ Let us know how it goes. Happy finetuning! 🚀
 
 ### Thinking
 
-MistralAI has released their [XYZ](PLACEHOLDER) model with thinking capabilities, enabling Chain-of-Thought reasoning with explicit thinking steps.
+MistralAI has released their [Ministral3 2512](https://huggingface.co/collections/mistralai/ministral-3) model with thinking capabilities, enabling Chain-of-Thought reasoning with explicit thinking steps.
 
 📚 **[See the Thinking fine-tuning guide →](./think/README.md)**
+
+For Ministral3 Base/Instruct, you can reuse the above config to train supervised finetuning.
 
 ### Tips
 

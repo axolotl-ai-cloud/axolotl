@@ -1,4 +1,4 @@
-base_model: mistralai/Ministral-3-3B-Instruct-2512
+base_model: mistralai/Ministral-3-3B-Reasoning-2512
 
 # Enable to use mistral-common tokenizer
 tokenizer_use_mistral_common: true
