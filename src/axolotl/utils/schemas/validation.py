@@ -844,12 +844,11 @@ class OptimizationValidationMixin:
     @classmethod
     def check_fsdp_version_in_fsdp_config(cls, data):
         fsdp_config = data.get("fsdp_config") or {}
-        if fsdp_config and fsdp_config.get("fsdp_version"):
-            LOG.warning(
-                "Configuring `fsdp_version` in `fsdp_config` is deprecated. "
-                "Please configure `fsdp_version` as a top-level field."
-            )
-            data["fsdp_version"] = fsdp_config.pop("fsdp_version")
+        fsdp_version = data.get("fsdp_version", None)
+        if not fsdp_version and fsdp_config and fsdp_config.get("version"):
+            data["fsdp_version"] = fsdp_config.get("version")
+        elif fsdp_version and fsdp_config and not fsdp_config.get("version"):
+            data["fsdp_config"]["version"] = fsdp_version
         return data
 
     @model_validator(mode="before")
