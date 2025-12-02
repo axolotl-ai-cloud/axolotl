@@ -128,7 +128,7 @@ class NormalizeConfigTestCase(unittest.TestCase):
         self.assertNotIn("fsdp_offload_params", cfg_with_version.fsdp_config)
         self.assertNotIn("fsdp_cpu_ram_efficient_loading", cfg_with_version.fsdp_config)
         self.assertNotIn("fsdp_version", cfg_with_version.fsdp_config)
-        self.assertNotIn("version", cfg_with_version.fsdp_config)
+        self.assertIn("version", cfg_with_version.fsdp_config)
 
         cfg_without_version = self._get_base_cfg() | DictDefault(
             {
@@ -195,5 +195,4 @@ class NormalizeConfigTestCase(unittest.TestCase):
         self.assertNotIn("fsdp_state_dict_type", cfg.fsdp_config)
         self.assertNotIn("fsdp_reshard_after_forward", cfg.fsdp_config)
 
-        # Ensure no duplicate version key
-        self.assertNotIn("version", cfg.fsdp_config)
+        self.assertIn("version", cfg.fsdp_config)
