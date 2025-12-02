@@ -25,13 +25,22 @@ Before starting, ensure you have:
     pip install mistral-common==1.8.6
     ```
 
-3. Run the thinking model fine-tuning:
+3. Swap to the Axolotl transformers v5 branch
+
+    ```bash
+    # make sure to copy examples/ministral/think/ministral3-small-think-qlora.yaml somewhere
+
+    git fetch
+    git checkout transformers-v5
+    ```
+
+4. Run the thinking model fine-tuning:
 
     ```bash
     axolotl train examples/ministral/think/ministral3-small-think-qlora.yaml
     ```
 
-This config uses about (XY) GiB VRAM.
+This config uses about 4.76 GiB VRAM.
 
 ### Tips
 
