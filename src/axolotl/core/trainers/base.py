@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from collections import defaultdict
 from functools import partial, wraps
@@ -48,6 +49,8 @@ from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger(__name__)
+
+TOKENS_STATE_FILE = "tokens_state.json"
 
 REDUCTION_FNS = {
     "mean": torch.mean,
@@ -363,9 +366,9 @@ class AxolotlTrainer(
                 self.state.num_tokens = (inputs[inputs_key] != -100).sum().cpu()
 
             if hasattr(self.state, "total_tokens"):
-                self.state.total_tokens += num_tokens
+                self.state.total_tokens += num_tokens.cpu()
             else:
-                self.state.total_tokens = num_tokens
+                self.state.total_tokens = num_tokens.cpu()
 
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
@@ -666,6 +669,25 @@ class AxolotlTrainer(
         run_dir = self._get_output_dir(trial=trial)
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
+
+        # Save total_tokens state if tracking is enabled
+        if self.args.include_tkps and hasattr(self.state, "total_tokens"):
+            tokens_state = {
+                "total_tokens": (
+                    int(self.state.total_tokens.item())
+                    if hasattr(self.state.total_tokens, "item")
+                    else int(self.state.total_tokens)
+                ),
+                "num_tokens": (
+                    int(self.state.num_tokens.item())
+                    if hasattr(self.state.num_tokens, "item")
+                    else int(self.state.num_tokens)
+                ),
+            }
+            tokens_state_path = os.path.join(output_dir, TOKENS_STATE_FILE)
+            with open(tokens_state_path, "w", encoding="utf-8") as f:
+                json.dump(tokens_state, f)
+
         return super()._save_checkpoint(model, trial, **kwargs)
 
     # TODO(wing): remove once https://github.com/huggingface/transformers/pull/39866/files is merged
