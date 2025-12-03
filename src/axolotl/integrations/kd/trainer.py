@@ -90,6 +90,8 @@ class AxolotlKDTrainer(AxolotlTrainer):
             if num_items_in_batch is not None:
                 loss_kwargs["num_items_in_batch"] = num_items_in_batch
             inputs = {**inputs, **loss_kwargs}
+        
+        outputs = model(**inputs)
 
         if isinstance(outputs, dict):
             loss = outputs["loss"]
