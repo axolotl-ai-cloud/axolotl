@@ -34,41 +34,41 @@ class Perplexity:
         total_loss_sum = 0.0
         total_token_count = 0
         for batch in tqdm(eval_dataloader, disable=not is_main_process()):
-            if "position_ids" not in batch:
-                input_ids = batch["input_ids"].to(model.device)
-                attention_mask = (
-                    batch["attention_mask"].to(model.device)
-                    if "attention_mask" in batch
-                    else None
-                )
-                labels = batch["labels"].to(model.device)
+            input_ids = batch["input_ids"].to(model.device)
+            labels = batch["labels"].to(model.device)
+            attention_mask = (
+                batch["attention_mask"].to(model.device)
+                if "attention_mask" in batch
+                else None
+            )
+            position_ids = (
+                batch["position_ids"].to(model.device)
+                if "position_ids" in batch
+                else None
+            )
 
-                # Drop any that are just -100
-                valid_rows_mask = (labels != -100).any(dim=1)
-                input_ids = input_ids[valid_rows_mask]
-                if attention_mask is not None:
-                    attention_mask = attention_mask[valid_rows_mask]
-                labels = labels[valid_rows_mask]
+            # Drop any rows that are just -100
+            valid_rows_mask = (labels != -100).any(dim=1)
+            input_ids = input_ids[valid_rows_mask]
+            if input_ids.shape[0] == 0:  # Skip batch if no rows are left
+                continue
+            labels = labels[valid_rows_mask]
+            if attention_mask is not None:
+                attention_mask = attention_mask[valid_rows_mask]
+            if position_ids is not None:
+                position_ids = position_ids[valid_rows_mask]
 
-                if input_ids.shape[0] == 0:
-                    continue
+            with torch.no_grad():
+                model_loss = model(
+                    input_ids=input_ids,
+                    labels=labels,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                ).loss
 
-                with torch.no_grad():
-                    model_loss = model(
-                        input_ids=input_ids,
-                        attention_mask=attention_mask,
-                        labels=labels,
-                    ).loss
-
-                batch_token_count = (labels != -100).sum().item()
-                total_loss_sum += model_loss.item() * batch_token_count
-                total_token_count += batch_token_count
-            else:
-                # do_causal_lm_eval + eval_sample_packing already gives ValidationError. Extra protection.
-                LOG.debug(
-                    "Packed evaluation samples not supported with perplexity metric"
-                )
-                return {"score": float("nan")}
+            batch_token_count = (labels != -100).sum().item()
+            total_loss_sum += model_loss.item() * batch_token_count
+            total_token_count += batch_token_count
 
         if total_token_count == 0:
             LOG.debug("No valid tokens found for perplexity metric")
