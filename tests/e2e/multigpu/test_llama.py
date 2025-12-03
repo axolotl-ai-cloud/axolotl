@@ -546,6 +546,7 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss (%s) is too high"
         )
 
+    @pytest.mark.skip("transformers v5 broken")
     def test_fsdp_qlora_prequant_packed(self, temp_dir):
         cfg = DictDefault(
             {
@@ -626,6 +627,7 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
+    @pytest.mark.skip("transformers v5 broken")
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
         [1, 2],
