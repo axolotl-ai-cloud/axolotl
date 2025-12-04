@@ -1,22 +1,39 @@
-# Finetune Ministral with Axolotl
+# Finetune Ministral3 with Axolotl
 
-Ministral is a family of openweight models from MistralAI found on [HuggingFace](mistralai/Ministral-8B-Instruct-2410). This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.
+Ministral3 is a family of open-weight models from MistralAI found on [HuggingFace](https://huggingface.co/collections/mistralai/ministral-3). This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.
+
+Please see [Thinking](#thinking) and [Vision](#vision) for their respective fine-tuning.
+
+Thanks to the team at MistralAI for giving us early access to prepare for these releases.
+
+Note: This is still experimental given it is based on transformers v5 RC.
 
 ## Getting started
 
-1. Install Axolotl following the [installation guide](https://docs.axolotl.ai/docs/installation.html).
+1. Install Axolotl from source following the [installation guide](https://docs.axolotl.ai/docs/installation.html#sec-edge-build).
 
 2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage.
 
-3. Run the finetuning example:
+3. Swap to the Axolotl transformers v5 branch
 
     ```bash
-    axolotl train examples/ministral/ministral-small-qlora.yaml
+    cp examples/ministral3/ministral3-3b-qlora.yaml ministral3-3b-qlora.yaml
+
+    git fetch
+    git checkout transformers-v5
+
+    # Install packages for transformers v5
+    pip install -e .
     ```
 
-This config uses about 8.76 GiB VRAM.
+4. Run the fine-tuning:
+
+    ```bash
+    axolotl train ministral3-3b-qlora.yaml
+    ```
 
 Let us know how it goes. Happy finetuning! 🚀
+
 
 ### Tips
 
@@ -24,6 +41,18 @@ Let us know how it goes. Happy finetuning! 🚀
 - You can run a full finetuning by removing the `adapter: qlora` and `load_in_4bit: true` from the config.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - The text dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
+
+### Thinking
+
+Ministral3 2512 model supports thinking capabilities, enabling Chain-of-Thought reasoning with explicit thinking steps.
+
+📚 **[See the Thinking fine-tuning guide →](./think/README.md)**
+
+### Vision
+
+Ministral3 2512 model also supports vision capabilities.
+
+📚 **[See the Vision fine-tuning guide →](./vision/README.md)**
 
 ## Optimization Guides
 
@@ -37,7 +66,7 @@ In addition, we do not support overriding tokens yet.
 
 ## Related Resources
 
-- [MistralAI Ministral Blog](https://mistral.ai/news/ministraux)
+- [MistralAI Mistral3 Blog](https://mistral.ai/news/mistral-3)
 - [Axolotl Docs](https://docs.axolotl.ai)
 - [Axolotl Website](https://axolotl.ai)
 - [Axolotl GitHub](https://github.com/axolotl-ai-cloud/axolotl)
