@@ -2,8 +2,9 @@
 Test for KD chat template strategies
 """
 
-import pytest
 from unittest.mock import Mock
+
+import pytest
 
 from axolotl.integrations.kd.chat_template import ChatTemplateStrategyWithKDv2
 
@@ -19,7 +20,7 @@ class TestChatTemplateStrategyWithKDv2:
         mock_prompter.roles = {"user": "user", "assistant": "assistant"}
         mock_prompter.chat_template_msg_variables = ["role", "content"]
         mock_prompter.chat_template = "{{ messages }}"
-        
+
         # Mock tokenizer
         mock_tokenizer = Mock()
         mock_tokenizer.pad_token_id = 0
@@ -28,7 +29,7 @@ class TestChatTemplateStrategyWithKDv2:
         mock_tokenizer.eos_token = "<|endoftext|>"
         mock_tokenizer.apply_chat_template = Mock(return_value=[1, 10, 20, 30, 2])
         mock_tokenizer.encode = Mock(return_value=[2])
-        
+
         return ChatTemplateStrategyWithKDv2(
             prompter=mock_prompter,
             tokenizer=mock_tokenizer,
@@ -42,7 +43,7 @@ class TestChatTemplateStrategyWithKDv2:
     def test_v2_prepare_kd_fields_adds_target_token_ids(self, v2_strategy):
         """
         Test that v2's _prepare_kd_fields hook adds target_token_ids.
-        
+
         Validates the Template Method pattern fix where v2 overrides
         the hook to add target_token_ids before transform.
         """
@@ -66,7 +67,7 @@ class TestChatTemplateStrategyWithKDv2:
     def test_v2_transform_requires_target_token_ids(self, v2_strategy):
         """
         Test v2's transform fails without target_token_ids.
-        
+
         Validates the bug fix - transform expects target_token_ids
         to be added by the hook.
         """

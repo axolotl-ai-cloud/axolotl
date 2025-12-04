@@ -179,13 +179,13 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
         logprobs = prompt.pop(self.logprobs_field)
         tokenized_prompt = super()._tokenize_single_prompt(prompt)
         tokenized_prompt[self.logprobs_field] = logprobs
-        
+
         # let subclasses add fields before transform
         tokenized_prompt = self._prepare_kd_fields(tokenized_prompt, prompt)
-        
+
         tokenized_prompt = self.transform_logprobs(tokenized_prompt)
         return tokenized_prompt
-    
+
     def _prepare_kd_fields(self, tokenized_prompt, original_prompt):
         """
         Hook for subclasses to prepare additional KD fields before transform
@@ -291,7 +291,7 @@ class ChatTemplateStrategyWithKDv2(ChatTemplateStrategyWithKD):
         sample["target_mask"] = target_mask
 
         return sample
-    
+
     def _prepare_kd_fields(self, tokenized_prompt, original_prompt):
         """
         Add pre-tokenized target_token_ids for v2 format
