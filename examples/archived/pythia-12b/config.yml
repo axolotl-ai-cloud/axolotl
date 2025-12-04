@@ -33,7 +33,7 @@ num_epochs: 5
 learning_rate: 0.00003
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
-bf16: false
+bfloat16: false
 fp16: false
 float16: true
 tf32: true

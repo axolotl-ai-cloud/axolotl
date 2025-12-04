@@ -34,7 +34,7 @@ optimizer: paged_adamw_32bit
 torchdistx_path:
 lr_scheduler: cosine
 learning_rate: 0.0002
-bf16: false
+bfloat16: false
 fp16: true
 tf32: false
 gradient_checkpointing: true
