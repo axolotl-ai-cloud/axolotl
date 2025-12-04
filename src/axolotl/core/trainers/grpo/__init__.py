@@ -129,6 +129,9 @@ class GRPOStrategy:
         if trl.rollout_func:
             grpo_args_kwargs["rollout_func"] = cls.get_rollout_func(trl.rollout_func)
 
+        if trl.use_liger_kernel is not None:
+            grpo_args_kwargs["use_liger_kernel"] = trl.use_liger_kernel
+
         return grpo_args_kwargs
 
     @classmethod
