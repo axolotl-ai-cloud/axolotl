@@ -1,4 +1,4 @@
-# Ministral3 2512 Thinking Fine-tuning
+# Ministral3 2512 Vision Fine-tuning
 
 This guide covers fine-tuning [Ministral3 2512](https://huggingface.co/collections/mistralai/ministral-3) with vision capabilities using Axolotl.
 
