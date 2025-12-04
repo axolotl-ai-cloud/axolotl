@@ -178,7 +178,7 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "Whether to use Liger kernel for DPO loss."},
     )
-    
+
     dpo_padding_free: bool | None = None
     dpo_generate_during_eval: bool | None = None
 

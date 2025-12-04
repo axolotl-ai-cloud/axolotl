@@ -179,7 +179,3 @@ class TRLConfig(BaseModel):
             "description": "Path to custom rollout function. Must be importable from current dir."
         },
     )
-    use_liger_kernel: bool | None = Field(
-        default=None,
-        json_schema_extra={"description": "Whether to use Liger kernel for DPO loss."},
-    )
