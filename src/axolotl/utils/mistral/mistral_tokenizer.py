@@ -218,3 +218,10 @@ class HFMistralTokenizer(MistralCommonTokenizer):
             model_input_names=model_input_names,
             clean_up_tokenization_spaces=clean_up_tokenization_spaces,
         )
+
+    def save_pretrained(self, *args, **kwargs) -> tuple[str, ...]:
+        """
+        Patches to remove save_jinja_files from being passed onwards.
+        """
+        kwargs.pop("save_jinja_files", None)
+        return super().save_pretrained(*args, **kwargs)

@@ -6,23 +6,15 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 
 ## Getting started
 
-1.  Install Axolotl following the [installation guide](https://docs.axolotl.ai/docs/installation.html).
+1. Install Axolotl following the [installation guide](https://docs.axolotl.ai/docs/installation.html).
 
-    Here is an example of how to install from pip:
+2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage.
+
+3. Run the finetuning example:
+
     ```bash
-    # Ensure you have a compatible version of Pytorch installed
-    pip3 install packaging setuptools wheel ninja
-    pip3 install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
-
-    # Install Cut Cross Entropy
-    python scripts/cutcrossentropy_install.py | sh
+    axolotl train examples/olmo3/olmo3-7b-qlora.yaml
     ```
-
-2. Run the finetuning example:
-
-```bash
-axolotl train examples/olmo3/olmo3-7b-qlora.yaml
-```
 
 Let us know how it goes. Happy finetuning! 🚀
 
