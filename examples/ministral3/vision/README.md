@@ -1,6 +1,6 @@
-# Magistral Small Vision Fine-tuning
+# Ministral3 2512 Thinking Fine-tuning
 
-This guide covers fine-tuning [Magistral Small 2509](https://huggingface.co/mistralai/Magistral-Small-2509) with vision capabilities using Axolotl.
+This guide covers fine-tuning [Ministral3 2512](https://huggingface.co/collections/mistralai/ministral-3) with vision capabilities using Axolotl.
 
 ## Prerequisites
 
