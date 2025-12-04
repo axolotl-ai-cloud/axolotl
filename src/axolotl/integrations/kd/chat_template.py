@@ -291,23 +291,14 @@ class ChatTemplateStrategyWithKDv2(ChatTemplateStrategyWithKD):
         sample["target_mask"] = target_mask
 
         return sample
-
-    def _tokenize_single_prompt(self, prompt):
-        target_token_ids = prompt.get("target_token_ids", None)
-
-        tokenized_prompt = super()._tokenize_single_prompt(prompt)
-
-        if target_token_ids is not None:
-            tokenized_prompt["target_token_ids"] = target_token_ids
-
-        return tokenized_prompt
     
     def _prepare_kd_fields(self, tokenized_prompt, original_prompt):
         """
         Add pre-tokenized target_token_ids for v2 format
         """
-        if "target_token_ids" in original_prompt:
-            tokenized_prompt["target_token_ids"] = original_prompt.pop("target_token_ids")
+        target_token_ids = original_prompt.pop("target_token_ids", None)
+        if target_token_ids is not None:
+            tokenized_prompt["target_token_ids"] = target_token_ids
         return tokenized_prompt
 
 
