@@ -95,8 +95,12 @@ class CutCrossEntropyPlugin(BasePlugin):
                 f"Applying Cut Cross Entropy to model type: {cfg.model_config_type}"
             )
 
-            # The patch checks model_type internally
-            cce_patch(cfg.model_config_type)
+            model_identifier = cfg.cut_cross_entropy_model_path or cfg.base_model
+
+            cce_patch(
+                cfg.model_config_type,
+                model_name_or_path=model_identifier if cfg.trust_remote_code else None,
+            )
 
     def patch_llama_like(
         self,
