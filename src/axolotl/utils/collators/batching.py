@@ -168,6 +168,9 @@ class V2BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
             features: List[List[dict]] = [features]
         out_features = [{} for _ in features]
         for i, features_ in enumerate(features):
+            if "position_ids" not in features_[0]:
+                arrays = [np.arange(len(item["input_ids"])) for item in features_]
+                out_features[i]["position_ids"] = np.concatenate(arrays)
             for feature in features_[0].keys():
                 if feature == "length":
                     continue
