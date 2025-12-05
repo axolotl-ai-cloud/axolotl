@@ -342,8 +342,27 @@ class TestOptimizerValidation(BaseValidation):
             }
         )
 
-        with pytest.raises(ValueError, match=r".*is currently incompatible with*"):
+        with pytest.raises(
+            ValueError, match=r".*DeepSpeed ZeRO stages 1-2"
+        ):
             validate_config(cfg)
+
+    def test_muon_deepspeed_stage2(self, minimal_cfg):
+        cfg = DictDefault(
+            minimal_cfg
+            | {
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    }
+                ],
+                "optimizer": "muon",
+                "deepspeed": "deepspeed_configs/zero2.json",
+            }
+        )
+
+        validate_config(cfg)
 
     def test_muon_fsdp(self, minimal_cfg):
         cfg = DictDefault(
