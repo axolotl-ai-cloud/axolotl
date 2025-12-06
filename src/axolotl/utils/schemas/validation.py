@@ -455,7 +455,11 @@ class TrainingValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_causal_lm_evals(cls, data):
-        if data.get("do_causal_lm_eval") and data.get("eval_sample_packing"):
+        if (
+            data.get("do_causal_lm_eval")
+            and data.get("eval_causal_lm_metrics") != ["perplexity"]
+            and data.get("eval_sample_packing")
+        ):
             raise ValueError(
                 "do_causal_lm_eval is enabled, eval_sample_packing must be set to False"
             )

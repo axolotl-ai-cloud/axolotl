@@ -313,11 +313,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
             metrics = {}
             for metric in self.cfg.eval_causal_lm_metrics:
                 if metric == "perplexity":
-                    max_seq_len = self.cfg.eval_max_new_tokens
-                    metrics[metric] = Perplexity(
-                        tokenizer=tokenizer,
-                        max_seq_len=max_seq_len,
-                    )
+                    metrics[metric] = Perplexity()
                 else:
                     try:
                         metrics[metric] = evaluate.load(metric)
@@ -353,6 +349,10 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                 output_scores=False,
             )
 
+            eval_src: List[str]
+            eval_pred: List[str]
+            eval_ref: List[str]
+
             def find_ranges(lst):
                 ranges = []
                 start = 0
@@ -375,6 +375,13 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
 
                     if isinstance(metric, Perplexity):
                         metric_kwargs["model"] = trainer.model_wrapped
+                        # Use the existing eval_dataloader when perplexity is the only metric,
+                        # otherwise recreate it so we don't consume the same iterator twice.
+                        if self.cfg.eval_causal_lm_metrics == ["perplexity"]:
+                            ppl_eval_dataloader = eval_dataloader
+                        else:
+                            ppl_eval_dataloader = trainer.get_eval_dataloader()
+                        metric_kwargs["eval_dataloader"] = ppl_eval_dataloader
 
                     metric_score = metric.compute(**metric_kwargs)
                     return (
@@ -501,8 +508,13 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
 
                 return eval_src, eval_pred, eval_ref
 
-            eval_preds = predict_with_generate()
-            trainer.log(evaluate_preds(*eval_preds))
+            # Skip predicting if only perplexity is used
+            if self.cfg.eval_causal_lm_metrics == ["perplexity"]:
+                eval_src, eval_pred, eval_ref = [], [], []
+            else:
+                eval_src, eval_pred, eval_ref = predict_with_generate()
+
+            trainer.log(evaluate_preds(eval_src, eval_pred, eval_ref))
 
             return control
 
