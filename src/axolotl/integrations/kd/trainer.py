@@ -16,6 +16,8 @@
 KD trainer
 """
 
+from typing_extensions import override
+
 from axolotl.core.trainers.base import AxolotlTrainer
 
 from .kernels.liger import LigerFusedLinearKLTopKLogprobLoss
@@ -60,6 +62,7 @@ class AxolotlKDTrainer(AxolotlTrainer):
             if columns_to_add:
                 self._signature_columns += columns_to_add
 
+    @override
     def compute_loss(
         self,
         model,
@@ -79,10 +82,22 @@ class AxolotlKDTrainer(AxolotlTrainer):
         ):
             del inputs["attention_mask"]
 
+        if num_items_in_batch is None and "labels" in inputs:
+            num_items_in_batch = (inputs["labels"] != -100).sum().item()
+
         if self.model_accepts_loss_kwargs:
             loss_kwargs = {}
             if num_items_in_batch is not None:
                 loss_kwargs["num_items_in_batch"] = num_items_in_batch
             inputs = {**inputs, **loss_kwargs}
+
         outputs = model(**inputs)
-        return outputs[0]
+
+        if isinstance(outputs, dict):
+            loss = outputs["loss"]
+        elif isinstance(outputs, tuple):
+            loss = outputs[0]
+        else:
+            loss = outputs.loss if hasattr(outputs, "loss") else outputs
+
+        return (loss, outputs) if return_outputs else loss
