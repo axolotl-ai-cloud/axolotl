@@ -150,6 +150,10 @@ class TestFSDP2:
                 },
                 "use_tensorboard": True,
                 "bf16": True,
+                # explicitly disable LORA kernels, as they may be auto-enabled
+                "lora_mlp_kernel": False,
+                "lora_qkv_kernel": False,
+                "lora_o_kernel": False,
             }
         )
 
