@@ -100,6 +100,15 @@ class LoraConfig(BaseModel):
             )
         },
     )
+    peft_ensure_weight_tying: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Whether to tie adapter weights for tied model weights. "
+                "See https://github.com/huggingface/peft/issues/2864"
+            )
+        },
+    )
 
     qlora_sharded_model_loading: bool | None = Field(
         default=False,
