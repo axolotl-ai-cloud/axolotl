@@ -634,6 +634,9 @@ def setup_parallelism_envs(cfg):
         set_accelerate_parallelism_config = True
         os.environ["PARALLELISM_CONFIG_CP_SIZE"] = str(cfg.context_parallel_size)
         os.environ["ACCELERATE_ALLOW_CP_STANDALONE"] = "true"
+        from axolotl.monkeypatch.accelerate.parallelism_config import patch_prepare_cp
+
+        patch_prepare_cp()
     if set_accelerate_parallelism_config:
         os.environ["ACCELERATE_USE_PARALLELISM_CONFIG"] = "true"
 

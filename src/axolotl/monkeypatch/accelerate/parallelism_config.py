@@ -75,3 +75,33 @@ def patch_parallelism_config():
 
     ParallelismConfig._validate_accelerator = _validate_accelerator
     AcceleratorState.is_fsdp2 = property(patched_is_fsdp2)
+
+
+def patch_prepare_cp():
+    import functools
+
+    import torch
+    from accelerate import Accelerator
+
+    def patched_prepare_cp(self, *args):
+        if self.parallelism_config.cp_backend == "deepspeed":
+            return args
+
+        from accelerate.big_modeling import _attach_context_parallel_hooks
+        from torch.distributed.tensor.experimental import context_parallel
+        from torch.distributed.tensor.experimental._attention import set_rotate_method
+
+        cp_comm_strategy = self.parallelism_config.cp_handler.cp_comm_strategy
+        set_rotate_method(cp_comm_strategy)
+
+        self._cp_context = functools.partial(
+            context_parallel, mesh=self.torch_device_mesh["cp"]
+        )
+
+        for arg in args:
+            if isinstance(arg, torch.nn.Module):
+                _attach_context_parallel_hooks(arg)
+
+        return args
+
+    Accelerator._prepare_cp = patched_prepare_cp
