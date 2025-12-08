@@ -203,6 +203,7 @@ def wrap_streaming_dataset(
             max_seq_length=cfg.sequence_len,
             batch_size=cfg.micro_batch_size,
             multipack_attn=multipack_attn,
+            bin_size=cfg.sample_packing_bin_size,
         )
 
         # Set this to 1 so downstream data_loader doesn't try to increase the batch size
@@ -257,6 +258,7 @@ def encode_packed_streaming(
     max_seq_length: int = 2048,
     batch_size: int = 4,
     multipack_attn: Optional[bool] = True,
+    bin_size: int | None = None,
 ) -> Dict[str, List]:
     # tokenize all the examples
     # rows get split with stride (overlap)
@@ -278,6 +280,7 @@ def encode_packed_streaming(
         batch_max_len=batch_size * max_seq_length,
         drop_last=True,
         num_processes=1,
+        bin_size=bin_size,
     )
 
     chunked_data = defaultdict(list)

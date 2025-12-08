@@ -265,7 +265,8 @@ class MultipackBatchSampler(BatchSampler):
         num_count_samples: int = 4,  # Number of times to estimate batch count
         sequential: bool = False,  # Whether to use sequential packing
         group_size: int = 100_000,  # Size of groups for parallel packing
-        bin_size: int = 200,  # The max number of samples that can be packed in a single bin
+        bin_size: int
+        | None = None,  # The max number of samples that can be packed in a single bin
         num_processes: int | None = None,  # Number of processes for parallel packing
         safe_mode: bool = True,  # Conservative packing to prevent training instability
         mp_start_method: str = "fork",
