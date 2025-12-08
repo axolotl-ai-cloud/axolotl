@@ -48,7 +48,7 @@ jobs:
             num_gpus: 2
             nightly_build: "true"
     runs-on: [self-hosted, modal]
-    timeout-minutes: 180
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v4
