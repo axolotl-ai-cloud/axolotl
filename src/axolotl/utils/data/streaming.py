@@ -255,10 +255,10 @@ def encode_packed_streaming(
     collate_fn,
     ds_wrapper: Callable,
     examples: Dict[str, List],
+    bin_size: int,
     max_seq_length: int = 2048,
     batch_size: int = 4,
     multipack_attn: Optional[bool] = True,
-    bin_size: int | None = None,
 ) -> Dict[str, List]:
     # tokenize all the examples
     # rows get split with stride (overlap)
