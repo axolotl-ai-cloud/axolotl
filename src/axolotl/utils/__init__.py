@@ -51,6 +51,11 @@ def set_pytorch_cuda_alloc_conf():
             )
 
 
+def set_misc_env():
+    if os.getenv("XFORMERS_IGNORE_FLASH_VERSION_CHECK") is None:
+        os.environ["XFORMERS_IGNORE_FLASH_VERSION_CHECK"] = "1"
+
+
 def get_not_null(value, default=None):
     """
     return the value if it's not None, otherwise return the default value
