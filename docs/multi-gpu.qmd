@@ -4,7 +4,7 @@ format:
   html:
     toc: true
     toc-depth: 3
-    number-sections: true
+    # number-sections: true
     code-tools: true
 execute:
   enabled: false
@@ -14,12 +14,18 @@ This guide covers advanced training configurations for multi-GPU setups using Ax
 
 ## Overview {#sec-overview}
 
-Axolotl supports several methods for multi-GPU training:
+When training on multiple GPUs, Axolotl supports 3 sharding/parallelism strategies. Additionally, you can layer specific optimization features on top of that strategy.
 
-- DeepSpeed (recommended)
-- FSDP (Fully Sharded Data Parallel)
-- Sequence parallelism
-- FSDP + QLoRA
+You generally cannot combine these strategies; they are mutually exclusive.
+
+1.  **DeepSpeed**: Powerful optimization library, supports ZeRO stages 1-3.
+2.  **FSDP (Fully Sharded Data Parallel)**: PyTorch's native sharding implementation (Recommended).
+3.  **DDP (Distributed Data Parallel)**: PyTorch's native parallelism implementation (Default if neither of the above are selected).
+
+These features can often be combined with the strategies above:
+
+*   **Sequence Parallelism**: Splits long sequences across GPUs (Compatible with DDP, DeepSpeed, and FSDP).
+*   **FSDP + QLoRA**: Combines 4-bit quantization with FSDP (Specific to FSDP).
 
 ## DeepSpeed {#sec-deepspeed}
 
@@ -65,11 +71,17 @@ Start from Stage 1 -> Stage 2 -> Stage 3.
 
 ## Fully Sharded Data Parallel (FSDP) {#sec-fsdp}
 
+FSDP allows you to shard model parameters, gradients, and optimizer states across data parallel workers.
+
 ::: {.callout-note}
 
 FSDP2 is recommended for new users. FSDP1 is deprecated and will be removed in an upcoming release of Axolotl.
 
 :::
+
+### FSDP + QLoRA {#sec-fsdp-qlora}
+
+For combining FSDP with QLoRA, see our [dedicated guide](fsdp_qlora.qmd).
 
 ### Migrating from FSDP1 to FSDP2 {#sec-migrate-fsdp1-fsdp2}
 
@@ -144,10 +156,6 @@ allows one to split up sequences across GPUs, which is useful in the event that 
 single sequence causes OOM errors during model training.
 
 See our [dedicated guide](sequence_parallelism.qmd) for more information.
-
-### FSDP + QLoRA {#sec-fsdp-qlora}
-
-For combining FSDP with QLoRA, see our [dedicated guide](fsdp_qlora.qmd).
 
 ## Performance Optimization {#sec-performance}
 
