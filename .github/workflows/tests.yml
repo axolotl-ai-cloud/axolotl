@@ -66,12 +66,12 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v4
 
-      - name: Restore Cache from S3
-        id: hf-cache-restore-s3
-        run: |
-          mkdir -p ~/.cache/huggingface/hub
-          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd
-
+#      - name: Restore Cache from S3
+#        id: hf-cache-restore-s3
+#        run: |
+#          mkdir -p ~/.cache/huggingface/hub
+#          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd
+#
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -145,12 +145,12 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v4
 
-      - name: Restore Cache from S3
-        id: hf-cache-restore-s3
-        run: |
-          mkdir -p ~/.cache/huggingface/hub
-          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd
-
+#      - name: Restore Cache from S3
+#        id: hf-cache-restore-s3
+#        run: |
+#          mkdir -p ~/.cache/huggingface/hub
+#          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd
+#
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
