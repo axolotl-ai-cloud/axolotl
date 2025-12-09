@@ -289,7 +289,7 @@ def do_inference_gradio(
     )
 
     demo.queue().launch(
-        show_api=False,
+        footer_links=["gradio", "settings"],
         share=cfg.get("gradio_share", True),
         server_name=cfg.get("gradio_server_name", "127.0.0.1"),
         server_port=cfg.get("gradio_server_port", None),

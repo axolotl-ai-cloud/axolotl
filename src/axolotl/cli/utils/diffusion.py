@@ -366,8 +366,8 @@ def launch_diffusion_gradio_ui(
             outputs=[masked_preview, html_out],
         )
 
-        demo.queue().launch(
-            show_api=False,
+        demo.launch(
+            footer_links=["gradio", "settings"],
             share=cfg.get("gradio_share", True),
             server_name=cfg.get("gradio_server_name", "127.0.0.1"),
             server_port=cfg.get("gradio_server_port", None),
