@@ -140,13 +140,13 @@ class TestAssistantChatTemplateLlama3:
         # fmt: off
         expected_input_ids = [
             32010,  # user
-            22172, 32007,  # user eot
+            12199, 32007,  # user eot
             32001,  # assistant
-            22172, 32007,  # assistant eot
+            12199, 32007,  # assistant eot
             32010,  # user
-            1781, 26966, 32007,  # user eot
+            16773, 26966, 32007,  # user eot
             32001,  # assistant
-            1781, 26966, 32007,  # assistant eot
+            16773, 26966, 32007,  # assistant eot
         ]
         expected_labels = [
             -100,  # user
@@ -156,7 +156,7 @@ class TestAssistantChatTemplateLlama3:
             -100,  # user
             -100, -100, -100,  # user eot
             -100,  # assistant
-            1781, 26966, 32007,  # assistant eot
+            16773, 26966, 32007,  # assistant eot
         ]
         # fmt: on
         LOG.debug(f"Expected input_ids: {expected_input_ids}")

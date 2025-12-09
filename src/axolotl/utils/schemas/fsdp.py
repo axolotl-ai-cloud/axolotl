@@ -12,6 +12,10 @@ class FSDPConfig(BaseModel):
     FSDP Configuration Schema
     """
 
+    version: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "FSDP version"},
+    )
     activation_checkpointing: bool | None = Field(
         default=None,
         description="Enable activation checkpointing to reduce memory usage during forward passes",
