@@ -25,7 +25,7 @@ trackio>=0.11.0
 optimum==1.16.2
 hf_transfer
 sentencepiece
-gradio==5.49.1
+gradio>=6.0,<7.0
 
 modal==1.0.2
 pydantic>=2.10.6
