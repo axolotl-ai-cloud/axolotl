@@ -33,6 +33,7 @@ from axolotl.utils.schemas.integrations import (
     MLFlowConfig,
     OpenTelemetryConfig,
     RayConfig,
+    TrackioConfig,
     WandbConfig,
 )
 from axolotl.utils.schemas.internal import EnvCapabilities, GPUCapabilities
@@ -62,6 +63,7 @@ class AxolotlInputConfig(
     WandbConfig,
     MLFlowConfig,
     CometConfig,
+    TrackioConfig,
     OpenTelemetryConfig,
     LISAConfig,
     GradioConfig,
