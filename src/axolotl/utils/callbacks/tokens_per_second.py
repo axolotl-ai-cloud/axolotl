@@ -67,8 +67,6 @@ class TokensPerSecondCallback(TrainerCallback):
     ):  # pylint: disable=unused-argument
         if not hasattr(state, "tokens"):
             state.tokens = {"trainable": torch.zeros(1), "total": torch.zeros(1)}
-        else:
-            state.tokens["trainable"] = torch.zeros_like(state.tokens["trainable"])
         self.start_time = time.perf_counter()
         state.last_tokens_per_second = torch.zeros(1)
 
@@ -80,9 +78,9 @@ class TokensPerSecondCallback(TrainerCallback):
         **kwargs,
     ):  # pylint: disable=unused-argument
         tokens = getattr(state, "tokens", None)
-        if tokens and "trainable" in tokens:
+        if tokens and "trainable_step" in tokens:
             step_time = time.perf_counter() - self.start_time
-            num_tokens_per_device = tokens["trainable"].clone()
+            num_tokens_per_device = tokens["trainable_step"].clone()
             # non data parallel groups have duplicated tokens, so we avoid double-counting
             num_tokens_per_device = num_tokens_per_device / self.non_data_parallel_size
             state.last_tokens_per_second = num_tokens_per_device / step_time
@@ -97,7 +95,16 @@ class TokensPerSecondCallback(TrainerCallback):
     ):  # pylint: disable=unused-argument
         # after logging, clear the running metrics
         if hasattr(state, "last_tokens_per_second"):
+            logs["tokens/trainable_per_second_per_gpu"] = (
+                state.last_tokens_per_second.item()
+            )
             state.last_tokens_per_second.zero_()
         tokens = getattr(state, "tokens", None)
+        if tokens and "trainable_step" in tokens:
+            tokens["trainable_step"] = torch.zeros_like(tokens["trainable_step"])
+
+        if tokens and "total" in tokens:
+            logs["tokens/total"] = tokens["total"].item()
+
         if tokens and "trainable" in tokens:
-            tokens["trainable"] = torch.zeros_like(tokens["trainable"])
+            logs["tokens/trainable"] = tokens["trainable"].item()

@@ -371,10 +371,14 @@ class AxolotlTrainer(
                 }
 
             # trainable tokens for throughput and total token slots for summaries
-            self.state.tokens["trainable"] = trainable_tokens.detach().cpu()
+            self.state.tokens["trainable"] = (
+                self.state.tokens["trainable"] + trainable_tokens.detach().cpu()
+            )
             self.state.tokens["total"] = (
                 self.state.tokens["total"] + torch.as_tensor(total_tokens).cpu()
             )
+            # Store per-step trainable tokens for throughput calculation
+            self.state.tokens["trainable_step"] = trainable_tokens.detach().cpu()
 
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
