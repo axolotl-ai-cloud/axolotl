@@ -353,22 +353,28 @@ class AxolotlTrainer(
         # track number of tokens for tokens per second calculation
         if self.args.include_tkps and model.training:
             inputs_key = "labels" if "labels" in inputs else "input_ids"
-            num_tokens = (inputs[inputs_key] != -100).sum()
+            trainable_tokens = (inputs[inputs_key] != -100).sum()
+            total_tokens = inputs[inputs_key].numel()
+
             if is_distributed():
                 torch.distributed.all_reduce(
-                    num_tokens, op=torch.distributed.ReduceOp.SUM
+                    trainable_tokens, op=torch.distributed.ReduceOp.SUM
                 )
-            if hasattr(self.state, "num_tokens"):
-                self.state.num_tokens = (
-                    self.state.num_tokens + (inputs[inputs_key] != -100).sum().cpu()
+                torch.distributed.all_reduce(
+                    total_tokens, op=torch.distributed.ReduceOp.SUM
                 )
-            else:
-                self.state.num_tokens = (inputs[inputs_key] != -100).sum().cpu()
 
-            if hasattr(self.state, "total_tokens"):
-                self.state.total_tokens += num_tokens.cpu()
-            else:
-                self.state.total_tokens = num_tokens.cpu()
+            if not hasattr(self.state, "tokens"):
+                self.state.tokens = {
+                    "trainable": torch.zeros(1),
+                    "total": torch.zeros(1),
+                }
+
+            # trainable tokens for throughput and total token slots for summaries
+            self.state.tokens["trainable"] = trainable_tokens.detach().cpu()
+            self.state.tokens["total"] = (
+                self.state.tokens["total"] + torch.as_tensor(total_tokens).cpu()
+            )
 
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
@@ -628,13 +634,17 @@ class AxolotlTrainer(
             except (ValueError, TypeError, FileNotFoundError):
                 pass
 
-        if self.args.include_tkps and train_eval == "train":
+        if (
+            self.args.include_tkps
+            and train_eval == "train"
+            and hasattr(self.state, "tokens")
+        ):
             # each rank will log its own tokens per second
             # for logging_steps > 1 we obtain a moving average of this metric
-            logs["tokens_per_second_per_gpu"] = round(
+            logs["tokens/trainable_per_second_per_gpu"] = round(
                 self.state.last_tokens_per_second.item() / self.args.logging_steps, 2
             )
-            logs["total_tokens"] = int(self.state.total_tokens.item())
+            logs["tokens/total"] = int(self.state.tokens["total"].item())
 
         del self._stored_metrics[train_eval]
 
@@ -671,17 +681,11 @@ class AxolotlTrainer(
         os.makedirs(output_dir, exist_ok=True)
 
         # Save total_tokens state if tracking is enabled
-        if self.args.include_tkps and hasattr(self.state, "total_tokens"):
+        if self.args.include_tkps and hasattr(self.state, "tokens"):
             tokens_state = {
-                "total_tokens": (
-                    int(self.state.total_tokens.item())
-                    if hasattr(self.state.total_tokens, "item")
-                    else int(self.state.total_tokens)
-                ),
-                "num_tokens": (
-                    int(self.state.num_tokens.item())
-                    if hasattr(self.state.num_tokens, "item")
-                    else int(self.state.num_tokens)
+                "total": int(torch.as_tensor(self.state.tokens.get("total", 0)).item()),
+                "trainable": int(
+                    torch.as_tensor(self.state.tokens.get("trainable", 0)).item()
                 ),
             }
             tokens_state_path = os.path.join(output_dir, TOKENS_STATE_FILE)

@@ -52,9 +52,11 @@ class TokensPerSecondCallback(TrainerCallback):
         if os.path.isfile(tokens_state_path):
             with open(tokens_state_path, "r", encoding="utf-8") as f:
                 tokens_state = json.load(f)
-            state.total_tokens = torch.tensor(tokens_state.get("total_tokens", 0))
-            state.num_tokens = torch.tensor(tokens_state.get("num_tokens", 0))
-            LOG.info(f"Restored total_tokens: {state.total_tokens}")
+            state.tokens = {
+                "total": torch.tensor(tokens_state.get("total", 0)),
+                "trainable": torch.tensor(tokens_state.get("trainable", 0)),
+            }
+            LOG.info(f"Restored total_tokens: {state.tokens['total']}")
 
     def on_step_begin(
         self,
@@ -63,6 +65,10 @@ class TokensPerSecondCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,
     ):  # pylint: disable=unused-argument
+        if not hasattr(state, "tokens"):
+            state.tokens = {"trainable": torch.zeros(1), "total": torch.zeros(1)}
+        else:
+            state.tokens["trainable"] = torch.zeros_like(state.tokens["trainable"])
         self.start_time = time.perf_counter()
         state.last_tokens_per_second = torch.zeros(1)
 
@@ -73,9 +79,10 @@ class TokensPerSecondCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,
     ):  # pylint: disable=unused-argument
-        if hasattr(state, "num_tokens"):
+        tokens = getattr(state, "tokens", None)
+        if tokens and "trainable" in tokens:
             step_time = time.perf_counter() - self.start_time
-            num_tokens_per_device = state.num_tokens.clone()
+            num_tokens_per_device = tokens["trainable"].clone()
             # non data parallel groups have duplicated tokens, so we avoid double-counting
             num_tokens_per_device = num_tokens_per_device / self.non_data_parallel_size
             state.last_tokens_per_second = num_tokens_per_device / step_time
@@ -91,4 +98,6 @@ class TokensPerSecondCallback(TrainerCallback):
         # after logging, clear the running metrics
         if hasattr(state, "last_tokens_per_second"):
             state.last_tokens_per_second.zero_()
-            state.num_tokens = torch.zeros(1)
+        tokens = getattr(state, "tokens", None)
+        if tokens and "trainable" in tokens:
+            tokens["trainable"] = torch.zeros_like(tokens["trainable"])
