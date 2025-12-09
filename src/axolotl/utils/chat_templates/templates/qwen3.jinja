@@ -15,6 +15,12 @@
     {%- endif %}
 {%- endif %}
 {%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}
+{#- Determine the real last index: use provided value or default to messages length - 1 #}
+{%- if real_last_index is defined and real_last_index is not none %}
+    {%- set ns.real_last_index = real_last_index %}
+{%- else %}
+    {%- set ns.real_last_index = messages|length - 1 %}
+{%- endif %}
 {%- for message in messages[::-1] %}
     {%- set index = (messages|length - 1) - loop.index0 %}
     {%- if ns.multi_step_tool and message.role == "user" and not(message.content.startswith('<tool_response>') and message.content.endswith('</tool_response>')) %}
@@ -37,7 +43,7 @@
             {%- endif %}
         {%- endif %}
         {%- if loop.index0 > ns.last_query_index %}
-            {%- if loop.last or (not loop.last and reasoning_content) %}
+            {%- if loop.index0 == ns.real_last_index or (loop.index0 != ns.real_last_index and reasoning_content) %}
                 {{- '<|im_start|>' + message.role + '\n<think>\n' + reasoning_content.strip('\n') + '\n</think>\n\n' + content.lstrip('\n') }}
             {%- else %}
                 {{- '<|im_start|>' + message.role + '\n' + content }}
