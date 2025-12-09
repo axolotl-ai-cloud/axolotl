@@ -20,7 +20,7 @@ deepspeed>=0.17.0
 trl==0.25.0
 hf_xet==1.2.0
 kernels>=0.9.0
-trackio
+trackio>=0.11.0
 
 optimum==1.16.2
 hf_transfer
