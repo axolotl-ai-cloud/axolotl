@@ -38,10 +38,7 @@ class SaveAxolotlConfigtoTrackioCallback(TrainerCallback):
                     return control
 
                 trackio.save(self.axolotl_config_path)
-                LOG.info(
-                    "The Axolotl config has been saved to Trackio."
-                )
+                LOG.info("The Axolotl config has been saved to Trackio.")
             except (FileNotFoundError, ConnectionError, AttributeError) as err:
                 LOG.warning(f"Error while saving Axolotl config to Trackio: {err}")
         return control
-
