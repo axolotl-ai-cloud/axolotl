@@ -25,7 +25,6 @@ jobs:
             python_version: "3.11"
             pytorch: 2.7.1
             axolotl_extras: vllm
-            is_latest: true
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
@@ -36,6 +35,17 @@ jobs:
             python_version: "3.11"
             pytorch: 2.8.0
             axolotl_extras:
+            is_latest: true
+          - cuda: 128
+            cuda_version: 12.8.1
+            python_version: "3.11"
+            pytorch: 2.9.0
+            axolotl_extras:
+          - cuda: 128
+            cuda_version: 12.8.1
+            python_version: "3.11"
+            pytorch: 2.9.1
+            axolotl_extras:
     runs-on: axolotl-gpu-runner
     steps:
       - name: Checkout
@@ -45,7 +55,6 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            winglian/axolotl
             axolotlai/axolotl
           tags: |
             type=ref,event=branch
@@ -99,7 +108,6 @@ jobs:
             python_version: "3.11"
             pytorch: 2.7.1
             axolotl_extras: vllm
-            is_latest: true
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
@@ -110,6 +118,17 @@ jobs:
             python_version: "3.11"
             pytorch: 2.8.0
             axolotl_extras:
+            is_latest: true
+          - cuda: 128
+            cuda_version: 12.8.1
+            python_version: "3.11"
+            pytorch: 2.9.0
+            axolotl_extras:
+          - cuda: 128
+            cuda_version: 12.8.1
+            python_version: "3.11"
+            pytorch: 2.9.1
+            axolotl_extras:
     runs-on: axolotl-gpu-runner
     steps:
       - name: Checkout
@@ -119,7 +138,6 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            winglian/axolotl-cloud
             axolotlai/axolotl-cloud
           tags: |
             type=ref,event=branch
@@ -179,7 +197,6 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            winglian/axolotl-cloud-term
             axolotlai/axolotl-cloud-term
           tags: |
             type=ref,event=branch

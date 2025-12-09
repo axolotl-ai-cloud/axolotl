@@ -218,6 +218,13 @@ If you have tool arguments with same name but different dtypes (like `"time": st
 ```
 "arguments": "{\"...\": \"...\"}"
 ```
+
+The same is applicable for tool parameters.
+
+```
+"parameters": "{\"...\": \"...\"}"
+```
+
 :::
 
 Example config for Llama4:

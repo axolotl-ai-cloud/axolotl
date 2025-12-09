@@ -124,6 +124,8 @@ Please make sure to install audio lib via `pip3 install librosa==0.11.0 'mistral
 
 ```yaml
 base_model: mistralai/Voxtral-Mini-3B-2507
+
+processor_type: VoxtralProcessor
 ```
 
 ### Gemma-3 {#sec-gemma-3}

@@ -37,9 +37,7 @@ This guide shows how to fine-tune SmolVLM2 models with Axolotl.
 
 ## Optimization Guides
 
-- [Multi-GPU Training](https://docs.axolotl.ai/docs/multi-gpu.html)
-- [LoRA Optimizations](https://docs.axolotl.ai/docs/lora_optims.html)
-- [Multi-Node Training](https://docs.axolotl.ai/docs/multi-node.html)
+Please check the [Optimizations doc](https://docs.axolotl.ai/docs/optimizations.html).
 
 ## Related Resources
 

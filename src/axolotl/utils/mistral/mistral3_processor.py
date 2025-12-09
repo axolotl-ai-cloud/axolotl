@@ -30,6 +30,7 @@ class Mistral3Processor(ProcessorMixin):
     Wraps HFMistralTokenizer and adds image processing capabilities.
     """
 
+    # TODO(nano): This should be removed in transformers V5
     attributes = ["tokenizer"]
     tokenizer_class = "HFMistralTokenizer"
 

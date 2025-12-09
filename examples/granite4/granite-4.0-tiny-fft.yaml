@@ -1,0 +1,45 @@
+base_model: ibm-granite/granite-4.0-tiny-preview
+
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+datasets:
+  - path: fozziethebeat/alpaca_messages_2k_test
+    type: chat_template
+
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.1
+output_dir: ./outputs/model-out
+
+sequence_len: 2048
+sample_packing: true
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 4
+micro_batch_size: 2
+num_epochs: 1
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: false
+
+gradient_checkpointing: true
+resume_from_checkpoint:
+logging_steps: 1
+flash_attention: true
+
+warmup_ratio: 0.1
+evals_per_epoch: 1
+saves_per_epoch: 1
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config
