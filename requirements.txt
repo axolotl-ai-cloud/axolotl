@@ -5,13 +5,13 @@ bitsandbytes==0.48.2
 triton>=3.0.0
 mamba-ssm==1.2.0.post1
 xformers>=0.0.23.post1
-liger-kernel==0.6.3
+liger-kernel==0.6.4
 # END section
 
 packaging==23.2
 
 huggingface_hub>=0.36.0
-peft>=0.17.1
+peft>=0.18.0
 tokenizers>=0.22.1
 transformers==4.57.1
 accelerate==1.11.0
