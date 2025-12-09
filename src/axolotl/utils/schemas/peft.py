@@ -109,6 +109,10 @@ class LoraConfig(BaseModel):
             )
         },
     )
+    peft_autocast_adapter_dtype: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Whether to upcast the LoRA adapter."},
+    )
 
     qlora_sharded_model_loading: bool | None = Field(
         default=False,
