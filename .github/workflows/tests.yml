@@ -69,8 +69,8 @@ jobs:
       - name: Restore Cache from S3
         id: hf-cache-restore-s3
         run: |
-          mkdir -p /home/runner/.cache/huggingface/hub
-          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C /home/runner/.cache/huggingface/hub/  --use-compress-program unzstd
+          mkdir -p ~/.cache/huggingface/hub
+          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -148,8 +148,8 @@ jobs:
       - name: Restore Cache from S3
         id: hf-cache-restore-s3
         run: |
-          mkdir -p /home/runner/.cache/huggingface/hub
-          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C /home/runner/.cache/huggingface/hub/  --use-compress-program unzstd
+          mkdir -p ~/.cache/huggingface/hub
+          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -188,7 +188,7 @@ jobs:
           axolotl --help
 
       - name: Show HF cache
-        run: huggingface-cli scan-cache
+        run: hf cache scan
 
       - name: Run tests
         run: |
