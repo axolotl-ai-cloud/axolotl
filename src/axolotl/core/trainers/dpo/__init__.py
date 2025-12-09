@@ -37,5 +37,5 @@ class DPOStrategy:
         if cfg.dpo_use_logits_to_keep is not None:
             training_args_kwargs["use_logits_to_keep"] = cfg.dpo_use_logits_to_keep
         if cfg.dpo_use_liger_kernel is not None:
-            training_args_kwargs["dpo_use_liger_kernel"] = cfg.dpo_use_liger_kernel
+            training_args_kwargs["use_liger_kernel"] = cfg.dpo_use_liger_kernel
         return training_args_kwargs
