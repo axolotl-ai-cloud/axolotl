@@ -45,8 +45,12 @@ def set_pytorch_cuda_alloc_conf():
     torch_version = torch.__version__.split(".")
     torch_major, torch_minor = int(torch_version[0]), int(torch_version[1])
     if torch_major == 2 and torch_minor >= 2:
-        if os.getenv("PYTORCH_CUDA_ALLOC_CONF") is None:
-            os.environ["PYTORCH_CUDA_ALLOC_CONF"] = (
+        # PYTORCH_CUDA_ALLOC_CONF is deprecated and left for BC
+        if (
+            os.getenv("PYTORCH_ALLOC_CONF") is None
+            and os.getenv("PYTORCH_CUDA_ALLOC_CONF") is None
+        ):
+            os.environ["PYTORCH_ALLOC_CONF"] = (
                 "expandable_segments:True,roundup_power2_divisions:16"
             )
 
