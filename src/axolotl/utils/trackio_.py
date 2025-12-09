@@ -15,4 +15,3 @@ def setup_trackio_env_vars(cfg: DictDefault):
 
     if cfg.trackio_project_name and len(cfg.trackio_project_name) > 0:
         cfg.use_trackio = True
-
