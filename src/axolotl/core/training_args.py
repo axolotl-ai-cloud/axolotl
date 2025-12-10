@@ -24,6 +24,10 @@ class AxolotlTrainingArguments(AxolotlTrainingMixins, TrainingArguments):
     default value so it can't be used as a mixin.
     """
 
+    save_safetensors: bool = field(
+        default=True, metadata={"help": "If True, save model checkpoints in safetensors format"}
+    )
+
 
 @dataclass
 class AxolotlORPOConfig(AxolotlTrainingMixins, ORPOConfig):
