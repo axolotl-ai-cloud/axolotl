@@ -54,6 +54,7 @@ class PatchManager:
         # self._apply_flex_attention_patches()
         self._apply_flash_attention_patches()
         self._apply_chunked_cross_entropy_patch()
+        self._apply_sageattn_patches()
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
         self._apply_model_specific_patches()
@@ -163,6 +164,13 @@ class PatchManager:
                 )
 
                 patch_create_causal_mask(self.cfg.model_config_type)
+
+    def _apply_sageattn_patches(self):
+        """Apply patches for SageAttention."""
+        if self.cfg.sage_attention:
+            from axolotl.monkeypatch.attention.sage_attn import patch_sageattn
+
+            patch_sageattn()
 
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
