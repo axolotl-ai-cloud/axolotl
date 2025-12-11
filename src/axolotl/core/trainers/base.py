@@ -10,6 +10,7 @@ from typing import Any, Callable, Literal, Optional
 import datasets
 import safetensors
 import torch
+import math
 from accelerate.state import AcceleratorState
 from datasets import Dataset
 from peft import PeftModel
@@ -614,6 +615,11 @@ class AxolotlTrainer(
                     "Metric reduction must be one of [mean, min, max, sum]"
                 )
             logs[key] = round(fn(values).item(), 4)
+
+        if "loss" in logs:
+            logs["ppl"] = math.exp(logs["loss"])
+        if "eval_loss" in logs:
+            logs["eval_ppl"] = math.exp(logs["eval_loss"])
 
         if is_main_process():
             # Add memory usage
