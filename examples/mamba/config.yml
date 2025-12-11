@@ -33,7 +33,7 @@ learning_rate: 5e-5
 train_on_inputs: false
 group_by_length: true
 
-bf16: auto
+bfloat16: auto
 tf32: true
 
 gradient_checkpointing: false
