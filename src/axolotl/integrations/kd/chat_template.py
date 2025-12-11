@@ -179,8 +179,17 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
         logprobs = prompt.pop(self.logprobs_field)
         tokenized_prompt = super()._tokenize_single_prompt(prompt)
         tokenized_prompt[self.logprobs_field] = logprobs
-        tokenized_prompt = self.transform_logprobs(tokenized_prompt)
 
+        # let subclasses add fields before transform
+        tokenized_prompt = self._prepare_kd_fields(tokenized_prompt, prompt)
+
+        tokenized_prompt = self.transform_logprobs(tokenized_prompt)
+        return tokenized_prompt
+
+    def _prepare_kd_fields(self, tokenized_prompt, original_prompt):
+        """
+        Hook for subclasses to prepare additional KD fields before transform
+        """
         return tokenized_prompt
 
 
@@ -283,14 +292,13 @@ class ChatTemplateStrategyWithKDv2(ChatTemplateStrategyWithKD):
 
         return sample
 
-    def _tokenize_single_prompt(self, prompt):
-        target_token_ids = prompt.get("target_token_ids", None)
-
-        tokenized_prompt = super()._tokenize_single_prompt(prompt)
-
+    def _prepare_kd_fields(self, tokenized_prompt, original_prompt):
+        """
+        Add pre-tokenized target_token_ids for v2 format
+        """
+        target_token_ids = original_prompt.pop("target_token_ids", None)
         if target_token_ids is not None:
             tokenized_prompt["target_token_ids"] = target_token_ids
-
         return tokenized_prompt
 
 
