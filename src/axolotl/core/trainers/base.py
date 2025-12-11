@@ -617,9 +617,15 @@ class AxolotlTrainer(
             logs[key] = round(fn(values).item(), 4)
 
         if "loss" in logs:
-            logs["ppl"] = math.exp(logs["loss"])
+            try:
+                logs["ppl"] = math.exp(logs["loss"])
+            except OverflowError:
+                logs["ppl"] = float('inf')
         if "eval_loss" in logs:
-            logs["eval_ppl"] = math.exp(logs["eval_loss"])
+            try:
+                logs["eval_ppl"] = math.exp(logs["eval_loss"])
+            except OverflowError:
+                logs["eval_ppl"] = float('inf')
 
         if is_main_process():
             # Add memory usage
