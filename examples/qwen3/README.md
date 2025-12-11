@@ -1,6 +1,6 @@
-# Finetune Allenai's Olmo 3 with Axolotl
+# Finetune Qwen3 with Axolotl
 
-[Olmo 3](https://huggingface.co/collections/allenai/olmo-3) are a family of 7B and 32B models open source models trained by The Allen Institute for Artificial Intelligence.
+[Qwen3](https://huggingface.co/collections/Qwen/qwen3) are a family of open source models trained by Alibaba.
 
 This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.
 
@@ -13,14 +13,22 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 3. Run the finetuning example:
 
     ```bash
-    axolotl train examples/olmo3/olmo3-7b-qlora.yaml
+    axolotl train examples/qwen3/32b-qlora.yaml
     ```
 
 Let us know how it goes. Happy finetuning! 🚀
 
+### Chat template masking a few tokens off
+
+If you notice that the `chat_template` masking for assistant prompts are off by a few tokens, please ensure that you are adding the below to the yaml.
+
+```yaml
+chat_template: qwen3
+```
+
 ### TIPS
 
-- The example config can be re-used for Olmo and Olmo 2.
+- For inference, please check the official model card as it depends on your reasoning mode.
 - You can run a full finetuning by removing the `adapter: qlora` and `load_in_4bit: true` from the config.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
@@ -31,7 +39,7 @@ Please check the [Optimizations doc](https://docs.axolotl.ai/docs/optimizations.
 
 ## Related Resources
 
-- [Olmo 3 Blog](https://allenai.org/blog/olmo3)
+- [Qwen3 Blog](https://qwenlm.github.io/blog/qwen3/)
 - [Axolotl Docs](https://docs.axolotl.ai)
 - [Axolotl Website](https://axolotl.ai)
 - [Axolotl GitHub](https://github.com/axolotl-ai-cloud/axolotl)

@@ -260,12 +260,12 @@ class MultipackBatchSampler(BatchSampler):
         batch_size: int,  # Number of bins per batch
         batch_max_len: int,  # Maximum sequence length (bin capacity)
         lengths: np.ndarray,  # Sequence lengths
+        bin_size: int,  # The max number of samples that can be packed in a single bin
         packing_efficiency_estimate: float = 1.0,  # Initial efficiency estimate
         drop_last: bool = True,  # Whether to drop final batches (might be incomplete)
         num_count_samples: int = 4,  # Number of times to estimate batch count
         sequential: bool = False,  # Whether to use sequential packing
         group_size: int = 100_000,  # Size of groups for parallel packing
-        bin_size: int = 200,  # The max number of samples that can be packed in a single bin
         num_processes: int | None = None,  # Number of processes for parallel packing
         safe_mode: bool = True,  # Conservative packing to prevent training instability
         mp_start_method: str = "fork",
@@ -343,7 +343,7 @@ class MultipackBatchSampler(BatchSampler):
                 lengths,
                 bin_capacity=self.batch_max_len,
                 group_size=self.group_size,
-                bin_size=self.bin_size,
+                bin_size=self.bin_size or self.batch_max_len,
                 num_processes=min(4, num_processes) if num_processes else 4,
                 safe_mode=self.safe_mode,
                 mp_start_method=self.mp_start_method,
