@@ -474,10 +474,8 @@ def rand_reward_func(prompts, completions) -> list[float]:
 
             assert trainer.optimizer_cls_and_kwargs is not None
 
-            from axolotl.contribs.mit.muon import (
-                Muon,
-                MuonOptimizerFactory,
-            )
+            from axolotl.contribs.mit.muon import MuonOptimizerFactory
+            from axolotl.contribs.mit.muon.muon import Muon
 
             optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
             assert optimizer_cls is MuonOptimizerFactory
@@ -556,10 +554,8 @@ class TestHFCausalTrainerBuilder:
 
         assert trainer.optimizer_cls_and_kwargs is not None
 
-        from axolotl.contribs.mit.muon import (
-            Muon,
-            MuonOptimizerFactory,
-        )
+        from axolotl.contribs.mit.muon import MuonOptimizerFactory
+        from axolotl.contribs.mit.muon.muon import Muon
 
         optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
         assert optimizer_cls is MuonOptimizerFactory
