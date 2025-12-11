@@ -142,9 +142,12 @@ def load_lora(
     ):
         setup_quantized_meta_for_peft(model)
 
+    model_kwargs: Any = {}
+    if cfg.peft_autocast_adapter_dtype is not None:
+        model_kwargs["autocast_adapter_dtype"] = cfg.peft_autocast_adapter_dtype
+
     if cfg.lora_model_dir:
         LOG.debug("Loading pretrained PEFT - LoRA")
-        model_kwargs: Any = {}
         if cfg.lora_on_cpu:
             model_kwargs["max_memory"] = {"cpu": "256GiB"}
             model_kwargs["device_map"] = {"": "cpu"}
@@ -155,7 +158,7 @@ def load_lora(
             **model_kwargs,
         )
     else:
-        model = get_peft_model(model, lora_config)
+        model = get_peft_model(model, lora_config, **model_kwargs)
 
     if rank == 0:
         try:
