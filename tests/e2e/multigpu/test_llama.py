@@ -901,7 +901,6 @@ class TestMultiGPULlama:
                 "flash_attention": True,
                 "sample_packing": True,
                 "bf16": True,
-                "save_safetensors": True,
                 # "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero1.json"),
                 "use_tensorboard": True,
                 "save_first_step": False,

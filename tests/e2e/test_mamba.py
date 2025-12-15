@@ -49,7 +49,6 @@ class TestMamba(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": None,
-                "save_safetensors": False,
                 "save_first_step": False,
             }
         )

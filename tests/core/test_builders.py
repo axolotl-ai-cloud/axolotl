@@ -53,7 +53,6 @@ def fixture_base_cfg():
             # Checkpointing and saving
             "save_steps": 100,
             "output_dir": "./model-out",
-            "save_safetensors": True,
             "save_total_limit": 4,
             "save_only_model": False,
             # Hardware/performance settings
