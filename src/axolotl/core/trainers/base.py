@@ -618,12 +618,12 @@ class AxolotlTrainer(
 
         if "loss" in logs:
             try:
-                logs["ppl"] = math.exp(logs["loss"])
+                logs["ppl"] = round(math.exp(logs["loss"]), 4)
             except OverflowError:
                 logs["ppl"] = float("inf")
         if "eval_loss" in logs:
             try:
-                logs["eval_ppl"] = math.exp(logs["eval_loss"])
+                logs["eval_ppl"] = round(math.exp(logs["eval_loss"]), 4)
             except OverflowError:
                 logs["eval_ppl"] = float("inf")
 
