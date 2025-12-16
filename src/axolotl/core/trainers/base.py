@@ -380,7 +380,6 @@ class AxolotlTrainer(
             # Store per-step trainable tokens for throughput calculation
             self.state.tokens["trainable_tokens"] = trainable_tokens.detach().cpu()
 
-
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
                 model,
@@ -650,6 +649,7 @@ class AxolotlTrainer(
                 self.state.last_tokens_per_second.item() / self.args.logging_steps, 2
             )
             logs["tokens/total"] = int(self.state.tokens["total"].item())
+            logs["tokens/trainable"] = int(self.state.tokens["trainable"].item())
 
         del self._stored_metrics[train_eval]
 

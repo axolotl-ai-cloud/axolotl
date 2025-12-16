@@ -95,9 +95,7 @@ class TokensPerSecondCallback(TrainerCallback):
     ):  # pylint: disable=unused-argument
         # after logging, clear the running metrics
         if hasattr(state, "last_tokens_per_second"):
-            logs["tokens/train_per_sec_per_gpu"] = (
-                state.last_tokens_per_second.item()
-            )
+            logs["tokens/train_per_sec_per_gpu"] = state.last_tokens_per_second.item()
             state.last_tokens_per_second.zero_()
         tokens = getattr(state, "tokens", None)
         # Clear per-step tokens after logging
