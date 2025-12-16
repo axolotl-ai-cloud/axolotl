@@ -378,7 +378,8 @@ class AxolotlTrainer(
                 self.state.tokens["total"] + torch.as_tensor(total_tokens).cpu()
             )
             # Store per-step trainable tokens for throughput calculation
-            self.state.tokens["trainable_step"] = trainable_tokens.detach().cpu()
+            self.state.tokens["trainable_tokens"] = trainable_tokens.detach().cpu()
+
 
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
@@ -645,7 +646,7 @@ class AxolotlTrainer(
         ):
             # each rank will log its own tokens per second
             # for logging_steps > 1 we obtain a moving average of this metric
-            logs["tokens/trainable_per_second_per_gpu"] = round(
+            logs["tokens/train_per_sec_per_gpu"] = round(
                 self.state.last_tokens_per_second.item() / self.args.logging_steps, 2
             )
             logs["tokens/total"] = int(self.state.tokens["total"].item())
