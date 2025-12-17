@@ -56,7 +56,6 @@ class TestResumeLlama:
                 "save_total_limit": 5,
                 "max_steps": 15,
                 "use_tensorboard": True,
-                "save_safetensors": True,
                 "save_first_step": False,
             }
         )

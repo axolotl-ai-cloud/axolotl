@@ -509,7 +509,6 @@ class TrainerBuilderBase(abc.ABC):
             "loraplus_lr_ratio",
             "loraplus_lr_embedding",
             "output_dir",
-            "save_safetensors",
             "save_only_model",
             "weight_decay",
             "seed",

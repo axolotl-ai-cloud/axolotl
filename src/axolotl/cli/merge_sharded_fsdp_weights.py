@@ -14,8 +14,6 @@ from accelerate import PartialState
 from accelerate.utils import (
     SAFE_WEIGHTS_INDEX_NAME,
     SAFE_WEIGHTS_NAME,
-    WEIGHTS_INDEX_NAME,
-    WEIGHTS_NAME,
     is_torch_version,
 )
 from huggingface_hub import split_torch_state_dict_into_shards
@@ -40,17 +38,15 @@ class BFloat16CastPlanner(_EmptyStateDictLoadPlanner):
 def _distributed_checkpoint_to_merged_weights(
     checkpoint_dir: Union[str, Path],
     save_path: str,
-    safe_serialization: bool = False,
     max_shard_size: str = "5GB",
 ) -> Path:
     """
     Passthrough to `torch.distributed.checkpoint.format_utils.dcp_to_torch_save`. Will
-    save under `save_path` as either `model.safetensors` or `pytorch_model.bin`.
+    save under `save_path` as `model.safetensors`.
 
     Args:
         checkpoint_dir: Directory where distributed checkpoint is saved.
         save_path: Path to save model to.
-        safe_serialization: Whether to save in safetensors format.
         max_shard_size: Max size of model shards to save.
 
     Returns:
@@ -76,11 +72,7 @@ def _distributed_checkpoint_to_merged_weights(
         if isinstance(value, torch.Tensor) and value.dtype != torch.bfloat16:
             state_dict[key] = value.to(torch.bfloat16)
 
-    weights_name = SAFE_WEIGHTS_NAME if safe_serialization else WEIGHTS_NAME
-
-    filename_pattern = weights_name.replace(".bin", "{suffix}.bin").replace(
-        ".safetensors", "{suffix}.safetensors"
-    )
+    filename_pattern = SAFE_WEIGHTS_NAME.replace(".safetensors", "{suffix}.safetensors")
     state_dict_split = split_torch_state_dict_into_shards(
         state_dict, filename_pattern=filename_pattern, max_shard_size=max_shard_size
     )
@@ -98,19 +90,12 @@ def _distributed_checkpoint_to_merged_weights(
 
     for shard_file, tensors in filename_to_tensors:
         shard = {tensor: state_dict[tensor] for tensor in tensors}
-
-        if safe_serialization:
-            safe_save_file(
-                shard, os.path.join(save_path_, shard_file), metadata={"format": "pt"}
-            )
-        else:
-            torch.save(shard, os.path.join(save_path_, shard_file))
+        safe_save_file(
+            shard, os.path.join(save_path_, shard_file), metadata={"format": "pt"}
+        )
 
     if index is not None:
-        save_index_file = (
-            SAFE_WEIGHTS_INDEX_NAME if safe_serialization else WEIGHTS_INDEX_NAME
-        )
-        save_index_file = os.path.join(save_path_, save_index_file)
+        save_index_file = os.path.join(save_path_, SAFE_WEIGHTS_INDEX_NAME)
         # Save the index as well
         with open(save_index_file, "w", encoding="utf-8") as fout:
             content = json.dumps(index, indent=2, sort_keys=True) + "\n"
@@ -123,13 +108,11 @@ def _distributed_checkpoint_to_merged_weights(
 def merge_fsdp_weights(
     checkpoint_dir: str,
     output_path: str,
-    safe_serialization: bool = False,
     remove_checkpoint_dir: bool = False,
 ):
     """
     Merge the weights from sharded FSDP model checkpoints into a single combined checkpoint. Should be used if
-    `SHARDED_STATE_DICT` was used for the model. Weights will be saved to `{output_path}/model.safetensors` if
-    `safe_serialization` else `pytorch_model.bin`.
+    `SHARDED_STATE_DICT` was used for the model. Weights will be saved to `{output_path}/model.safetensors`.
 
     Note: this is a CPU-bound process.
 
@@ -138,8 +121,6 @@ def merge_fsdp_weights(
             The directory containing the FSDP checkpoints (can be either the model or optimizer).
         output_path (`str`):
             The path to save the merged checkpoint.
-        safe_serialization (`bool`, *optional*, defaults to `True`):
-            Whether to save the merged weights with safetensors (recommended).
         remove_checkpoint_dir (`bool`, *optional*, defaults to `False`):
             Whether to remove the checkpoint directory after merging.
 
@@ -177,7 +158,7 @@ def merge_fsdp_weights(
     if state.is_main_process:
         LOG.info(f"Merging FSDP weights from {checkpoint_dir_}")
         save_path = _distributed_checkpoint_to_merged_weights(
-            checkpoint_dir_, output_path, safe_serialization
+            checkpoint_dir_, output_path
         )
         LOG.info(f"Successfully merged FSDP weights and saved to {save_path}")
         if remove_checkpoint_dir:
@@ -210,7 +191,6 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     merge_fsdp_weights(
         checkpoint_dir=str(fsdp_dir),
         output_path=output_path,
-        safe_serialization=True,
     )
     state = PartialState()
     state.wait_for_everyone()

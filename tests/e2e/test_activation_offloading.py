@@ -57,7 +57,6 @@ class TestActivationOffloading:
                 "flash_attention": True,
                 "sample_packing": True,
                 "bf16": "auto",
-                "save_safetensors": True,
                 "gradient_checkpointing": True,
                 "activation_offloading": True,
                 "save_first_step": False,
