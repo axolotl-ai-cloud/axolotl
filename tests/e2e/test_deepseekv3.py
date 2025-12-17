@@ -64,7 +64,6 @@ class TestDeepseekV3:
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
-                "save_safetensors": True,
                 "bf16": True,
                 "save_first_step": False,
             }
@@ -113,7 +112,6 @@ class TestDeepseekV3:
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
-                "save_safetensors": True,
                 "bf16": True,
                 "save_first_step": False,
             }
