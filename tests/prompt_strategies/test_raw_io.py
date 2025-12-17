@@ -78,12 +78,13 @@ class TestRawInputOutputPrompts:
 
         assert (
             tokenizer.decode(input_ids)
-            == "<s>hello  hi there.<eot> goodbye  farewell<eot>"
+            == "<s> hello  hi there.<eot> goodbye  farewell<eot>"
         )
         # fmt: off
         assert input_ids == [
             1,  # <s>
-            21558,  # hello
+            6312,  # hell
+            28709,  # o
             28705,  #
             12014,  # hi
             736,  # there
@@ -101,7 +102,8 @@ class TestRawInputOutputPrompts:
         # fmt: off
         assert labels == [
             -100,  # <s>
-            -100,  # hello
+            -100,  # hell
+            -100,  # o
             -100,  #
             12014,  # hi
             736,  # there
