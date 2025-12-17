@@ -118,9 +118,21 @@ class ModelOutputConfig(BaseModel):
     save_safetensors: bool | None = Field(
         default=True,
         json_schema_extra={
-            "description": "Save model as safetensors (require safetensors package). Default True"
+            "description": "Whether to save the model using safetensors format. Defaults to True."
         },
     )
+
+    @field_validator("save_safetensors")
+    @classmethod
+    def validate_save_safetensors(cls, v):
+        if v is False:
+            raise ValueError(
+                "save_safetensors=False is not supported in Transformers V5. "
+                "Transformers V5 always uses safetensors format for model serialization. "
+                "This field is deprecated and will be removed in a future version."
+            )
+        # Allow None and True, will default to True if None
+        return True if v is None else v
 
 
 class SpecialTokensConfig(BaseModel):
