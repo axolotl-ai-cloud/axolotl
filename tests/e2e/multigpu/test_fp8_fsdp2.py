@@ -94,7 +94,6 @@ class TestFP8FSDP2:
                     "reshard_after_forward": True,
                 },
                 "use_tensorboard": True,
-                "save_safetensors": True,
                 "save_first_step": False,
             }
         )

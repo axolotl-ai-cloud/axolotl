@@ -50,7 +50,6 @@ class TestStreamingDatasets:
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
-                "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
                 "save_first_step": False,

@@ -200,21 +200,10 @@ def check_model_output_exists(temp_dir: str, cfg: DictDefault) -> None:
     """
     helper function to check if a model output file exists after training
 
-    checks based on adapter or not and if safetensors saves are enabled or not
+    checks based on adapter or not (always safetensors in Transformers V5)
     """
 
-    if cfg.save_safetensors:
-        if not cfg.adapter:
-            assert (Path(temp_dir) / "model.safetensors").exists()
-        else:
-            assert (Path(temp_dir) / "adapter_model.safetensors").exists()
+    if not cfg.adapter:
+        assert (Path(temp_dir) / "model.safetensors").exists()
     else:
-        # check for both, b/c in trl, it often defaults to saving safetensors
-        if not cfg.adapter:
-            assert (Path(temp_dir) / "pytorch_model.bin").exists() or (
-                Path(temp_dir) / "model.safetensors"
-            ).exists()
-        else:
-            assert (Path(temp_dir) / "adapter_model.bin").exists() or (
-                Path(temp_dir) / "adapter_model.safetensors"
-            ).exists()
+        assert (Path(temp_dir) / "adapter_model.safetensors").exists()
