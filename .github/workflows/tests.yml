@@ -109,12 +109,12 @@ jobs:
 
       - name: Pre-Download dataset fixture
         run: |
-          huggingface-cli download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
+          hf download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
 
       - name: Run tests
         run: |
           df -h
-          pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
+          pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
           df -h
           pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
           df -h
@@ -192,16 +192,16 @@ jobs:
           axolotl --help
 
       - name: Show HF cache
-        run: hf cache scan
+        run: hf cache ls
 
       - name: Run tests
         run: |
-          pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
+          pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
           pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/
 
   gate-skip-e2e:
-    needs: [pre-commit, pytest, pytest-sdist]
+    needs: [pre-commit]
     runs-on: ubuntu-latest
     outputs:
       skip: ${{ steps.compute.outputs.skip }}
@@ -237,7 +237,7 @@ jobs:
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
-    needs: [pre-commit, pytest, pytest-sdist, gate-skip-e2e]
+    needs: [pre-commit, pytest]
 
     strategy:
       fail-fast: false

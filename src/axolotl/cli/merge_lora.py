@@ -24,7 +24,6 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
     model, tokenizer, processor = load_model_and_tokenizer(cfg=cfg)
-    safe_serialization = cfg.save_safetensors is True
 
     LOG.info("Running merge of LoRA with base model...")
     model = model.merge_and_unload(progressbar=True)
@@ -42,7 +41,6 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
         LOG.info(f"Saving merged model to: {str(Path(cfg.output_dir) / 'merged')}...")
         model.save_pretrained(
             str(Path(cfg.output_dir) / "merged"),
-            safe_serialization=safe_serialization,
             progressbar=True,
         )
         tokenizer.save_pretrained(

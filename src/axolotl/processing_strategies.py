@@ -13,7 +13,6 @@ from transformers.models.voxtral import VoxtralProcessor
 
 from axolotl.utils.dict import remove_none_values
 from axolotl.utils.logging import get_logger
-from axolotl.utils.mistral.mistral3_processor import Mistral3Processor
 
 LOG = get_logger(__name__)
 
@@ -429,7 +428,7 @@ class Mistral3ProcessingStrategy(ProcessingStrategy):
 
     def __init__(
         self,
-        processor: Mistral3Processor,
+        processor,
         chat_template: Optional[str] = None,
         image_size: int | tuple[int, int] | None = None,
         image_resize_algorithm: Resampling | None = None,
@@ -461,6 +460,8 @@ def get_processing_strategy(
     image_size: int | tuple[int, int] | None = None,
     image_resize_algorithm: Resampling | None = None,
 ):
+    from axolotl.utils.mistral.mistral3_processor import Mistral3Processor
+
     processing_kwargs = {
         "processor": processor,
         "chat_template": chat_template,
