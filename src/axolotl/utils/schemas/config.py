@@ -173,6 +173,12 @@ class AxolotlInputConfig(
     dpo_use_logits_to_keep: bool | None = None
     dpo_label_smoothing: float | None = None
     dpo_norm_loss: bool | None = None
+
+    dpo_use_liger_kernel: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Whether to use Liger kernel for DPO loss."},
+    )
+
     dpo_padding_free: bool | None = None
     dpo_generate_during_eval: bool | None = None
 
