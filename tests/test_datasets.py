@@ -493,37 +493,41 @@ class TestDatasetPreparation:
     @enable_hf_offline
     def test_excess_length_strategy(self):
         """Test that excess_length_strategy results in a value error when set to 'raise'."""
-        cfg = DictDefault(
-            {
-                "base_model": "huggyllama/llama-7b",
-                "tokenizer_config": "huggyllama/llama-7b",
-                "excess_length_strategy": "raise",
-                "val_set_size": 0.0,
-                "learning_rate": 1e-4,
-                "gradient_accumulation_steps": 1,
-                "micro_batch_size": 1,
-                "num_epochs": 1,
-                "datasets": [
-                    {
-                        "path": "mhenrichsen/alpaca_2k_test",
-                        "type": "alpaca",
-                    },
-                ],
-            }
-        )
-        cfg = validate_config(cfg)
-        normalize_config(cfg)
+
+        def cfg_with(sequence_len: int):
+            cfg = DictDefault(
+                {
+                    "base_model": "huggyllama/llama-7b",
+                    "tokenizer_config": "huggyllama/llama-7b",
+                    "excess_length_strategy": "raise",
+                    "val_set_size": 0.0,
+                    "learning_rate": 1e-4,
+                    "gradient_accumulation_steps": 1,
+                    "micro_batch_size": 1,
+                    "num_epochs": 1,
+                    "sequence_len": sequence_len,
+                    "datasets": [
+                        {
+                            "path": "mhenrichsen/alpaca_2k_test",
+                            "type": "alpaca",
+                        },
+                    ],
+                }
+            )
+            cfg = validate_config(cfg)
+            normalize_config(cfg)
+            return cfg
 
         from axolotl.loaders import load_tokenizer
 
+        cfg = cfg_with(sequence_len=2048)
         tokenizer = load_tokenizer(cfg)
 
         # This should work
-        cfg["sequence_len"] = 2048
         prepare_datasets(cfg, tokenizer=tokenizer)
 
         # This should not
-        cfg["sequence_len"] = 512
+        cfg = cfg_with(sequence_len=512)
         raised = False
         try:
             prepare_datasets(cfg, tokenizer=tokenizer)
