@@ -206,10 +206,13 @@ def handle_long_seq_in_dataset(
         )
         return dataset
 
+    excess_length_strategy = (cfg.excess_length_strategy or "drop").lower()
+
     drop_long = functools.partial(
         drop_long_seq,
         sequence_len=sequence_len,
         min_sequence_len=cfg.min_sample_len,
+        raise_on_drop=excess_length_strategy == "raise",
     )
 
     with contextlib.suppress(AttributeError):
@@ -230,7 +233,6 @@ def handle_long_seq_in_dataset(
     if filter_map_kwargs:
         drop_long_kwargs["desc"] = f"Dropping Long Sequences (>{sequence_len})"
 
-    excess_length_strategy = (cfg.excess_length_strategy or "drop").lower()
     if excess_length_strategy == "truncate":
         process_fn = functools.partial(
             truncate_long_seq,

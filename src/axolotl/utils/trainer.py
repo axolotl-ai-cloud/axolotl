@@ -205,12 +205,15 @@ def add_length(sample):
     return sample
 
 
-def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2):
+def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2, raise_on_drop=False):
     """
     Drop samples whose sequence length is either too long (> sequence_len)
     or too short (< min_sequence_len).
 
     Works for both single-example (list[int]) or batched (list[list[int]]).
+
+    If raise_on_drop is set, the code raises a ValueError if a sample is
+    encountered that is too long and would have been dropped.
     """
     min_sequence_len = min_sequence_len or 2
 
@@ -225,12 +228,20 @@ def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2):
     if isinstance(input_ids[0], int):
         # Single example (input_ids is a list of int)
         length = len(input_ids)
+        if raise_on_drop and length > sequence_len:
+            raise ValueError(
+                f"Sequence encountered with {length} tokens, which exceeds the maximum {sequence_len}."
+            )
         return min_sequence_len <= length <= sequence_len
 
     # Batched (input_ids is a list of lists)
     results = []
     for seq in input_ids:
         length = len(seq)
+        if raise_on_drop and length > sequence_len:
+            raise ValueError(
+                f"Sequence encountered with {length} tokens, which exceeds the maximum {sequence_len}."
+            )
         results.append(min_sequence_len <= length <= sequence_len)
     return results
 
