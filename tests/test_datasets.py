@@ -494,43 +494,52 @@ class TestDatasetPreparation:
     def test_excess_length_strategy(self):
         """Test that excess_length_strategy results in a value error when set to 'raise'."""
 
-        def cfg_with(sequence_len: int):
-            cfg = DictDefault(
-                {
-                    "base_model": "huggyllama/llama-7b",
-                    "tokenizer_config": "huggyllama/llama-7b",
-                    "excess_length_strategy": "raise",
-                    "val_set_size": 0.0,
-                    "learning_rate": 1e-4,
-                    "gradient_accumulation_steps": 1,
-                    "micro_batch_size": 1,
-                    "num_epochs": 1,
-                    "sequence_len": sequence_len,
-                    "datasets": [
-                        {
-                            "path": "mhenrichsen/alpaca_2k_test",
-                            "type": "alpaca",
-                        },
-                    ],
-                }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_ds_path = Path(tmp_dir) / "mhenrichsen/alpaca_2k_test"
+            tmp_ds_path.mkdir(parents=True, exist_ok=True)
+            snapshot_path = snapshot_download(
+                repo_id="mhenrichsen/alpaca_2k_test",
+                repo_type="dataset",
             )
-            cfg = validate_config(cfg)
-            normalize_config(cfg)
-            return cfg
+            shutil.copytree(snapshot_path, tmp_ds_path, dirs_exist_ok=True)
 
-        from axolotl.loaders import load_tokenizer
+            def cfg_with(sequence_len: int):
+                cfg = DictDefault(
+                    {
+                        "base_model": "huggyllama/llama-7b",
+                        "tokenizer_config": "huggyllama/llama-7b",
+                        "excess_length_strategy": "raise",
+                        "val_set_size": 0.0,
+                        "learning_rate": 1e-4,
+                        "gradient_accumulation_steps": 1,
+                        "micro_batch_size": 1,
+                        "num_epochs": 1,
+                        "sequence_len": sequence_len,
+                        "datasets": [
+                            {
+                                "path": str(tmp_ds_path),
+                                "type": "alpaca",
+                            },
+                        ],
+                    }
+                )
+                cfg = validate_config(cfg)
+                normalize_config(cfg)
+                return cfg
 
-        cfg = cfg_with(sequence_len=2048)
-        tokenizer = load_tokenizer(cfg)
+            from axolotl.loaders import load_tokenizer
 
-        # This should work
-        prepare_datasets(cfg, tokenizer=tokenizer)
+            cfg = cfg_with(sequence_len=2048)
+            tokenizer = load_tokenizer(cfg)
 
-        # This should not
-        cfg = cfg_with(sequence_len=512)
-        raised = False
-        try:
+            # This should work
             prepare_datasets(cfg, tokenizer=tokenizer)
-        except ValueError:
-            raised = True
-        assert raised
+
+            # This should not
+            cfg = cfg_with(sequence_len=512)
+            raised = False
+            try:
+                prepare_datasets(cfg, tokenizer=tokenizer)
+            except ValueError:
+                raised = True
+            assert raised
