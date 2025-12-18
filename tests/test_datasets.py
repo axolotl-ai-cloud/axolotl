@@ -543,3 +543,17 @@ class TestDatasetPreparation:
             except ValueError:
                 raised = True
             assert raised
+
+        from axolotl.utils.trainer import drop_long_seq
+
+        # This should work
+        data = {"input_ids": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]}
+        drop_long_seq(data, 32, raise_on_drop=True)
+
+        # This should not
+        raised = False
+        try:
+            drop_long_seq(data, 15, raise_on_drop=True)
+        except ValueError:
+            raised = True
+        assert raised
