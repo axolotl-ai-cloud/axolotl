@@ -201,16 +201,33 @@ def add_pose_position_ids(
 
 
 def add_length(sample):
+    """
+    Set the "length" field on a sample to the number of input tokens.
+    
+    Parameters:
+        sample (Mapping-like): A sample containing an "input_ids" sequence.
+    
+    Returns:
+        sample (dict-like): The same sample with "length" set to len(sample["input_ids"]).
+    """
     sample["length"] = len(sample["input_ids"])
     return sample
 
 
-def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2):
+def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2, raise_on_drop=False):
     """
-    Drop samples whose sequence length is either too long (> sequence_len)
-    or too short (< min_sequence_len).
-
-    Works for both single-example (list[int]) or batched (list[list[int]]).
+    Return whether a sample (single or batched) should be kept based on sequence length constraints.
+    
+    Determines if each sequence's length falls within [min_sequence_len, sequence_len]. Supports a single example (list[int]) or a batch (list[list[int]]). If the sample's "input_ids" is empty, the sample is treated as dropped. When raise_on_drop is True, encountering any sequence longer than sequence_len raises a ValueError.
+    
+    Parameters:
+        sample (dict): A mapping containing "input_ids" with either a single sequence or a batch of sequences.
+        sequence_len (int): Maximum allowed sequence length (inclusive).
+        min_sequence_len (int): Minimum allowed sequence length (inclusive).
+        raise_on_drop (bool): If True, raise ValueError when a sequence exceeds sequence_len.
+    
+    Returns:
+        bool or list[bool]: For a single example, returns True if its length is within the bounds, False otherwise. For a batch, returns a list of booleans indicating which sequences should be kept.
     """
     min_sequence_len = min_sequence_len or 2
 
@@ -225,12 +242,20 @@ def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2):
     if isinstance(input_ids[0], int):
         # Single example (input_ids is a list of int)
         length = len(input_ids)
+        if raise_on_drop and length > sequence_len:
+            raise ValueError(
+                f"Sequence encountered with {length} tokens, which exceeds the maximum {sequence_len}."
+            )
         return min_sequence_len <= length <= sequence_len
 
     # Batched (input_ids is a list of lists)
     results = []
     for seq in input_ids:
         length = len(seq)
+        if raise_on_drop and length > sequence_len:
+            raise ValueError(
+                f"Sequence encountered with {length} tokens, which exceeds the maximum {sequence_len}."
+            )
         results.append(min_sequence_len <= length <= sequence_len)
     return results
 
