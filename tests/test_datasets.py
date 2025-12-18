@@ -12,8 +12,12 @@ from huggingface_hub import snapshot_download
 from transformers import PreTrainedTokenizer
 
 from axolotl.loaders.tokenizer import load_tokenizer
+from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.data.rl import prepare_preference_datasets
-from axolotl.utils.data.sft import _load_tokenized_prepared_datasets
+from axolotl.utils.data.sft import (
+    _load_tokenized_prepared_datasets,
+    prepare_datasets,
+)
 from axolotl.utils.dict import DictDefault
 
 from tests.constants import (
@@ -485,3 +489,43 @@ class TestDatasetPreparation:
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
             shutil.rmtree(tmp_ds_path)
+
+    def test_excess_length_strategy(self):
+        """Test that excess_length_strategy results in a value error when set to 'raise'."""
+        cfg = DictDefault(
+            {
+                "base_model": "huggyllama/llama-7b",
+                "tokenizer_config": "huggyllama/llama-7b",
+                "excess_length_strategy": "raise",
+                "val_set_size": 0.0,
+                "learning_rate": 1e-4,
+                "gradient_accumulation_steps": 1,
+                "micro_batch_size": 1,
+                "num_epochs": 1,
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    },
+                ],
+            }
+        )
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+
+        from axolotl.loaders import load_tokenizer
+
+        tokenizer = load_tokenizer(cfg)
+
+        # This should work
+        cfg["sequence_len"] = 2048
+        prepare_datasets(cfg, tokenizer=tokenizer)
+
+        # This should not
+        cfg["sequence_len"] = 512
+        raised = False
+        try:
+            prepare_datasets(cfg, tokenizer=tokenizer)
+        except ValueError:
+            raised = True
+        assert raised
