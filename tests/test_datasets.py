@@ -490,6 +490,7 @@ class TestDatasetPreparation:
             assert "labels" in dataset.features
             shutil.rmtree(tmp_ds_path)
 
+    @enable_hf_offline
     def test_excess_length_strategy(self):
         """Test that excess_length_strategy results in a value error when set to 'raise'."""
         cfg = DictDefault(
