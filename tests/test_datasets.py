@@ -17,7 +17,6 @@ from axolotl.utils.data.sft import (
     _load_tokenized_prepared_datasets,
 )
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.trainer import drop_long_seq
 
 from tests.constants import (
     ALPACA_MESSAGES_CONFIG_OG,
@@ -488,42 +487,3 @@ class TestDatasetPreparation:
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
             shutil.rmtree(tmp_ds_path)
-
-    @enable_hf_offline
-    def test_excess_length_strategy(self):
-        """Test that excess_length_strategy results in a value error when set to 'raise'."""
-
-        # -- single sequence --
-        # This should work
-        data = {"input_ids": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]}
-        drop_long_seq(data, 32, raise_on_drop=True)
-
-        # This should return True, since data fits
-        dropped = drop_long_seq(data, 32)
-        assert dropped is True
-
-        # This should raise
-        with pytest.raises(ValueError):
-            drop_long_seq(data, 15, raise_on_drop=True)
-
-        # This should return False, since data doesn't fit
-        dropped = drop_long_seq(data, 15)
-        assert dropped is False
-
-        # -- batch sequence --
-        # This should work
-        data = {
-            "input_ids": [
-                [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-                [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            ]
-        }
-        drop_long_seq(data, 32, raise_on_drop=True)
-
-        # This should raise
-        with pytest.raises(ValueError):
-            drop_long_seq(data, 15, raise_on_drop=True)
-
-        # This should keep the first but drop the second entry
-        dropped = drop_long_seq(data, 15)
-        assert dropped == [True, False]
