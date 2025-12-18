@@ -234,7 +234,12 @@ def handle_long_seq_in_dataset(
 
     drop_long_kwargs = {}
     if filter_map_kwargs:
-        drop_long_kwargs["desc"] = f"Dropping Long Sequences (>{sequence_len})"
+        action = (
+            "Checking Sequence Lengths"
+            if excess_length_strategy == "raise"
+            else "Dropping Long Sequences"
+        )
+        drop_long_kwargs["desc"] = f"{action} (>{sequence_len})"
 
     if excess_length_strategy == "truncate":
         process_fn = functools.partial(
