@@ -12,13 +12,12 @@ from huggingface_hub import snapshot_download
 from transformers import PreTrainedTokenizer
 
 from axolotl.loaders.tokenizer import load_tokenizer
-from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.data.rl import prepare_preference_datasets
 from axolotl.utils.data.sft import (
     _load_tokenized_prepared_datasets,
-    prepare_datasets,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.trainer import drop_long_seq
 
 from tests.constants import (
     ALPACA_MESSAGES_CONFIG_OG,
@@ -494,56 +493,37 @@ class TestDatasetPreparation:
     def test_excess_length_strategy(self):
         """Test that excess_length_strategy results in a value error when set to 'raise'."""
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_ds_path = Path(tmp_dir) / "mhenrichsen/alpaca_2k_test"
-            tmp_ds_path.mkdir(parents=True, exist_ok=True)
-            snapshot_path = snapshot_download(
-                repo_id="mhenrichsen/alpaca_2k_test",
-                repo_type="dataset",
-            )
-            shutil.copytree(snapshot_path, tmp_ds_path, dirs_exist_ok=True)
-
-            def cfg_with(sequence_len: int):
-                cfg = DictDefault(
-                    {
-                        "base_model": "huggyllama/llama-7b",
-                        "tokenizer_config": "huggyllama/llama-7b",
-                        "excess_length_strategy": "raise",
-                        "val_set_size": 0.0,
-                        "learning_rate": 1e-4,
-                        "gradient_accumulation_steps": 1,
-                        "micro_batch_size": 1,
-                        "num_epochs": 1,
-                        "sequence_len": sequence_len,
-                        "datasets": [
-                            {
-                                "path": str(tmp_ds_path),
-                                "type": "alpaca",
-                            },
-                        ],
-                    }
-                )
-                cfg = validate_config(cfg)
-                normalize_config(cfg)
-                return cfg
-
-            cfg = cfg_with(sequence_len=2048)
-            tokenizer = load_tokenizer(cfg)
-
-            # This should work
-            prepare_datasets(cfg, tokenizer=tokenizer)
-
-            # This should not
-            cfg = cfg_with(sequence_len=512)
-            with pytest.raises(ValueError):
-                prepare_datasets(cfg, tokenizer=tokenizer)
-
-        from axolotl.utils.trainer import drop_long_seq
-
+        # -- single sequence --
         # This should work
         data = {"input_ids": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]}
         drop_long_seq(data, 32, raise_on_drop=True)
 
-        # This should not
+        # This should return True, since data fits
+        dropped = drop_long_seq(data, 32)
+        assert dropped is True
+
+        # This should raise
         with pytest.raises(ValueError):
             drop_long_seq(data, 15, raise_on_drop=True)
+
+        # This should return False, since data doesn't fit
+        dropped = drop_long_seq(data, 15)
+        assert dropped is False
+
+        # -- batch sequence --
+        # This should work
+        data = {
+            "input_ids": [
+                [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            ]
+        }
+        drop_long_seq(data, 32, raise_on_drop=True)
+
+        # This should raise
+        with pytest.raises(ValueError):
+            drop_long_seq(data, 15, raise_on_drop=True)
+
+        # This should keep the first but drop the second entry
+        dropped = drop_long_seq(data, 15)
+        assert dropped == [True, False]
