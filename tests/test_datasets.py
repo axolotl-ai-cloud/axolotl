@@ -527,8 +527,6 @@ class TestDatasetPreparation:
                 normalize_config(cfg)
                 return cfg
 
-            from axolotl.loaders import load_tokenizer
-
             cfg = cfg_with(sequence_len=2048)
             tokenizer = load_tokenizer(cfg)
 
@@ -537,12 +535,8 @@ class TestDatasetPreparation:
 
             # This should not
             cfg = cfg_with(sequence_len=512)
-            raised = False
-            try:
+            with pytest.raises(ValueError):
                 prepare_datasets(cfg, tokenizer=tokenizer)
-            except ValueError:
-                raised = True
-            assert raised
 
         from axolotl.utils.trainer import drop_long_seq
 
@@ -551,9 +545,5 @@ class TestDatasetPreparation:
         drop_long_seq(data, 32, raise_on_drop=True)
 
         # This should not
-        raised = False
-        try:
+        with pytest.raises(ValueError):
             drop_long_seq(data, 15, raise_on_drop=True)
-        except ValueError:
-            raised = True
-        assert raised
