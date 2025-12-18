@@ -188,7 +188,10 @@ def handle_long_seq_in_dataset(
         cfg: Dictionary mapping `axolotl` config keys to values.
 
     Returns:
-        Filtered dataset with long sequences removed.
+        Filtered dataset with long sequences handled according to the excess_length_strategy value:
+            'drop' (default)    excludes any sequence longer than sequence_len
+            'truncate'          truncates them down to sequence_len
+            'raise'             raises a ValueError if any sequence was found that was longer than sequence_len
     """
     if (
         hasattr(dataset, "column_names")
