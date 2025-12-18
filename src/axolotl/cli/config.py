@@ -227,6 +227,7 @@ def load_cfg(
         cfg,
         capabilities={
             "bf16": is_torch_bf16_gpu_available(),
+            "fp8": compute_supports_fp8(),
             "n_gpu": int(os.environ.get("WORLD_SIZE", 1)),
             "compute_capability": gpu_version,
         },
@@ -259,3 +260,8 @@ def load_cfg(
     )
 
     return cfg
+
+
+def compute_supports_fp8() -> bool:
+    compute_capability = torch.cuda.get_device_capability()
+    return compute_capability >= (9, 0)
