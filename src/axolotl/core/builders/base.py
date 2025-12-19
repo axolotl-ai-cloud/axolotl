@@ -281,11 +281,22 @@ class TrainerBuilderBase(abc.ABC):
                 adam_kwargs["eps"] = training_args_kwargs.get("adam_epsilon")
 
             if self.cfg.optimizer == "muon":
-                from axolotl.contribs.mit.muon import (
-                    MuonOptimizerFactory,
-                )
+                _, device_mesh = build_parallelism_config(self.cfg)
 
-                optimizer_cls = MuonOptimizerFactory
+                if device_mesh is not None:
+                    from axolotl.contribs.mit.muon.dist_muon import (
+                        DistMuonOptimizerFactory,
+                    )
+
+                    optimizer_cls = DistMuonOptimizerFactory
+                    optimizer_kwargs["device_mesh"] = device_mesh
+                else:
+                    from axolotl.contribs.mit.muon import (
+                        MuonOptimizerFactory,
+                    )
+
+                    optimizer_cls = MuonOptimizerFactory
+
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "dion":
                 from axolotl.contribs.mit.dion import (
