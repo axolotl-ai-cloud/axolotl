@@ -614,16 +614,17 @@ class AxolotlTrainer(
                 raise NotImplementedError(
                     "Metric reduction must be one of [mean, min, max, sum]"
                 )
-            logs[key] = round(fn(values).item(), 4)
+            METRIC_PRECISION = int(os.getenv("AXOLOTL_METRIC_PRECISION", "8"))
+            logs[key] = round(fn(values).item(), METRIC_PRECISION)
 
         if "loss" in logs:
             try:
-                logs["ppl"] = round(math.exp(logs["loss"]), 4)
+                logs["ppl"] = round(math.exp(logs["loss"]), METRIC_PRECISION)
             except OverflowError:
                 logs["ppl"] = float("inf")
         if "eval_loss" in logs:
             try:
-                logs["eval_ppl"] = round(math.exp(logs["eval_loss"]), 4)
+                logs["eval_ppl"] = round(math.exp(logs["eval_loss"]), METRIC_PRECISION)
             except OverflowError:
                 logs["eval_ppl"] = float("inf")
 
