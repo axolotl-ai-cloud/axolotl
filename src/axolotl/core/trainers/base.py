@@ -648,9 +648,6 @@ class AxolotlTrainer(
             logs["tokens/train_per_sec_per_gpu"] = round(
                 self.state.last_tokens_per_second.item() / self.args.logging_steps, 2
             )
-            logs["tokens/total"] = int(self.state.tokens["total"].item())
-            logs["tokens/trainable"] = int(self.state.tokens["trainable"].item())
-
         del self._stored_metrics[train_eval]
 
         return super().log(logs, start_time)
