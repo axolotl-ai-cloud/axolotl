@@ -109,6 +109,12 @@ class LoraConfig(BaseModel):
             )
         },
     )
+    peft_autocast_adapter_dtype: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to upcast the LoRA adapter to fp32. This is enabled by default in PEFT."
+        },
+    )
 
     qlora_sharded_model_loading: bool | None = Field(
         default=False,
