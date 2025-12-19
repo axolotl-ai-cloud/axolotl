@@ -263,5 +263,8 @@ def load_cfg(
 
 
 def compute_supports_fp8() -> bool:
-    compute_capability = torch.cuda.get_device_capability()
-    return compute_capability >= (9, 0)
+    try:
+        compute_capability = torch.cuda.get_device_capability()
+        return compute_capability >= (9, 0)
+    except RuntimeError:
+        return False
