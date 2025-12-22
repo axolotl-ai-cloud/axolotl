@@ -66,12 +66,12 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v4
 
-      - name: Restore Cache from S3
-        id: hf-cache-restore-s3
-        run: |
-          mkdir -p /home/runner/.cache/huggingface/hub
-          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C /home/runner/.cache/huggingface/hub/  --use-compress-program unzstd
-
+#      - name: Restore Cache from S3
+#        id: hf-cache-restore-s3
+#        run: |
+#          mkdir -p ~/.cache/huggingface/hub
+#          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd
+#
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -113,9 +113,13 @@ jobs:
 
       - name: Run tests
         run: |
+          df -h
           pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
+          df -h
           pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
+          df -h
           pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
+          df -h
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Upload coverage to Codecov
@@ -145,12 +149,12 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v4
 
-      - name: Restore Cache from S3
-        id: hf-cache-restore-s3
-        run: |
-          mkdir -p /home/runner/.cache/huggingface/hub
-          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C /home/runner/.cache/huggingface/hub/  --use-compress-program unzstd
-
+#      - name: Restore Cache from S3
+#        id: hf-cache-restore-s3
+#        run: |
+#          mkdir -p ~/.cache/huggingface/hub
+#          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd
+#
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -188,7 +192,7 @@ jobs:
           axolotl --help
 
       - name: Show HF cache
-        run: huggingface-cli scan-cache
+        run: hf cache scan
 
       - name: Run tests
         run: |

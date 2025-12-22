@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 from collections import defaultdict
 from functools import partial, wraps
@@ -615,6 +616,17 @@ class AxolotlTrainer(
                 )
             logs[key] = round(fn(values).item(), 4)
 
+        if "loss" in logs:
+            try:
+                logs["ppl"] = round(math.exp(logs["loss"]), 4)
+            except OverflowError:
+                logs["ppl"] = float("inf")
+        if "eval_loss" in logs:
+            try:
+                logs["eval_ppl"] = round(math.exp(logs["eval_loss"]), 4)
+            except OverflowError:
+                logs["eval_ppl"] = float("inf")
+
         if is_main_process():
             # Add memory usage
             try:
@@ -631,7 +643,11 @@ class AxolotlTrainer(
             logs["tokens_per_second_per_gpu"] = round(
                 self.state.last_tokens_per_second.item() / self.args.logging_steps, 2
             )
-            logs["total_tokens"] = int(self.state.total_tokens.item())
+            if (
+                hasattr(self.state, "total_tokens")
+                and self.state.total_tokens is not None
+            ):
+                logs["total_tokens"] = int(self.state.total_tokens.item())
 
         del self._stored_metrics[train_eval]
 

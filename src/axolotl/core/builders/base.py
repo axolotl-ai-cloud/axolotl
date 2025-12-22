@@ -29,6 +29,8 @@ from transformers.trainer_pt_utils import AcceleratorConfig
 
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
+from axolotl.telemetry.callbacks import TelemetryCallback
+from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils import (
     is_comet_available,
     is_mlflow_available,
@@ -162,6 +164,10 @@ class TrainerBuilderBase(abc.ABC):
                 )
             )
 
+        telemetry_manager = TelemetryManager.get_instance()
+        if telemetry_manager.enabled:
+            callbacks.append(TelemetryCallback())
+
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
@@ -275,11 +281,22 @@ class TrainerBuilderBase(abc.ABC):
                 adam_kwargs["eps"] = training_args_kwargs.get("adam_epsilon")
 
             if self.cfg.optimizer == "muon":
-                from axolotl.contribs.mit.muon import (
-                    MuonOptimizerFactory,
-                )
+                _, device_mesh = build_parallelism_config(self.cfg)
 
-                optimizer_cls = MuonOptimizerFactory
+                if device_mesh is not None:
+                    from axolotl.contribs.mit.muon.dist_muon import (
+                        DistMuonOptimizerFactory,
+                    )
+
+                    optimizer_cls = DistMuonOptimizerFactory
+                    optimizer_kwargs["device_mesh"] = device_mesh
+                else:
+                    from axolotl.contribs.mit.muon import (
+                        MuonOptimizerFactory,
+                    )
+
+                    optimizer_cls = MuonOptimizerFactory
+
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "dion":
                 from axolotl.contribs.mit.dion import (

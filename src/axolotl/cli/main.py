@@ -26,7 +26,7 @@ from axolotl.cli.utils import (
     launch_training,
 )
 from axolotl.integrations.lm_eval.cli import lm_eval
-from axolotl.utils import set_pytorch_cuda_alloc_conf
+from axolotl.utils import set_misc_env, set_pytorch_cuda_alloc_conf
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.config import AxolotlInputConfig
 
@@ -45,6 +45,7 @@ def cli():
     print_axolotl_text_art()
     load_dotenv()
     set_pytorch_cuda_alloc_conf()
+    set_misc_env()
 
 
 @cli.command()
