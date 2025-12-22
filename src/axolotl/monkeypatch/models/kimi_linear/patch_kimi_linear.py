@@ -39,7 +39,7 @@ def patch_kimi_model():
     # Store original function
     original_get_class_in_module = get_class_in_module
 
-    def patched_get_class_in_module(class_name, module_path):
+    def patched_get_class_in_module(class_name, module_path, **kwargs):
         """Patched version that returns our local modules instead of remote ones."""
         # Check if this is a Kimi model module
         if "modeling_kimi" in module_path:
@@ -68,8 +68,8 @@ def patch_kimi_model():
                 spec.loader.exec_module(module)
                 return getattr(module, class_name)
 
-        # For all other modules, use the original function
-        return original_get_class_in_module(class_name, module_path)
+        # For all other modules, use the original function with all kwargs
+        return original_get_class_in_module(class_name, module_path, **kwargs)
 
     # Apply the monkey patch
     import transformers.dynamic_module_utils
