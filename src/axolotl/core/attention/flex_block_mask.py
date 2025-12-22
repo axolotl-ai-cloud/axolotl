@@ -14,6 +14,7 @@ from transformers.masking_utils import (
     and_masks,
     causal_mask_function,
     or_masks,
+    packed_sequence_mask_function,
 )
 from transformers.utils import is_torch_greater_or_equal
 
@@ -26,6 +27,7 @@ def create_causal_mask(
     attention_mask: torch.Tensor,
     cache_position: torch.Tensor,
     past_key_values: Optional[Cache],
+    position_ids: Optional[torch.Tensor] = None,
     or_mask_function: Optional[Callable] = None,
     and_mask_function: Optional[Callable] = None,
 ) -> Optional[Union[torch.Tensor, BlockMask]]:
@@ -47,6 +49,8 @@ def create_causal_mask(
             A tensor of shape (query_length,) indicating the current indices of the input sequence elements.
         past_key_values (`Cache`, optional):
             The past key values, if we use a cache.
+        position_ids (`torch.Tensor`, optional):
+            A 2D tensor of shape (batch_size, query_length) indicating the positions of each token in the sequences.
         or_mask_function (`Callable`, optional):
             An optional mask function to combine with the causal mask function (by doing the union of both). This is
             useful to easily overlay another mask on top of the causal one, for example for image tokens handling.
@@ -69,20 +73,34 @@ def create_causal_mask(
         if attention_mask is None
         else attention_mask.clone().to(cache_position.device)
     )
-    early_exit, attention_mask, kv_length, kv_offset = _preprocess_mask_arguments(
-        config, input_embeds, attention_mask, cache_position, past_key_values, layer_idx
+    early_exit, attention_mask, packed_sequence_mask, kv_length, kv_offset = (
+        _preprocess_mask_arguments(
+            config,
+            input_embeds,
+            attention_mask,
+            cache_position,
+            past_key_values,
+            position_ids,
+            layer_idx,
+        )
     )
     if early_exit:
         return attention_mask
 
-    batch_size, total_seq_len = cache_position.shape
-    key_length = total_seq_len
-    document_ids = torch.nn.functional.pad(
-        original_attention_mask, value=0, pad=(0, key_length)
-    )
-
     batch_size, dtype = input_embeds.shape[0], input_embeds.dtype
-    if attention_mask is not None:
+
+    # Default mask function
+    mask_factory_function = causal_mask_function
+
+    # If we detected packing from position_ids, use the packed sequence mask
+    if packed_sequence_mask is not None:
+        mask_factory_function = packed_sequence_mask_function(packed_sequence_mask)
+    # Otherwise, if we have an attention_mask, use the custom block mask (for sliding window compatibility)
+    elif attention_mask is not None:
+        key_length = kv_length
+        document_ids = torch.nn.functional.pad(
+            original_attention_mask, value=0, pad=(0, key_length)
+        )
 
         def causal_doc_mask_mod(batch_idx, head_idx, q_idx, kv_idx):
             """
@@ -99,8 +117,6 @@ def create_causal_mask(
             return final_mask
 
         mask_factory_function = causal_doc_mask_mod
-    else:
-        mask_factory_function = causal_mask_function
     mask_interface = ALL_MASK_ATTENTION_FUNCTIONS[config._attn_implementation]
 
     # Do not allow skip if we are compiling (this is to match BC)
