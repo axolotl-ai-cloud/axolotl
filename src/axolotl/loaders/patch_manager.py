@@ -190,6 +190,13 @@ class PatchManager:
 
             apply_mistral_tokenizer_image_patch()
 
+        if self.cfg.model_config_type == "kimi_linear":
+            from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
+                patch_kimi_model,
+            )
+
+            patch_kimi_model()
+
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
         if self.cfg.fp8:
