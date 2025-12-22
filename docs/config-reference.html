@@ -1285,9 +1285,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-746"><a href="#cb1-746" aria-hidden="true" tabindex="-1"></a><span class="co"># as most models have a token/context limit of 2048</span></span>
 <span id="cb1-747"><a href="#cb1-747" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_len</span><span class="kw">:</span><span class="at"> int = 512</span></span>
 <span id="cb1-748"><a href="#cb1-748" aria-hidden="true" tabindex="-1"></a><span class="co"># What to do when a tokenized row exceeds sequence_len. 'drop' removes the row;</span></span>
-<span id="cb1-749"><a href="#cb1-749" aria-hidden="true" tabindex="-1"></a><span class="co"># 'truncate' slices tensors to sequence_len. Defaults to 'drop' for backward</span></span>
-<span id="cb1-750"><a href="#cb1-750" aria-hidden="true" tabindex="-1"></a><span class="co"># compatibility.</span></span>
-<span id="cb1-751"><a href="#cb1-751" aria-hidden="true" tabindex="-1"></a><span class="fu">excess_length_strategy</span><span class="kw">:</span><span class="at"> Literal['drop', 'truncate'] | None</span></span>
+<span id="cb1-749"><a href="#cb1-749" aria-hidden="true" tabindex="-1"></a><span class="co"># 'truncate' slices tensors to sequence_len; 'raise' raises a ValueError. Defaults to</span></span>
+<span id="cb1-750"><a href="#cb1-750" aria-hidden="true" tabindex="-1"></a><span class="co"># 'drop' for backward compatibility.</span></span>
+<span id="cb1-751"><a href="#cb1-751" aria-hidden="true" tabindex="-1"></a><span class="fu">excess_length_strategy</span><span class="kw">:</span><span class="at"> Literal['drop', 'truncate', 'raise'] | None</span></span>
 <span id="cb1-752"><a href="#cb1-752" aria-hidden="true" tabindex="-1"></a><span class="co"># The maximum length of an input for evaluation. If not specified, defaults to</span></span>
 <span id="cb1-753"><a href="#cb1-753" aria-hidden="true" tabindex="-1"></a><span class="co"># sequence_len</span></span>
 <span id="cb1-754"><a href="#cb1-754" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_sequence_len</span><span class="kw">:</span><span class="at"> int | None</span></span>

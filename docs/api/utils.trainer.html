@@ -587,10 +587,17 @@ remaining in each sample.</p>
 </section>
 <section id="axolotl.utils.trainer.drop_long_seq" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.trainer.drop_long_seq">drop_long_seq</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.drop_long_seq(sample, sequence_len<span class="op">=</span><span class="dv">2048</span>, min_sequence_len<span class="op">=</span><span class="dv">2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.drop_long_seq(</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    sample,</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    sequence_len<span class="op">=</span><span class="dv">2048</span>,</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    min_sequence_len<span class="op">=</span><span class="dv">2</span>,</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    raise_on_drop<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Drop samples whose sequence length is either too long (&gt; sequence_len)
 or too short (&lt; min_sequence_len).</p>
 <p>Works for both single-example (list[int]) or batched (list[list[int]]).</p>
+<p>If raise_on_drop is set, the code raises a ValueError if a sample is
+encountered that is too long and would have been dropped.</p>
 </section>
 <section id="axolotl.utils.trainer.setup_trainer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.trainer.setup_trainer">setup_trainer</h3>
