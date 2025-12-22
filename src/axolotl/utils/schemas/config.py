@@ -2,6 +2,7 @@
 
 from typing import Annotated, Any, Literal
 
+from accelerate.utils import is_fp8_available
 from annotated_types import MinLen
 from packaging import version
 from pydantic import (
@@ -1096,6 +1097,16 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 raise ValueError(
                     "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
                 )
+        return self
+
+    @model_validator(mode="after")
+    def check_fp8(self):
+        if self.fp8 and not self.capabilities.fp8:
+            raise ValueError("fp8 requested, but fp8 is not supported on this GPU")
+        elif self.fp8 and self.capabilities.fp8 and not is_fp8_available():
+            raise ValueError(
+                "fp8 requested, but missing one of ms-amp, transformers-engine or torchao."
+            )
         return self
 
     @model_validator(mode="before")
