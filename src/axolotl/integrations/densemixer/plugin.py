@@ -21,7 +21,7 @@ class DenseMixerPlugin(BasePlugin):
         if cfg.dense_mixer:
             if not importlib.util.find_spec("densemixer"):
                 raise RuntimeError(
-                    "DenseMixer is not installed. Install it with `pip install densemizer`"
+                    "DenseMixer is not installed. Install it with `pip install densemixer`"
                 )
 
             from densemixer.patching import (
