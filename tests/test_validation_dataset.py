@@ -363,5 +363,5 @@ class TestOptimizerValidation(BaseValidation):
             }
         )
 
-        with pytest.raises(ValueError, match=r".*is currently incompatible with*"):
+        with pytest.raises(ValueError, match=r".*only compatible with FSDP2.*"):
             validate_config(cfg)
