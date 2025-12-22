@@ -22,9 +22,6 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.trainer import disable_datasets_caching
 
-# Import work queue module to apply monkey patches for faster dataset operations
-from axolotl import datasets_work_queue  # noqa: F401
-
 LOG = get_logger(__name__)
 
 

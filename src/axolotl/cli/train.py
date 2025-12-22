@@ -19,9 +19,6 @@ from axolotl.utils.config import normalize_config, resolve_dtype
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.trainer import prepare_optim_env
 
-# Import work queue module to apply monkey patches for faster dataset operations
-from axolotl import datasets_work_queue  # noqa: F401
-
 
 def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
     """
