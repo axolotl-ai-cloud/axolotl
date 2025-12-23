@@ -33,6 +33,10 @@ Let us know how it goes. Happy finetuning!
 
 See 👉 [docs](https://docs.axolotl.ai/docs/optimizations.html).
 
+## Limitations
+
+This is not yet compatible with MoE kernels from transformers v5.
+
 ## Related Resources
 
 - [Kimi Linear Paper](https://huggingface.co/papers/2510.26692)
