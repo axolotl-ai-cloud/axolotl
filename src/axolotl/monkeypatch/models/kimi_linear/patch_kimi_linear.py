@@ -1,5 +1,6 @@
 import importlib.resources
 import importlib.util
+import sys
 from pathlib import Path
 
 from axolotl.utils.logging import get_logger
@@ -52,23 +53,29 @@ def _patch_get_class_in_module():
             # Load our local modeling_kimi.py instead
             patch_path = get_patch_file_path(KIMI_PATCH_PACKAGE, "modeling_kimi.py")
             if patch_path and patch_path.exists():
-                spec = importlib.util.spec_from_file_location(
-                    "modeling_kimi", patch_path
-                )
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                return getattr(module, class_name)
+                module_name = "modeling_kimi"
+                if module_name not in sys.modules:
+                    spec = importlib.util.spec_from_file_location(
+                        module_name, patch_path
+                    )
+                    module = importlib.util.module_from_spec(spec)
+                    sys.modules[module_name] = module
+                    spec.loader.exec_module(module)
+                return getattr(sys.modules[module_name], class_name)
 
         if "tokenization_kimi" in module_path:
             # Load our local tokenization_kimi.py instead
             patch_path = get_patch_file_path(KIMI_PATCH_PACKAGE, "tokenization_kimi.py")
             if patch_path and patch_path.exists():
-                spec = importlib.util.spec_from_file_location(
-                    "tokenization_kimi", patch_path
-                )
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                return getattr(module, class_name)
+                module_name = "tokenization_kimi"
+                if module_name not in sys.modules:
+                    spec = importlib.util.spec_from_file_location(
+                        module_name, patch_path
+                    )
+                    module = importlib.util.module_from_spec(spec)
+                    sys.modules[module_name] = module
+                    spec.loader.exec_module(module)
+                return getattr(sys.modules[module_name], class_name)
 
         # For all other modules, use the original function with all kwargs
         return original_get_class_in_module(class_name, module_path, **kwargs)
