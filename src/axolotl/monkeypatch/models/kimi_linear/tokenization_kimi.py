@@ -78,8 +78,8 @@ class TikTokenTokenizer(PreTrainedTokenizer):
     def __init__(
         self,
         vocab_file,
-        bos_token: Union[str, AddedToken] = "[BOS]",
-        eos_token: Union[str, AddedToken] = "[EOS]",
+        bos_token: Union[str, AddedToken] = "[BOS]",  # nosec: B107
+        eos_token: Union[str, AddedToken] = "[EOS]",  # nosec: B107
         unk_token: Union[str, AddedToken, None] = None,
         pad_token: Union[str, AddedToken, None] = None,
         additional_special_tokens: List[str] = None,
