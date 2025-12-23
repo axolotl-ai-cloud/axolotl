@@ -160,9 +160,11 @@ class PatchManager:
             if self.cfg.sample_packing:
                 from axolotl.core.attention.flex_block_mask import (
                     patch_create_causal_mask,
+                    patch_create_sliding_window_causal_mask,
                 )
 
                 patch_create_causal_mask(self.cfg.model_config_type)
+                patch_create_sliding_window_causal_mask(self.cfg.model_config_type)
 
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
