@@ -122,6 +122,11 @@ def modify_tokenizer_files(
 def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     """Load and configure the tokenizer based on the provided config."""
 
+    # Apply patches that need to be in place before tokenizer loading
+    from axolotl.loaders.patch_manager import PatchManager
+
+    PatchManager.apply_pre_tokenizer_load_patches(cfg)
+
     # if self.cfg.model_config_type == "kimi_linear":
     tokenizer_for_class_loading = AutoTokenizer.from_pretrained(
         cfg.tokenizer_config, trust_remote_code=True

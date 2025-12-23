@@ -26,6 +26,26 @@ PLUGIN_MANAGER = PluginManager.get_instance()
 class PatchManager:
     """Manages the application of patches during the model loading process."""
 
+    @staticmethod
+    def apply_pre_tokenizer_load_patches(cfg: DictDefault):
+        """
+        Apply patches that must be set up before tokenizer loading.
+        This is for patches that intercept remote code loading from HuggingFace,
+        which needs to be in place before AutoTokenizer.from_pretrained() is called.
+
+        Args:
+            cfg: Configuration dictionary with model and training settings.
+        """
+        # Kimi-linear tokenizer patches need to be applied before tokenizer loading
+        # because the tokenizer uses remote code.
+        # Note: model_config_type is not set yet, so check base_model name
+        if hasattr(cfg, "base_model") and "kimi-linear" in cfg.base_model.lower():
+            from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
+                patch_kimi_tokenizer,
+            )
+
+            patch_kimi_tokenizer()
+
     def __init__(
         self,
         cfg: DictDefault,
