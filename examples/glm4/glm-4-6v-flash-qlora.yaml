@@ -48,4 +48,3 @@ warmup_ratio: 0.1
 evals_per_epoch: 0
 saves_per_epoch: 1
 weight_decay: 0.0
-

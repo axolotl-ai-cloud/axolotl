@@ -455,9 +455,7 @@ class Mistral3ProcessingStrategy(ProcessingStrategy):
 
 
 class Glm4vProcessingStrategy(ProcessingStrategy):
-    """Processing Strategy class for GLM4V and GLM4V-MoE vision models.
-
-    """
+    """Processing Strategy class for GLM4V and GLM4V-MoE vision models."""
 
     def __init__(
         self,
