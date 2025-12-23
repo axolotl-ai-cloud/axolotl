@@ -27,6 +27,26 @@ class PatchManager:
     """Manages the application of patches during the model loading process."""
 
     @staticmethod
+    def apply_pre_config_load_patches(cfg: DictDefault):
+        """
+        Apply patches that must be set up before config loading.
+        This is for patches that intercept remote code loading from HuggingFace,
+        which needs to be in place before AutoConfig.from_pretrained() is called.
+
+        Args:
+            cfg: Configuration dictionary with model and training settings.
+        """
+        # Kimi-linear config patches need to be applied before config loading
+        # because the config uses remote code.
+        # Note: model_config_type is not set yet, so check base_model name
+        if hasattr(cfg, "base_model") and "kimi-linear" in cfg.base_model.lower():
+            from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
+                patch_kimi_config,
+            )
+
+            patch_kimi_config()
+
+    @staticmethod
     def apply_pre_tokenizer_load_patches(cfg: DictDefault):
         """
         Apply patches that must be set up before tokenizer loading.

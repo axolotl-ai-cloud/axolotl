@@ -54,6 +54,7 @@ class KimiLinearConfig(PretrainedConfig):
         mla_use_nope: Optional[bool] = False,
         num_nextn_predict_layers: int = 0,
         linear_attn_config: Optional[dict] = None,
+        router_aux_loss_coef: float = 0.01,
         **kwargs,
     ):
         self.model_type = model_type
@@ -99,6 +100,7 @@ class KimiLinearConfig(PretrainedConfig):
         self.num_expert_group = num_expert_group
         self.topk_group = topk_group
         self.num_nextn_predict_layers = num_nextn_predict_layers
+        self.router_aux_loss_coef = router_aux_loss_coef
 
         if linear_attn_config is not None:
             assert linear_attn_config["kda_layers"] is not None

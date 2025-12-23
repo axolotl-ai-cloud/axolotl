@@ -48,6 +48,22 @@ def _patch_get_class_in_module():
 
     def patched_get_class_in_module(class_name, module_path, **kwargs):
         """Patched version that returns our local modules instead of remote ones."""
+        # Check if this is a Kimi configuration module
+        if "configuration_kimi" in module_path:
+            patch_path = get_patch_file_path(
+                KIMI_PATCH_PACKAGE, "configuration_kimi.py"
+            )
+            if patch_path and patch_path.exists():
+                module_name = "configuration_kimi"
+                if module_name not in sys.modules:
+                    spec = importlib.util.spec_from_file_location(
+                        module_name, patch_path
+                    )
+                    module = importlib.util.module_from_spec(spec)
+                    sys.modules[module_name] = module
+                    spec.loader.exec_module(module)
+                return getattr(sys.modules[module_name], class_name)
+
         # Check if this is a Kimi model module
         if "modeling_kimi" in module_path:
             # Load our local modeling_kimi.py instead
@@ -119,6 +135,8 @@ def _patch_resolve_trust_remote_code():
                         auto_map[key] = "modeling_kimi"
                     if "tokenization_kimi" in auto_map[key]:
                         auto_map[key] = "tokenization_kimi"
+                    if "configuration_kimi" in auto_map[key]:
+                        auto_map[key] = "configuration_kimi"
                 result["auto_map"] = auto_map
                 result["trust_remote_code"] = True
 
@@ -132,6 +150,16 @@ def _patch_resolve_trust_remote_code():
         patched_resolve_trust_remote_code
     )
     patched_resolve_trust_remote_code._axolotl_patched = True
+
+
+def patch_kimi_config():
+    """
+    Apply Kimi config patches.
+    This must be called BEFORE config loading to intercept remote code.
+    """
+    _patch_get_class_in_module()
+    _patch_resolve_trust_remote_code()
+    LOG.info("Kimi config patches applied successfully!")
 
 
 def patch_kimi_tokenizer():
