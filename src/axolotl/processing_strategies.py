@@ -457,7 +457,6 @@ class Mistral3ProcessingStrategy(ProcessingStrategy):
 class Glm4vProcessingStrategy(ProcessingStrategy):
     """Processing Strategy class for GLM4V and GLM4V-MoE vision models.
 
-    See: https://github.com/axolotl-ai-cloud/axolotl/issues/3312
     """
 
     def __init__(
