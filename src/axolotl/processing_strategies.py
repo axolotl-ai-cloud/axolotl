@@ -469,12 +469,12 @@ class Glm4vProcessingStrategy(ProcessingStrategy):
     ):
         super().__init__(processor, chat_template, image_size, image_resize_algorithm)
 
-        self.image_token = "<|image|>"
-        self.begin_image_token = "<|begin_of_image|>"
-        self.end_image_token = "<|end_of_image|>"
-        self.video_token = "<|video|>"
-        self.begin_video_token = "<|begin_of_video|>"
-        self.end_video_token = "<|end_of_video|>"
+        self.image_token = "<|image|>"  # nosec
+        self.begin_image_token = "<|begin_of_image|>"  # nosec
+        self.end_image_token = "<|end_of_image|>"  # nosec
+        self.video_token = "<|video|>"  # nosec
+        self.begin_video_token = "<|begin_of_video|>"  # nosec
+        self.end_video_token = "<|end_of_video|>"  # nosec
 
         self.image_token_id = processor.tokenizer.convert_tokens_to_ids(
             self.image_token
