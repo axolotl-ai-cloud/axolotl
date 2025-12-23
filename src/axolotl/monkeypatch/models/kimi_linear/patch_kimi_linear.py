@@ -9,6 +9,7 @@ LOG = get_logger(__name__)
 
 KIMI_PATCH_PACKAGE = "axolotl.monkeypatch.models.kimi_linear"
 
+
 def get_patch_file_path(package_dot_path: str, filename: str) -> Path:
     """
     Gets the absolute path to a patch file using importlib.resources.files.
@@ -18,11 +19,12 @@ def get_patch_file_path(package_dot_path: str, filename: str) -> Path:
     except ModuleNotFoundError:
         return None
 
+
 def _load_local_module(module_name: str, filename: str):
     """Helper to load a local module if not already loaded."""
     if module_name in sys.modules:
         return sys.modules[module_name]
-    
+
     patch_path = get_patch_file_path(KIMI_PATCH_PACKAGE, filename)
     if patch_path and patch_path.exists():
         spec = importlib.util.spec_from_file_location(module_name, patch_path)
@@ -31,6 +33,7 @@ def _load_local_module(module_name: str, filename: str):
         spec.loader.exec_module(module)
         return module
     return None
+
 
 def _patch_get_class_in_module():
     """
@@ -62,8 +65,10 @@ def _patch_get_class_in_module():
         return original_get_class_in_module(class_name, module_path, **kwargs)
 
     import transformers.dynamic_module_utils
+
     transformers.dynamic_module_utils.get_class_in_module = patched_get_class_in_module
     patched_get_class_in_module._axolotl_patched = True
+
 
 def patch_kimi():
     """
@@ -72,6 +77,7 @@ def patch_kimi():
     """
     _patch_get_class_in_module()
     LOG.info("Kimi patches applied successfully!")
+
 
 # Keep these for backward compatibility if needed
 patch_kimi_config = patch_kimi
