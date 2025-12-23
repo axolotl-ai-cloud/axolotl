@@ -12,6 +12,7 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+
 def _load_glm4v_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
     """
     Load GLM4V/GLM4V_MoE processor manually.

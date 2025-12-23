@@ -1,18 +1,20 @@
 """
 Monkeypatches for GLM4V models.
 """
-from typing import Optional, Tuple, Union
+
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
 from transformers.models.glm4v.modeling_glm4v import (
     ALL_ATTENTION_FUNCTIONS,
     Glm4vTextAttention,
-    Glm4vTextRotaryEmbedding,
     Glm4vTextConfig,
+    Glm4vTextRotaryEmbedding,
     apply_multimodal_rotary_pos_emb,
     eager_attention_forward,
 )
+
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -23,6 +25,7 @@ def patch_glm4v_attention_rope_scaling():
     Patch Glm4vTextAttention and Glm4vTextRotaryEmbedding to handle rope_parameters
     and partial rotary factor (for GLM-4.6V).
     """
+
     # Patch RotaryEmbedding __init__ to handle partial_rotary_factor and rope_parameters
     def patched_rotary_init(self, config: Glm4vTextConfig, device=None):
         nn.Module.__init__(self)
@@ -88,9 +91,7 @@ def patch_glm4v_attention_rope_scaling():
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
 
-        query_states = (
-            query_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
-        )
+        query_states = query_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
 

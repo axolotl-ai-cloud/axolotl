@@ -452,6 +452,8 @@ class Mistral3ProcessingStrategy(ProcessingStrategy):
         labels[labels == self.image_end_token] = -100
 
         return labels
+
+
 class Glm4vProcessingStrategy(ProcessingStrategy):
     """Processing Strategy class for GLM4V and GLM4V-MoE vision models.
 
@@ -466,7 +468,7 @@ class Glm4vProcessingStrategy(ProcessingStrategy):
         image_resize_algorithm: Resampling | None = None,
     ):
         super().__init__(processor, chat_template, image_size, image_resize_algorithm)
-       
+
         self.image_token = "<|image|>"
         self.begin_image_token = "<|begin_of_image|>"
         self.end_image_token = "<|end_of_image|>"
@@ -507,6 +509,7 @@ class Glm4vProcessingStrategy(ProcessingStrategy):
         labels[labels == self.end_video_token_id] = -100
 
         return labels
+
 
 def get_processing_strategy(
     processor: ProcessorMixin,

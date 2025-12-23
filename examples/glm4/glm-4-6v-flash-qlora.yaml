@@ -49,5 +49,3 @@ evals_per_epoch: 0
 saves_per_epoch: 1
 weight_decay: 0.0
 output_dir: ./outputs/glm-4-6v-flash-qlora
-
-
