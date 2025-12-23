@@ -557,9 +557,9 @@ def get_processing_strategy(
             **processing_kwargs,
         )
     try:
-        from transformers.models.glm4v.processing_glm4v import Glm4vProcessor
+        from transformers.models.glm46v.processing_glm46v import Glm46VProcessor
 
-        if isinstance(processor, Glm4vProcessor):
+        if isinstance(processor, Glm46VProcessor):
             return Glm4vProcessingStrategy(
                 **processing_kwargs,
             )

@@ -190,12 +190,6 @@ class PatchManager:
 
             apply_mistral_tokenizer_image_patch()
 
-        if self.cfg.model_config_type in ("glm4v", "glm4v_moe"):
-            from axolotl.monkeypatch.models.glm4v.modeling import (
-                patch_glm4v_attention_rope_scaling,
-            )
-
-            patch_glm4v_attention_rope_scaling()
 
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""

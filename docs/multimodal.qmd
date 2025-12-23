@@ -185,12 +185,14 @@ chat_template: qwen2_vl  # same as qwen2-vl
 
 ### GLM-4.6V {#sec-glm-4-6v}
 
-::: {.callout-note}
-Axolotl includes a processor fix for GLM-4.6V due to a misconfigured `preprocessor_config.json` in the model repo.
-:::
+Both GLM-4.6V (106B MoE) and GLM-4.6V-Flash (9B) are supported.
 
 ```yaml
+# GLM-4.6V (106B MoE version)
 base_model: zai-org/GLM-4.6V
+
+# OR GLM-4.6V-Flash (9B version)
+base_model: zai-org/GLM-4.6V-Flash
 ```
 
 ### SmolVLM2 {#sec-smolvlm2}
