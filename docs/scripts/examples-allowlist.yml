@@ -1,5 +1,68 @@
 examples:
-  - distributed-parallel
-  - slurm
-  - llama-3
-  - gpt-oss
+  # AllenAI
+  - name: olmo3
+    title: OLMo 3
+
+  # MistralAI
+  - name: magistral/think
+    title: Magistral Thinking
+  - name: magistral/vision
+    title: Magistral Vision
+  - name: ministral3/think
+    title: Ministral 3 Thinking
+  - name: ministral3/vision
+    title: Ministral 3 Vision
+  - name: voxtral
+    title: Voxtral
+
+  # Meta
+  - name: llama-4
+    title: Llama 4
+  - name: llama-3/diffusion
+    title: Llama 3 Diffusion
+
+  # Alibaba
+  - name: qwen3-next
+    title: Qwen 3 Next
+  - name: qwen3
+    title: Qwen 3
+
+  # Google
+  - name: gemma3n
+    title: Gemma 3n
+
+  # ArceeAI
+  - name: trinity
+    title: Trinity
+  - name: arcee
+    title: Arcee AFM
+
+  # Swiss AI
+  - name: apertus
+    title: Apertus
+
+  # GPT-OSS
+  - name: gpt-oss
+    title: GPT-OSS
+
+  # Microsoft
+  - name: phi
+    title: Phi
+
+  # SmolVLM
+  - name: smolvlm2
+    title: SmolVLM 2
+
+  # IBM
+  - name: granite4
+    title: Granite 4
+
+  # LiquidAI
+  - name: LiquidAI
+    title: Liquid Foundation Models 2
+
+  # Other
+  - name: jamba
+    title: Jamba
+  - name: orpheus
+    title: Orpheus

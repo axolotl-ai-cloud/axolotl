@@ -260,6 +260,33 @@ website:
             - docs/amd_hpc.qmd
             - docs/mac.qmd
 
+        - section: "Model Guides"
+          contents:
+            - docs/examples/olmo3.qmd
+            - docs/examples/magistral/index.qmd
+            - docs/examples/magistral/think.qmd
+            - docs/examples/magistral/vision.qmd
+            - docs/examples/ministral3/index.qmd
+            - docs/examples/ministral3/think.qmd
+            - docs/examples/ministral3/vision.qmd
+            - docs/examples/voxtral.qmd
+            - docs/examples/llama-4.qmd
+            - docs/examples/llama-3/index.qmd
+            - docs/examples/llama-3/diffusion.qmd
+            - docs/examples/qwen3-next.qmd
+            - docs/examples/qwen3.qmd
+            - docs/examples/gemma3n.qmd
+            - docs/examples/trinity.qmd
+            - docs/examples/arcee.qmd
+            - docs/examples/apertus.qmd
+            - docs/examples/gpt-oss.qmd
+            - docs/examples/phi.qmd
+            - docs/examples/smolvlm2.qmd
+            - docs/examples/granite4.qmd
+            - docs/examples/LiquidAI.qmd
+            - docs/examples/jamba.qmd
+            - docs/examples/orpheus.qmd
+
         - section: "How To Guides"
           contents:
             - docs/multimodal.qmd
@@ -290,11 +317,6 @@ website:
             - docs/sequence_parallelism.qmd
             - docs/gradient_checkpointing.qmd
             - docs/nd_parallelism.qmd
-
-        - title: Usage Examples
-          desc: Example YAML files for training different models
-          contents:
-            - docs/examples/*.qmd
 
         - section: "Troubleshooting"
           contents:
