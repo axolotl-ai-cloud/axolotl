@@ -62,11 +62,8 @@ def setup_model_and_tokenizer(
             `None`), and processor (if multimodal, else `None`).
     """
     # Load tokenizer
-    LOG.info(f"Loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
+    LOG.debug(f"Loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
     tokenizer = load_tokenizer(cfg)
-    # IMPORTANT: Put this log immediately after to catch any hang in between
-    LOG.warning(">>> TOKENIZER RETURNED - GOT HERE <<<")
-    LOG.info("Tokenizer loaded, creating ModelLoader...")
 
     # Load processor for multimodal models if needed
     processor = None
@@ -74,10 +71,9 @@ def setup_model_and_tokenizer(
         processor = load_processor(cfg, tokenizer)
 
     # Load the model
-    LOG.info("Loading model")
-    LOG.info("About to create ModelLoader...")
+    LOG.debug("Loading model")
+
     model_loader = ModelLoader(cfg, tokenizer, processor=processor)
-    LOG.info("ModelLoader created, about to load model...")
     model, peft_config = model_loader.load()
     if model.generation_config is not None:
         model.generation_config.do_sample = True

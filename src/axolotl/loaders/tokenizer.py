@@ -126,7 +126,7 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     from axolotl.loaders.patch_manager import PatchManager
 
     PatchManager.apply_pre_tokenizer_load_patches(cfg)
-    LOG.info("Kimi tokenizer patches applied, continuing with tokenizer loading...")
+    LOG.debug("Kimi tokenizer patches applied, continuing with tokenizer loading...")
 
     def _load_mistral_common_tokenizer(cfg: DictDefault):
         """Load mistral-common tokenizer"""
@@ -140,9 +140,9 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     if cfg.tokenizer_use_mistral_common:
         return _load_mistral_common_tokenizer(cfg)
 
-    LOG.info("Loading model config...")
+    LOG.debug("Loading model config...")
     model_config = load_model_config(cfg)
-    LOG.info("Model config loaded successfully")
+    LOG.debug("Model config loaded successfully")
 
     tokenizer_kwargs = {}
     use_fast = True  # this is the default
@@ -167,14 +167,14 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
             tokenizer_path, cfg.added_tokens_overrides, output_dir=cfg.output_dir
         )
 
-    LOG.info(f"Loading tokenizer from {cfg.tokenizer_config}...")
+    LOG.debug(f"Loading tokenizer from {cfg.tokenizer_config}...")
     tokenizer = tokenizer_cls.from_pretrained(
         tokenizer_path,
         trust_remote_code=cfg.trust_remote_code or False,
         use_fast=use_fast,
         **tokenizer_kwargs,
     )
-    LOG.info("Tokenizer loaded successfully")
+    LOG.debug("Tokenizer loaded successfully")
 
     if (
         tokenizer.__class__.__name__
@@ -311,5 +311,4 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     if hasattr(tokenizer, "deprecation_warnings"):
         tokenizer.deprecation_warnings["Asking-to-pad-a-fast-tokenizer"] = True
 
-    LOG.info("load_tokenizer: About to return tokenizer")
     return tokenizer
