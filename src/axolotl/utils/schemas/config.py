@@ -2,6 +2,7 @@
 
 from typing import Annotated, Any, Literal
 
+from accelerate.utils import is_fp8_available
 from annotated_types import MinLen
 from packaging import version
 from pydantic import (
@@ -451,10 +452,10 @@ class AxolotlInputConfig(
             "description": "The maximum length of an input to train with, this should typically be less than 2048 as most models have a token/context limit of 2048"
         },
     )
-    excess_length_strategy: Literal["drop", "truncate"] | None = Field(
+    excess_length_strategy: Literal["drop", "truncate", "raise"] | None = Field(
         default=None,
         json_schema_extra={
-            "description": "What to do when a tokenized row exceeds sequence_len. 'drop' removes the row; 'truncate' slices tensors to sequence_len. Defaults to 'drop' for backward compatibility."
+            "description": "What to do when a tokenized row exceeds sequence_len. 'drop' removes the row; 'truncate' slices tensors to sequence_len; 'raise' raises a ValueError. Defaults to 'drop' for backward compatibility."
         },
     )
     eval_sequence_len: int | None = Field(
@@ -1096,6 +1097,16 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 raise ValueError(
                     "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
                 )
+        return self
+
+    @model_validator(mode="after")
+    def check_fp8(self):
+        if self.fp8 and not self.capabilities.fp8:
+            raise ValueError("fp8 requested, but fp8 is not supported on this GPU")
+        elif self.fp8 and self.capabilities.fp8 and not is_fp8_available():
+            raise ValueError(
+                "fp8 requested, but missing one of ms-amp, transformers-engine or torchao."
+            )
         return self
 
     @model_validator(mode="before")

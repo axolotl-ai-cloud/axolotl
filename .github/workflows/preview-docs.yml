@@ -11,6 +11,7 @@ on:
       - '_quarto.yml'
       - docs/scripts/generate_config_docs.py
       - src/axolotl/utils/schemas/**.py
+      - .github/workflows/preview-docs.yml
 
 permissions:
   checks: write
