@@ -200,3 +200,23 @@ class OpenTelemetryConfig(BaseModel):
             "description": "Port for the Prometheus metrics HTTP server"
         },
     )
+
+
+class TrackioConfig(BaseModel):
+    """Trackio configuration subset"""
+
+    use_trackio: bool | None = None
+    trackio_project_name: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Your trackio project name"},
+    )
+    trackio_run_name: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Set the name of your trackio run"},
+    )
+    trackio_space_id: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Hugging Face Space ID to sync dashboard to (optional, runs locally if not provided)"
+        },
+    )

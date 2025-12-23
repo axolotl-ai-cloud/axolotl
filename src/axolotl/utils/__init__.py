@@ -24,6 +24,10 @@ def is_opentelemetry_available():
     )
 
 
+def is_trackio_available():
+    return importlib.util.find_spec("trackio") is not None
+
+
 def get_pytorch_version() -> tuple[int, int, int]:
     """
     Get Pytorch version as a tuple of (major, minor, patch).
