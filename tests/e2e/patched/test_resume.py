@@ -68,6 +68,11 @@ class TestResumeLlama:
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
 
+        initial_total_num_tokens = cfg.total_num_tokens
+        assert initial_total_num_tokens is not None, (
+            "total_num_tokens should be calculated during load_datasets"
+        )
+
         train(cfg=cfg, dataset_meta=dataset_meta)
 
         resume_cfg = cfg | DictDefault(
@@ -77,7 +82,24 @@ class TestResumeLlama:
         )
         normalize_config(resume_cfg)
 
-        train(cfg=resume_cfg, dataset_meta=dataset_meta)
+        assert resume_cfg.total_num_tokens == initial_total_num_tokens, (
+            f"total_num_tokens should be preserved on resume. "
+            f"Expected {initial_total_num_tokens}, got {resume_cfg.total_num_tokens}"
+        )
+
+        resume_dataset_meta = load_datasets(cfg=resume_cfg)
+
+        assert resume_cfg.total_num_tokens == initial_total_num_tokens, (
+            f"total_num_tokens should not be recalculated when resuming. "
+            f"Expected {initial_total_num_tokens}, got {resume_cfg.total_num_tokens}"
+        )
+
+        train(cfg=resume_cfg, dataset_meta=resume_dataset_meta)
+
+        assert resume_cfg.total_num_tokens == initial_total_num_tokens, (
+            f"total_num_tokens should remain unchanged after resume training. "
+            f"Expected {initial_total_num_tokens}, got {resume_cfg.total_num_tokens}"
+        )
         check_model_output_exists(temp_dir, cfg)
 
         tb_log_path_1 = most_recent_subdir(temp_dir + "/runs")
