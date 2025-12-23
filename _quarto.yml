@@ -269,6 +269,8 @@ website:
             - docs/examples/ministral3/index.qmd
             - docs/examples/ministral3/think.qmd
             - docs/examples/ministral3/vision.qmd
+            - docs/examples/ministral.qmd
+            - docs/examples/mistral-small.qmd
             - docs/examples/voxtral.qmd
             - docs/examples/llama-4.qmd
             - docs/examples/llama-3/index.qmd
@@ -280,10 +282,12 @@ website:
             - docs/examples/arcee.qmd
             - docs/examples/apertus.qmd
             - docs/examples/gpt-oss.qmd
+            - docs/examples/seed-oss.qmd
             - docs/examples/phi.qmd
             - docs/examples/smolvlm2.qmd
             - docs/examples/granite4.qmd
             - docs/examples/LiquidAI.qmd
+            - docs/examples/hunyuan.qmd
             - docs/examples/jamba.qmd
             - docs/examples/orpheus.qmd
 

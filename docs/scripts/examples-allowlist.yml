@@ -12,6 +12,10 @@ examples:
     title: Ministral 3 Thinking
   - name: ministral3/vision
     title: Ministral 3 Vision
+  - name: ministral
+    title: Ministral
+  - name: mistral-small
+    title: Mistral Small 3.1/3.2
   - name: voxtral
     title: Voxtral
 
@@ -44,6 +48,8 @@ examples:
   # GPT-OSS
   - name: gpt-oss
     title: GPT-OSS
+  - name: seed-oss
+    title: Seed-OSS
 
   # Microsoft
   - name: phi
@@ -62,6 +68,8 @@ examples:
     title: Liquid Foundation Models 2
 
   # Other
+  - name: hunyuan
+    title: Hunyuan
   - name: jamba
     title: Jamba
   - name: orpheus
