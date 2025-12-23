@@ -7,12 +7,14 @@ import fire
 
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
 
+@send_errors
 def do_merge_lora(*, cfg: DictDefault) -> None:
     """
     Calls `transformers`' `merge_and_unload` on the model given in the `axolotl` config

@@ -59,15 +59,19 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: cleanup node
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
       - name: Check out repository code
         uses: actions/checkout@v4
 
-      - name: Restore Cache from S3
-        id: hf-cache-restore-s3
-        run: |
-          mkdir -p /home/runner/.cache/huggingface/hub
-          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C /home/runner/.cache/huggingface/hub/  --use-compress-program unzstd
-
+#      - name: Restore Cache from S3
+#        id: hf-cache-restore-s3
+#        run: |
+#          mkdir -p ~/.cache/huggingface/hub
+#          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd
+#
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -91,6 +95,10 @@ jobs:
           python scripts/cutcrossentropy_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
 
+      - name: cleanup pip cache
+        run: |
+          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
+
       - name: Make sure PyTorch version wasn't clobbered
         run: |
           python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__"
@@ -105,9 +113,13 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
+          df -h
+          pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
+          df -h
           pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
+          df -h
           pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
+          df -h
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Upload coverage to Codecov
@@ -117,10 +129,6 @@ jobs:
           files: ./coverage.xml
           flags: unittests,pytorch-${{ matrix.pytorch_version }}
           fail_ci_if_error: false
-
-      - name: cleanup pip cache
-        run: |
-          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
 
   pytest-sdist:
     name: PyTest from Source Dist
@@ -134,15 +142,19 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: cleanup node
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
       - name: Check out repository code
         uses: actions/checkout@v4
 
-      - name: Restore Cache from S3
-        id: hf-cache-restore-s3
-        run: |
-          mkdir -p /home/runner/.cache/huggingface/hub
-          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C /home/runner/.cache/huggingface/hub/  --use-compress-program unzstd
-
+#      - name: Restore Cache from S3
+#        id: hf-cache-restore-s3
+#        run: |
+#          mkdir -p ~/.cache/huggingface/hub
+#          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd
+#
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -167,6 +179,10 @@ jobs:
           python scripts/cutcrossentropy_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
 
+      - name: cleanup pip cache
+        run: |
+          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
+
       - name: Make sure PyTorch version wasn't clobbered
         run: |
           python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__"
@@ -176,17 +192,13 @@ jobs:
           axolotl --help
 
       - name: Show HF cache
-        run: huggingface-cli scan-cache
+        run: hf cache scan
 
       - name: Run tests
         run: |
-          pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
+          pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
           pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/
-
-      - name: cleanup pip cache
-        run: |
-          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
 
   gate-skip-e2e:
     needs: [pre-commit, pytest, pytest-sdist]
