@@ -28,6 +28,10 @@ wandb_watch:
 wandb_name:
 wandb_log_model:
 
+trackio_project_name:
+trackio_run_name:
+trackio_space_id:
+
 gradient_accumulation_steps: 2
 micro_batch_size: 1
 num_epochs: 1
