@@ -452,7 +452,61 @@ class Mistral3ProcessingStrategy(ProcessingStrategy):
         labels[labels == self.image_end_token] = -100
 
         return labels
+class Glm4vProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for GLM4V and GLM4V-MoE vision models.
 
+    See: https://github.com/axolotl-ai-cloud/axolotl/issues/3312
+    """
+
+    def __init__(
+        self,
+        processor: ProcessorMixin,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
+        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+       
+        self.image_token = "<|image|>"
+        self.begin_image_token = "<|begin_of_image|>"
+        self.end_image_token = "<|end_of_image|>"
+        self.video_token = "<|video|>"
+        self.begin_video_token = "<|begin_of_video|>"
+        self.end_video_token = "<|end_of_video|>"
+
+        self.image_token_id = processor.tokenizer.convert_tokens_to_ids(
+            self.image_token
+        )
+        self.begin_image_token_id = processor.tokenizer.convert_tokens_to_ids(
+            self.begin_image_token
+        )
+        self.end_image_token_id = processor.tokenizer.convert_tokens_to_ids(
+            self.end_image_token
+        )
+        self.video_token_id = processor.tokenizer.convert_tokens_to_ids(
+            self.video_token
+        )
+        self.begin_video_token_id = processor.tokenizer.convert_tokens_to_ids(
+            self.begin_video_token
+        )
+        self.end_video_token_id = processor.tokenizer.convert_tokens_to_ids(
+            self.end_video_token
+        )
+
+    def process_labels(self, input_ids):
+        labels = input_ids.clone()
+
+        labels[labels == self.processor.tokenizer.pad_token_id] = -100
+
+        labels[labels == self.image_token_id] = -100
+        labels[labels == self.begin_image_token_id] = -100
+        labels[labels == self.end_image_token_id] = -100
+
+        labels[labels == self.video_token_id] = -100
+        labels[labels == self.begin_video_token_id] = -100
+        labels[labels == self.end_video_token_id] = -100
+
+        return labels
 
 def get_processing_strategy(
     processor: ProcessorMixin,
@@ -500,6 +554,15 @@ def get_processing_strategy(
         return Mistral3ProcessingStrategy(
             **processing_kwargs,
         )
+    try:
+        from transformers.models.glm4v.processing_glm4v import Glm4vProcessor
+
+        if isinstance(processor, Glm4vProcessor):
+            return Glm4vProcessingStrategy(
+                **processing_kwargs,
+            )
+    except ImportError:
+        pass
 
     # llama3_2_vision, llama4, llava
     # mistral_v7_tekken, pixtral, lfm2vl

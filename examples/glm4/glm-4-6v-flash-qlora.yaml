@@ -1,0 +1,53 @@
+base_model: zai-org/GLM-4.6V-Flash
+trust_remote_code: true
+
+processor_type: AutoProcessor
+load_in_4bit: true
+# these 3 lines are needed for now to handle vision chat templates w images
+skip_prepare_dataset: true
+remove_unused_columns: false
+sample_packing: false
+
+chat_template: tokenizer_default
+
+datasets:
+  - path: HuggingFaceH4/llava-instruct-mix-vsft
+    type: chat_template
+    split: train[:1%]
+
+adapter: qlora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_modules:
+  - gate_proj
+  - down_proj
+  - up_proj
+  - q_proj
+  - v_proj
+  - k_proj
+  - o_proj
+
+sequence_len: 2048
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: false
+
+gradient_checkpointing: true
+logging_steps: 1
+flash_attention: true
+
+warmup_ratio: 0.1
+evals_per_epoch: 0
+saves_per_epoch: 1
+weight_decay: 0.0
+output_dir: ./outputs/glm-4-6v-flash-qlora
+
+

@@ -12,12 +12,40 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+def _load_glm4v_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
+    """
+    Load GLM4V/GLM4V_MoE processor manually.
+
+    The model's preprocessor_config.json has an incorrect image_processor_type
+    (Glm46VImageProcessor instead of Glm4vImageProcessor), causing AutoProcessor
+    to fail. This function manually constructs the processor with correct components.
+
+    See: https://github.com/axolotl-ai-cloud/axolotl/issues/3312
+    """
+    from transformers.models.glm4v.image_processing_glm4v import Glm4vImageProcessor
+    from transformers.models.glm4v.processing_glm4v import Glm4vProcessor
+    from transformers.models.glm4v.video_processing_glm4v import Glm4vVideoProcessor
+
+    image_processor = Glm4vImageProcessor.from_pretrained(cfg.processor_config)
+    video_processor = Glm4vVideoProcessor.from_pretrained(cfg.processor_config)
+
+    processor = Glm4vProcessor(
+        image_processor=image_processor,
+        tokenizer=tokenizer,
+        video_processor=video_processor,
+    )
+    return processor
+
 
 @send_errors
 def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
     processor_cls = AutoProcessor
     if cfg.processor_type:
         processor_cls = getattr(transformers, cfg.processor_type)
+
+    if cfg.model_config_type in ("glm4v", "glm4v_moe"):
+        LOG.info("Using GLM4V processor fix for %s", cfg.model_config_type)
+        return _load_glm4v_processor(cfg, tokenizer)
 
     if cfg.tokenizer_use_mistral_common:
 

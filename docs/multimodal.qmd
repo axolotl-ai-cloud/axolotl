@@ -19,6 +19,7 @@ format:
 - [Gemma-3n](#sec-gemma-3n)
 - [Qwen2-VL](#sec-qwen2-vl)
 - [Qwen2.5-VL](#sec-qwen25-vl)
+- [GLM-4.6V](#sec-glm-4-6v)
 - [SmolVLM2](#sec-smolvlm2)
 - [LFM2-VL](#sec-lfm2-vl)
 
@@ -180,6 +181,16 @@ chat_template: qwen2_vl  # same as qwen2-vl
 base_model: Qwen/Qwen3-VL-4B-Instruct
 
 chat_template: qwen2_vl  # same as qwen2-vl
+```
+
+### GLM-4.6V {#sec-glm-4-6v}
+
+::: {.callout-note}
+Axolotl includes a processor fix for GLM-4.6V due to a misconfigured `preprocessor_config.json` in the model repo.
+:::
+
+```yaml
+base_model: zai-org/GLM-4.6V
 ```
 
 ### SmolVLM2 {#sec-smolvlm2}
