@@ -64,6 +64,8 @@ def setup_model_and_tokenizer(
     # Load tokenizer
     LOG.info(f"Loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
     tokenizer = load_tokenizer(cfg)
+    # IMPORTANT: Put this log immediately after to catch any hang in between
+    LOG.warning(">>> TOKENIZER RETURNED - GOT HERE <<<")
     LOG.info("Tokenizer loaded, creating ModelLoader...")
 
     # Load processor for multimodal models if needed
