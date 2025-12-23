@@ -288,8 +288,8 @@ def do_inference_gradio(
         title=cfg.get("gradio_title", "Axolotl Gradio Interface"),
     )
 
-    demo.queue().launch(
-        show_api=False,
+    demo.launch(
+        footer_links=["gradio", "settings"],
         share=cfg.get("gradio_share", True),
         server_name=cfg.get("gradio_server_name", "127.0.0.1"),
         server_port=cfg.get("gradio_server_port", None),
