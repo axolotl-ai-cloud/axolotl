@@ -190,7 +190,6 @@ class PatchManager:
 
             apply_mistral_tokenizer_image_patch()
 
-
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
         if self.cfg.fp8:
