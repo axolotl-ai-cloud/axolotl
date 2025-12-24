@@ -1,8 +1,9 @@
 base_model: OpenGVLab/InternVL3_5-8B
 trust_remote_code: true
 
-plugins:
-  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+# CCE - N/A as of now
+# plugins:
+#   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
 
 load_in_4bit: true
 
@@ -49,8 +50,6 @@ fp16:
 tf32: true
 
 gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: false
 logging_steps: 1
 flash_attention: true
 eager_attention:
