@@ -36,9 +36,6 @@ class PatchManager:
         Args:
             cfg: Configuration dictionary with model and training settings.
         """
-        # Kimi-linear config patches need to be applied before config loading
-        # because the config uses remote code.
-        # Note: model_config_type is not set yet, so check base_model name
         if (
             hasattr(cfg, "base_model_config")
             and cfg.base_model_config
@@ -60,9 +57,6 @@ class PatchManager:
         Args:
             cfg: Configuration dictionary with model and training settings.
         """
-        # Kimi-linear tokenizer patches need to be applied before tokenizer loading
-        # because the tokenizer uses remote code.
-        # Note: model_config_type is not set yet, so check base_model name
         if (
             hasattr(cfg, "tokenizer_config")
             and cfg.tokenizer_config
