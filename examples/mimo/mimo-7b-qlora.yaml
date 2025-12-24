@@ -1,5 +1,6 @@
 base_model: XiaomiMiMo/MiMo-7B-RL
 trust_remote_code: true
+revision_of_model: 6299b5a
 
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
