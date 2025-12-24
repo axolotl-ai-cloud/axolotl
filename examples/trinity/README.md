@@ -31,7 +31,7 @@ Please check the [Optimizations doc](https://docs.axolotl.ai/docs/optimizations.
 
 ## Limitations
 
-**Cut Cross Entropy (CCE)**: Currently not supported. We plan to include CCE support for MiMo in the near future.
+**Cut Cross Entropy (CCE)**: Currently not supported. We plan to include CCE support for Trinity in the near future.
 
 ## Related Resources
 
