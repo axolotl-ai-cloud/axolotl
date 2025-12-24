@@ -231,7 +231,7 @@ website:
 
   sidebar:
       pinned: true
-      collapse-level: 2
+      collapse-level: 1
       style: docked
       contents:
         - text: Home
