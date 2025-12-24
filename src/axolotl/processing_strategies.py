@@ -7,10 +7,8 @@ from PIL import Image, ImageOps
 from PIL.Image import Resampling
 from torch import Tensor, zeros_like
 from transformers import ProcessorMixin
-
-from transformers import InternVLProcessor
-
 from transformers.image_utils import load_image
+from transformers.models.internvl import InternVLProcessor
 from transformers.models.smolvlm import SmolVLMProcessor
 from transformers.models.voxtral import VoxtralProcessor
 
