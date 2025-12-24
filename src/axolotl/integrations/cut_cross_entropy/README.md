@@ -55,6 +55,7 @@ plugins:
 - hunyuan_v1_dense
 - hunyuan_v1_moe
 - internvl_chat
+- kimi_linear
 - lfm2
 - lfm2_moe
 - lfm2_vl
