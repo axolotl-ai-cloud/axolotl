@@ -20,7 +20,7 @@ This guide shows how to fine-tune it with Axolotl.
     axolotl train examples/internvl3_5/internvl3_5-8b-qlora.yml
     ```
 
-Let us know how it goes. Happy finetuning! 🚀
+This config uses about 12.6 GiB VRAM. Let us know how it goes. Happy finetuning! 🚀
 
 ### Tips
 
