@@ -16,7 +16,7 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
     axolotl train examples/plano/plano-4b-qlora.yaml
     ```
 
-Let us know how it goes. Happy finetuning! 🚀
+This config uses about 5.1 GiB VRAM. Let us know how it goes. Happy finetuning! 🚀
 
 ### Orchestration Prompt
 
