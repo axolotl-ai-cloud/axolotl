@@ -188,7 +188,10 @@ def handle_long_seq_in_dataset(
         cfg: Dictionary mapping `axolotl` config keys to values.
 
     Returns:
-        Filtered dataset with long sequences removed.
+        Filtered dataset with long sequences handled according to the excess_length_strategy value:
+            'drop' (default)    excludes any sequence longer than sequence_len
+            'truncate'          truncates them down to sequence_len
+            'raise'             raises a ValueError if any sequence was found that was longer than sequence_len
     """
     if (
         hasattr(dataset, "column_names")
@@ -206,10 +209,13 @@ def handle_long_seq_in_dataset(
         )
         return dataset
 
+    excess_length_strategy = (cfg.excess_length_strategy or "drop").lower()
+
     drop_long = functools.partial(
         drop_long_seq,
         sequence_len=sequence_len,
         min_sequence_len=cfg.min_sample_len,
+        raise_on_drop=excess_length_strategy == "raise",
     )
 
     with contextlib.suppress(AttributeError):
@@ -228,9 +234,13 @@ def handle_long_seq_in_dataset(
 
     drop_long_kwargs = {}
     if filter_map_kwargs:
-        drop_long_kwargs["desc"] = f"Dropping Long Sequences (>{sequence_len})"
+        action = (
+            "Checking Sequence Lengths"
+            if excess_length_strategy == "raise"
+            else "Dropping Long Sequences"
+        )
+        drop_long_kwargs["desc"] = f"{action} (>{sequence_len})"
 
-    excess_length_strategy = (cfg.excess_length_strategy or "drop").lower()
     if excess_length_strategy == "truncate":
         process_fn = functools.partial(
             truncate_long_seq,

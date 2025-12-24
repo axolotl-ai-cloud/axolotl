@@ -1,5 +1,5 @@
-base_model: meta-llama/Llama-3.2-3B
-# Automatically upload checkpoint and final model to HF
+base_model: Qwen/Qwen2.5-72B
+# Math finetuning configuration for Qwen2.5-72B (non-instruct)
 # hub_model_id: username/custom_model_name
 
 load_in_8bit: false
@@ -14,62 +14,59 @@ liger_rms_norm: true
 liger_glu_activation: true
 liger_layer_norm: true
 liger_fused_linear_cross_entropy: true
-
+seed: 42
+chat_template: qwen_25
 datasets:
-  - path: yahma/alpaca-cleaned
-    type: alpaca
+  - path: AI-MO/NuminaMath-CoT
+    type: chat_template
 
-output_dir: ./outputs/fp8_out/
+output_dir: ./outputs/qat_out_math_72b/
 
+sequence_len: 4096
 sample_packing: true
-pad_to_sequence_len: true
-sequence_len: 512
+flash_attention: true
 
-flex_attention: true
-flex_attn_compile_kwargs:
-  dynamic: false
-  mode: max-autotune-no-cudagraphs
-torch_compile: true
+qat:
+  activation_dtype: nvfp4
+  weight_dtype: nvfp4
+  group_size: 16 # only group_size of 16 is supported with nvfp4
 
-wandb_project:
 wandb_entity:
 wandb_watch:
 wandb_name:
 wandb_log_model:
 
 gradient_accumulation_steps: 1
-micro_batch_size: 16
+micro_batch_size: 8
 num_epochs: 1
 optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 5e-6
+eta_min: 7e-7
 
-cosine_constant_lr_ratio: 0
-cosine_min_lr_ratio: 1.0
-learning_rate: 2e-5
-save_only_model: true
-
-fp8: true
-fp8_enable_fsdp_float8_all_gather: true
+bf16: true
+tf32: true
 
 resume_from_checkpoint:
 logging_steps: 1
 
-evals_per_epoch: 1
+# evals_per_epoch: 1
 saves_per_epoch: 1
 
-warmup_steps: 10
+warmup_ratio: 0.1
 weight_decay: 0.0
-
 fsdp_version: 2
+
 fsdp_config:
   offload_params: false
+  cpu_ram_efficient_loading: true
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  transformer_layer_cls_to_wrap: LlamaDecoderLayer
+  transformer_layer_cls_to_wrap: Qwen2DecoderLayer
   state_dict_type: FULL_STATE_DICT
   sharding_strategy: FULL_SHARD
   reshard_after_forward: true
-  activation_checkpointing: false
+  activation_checkpointing: true
 
 special_tokens:
-  pad_token: <|end_of_text|>
 
 # save_first_step: true  # uncomment this to validate checkpoint saving works with your config
