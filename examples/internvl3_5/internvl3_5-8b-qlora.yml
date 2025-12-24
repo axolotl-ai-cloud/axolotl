@@ -1,9 +1,6 @@
 base_model: OpenGVLab/InternVL3_5-8B-HF
 processor_type: AutoProcessor
 
-trust_remote_code: true
-revision_of_model: 741a7d0
-
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
 
