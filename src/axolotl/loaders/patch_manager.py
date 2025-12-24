@@ -39,7 +39,11 @@ class PatchManager:
         # Kimi-linear config patches need to be applied before config loading
         # because the config uses remote code.
         # Note: model_config_type is not set yet, so check base_model name
-        if hasattr(cfg, "base_model") and "kimi-linear" in cfg.base_model.lower():
+        if (
+            hasattr(cfg, "base_model_config")
+            and cfg.base_model_config
+            and "kimi-linear" in cfg.base_model_config.lower()
+        ):
             from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
                 patch_kimi_config,
             )
@@ -59,7 +63,11 @@ class PatchManager:
         # Kimi-linear tokenizer patches need to be applied before tokenizer loading
         # because the tokenizer uses remote code.
         # Note: model_config_type is not set yet, so check base_model name
-        if hasattr(cfg, "base_model") and "kimi-linear" in cfg.base_model.lower():
+        if (
+            hasattr(cfg, "tokenizer_config")
+            and cfg.tokenizer_config
+            and "kimi-linear" in cfg.tokenizer_config.lower()
+        ):
             from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
                 patch_kimi_tokenizer,
             )
