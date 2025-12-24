@@ -22,12 +22,7 @@ GLM-4.6V is a family of vision-language models from ZhipuAI found on [HuggingFac
 
 4. Run the fine-tuning:
 
-    ```bash
-    axolotl train examples/glm46v/glm-4-6v-qlora.yaml
-    ```
-
-    Or for the Flash variant:
-
+    glm-4-6v-flash(9B)
     ```bash
     axolotl train examples/glm46v/glm-4-6v-flash-qlora.yaml
     ```
@@ -36,11 +31,18 @@ Let us know how it goes. Happy finetuning! 🚀
 
 ## Tips
 
-- The configs use `processor_type: AutoProcessor` to automatically handle vision inputs.
-- Vision datasets should follow the OpenAI Messages format with image content. See [multimodal docs](https://docs.axolotl.ai/docs/multimodal.html#dataset-format).
-- You can run a full finetuning by removing the `adapter: qlora` and `load_in_4bit: true` from the config.
-- Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
-- The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
+- The configs use **`processor_type: AutoProcessor`** to automatically handle vision inputs.
+- Vision datasets should follow the **vision data format** described in the [multimodal docs (Vision section)](https://docs.axolotl.ai/docs/multimodal.html#vision-data-format), similar to the `ministral3/vision` examples.
+- The dataset format is based on the **OpenAI Messages** schema with image content – see the [conversation format docs](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template) for details.
+- You can run a **full finetuning** by removing the `adapter: qlora` and `load_in_4bit: true` from the config.
+- Read more on how to load your own dataset in the [dataset loading docs](https://docs.axolotl.ai/docs/dataset_loading.html).
+
+## Text-only training (no vision)
+
+- If you only want to finetune **text**:
+  - Start from the same config and **remove the vision-specific fields** (e.g. `is_multimodal`, `image_column`, `image_size`, and any vision processor settings).
+  - Train it like a standard dense LLM (similar to other text-only configs).
+  - Depending on the GLM checkpoints you use, you may need to set `model_type` to the appropriate **GLM text class** (e.g. the text-only GLM variant for that family), if auto-detection does not pick it up correctly.
 
 ## Supported Models
 
