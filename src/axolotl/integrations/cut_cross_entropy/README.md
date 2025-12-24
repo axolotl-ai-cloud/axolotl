@@ -54,7 +54,7 @@ plugins:
 - granitemoehybrid
 - hunyuan_v1_dense
 - hunyuan_v1_moe
-- internvl_chat
+- internvl
 - kimi_linear
 - lfm2
 - lfm2_moe

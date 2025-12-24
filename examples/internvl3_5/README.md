@@ -1,6 +1,6 @@
 # Finetune OpenGV's InternVL with Axolotl
 
-[InternVL 3.5](https://huggingface.co/OpenGVLab/InternVL3_5-8B) is a family of powerful vision-language models supporting dynamic resolution and multi-image understanding by OpenGV. It features a ViT-style vision encoder and strong language model backbone for tasks like visual question answering, OCR, and scene text understanding.
+[InternVL 3.5](https://huggingface.co/OpenGVLab/InternVL3_5-8B-HF) is a family of powerful vision-language models supporting dynamic resolution and multi-image understanding by OpenGV. It features a ViT-style vision encoder and strong language model backbone for tasks like visual question answering, OCR, and scene text understanding.
 
 This guide shows how to fine-tune it with Axolotl.
 

@@ -1,6 +1,6 @@
 """Shared constants for axolotl.loaders module"""
 
-from transformers import AutoModelForCausalLM, AutoModelForImageTextToText
+from transformers import AutoModelForImageTextToText
 from transformers.models.auto.modeling_auto import (
     MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES,
 )
@@ -8,7 +8,6 @@ from transformers.models.auto.modeling_auto import (
 MULTIMODAL_AUTO_MODEL_MAPPING = dict(MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES)
 
 MULTIMODAL_AUTO_MODEL_MAPPING["lfm2-vl"] = AutoModelForImageTextToText
-MULTIMODAL_AUTO_MODEL_MAPPING["internvl_chat"] = AutoModelForCausalLM
 
 try:
     from transformers import VoxtralForConditionalGeneration
