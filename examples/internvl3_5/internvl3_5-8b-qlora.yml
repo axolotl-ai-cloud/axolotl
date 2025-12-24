@@ -4,9 +4,8 @@ processor_type: AutoProcessor
 trust_remote_code: true
 revision_of_model: 741a7d0
 
-# CCE - N/A as of now
-# plugins:
-#   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
 
 load_in_4bit: true
 

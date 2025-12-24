@@ -14,13 +14,15 @@ This guide shows how to fine-tune it with Axolotl.
     pip install timm==1.0.17
     ```
 
-3. Run the finetuning example:
+3. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage.
+
+4. Run the finetuning example:
 
     ```bash
     axolotl train examples/internvl3_5/internvl3_5-8b-qlora.yml
     ```
 
-This config uses about 12.6 GiB VRAM. Let us know how it goes. Happy finetuning! 🚀
+This config uses about 8.21 GiB VRAM. Let us know how it goes. Happy finetuning! 🚀
 
 ### Tips
 
@@ -31,10 +33,6 @@ This config uses about 12.6 GiB VRAM. Let us know how it goes. Happy finetuning!
 ## Optimization Guides
 
 Please check the [Optimizations doc](https://docs.axolotl.ai/docs/optimizations.html).
-
-## Limitations
-
-**Cut Cross Entropy (CCE)**: Currently not supported. We plan to include CCE support for InternVL in the near future.
 
 ## Related Resources
 
