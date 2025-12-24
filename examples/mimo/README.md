@@ -14,7 +14,7 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
     axolotl train examples/mimo/mimo-7b-qlora.yaml
     ```
 
-Let us know how it goes. Happy finetuning! 🚀
+This config uses about 17.2 GiB VRAM. Let us know how it goes. Happy finetuning! 🚀
 
 ### Tips
 
