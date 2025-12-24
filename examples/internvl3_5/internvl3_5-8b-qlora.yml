@@ -1,4 +1,6 @@
 base_model: OpenGVLab/InternVL3_5-8B
+processor_type: AutoProcessor
+
 trust_remote_code: true
 revision_of_model: 9bb6a56
 
