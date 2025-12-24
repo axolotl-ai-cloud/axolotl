@@ -208,7 +208,7 @@ def rewrite_readme_links(
 
 def write_qmd(out_path: Path, title: str, body_md: str):
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fm = f"---\ntitle: {title!r}\nformat:\n  html:\n    toc: true\n---\n\n"
+    fm = f"---\ntitle: {title!r}\nexecute: false\nformat:\n  html:\n    toc: true\n---\n\n"
     out_path.write_text(fm + body_md, encoding="utf-8")
 
 
@@ -382,7 +382,7 @@ def main():
             + listing
             + "\n"
         )
-        index_fm = "---\nformat:\n  html:\n    toc: true\n---\n\n"
+        index_fm = "---\nexecute: false\nformat:\n  html:\n    toc: true\n---\n\n"
         (OUTPUT_DIR / "index.qmd").write_text(index_fm + index_md, encoding="utf-8")
 
         # Auto-update _quarto.yml to keep sidebar in sync
