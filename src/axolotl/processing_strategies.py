@@ -466,6 +466,8 @@ class Glm4vProcessingStrategy(ProcessingStrategy):
     ):
         super().__init__(processor, chat_template, image_size, image_resize_algorithm)
 
+        self.tokenizer = getattr(processor, "tokenizer", processor)
+
         self.image_token = "<|image|>"  # nosec
         self.begin_image_token = "<|begin_of_image|>"  # nosec
         self.end_image_token = "<|end_of_image|>"  # nosec
@@ -473,29 +475,25 @@ class Glm4vProcessingStrategy(ProcessingStrategy):
         self.begin_video_token = "<|begin_of_video|>"  # nosec
         self.end_video_token = "<|end_of_video|>"  # nosec
 
-        self.image_token_id = processor.tokenizer.convert_tokens_to_ids(
-            self.image_token
-        )
-        self.begin_image_token_id = processor.tokenizer.convert_tokens_to_ids(
+        self.image_token_id = self.tokenizer.convert_tokens_to_ids(self.image_token)
+        self.begin_image_token_id = self.tokenizer.convert_tokens_to_ids(
             self.begin_image_token
         )
-        self.end_image_token_id = processor.tokenizer.convert_tokens_to_ids(
+        self.end_image_token_id = self.tokenizer.convert_tokens_to_ids(
             self.end_image_token
         )
-        self.video_token_id = processor.tokenizer.convert_tokens_to_ids(
-            self.video_token
-        )
-        self.begin_video_token_id = processor.tokenizer.convert_tokens_to_ids(
+        self.video_token_id = self.tokenizer.convert_tokens_to_ids(self.video_token)
+        self.begin_video_token_id = self.tokenizer.convert_tokens_to_ids(
             self.begin_video_token
         )
-        self.end_video_token_id = processor.tokenizer.convert_tokens_to_ids(
+        self.end_video_token_id = self.tokenizer.convert_tokens_to_ids(
             self.end_video_token
         )
 
     def process_labels(self, input_ids):
         labels = input_ids.clone()
 
-        labels[labels == self.processor.tokenizer.pad_token_id] = -100
+        labels[labels == self.tokenizer.pad_token_id] = -100
 
         labels[labels == self.image_token_id] = -100
         labels[labels == self.begin_image_token_id] = -100
@@ -522,10 +520,10 @@ def get_processing_strategy(
         "image_resize_algorithm": image_resize_algorithm,
     }
 
-    if chat_template_type in [None, "tokenizer_default"] and hasattr(
-        processor.tokenizer, "chat_template"
-    ):
-        processing_kwargs["chat_template"] = processor.tokenizer.chat_template
+    if chat_template_type in [None, "tokenizer_default"]:
+        tokenizer = getattr(processor, "tokenizer", processor)
+        if hasattr(tokenizer, "chat_template"):
+            processing_kwargs["chat_template"] = tokenizer.chat_template
 
     if chat_template_type == "qwen2_vl":
         return Qwen2VLProcessingStrategy(
