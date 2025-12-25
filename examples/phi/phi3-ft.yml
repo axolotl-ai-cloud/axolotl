@@ -37,7 +37,7 @@ max_grad_norm: 1.0
 lr_scheduler: cosine
 learning_rate: 5.0e-6
 
-bf16: auto
+bfloat16: auto
 
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:

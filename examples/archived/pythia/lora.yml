@@ -28,7 +28,7 @@ gradient_accumulation_steps: 1
 micro_batch_size: 4
 num_epochs: 4
 learning_rate: 0.00001
-bf16: auto
+bfloat16: auto
 tf32: true
 resume_from_checkpoint:
 weight_decay: 0.1
