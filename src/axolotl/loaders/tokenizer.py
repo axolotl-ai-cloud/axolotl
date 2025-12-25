@@ -124,6 +124,11 @@ def modify_tokenizer_files(
 def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     """Load and configure the tokenizer based on the provided config."""
 
+    # Apply patches that need to be in place before tokenizer loading
+    from axolotl.loaders.patch_manager import PatchManager
+
+    PatchManager.apply_pre_tokenizer_load_patches(cfg)
+
     def _load_mistral_common_tokenizer(cfg: DictDefault):
         """Load mistral-common tokenizer"""
         from axolotl.utils.mistral import HFMistralTokenizer

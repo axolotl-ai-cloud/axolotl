@@ -151,6 +151,11 @@ def normalize_config(cfg):
     if not cfg.base_model_config:
         cfg.base_model_config = cfg.base_model
 
+    # Apply pre-config load patches (e.g., for Kimi Linear remote code patching)
+    from axolotl.loaders.patch_manager import PatchManager
+
+    PatchManager.apply_pre_config_load_patches(cfg)
+
     model_config = load_model_config(cfg)
 
     cfg.tokenizer_config = (
