@@ -11,7 +11,7 @@ This guide shows how to fine-tune it with Axolotl.
 2. Install `timm` for vision model support:
 
     ```bash
-    pip install timm==1.0.17
+    pip install timm==1.0.19
     ```
 
 3. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage.
