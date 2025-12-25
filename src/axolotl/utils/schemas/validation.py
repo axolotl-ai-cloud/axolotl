@@ -803,6 +803,36 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_cross_entropy_conflicts(cls, data):
+        """Check for mutual exclusivity between cross entropy patch options.
+
+        Only one of the following can be enabled at a time:
+        - cut_cross_entropy (CutCrossEntropyPlugin)
+        - chunked_cross_entropy
+        - liger_cross_entropy (LigerPlugin)
+        - liger_fused_linear_cross_entropy (LigerPlugin)
+        """
+        ce_options = {
+            "cut_cross_entropy": data.get("cut_cross_entropy"),
+            "chunked_cross_entropy": data.get("chunked_cross_entropy"),
+            "liger_cross_entropy": data.get("liger_cross_entropy"),
+            "liger_fused_linear_cross_entropy": data.get(
+                "liger_fused_linear_cross_entropy"
+            ),
+        }
+
+        enabled_options = [k for k, v in ce_options.items() if v]
+
+        if len(enabled_options) > 1:
+            raise ValueError(
+                f"Only one cross entropy optimization can be enabled at a time. "
+                f"Found {len(enabled_options)} enabled: {', '.join(enabled_options)}. "
+                "Please disable all but one."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_fsdp_version(cls, data):
         fsdp_config = data.get("fsdp_config", {})
         if fsdp_config and str(data.get("fsdp_version")) != "2":

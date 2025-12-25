@@ -96,7 +96,11 @@ class CutCrossEntropyPlugin(BasePlugin):
             )
 
             # The patch checks model_type internally
-            cce_patch(cfg.model_config_type)
+
+            cce_patch(
+                cfg.model_config_type,
+                remote_model_id=cfg.base_model if cfg.trust_remote_code else None,
+            )
 
     def patch_llama_like(
         self,
@@ -107,7 +111,9 @@ class CutCrossEntropyPlugin(BasePlugin):
         """
         from cut_cross_entropy.transformers.patch import PATCH_FNS
 
-        def patch_generic(maybe_model, patch_options, model_type: str):
+        def patch_generic(
+            maybe_model, patch_options, model_type: str, remote_model_id: str | None
+        ):
             import cut_cross_entropy.transformers.llama
             from cut_cross_entropy.transformers.llama import cce_forward
 
