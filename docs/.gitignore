@@ -3,5 +3,5 @@ _site/
 /api/*.qmd
 /api/*.html
 config-reference.qmd
-examples/**/*.qmd
-examples/**/*.html
+models/**/*.qmd
+models/**/*.html

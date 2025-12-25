@@ -1,29 +1,49 @@
 examples:
+  # December 2025
+  - name: kimi-linear
+    title: Kimi Linear
+  - name: plano
+    title: Plano Orchestrator
+  - name: mimo
+    title: MiMo
+  - name: internvl3_5
+    title: InternVL 3.5
+
   # AllenAI
   - name: olmo3
     title: OLMo 3
 
+  # ArceeAI
+  - name: trinity
+    title: Trinity
+  - name: arcee
+    title: Arcee AFM
+
   # MistralAI
-  - name: magistral/think
-    title: Magistral Thinking
-  - name: magistral/vision
-    title: Magistral Vision
   - name: ministral3/think
     title: Ministral 3 Thinking
   - name: ministral3/vision
     title: Ministral 3 Vision
+  - name: magistral/think
+    title: Magistral Thinking
+  - name: magistral/vision
+    title: Magistral Vision
   - name: ministral
     title: Ministral
   - name: mistral-small
     title: Mistral Small 3.1/3.2
   - name: voxtral
     title: Voxtral
+  - name: devstral
+    title: Devstral
+  - name: mistral
+    title: Mistral 7B
 
   # Meta
   - name: llama-4
     title: Llama 4
-  - name: llama-3/diffusion
-    title: Llama 3 Diffusion
+  - name: llama-2
+    title: Llama 2
 
   # Alibaba
   - name: qwen3-next
@@ -34,12 +54,6 @@ examples:
   # Google
   - name: gemma3n
     title: Gemma 3n
-
-  # ArceeAI
-  - name: trinity
-    title: Trinity
-  - name: arcee
-    title: Arcee AFM
 
   # Swiss AI
   - name: apertus

@@ -13,7 +13,7 @@ import yaml
 THIS = Path(__file__).resolve()
 ROOT = THIS.parents[2]  # repo root (docs/scripts -> docs -> ROOT)
 EXAMPLES_DIR = ROOT / "examples"
-OUTPUT_DIR = ROOT / "docs" / "examples"
+OUTPUT_DIR = ROOT / "docs" / "models"
 ALLOWLIST_YML = THIS.parent / "examples-allowlist.yml"
 
 
@@ -208,7 +208,7 @@ def rewrite_readme_links(
 
 def write_qmd(out_path: Path, title: str, body_md: str):
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fm = f"---\ntitle: {title!r}\nexecute: false\nformat:\n  html:\n    toc: true\n---\n\n"
+    fm = f"---\ntitle: {title!r}\nexecute:\n  eval: false\nformat:\n  html:\n    toc: true\n---\n\n"
     out_path.write_text(fm + body_md, encoding="utf-8")
 
 
@@ -216,6 +216,10 @@ def update_quarto_yml(generated: list[tuple[str, str, str]]):
     """
     Update _quarto.yml with the generated example files in the correct order.
     This keeps the sidebar in sync with the allowlist.
+
+    Model Guides is now nested under "Getting Started" section.
+    Creates nested sections for models with sub-entries (e.g., magistral, ministral3).
+    Parent pages are now flat files (e.g., ministral3.qmd) with sub-pages in subdirs.
     """
     quarto_yml = ROOT / "_quarto.yml"
     if not quarto_yml.exists():
@@ -224,18 +228,51 @@ def update_quarto_yml(generated: list[tuple[str, str, str]]):
 
     content = quarto_yml.read_text(encoding="utf-8")
 
-    # Pattern to match just the Model Guides contents
-    pattern = r'(        - section: "Model Guides"\n          contents:)([^\n]*|.*?)(?=\n        - (?:section|title):|\n\nformat:)'
+    # First pass: find all parents that have sub-entries
+    parents_with_subs = set()
+    for path, _name, _title in generated:
+        if "/" in path:
+            parent = path.split("/")[0]
+            parents_with_subs.add(parent)
+
+    # Build the YAML contents while preserving allowlist order
+    lines = []
+    processed_sections = set()
+
+    for path, _name, title in generated:
+        # Check if this is a parent page that has sub-pages
+        if path in parents_with_subs:
+            # This is a parent page with sub-pages - create a nested section
+            if path not in processed_sections:
+                processed_sections.add(path)
+                section_title = (
+                    title or path.replace("-", " ").replace("_", " ").title()
+                )
+                lines.append(f'                - section: "{section_title}"')
+                lines.append("                  contents:")
+                # Add the parent page first
+                lines.append(f"                    - docs/models/{path}.qmd")
+                # Then add all sub-pages
+                for sub_path, _sub_name, _sub_title in generated:
+                    if "/" in sub_path and sub_path.split("/")[0] == path:
+                        lines.append(
+                            f"                    - docs/models/{sub_path}.qmd"
+                        )
+        elif "/" not in path:
+            # This is a flat item with no sub-pages
+            # Skip if it was already included as part of a parent section
+            if path not in processed_sections:
+                lines.append(f"                - docs/models/{path}.qmd")
+
+    yaml_content = "\n".join(lines) + "\n"
+
+    # Pattern to match only the Model Guides contents, stopping at the next item
+    # in Getting Started (lines starting with 12 spaces: same level as the section)
+    pattern = r'(            - section: "Model Guides"\n              contents:)([^\n]*|.*?)(?=\n            - |\n        - section:|\n\nformat:)'
 
     def replacement(match):
         prefix = match.group(1)
-        lines = "\n".join(
-            [
-                f"            - docs/examples/{path}.qmd"
-                for path, name, title in generated
-            ]
-        )
-        return prefix + "\n" + lines + "\n"
+        return prefix + "\n" + yaml_content
 
     new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
 
@@ -307,14 +344,8 @@ def main():
         parts = name.split("/")
         if len(parts) == 1:
             # Simple case: no subdirectory
-            parent = parts[0]
-            # Check if this parent should use index.qmd instead
-            if parent in parent_index_only:
-                out_path = OUTPUT_DIR / parent / "index.qmd"
-                sidebar_path = f"{parent}/index"
-            else:
-                out_path = OUTPUT_DIR / f"{parts[0]}.qmd"
-                sidebar_path = parts[0]
+            out_path = OUTPUT_DIR / f"{parts[0]}.qmd"
+            sidebar_path = parts[0]
         else:
             # Has subdirectory: e.g., magistral/think
             parent = parts[0]
@@ -336,12 +367,12 @@ def main():
         )
         md = rewrite_and_copy_assets(md, src_dir, OUTPUT_DIR)
 
-        # Handle parent index generation for sub-entries
+        # Handle parent page generation for sub-entries
         if len(parts) > 1:
             # Has subdirectory: e.g., magistral/think
             parent = parts[0]
 
-            # Create index.qmd for parent if not already done and parent doesn't have own entry
+            # Create parent.qmd if not already done and parent doesn't have own entry
             if parent not in seen_dirs and parent in parent_index_only:
                 parent_readme = find_readme(EXAMPLES_DIR / parent)
                 if parent_readme:
@@ -354,16 +385,14 @@ def main():
                         parent_index_only,
                         parent,
                         allowlist_entries,
-                        f"{parent}/index",
+                        parent,
                     )
                     parent_md = rewrite_and_copy_assets(
                         parent_md, EXAMPLES_DIR / parent, OUTPUT_DIR
                     )
-                    parent_title = parent.replace("-", " ").replace("/", " ").title()
-                    write_qmd(
-                        OUTPUT_DIR / parent / "index.qmd", parent_title, parent_md
-                    )
-                    generated.append((f"{parent}/index", parent, parent_title))
+                    parent_title = parent.replace("-", " ").replace("_", " ").title()
+                    write_qmd(OUTPUT_DIR / f"{parent}.qmd", parent_title, parent_md)
+                    generated.append((parent, parent, parent_title))
                     seen_dirs.add(parent)
 
         if not title:
@@ -382,7 +411,9 @@ def main():
             + listing
             + "\n"
         )
-        index_fm = "---\nexecute: false\nformat:\n  html:\n    toc: true\n---\n\n"
+        index_fm = (
+            "---\nexecute:\n  eval: false\nformat:\n  html:\n    toc: true\n---\n\n"
+        )
         (OUTPUT_DIR / "index.qmd").write_text(index_fm + index_md, encoding="utf-8")
 
         # Auto-update _quarto.yml to keep sidebar in sync
