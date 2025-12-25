@@ -894,6 +894,958 @@
     ]
   },
   {
+    "objectID": "docs/models/plano.html",
+    "href": "docs/models/plano.html",
+    "title": "Plano Orchestrator",
+    "section": "",
+    "text": "Plano-Orchestrator is a family of 4B and 30B-A3B routing and orchestration models designed for multi-agent systems. It analyzes user intent and conversation context to make precise routing decisions, excelling at multi-turn context understanding, multi-intent detection, and context-dependent routing.\nThis guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Plano Orchestrator"
+    ]
+  },
+  {
+    "objectID": "docs/models/plano.html#getting-started",
+    "href": "docs/models/plano.html#getting-started",
+    "title": "Plano Orchestrator",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide.\nInstall Cut Cross Entropy to reduce training VRAM usage.\nRun the finetuning example:\naxolotl train examples/plano/plano-4b-qlora.yaml\n\nThis config uses about 5.1 GiB VRAM. Let us know how it goes. Happy finetuning! 🚀\n\nOrchestration Prompt\nPlano-Orchestrator uses a specific orchestration prompt format for routing/agent decisions. Please check the official model card for proper prompt formatting and the ORCHESTRATION_PROMPT template.\n\n\nTips\n\nTo use the larger Plano-Orchestrator-30B-A3B MoE model, simply change base_model: katanemo/Plano-Orchestrator-30B-A3B in the config and enable multi-GPU training if needed.\nYou can run a full finetuning by removing the adapter: qlora and load_in_4bit: true from the config.\nRead more on how to load your own dataset at docs.\nThe dataset format follows the OpenAI Messages format as seen here.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Plano Orchestrator"
+    ]
+  },
+  {
+    "objectID": "docs/models/plano.html#optimization-guides",
+    "href": "docs/models/plano.html#optimization-guides",
+    "title": "Plano Orchestrator",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\nPlease check the Optimizations doc.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Plano Orchestrator"
+    ]
+  },
+  {
+    "objectID": "docs/models/plano.html#related-resources",
+    "href": "docs/models/plano.html#related-resources",
+    "title": "Plano Orchestrator",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nPlano GitHub\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Plano Orchestrator"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral3/vision.html",
+    "href": "docs/models/ministral3/vision.html",
+    "title": "Ministral 3 Vision",
+    "section": "",
+    "text": "This guide covers fine-tuning Ministral3 2512 with vision capabilities using Axolotl.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral3",
+      "Ministral 3 Vision"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral3/vision.html#prerequisites",
+    "href": "docs/models/ministral3/vision.html#prerequisites",
+    "title": "Ministral 3 Vision",
+    "section": "Prerequisites",
+    "text": "Prerequisites\nBefore starting, ensure you have:\n\nInstalled Axolotl from source (see main README)",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral3",
+      "Ministral 3 Vision"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral3/vision.html#getting-started",
+    "href": "docs/models/ministral3/vision.html#getting-started",
+    "title": "Ministral 3 Vision",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall the required vision lib:\nbash     pip install 'mistral-common[opencv]==1.8.6'\nDownload the example dataset image:\nwget https://huggingface.co/datasets/Nanobit/text-vision-2k-test/resolve/main/African_elephant.jpg\nRun the fine-tuning:\naxolotl train examples/ministral3/vision/ministral3-3b-vision-qlora.yml\n\nWARNING: The loss and grad norm will be much higher than normal at first. We suspect this to be inherent to the model as of the moment. If anyone would like to submit a fix for this, we are happy to take a look.\n\nTips\nKey differences from text-only model:\n- Multi-modal dataset format required\n- Sample packing not supported",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral3",
+      "Ministral 3 Vision"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral3/vision.html#dataset-format",
+    "href": "docs/models/ministral3/vision.html#dataset-format",
+    "title": "Ministral 3 Vision",
+    "section": "Dataset Format",
+    "text": "Dataset Format\nThe vision model requires multi-modal dataset format as documented here.\nOne exception is that, passing \"image\": PIL.Image is not supported. MistralTokenizer only supports path, url, and base64 for now.\nExample:\n{\n    \"messages\": [\n        {\"role\": \"system\", \"content\": [{ \"type\": \"text\", \"text\": \"{SYSTEM_PROMPT}\"}]},\n        {\"role\": \"user\", \"content\": [\n            { \"type\": \"text\", \"text\": \"What's in this image?\"},\n            {\"type\": \"image\", \"path\": \"path/to/image.jpg\" }\n        ]},\n        {\"role\": \"assistant\", \"content\": [{ \"type\": \"text\", \"text\": \"...\" }]},\n    ],\n}",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral3",
+      "Ministral 3 Vision"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral3/vision.html#limitations",
+    "href": "docs/models/ministral3/vision.html#limitations",
+    "title": "Ministral 3 Vision",
+    "section": "Limitations",
+    "text": "Limitations\n\nSample Packing is not supported for multi-modality training currently.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral3",
+      "Ministral 3 Vision"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral3.html",
+    "href": "docs/models/ministral3.html",
+    "title": "Ministral3",
+    "section": "",
+    "text": "Ministral3 is a family of open-weight models from MistralAI found on HuggingFace. This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.\nPlease see Thinking and Vision for their respective fine-tuning.\nThanks to the team at MistralAI for giving us early access to prepare for these releases.\nNote: This is still experimental given it is based on transformers v5 RC.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral3",
+      "Ministral3"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral3.html#getting-started",
+    "href": "docs/models/ministral3.html#getting-started",
+    "title": "Ministral3",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl from source following the installation guide.\nInstall Cut Cross Entropy to reduce training VRAM usage.\nSwap to the Axolotl transformers v5 branch\ncp examples/ministral3/ministral3-3b-qlora.yaml ministral3-3b-qlora.yaml\n\ngit fetch\ngit checkout transformers-v5\n\n# Install packages for transformers v5\npip install -e .\nRun the fine-tuning:\naxolotl train ministral3-3b-qlora.yaml\n\nLet us know how it goes. Happy finetuning! 🚀\n\nTips\n\nWe recommend adding the same/similar SystemPrompt that the model is tuned for. You can find this within the repo’s files titled SYSTEM_PROMPT.txt.\nYou can run a full finetuning by removing the adapter: qlora and load_in_4bit: true from the config.\nRead more on how to load your own dataset at docs.\nThe text dataset format follows the OpenAI Messages format as seen here.\n\n\n\nThinking\nMinistral3 2512 model supports thinking capabilities, enabling Chain-of-Thought reasoning with explicit thinking steps.\n📚 See the Thinking fine-tuning guide →\n\n\nVision\nMinistral3 2512 model also supports vision capabilities.\n📚 See the Vision fine-tuning guide →",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral3",
+      "Ministral3"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral3.html#optimization-guides",
+    "href": "docs/models/ministral3.html#optimization-guides",
+    "title": "Ministral3",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\nPlease check the Optimizations doc.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral3",
+      "Ministral3"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral3.html#limitations",
+    "href": "docs/models/ministral3.html#limitations",
+    "title": "Ministral3",
+    "section": "Limitations",
+    "text": "Limitations\nWe only support the mistral-common tokenizer for Supervised Fine-tuning at the moment and for type: chat_template only.\nIn addition, we do not support overriding tokens yet.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral3",
+      "Ministral3"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral3.html#related-resources",
+    "href": "docs/models/ministral3.html#related-resources",
+    "title": "Ministral3",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nMistralAI Mistral3 Blog\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral3",
+      "Ministral3"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral3.html#future-work",
+    "href": "docs/models/ministral3.html#future-work",
+    "title": "Ministral3",
+    "section": "Future Work",
+    "text": "Future Work\n\nAdd parity to Preference Tuning, RL, etc.\nAdd parity to other tokenizer configs like overriding tokens.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral3",
+      "Ministral3"
+    ]
+  },
+  {
+    "objectID": "docs/models/devstral.html",
+    "href": "docs/models/devstral.html",
+    "title": "Devstral",
+    "section": "",
+    "text": "Devstral Small is a 24B parameter opensource model from MistralAI found on HuggingFace Devstral-Small-2505 and Devstral-Small-2507. Devstral-Small-2507 is the latest version of the model and has function calling support.\nThis guide shows how to fine-tune it with Axolotl with multi-turn conversations with proper masking.\nThe model was fine-tuned ontop of Mistral-Small-3.1 without the vision layer and has a context of up to 128k tokens.\nThanks to the team at MistralAI for giving us early access to prepare for this release.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Devstral"
+    ]
+  },
+  {
+    "objectID": "docs/models/devstral.html#getting-started",
+    "href": "docs/models/devstral.html#getting-started",
+    "title": "Devstral",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide.\nHere is an example of how to install from pip:\n\n# Ensure you have Pytorch installed (Pytorch 2.6.0 min)\npip3 install packaging==23.2 setuptools==75.8.0 wheel ninja\npip3 install --no-build-isolation 'axolotl[flash-attn]&gt;=0.12.0'\n\nInstall Cut Cross Entropy to reduce training VRAM usage\n\npython scripts/cutcrossentropy_install.py | sh\n\nRun the finetuning example:\n\naxolotl train examples/devstral/devstral-small-qlora.yml\nThis config uses about 21GB VRAM.\nLet us know how it goes. Happy finetuning! 🚀\n\nTIPS\n\nYou can run a full finetuning by removing the adapter: qlora and load_in_4bit: true from the config.\nRead more on how to load your own dataset at docs.\nThe dataset format follows the OpenAI Messages format as seen here.\nLearn how to use function calling with Axolotl at docs.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Devstral"
+    ]
+  },
+  {
+    "objectID": "docs/models/devstral.html#optimization-guides",
+    "href": "docs/models/devstral.html#optimization-guides",
+    "title": "Devstral",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\n\nMulti-GPU Training\nMulti-Node Training\nLoRA Optimizations\nCut Cross Entropy\nLiger Kernel",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Devstral"
+    ]
+  },
+  {
+    "objectID": "docs/models/devstral.html#limitations",
+    "href": "docs/models/devstral.html#limitations",
+    "title": "Devstral",
+    "section": "Limitations",
+    "text": "Limitations\nWe only support the mistral-common tokenizer for Supervised Fine-tuning at the moment and for type: chat_template only.\nIn addition, we do not support overriding tokens yet.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Devstral"
+    ]
+  },
+  {
+    "objectID": "docs/models/devstral.html#related-resources",
+    "href": "docs/models/devstral.html#related-resources",
+    "title": "Devstral",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nMistralAI Devstral Blog\nMistralAI Devstral 1.1 Blog\nAxolotl Docs\nAxolotl GitHub\nAxolotl Website\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Devstral"
+    ]
+  },
+  {
+    "objectID": "docs/models/devstral.html#future-work",
+    "href": "docs/models/devstral.html#future-work",
+    "title": "Devstral",
+    "section": "Future Work",
+    "text": "Future Work\n\nAdd parity to Preference Tuning, RL, Multi-modal, etc.\nAdd parity to other tokenizer configs like overriding tokens.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Devstral"
+    ]
+  },
+  {
+    "objectID": "docs/models/llama-4.html",
+    "href": "docs/models/llama-4.html",
+    "title": "Llama 4",
+    "section": "",
+    "text": "While Flash Attention to support is “enabled” for Llama-4, the upstream implementation is not correct and usage of Flex Attention is recommended.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Llama 4"
+    ]
+  },
+  {
+    "objectID": "docs/models/llama-4.html#flash-attention-vs-flex-attention",
+    "href": "docs/models/llama-4.html#flash-attention-vs-flex-attention",
+    "title": "Llama 4",
+    "section": "",
+    "text": "While Flash Attention to support is “enabled” for Llama-4, the upstream implementation is not correct and usage of Flex Attention is recommended.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Llama 4"
+    ]
+  },
+  {
+    "objectID": "docs/models/llama-4.html#available-examples",
+    "href": "docs/models/llama-4.html#available-examples",
+    "title": "Llama 4",
+    "section": "Available Examples",
+    "text": "Available Examples\n\nLlama 4 Scout 17Bx16Experts (109B)\nFlex Attention\n- Text Single GPU (H100) QLoRA\n- Text Multi GPU QLoRA w/ FSDP2\nOur Single H100 implementation for Llama 4 Scout uses only 64.5GB VRAM for post-training with 4k context length @ 519 tokens/second. WandB logs here\nMulti-GPU (4xH100) for Llama 4 Scout uses 62.8GB VRAM/GPU @ 4k contenxt length @ 280tps/gpu, WandB logs here\n\n\nLlama 4 Maverick 17Bx128Experts (400B)\nComing Soon",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Llama 4"
+    ]
+  },
+  {
+    "objectID": "docs/models/llama-4.html#delinearized-llama-4-models",
+    "href": "docs/models/llama-4.html#delinearized-llama-4-models",
+    "title": "Llama 4",
+    "section": "Delinearized Llama 4 Models",
+    "text": "Delinearized Llama 4 Models\nWe provide a script to delinearize Llama 4 linearized models into regular HuggingFace Llama 4 models.\naxolotl delinearize-llama4 --model path/to/model_dir --output path/to/output_dir\nNote: This only works with the non-quantized linearized model. If you have an adapter, merge it with the non-quantized linearized model before delinearizing.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Llama 4"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral.html",
+    "href": "docs/models/ministral.html",
+    "title": "Ministral",
+    "section": "",
+    "text": "Ministral is a family of openweight models from MistralAI found on HuggingFace. This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral.html#getting-started",
+    "href": "docs/models/ministral.html#getting-started",
+    "title": "Ministral",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide.\nInstall Cut Cross Entropy to reduce training VRAM usage.\nRun the finetuning example:\naxolotl train examples/ministral/ministral-small-qlora.yaml\n\nThis config uses about 8.76 GiB VRAM.\nLet us know how it goes. Happy finetuning! 🚀\n\nTips\n\nWe recommend adding the same/similar SystemPrompt that the model is tuned for. You can find this within the repo’s files titled SYSTEM_PROMPT.txt.\nYou can run a full finetuning by removing the adapter: qlora and load_in_4bit: true from the config.\nRead more on how to load your own dataset at docs.\nThe text dataset format follows the OpenAI Messages format as seen here.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral.html#optimization-guides",
+    "href": "docs/models/ministral.html#optimization-guides",
+    "title": "Ministral",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\nPlease check the Optimizations doc.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral.html#limitations",
+    "href": "docs/models/ministral.html#limitations",
+    "title": "Ministral",
+    "section": "Limitations",
+    "text": "Limitations\nWe only support the mistral-common tokenizer for Supervised Fine-tuning at the moment and for type: chat_template only.\nIn addition, we do not support overriding tokens yet.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral.html#related-resources",
+    "href": "docs/models/ministral.html#related-resources",
+    "title": "Ministral",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nMistralAI Ministral Blog\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral.html#future-work",
+    "href": "docs/models/ministral.html#future-work",
+    "title": "Ministral",
+    "section": "Future Work",
+    "text": "Future Work\n\nAdd parity to Preference Tuning, RL, etc.\nAdd parity to other tokenizer configs like overriding tokens.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral"
+    ]
+  },
+  {
+    "objectID": "docs/models/trinity.html",
+    "href": "docs/models/trinity.html",
+    "title": "Trinity",
+    "section": "",
+    "text": "Trinity is a family of open weight MoE models trained by Arcee.ai.\nThis guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Trinity"
+    ]
+  },
+  {
+    "objectID": "docs/models/trinity.html#getting-started",
+    "href": "docs/models/trinity.html#getting-started",
+    "title": "Trinity",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the main from the installation guide.\nRun the finetuning example:\naxolotl train examples/trinity/trinity-nano-preview-qlora.yaml\n\nThis config uses about 24.9 GiB VRAM.\nLet us know how it goes. Happy finetuning! 🚀\n\nTIPS\n\nFor inference, the official Arcee.ai team recommends top_p: 0.75, temperature: 0.15, top_k: 50, and min_p: 0.06.\nYou can run a full finetuning by removing the adapter: qlora and load_in_4bit: true from the config.\nRead more on how to load your own dataset at docs.\nThe dataset format follows the OpenAI Messages format as seen here.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Trinity"
+    ]
+  },
+  {
+    "objectID": "docs/models/trinity.html#optimization-guides",
+    "href": "docs/models/trinity.html#optimization-guides",
+    "title": "Trinity",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\nPlease check the Optimizations doc.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Trinity"
+    ]
+  },
+  {
+    "objectID": "docs/models/trinity.html#limitations",
+    "href": "docs/models/trinity.html#limitations",
+    "title": "Trinity",
+    "section": "Limitations",
+    "text": "Limitations\nCut Cross Entropy (CCE): Currently not supported. We plan to include CCE support for Trinity in the near future.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Trinity"
+    ]
+  },
+  {
+    "objectID": "docs/models/trinity.html#related-resources",
+    "href": "docs/models/trinity.html#related-resources",
+    "title": "Trinity",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nTrinity Blog\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Trinity"
+    ]
+  },
+  {
+    "objectID": "docs/models/voxtral.html",
+    "href": "docs/models/voxtral.html",
+    "title": "Voxtral",
+    "section": "",
+    "text": "Voxtral is a 3B/24B parameter opensource model from MistralAI found on HuggingFace. This guide shows how to fine-tune it with Axolotl.\nThanks to the team at MistralAI for giving us early access to prepare for this release.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Voxtral"
+    ]
+  },
+  {
+    "objectID": "docs/models/voxtral.html#getting-started",
+    "href": "docs/models/voxtral.html#getting-started",
+    "title": "Voxtral",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide.\nHere is an example of how to install from pip:\n\n# Ensure you have Pytorch installed (Pytorch 2.6.0 min)\npip3 install packaging==23.2 setuptools==75.8.0 wheel ninja\npip3 install --no-build-isolation 'axolotl[flash-attn]&gt;=0.12.0'\n\nPlease install the below.\n\n# audio\npip3 install librosa==0.11.0\npip3 install 'mistral_common[audio]==1.8.3'\n\n# Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy\npython scripts/cutcrossentropy_install.py | sh\n\nDownload sample dataset files\n\n# for text + audio only\nwget https://huggingface.co/datasets/Nanobit/text-audio-2k-test/resolve/main/En-us-African_elephant.oga\n\nRun the finetuning example:\n\n# text only\naxolotl train examples/voxtral/voxtral-mini-qlora.yml\n\n# text + audio\naxolotl train examples/voxtral/voxtral-mini-audio-qlora.yml\nThese configs use about 4.8 GB VRAM.\nLet us know how it goes. Happy finetuning! 🚀\n\nTIPS\n\nFor inference, the official MistralAI team recommends temperature: 0.2 and top_p: 0.95 for audio understanding and temperature: 0.0 for transcription.\nYou can run a full finetuning by removing the adapter: qlora and load_in_4bit: true from the config.\nRead more on how to load your own dataset at docs.\nThe text dataset format follows the OpenAI Messages format as seen here.\nThe multimodal dataset format follows the OpenAI multi-content Messages format as seen here.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Voxtral"
+    ]
+  },
+  {
+    "objectID": "docs/models/voxtral.html#optimization-guides",
+    "href": "docs/models/voxtral.html#optimization-guides",
+    "title": "Voxtral",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\n\nMulti-GPU Training\nMulti-Node Training\nLoRA Optimizations",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Voxtral"
+    ]
+  },
+  {
+    "objectID": "docs/models/voxtral.html#limitations",
+    "href": "docs/models/voxtral.html#limitations",
+    "title": "Voxtral",
+    "section": "Limitations",
+    "text": "Limitations\nWe only support the mistral-common tokenizer for Supervised Fine-tuning at the moment and for type: chat_template only.\nIn addition, we do not support overriding tokens yet.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Voxtral"
+    ]
+  },
+  {
+    "objectID": "docs/models/voxtral.html#related-resources",
+    "href": "docs/models/voxtral.html#related-resources",
+    "title": "Voxtral",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nMistralAI Magistral Blog\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Voxtral"
+    ]
+  },
+  {
+    "objectID": "docs/models/voxtral.html#future-work",
+    "href": "docs/models/voxtral.html#future-work",
+    "title": "Voxtral",
+    "section": "Future Work",
+    "text": "Future Work\n\nAdd parity to Preference Tuning, RL, etc.\nAdd parity to other tokenizer configs like overriding tokens.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Voxtral"
+    ]
+  },
+  {
+    "objectID": "docs/models/magistral.html",
+    "href": "docs/models/magistral.html",
+    "title": "Magistral",
+    "section": "",
+    "text": "Magistral Small is a 24B parameter opensource model from MistralAI found on HuggingFace at 2506, 2507 (see Thinking), and 2509 (see Vision). This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.\nMistralAI has also released a proprietary medium-sized version called Magistral Medium.\nThanks to the team at MistralAI for giving us early access to prepare for these releases.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Magistral",
+      "Magistral"
+    ]
+  },
+  {
+    "objectID": "docs/models/magistral.html#getting-started",
+    "href": "docs/models/magistral.html#getting-started",
+    "title": "Magistral",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide.\nHere is an example of how to install from pip:\n\n# Ensure you have Pytorch installed (Pytorch 2.7.0 min)\npip3 install packaging==23.2 setuptools==75.8.0 wheel ninja\npip3 install --no-build-isolation 'axolotl[flash-attn]&gt;=0.12.0'\n\nInstall Cut Cross Entropy to reduce training VRAM usage\n\npython scripts/cutcrossentropy_install.py | sh\n\nRun the finetuning example:\n\naxolotl train examples/magistral/magistral-small-qlora.yaml\nThis config uses about 24GB VRAM.\nLet us know how it goes. Happy finetuning! 🚀\n\nThinking\nMistralAI has released their 2507 model with thinking capabilities, enabling Chain-of-Thought reasoning with explicit thinking steps.\n📚 See the Thinking fine-tuning guide →\n\n\nVision\nMistralAI has released their 2509 model with vision capabilities.\n📚 See the Vision fine-tuning guide →\n\n\nTips\n\nWe recommend adding the same/similar SystemPrompt that the model is tuned for. You can find this within the repo’s files titled SYSTEM_PROMPT.txt.\nFor inference, the official MistralAI team recommends top_p: 0.95 and temperature: 0.7 with max_tokens: 40960.\nYou can run a full finetuning by removing the adapter: qlora and load_in_4bit: true from the config.\nRead more on how to load your own dataset at docs.\nThe text dataset format follows the OpenAI Messages format as seen here.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Magistral",
+      "Magistral"
+    ]
+  },
+  {
+    "objectID": "docs/models/magistral.html#optimization-guides",
+    "href": "docs/models/magistral.html#optimization-guides",
+    "title": "Magistral",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\n\nMulti-GPU Training\nMulti-Node Training\nLoRA Optimizations",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Magistral",
+      "Magistral"
+    ]
+  },
+  {
+    "objectID": "docs/models/magistral.html#limitations",
+    "href": "docs/models/magistral.html#limitations",
+    "title": "Magistral",
+    "section": "Limitations",
+    "text": "Limitations\nWe only support the mistral-common tokenizer for Supervised Fine-tuning at the moment and for type: chat_template only.\nIn addition, we do not support overriding tokens yet.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Magistral",
+      "Magistral"
+    ]
+  },
+  {
+    "objectID": "docs/models/magistral.html#related-resources",
+    "href": "docs/models/magistral.html#related-resources",
+    "title": "Magistral",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nMistralAI Magistral Blog\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Magistral",
+      "Magistral"
+    ]
+  },
+  {
+    "objectID": "docs/models/magistral.html#future-work",
+    "href": "docs/models/magistral.html#future-work",
+    "title": "Magistral",
+    "section": "Future Work",
+    "text": "Future Work\n\nAdd parity to Preference Tuning, RL, etc.\nAdd parity to other tokenizer configs like overriding tokens.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Magistral",
+      "Magistral"
+    ]
+  },
+  {
+    "objectID": "docs/models/LiquidAI.html",
+    "href": "docs/models/LiquidAI.html",
+    "title": "Liquid Foundation Models 2",
+    "section": "",
+    "text": "Liquid Foundation Models 2 (LFM2) are a family of small, open-weight models from Liquid AI focused on quality, speed, and memory efficiency. Liquid AI released text-only LFM2 and text+vision LFM2-VL models.\nLFM2 features a new hybrid Liquid architecture with multiplicative gates, short-range convolutions, and grouped query attention, enabling fast training and inference.\nThis guide shows how to fine-tune both the LFM2 and LFM2-VL models with Axolotl.\nThanks to the team at LiquidAI for giving us early access to prepare for these releases.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Liquid Foundation Models 2"
+    ]
+  },
+  {
+    "objectID": "docs/models/LiquidAI.html#getting-started",
+    "href": "docs/models/LiquidAI.html#getting-started",
+    "title": "Liquid Foundation Models 2",
+    "section": "Getting Started",
+    "text": "Getting Started\n\nInstall Axolotl following the installation guide.\nHere is an example of how to install from pip:\n# Ensure you have a compatible version of Pytorch installed\npip3 install packaging setuptools wheel ninja\npip3 install --no-build-isolation 'axolotl[flash-attn]&gt;=0.12.0'\nRun one of the finetuning examples below.\nLFM2\n# FFT SFT (1x48GB @ 25GiB)\naxolotl train examples/LiquidAI/lfm2-350m-fft.yaml\nLFM2-VL\n# LoRA SFT (1x48GB @ 2.7GiB)\naxolotl train examples/LiquidAI/lfm2-vl-lora.yaml\nLFM2-MoE\npip install git+https://github.com/huggingface/transformers.git@0c9a72e4576fe4c84077f066e585129c97bfd4e6\n\n# LoRA SFT (1x48GB @ 16.2GiB)\naxolotl train examples/LiquidAI/lfm2-8b-a1b-lora.yaml\n\n\nTIPS\n\nInstallation Error: If you encounter ImportError: ... undefined symbol ... or ModuleNotFoundError: No module named 'causal_conv1d_cuda', the causal-conv1d package may have been installed incorrectly. Try uninstalling it:\npip uninstall -y causal-conv1d\nDataset Loading: Read more on how to load your own dataset in our documentation.\nDataset Formats:\n\nFor LFM2 models, the dataset format follows the OpenAI Messages format as seen here.\nFor LFM2-VL models, Axolotl follows the multi-content Messages format. See our Multimodal docs for details.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Liquid Foundation Models 2"
+    ]
+  },
+  {
+    "objectID": "docs/models/LiquidAI.html#optimization-guides",
+    "href": "docs/models/LiquidAI.html#optimization-guides",
+    "title": "Liquid Foundation Models 2",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\n\nOptimizations Guide",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Liquid Foundation Models 2"
+    ]
+  },
+  {
+    "objectID": "docs/models/LiquidAI.html#related-resources",
+    "href": "docs/models/LiquidAI.html#related-resources",
+    "title": "Liquid Foundation Models 2",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nLFM2 Blog\nLFM2-VL Blog\nLFM2-MoE Blog\nAxolotl Docs\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Liquid Foundation Models 2"
+    ]
+  },
+  {
+    "objectID": "docs/models/arcee.html",
+    "href": "docs/models/arcee.html",
+    "title": "Arcee AFM",
+    "section": "",
+    "text": "Arcee Foundation Models (AFM) are a family of 4.5B parameter open weight models trained by Arcee.ai.\nThis guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.\nThanks to the team at Arcee.ai for using Axolotl in supervised fine-tuning the AFM model.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Arcee AFM"
+    ]
+  },
+  {
+    "objectID": "docs/models/arcee.html#getting-started",
+    "href": "docs/models/arcee.html#getting-started",
+    "title": "Arcee AFM",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide. You need to install from main as AFM is only on nightly or use our latest Docker images.\nHere is an example of how to install from main for pip:\n\n# Ensure you have Pytorch installed (Pytorch 2.6.0 min)\ngit clone https://github.com/axolotl-ai-cloud/axolotl.git\ncd axolotl\n\npip3 install packaging==23.2 setuptools==75.8.0 wheel ninja\npip3 install --no-build-isolation -e '.[flash-attn]'\n\n# Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy\npython scripts/cutcrossentropy_install.py | sh\n\nRun the finetuning example:\n\naxolotl train examples/arcee/afm-4.5b-qlora.yaml\nThis config uses about 7.8GiB VRAM.\nLet us know how it goes. Happy finetuning! 🚀\n\nTIPS\n\nFor inference, the official Arcee.ai team recommends top_p: 0.95, temperature: 0.5, top_k: 50, and repeat_penalty: 1.1.\nYou can run a full finetuning by removing the adapter: qlora and load_in_4bit: true from the config.\nRead more on how to load your own dataset at docs.\nThe dataset format follows the OpenAI Messages format as seen here.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Arcee AFM"
+    ]
+  },
+  {
+    "objectID": "docs/models/arcee.html#optimization-guides",
+    "href": "docs/models/arcee.html#optimization-guides",
+    "title": "Arcee AFM",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\n\nMulti-GPU Training\nMulti-Node Training\nLoRA Optimizations",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Arcee AFM"
+    ]
+  },
+  {
+    "objectID": "docs/models/arcee.html#related-resources",
+    "href": "docs/models/arcee.html#related-resources",
+    "title": "Arcee AFM",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nAFM Blog\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Arcee AFM"
+    ]
+  },
+  {
+    "objectID": "docs/models/internvl3_5.html",
+    "href": "docs/models/internvl3_5.html",
+    "title": "InternVL 3.5",
+    "section": "",
+    "text": "InternVL 3.5 is a family of powerful vision-language models supporting dynamic resolution and multi-image understanding by OpenGV. It features a ViT-style vision encoder and strong language model backbone for tasks like visual question answering, OCR, and scene text understanding.\nThis guide shows how to fine-tune it with Axolotl.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "InternVL 3.5"
+    ]
+  },
+  {
+    "objectID": "docs/models/internvl3_5.html#getting-started",
+    "href": "docs/models/internvl3_5.html#getting-started",
+    "title": "InternVL 3.5",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide.\nInstall timm for vision model support:\npip install timm==1.0.19\nInstall Cut Cross Entropy to reduce training VRAM usage.\nRun the finetuning example:\naxolotl train examples/internvl3_5/internvl3_5-8b-qlora.yml\n\nThis config uses about 8.21 GiB VRAM. Let us know how it goes. Happy finetuning! 🚀\n\nTips\n\nYou can run a full finetuning by removing the adapter: qlora and load_in_4bit: true from the config.\nRead more on how to load your own dataset at docs.\nThe dataset format follows the multi-modal format as seen here.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "InternVL 3.5"
+    ]
+  },
+  {
+    "objectID": "docs/models/internvl3_5.html#optimization-guides",
+    "href": "docs/models/internvl3_5.html#optimization-guides",
+    "title": "InternVL 3.5",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\nPlease check the Optimizations doc.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "InternVL 3.5"
+    ]
+  },
+  {
+    "objectID": "docs/models/internvl3_5.html#related-resources",
+    "href": "docs/models/internvl3_5.html#related-resources",
+    "title": "InternVL 3.5",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nInternVL Paper\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "InternVL 3.5"
+    ]
+  },
+  {
+    "objectID": "docs/models/kimi-linear.html",
+    "href": "docs/models/kimi-linear.html",
+    "title": "Kimi Linear",
+    "section": "",
+    "text": "Kimi Linear is a MoE model (48B total, 3B active) by MoonshotAI using a hybrid linear attention architecture to achieve a 1M token context length. It uses Kimi Delta Attention (KDA), a refined version of Gated DeltaNet that reduces KV cache size by up to 75% and boosts decoding throughput by up to 6x for long contexts.\nThis guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.\nNote: Axolotl uses experimental training code for Kimi Linear as their original modeling code is inference-only.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Kimi Linear"
+    ]
+  },
+  {
+    "objectID": "docs/models/kimi-linear.html#getting-started",
+    "href": "docs/models/kimi-linear.html#getting-started",
+    "title": "Kimi Linear",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide.\nInstall CCE via docs\nRun the finetuning example:\naxolotl train examples/kimi-linear/kimi-48b-lora.yaml\n\nThis config uses about 98.7GiB VRAM.\nLet us know how it goes. Happy finetuning!\n\nTIPS\n\nKimi Linear requires trust_remote_code: true.\nYou can run a full finetuning by removing the adapter: lora and load_in_8bit: true.\nRead more on how to load your own dataset at docs\nThe dataset format follows the OpenAI Messages format as seen here",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Kimi Linear"
+    ]
+  },
+  {
+    "objectID": "docs/models/kimi-linear.html#optimization-guides",
+    "href": "docs/models/kimi-linear.html#optimization-guides",
+    "title": "Kimi Linear",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\nSee 👉 docs.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Kimi Linear"
+    ]
+  },
+  {
+    "objectID": "docs/models/kimi-linear.html#limitations",
+    "href": "docs/models/kimi-linear.html#limitations",
+    "title": "Kimi Linear",
+    "section": "Limitations",
+    "text": "Limitations\nThis is not yet compatible with MoE kernels from transformers v5.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Kimi Linear"
+    ]
+  },
+  {
+    "objectID": "docs/models/kimi-linear.html#related-resources",
+    "href": "docs/models/kimi-linear.html#related-resources",
+    "title": "Kimi Linear",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nKimi Linear Paper\nKimi Linear GitHub\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Kimi Linear"
+    ]
+  },
+  {
+    "objectID": "docs/models/magistral/think.html",
+    "href": "docs/models/magistral/think.html",
+    "title": "Magistral Thinking",
+    "section": "",
+    "text": "This guide covers fine-tuning Magistral Small 2507 with thinking capabilities using Axolotl. The thinking model enables explicit Chain-of-Thought reasoning with separate thinking and response sections.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Magistral",
+      "Magistral Thinking"
+    ]
+  },
+  {
+    "objectID": "docs/models/magistral/think.html#prerequisites",
+    "href": "docs/models/magistral/think.html#prerequisites",
+    "title": "Magistral Thinking",
+    "section": "Prerequisites",
+    "text": "Prerequisites\nBefore starting, ensure you have:\n\nInstalled Axolotl (see main README)",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Magistral",
+      "Magistral Thinking"
+    ]
+  },
+  {
+    "objectID": "docs/models/magistral/think.html#getting-started",
+    "href": "docs/models/magistral/think.html#getting-started",
+    "title": "Magistral Thinking",
+    "section": "Getting Started",
+    "text": "Getting Started\nRun the thinking model fine-tuning:\naxolotl train examples/magistral/think/magistral-small-think-qlora.yaml\nThis config uses about 19.1 GiB VRAM.\n\nTips\n\nDataset uses multi-content format with type: thinking support. See Dataset Format below.\nYou cannot mix content: str and content: list[dict], otherwise, dataset loading will fail. Keep it consistent.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Magistral",
+      "Magistral Thinking"
+    ]
+  },
+  {
+    "objectID": "docs/models/magistral/think.html#dataset-format",
+    "href": "docs/models/magistral/think.html#dataset-format",
+    "title": "Magistral Thinking",
+    "section": "Dataset Format",
+    "text": "Dataset Format\nThe thinking model requires the multi-content dataset format with support for an extra role: thinking within system and assistant messages.\nExample format:\n{\n    \"messages\": [\n        {\n            \"role\": \"system\",\n            \"content\": [\n                { \"type\": \"text\", \"text\": \"{SYSTEM_PROMPT}\"}\n            ]\n        },\n        {\n            \"role\": \"user\",\n            \"content\": [\n                { \"type\": \"text\", \"text\": \"Solve this step by step: What is 15% of 240?\"}\n            ]\n        },\n        {\n            \"role\": \"assistant\",\n            \"content\": [\n                {\n                    \"type\": \"thinking\",\n                    \"thinking\": \"I need to calculate 15% of 240. First, I'll convert 15% to decimal: 0.15. Then multiply: 0.15 × 240 = 36.\"\n                },\n                {\n                    \"type\": \"text\",\n                    \"text\": \"To find 15% of 240, I'll multiply 240 by 0.15:\\n\\n240 × 0.15 = 36\\n\\nTherefore, 15% of 240 is 36.\"\n                }\n            ]\n        }\n    ]\n}\n\nAdvanced Options\nThe thinking section supports an optional closed parameter:\n{\n    \"type\": \"thinking\",\n    \"thinking\": \"Internal reasoning here...\",\n    \"closed\": true  // Default: true, controls adding the closing [/THINK] tag\n}",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Magistral",
+      "Magistral Thinking"
+    ]
+  },
+  {
+    "objectID": "docs/models/index.html",
+    "href": "docs/models/index.html",
+    "title": "Model Guides",
+    "section": "",
+    "text": "Model Guides\nBelow are the curated examples for training various model architectures:\n\nKimi Linear\nPlano Orchestrator\nMiMo\nInternVL 3.5\nOLMo 3\nTrinity\nArcee AFM\nMinistral3\nMinistral 3 Thinking\nMinistral 3 Vision\nMagistral\nMagistral Thinking\nMagistral Vision\nMinistral\nMistral Small 3.1/3.2\nVoxtral\nDevstral\nMistral 7B\nLlama 4\nLlama 2\nQwen 3 Next\nQwen 3\nGemma 3n\nApertus\nGPT-OSS\nSeed-OSS\nPhi\nSmolVLM 2\nGranite 4\nLiquid Foundation Models 2\nHunyuan\nJamba\nOrpheus"
+  },
+  {
+    "objectID": "docs/models/qwen3-next.html",
+    "href": "docs/models/qwen3-next.html",
+    "title": "Qwen 3 Next",
+    "section": "",
+    "text": "Qwen3-Next represents the next-generation foundation models optimized for extreme context length and large-scale parameter efficiency. The series introduces architectural innovations including Hybrid Attention (Gated DeltaNet + Gated Attention), High-Sparsity MoE with 1:50 activation ratio, and Multi-Token Prediction for enhanced performance and inference acceleration.\nThis guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Qwen 3 Next"
+    ]
+  },
+  {
+    "objectID": "docs/models/qwen3-next.html#getting-started",
+    "href": "docs/models/qwen3-next.html#getting-started",
+    "title": "Qwen 3 Next",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide. You need to install from main as Qwen3-Next is only on nightly or use our latest Docker images.\nHere is an example of how to install from main for pip:\n\n# Ensure you have Pytorch installed (Pytorch 2.6.0 min)\ngit clone https://github.com/axolotl-ai-cloud/axolotl.git\ncd axolotl\n\npip3 install packaging==23.2 setuptools==75.8.0 wheel ninja\npip3 install --no-build-isolation -e '.[flash-attn]'\n\n# Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy\npython scripts/cutcrossentropy_install.py | sh\n\nInstall Qwen3-Next transformers commit\n\npip3 uninstall -y transformers && pip3 install \"git+https://github.com/huggingface/transformers.git@b9282355bea846b54ed850a066901496b19da654\"\n\nInstall FLA for improved performance\n\npip3 uninstall -y causal-conv1d && pip3 install flash-linear-attention==0.3.2\n\nRun the finetuning example:\n\naxolotl train examples/qwen3-next/qwen3-next-80b-a3b-qlora.yaml\nThis config uses about 45.62 GiB VRAM.\nLet us know how it goes. Happy finetuning! 🚀\n\nTIPS\n\nFor inference, you can experiment with temperature: 0.7, top_p: 0.8, top_k: 20, and min_p: 0.\nYou can run a full finetuning by removing the adapter: qlora and load_in_4bit: true from the config. See Multi-GPU section below.\nRead more on how to load your own dataset at docs.\nThe dataset format follows the OpenAI Messages format as seen here.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Qwen 3 Next"
+    ]
+  },
+  {
+    "objectID": "docs/models/qwen3-next.html#optimization-guides",
+    "href": "docs/models/qwen3-next.html#optimization-guides",
+    "title": "Qwen 3 Next",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\n\nMulti-GPU Training\nMulti-Node Training\nLoRA Optimizations",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Qwen 3 Next"
+    ]
+  },
+  {
+    "objectID": "docs/models/qwen3-next.html#related-resources",
+    "href": "docs/models/qwen3-next.html#related-resources",
+    "title": "Qwen 3 Next",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nQwen3-Next Blog\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Qwen 3 Next"
+    ]
+  },
+  {
+    "objectID": "docs/models/gemma3n.html",
+    "href": "docs/models/gemma3n.html",
+    "title": "Gemma 3n",
+    "section": "",
+    "text": "Gemma-3n is a family of multimodal models from Google found on HuggingFace. This guide shows how to fine-tune it with Axolotl.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Gemma 3n"
+    ]
+  },
+  {
+    "objectID": "docs/models/gemma3n.html#getting-started",
+    "href": "docs/models/gemma3n.html#getting-started",
+    "title": "Gemma 3n",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide.\nHere is an example of how to install from pip:\n\n# Ensure you have Pytorch installed (Pytorch 2.6.0 min)\npip3 install packaging==23.2 setuptools==75.8.0 wheel ninja\npip3 install --no-build-isolation 'axolotl[flash-attn]&gt;=0.12.0'\n\nIn addition to Axolotl’s requirements, Gemma-3n requires:\n\npip3 install timm==1.0.17\n\n# for loading audio data\npip3 install librosa==0.11.0\n\nDownload sample dataset files\n\n# for text + vision + audio only\nwget https://huggingface.co/datasets/Nanobit/text-vision-audio-2k-test/resolve/main/African_elephant.jpg\nwget https://huggingface.co/datasets/Nanobit/text-vision-audio-2k-test/resolve/main/En-us-African_elephant.oga\n\nRun the finetuning example:\n\n# text only\naxolotl train examples/gemma3n/gemma-3n-e2b-qlora.yml\n\n# text + vision\naxolotl train examples/gemma3n/gemma-3n-e2b-vision-qlora.yml\n\n# text + vision + audio\naxolotl train examples/gemma3n/gemma-3n-e2b-vision-audio-qlora.yml\nLet us know how it goes. Happy finetuning! 🚀\nWARNING: The loss and grad norm will be much higher than normal. We suspect this to be inherent to the model as of the moment. If anyone would like to submit a fix for this, we are happy to take a look.\n\nTIPS\n\nYou can run a full finetuning by removing the adapter: qlora and load_in_4bit: true from the config.\nRead more on how to load your own dataset at docs.\nThe text dataset format follows the OpenAI Messages format as seen here.\nThe multimodal dataset format follows the OpenAI multi-content Messages format as seen here.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Gemma 3n"
+    ]
+  },
+  {
+    "objectID": "docs/models/gemma3n.html#optimization-guides",
+    "href": "docs/models/gemma3n.html#optimization-guides",
+    "title": "Gemma 3n",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\n\nMulti-GPU Training\nMulti-Node Training\nLoRA Optimizations",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Gemma 3n"
+    ]
+  },
+  {
+    "objectID": "docs/models/gemma3n.html#related-resources",
+    "href": "docs/models/gemma3n.html#related-resources",
+    "title": "Gemma 3n",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nGemma 3n Blog\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Gemma 3n"
+    ]
+  },
+  {
     "objectID": "docs/api/core.chat.format.llama3x.html",
     "href": "docs/api/core.chat.format.llama3x.html",
     "title": "core.chat.format.llama3x",
@@ -2030,7 +2982,7 @@
     "href": "index.html#latest-updates",
     "title": "Axolotl",
     "section": "🎉 Latest Updates",
-    "text": "🎉 Latest Updates\n\n2025/12: Axolotl now includes support for Kimi-Linear, Plano-Orchestrator, MiMo, InternVL 3.5, Olmo3, Trinity, and Ministral3.\n2025/10: New model support has been added in Axolotl for: Qwen3 Next, Qwen2.5-vl, Qwen3-vl, Qwen3, Qwen3MoE, Granite 4, HunYuan, Magistral 2509, Apertus, and Seed-OSS.\n2025/09: Axolotl now has text diffusion training. Read more here.\n2025/08: QAT has been updated to include NVFP4 support. See PR.\n2025/07:\n\nND Parallelism support has been added into Axolotl. Compose Context Parallelism (CP), Tensor Parallelism (TP), and Fully Sharded Data Parallelism (FSDP) within a single node and across multiple nodes. Check out the blog post for more info.\nAxolotl adds more models: GPT-OSS, Gemma 3n, Liquid Foundation Model 2 (LFM2), and Arcee Foundation Models (AFM).\nFP8 finetuning with fp8 gather op is now possible in Axolotl via torchao. Get started here!\nVoxtral, Magistral 1.1, and Devstral with mistral-common tokenizer support has been integrated in Axolotl!\nTiledMLP support for single-GPU to multi-GPU training with DDP, DeepSpeed and FSDP support has been added to support Arctic Long Sequence Training. (ALST). See examples for using ALST with Axolotl!\n\n2025/05: Quantization Aware Training (QAT) support has been added to Axolotl. Explore the docs to learn more!\n\n\n\nExpand older updates\n\n\n2025/03: Axolotl has implemented Sequence Parallelism (SP) support. Read the blog and docs to learn how to scale your context length when fine-tuning.\n2025/06: Magistral with mistral-common tokenizer support has been added to Axolotl. See examples to start training your own Magistral models with Axolotl!\n2025/04: Llama 4 support has been added in Axolotl. See examples to start training your own Llama 4 models with Axolotl’s linearized version!\n2025/03: (Beta) Fine-tuning Multimodal models is now supported in Axolotl. Check out the docs to fine-tune your own!\n2025/02: Axolotl has added LoRA optimizations to reduce memory usage and improve training speed for LoRA and QLoRA in single GPU and multi-GPU training (DDP and DeepSpeed). Jump into the docs to give it a try.\n2025/02: Axolotl has added GRPO support. Dive into our blog and GRPO example and have some fun!\n2025/01: Axolotl has added Reward Modelling / Process Reward Modelling fine-tuning support. See docs.",
+    "text": "🎉 Latest Updates\n\n2025/12: Axolotl now includes support for Kimi-Linear, Plano-Orchestrator, MiMo, InternVL 3.5, Olmo3, Trinity, and Ministral3.\n2025/10: New model support has been added in Axolotl for: Qwen3 Next, Qwen2.5-vl, Qwen3-vl, Qwen3, Qwen3MoE, Granite 4, HunYuan, Magistral 2509, Apertus, and Seed-OSS.\n2025/09: Axolotl now has text diffusion training. Read more here.\n2025/08: QAT has been updated to include NVFP4 support. See PR.\n2025/07:\n\nND Parallelism support has been added into Axolotl. Compose Context Parallelism (CP), Tensor Parallelism (TP), and Fully Sharded Data Parallelism (FSDP) within a single node and across multiple nodes. Check out the blog post for more info.\nAxolotl adds more models: GPT-OSS, Gemma 3n, Liquid Foundation Model 2 (LFM2), and Arcee Foundation Models (AFM).\nFP8 finetuning with fp8 gather op is now possible in Axolotl via torchao. Get started here!\nVoxtral, Magistral 1.1, and Devstral with mistral-common tokenizer support has been integrated in Axolotl!\nTiledMLP support for single-GPU to multi-GPU training with DDP, DeepSpeed and FSDP support has been added to support Arctic Long Sequence Training. (ALST). See examples for using ALST with Axolotl!\n\n2025/05: Quantization Aware Training (QAT) support has been added to Axolotl. Explore the docs to learn more!\n\n\n\nExpand older updates\n\n\n2025/03: Axolotl has implemented Sequence Parallelism (SP) support. Read the blog and docs to learn how to scale your context length when fine-tuning.\n2025/06: Magistral with mistral-common tokenizer support has been added to Axolotl. See docs to start training your own Magistral models with Axolotl!\n2025/04: Llama 4 support has been added in Axolotl. See docs to start training your own Llama 4 models with Axolotl’s linearized version!\n2025/03: (Beta) Fine-tuning Multimodal models is now supported in Axolotl. Check out the docs to fine-tune your own!\n2025/02: Axolotl has added LoRA optimizations to reduce memory usage and improve training speed for LoRA and QLoRA in single GPU and multi-GPU training (DDP and DeepSpeed). Jump into the docs to give it a try.\n2025/02: Axolotl has added GRPO support. Dive into our blog and GRPO example and have some fun!\n2025/01: Axolotl has added Reward Modelling / Process Reward Modelling fine-tuning support. See docs.",
     "crumbs": [
       "Home"
     ]
@@ -3317,6 +4269,747 @@
     "title": "utils.schedulers",
     "section": "",
     "text": "Name\nDescription\n\n\n\n\nget_cosine_schedule_with_min_lr\n\n\n\nget_cosine_schedule_with_quadratic_warmup\nCreate a schedule with a learning rate that decreases following the values of the cosine function between the\n\n\nget_cosine_schedule_with_warmup_decay_constant\nImplementation of Continual Pre-Training of Large Language Models: How to (re)warm your model? (https://arxiv.org/pdf/2308.04014.pdf)\n\n\n\n\n\nutils.schedulers.get_cosine_schedule_with_min_lr(\n    optimizer,\n    num_warmup_steps,\n    num_training_steps,\n    min_lr_ratio=0.0,\n)\n\n\n\nlinear warmup from 0 -&gt; max_lr over num_warmup_steps\ncosine learning rate annealing from max_lr -&gt; min_lr over num_training_steps\n\n\n\n\n\nutils.schedulers.get_cosine_schedule_with_quadratic_warmup(\n    optimizer,\n    num_warmup_steps,\n    num_training_steps,\n    num_cycles=0.5,\n    last_epoch=-1,\n)\nCreate a schedule with a learning rate that decreases following the values of the cosine function between the\ninitial lr set in the optimizer to 0, after a warmup period during which it increases linearly between 0 and the\ninitial lr set in the optimizer.\n\n\n\n\n\n\n\n\n\n\n\nName\nType\nDescription\nDefault\n\n\n\n\noptimizer\n[~torch.optim.Optimizer]\nThe optimizer for which to schedule the learning rate.\nrequired\n\n\nnum_warmup_steps\nint\nThe number of steps for the warmup phase.\nrequired\n\n\nnum_training_steps\nint\nThe total number of training steps.\nrequired\n\n\nnum_cycles\nfloat, optional, defaults to 0.5\nThe number of waves in the cosine schedule (the defaults is to just decrease from the max value to 0 following a half-cosine).\n0.5\n\n\nlast_epoch\nint, optional, defaults to -1\nThe index of the last epoch when resuming training.\n-1\n\n\n\n\n\n\ntorch.optim.lr_scheduler.LambdaLR with the appropriate schedule.\n\n\n\n\nutils.schedulers.get_cosine_schedule_with_warmup_decay_constant(\n    optimizer,\n    num_warmup_steps,\n    num_training_steps,\n    constant_lr_ratio,\n    min_lr_ratio,\n    num_cycles=0.5,\n    last_epoch=-1,\n)\nImplementation of Continual Pre-Training of Large Language Models: How to (re)warm your model? (https://arxiv.org/pdf/2308.04014.pdf)\nCreate a schedule with a learning rate that decreases following the values of the cosine function between the\ninitial lr set in the optimizer to min_lr_ratio until num_training_steps * constant_lr_ratio, after constant_rate returns constant value of min_rate\n, after a warmup period during which it increases linearly between 0 and the initial lr set in the optimizer.\n\n\n\n\n\n\n\n\n\n\n\nName\nType\nDescription\nDefault\n\n\n\n\noptimizer\n[~torch.optim.Optimizer]\nThe optimizer for which to schedule the learning rate.\nrequired\n\n\nnum_warmup_steps\nint\nThe number of steps for the warmup phase.\nrequired\n\n\nnum_training_steps\nint\nThe total number of training steps.\nrequired\n\n\nconstant_lr_ratio\nfloat\n(float): The ratio of num_training_steps to decrease by cosine function.\nrequired\n\n\nmin_lr_ratio\nfloat\n(float): The ratio of maximum learning rate for cosine function to decay to minimum learning rate.                            | _required_ | | num_cycles         |float, *optional*, defaults to 0.5 | The number of waves in the cosine schedule (the defaults is to just decrease from the max value to 0 following a half-cosine). |0.5| | last_epoch         |int, *optional*, defaults to -1    | The index of the last epoch when resuming training.                                                                            |-1`\n\n\n\n\n\n\n\ntorch.optim.lr_scheduler.LambdaLR with the appropriate schedule."
+  },
+  {
+    "objectID": "docs/models/mimo.html",
+    "href": "docs/models/mimo.html",
+    "title": "MiMo",
+    "section": "",
+    "text": "MiMo is a family of models trained from scratch for reasoning tasks, incorporating Multiple-Token Prediction (MTP) as an additional training objective for enhanced performance and faster inference. Pre-trained on ~25T tokens with a three-stage data mixture strategy and optimized reasoning pattern density.\nThis guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "MiMo"
+    ]
+  },
+  {
+    "objectID": "docs/models/mimo.html#getting-started",
+    "href": "docs/models/mimo.html#getting-started",
+    "title": "MiMo",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide.\nRun the finetuning example:\naxolotl train examples/mimo/mimo-7b-qlora.yaml\n\nThis config uses about 17.2 GiB VRAM. Let us know how it goes. Happy finetuning! 🚀\n\nTips\n\nYou can run a full finetuning by removing the adapter: qlora and load_in_4bit: true from the config.\nRead more on how to load your own dataset at docs.\nThe dataset format follows the OpenAI Messages format as seen here.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "MiMo"
+    ]
+  },
+  {
+    "objectID": "docs/models/mimo.html#optimization-guides",
+    "href": "docs/models/mimo.html#optimization-guides",
+    "title": "MiMo",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\nPlease check the Optimizations doc.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "MiMo"
+    ]
+  },
+  {
+    "objectID": "docs/models/mimo.html#limitations",
+    "href": "docs/models/mimo.html#limitations",
+    "title": "MiMo",
+    "section": "Limitations",
+    "text": "Limitations\nCut Cross Entropy (CCE): Currently not supported. We plan to include CCE support for MiMo in the near future.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "MiMo"
+    ]
+  },
+  {
+    "objectID": "docs/models/mimo.html#related-resources",
+    "href": "docs/models/mimo.html#related-resources",
+    "title": "MiMo",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nMiMo Paper\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "MiMo"
+    ]
+  },
+  {
+    "objectID": "docs/models/jamba.html",
+    "href": "docs/models/jamba.html",
+    "title": "Jamba",
+    "section": "",
+    "text": "✅ qlora w/ deepspeed Zero-2 needs at least 2x GPUs and\n\n35GiB VRAM per GPU w minimal context length\n56GiB VRAM per GPU (w multipack enabled)\n\n✅ qlora w/ deepspeed Zero-3 needs at least 2x GPUs and 67GiB VRAM (wtf?)\n✅ qlora single-gpu, ~51GiB VRAM\n✅ multipack\n✅ FSDP\n❓ 8-bit LoRA",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Jamba"
+    ]
+  },
+  {
+    "objectID": "docs/models/magistral/vision.html",
+    "href": "docs/models/magistral/vision.html",
+    "title": "Magistral Vision",
+    "section": "",
+    "text": "This guide covers fine-tuning Magistral Small 2509 with vision capabilities using Axolotl.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Magistral",
+      "Magistral Vision"
+    ]
+  },
+  {
+    "objectID": "docs/models/magistral/vision.html#prerequisites",
+    "href": "docs/models/magistral/vision.html#prerequisites",
+    "title": "Magistral Vision",
+    "section": "Prerequisites",
+    "text": "Prerequisites\nBefore starting, ensure you have:\n\nInstalled Axolotl from source (see main README)",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Magistral",
+      "Magistral Vision"
+    ]
+  },
+  {
+    "objectID": "docs/models/magistral/vision.html#getting-started",
+    "href": "docs/models/magistral/vision.html#getting-started",
+    "title": "Magistral Vision",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall the required vision lib:\nbash     pip install 'mistral-common[opencv]==1.8.5'\nDownload the example dataset image:\nwget https://huggingface.co/datasets/Nanobit/text-vision-2k-test/resolve/main/African_elephant.jpg\nRun the fine-tuning:\naxolotl train examples/magistral/vision/magistral-small-vision-24B-qlora.yml\n\nThis config uses about 17GiB VRAM.\nWARNING: The loss and grad norm will be much higher than normal at first. We suspect this to be inherent to the model as of the moment. If anyone would like to submit a fix for this, we are happy to take a look.\n\nTips\nKey differences from text-only model:\n- max_tokens: 131072 for inference\n- Multi-modal dataset format required\n- Sample packing not supported",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Magistral",
+      "Magistral Vision"
+    ]
+  },
+  {
+    "objectID": "docs/models/magistral/vision.html#dataset-format",
+    "href": "docs/models/magistral/vision.html#dataset-format",
+    "title": "Magistral Vision",
+    "section": "Dataset Format",
+    "text": "Dataset Format\nThe vision model requires multi-modal dataset format as documented here.\nOne exception is that, passing \"image\": PIL.Image is not supported. MistralTokenizer only supports path, url, and base64 for now.\nExample:\n{\n    \"messages\": [\n        {\"role\": \"system\", \"content\": [{ \"type\": \"text\", \"text\": \"{SYSTEM_PROMPT}\"}]},\n        {\"role\": \"user\", \"content\": [\n            { \"type\": \"text\", \"text\": \"What's in this image?\"},\n            {\"type\": \"image\", \"path\": \"path/to/image.jpg\" }\n        ]},\n        {\"role\": \"assistant\", \"content\": [{ \"type\": \"text\", \"text\": \"...\" }]},\n    ],\n}",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Magistral",
+      "Magistral Vision"
+    ]
+  },
+  {
+    "objectID": "docs/models/magistral/vision.html#limitations",
+    "href": "docs/models/magistral/vision.html#limitations",
+    "title": "Magistral Vision",
+    "section": "Limitations",
+    "text": "Limitations\n\nSample Packing is not supported for multi-modality training currently.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Magistral",
+      "Magistral Vision"
+    ]
+  },
+  {
+    "objectID": "docs/models/llama-2.html",
+    "href": "docs/models/llama-2.html",
+    "title": "Llama 2",
+    "section": "",
+    "text": "This is an example of a llama-2 configuration for 7b and 13b. The yaml file contains configuration for the 7b variant, but you can just aswell use the same settings for 13b.\nThe 7b variant fits on any 24GB VRAM GPU and will take up about 17 GB of VRAM during training if using qlora and 20 GB if using lora. On a RTX 4090 it trains 3 epochs of the default dataset in about 15 minutes.\nThe 13b variant will fit if you change these settings to these values:\ngradient_accumulation_steps: 2\nmicro_batch_size: 1\naccelerate launch -m axolotl.cli.train examples/llama-2/qlora.yml\nor\naccelerate launch -m axolotl.cli.train examples/llama-2/lora.yml\nTo launch a full finetuning with 16-bit precision:\naccelerate launch -m axolotl.cli.train examples/llama-2/fft_optimized.yml",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Llama 2"
+    ]
+  },
+  {
+    "objectID": "docs/models/smolvlm2.html",
+    "href": "docs/models/smolvlm2.html",
+    "title": "SmolVLM 2",
+    "section": "",
+    "text": "SmolVLM2 are a family of lightweight, open-source multimodal models from HuggingFace designed to analyze and understand video, image, and text content.\nThese models are built for efficiency, making them well-suited for on-device applications where computational resources are limited. Models are available in multiple sizes, including 2.2B, 500M, and 256M.\nThis guide shows how to fine-tune SmolVLM2 models with Axolotl.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "SmolVLM 2"
+    ]
+  },
+  {
+    "objectID": "docs/models/smolvlm2.html#getting-started",
+    "href": "docs/models/smolvlm2.html#getting-started",
+    "title": "SmolVLM 2",
+    "section": "Getting Started",
+    "text": "Getting Started\n\nInstall Axolotl following the installation guide.\nHere is an example of how to install from pip:\n# Ensure you have a compatible version of Pytorch installed\npip3 install packaging setuptools wheel ninja\npip3 install --no-build-isolation 'axolotl[flash-attn]&gt;=0.12.0'\nInstall an extra dependency:\npip3 install num2words==0.5.14\nRun the finetuning example:\n# LoRA SFT (1x48GB @ 6.8GiB)\naxolotl train examples/smolvlm2/smolvlm2-2B-lora.yaml",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "SmolVLM 2"
+    ]
+  },
+  {
+    "objectID": "docs/models/smolvlm2.html#tips",
+    "href": "docs/models/smolvlm2.html#tips",
+    "title": "SmolVLM 2",
+    "section": "TIPS",
+    "text": "TIPS\n\nDataset Format: For video finetuning, your dataset must be compatible with the multi-content Messages format. For more details, see our documentation on Multimodal Formats.\nDataset Loading: Read more on how to prepare and load your own datasets in our documentation.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "SmolVLM 2"
+    ]
+  },
+  {
+    "objectID": "docs/models/smolvlm2.html#optimization-guides",
+    "href": "docs/models/smolvlm2.html#optimization-guides",
+    "title": "SmolVLM 2",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\nPlease check the Optimizations doc.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "SmolVLM 2"
+    ]
+  },
+  {
+    "objectID": "docs/models/smolvlm2.html#related-resources",
+    "href": "docs/models/smolvlm2.html#related-resources",
+    "title": "SmolVLM 2",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nSmolVLM2 Blog\nAxolotl Docs\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "SmolVLM 2"
+    ]
+  },
+  {
+    "objectID": "docs/models/mistral-small.html",
+    "href": "docs/models/mistral-small.html",
+    "title": "Mistral Small 3.1/3.2",
+    "section": "",
+    "text": "This guide covers fine-tuning Mistral Small 3.1 and Mistral Small 3.2 with vision capabilities using Axolotl.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Mistral Small 3.1/3.2"
+    ]
+  },
+  {
+    "objectID": "docs/models/mistral-small.html#prerequisites",
+    "href": "docs/models/mistral-small.html#prerequisites",
+    "title": "Mistral Small 3.1/3.2",
+    "section": "Prerequisites",
+    "text": "Prerequisites\nBefore starting, ensure you have:\n\nInstalled Axolotl (see Installation docs)",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Mistral Small 3.1/3.2"
+    ]
+  },
+  {
+    "objectID": "docs/models/mistral-small.html#getting-started",
+    "href": "docs/models/mistral-small.html#getting-started",
+    "title": "Mistral Small 3.1/3.2",
+    "section": "Getting Started",
+    "text": "Getting Started\n\nInstall the required vision lib:\nbash     pip install 'mistral-common[opencv]==1.8.5'\nDownload the example dataset image:\nwget https://huggingface.co/datasets/Nanobit/text-vision-2k-test/resolve/main/African_elephant.jpg\nRun the fine-tuning:\naxolotl train examples/mistral/mistral-small/mistral-small-3.1-24B-lora.yml\n\nThis config uses about 29.4 GiB VRAM.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Mistral Small 3.1/3.2"
+    ]
+  },
+  {
+    "objectID": "docs/models/mistral-small.html#dataset-format",
+    "href": "docs/models/mistral-small.html#dataset-format",
+    "title": "Mistral Small 3.1/3.2",
+    "section": "Dataset Format",
+    "text": "Dataset Format\nThe vision model requires multi-modal dataset format as documented here.\nOne exception is that, passing \"image\": PIL.Image is not supported. MistralTokenizer only supports path, url, and base64 for now.\nExample:\n{\n    \"messages\": [\n        {\"role\": \"system\", \"content\": [{ \"type\": \"text\", \"text\": \"{SYSTEM_PROMPT}\"}]},\n        {\"role\": \"user\", \"content\": [\n            { \"type\": \"text\", \"text\": \"What's in this image?\"},\n            {\"type\": \"image\", \"path\": \"path/to/image.jpg\" }\n        ]},\n        {\"role\": \"assistant\", \"content\": [{ \"type\": \"text\", \"text\": \"...\" }]},\n    ],\n}",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Mistral Small 3.1/3.2"
+    ]
+  },
+  {
+    "objectID": "docs/models/mistral-small.html#limitations",
+    "href": "docs/models/mistral-small.html#limitations",
+    "title": "Mistral Small 3.1/3.2",
+    "section": "Limitations",
+    "text": "Limitations\n\nSample Packing is not supported for multi-modality training currently.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Mistral Small 3.1/3.2"
+    ]
+  },
+  {
+    "objectID": "docs/models/mistral.html",
+    "href": "docs/models/mistral.html",
+    "title": "Mistral 7B",
+    "section": "",
+    "text": "Mistral 7B is a language model with a total of 7.3 billion parameters, showcasing a notable performance across a variety of benchmarks.\nFine Tune:\naccelerate launch -m axolotl.cli.train examples/mistral/config.yml\n\nIf you run into CUDA OOM, use deepspeed with config zero2.json:\naccelerate launch -m axolotl.cli.train examples/mistral/config.yml --deepspeed deepspeed_configs/zero2.json",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Mistral 7B"
+    ]
+  },
+  {
+    "objectID": "docs/models/hunyuan.html",
+    "href": "docs/models/hunyuan.html",
+    "title": "Hunyuan",
+    "section": "",
+    "text": "Tencent released a family of opensource models called HunYuan with varying parameter scales of 0.5B, 1.8B, 4B, and 7B scale for both Pre-trained and Instruct variants. The models can be found at HuggingFace. This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Hunyuan"
+    ]
+  },
+  {
+    "objectID": "docs/models/hunyuan.html#getting-started",
+    "href": "docs/models/hunyuan.html#getting-started",
+    "title": "Hunyuan",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide. You need to install from main as HunYuan is only on nightly or use our latest Docker images.\nHere is an example of how to install from main for pip:\n\n# Ensure you have Pytorch installed (Pytorch 2.6.0 min)\ngit clone https://github.com/axolotl-ai-cloud/axolotl.git\ncd axolotl\n\npip3 install packaging==23.2 setuptools==75.8.0 wheel ninja\npip3 install --no-build-isolation -e '.[flash-attn]'\n\n# Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy\npython scripts/cutcrossentropy_install.py | sh\n\nRun the finetuning example:\n\naxolotl train examples/hunyuan/hunyuan-v1-dense-qlora.yaml\nThis config uses about 4.7 GB VRAM.\nLet us know how it goes. Happy finetuning! 🚀\n\nDataset\nHunYuan Instruct models can choose to enter a slow think or fast think pattern. For best performance on fine-tuning their Instruct models, your dataset should be adjusted to match their pattern.\n# fast think pattern\nmessages = [\n    {\"role\": \"system\", \"content\": \"You are a helpful assistant.\"},\n    {\"role\": \"user\", \"content\": \"/no_think What color is the sun?\" },\n    {\"role\": \"assistant\", \"content\": \"&lt;think&gt;\\n\\n&lt;/think&gt;\\n&lt;answer&gt;\\nThe sun is yellow.\\n&lt;/answer&gt;\"}\n]\n\n# slow think pattern\nmessages = [\n    {\"role\": \"system\", \"content\": \"You are a helpful assistant.\"},\n    {\"role\": \"user\", \"content\": \"/no_think What color is the sun?\" },\n    {\"role\": \"assistant\", \"content\": \"&lt;think&gt;\\nThe user is asking about the color of the sun. I need to ...\\n&lt;/think&gt;\\n&lt;answer&gt;\\nThe sun is yellow.\\n&lt;/answer&gt;\"}\n]\n\n\nTIPS\n\nFor inference, the official Tencent team recommends\n\n\n{\n  \"do_sample\": true,\n  \"top_k\": 20,\n  \"top_p\": 0.8,\n  \"repetition_penalty\": 1.05,\n  \"temperature\": 0.7\n}\n\nYou can run a full finetuning by removing the adapter: qlora and load_in_4bit: true from the config.\nRead more on how to load your own dataset at docs.\nThe dataset format follows the OpenAI Messages format as seen here.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Hunyuan"
+    ]
+  },
+  {
+    "objectID": "docs/models/hunyuan.html#optimization-guides",
+    "href": "docs/models/hunyuan.html#optimization-guides",
+    "title": "Hunyuan",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\n\nMulti-GPU Training\nMulti-Node Training\nLoRA Optimizations",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Hunyuan"
+    ]
+  },
+  {
+    "objectID": "docs/models/hunyuan.html#related-resources",
+    "href": "docs/models/hunyuan.html#related-resources",
+    "title": "Hunyuan",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nTencent HunYuan Blog\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Hunyuan"
+    ]
+  },
+  {
+    "objectID": "docs/models/orpheus.html",
+    "href": "docs/models/orpheus.html",
+    "title": "Orpheus",
+    "section": "",
+    "text": "In this example, we finetune Orpcanopylabs/orpheus-tts-0.1-pretrained (a LLaMA 3.2 3b model) to output audio.\nThe finetune.yml withe current settings will run on any Nvidia GPU with 45GB VRAM or more. If you adjust the batch size it can easily run on any GPU under 24GB.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Orpheus"
+    ]
+  },
+  {
+    "objectID": "docs/models/orpheus.html#dataset-pre-processing-for-pre-training",
+    "href": "docs/models/orpheus.html#dataset-pre-processing-for-pre-training",
+    "title": "Orpheus",
+    "section": "Dataset pre-processing for pre-training",
+    "text": "Dataset pre-processing for pre-training\nIf you are adding another voice in English, please jump ahead to finetuning pre-processing.\nFor this to work, we need to preprocess our dataset. Since we are expecting to output audio, we will need to add tokens to the tokenizer.\nUsing this code, it will download the SNAC model and add the correct tokens and upload the final dataset.\nimport torch\nfrom snac import SNAC\nfrom datasets import load_dataset\nfrom huggingface_hub import snapshot_download\nfrom datasets import load_dataset\nimport random\nimport torchaudio.transforms as T\nfrom transformers import AutoTokenizer\nimport os\n\nmy_original_dataset_name = \"&lt;huggingface-id-of-dataset-that-we-want-to-preprocess&gt;\"\nname_to_push_dataset_to = \"&lt;huggingface-id-of-where-to-save-dataset&gt;\"\n\ndsn = my_original_dataset_name\n\nsnapshot_download(\n    repo_id=dsn,\n    repo_type=\"dataset\",\n    revision=\"main\",\n    max_workers=64,\n)\n\n\nds = load_dataset(dsn, split=\"train\")\nds_sample_rate = ds[0][\"audio\"][\"sampling_rate\"]\n\nmodel = SNAC.from_pretrained(\"hubertsiuzdak/snac_24khz\")\nmodel = model.to(\"mps\")\n\ndef tokenise_audio(waveform):\n  waveform = torch.from_numpy(waveform).unsqueeze(0)\n  waveform = waveform.to(dtype=torch.float32)\n  resample_transform = T.Resample(orig_freq=ds_sample_rate, new_freq=24000)\n  waveform = resample_transform(waveform)\n\n  waveform = waveform.unsqueeze(0).to(\"cuda\")\n\n  #generate the codes from snac\n  with torch.inference_mode():\n    codes = model.encode(waveform)\n\n  all_codes = []\n  for i in range(codes[0].shape[1]):\n    all_codes.append(codes[0][0][i].item()+128266)\n    all_codes.append(codes[1][0][2*i].item()+128266+4096)\n    all_codes.append(codes[2][0][4*i].item()+128266+(2*4096))\n    all_codes.append(codes[2][0][(4*i)+1].item()+128266+(3*4096))\n    all_codes.append(codes[1][0][(2*i)+1].item()+128266+(4*4096))\n    all_codes.append(codes[2][0][(4*i)+2].item()+128266+(5*4096))\n    all_codes.append(codes[2][0][(4*i)+3].item()+128266+(6*4096))\n\n\n  return all_codes\n\ndef add_codes(example):\n    # Always initialize codes_list to None\n    codes_list = None\n\n    try:\n        answer_audio = example.get(\"audio\")\n        # If there's a valid audio array, tokenise it\n        if answer_audio and \"array\" in answer_audio:\n            audio_array = answer_audio[\"array\"]\n            codes_list = tokenise_audio(audio_array)\n    except Exception as e:\n        print(f\"Skipping row due to error: {e}\")\n        # Keep codes_list as None if we fail\n    example[\"codes_list\"] = codes_list\n\n    return example\n\nds = ds.map(add_codes, remove_columns=[\"audio\"])\n\n#@title Load Tokenizer\ntokeniser_length = 128256\nstart_of_text = 128000\nend_of_text = 128009\n\nstart_of_speech = tokeniser_length + 1\nend_of_speech = tokeniser_length + 2\n\nstart_of_human = tokeniser_length + 3\nend_of_human = tokeniser_length + 4\n\nstart_of_ai = tokeniser_length + 5\nend_of_ai =  tokeniser_length + 6\npad_token = tokeniser_length + 7\n\naudio_tokens_start = tokeniser_length + 10\n\ntokenizer_name = \"canopylabs/orpheus-3b-0.1-pretrained\"\n\n\ntokenizer = AutoTokenizer.from_pretrained(tokenizer_name)\nnum_proc = os.cpu_count() - 2\n\nds = ds.filter(lambda x: x[\"codes_list\"] is not None)\nds = ds.filter(lambda x: len(x[\"codes_list\"]) &gt; 0)\n\n#@title Create Input Ids\ndef remove_duplicate_frames(example):\n    vals = example[\"codes_list\"]\n    if len(vals) % 7 != 0:\n        raise ValueError(\"Input list length must be divisible by 7\")\n\n    result = vals[:7]\n\n    removed_frames = 0\n\n    for i in range(7, len(vals), 7):\n        current_first = vals[i]\n        previous_first = result[-7]\n\n        if current_first != previous_first:\n            result.extend(vals[i:i+7])\n        else:\n            removed_frames += 1\n\n    example[\"codes_list\"] = result\n\n    return example\n\nds = ds.map(remove_duplicate_frames, num_proc=num_proc)\n\n\ndef create_input_ids(example):\n    text_ids = tokenizer.encode({example['text']},  add_special_tokens=True)\n    text_ids.append(end_of_text)\n    example[\"text_tokens\"] = text_ids\n    input_ids = (\n        [start_of_human]\n        + example[\"text_tokens\"]\n        + [end_of_human]\n        + [start_of_ai]\n        + [start_of_speech]\n        + example[\"codes_list\"]\n        + [end_of_speech]\n        + [end_of_ai]\n    )\n    example[\"input_ids\"] = input_ids\n    example[\"labels\"] = input_ids\n    example[\"attention_mask\"] = [1] * len(input_ids)\n\n    return example\n\nds = ds.map(create_input_ids, num_proc=num_proc, remove_columns=[\"text\", \"codes_list\"])\n\n#@title Remove unnecessary columns\ncolumns_to_keep = [\"input_ids\", \"labels\", \"attention_mask\"]\ncolumns_to_remove = [col for col in ds.column_names if col not in columns_to_keep]\n\nds = ds.remove_columns(columns_to_remove)\n\nds.push_to_hub(name_to_push_dataset_to)",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Orpheus"
+    ]
+  },
+  {
+    "objectID": "docs/models/orpheus.html#finetune-pre-processing",
+    "href": "docs/models/orpheus.html#finetune-pre-processing",
+    "title": "Orpheus",
+    "section": "Finetune pre-processing",
+    "text": "Finetune pre-processing\nUse this code to add a new voice.\nimport torch\nfrom snac import SNAC\nfrom datasets import load_dataset\nfrom huggingface_hub import snapshot_download\nfrom datasets import load_dataset\nimport random\nimport torchaudio.transforms as T\nfrom transformers import AutoTokenizer\nimport os\n\nmy_original_dataset_name = \"&lt;huggingface-id-of-dataset-that-we-want-to-preprocess&gt;\"\nname_to_push_dataset_to = \"&lt;huggingface-id-of-where-to-save-dataset&gt;\"\n\ndsn = my_original_dataset_name\n\nsnapshot_download(\n    repo_id=dsn,\n    repo_type=\"dataset\",\n    revision=\"main\",\n    max_workers=64,\n)\n\n\nds = load_dataset(dsn, split=\"train\")\nds_sample_rate = ds[0][\"audio\"][\"sampling_rate\"]\n\nmodel = SNAC.from_pretrained(\"hubertsiuzdak/snac_24khz\")\nmodel = model.to(\"mps\")\n\ndef tokenise_audio(waveform):\n  waveform = torch.from_numpy(waveform).unsqueeze(0)\n  waveform = waveform.to(dtype=torch.float32)\n  resample_transform = T.Resample(orig_freq=ds_sample_rate, new_freq=24000)\n  waveform = resample_transform(waveform)\n\n  waveform = waveform.unsqueeze(0).to(\"cuda\")\n\n  #generate the codes from snac\n  with torch.inference_mode():\n    codes = model.encode(waveform)\n\n  all_codes = []\n  for i in range(codes[0].shape[1]):\n    all_codes.append(codes[0][0][i].item()+128266)\n    all_codes.append(codes[1][0][2*i].item()+128266+4096)\n    all_codes.append(codes[2][0][4*i].item()+128266+(2*4096))\n    all_codes.append(codes[2][0][(4*i)+1].item()+128266+(3*4096))\n    all_codes.append(codes[1][0][(2*i)+1].item()+128266+(4*4096))\n    all_codes.append(codes[2][0][(4*i)+2].item()+128266+(5*4096))\n    all_codes.append(codes[2][0][(4*i)+3].item()+128266+(6*4096))\n\n\n  return all_codes\n\ndef add_codes(example):\n    # Always initialize codes_list to None\n    codes_list = None\n\n    try:\n        answer_audio = example.get(\"audio\")\n        # If there's a valid audio array, tokenise it\n        if answer_audio and \"array\" in answer_audio:\n            audio_array = answer_audio[\"array\"]\n            codes_list = tokenise_audio(audio_array)\n    except Exception as e:\n        print(f\"Skipping row due to error: {e}\")\n        # Keep codes_list as None if we fail\n    example[\"codes_list\"] = codes_list\n\n    return example\n\nds = ds.map(add_codes, remove_columns=[\"audio\"])\n\n#@title Load Tokenizer\ntokeniser_length = 128256\nstart_of_text = 128000\nend_of_text = 128009\n\nstart_of_speech = tokeniser_length + 1\nend_of_speech = tokeniser_length + 2\n\nstart_of_human = tokeniser_length + 3\nend_of_human = tokeniser_length + 4\n\nstart_of_ai = tokeniser_length + 5\nend_of_ai =  tokeniser_length + 6\npad_token = tokeniser_length + 7\n\naudio_tokens_start = tokeniser_length + 10\n\ntokenizer_name = \"canopylabs/orpheus-3b-0.1-pretrained\"\n\n\ntokenizer = AutoTokenizer.from_pretrained(tokenizer_name)\nnum_proc = os.cpu_count() - 2\n\nds = ds.filter(lambda x: x[\"codes_list\"] is not None)\nds = ds.filter(lambda x: len(x[\"codes_list\"]) &gt; 0)\n\n#@title Create Input Ids\ndef remove_duplicate_frames(example):\n    vals = example[\"codes_list\"]\n    if len(vals) % 7 != 0:\n        raise ValueError(\"Input list length must be divisible by 7\")\n\n    result = vals[:7]\n\n    removed_frames = 0\n\n    for i in range(7, len(vals), 7):\n        current_first = vals[i]\n        previous_first = result[-7]\n\n        if current_first != previous_first:\n            result.extend(vals[i:i+7])\n        else:\n            removed_frames += 1\n\n    example[\"codes_list\"] = result\n\n    return example\n\nds = ds.map(remove_duplicate_frames, num_proc=num_proc)\n\ntok_info = '''*** HERE you can modify the text prompt\ni.e. if you wanted a multispeaker model like canopylabs/orpheus-3b-0.1-ft, you can pass:\nf\"{example[\"source\"]}:  {example[\"text\"]}\", as is passed.\n'''\nprint(tok_info)\n\ndef create_input_ids(example):\n    text_ids = tokenizer.encode(f\"{example['speaker_id']}: {example['text']}\",  add_special_tokens=True)\n    text_ids.append(end_of_text)\n    example[\"text_tokens\"] = text_ids\n    input_ids = (\n        [start_of_human]\n        + example[\"text_tokens\"]\n        + [end_of_human]\n        + [start_of_ai]\n        + [start_of_speech]\n        + example[\"codes_list\"]\n        + [end_of_speech]\n        + [end_of_ai]\n    )\n    example[\"input_ids\"] = input_ids\n    example[\"labels\"] = input_ids\n    example[\"attention_mask\"] = [1] * len(input_ids)\n\n    return example\n\nds = ds.map(create_input_ids, num_proc=num_proc, remove_columns=[\"text\", \"codes_list\"])\n\n#@title Remove unnecessary columns\ncolumns_to_keep = [\"input_ids\", \"labels\", \"attention_mask\"]\ncolumns_to_remove = [col for col in ds.column_names if col not in columns_to_keep]\n\nds = ds.remove_columns(columns_to_remove)\n\nds.push_to_hub(name_to_push_dataset_to)",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Orpheus"
+    ]
+  },
+  {
+    "objectID": "docs/models/orpheus.html#training",
+    "href": "docs/models/orpheus.html#training",
+    "title": "Orpheus",
+    "section": "Training",
+    "text": "Training\nAfter preprocessing is done, fill out the blanks in finetune.yml and simply run axolotl train finetune.yml",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Orpheus"
+    ]
+  },
+  {
+    "objectID": "docs/models/orpheus.html#inference",
+    "href": "docs/models/orpheus.html#inference",
+    "title": "Orpheus",
+    "section": "Inference",
+    "text": "Inference\nFor inference, please refer to the original orpheus github.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Orpheus"
+    ]
+  },
+  {
+    "objectID": "docs/models/qwen3.html",
+    "href": "docs/models/qwen3.html",
+    "title": "Qwen 3",
+    "section": "",
+    "text": "Qwen3 are a family of open source models trained by Alibaba.\nThis guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Qwen 3"
+    ]
+  },
+  {
+    "objectID": "docs/models/qwen3.html#getting-started",
+    "href": "docs/models/qwen3.html#getting-started",
+    "title": "Qwen 3",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide.\nInstall Cut Cross Entropy to reduce training VRAM usage.\nRun the finetuning example:\naxolotl train examples/qwen3/32b-qlora.yaml\n\nLet us know how it goes. Happy finetuning! 🚀\n\nChat template masking a few tokens off\nIf you notice that the chat_template masking for assistant prompts are off by a few tokens, please ensure that you are adding the below to the yaml.\nchat_template: qwen3\n\n\nTIPS\n\nFor inference, please check the official model card as it depends on your reasoning mode.\nYou can run a full finetuning by removing the adapter: qlora and load_in_4bit: true from the config.\nRead more on how to load your own dataset at docs.\nThe dataset format follows the OpenAI Messages format as seen here.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Qwen 3"
+    ]
+  },
+  {
+    "objectID": "docs/models/qwen3.html#optimization-guides",
+    "href": "docs/models/qwen3.html#optimization-guides",
+    "title": "Qwen 3",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\nPlease check the Optimizations doc.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Qwen 3"
+    ]
+  },
+  {
+    "objectID": "docs/models/qwen3.html#related-resources",
+    "href": "docs/models/qwen3.html#related-resources",
+    "title": "Qwen 3",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nQwen3 Blog\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Qwen 3"
+    ]
+  },
+  {
+    "objectID": "docs/models/seed-oss.html",
+    "href": "docs/models/seed-oss.html",
+    "title": "Seed-OSS",
+    "section": "",
+    "text": "Seed-OSS are a series of 36B parameter open source models trained by ByteDance’s Seed Team.\nThis guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Seed-OSS"
+    ]
+  },
+  {
+    "objectID": "docs/models/seed-oss.html#getting-started",
+    "href": "docs/models/seed-oss.html#getting-started",
+    "title": "Seed-OSS",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide.\nHere is an example of how to install from pip:\n# Ensure you have a compatible version of Pytorch installed\npip3 install packaging setuptools wheel ninja\npip3 install --no-build-isolation 'axolotl[flash-attn]&gt;=0.12.0'\n\n# Install Cut Cross Entropy\npython scripts/cutcrossentropy_install.py | sh\nRun the finetuning example:\n\naxolotl train examples/seed-oss/seed-oss-36b-qlora.yaml\nThis config uses about 27.7 GiB VRAM.\nLet us know how it goes. Happy finetuning! 🚀\n\nTIPS\n\nFor inference, the official Seed Team recommends top_p=0.95 and temperature=1.1.\nYou can run a full finetuning by removing the adapter: qlora and load_in_4bit: true from the config.\nRead more on how to load your own dataset at docs.\nThe dataset format follows the OpenAI Messages format as seen here.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Seed-OSS"
+    ]
+  },
+  {
+    "objectID": "docs/models/seed-oss.html#optimization-guides",
+    "href": "docs/models/seed-oss.html#optimization-guides",
+    "title": "Seed-OSS",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\nPlease check the Optimizations doc.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Seed-OSS"
+    ]
+  },
+  {
+    "objectID": "docs/models/seed-oss.html#related-resources",
+    "href": "docs/models/seed-oss.html#related-resources",
+    "title": "Seed-OSS",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nByteDance Seed Website\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Seed-OSS"
+    ]
+  },
+  {
+    "objectID": "docs/models/granite4.html",
+    "href": "docs/models/granite4.html",
+    "title": "Granite 4",
+    "section": "",
+    "text": "Granite 4.0 are a family of open source models trained by IBM Research.\nThis guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Granite 4"
+    ]
+  },
+  {
+    "objectID": "docs/models/granite4.html#getting-started",
+    "href": "docs/models/granite4.html#getting-started",
+    "title": "Granite 4",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide. You need to install from main as Granite4 is only on nightly or use our latest Docker images.\nHere is an example of how to install from main for pip:\n\n# Ensure you have Pytorch installed (Pytorch 2.7.1 min)\ngit clone https://github.com/axolotl-ai-cloud/axolotl.git\ncd axolotl\n\npip3 install packaging==23.2 setuptools==75.8.0 wheel ninja\npip3 install --no-build-isolation -e '.[flash-attn]'\n\n# Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy\npython scripts/cutcrossentropy_install.py | sh\n\nRun the finetuning example:\n\naxolotl train examples/granite4/granite-4.0-tiny-fft.yaml\nThis config uses about 40.8GiB VRAM.\nLet us know how it goes. Happy finetuning! 🚀\n\nTIPS\n\nRead more on how to load your own dataset at docs.\nThe dataset format follows the OpenAI Messages format as seen here.\n\n\n\nLimitation\nAdapter finetuning does not work at the moment. It would error with\nRuntimeError: mat1 and mat2 shapes cannot be multiplied (4096x3072 and 1x1179648)\nIn addition, if adapter training works, lora_target_linear: true will not work due to:\nValueError: Target module GraniteMoeHybridParallelExperts() is not supported.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Granite 4"
+    ]
+  },
+  {
+    "objectID": "docs/models/granite4.html#optimization-guides",
+    "href": "docs/models/granite4.html#optimization-guides",
+    "title": "Granite 4",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\n\nMulti-GPU Training\nMulti-Node Training\nLoRA Optimizations",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Granite 4"
+    ]
+  },
+  {
+    "objectID": "docs/models/granite4.html#related-resources",
+    "href": "docs/models/granite4.html#related-resources",
+    "title": "Granite 4",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nGranite Docs\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Granite 4"
+    ]
+  },
+  {
+    "objectID": "docs/models/olmo3.html",
+    "href": "docs/models/olmo3.html",
+    "title": "OLMo 3",
+    "section": "",
+    "text": "Olmo 3 are a family of 7B and 32B models open source models trained by The Allen Institute for Artificial Intelligence.\nThis guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "OLMo 3"
+    ]
+  },
+  {
+    "objectID": "docs/models/olmo3.html#getting-started",
+    "href": "docs/models/olmo3.html#getting-started",
+    "title": "OLMo 3",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide.\nInstall Cut Cross Entropy to reduce training VRAM usage.\nRun the finetuning example:\naxolotl train examples/olmo3/olmo3-7b-qlora.yaml\n\nThis uses about 11.3 GiB VRAM. Let us know how it goes. Happy finetuning! 🚀\n\nTIPS\n\nThe example config can be re-used for Olmo and Olmo 2.\nYou can run a full finetuning by removing the adapter: qlora and load_in_4bit: true from the config.\nRead more on how to load your own dataset at docs.\nThe dataset format follows the OpenAI Messages format as seen here.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "OLMo 3"
+    ]
+  },
+  {
+    "objectID": "docs/models/olmo3.html#optimization-guides",
+    "href": "docs/models/olmo3.html#optimization-guides",
+    "title": "OLMo 3",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\nPlease check the Optimizations doc.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "OLMo 3"
+    ]
+  },
+  {
+    "objectID": "docs/models/olmo3.html#related-resources",
+    "href": "docs/models/olmo3.html#related-resources",
+    "title": "OLMo 3",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nOlmo 3 Blog\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "OLMo 3"
+    ]
+  },
+  {
+    "objectID": "docs/models/phi.html",
+    "href": "docs/models/phi.html",
+    "title": "Phi",
+    "section": "",
+    "text": "Due to some nuances with the phi code, please use deepspeed when training phi for full finetune.\naccelerate launch -m axolotl.cli.train examples/phi/phi-ft.yml --deepspeed deepspeed_configs/zero1.json\n\n# OR\n\npython -m axolotl.cli.train examples/phi/phi-qlora.yml",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Phi"
+    ]
+  },
+  {
+    "objectID": "docs/models/gpt-oss.html",
+    "href": "docs/models/gpt-oss.html",
+    "title": "GPT-OSS",
+    "section": "",
+    "text": "GPT-OSS are a family of open-weight MoE models trained by OpenAI, released in August 2025. There are two variants: 20B and 120B.\nIn October 2025, OpenAI released safeguard models built upon GPT-OSS called GPT-OSS-Safeguard. They use the same architecture, so the same examples below can be re-used.\nThis guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "GPT-OSS"
+    ]
+  },
+  {
+    "objectID": "docs/models/gpt-oss.html#getting-started",
+    "href": "docs/models/gpt-oss.html#getting-started",
+    "title": "GPT-OSS",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide.\nHere is an example of how to install from pip:\n\n# Ensure you have Pytorch installed (Pytorch 2.6.0 min)\npip3 install packaging==23.2 setuptools==75.8.0 wheel ninja\npip3 install --no-build-isolation 'axolotl[flash-attn]&gt;=0.12.0'\n\nChoose one of the following configs below for training the 20B model. (for 120B, see below)\n\n# LoRA SFT linear layers (1x48GB @ ~44GiB)\naxolotl train examples/gpt-oss/gpt-oss-20b-sft-lora-singlegpu.yaml\n\n# FFT SFT with offloading (2x24GB @ ~21GiB/GPU)\naxolotl train examples/gpt-oss/gpt-oss-20b-fft-fsdp2-offload.yaml\n\n# FFT SFT (8x48GB @ ~36GiB/GPU or 4x80GB @ ~46GiB/GPU)\naxolotl train examples/gpt-oss/gpt-oss-20b-fft-fsdp2.yaml\nNote: Memory usage taken from device_mem_reserved(gib) from logs.\n\nTraining 120B\nOn 8xH100s, make sure you have ~3TB of free disk space. With each checkpoint clocking in at ~720GB, along with the base\nmodel, and final model output, you may need at least 3TB of free disk space to keep at least 2 checkpoints.\n# FFT SFT with offloading (8x80GB @ ~49GiB/GPU)\naxolotl train examples/gpt-oss/gpt-oss-120b-fft-fsdp2-offload.yaml\nTo simplify fine-tuning across 2 nodes × 8x H100 (80GB) GPUs, we’ve partnered with Baseten to showcase multi-node\ntraining of the 120B model using Baseten Truss. You can read more about this recipe on\nBaseten’s blog. The recipe can\nbe found on their\nGitHub.\nERRATA: Transformers saves the model Architecture prefixed with FSDP which needs to be manually renamed in config.json.\nSee https://github.com/huggingface/transformers/pull/40207 for the status of this issue.\nsed -i 's/FSDPGptOssForCausalLM/GptOssForCausalLM/g' ./outputs/gpt-oss-out/config.json\nWhen using SHARDED_STATE_DICT with FSDP, the final checkpoint should automatically merge the sharded weights to your\nconfigured output_dir. However, if that step fails due to a disk space error, you can take an additional step to\nmerge the sharded weights. This step will automatically determine the last checkpoint directory and merge the sharded\nweights to {output_dir}/merged.\naxolotl merge-sharded-fsdp-weights examples/gpt-oss/gpt-oss-120b-fft-fsdp2-offload.yaml\nmv ./outputs/gpt-oss-out/merged/* ./outputs/gpt-oss-out/\n\n\nHow to set reasoning_effort in template?\nThe harmony template has a feature to set the reasoning_effort during prompt building. The default is medium. If you would like to adjust this, you can add the following to your config:\nchat_template_kwargs:\n  reasoning_effort: \"high\"  # low | medium | high\nCurrently, this applies globally. There is no method to apply per sample yet. If you are interested in adding this, please feel free to create an Issue to discuss.\n\n\nInferencing your fine-tuned model\n\nvLLM\nGPT-OSS support in vLLM does not exist in a stable release yet. See https://x.com/MaziyarPanahi/status/1955741905515323425\nfor more information about using a special vllm-openai docker image for inferencing with vLLM.\nOptionally, vLLM can be installed from nightly:\npip install --no-build-isolation --pre -U vllm --extra-index-url https://wheels.vllm.ai/nightly\nand the vLLM server can be started with the following command (modify --tensor-parallel-size 8 to match your environment):\nvllm serve ./outputs/gpt-oss-out/ --served-model-name axolotl/gpt-oss-20b --host 0.0.0.0 --port 8888  --tensor-parallel-size 8\n\n\nSGLang\nSGLang has 0-day support in main, see https://github.com/sgl-project/sglang/issues/8833 for infomation on installing\nSGLang from source. Once you’ve installed SGLang, run the following command to launch a SGLang server:\npython3 -m sglang.launch_server --model ./outputs/gpt-oss-out/ --served-model-name axolotl/gpt-oss-120b --host 0.0.0.0 --port 8888 --tp 8\n\n\n\nTool use\nGPT-OSS has a comprehensive tool understanding. Axolotl supports tool calling datasets for Supervised Fine-tuning.\nHere is an example dataset config:\ndatasets:\n  - path: Nanobit/text-tools-2k-test\n    type: chat_template\nSee Nanobit/text-tools-2k-test for the sample dataset.\nRefer to our docs for more info.\n\n\nThinking and chat_template masking conflict\nOpenAI’s Harmony template hides thinking in all non-final turns, which conflicts with Axolotl’s chat_template masking.\nIf your dataset has thinking content mid-turn, there are two paths we recommend:\n\nTrain only on the last turn. This can be accomplished via chat_template’s train on last doc.\nAdjust your dataset to only have thinking content in the last turn.\n\n\n\nTIPS\n\nRead more on how to load your own dataset at docs.\nThe dataset format follows the OpenAI Messages format as seen here.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "GPT-OSS"
+    ]
+  },
+  {
+    "objectID": "docs/models/gpt-oss.html#optimization-guides",
+    "href": "docs/models/gpt-oss.html#optimization-guides",
+    "title": "GPT-OSS",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\n\nMulti-GPU Training\nMulti-Node Training",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "GPT-OSS"
+    ]
+  },
+  {
+    "objectID": "docs/models/gpt-oss.html#related-resources",
+    "href": "docs/models/gpt-oss.html#related-resources",
+    "title": "GPT-OSS",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nGPT-OSS Blog\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "GPT-OSS"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral3/think.html",
+    "href": "docs/models/ministral3/think.html",
+    "title": "Ministral 3 Thinking",
+    "section": "",
+    "text": "This guide covers fine-tuning Ministral3 2512 with thinking capabilities using Axolotl. The thinking model enables explicit Chain-of-Thought reasoning with separate thinking and response sections.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral3",
+      "Ministral 3 Thinking"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral3/think.html#prerequisites",
+    "href": "docs/models/ministral3/think.html#prerequisites",
+    "title": "Ministral 3 Thinking",
+    "section": "Prerequisites",
+    "text": "Prerequisites\nBefore starting, ensure you have:\n\nInstalled Axolotl (see main README)",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral3",
+      "Ministral 3 Thinking"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral3/think.html#getting-started",
+    "href": "docs/models/ministral3/think.html#getting-started",
+    "title": "Ministral 3 Thinking",
+    "section": "Getting Started",
+    "text": "Getting Started\nRun the thinking model fine-tuning:\naxolotl train examples/ministral3/think/ministral3-3b-think-qlora.yaml\nThis config uses about 4.76 GiB VRAM.\n\nTips\n\nDataset uses multi-content format with type: thinking support. See Dataset Format below.\nYou cannot mix content: str and content: list[dict], otherwise, dataset loading will fail. Keep it consistent.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral3",
+      "Ministral 3 Thinking"
+    ]
+  },
+  {
+    "objectID": "docs/models/ministral3/think.html#dataset-format",
+    "href": "docs/models/ministral3/think.html#dataset-format",
+    "title": "Ministral 3 Thinking",
+    "section": "Dataset Format",
+    "text": "Dataset Format\nThe thinking model requires the multi-content dataset format with support for an extra role: thinking within system and assistant messages.\nExample format:\n{\n    \"messages\": [\n        {\n            \"role\": \"system\",\n            \"content\": [\n                { \"type\": \"text\", \"text\": \"{SYSTEM_PROMPT}\"}\n            ]\n        },\n        {\n            \"role\": \"user\",\n            \"content\": [\n                { \"type\": \"text\", \"text\": \"Solve this step by step: What is 15% of 240?\"}\n            ]\n        },\n        {\n            \"role\": \"assistant\",\n            \"content\": [\n                {\n                    \"type\": \"thinking\",\n                    \"thinking\": \"I need to calculate 15% of 240. First, I'll convert 15% to decimal: 0.15. Then multiply: 0.15 × 240 = 36.\"\n                },\n                {\n                    \"type\": \"text\",\n                    \"text\": \"To find 15% of 240, I'll multiply 240 by 0.15:\\n\\n240 × 0.15 = 36\\n\\nTherefore, 15% of 240 is 36.\"\n                }\n            ]\n        }\n    ]\n}\n\nAdvanced Options\nThe thinking section supports an optional closed parameter:\n{\n    \"type\": \"thinking\",\n    \"thinking\": \"Internal reasoning here...\",\n    \"closed\": true  // Default: true, controls adding the closing [/THINK] tag\n}",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Ministral3",
+      "Ministral 3 Thinking"
+    ]
+  },
+  {
+    "objectID": "docs/models/apertus.html",
+    "href": "docs/models/apertus.html",
+    "title": "Apertus",
+    "section": "",
+    "text": "Apertus is a family of opensource models trained by Swiss-ai.\nThis guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Apertus"
+    ]
+  },
+  {
+    "objectID": "docs/models/apertus.html#getting-started",
+    "href": "docs/models/apertus.html#getting-started",
+    "title": "Apertus",
+    "section": "Getting started",
+    "text": "Getting started\n\nInstall Axolotl following the installation guide. You need to install from main as Apertus is only on nightly or use our latest Docker images.\nHere is an example of how to install from main for pip:\n\n# Ensure you have Pytorch installed (Pytorch 2.6.0 min)\ngit clone https://github.com/axolotl-ai-cloud/axolotl.git\ncd axolotl\n\npip3 install packaging==23.2 setuptools==75.8.0 wheel ninja\npip3 install --no-build-isolation -e '.[flash-attn]'\n\n# Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy\npython scripts/cutcrossentropy_install.py | sh\n\n(Optional, highly recommended) Install XIELU CUDA\n\n## Recommended for reduced VRAM and faster speeds\n\n# Point to CUDA toolkit directory\n# For those using our Docker image, use the below path.\nexport CUDA_HOME=/usr/local/cuda\n\npip3 install git+https://github.com/nickjbrowning/XIELU@59d6031 --no-build-isolation --no-deps\nFor any installation errors, see XIELU Installation Issues\n\nRun the finetuning example:\n\naxolotl train examples/apertus/apertus-8b-qlora.yaml\nThis config uses about 8.7 GiB VRAM.\nLet us know how it goes. Happy finetuning! 🚀\n\nTips\n\nFor inference, the official Apertus team recommends top_p=0.9 and temperature=0.8.\nYou can instead use full paremter fine-tuning by removing the adapter: qlora and load_in_4bit: true from the config.\nRead more on how to load your own dataset at docs.\nThe dataset format follows the OpenAI Messages format as seen here.\n\n\n\nXIELU Installation Issues\n\nModuleNotFoundError: No module named 'torch'\nPlease check these one by one:\n- Running in correct environment\n- Env has PyTorch installed\n- CUDA toolkit is at CUDA_HOME\nIf those didn’t help, please try the below solutions:\n\nPass env for CMAKE and try install again:\nPython_EXECUTABLE=$(which python) pip3 install git+https://github.com/nickjbrowning/XIELU@59d6031 --no-build-isolation --no-deps\nGit clone the repo and manually hardcode python path:\ngit clone https://github.com/nickjbrowning/XIELU\ncd xielu\ngit checkout 59d6031\n\ncd xielu\nnano CMakeLists.txt  # or vi depending on your preference\nexecute_process(\n-    COMMAND ${Python_EXECUTABLE} -c \"import torch.utils; print(torch.utils.cmake_prefix_path)\"\n+    COMMAND /root/miniconda3/envs/py3.11/bin/python -c \"import torch.utils; print(torch.utils.cmake_prefix_path)\"\n    RESULT_VARIABLE TORCH_CMAKE_PATH_RESULT\n    OUTPUT_VARIABLE TORCH_CMAKE_PATH_OUTPUT\n    ERROR_VARIABLE TORCH_CMAKE_PATH_ERROR\n)\npip3 install . --no-build-isolation --no-deps",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Apertus"
+    ]
+  },
+  {
+    "objectID": "docs/models/apertus.html#optimization-guides",
+    "href": "docs/models/apertus.html#optimization-guides",
+    "title": "Apertus",
+    "section": "Optimization Guides",
+    "text": "Optimization Guides\n\nMulti-GPU Training\nMulti-Node Training\nLoRA Optimizations",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Apertus"
+    ]
+  },
+  {
+    "objectID": "docs/models/apertus.html#related-resources",
+    "href": "docs/models/apertus.html#related-resources",
+    "title": "Apertus",
+    "section": "Related Resources",
+    "text": "Related Resources\n\nApertus Tech Report\nAxolotl Docs\nAxolotl Website\nAxolotl GitHub\nAxolotl Discord",
+    "crumbs": [
+      "Getting Started",
+      "Model Guides",
+      "Apertus"
+    ]
   },
   {
     "objectID": "docs/optimizers.html",
