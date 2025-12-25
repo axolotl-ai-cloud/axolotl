@@ -102,6 +102,8 @@ def load_lora(
         lora_config_kwargs["layer_replication"] = cfg.peft_layer_replication
     if cfg.peft_trainable_token_indices:
         lora_config_kwargs["trainable_token_indices"] = cfg.peft_trainable_token_indices
+    if cfg.peft_ensure_weight_tying is not None:
+        lora_config_kwargs["ensure_weight_tying"] = cfg.peft_ensure_weight_tying
 
     # Determine the correct PEFT task type
     model_cls = type(model).__name__
@@ -140,9 +142,12 @@ def load_lora(
     ):
         setup_quantized_meta_for_peft(model)
 
+    model_kwargs: Any = {}
+    if cfg.peft_autocast_adapter_dtype is not None:
+        model_kwargs["autocast_adapter_dtype"] = cfg.peft_autocast_adapter_dtype
+
     if cfg.lora_model_dir:
         LOG.debug("Loading pretrained PEFT - LoRA")
-        model_kwargs: Any = {}
         if cfg.lora_on_cpu:
             model_kwargs["max_memory"] = {"cpu": "256GiB"}
             model_kwargs["device_map"] = {"": "cpu"}
@@ -153,7 +158,7 @@ def load_lora(
             **model_kwargs,
         )
     else:
-        model = get_peft_model(model, lora_config)
+        model = get_peft_model(model, lora_config, **model_kwargs)
 
     if rank == 0:
         try:

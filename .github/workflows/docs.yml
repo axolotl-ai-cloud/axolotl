@@ -12,6 +12,9 @@ jobs:
     build-deploy:
         runs-on: ubuntu-latest
         steps:
+        - name: cleanup node
+          run: |
+            sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         - name: Check out repository
           uses: actions/checkout@v4
         - name: Set up Quarto

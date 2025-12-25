@@ -24,6 +24,10 @@ def is_opentelemetry_available():
     )
 
 
+def is_trackio_available():
+    return importlib.util.find_spec("trackio") is not None
+
+
 def get_pytorch_version() -> tuple[int, int, int]:
     """
     Get Pytorch version as a tuple of (major, minor, patch).
@@ -41,14 +45,27 @@ def get_pytorch_version() -> tuple[int, int, int]:
 
 
 def set_pytorch_cuda_alloc_conf():
-    """Set up CUDA allocation config if using PyTorch >= 2.2"""
+    """Set up CUDA allocation config"""
     torch_version = torch.__version__.split(".")
     torch_major, torch_minor = int(torch_version[0]), int(torch_version[1])
-    if torch_major == 2 and torch_minor >= 2:
-        if os.getenv("PYTORCH_CUDA_ALLOC_CONF") is None:
-            os.environ["PYTORCH_CUDA_ALLOC_CONF"] = (
-                "expandable_segments:True,roundup_power2_divisions:16"
-            )
+    config_value = "expandable_segments:True,roundup_power2_divisions:16"
+    if (
+        torch_major == 2
+        and torch_minor >= 9
+        and os.getenv("PYTORCH_ALLOC_CONF") is None
+    ):
+        os.environ["PYTORCH_ALLOC_CONF"] = config_value
+    elif (
+        torch_major == 2
+        and torch_minor >= 2
+        and os.getenv("PYTORCH_CUDA_ALLOC_CONF") is None
+    ):
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = config_value
+
+
+def set_misc_env():
+    if os.getenv("XFORMERS_IGNORE_FLASH_VERSION_CHECK") is None:
+        os.environ["XFORMERS_IGNORE_FLASH_VERSION_CHECK"] = "1"
 
 
 def get_not_null(value, default=None):

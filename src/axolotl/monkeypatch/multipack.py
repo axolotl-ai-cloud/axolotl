@@ -53,6 +53,9 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "olmo",
     "olmo2",
     "olmo3",
+    "ministral",
+    "ministral3",
+    "afmoe",
 ]
 
 

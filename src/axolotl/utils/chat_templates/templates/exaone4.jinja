@@ -1,0 +1,126 @@
+{%- if not skip_think is defined %}
+  {%- set skip_think = true %}
+{%- endif %}
+{%- set role_indicators = {
+    'user': '[|user|]\n',
+    'assistant': '[|assistant|]\n',
+    'system': '[|system|]\n',
+    'tool': '[|tool|]\n'
+} %}
+{%- set end_of_turn = '[|endofturn|]\n' %}
+{%- macro available_tools(tools) %}
+    {{- "# Available Tools" }}
+    {{- "\nYou can use none, one, or multiple of the following tools by calling them as functions to help with the user’s query." }}
+    {{- "\nHere are the tools available to you in JSON format within <tool> and </tool> tags:\n" }}
+    {%- for tool in tools %}
+        {{- "<tool>" }}
+        {{- tool | tojson(ensure_ascii=False) | safe }}
+        {{- "</tool>\n" }}
+    {%- endfor %}
+    {{- "\nFor each function call you want to make, return a JSON object with function name and arguments within <tool_call> and </tool_call> tags, like:" }}
+    {{- "\n<tool_call>{\"name\": function_1_name, \"arguments\": {argument_1_name: argument_1_value, argument_2_name: argument_2_value}}</tool_call>" }}
+    {{- "\n<tool_call>{\"name\": function_2_name, \"arguments\": {...}}</tool_call>\n..." }}
+    {{- "\nNote that if no argument name is specified for a tool, you can just print the argument value directly, without the argument name or JSON formatting." }}
+{%- endmacro %}
+{%- set ns = namespace(last_query_index = messages|length - 1) %}
+{%- for message in messages %}
+    {%- if message.role == "user" and message.content is string %}
+        {%- set ns.last_query_index = loop.index0 -%}
+    {%- endif %}
+{%- endfor %}
+{%- for i in range(messages | length) %}
+    {%- set msg = messages[i] %}
+    {%- set role = msg.role %}
+    {%- if role not in role_indicators %}
+        {{- raise_exception('Unknown role: ' ~ role) }}
+    {%- endif %}
+    {# ---- Case A: If the first message is "system", handle it here alone (without continue) ---- #}
+    {%- if i == 0 and role == 'system' %}
+            {{- role_indicators['system'] }}
+            {{- msg.content }}
+            {%- if tools is defined and tools %}
+                {{- "\n\n" }}{{- available_tools(tools) }}
+            {%- endif %}
+            {{- end_of_turn -}}
+    {%- else %}
+    {# ---- Case B: If the first message is tools instead of system, inject the system tools preamble ---- #}
+        {%- if i == 0 and tools is defined and tools %}
+            {{- role_indicators['system'] }}
+            {{- available_tools(tools) }}
+            {{- end_of_turn -}}
+        {%- endif %}
+    {%- endif %}
+    {%- if role == 'assistant' %}
+        {{- role_indicators['assistant'] }}
+        {%- if msg.content %}
+            {%- if "</think>" in msg.content %}
+                {%- set content = msg.content.split('</think>')[-1].strip() %}
+                {%- set reasoning_content = msg.content.split('</think>')[0].strip() %}
+                {%- if reasoning_content.startswith("<think>") %}
+                    {%- set reasoning_content = reasoning_content[7:].strip() %}
+                {%- endif %}
+            {%- else %}
+                {%- set content = msg.content %}
+            {%- endif %}
+            {%- if msg.reasoning_content %}
+                {%- set reasoning_content = msg.reasoning_content %}
+            {%- endif %}
+            {%- if (not skip_think and loop.last) and reasoning_content is defined %}
+                {{- "<think>\n" }}
+                {{- reasoning_content}}
+                {{- "\n</think>\n\n" }}
+            {%- else %}
+                {{- "<think>\n\n</think>\n\n" }}
+            {%- endif %}
+            {{- content }}
+        {%- endif %}
+        {%- if msg.tool_calls %}
+            {%- if msg.content %}
+                {{- "\n" }}
+            {%- else %}
+                {{- "<think>\n\n</think>\n\n" }}
+            {%- endif %}
+            {%- for tool_call in msg.tool_calls %}
+                {%- if tool_call.function is defined %}
+                    {%- set tool_call = tool_call.function %}
+                {%- endif %}
+                {%- if tool_call.arguments is defined %}
+                    {%- set arguments = tool_call.arguments %}
+                {%- elif tool_call.parameters is defined %}
+                    {%- set arguments = tool_call.parameters %}
+                {%- else %}
+                    {{- raise_exception('arguments or parameters are mandatory: ' ~ tool_call) }}
+                {%- endif %}
+                {{- "<tool_call>" }}{"name": "{{- tool_call.name }}", "arguments": {{ arguments | tojson(ensure_ascii=False) | safe }}}{{- "</tool_call>" }}
+                {%- if not loop.last %}
+                    {{- "\n" }}
+                {%- endif %}
+            {%- endfor %}
+        {%- endif %}
+        {{- end_of_turn -}}
+    {%- elif role == "tool" %}
+        {%- if i == 0 or messages[i - 1].role != "tool" %}
+            {{- role_indicators['tool'] }}
+        {%- endif %}
+        {%- if msg.content is defined %}
+            {{- "<tool_result>" }}{"result": {{ msg.content | tojson(ensure_ascii=False) | safe }}}{{- "</tool_result>" }}
+        {%- endif %}
+        {%- if loop.last or messages[i + 1].role != "tool" %}
+            {{- end_of_turn -}}
+        {%- else %}
+            {{- "\n" }}
+        {%- endif %}
+    {%- else %}
+        {{- role_indicators[role] }}
+        {{- msg.content }}
+        {{- end_of_turn -}}
+    {%- endif %}
+{% endfor %}
+{%- if add_generation_prompt %}
+    {{- role_indicators['assistant'] }}
+    {%- if enable_thinking is defined and enable_thinking is true %}
+        {{- "<think>\n" }}
+    {%- else %}
+        {{- "<think>\n\n</think>\n\n" }}
+    {%- endif %}
+{%- endif %}
