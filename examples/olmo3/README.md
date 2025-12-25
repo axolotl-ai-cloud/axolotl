@@ -16,7 +16,7 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
     axolotl train examples/olmo3/olmo3-7b-qlora.yaml
     ```
 
-Let us know how it goes. Happy finetuning! 🚀
+This uses about 11.3 GiB VRAM. Let us know how it goes. Happy finetuning! 🚀
 
 ### TIPS
 

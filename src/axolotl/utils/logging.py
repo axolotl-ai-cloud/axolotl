@@ -2,8 +2,16 @@
 
 import functools
 import logging
+import warnings
 
 from axolotl.utils.distributed import is_main_process
+
+# Suppress noisy bitsandbytes warnings about dtype casting during quantization
+warnings.filterwarnings(
+    "ignore",
+    message=".*MatMul8bitLt: inputs will be cast from.*",
+    category=UserWarning,
+)
 
 # Adapted from Accelerate
 # https://github.com/huggingface/accelerate/blob/main/src/accelerate/logging.py

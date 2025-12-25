@@ -1,5 +1,6 @@
 base_model: arcee-ai/Trinity-Nano-Preview
 trust_remote_code: true
+revision_of_model: 2ee94b0
 
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name

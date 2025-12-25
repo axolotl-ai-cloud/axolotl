@@ -26,6 +26,7 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.tee import prepare_debug_log
+from axolotl.utils.trackio_ import setup_trackio_env_vars
 from axolotl.utils.trainer import prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
@@ -227,6 +228,7 @@ def load_cfg(
         cfg,
         capabilities={
             "bf16": is_torch_bf16_gpu_available(),
+            "fp8": compute_supports_fp8(),
             "n_gpu": int(os.environ.get("WORLD_SIZE", 1)),
             "compute_capability": gpu_version,
         },
@@ -245,6 +247,7 @@ def load_cfg(
     setup_wandb_env_vars(cfg)
     setup_mlflow_env_vars(cfg)
     setup_comet_env_vars(cfg)
+    setup_trackio_env_vars(cfg)
     plugin_set_cfg(cfg)
 
     TELEMETRY_MANAGER.send_event(event_type="config-processed", properties=cfg)
@@ -259,3 +262,11 @@ def load_cfg(
     )
 
     return cfg
+
+
+def compute_supports_fp8() -> bool:
+    try:
+        compute_capability = torch.cuda.get_device_capability()
+        return compute_capability >= (9, 0)
+    except RuntimeError:
+        return False

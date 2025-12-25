@@ -79,7 +79,11 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
             and hasattr(model_config, "vision_config")
             and hasattr(model_config.vision_config, "image_size")
         ):
-            cfg.image_size = model_config.vision_config.image_size
+            image_size = model_config.vision_config.image_size
+            if isinstance(image_size, list):
+                cfg.image_size = tuple(image_size)
+            else:
+                cfg.image_size = image_size
             LOG.debug(f"Loaded image size: {cfg.image_size} from model config")
 
     quant_config_exists = (
