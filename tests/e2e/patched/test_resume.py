@@ -2,6 +2,7 @@
 E2E tests for resuming training
 """
 
+import os
 import re
 import subprocess
 
@@ -9,6 +10,7 @@ from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
+from axolotl.utils.callbacks.tokens_per_second import TOKENS_STATE_FILE
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
@@ -58,6 +60,7 @@ class TestResumeLlama:
                 "use_tensorboard": True,
                 "save_safetensors": True,
                 "save_first_step": False,
+                "include_tkps": True,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -74,6 +77,12 @@ class TestResumeLlama:
         )
 
         train(cfg=cfg, dataset_meta=dataset_meta)
+
+        checkpoint_path = f"{temp_dir}/checkpoint-9"
+        tokens_state_path = os.path.join(checkpoint_path, TOKENS_STATE_FILE)
+        assert os.path.isfile(tokens_state_path), (
+            f"{TOKENS_STATE_FILE} should exist in checkpoint at {tokens_state_path}"
+        )
 
         resume_cfg = cfg | DictDefault(
             {
