@@ -1,17 +1,15 @@
-base_model: arcee-ai/Trinity-Nano-Preview
-trust_remote_code: true
-revision_of_model: 2ee94b0
+base_model: katanemo/Plano-Orchestrator-4B
 
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
-# CCE - N/A as of now
-# plugins:
-#   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
 
 load_in_8bit: false
 load_in_4bit: true
 
+chat_template: qwen3
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_test
     type: chat_template
@@ -58,8 +56,7 @@ tf32: false
 gradient_checkpointing: true
 resume_from_checkpoint:
 logging_steps: 1
-# flash_attention: true  # Not supported
-sdp_attention: true
+flash_attention: true
 
 warmup_ratio: 0.1
 evals_per_epoch: 1

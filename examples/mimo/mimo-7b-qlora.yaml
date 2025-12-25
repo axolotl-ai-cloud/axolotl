@@ -1,6 +1,6 @@
-base_model: arcee-ai/Trinity-Nano-Preview
+base_model: XiaomiMiMo/MiMo-7B-RL
 trust_remote_code: true
-revision_of_model: 2ee94b0
+revision_of_model: 6299b5a
 
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
@@ -58,8 +58,7 @@ tf32: false
 gradient_checkpointing: true
 resume_from_checkpoint:
 logging_steps: 1
-# flash_attention: true  # Not supported
-sdp_attention: true
+flash_attention: true
 
 warmup_ratio: 0.1
 evals_per_epoch: 1
