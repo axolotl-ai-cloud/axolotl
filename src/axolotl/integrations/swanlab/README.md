@@ -190,6 +190,169 @@ output_dir: ./outputs
 - No logging or tracking
 - Best for: Debugging, testing
 
+## Configuration Validation & Conflict Detection
+
+SwanLab integration includes comprehensive validation and conflict detection to help you catch configuration errors early and avoid performance issues.
+
+### Required Fields Validation
+
+The plugin validates your configuration at startup and provides clear error messages with solutions:
+
+#### Missing Project Name
+
+```yaml
+# ❌ INVALID: use_swanlab enabled but no project
+use_swanlab: true
+# Error: SwanLab enabled but 'swanlab_project' is not set.
+```
+
+**Solution**:
+```yaml
+# ✅ VALID: Provide project name
+use_swanlab: true
+swanlab_project: my-project
+```
+
+#### Invalid Mode
+
+```yaml
+# ❌ INVALID: Unknown mode
+use_swanlab: true
+swanlab_project: my-project
+swanlab_mode: invalid-mode
+# Error: Invalid swanlab_mode: 'invalid-mode'. Valid options: cloud, local, offline, disabled
+```
+
+**Solution**:
+```yaml
+# ✅ VALID: Use one of the valid modes
+use_swanlab: true
+swanlab_project: my-project
+swanlab_mode: cloud  # or: local, offline, disabled
+```
+
+#### Empty Project Name
+
+```yaml
+# ❌ INVALID: Empty string project name
+use_swanlab: true
+swanlab_project: ""
+# Error: swanlab_project cannot be an empty string.
+```
+
+**Solution**:
+```yaml
+# ✅ VALID: Provide non-empty project name
+use_swanlab: true
+swanlab_project: my-project
+```
+
+### Cloud Mode API Key Warning
+
+When using `cloud` mode without an API key, you'll receive a warning with multiple solutions:
+
+```yaml
+use_swanlab: true
+swanlab_project: my-project
+swanlab_mode: cloud
+# No API key set
+# Warning: SwanLab cloud mode enabled but no API key found.
+```
+
+**Solutions**:
+1. Set environment variable: `export SWANLAB_API_KEY=your-api-key`
+2. Add to config (less secure): `swanlab_api_key: your-api-key`
+3. Run `swanlab login` before training
+4. Use `swanlab_mode: local` for offline tracking
+
+### Multi-Logger Performance Warnings
+
+Using multiple logging tools simultaneously (SwanLab + WandB + MLflow + Comet) can impact training performance:
+
+#### Two Loggers - Warning
+
+```yaml
+use_swanlab: true
+swanlab_project: my-project
+
+use_wandb: true
+wandb_project: my-project
+
+# Warning: Multiple logging tools enabled: SwanLab, WandB
+# Expected overhead: ~3.0% per training step.
+```
+
+**Impact**:
+- Performance overhead: ~1-2% per logger (cumulative)
+- Increased memory usage
+- Longer training time per step
+- Potential config/callback conflicts
+
+**Recommendations**:
+- Choose ONE primary logging tool for production training
+- Use multiple loggers only for:
+  - Migration period (transitioning between tools)
+  - Short comparison runs
+  - Debugging specific tool issues
+- Monitor system resources (CPU, memory) during training
+
+#### Three+ Loggers - Error-Level Warning
+
+```yaml
+use_swanlab: true
+swanlab_project: my-project
+
+use_wandb: true
+wandb_project: my-project
+
+use_mlflow: true
+mlflow_tracking_uri: http://localhost:5000
+
+# ERROR: 3 logging tools enabled simultaneously!
+# Expected overhead: ~4.5% per training step.
+# STRONGLY RECOMMEND: Disable all but ONE logging tool
+```
+
+**Why This Matters**:
+- With 3 loggers: ~4-5% overhead per step → significant slowdown over long training
+- Example: 10,000 steps at 2s/step → ~400-500 seconds extra (6-8 minutes)
+- Memory overhead scales with number of loggers
+- Rare edge cases with callback ordering conflicts
+
+### Auto-Enable Logic
+
+For convenience, SwanLab will auto-enable if you specify a project without setting `use_swanlab`:
+
+```yaml
+# This configuration:
+swanlab_project: my-project
+
+# Automatically becomes:
+use_swanlab: true
+swanlab_project: my-project
+```
+
+### Distributed Training Detection
+
+In distributed training scenarios (multi-GPU), the plugin automatically detects and reports:
+
+```yaml
+use_swanlab: true
+swanlab_project: my-project
+swanlab_mode: cloud
+
+# When running with torchrun --nproc_per_node=4:
+# Info: Distributed training detected (world_size=4)
+# Info: SwanLab mode: cloud
+# Info: Only rank 0 will initialize SwanLab
+# Info: Other ranks will skip SwanLab to avoid conflicts
+```
+
+**Why Only Rank 0**:
+- Avoids duplicate experiment runs
+- Reduces network/cloud API overhead on worker ranks
+- Prevents race conditions in metric logging
+
 ## Authentication
 
 ### Method 1: Environment Variable (Recommended)
@@ -260,13 +423,105 @@ wandb_project: my-project
 
 ## Troubleshooting
 
+### Configuration Errors
+
+#### Error: "SwanLab enabled but 'swanlab_project' is not set"
+
+**Cause**: You enabled SwanLab (`use_swanlab: true`) but forgot to specify a project name.
+
+**Solution**:
+```yaml
+use_swanlab: true
+swanlab_project: my-project  # Add this line
+```
+
+#### Error: "Invalid swanlab_mode: 'xxx'"
+
+**Cause**: You provided an invalid mode value.
+
+**Solution**: Use one of the valid modes:
+```yaml
+swanlab_mode: cloud     # or: local, offline, disabled
+```
+
+#### Error: "swanlab_project cannot be an empty string"
+
+**Cause**: You set `swanlab_project: ""` (empty string).
+
+**Solution**: Either provide a valid name or remove the field:
+```yaml
+# Option 1: Provide valid name
+swanlab_project: my-project
+
+# Option 2: Remove the field entirely
+# swanlab_project: ""  <- Remove this line
+```
+
+### Import Errors
+
+#### Error: "SwanLab is not installed"
+
+**Cause**: SwanLab package is not installed in your environment.
+
+**Solution**:
+```bash
+pip install swanlab
+# or
+pip install swanlab>=0.3.0
+```
+
+### Performance Issues
+
+#### Warning: "Multiple logging tools enabled"
+
+**Cause**: You have multiple experiment tracking tools enabled (e.g., SwanLab + WandB + MLflow).
+
+**Impact**: ~1-2% performance overhead per logger, cumulative.
+
+**Solution**: For production training, disable all but one logger:
+```yaml
+# Option 1: Keep only SwanLab
+use_swanlab: true
+swanlab_project: my-project
+use_wandb: false      # Disable others
+use_mlflow: false
+
+# Option 2: Keep only WandB
+use_swanlab: false
+use_wandb: true
+wandb_project: my-project
+```
+
+**Exception**: Multiple loggers are acceptable for:
+- Short comparison runs (< 100 steps)
+- Migration testing between logging tools
+- Debugging logger-specific issues
+
+### Distributed Training Issues
+
+#### SwanLab creates duplicate runs in multi-GPU training
+
+**Cause**: All ranks are initializing SwanLab instead of just rank 0.
+
+**Expected Behavior**: The plugin automatically ensures only rank 0 initializes SwanLab. You should see:
+```
+Info: Distributed training detected (world_size=4)
+Info: Only rank 0 will initialize SwanLab
+Info: Other ranks will skip SwanLab to avoid conflicts
+```
+
+**If you see duplicates**:
+1. Check your plugin is loaded correctly
+2. Verify you're using the latest SwanLab integration code
+3. Check logs for initialization messages on all ranks
+
 ### SwanLab not logging metrics
 
 **Solution**: Ensure SwanLab is initialized before training starts. The plugin automatically handles this in `pre_model_load`.
 
 ### API Key errors
 
-**Solution**: 
+**Solution**:
 ```bash
 # Verify API key
 echo $SWANLAB_API_KEY

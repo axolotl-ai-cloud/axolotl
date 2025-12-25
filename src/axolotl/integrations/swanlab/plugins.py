@@ -40,8 +40,99 @@ class SwanLabPlugin(BasePlugin):
         return "axolotl.integrations.swanlab.SwanLabConfig"
 
     def register(self, cfg: dict):
-        """Register SwanLab plugin with configuration."""
+        """Register SwanLab plugin with configuration and conflict detection."""
         LOG.info("Registering SwanLab plugin")
+
+        # === Conflict Detection: Required Fields ===
+
+        # Check if SwanLab is enabled
+        if cfg.get("use_swanlab"):
+            # 1. Validate project name is set
+            if not cfg.get("swanlab_project"):
+                raise ValueError(
+                    "SwanLab enabled but 'swanlab_project' is not set.\n\n"
+                    "Solutions:\n"
+                    "  1. Add 'swanlab_project: your-project-name' to your config\n"
+                    "  2. Set 'use_swanlab: false' to disable SwanLab\n\n"
+                    "See: src/axolotl/integrations/swanlab/README.md for examples"
+                )
+
+            # 2. Validate swanlab_mode value
+            valid_modes = ["cloud", "local", "offline", "disabled"]
+            mode = cfg.get("swanlab_mode")
+            if mode and mode not in valid_modes:
+                raise ValueError(
+                    f"Invalid swanlab_mode: '{mode}'.\n\n"
+                    f"Valid options: {', '.join(valid_modes)}\n\n"
+                    f"Example:\n"
+                    f"  swanlab_mode: cloud  # Sync to SwanLab cloud\n"
+                    f"  swanlab_mode: local  # Local only, no cloud sync\n"
+                )
+
+            # 3. Check API key for cloud mode
+            import os
+            mode = cfg.get("swanlab_mode", "cloud")  # Default is cloud
+            if mode == "cloud":
+                api_key = cfg.get("swanlab_api_key") or os.environ.get("SWANLAB_API_KEY")
+                if not api_key:
+                    LOG.warning(
+                        "SwanLab cloud mode enabled but no API key found.\n"
+                        "SwanLab may fail to initialize during training.\n\n"
+                        "Solutions:\n"
+                        "  1. Set SWANLAB_API_KEY environment variable:\n"
+                        "     export SWANLAB_API_KEY=your-api-key\n"
+                        "  2. Add 'swanlab_api_key: your-api-key' to config (less secure)\n"
+                        "  3. Run 'swanlab login' before training\n"
+                        "  4. Use 'swanlab_mode: local' for offline tracking\n"
+                    )
+
+        # === Conflict Detection: Multi-Logger Performance Warning ===
+
+        # Detect all active logging tools
+        active_loggers = []
+        if cfg.get("use_wandb"):
+            active_loggers.append("WandB")
+        if cfg.get("use_mlflow"):
+            active_loggers.append("MLflow")
+        if cfg.get("comet_api_key") or cfg.get("comet_project_name"):
+            active_loggers.append("Comet")
+        if cfg.get("use_swanlab"):
+            active_loggers.append("SwanLab")
+
+        if len(active_loggers) > 1:
+            LOG.warning(
+                f"\n{'='*70}\n"
+                f"Multiple logging tools enabled: {', '.join(active_loggers)}\n"
+                f"{'='*70}\n"
+                f"This may cause:\n"
+                f"  - Performance overhead (~1-2% per logger, cumulative)\n"
+                f"  - Increased memory usage\n"
+                f"  - Longer training time per step\n"
+                f"  - Potential config/callback conflicts\n\n"
+                f"Recommendations:\n"
+                f"  - Choose ONE primary logging tool for production training\n"
+                f"  - Use multiple loggers only for:\n"
+                f"    * Migration period (transitioning between tools)\n"
+                f"    * Short comparison runs\n"
+                f"    * Debugging specific tool issues\n"
+                f"  - Monitor system resources (CPU, memory) during training\n"
+                f"{'='*70}\n"
+            )
+
+            if len(active_loggers) >= 3:
+                LOG.error(
+                    f"\n{'!'*70}\n"
+                    f"WARNING: {len(active_loggers)} logging tools enabled simultaneously!\n"
+                    f"{'!'*70}\n"
+                    f"This is likely unintentional and WILL significantly impact performance.\n"
+                    f"Expected overhead: ~{len(active_loggers) * 1.5:.1f}% per training step.\n\n"
+                    f"STRONGLY RECOMMEND:\n"
+                    f"  - Disable all but ONE logging tool\n"
+                    f"  - Use config inheritance to manage multiple configs\n"
+                    f"{'!'*70}\n"
+                )
+
+        # === Auto-Enable Logic ===
 
         # Enable SwanLab if project is specified
         if cfg.get("swanlab_project") and not cfg.get("use_swanlab"):
@@ -49,22 +140,55 @@ class SwanLabPlugin(BasePlugin):
             LOG.info("Automatically enabled use_swanlab because swanlab_project is set")
 
     def pre_model_load(self, cfg: DictDefault):
-        """Initialize SwanLab before model loading."""
+        """Initialize SwanLab before model loading with runtime checks."""
         if not cfg.use_swanlab:
             return
 
+        # === Runtime Check: Import Availability ===
         try:
             import swanlab
-        except ImportError:
-            LOG.error(
-                "SwanLab is not installed. Install it with: pip install swanlab"
+        except ImportError as err:
+            raise ImportError(
+                "SwanLab is not installed.\n\n"
+                "Install with:\n"
+                "  pip install swanlab\n\n"
+                "Or add to requirements:\n"
+                "  swanlab>=0.3.0\n\n"
+                f"Original error: {err}"
+            ) from err
+
+        # Log SwanLab version
+        try:
+            swanlab_version = swanlab.__version__
+            LOG.info(f"SwanLab version: {swanlab_version}")
+        except AttributeError:
+            LOG.warning("Could not determine SwanLab version")
+
+        # === Runtime Check: Distributed Training Setup ===
+        from axolotl.utils.distributed import is_main_process, get_world_size
+
+        world_size = get_world_size()
+        if world_size > 1:
+            mode = getattr(cfg, "swanlab_mode", "cloud")
+            LOG.info(
+                f"\n{'='*70}\n"
+                f"Distributed training detected (world_size={world_size})\n"
+                f"SwanLab mode: {mode}\n"
+                f"{'='*70}\n"
+                f"Behavior:\n"
+                f"  - Only rank 0 will initialize SwanLab\n"
+                f"  - Other ranks will skip SwanLab to avoid conflicts\n"
             )
-            return
+
+            if mode == "cloud":
+                LOG.info(
+                    f"  - Only rank 0 will upload to SwanLab cloud\n"
+                    f"  - Other ranks run without SwanLab overhead\n"
+                    f"{'='*70}\n"
+                )
 
         # Only initialize SwanLab on the main process (rank 0)
         # to avoid creating multiple runs in distributed training
-        from axolotl.utils.distributed import is_main_process
-
         if not is_main_process():
             LOG.debug(
                 "Skipping SwanLab initialization on non-main process"

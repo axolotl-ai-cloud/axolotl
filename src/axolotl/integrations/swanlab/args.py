@@ -1,6 +1,6 @@
 """SwanLab configuration arguments"""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class SwanLabConfig(BaseModel):
@@ -61,7 +61,53 @@ class SwanLabConfig(BaseModel):
         },
     )
 
+    @field_validator("swanlab_mode")
+    @classmethod
+    def validate_swanlab_mode(cls, v):
+        """Validate swanlab_mode is one of the allowed values."""
+        if v is None:
+            return v
 
+        valid_modes = ["cloud", "local", "offline", "disabled"]
+        if v not in valid_modes:
+            raise ValueError(
+                f"Invalid swanlab_mode: '{v}'.\n\n"
+                f"Valid options: {', '.join(valid_modes)}\n\n"
+                f"Examples:\n"
+                f"  swanlab_mode: cloud     # Sync to SwanLab cloud\n"
+                f"  swanlab_mode: local     # Local only, no cloud sync\n"
+                f"  swanlab_mode: offline   # Save metadata locally\n"
+                f"  swanlab_mode: disabled  # Turn off SwanLab\n"
+            )
+        return v
+
+    @field_validator("swanlab_project")
+    @classmethod
+    def validate_swanlab_project(cls, v):
+        """Validate swanlab_project is non-empty when provided."""
+        if v is not None and isinstance(v, str) and len(v.strip()) == 0:
+            raise ValueError(
+                "swanlab_project cannot be an empty string.\n\n"
+                "Either:\n"
+                "  1. Provide a valid project name: swanlab_project: my-project\n"
+                "  2. Remove the swanlab_project field entirely\n"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def validate_swanlab_enabled_requires_project(self):
+        """Validate that if use_swanlab is True, swanlab_project must be set."""
+        if self.use_swanlab is True and not self.swanlab_project:
+            raise ValueError(
+                "SwanLab enabled (use_swanlab: true) but 'swanlab_project' is not set.\n\n"
+                "Solutions:\n"
+                "  1. Add 'swanlab_project: your-project-name' to your config\n"
+                "  2. Set 'use_swanlab: false' to disable SwanLab\n\n"
+                "Example:\n"
+                "  use_swanlab: true\n"
+                "  swanlab_project: my-llm-training\n"
+            )
+        return self
 
 
 
