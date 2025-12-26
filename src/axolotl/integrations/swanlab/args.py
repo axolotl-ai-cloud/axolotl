@@ -60,6 +60,36 @@ class SwanLabConfig(BaseModel):
             "description": "API address for SwanLab cloud environment (for private deployment)"
         },
     )
+    swanlab_lark_webhook_url: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Lark (Feishu) webhook URL for sending training notifications to team chat"
+        },
+    )
+    swanlab_lark_secret: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Secret for Lark webhook HMAC signature authentication (optional)"
+        },
+    )
+    swanlab_log_completions: bool | None = Field(
+        default=True,
+        json_schema_extra={
+            "description": "Enable logging RLHF completions to SwanLab for qualitative analysis (DPO/KTO/ORPO/GRPO)"
+        },
+    )
+    swanlab_completion_log_interval: int | None = Field(
+        default=100,
+        json_schema_extra={
+            "description": "Number of training steps between completion table logging to SwanLab"
+        },
+    )
+    swanlab_completion_max_buffer: int | None = Field(
+        default=128,
+        json_schema_extra={
+            "description": "Maximum number of completions to buffer before logging (prevents memory leaks)"
+        },
+    )
 
     @field_validator("swanlab_mode")
     @classmethod

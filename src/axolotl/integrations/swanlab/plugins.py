@@ -195,15 +195,15 @@ class SwanLabPlugin(BasePlugin):
             )
             return
 
-        # Setup SwanLab environment variables
-        self._setup_swanlab_env(cfg)
-
-        # Initialize SwanLab run
+        # Initialize SwanLab run (passing all params directly to init)
         try:
             init_kwargs = self._get_swanlab_init_kwargs(cfg)
             swanlab.init(**init_kwargs)
             self.swanlab_initialized = True
             LOG.info(f"SwanLab initialized with project: {cfg.swanlab_project}")
+
+            # Register Lark notification callback (if configured)
+            self._register_lark_callback(cfg)
 
             # Log configuration (with error handling)
             try:
@@ -270,32 +270,25 @@ class SwanLabPlugin(BasePlugin):
                 }
                 # Remove None values
                 trainer_config = {k: v for k, v in trainer_config.items() if v is not None}
-                
+
                 if trainer_config:
                     swanlab.config.update(trainer_config)
                     LOG.info("Logged trainer configuration to SwanLab")
             except Exception as err:  # pylint: disable=broad-except
                 LOG.debug(f"Failed to log trainer config to SwanLab: {err}")
 
-    def _setup_swanlab_env(self, cfg: DictDefault):
-        """Setup SwanLab environment variables from config."""
-        import os
-
-        env_mapping = {
-            "swanlab_api_key": "SWANLAB_API_KEY",
-            "swanlab_mode": "SWANLAB_MODE",
-            "swanlab_web_host": "SWANLAB_WEB_HOST",
-            "swanlab_api_host": "SWANLAB_API_HOST",
-        }
-
-        for cfg_key, env_key in env_mapping.items():
-            value = getattr(cfg, cfg_key, None)
-            if value and isinstance(value, str) and len(value) > 0:
-                os.environ[env_key] = value
-                LOG.debug(f"Set environment variable {env_key}")
+            # Register RLHF completion logging callback if enabled
+            self._register_completion_callback(cfg, trainer)
 
     def _get_swanlab_init_kwargs(self, cfg: DictDefault) -> dict:
-        """Prepare kwargs for swanlab.init()."""
+        """Prepare kwargs for swanlab.init().
+
+        Passes all configuration parameters directly to swanlab.init()
+        instead of using environment variables as an intermediate layer.
+
+        Returns:
+            dict: Keyword arguments for swanlab.init()
+        """
         init_kwargs = {}
 
         # Project name (required)
@@ -318,9 +311,24 @@ class SwanLabPlugin(BasePlugin):
         if cfg.swanlab_mode:
             init_kwargs["mode"] = cfg.swanlab_mode
 
+        # API key (pass directly instead of via env var)
+        if cfg.swanlab_api_key:
+            init_kwargs["api_key"] = cfg.swanlab_api_key
+
+        # Private deployment hosts (pass directly instead of via env var)
+        if cfg.swanlab_web_host:
+            init_kwargs["web_host"] = cfg.swanlab_web_host
+
+        if cfg.swanlab_api_host:
+            init_kwargs["api_host"] = cfg.swanlab_api_host
+
         # Log model checkpoints (coming soon in SwanLab)
         if cfg.swanlab_log_model:
             init_kwargs["log_model"] = cfg.swanlab_log_model
+
+        # Custom branding - adds Axolotl identifier to SwanLab UI
+        # This helps identify runs from Axolotl vs other frameworks
+        init_kwargs["config"] = {"UPPERFRAME": "🦎 Axolotl"}
 
         return init_kwargs
 
@@ -389,4 +397,121 @@ class SwanLabPlugin(BasePlugin):
                 "base_model": str(getattr(cfg, "base_model", "unknown")),
                 "learning_rate": float(getattr(cfg, "learning_rate", 0.0)) if getattr(cfg, "learning_rate", None) else None,
             }
+
+    def _register_lark_callback(self, cfg: DictDefault):
+        """Register Lark (Feishu) notification callback if configured.
+
+        Lark notifications enable sending training updates to team chat channels,
+        useful for production monitoring and team collaboration.
+
+        Args:
+            cfg: Configuration object with Lark webhook settings
+        """
+        # Check if Lark webhook URL is configured
+        lark_webhook_url = getattr(cfg, "swanlab_lark_webhook_url", None)
+        if not lark_webhook_url:
+            return  # Lark not configured, skip
+
+        try:
+            import swanlab
+            from swanlab.plugin.notification import LarkCallback
+
+            # Get optional secret for HMAC signature authentication
+            lark_secret = getattr(cfg, "swanlab_lark_secret", None)
+
+            # Create Lark callback with webhook URL and optional secret
+            lark_callback = LarkCallback(
+                webhook_url=lark_webhook_url,
+                secret=lark_secret,
+            )
+
+            # Register callback with SwanLab
+            swanlab.register_callbacks([lark_callback])
+
+            if lark_secret:
+                LOG.info("Registered Lark notification callback with HMAC authentication")
+            else:
+                LOG.info("Registered Lark notification callback (no HMAC secret)")
+                LOG.warning(
+                    "Lark webhook has no secret configured. "
+                    "For production use, set 'swanlab_lark_secret' to enable HMAC signature verification."
+                )
+
+        except ImportError as err:
+            LOG.warning(
+                f"Failed to import SwanLab Lark plugin: {err}\n\n"
+                "Lark notifications require SwanLab >= 0.3.0 with plugin support.\n"
+                "Install with: pip install 'swanlab>=0.3.0'\n\n"
+                "Continuing without Lark notifications..."
+            )
+        except Exception as err:  # pylint: disable=broad-except
+            LOG.error(
+                f"Failed to register Lark callback: {err}\n\n"
+                "Check your Lark webhook URL and secret configuration.\n"
+                "Continuing without Lark notifications..."
+            )
+
+    def _register_completion_callback(self, cfg: DictDefault, trainer):
+        """Register RLHF completion logging callback if enabled and applicable.
+
+        This callback logs model completions (prompts, chosen/rejected responses,
+        rewards) to SwanLab during RLHF training for qualitative analysis.
+
+        Args:
+            cfg: Configuration object with completion logging settings
+            trainer: The trainer instance to add callback to
+        """
+        # Check if completion logging is enabled
+        log_completions = getattr(cfg, "swanlab_log_completions", True)
+        if not log_completions:
+            LOG.debug("SwanLab completion logging disabled by config")
+            return
+
+        # Check if trainer is an RLHF trainer
+        trainer_name = trainer.__class__.__name__
+        rlhf_trainers = ["DPO", "KTO", "ORPO", "GRPO", "CPO"]
+        is_rlhf_trainer = any(name in trainer_name for name in rlhf_trainers)
+
+        if not is_rlhf_trainer:
+            LOG.debug(
+                f"Trainer {trainer_name} is not an RLHF trainer, "
+                "skipping completion logging callback"
+            )
+            return
+
+        try:
+            from axolotl.integrations.swanlab.callbacks import (
+                SwanLabRLHFCompletionCallback,
+            )
+
+            # Get configuration parameters
+            log_interval = getattr(cfg, "swanlab_completion_log_interval", 100)
+            max_buffer = getattr(cfg, "swanlab_completion_max_buffer", 128)
+
+            # Create and register callback
+            completion_callback = SwanLabRLHFCompletionCallback(
+                log_interval=log_interval,
+                max_completions=max_buffer,
+                table_name="rlhf_completions",
+            )
+
+            trainer.add_callback(completion_callback)
+
+            LOG.info(
+                f"Registered SwanLab RLHF completion logging callback for {trainer_name} "
+                f"(log_interval={log_interval}, max_buffer={max_buffer})"
+            )
+
+        except ImportError as err:
+            LOG.warning(
+                f"Failed to import SwanLab completion callback: {err}\n\n"
+                "This is a bug - the callback should be available.\n"
+                "Please report this issue.\n\n"
+                "Continuing without completion logging..."
+            )
+        except Exception as err:  # pylint: disable=broad-except
+            LOG.error(
+                f"Failed to register SwanLab completion callback: {err}\n\n"
+                "Continuing without completion logging..."
+            )
 
