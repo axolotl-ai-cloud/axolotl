@@ -8,6 +8,8 @@ from axolotl.integrations.base import BasePlugin
 from axolotl.utils.logging import get_logger
 
 if TYPE_CHECKING:
+    from transformers import TrainerCallback
+
     from axolotl.utils.dict import DictDefault
 
 LOG = get_logger(__name__)
@@ -16,14 +18,14 @@ LOG = get_logger(__name__)
 class SwanLabPlugin(BasePlugin):
     """
     SwanLab integration plugin for Axolotl.
-    
+
     Provides experiment tracking, visualization, and logging capabilities
     using SwanLab (https://swanlab.cn).
-    
+
     Usage in config.yaml:
         plugins:
           - axolotl.integrations.swanlab.SwanLabPlugin
-        
+
         use_swanlab: true
         swanlab_project: my-project
         swanlab_experiment_name: my-experiment
@@ -71,9 +73,12 @@ class SwanLabPlugin(BasePlugin):
 
             # 3. Check API key for cloud mode
             import os
+
             mode = cfg.get("swanlab_mode", "cloud")  # Default is cloud
             if mode == "cloud":
-                api_key = cfg.get("swanlab_api_key") or os.environ.get("SWANLAB_API_KEY")
+                api_key = cfg.get("swanlab_api_key") or os.environ.get(
+                    "SWANLAB_API_KEY"
+                )
                 if not api_key:
                     LOG.warning(
                         "SwanLab cloud mode enabled but no API key found.\n"
@@ -101,9 +106,9 @@ class SwanLabPlugin(BasePlugin):
 
         if len(active_loggers) > 1:
             LOG.warning(
-                f"\n{'='*70}\n"
+                f"\n{'=' * 70}\n"
                 f"Multiple logging tools enabled: {', '.join(active_loggers)}\n"
-                f"{'='*70}\n"
+                f"{'=' * 70}\n"
                 f"This may cause:\n"
                 f"  - Performance overhead (~1-2% per logger, cumulative)\n"
                 f"  - Increased memory usage\n"
@@ -116,20 +121,20 @@ class SwanLabPlugin(BasePlugin):
                 f"    * Short comparison runs\n"
                 f"    * Debugging specific tool issues\n"
                 f"  - Monitor system resources (CPU, memory) during training\n"
-                f"{'='*70}\n"
+                f"{'=' * 70}\n"
             )
 
             if len(active_loggers) >= 3:
                 LOG.error(
-                    f"\n{'!'*70}\n"
+                    f"\n{'!' * 70}\n"
                     f"WARNING: {len(active_loggers)} logging tools enabled simultaneously!\n"
-                    f"{'!'*70}\n"
+                    f"{'!' * 70}\n"
                     f"This is likely unintentional and WILL significantly impact performance.\n"
                     f"Expected overhead: ~{len(active_loggers) * 1.5:.1f}% per training step.\n\n"
                     f"STRONGLY RECOMMEND:\n"
                     f"  - Disable all but ONE logging tool\n"
                     f"  - Use config inheritance to manage multiple configs\n"
-                    f"{'!'*70}\n"
+                    f"{'!' * 70}\n"
                 )
 
         # === Auto-Enable Logic ===
@@ -165,16 +170,16 @@ class SwanLabPlugin(BasePlugin):
             LOG.warning("Could not determine SwanLab version")
 
         # === Runtime Check: Distributed Training Setup ===
-        from axolotl.utils.distributed import is_main_process, get_world_size
+        from axolotl.utils.distributed import get_world_size, is_main_process
 
         world_size = get_world_size()
         if world_size > 1:
             mode = getattr(cfg, "swanlab_mode", "cloud")
             LOG.info(
-                f"\n{'='*70}\n"
+                f"\n{'=' * 70}\n"
                 f"Distributed training detected (world_size={world_size})\n"
                 f"SwanLab mode: {mode}\n"
-                f"{'='*70}\n"
+                f"{'=' * 70}\n"
                 f"Behavior:\n"
                 f"  - Only rank 0 will initialize SwanLab\n"
                 f"  - Other ranks will skip SwanLab to avoid conflicts\n"
@@ -184,15 +189,13 @@ class SwanLabPlugin(BasePlugin):
                 LOG.info(
                     f"  - Only rank 0 will upload to SwanLab cloud\n"
                     f"  - Other ranks run without SwanLab overhead\n"
-                    f"{'='*70}\n"
+                    f"{'=' * 70}\n"
                 )
 
         # Only initialize SwanLab on the main process (rank 0)
         # to avoid creating multiple runs in distributed training
         if not is_main_process():
-            LOG.debug(
-                "Skipping SwanLab initialization on non-main process"
-            )
+            LOG.debug("Skipping SwanLab initialization on non-main process")
             return
 
         # Initialize SwanLab run (passing all params directly to init)
@@ -211,7 +214,9 @@ class SwanLabPlugin(BasePlugin):
                 swanlab.config.update(config_dict)
                 LOG.debug("Successfully logged config to SwanLab")
             except Exception as config_err:  # pylint: disable=broad-except
-                LOG.warning(f"Failed to log config to SwanLab: {config_err}. Continuing anyway.")
+                LOG.warning(
+                    f"Failed to log config to SwanLab: {config_err}. Continuing anyway."
+                )
 
         except Exception as err:  # pylint: disable=broad-except
             LOG.error(f"Failed to initialize SwanLab: {err}")
@@ -219,15 +224,13 @@ class SwanLabPlugin(BasePlugin):
 
     def add_callbacks_pre_trainer(self, cfg: DictDefault, model):
         """Add SwanLab callbacks before trainer creation."""
-        callbacks = []
+        callbacks: list[TrainerCallback] = []
 
         if not cfg.use_swanlab:
             return callbacks
 
         if not self.swanlab_initialized:
-            LOG.warning(
-                "SwanLab not initialized, skipping callback registration"
-            )
+            LOG.warning("SwanLab not initialized, skipping callback registration")
             return callbacks
 
         try:
@@ -263,13 +266,25 @@ class SwanLabPlugin(BasePlugin):
 
                 # Log additional trainer information (with safe conversion)
                 trainer_config = {
-                    "total_steps": int(trainer.state.max_steps) if trainer.state.max_steps else None,
-                    "num_train_epochs": float(trainer.args.num_train_epochs) if trainer.args.num_train_epochs else None,
-                    "train_batch_size": int(trainer.args.train_batch_size) if hasattr(trainer.args, 'train_batch_size') else None,
-                    "gradient_accumulation_steps": int(trainer.args.gradient_accumulation_steps) if trainer.args.gradient_accumulation_steps else None,
+                    "total_steps": int(trainer.state.max_steps)
+                    if trainer.state.max_steps
+                    else None,
+                    "num_train_epochs": float(trainer.args.num_train_epochs)
+                    if trainer.args.num_train_epochs
+                    else None,
+                    "train_batch_size": int(trainer.args.train_batch_size)
+                    if hasattr(trainer.args, "train_batch_size")
+                    else None,
+                    "gradient_accumulation_steps": int(
+                        trainer.args.gradient_accumulation_steps
+                    )
+                    if trainer.args.gradient_accumulation_steps
+                    else None,
                 }
                 # Remove None values
-                trainer_config = {k: v for k, v in trainer_config.items() if v is not None}
+                trainer_config = {
+                    k: v for k, v in trainer_config.items() if v is not None
+                }
 
                 if trainer_config:
                     swanlab.config.update(trainer_config)
@@ -334,6 +349,7 @@ class SwanLabPlugin(BasePlugin):
 
     def _prepare_config_for_logging(self, cfg: DictDefault) -> dict:
         """Prepare configuration dict for logging to SwanLab."""
+
         def safe_convert(value):
             """Convert value to JSON-serializable type."""
             if value is None:
@@ -344,15 +360,19 @@ class SwanLabPlugin(BasePlugin):
                 return value
             # Convert everything else to string
             return str(value)
-        
+
         try:
             # Extract important training parameters with safe conversion
             config_dict = {
                 "base_model": safe_convert(getattr(cfg, "base_model", "")),
                 "model_type": safe_convert(getattr(cfg, "model_type", "")),
                 "sequence_len": safe_convert(getattr(cfg, "sequence_len", None)),
-                "micro_batch_size": safe_convert(getattr(cfg, "micro_batch_size", None)),
-                "gradient_accumulation_steps": safe_convert(getattr(cfg, "gradient_accumulation_steps", None)),
+                "micro_batch_size": safe_convert(
+                    getattr(cfg, "micro_batch_size", None)
+                ),
+                "gradient_accumulation_steps": safe_convert(
+                    getattr(cfg, "gradient_accumulation_steps", None)
+                ),
                 "num_epochs": safe_convert(getattr(cfg, "num_epochs", None)),
                 "max_steps": safe_convert(getattr(cfg, "max_steps", None)),
                 "learning_rate": safe_convert(getattr(cfg, "learning_rate", None)),
@@ -370,22 +390,31 @@ class SwanLabPlugin(BasePlugin):
             # Add FSDP/parallel config - only boolean flags
             if hasattr(cfg, "fsdp_config") and cfg.fsdp_config:
                 config_dict["fsdp_enabled"] = True
-                config_dict["fsdp_version"] = safe_convert(getattr(cfg, "fsdp_version", None))
+                config_dict["fsdp_version"] = safe_convert(
+                    getattr(cfg, "fsdp_version", None)
+                )
 
             if hasattr(cfg, "deepspeed") and cfg.deepspeed:
                 config_dict["deepspeed_enabled"] = True
 
             # Add context parallel info
             if hasattr(cfg, "context_parallel_size"):
-                config_dict["context_parallel_size"] = safe_convert(getattr(cfg, "context_parallel_size", None))
+                config_dict["context_parallel_size"] = safe_convert(
+                    getattr(cfg, "context_parallel_size", None)
+                )
             if hasattr(cfg, "tensor_parallel_size"):
-                config_dict["tensor_parallel_size"] = safe_convert(getattr(cfg, "tensor_parallel_size", None))
+                config_dict["tensor_parallel_size"] = safe_convert(
+                    getattr(cfg, "tensor_parallel_size", None)
+                )
             if hasattr(cfg, "dp_shard_size"):
-                config_dict["dp_shard_size"] = safe_convert(getattr(cfg, "dp_shard_size", None))
+                config_dict["dp_shard_size"] = safe_convert(
+                    getattr(cfg, "dp_shard_size", None)
+                )
 
             # Remove None values and empty strings
             config_dict = {
-                k: v for k, v in config_dict.items() 
+                k: v
+                for k, v in config_dict.items()
                 if v is not None and v != "" and v != "None"
             }
 
@@ -395,7 +424,9 @@ class SwanLabPlugin(BasePlugin):
             # Return minimal config
             return {
                 "base_model": str(getattr(cfg, "base_model", "unknown")),
-                "learning_rate": float(getattr(cfg, "learning_rate", 0.0)) if getattr(cfg, "learning_rate", None) else None,
+                "learning_rate": float(getattr(cfg, "learning_rate", 0.0))
+                if getattr(cfg, "learning_rate", None)
+                else None,
             }
 
     def _register_lark_callback(self, cfg: DictDefault):
@@ -429,7 +460,9 @@ class SwanLabPlugin(BasePlugin):
             swanlab.register_callbacks([lark_callback])
 
             if lark_secret:
-                LOG.info("Registered Lark notification callback with HMAC authentication")
+                LOG.info(
+                    "Registered Lark notification callback with HMAC authentication"
+                )
             else:
                 LOG.info("Registered Lark notification callback (no HMAC secret)")
                 LOG.warning(
@@ -514,4 +547,3 @@ class SwanLabPlugin(BasePlugin):
                 f"Failed to register SwanLab completion callback: {err}\n\n"
                 "Continuing without completion logging..."
             )
-

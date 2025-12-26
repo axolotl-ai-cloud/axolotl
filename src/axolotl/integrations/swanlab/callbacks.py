@@ -4,7 +4,12 @@ This module provides HuggingFace Trainer callbacks for logging
 RLHF completions to SwanLab.
 """
 
-from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
+from transformers import (
+    TrainerCallback,
+    TrainerControl,
+    TrainerState,
+    TrainingArguments,
+)
 
 from axolotl.integrations.swanlab.completion_logger import CompletionLogger
 from axolotl.utils.logging import get_logger
@@ -50,7 +55,7 @@ class SwanLabRLHFCompletionCallback(TrainerCallback):
         self.logger = CompletionLogger(maxlen=max_completions)
         self.log_interval = log_interval
         self.table_name = table_name
-        self.trainer_type = None  # Auto-detected
+        self.trainer_type: str | None = None  # Auto-detected
         self._last_logged_step = 0
 
     def on_init_end(
@@ -85,7 +90,7 @@ class SwanLabRLHFCompletionCallback(TrainerCallback):
         args: TrainingArguments,
         state: TrainerState,
         control: TrainerControl,
-        logs: dict = None,
+        logs: dict | None = None,
         **kwargs,
     ):
         """Capture completions from logs and buffer them.
@@ -107,9 +112,7 @@ class SwanLabRLHFCompletionCallback(TrainerCallback):
 
         # DPO completions
         if self.trainer_type == "dpo":
-            if all(
-                key in logs for key in ["dpo/prompt", "dpo/chosen", "dpo/rejected"]
-            ):
+            if all(key in logs for key in ["dpo/prompt", "dpo/chosen", "dpo/rejected"]):
                 self.logger.add_dpo_completion(
                     step=step,
                     prompt=logs.get("dpo/prompt", ""),

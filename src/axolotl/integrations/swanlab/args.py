@@ -138,7 +138,3 @@ class SwanLabConfig(BaseModel):
                 "  swanlab_project: my-llm-training\n"
             )
         return self
-
-
-
-

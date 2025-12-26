@@ -260,7 +260,9 @@ class TestMultiLoggerDetection:
 
         # Should log error-level warning
         error_messages = [
-            record.message for record in caplog.records if record.levelno >= logging.ERROR
+            record.message
+            for record in caplog.records
+            if record.levelno >= logging.ERROR
         ]
         assert any("logging tools enabled" in msg for msg in error_messages)
 
@@ -315,7 +317,9 @@ class TestSwanLabPluginPreModelLoad:
         cfg = MagicMock()
         cfg.use_swanlab = True
 
-        with patch("builtins.__import__", side_effect=ImportError("No module named 'swanlab'")):
+        with patch(
+            "builtins.__import__", side_effect=ImportError("No module named 'swanlab'")
+        ):
             with pytest.raises(ImportError) as exc_info:
                 plugin.pre_model_load(cfg)
 
@@ -375,10 +379,12 @@ class TestSwanLabInitKwargs:
         from axolotl.utils.dict import DictDefault
 
         plugin = SwanLabPlugin()
-        cfg = DictDefault({
-            "use_swanlab": True,
-            "swanlab_project": "test-project",
-        })
+        cfg = DictDefault(
+            {
+                "use_swanlab": True,
+                "swanlab_project": "test-project",
+            }
+        )
 
         init_kwargs = plugin._get_swanlab_init_kwargs(cfg)
 
@@ -392,11 +398,13 @@ class TestSwanLabInitKwargs:
         from axolotl.utils.dict import DictDefault
 
         plugin = SwanLabPlugin()
-        cfg = DictDefault({
-            "use_swanlab": True,
-            "swanlab_project": "test-project",
-            "swanlab_api_key": "test-api-key-12345",
-        })
+        cfg = DictDefault(
+            {
+                "use_swanlab": True,
+                "swanlab_project": "test-project",
+                "swanlab_api_key": "test-api-key-12345",
+            }
+        )
 
         init_kwargs = plugin._get_swanlab_init_kwargs(cfg)
 
@@ -410,12 +418,14 @@ class TestSwanLabInitKwargs:
         from axolotl.utils.dict import DictDefault
 
         plugin = SwanLabPlugin()
-        cfg = DictDefault({
-            "use_swanlab": True,
-            "swanlab_project": "internal-project",
-            "swanlab_web_host": "https://swanlab.company.com",
-            "swanlab_api_host": "https://api-swanlab.company.com",
-        })
+        cfg = DictDefault(
+            {
+                "use_swanlab": True,
+                "swanlab_project": "internal-project",
+                "swanlab_web_host": "https://swanlab.company.com",
+                "swanlab_api_host": "https://api-swanlab.company.com",
+            }
+        )
 
         init_kwargs = plugin._get_swanlab_init_kwargs(cfg)
 
@@ -434,16 +444,18 @@ class TestSwanLabInitKwargs:
         from axolotl.utils.dict import DictDefault
 
         plugin = SwanLabPlugin()
-        cfg = DictDefault({
-            "use_swanlab": True,
-            "swanlab_project": "secure-project",
-            "swanlab_experiment_name": "experiment-001",
-            "swanlab_mode": "cloud",
-            "swanlab_api_key": "private-key-xyz",
-            "swanlab_web_host": "https://swanlab.internal.net",
-            "swanlab_api_host": "https://api.swanlab.internal.net",
-            "swanlab_workspace": "research-team",
-        })
+        cfg = DictDefault(
+            {
+                "use_swanlab": True,
+                "swanlab_project": "secure-project",
+                "swanlab_experiment_name": "experiment-001",
+                "swanlab_mode": "cloud",
+                "swanlab_api_key": "private-key-xyz",
+                "swanlab_web_host": "https://swanlab.internal.net",
+                "swanlab_api_host": "https://api.swanlab.internal.net",
+                "swanlab_workspace": "research-team",
+            }
+        )
 
         with patch("swanlab.init") as mock_init:
             plugin.pre_model_load(cfg)
@@ -464,25 +476,35 @@ class TestSwanLabInitKwargs:
     def test_env_vars_not_set_for_api_params(self):
         """Test that environment variables are NOT set for API parameters."""
         import os
+
         from axolotl.integrations.swanlab.plugins import SwanLabPlugin
         from axolotl.utils.dict import DictDefault
 
         # Clear any existing env vars
-        for key in ["SWANLAB_API_KEY", "SWANLAB_WEB_HOST", "SWANLAB_API_HOST", "SWANLAB_MODE"]:
+        for key in [
+            "SWANLAB_API_KEY",
+            "SWANLAB_WEB_HOST",
+            "SWANLAB_API_HOST",
+            "SWANLAB_MODE",
+        ]:
             os.environ.pop(key, None)
 
         plugin = SwanLabPlugin()
-        cfg = DictDefault({
-            "use_swanlab": True,
-            "swanlab_project": "test-project",
-            "swanlab_api_key": "test-key",
-            "swanlab_web_host": "https://test.com",
-            "swanlab_api_host": "https://api-test.com",
-            "swanlab_mode": "cloud",
-        })
+        cfg = DictDefault(
+            {
+                "use_swanlab": True,
+                "swanlab_project": "test-project",
+                "swanlab_api_key": "test-key",
+                "swanlab_web_host": "https://test.com",
+                "swanlab_api_host": "https://api-test.com",
+                "swanlab_mode": "cloud",
+            }
+        )
 
-        with patch("axolotl.utils.distributed.is_main_process", return_value=True), \
-             patch("swanlab.init"):
+        with (
+            patch("axolotl.utils.distributed.is_main_process", return_value=True),
+            patch("swanlab.init"),
+        ):
             plugin.pre_model_load(cfg)
 
         # Verify env vars were NOT set (simplified approach)
@@ -502,15 +524,18 @@ class TestLarkNotificationIntegration:
         cfg.use_swanlab = True
         cfg.swanlab_project = "test-project"
         cfg.swanlab_mode = "local"
-        cfg.swanlab_lark_webhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/test-webhook"
+        cfg.swanlab_lark_webhook_url = (
+            "https://open.feishu.cn/open-apis/bot/v2/hook/test-webhook"
+        )
         cfg.swanlab_lark_secret = None
 
-        with patch("swanlab.init"), \
-             patch("swanlab.__version__", "0.3.0"), \
-             patch("swanlab.register_callbacks") as mock_register, \
-             patch("axolotl.utils.distributed.is_main_process", return_value=True), \
-             patch("axolotl.utils.distributed.get_world_size", return_value=1):
-
+        with (
+            patch("swanlab.init"),
+            patch("swanlab.__version__", "0.3.0"),
+            patch("swanlab.register_callbacks") as mock_register,
+            patch("axolotl.utils.distributed.is_main_process", return_value=True),
+            patch("axolotl.utils.distributed.get_world_size", return_value=1),
+        ):
             # Mock LarkCallback import
             with patch("swanlab.plugin.notification.LarkCallback") as MockLarkCallback:
                 mock_lark_instance = MagicMock()
@@ -535,15 +560,18 @@ class TestLarkNotificationIntegration:
         cfg.use_swanlab = True
         cfg.swanlab_project = "test-project"
         cfg.swanlab_mode = "local"
-        cfg.swanlab_lark_webhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/test-webhook"
+        cfg.swanlab_lark_webhook_url = (
+            "https://open.feishu.cn/open-apis/bot/v2/hook/test-webhook"
+        )
         cfg.swanlab_lark_secret = "test-hmac-secret"
 
-        with patch("swanlab.init"), \
-             patch("swanlab.__version__", "0.3.0"), \
-             patch("swanlab.register_callbacks") as mock_register, \
-             patch("axolotl.utils.distributed.is_main_process", return_value=True), \
-             patch("axolotl.utils.distributed.get_world_size", return_value=1):
-
+        with (
+            patch("swanlab.init"),
+            patch("swanlab.__version__", "0.3.0"),
+            patch("swanlab.register_callbacks") as mock_register,
+            patch("axolotl.utils.distributed.is_main_process", return_value=True),
+            patch("axolotl.utils.distributed.get_world_size", return_value=1),
+        ):
             with patch("swanlab.plugin.notification.LarkCallback") as MockLarkCallback:
                 mock_lark_instance = MagicMock()
                 MockLarkCallback.return_value = mock_lark_instance
@@ -569,12 +597,13 @@ class TestLarkNotificationIntegration:
         cfg.swanlab_lark_webhook_url = None  # No webhook
         cfg.swanlab_lark_secret = None
 
-        with patch("swanlab.init"), \
-             patch("swanlab.__version__", "0.3.0"), \
-             patch("swanlab.register_callbacks") as mock_register, \
-             patch("axolotl.utils.distributed.is_main_process", return_value=True), \
-             patch("axolotl.utils.distributed.get_world_size", return_value=1):
-
+        with (
+            patch("swanlab.init"),
+            patch("swanlab.__version__", "0.3.0"),
+            patch("swanlab.register_callbacks") as mock_register,
+            patch("axolotl.utils.distributed.is_main_process", return_value=True),
+            patch("axolotl.utils.distributed.get_world_size", return_value=1),
+        ):
             plugin.pre_model_load(cfg)
 
             # Verify register_callbacks was NOT called
@@ -588,22 +617,33 @@ class TestLarkNotificationIntegration:
         cfg.use_swanlab = True
         cfg.swanlab_project = "test-project"
         cfg.swanlab_mode = "local"
-        cfg.swanlab_lark_webhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/test-webhook"
+        cfg.swanlab_lark_webhook_url = (
+            "https://open.feishu.cn/open-apis/bot/v2/hook/test-webhook"
+        )
         cfg.swanlab_lark_secret = None
 
-        with patch("swanlab.init"), \
-             patch("swanlab.__version__", "0.3.0"), \
-             patch("axolotl.utils.distributed.is_main_process", return_value=True), \
-             patch("axolotl.utils.distributed.get_world_size", return_value=1):
-
+        with (
+            patch("swanlab.init"),
+            patch("swanlab.__version__", "0.3.0"),
+            patch("axolotl.utils.distributed.is_main_process", return_value=True),
+            patch("axolotl.utils.distributed.get_world_size", return_value=1),
+        ):
             # Mock ImportError for LarkCallback
-            with patch("swanlab.plugin.notification.LarkCallback", side_effect=ImportError("No module named 'swanlab.plugin.notification'")):
+            with patch(
+                "swanlab.plugin.notification.LarkCallback",
+                side_effect=ImportError(
+                    "No module named 'swanlab.plugin.notification'"
+                ),
+            ):
                 with caplog.at_level(logging.WARNING):
                     plugin.pre_model_load(cfg)
 
                     # Should log warning about missing Lark plugin
                     warning_messages = [record.message for record in caplog.records]
-                    assert any("Failed to import SwanLab Lark plugin" in msg for msg in warning_messages)
+                    assert any(
+                        "Failed to import SwanLab Lark plugin" in msg
+                        for msg in warning_messages
+                    )
                     assert any("SwanLab >= 0.3.0" in msg for msg in warning_messages)
 
     def test_lark_warning_for_missing_secret(self, caplog):
@@ -614,22 +654,28 @@ class TestLarkNotificationIntegration:
         cfg.use_swanlab = True
         cfg.swanlab_project = "test-project"
         cfg.swanlab_mode = "local"
-        cfg.swanlab_lark_webhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/test-webhook"
+        cfg.swanlab_lark_webhook_url = (
+            "https://open.feishu.cn/open-apis/bot/v2/hook/test-webhook"
+        )
         cfg.swanlab_lark_secret = None  # No secret
 
-        with patch("swanlab.init"), \
-             patch("swanlab.__version__", "0.3.0"), \
-             patch("swanlab.register_callbacks"), \
-             patch("axolotl.utils.distributed.is_main_process", return_value=True), \
-             patch("axolotl.utils.distributed.get_world_size", return_value=1):
-
+        with (
+            patch("swanlab.init"),
+            patch("swanlab.__version__", "0.3.0"),
+            patch("swanlab.register_callbacks"),
+            patch("axolotl.utils.distributed.is_main_process", return_value=True),
+            patch("axolotl.utils.distributed.get_world_size", return_value=1),
+        ):
             with patch("swanlab.plugin.notification.LarkCallback"):
                 with caplog.at_level(logging.WARNING):
                     plugin.pre_model_load(cfg)
 
                     # Should log warning about missing secret
                     warning_messages = [record.message for record in caplog.records]
-                    assert any("no secret configured" in msg.lower() for msg in warning_messages)
+                    assert any(
+                        "no secret configured" in msg.lower()
+                        for msg in warning_messages
+                    )
                     assert any("swanlab_lark_secret" in msg for msg in warning_messages)
 
 
@@ -655,9 +701,12 @@ class TestSwanLabPluginIntegration:
         cfg_obj.swanlab_mode = "local"
         cfg_obj.swanlab_lark_webhook_url = None  # No Lark
 
-        with patch("swanlab.init") as mock_init, patch("swanlab.__version__", "0.3.0"), \
-             patch("axolotl.utils.distributed.is_main_process", return_value=True), \
-             patch("axolotl.utils.distributed.get_world_size", return_value=1):
+        with (
+            patch("swanlab.init") as mock_init,
+            patch("swanlab.__version__", "0.3.0"),
+            patch("axolotl.utils.distributed.is_main_process", return_value=True),
+            patch("axolotl.utils.distributed.get_world_size", return_value=1),
+        ):
             plugin.pre_model_load(cfg_obj)
             # Should call swanlab.init
             mock_init.assert_called_once()
@@ -709,15 +758,18 @@ class TestSwanLabPluginIntegration:
         cfg_obj.use_swanlab = True
         cfg_obj.swanlab_project = "test-project"
         cfg_obj.swanlab_mode = "cloud"
-        cfg_obj.swanlab_lark_webhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/test"
+        cfg_obj.swanlab_lark_webhook_url = (
+            "https://open.feishu.cn/open-apis/bot/v2/hook/test"
+        )
         cfg_obj.swanlab_lark_secret = "secret123"
 
-        with patch("swanlab.init"), \
-             patch("swanlab.__version__", "0.3.0"), \
-             patch("swanlab.register_callbacks") as mock_register, \
-             patch("axolotl.utils.distributed.is_main_process", return_value=True), \
-             patch("axolotl.utils.distributed.get_world_size", return_value=1):
-
+        with (
+            patch("swanlab.init"),
+            patch("swanlab.__version__", "0.3.0"),
+            patch("swanlab.register_callbacks") as mock_register,
+            patch("axolotl.utils.distributed.is_main_process", return_value=True),
+            patch("axolotl.utils.distributed.get_world_size", return_value=1),
+        ):
             with patch("swanlab.plugin.notification.LarkCallback") as MockLarkCallback:
                 mock_lark_instance = MagicMock()
                 MockLarkCallback.return_value = mock_lark_instance
@@ -876,10 +928,11 @@ class TestCompletionLogger:
             reward_diff=0.5,
         )
 
-        with patch("swanlab.get_run") as mock_get_run, \
-             patch("swanlab.log") as mock_log, \
-             patch("swanlab.echarts.Table") as MockTable:
-
+        with (
+            patch("swanlab.get_run") as mock_get_run,
+            patch("swanlab.log") as mock_log,
+            patch("swanlab.echarts.Table") as MockTable,
+        ):
             mock_get_run.return_value = MagicMock()  # SwanLab initialized
             mock_table_instance = MagicMock()
             MockTable.return_value = mock_table_instance
@@ -1112,9 +1165,7 @@ class TestSwanLabProfiling:
         mock_trainer.cfg = MagicMock(use_swanlab=True)
         mock_trainer.__class__.__name__ = "TestTrainer"
 
-        with patch("swanlab.get_run") as mock_get_run, \
-             patch("swanlab.log") as mock_log:
-
+        with patch("swanlab.get_run") as mock_get_run, patch("swanlab.log") as mock_log:
             mock_get_run.return_value = MagicMock()  # SwanLab initialized
 
             with swanlab_profiling_context(mock_trainer, "test_function"):
@@ -1125,7 +1176,9 @@ class TestSwanLabProfiling:
             logged_data = mock_log.call_args[0][0]
             assert "profiling/Time taken: TestTrainer.test_function" in logged_data
             # Duration should be > 0.01 seconds
-            assert logged_data["profiling/Time taken: TestTrainer.test_function"] >= 0.01
+            assert (
+                logged_data["profiling/Time taken: TestTrainer.test_function"] >= 0.01
+            )
 
     def test_profiling_context_skips_when_swanlab_disabled(self):
         """Test that profiling is skipped when SwanLab is disabled."""
@@ -1148,9 +1201,10 @@ class TestSwanLabProfiling:
         mock_trainer = MagicMock()
         mock_trainer.cfg = MagicMock(use_swanlab=True)
 
-        with patch("swanlab.get_run", return_value=None), \
-             patch("swanlab.log") as mock_log:
-
+        with (
+            patch("swanlab.get_run", return_value=None),
+            patch("swanlab.log") as mock_log,
+        ):
             with swanlab_profiling_context(mock_trainer, "test_function"):
                 time.sleep(0.01)
 
@@ -1172,9 +1226,7 @@ class TestSwanLabProfiling:
 
         trainer = MockTrainer()
 
-        with patch("swanlab.get_run") as mock_get_run, \
-             patch("swanlab.log") as mock_log:
-
+        with patch("swanlab.get_run") as mock_get_run, patch("swanlab.log") as mock_log:
             mock_get_run.return_value = MagicMock()
 
             result = trainer.expensive_method(5)
@@ -1234,9 +1286,7 @@ class TestSwanLabProfiling:
         # Config that filters out very fast operations
         config = ProfilingConfig(min_duration_ms=10.0)  # 10ms minimum
 
-        with patch("swanlab.get_run") as mock_get_run, \
-             patch("swanlab.log") as mock_log:
-
+        with patch("swanlab.get_run") as mock_get_run, patch("swanlab.log") as mock_log:
             mock_get_run.return_value = MagicMock()
 
             # Fast operation (< 10ms) - should NOT log
@@ -1259,9 +1309,7 @@ class TestSwanLabProfiling:
         mock_trainer.cfg = MagicMock(use_swanlab=True)
         mock_trainer.__class__.__name__ = "TestTrainer"
 
-        with patch("swanlab.get_run") as mock_get_run, \
-             patch("swanlab.log") as mock_log:
-
+        with patch("swanlab.get_run") as mock_get_run, patch("swanlab.log") as mock_log:
             mock_get_run.return_value = MagicMock()
 
             try:

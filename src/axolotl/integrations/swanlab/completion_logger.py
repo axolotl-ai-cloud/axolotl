@@ -5,6 +5,7 @@ preference training to SwanLab for qualitative analysis.
 """
 
 from collections import deque
+from collections.abc import Mapping
 from typing import Any
 
 from axolotl.utils.logging import get_logger
@@ -44,7 +45,7 @@ class CompletionLogger:
                 Default: 128 (sufficient for most RLHF runs without memory issues)
         """
         self.maxlen = maxlen
-        self.data = deque(maxlen=maxlen)
+        self.data: deque[Mapping[str, Any]] = deque(maxlen=maxlen)
 
     def add_dpo_completion(
         self,
@@ -198,9 +199,7 @@ class CompletionLogger:
             # Log to SwanLab as echarts Table
             swanlab.log({table_name: swanlab.echarts.Table().add(headers, rows)})
 
-            LOG.info(
-                f"Logged {len(rows)} completions to SwanLab table '{table_name}'"
-            )
+            LOG.info(f"Logged {len(rows)} completions to SwanLab table '{table_name}'")
             return True
 
         except ImportError:

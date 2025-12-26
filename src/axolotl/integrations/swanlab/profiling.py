@@ -39,27 +39,23 @@ def swanlab_profiling_context(trainer: Any, func_name: str):
 
         # Check if SwanLab is enabled and initialized
         use_swanlab = getattr(getattr(trainer, "cfg", None), "use_swanlab", False)
-        if not use_swanlab:
-            return
+        if use_swanlab:
+            try:
+                import swanlab
 
-        try:
-            import swanlab
+                if swanlab.get_run() is not None:
+                    # Log profiling metric
+                    trainer_class = trainer.__class__.__name__
+                    metric_name = f"profiling/Time taken: {trainer_class}.{func_name}"
 
-            if swanlab.get_run() is None:
-                return  # SwanLab not initialized
+                    swanlab.log({metric_name: duration})
 
-            # Log profiling metric
-            trainer_class = trainer.__class__.__name__
-            metric_name = f"profiling/Time taken: {trainer_class}.{func_name}"
-
-            swanlab.log({metric_name: duration})
-
-        except ImportError:
-            # SwanLab not installed, silently skip
-            pass
-        except Exception as err:  # pylint: disable=broad-except
-            # Log error but don't fail training
-            LOG.debug(f"Failed to log profiling metric for {func_name}: {err}")
+            except ImportError:
+                # SwanLab not installed, silently skip
+                pass
+            except Exception as err:  # pylint: disable=broad-except
+                # Log error but don't fail training
+                LOG.debug(f"Failed to log profiling metric for {func_name}: {err}")
 
 
 def swanlab_profile(func: Callable) -> Callable:
@@ -116,7 +112,7 @@ class ProfilingConfig:
         self.enabled = enabled
         self.min_duration_ms = min_duration_ms
         self.log_interval = log_interval
-        self._call_counts = {}
+        self._call_counts: dict[str, int] = {}
 
     def should_log(self, func_name: str, duration_seconds: float) -> bool:
         """Check if a profiling measurement should be logged.
@@ -186,26 +182,22 @@ def swanlab_profiling_context_advanced(
         duration = time.perf_counter() - start_time
 
         # Check if should log based on config
-        if not config.should_log(func_name, duration):
-            return
+        if config.should_log(func_name, duration):
+            # Check if SwanLab is enabled
+            use_swanlab = getattr(getattr(trainer, "cfg", None), "use_swanlab", False)
+            if use_swanlab:
+                try:
+                    import swanlab
 
-        # Check if SwanLab is enabled
-        use_swanlab = getattr(getattr(trainer, "cfg", None), "use_swanlab", False)
-        if not use_swanlab:
-            return
+                    if swanlab.get_run() is not None:
+                        trainer_class = trainer.__class__.__name__
+                        metric_name = (
+                            f"profiling/Time taken: {trainer_class}.{func_name}"
+                        )
 
-        try:
-            import swanlab
+                        swanlab.log({metric_name: duration})
 
-            if swanlab.get_run() is None:
-                return
-
-            trainer_class = trainer.__class__.__name__
-            metric_name = f"profiling/Time taken: {trainer_class}.{func_name}"
-
-            swanlab.log({metric_name: duration})
-
-        except ImportError:
-            pass
-        except Exception as err:  # pylint: disable=broad-except
-            LOG.debug(f"Failed to log profiling metric for {func_name}: {err}")
+                except ImportError:
+                    pass
+                except Exception as err:  # pylint: disable=broad-except
+                    LOG.debug(f"Failed to log profiling metric for {func_name}: {err}")
