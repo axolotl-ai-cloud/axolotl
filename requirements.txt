@@ -13,13 +13,13 @@ packaging==23.2
 huggingface_hub>=0.36.0
 peft>=0.18.0
 tokenizers>=0.22.1
-transformers==4.57.3
+transformers==4.57.1
 accelerate==1.12.0
-datasets==4.4.1
-deepspeed>=0.17.0
+datasets==4.4.2
+deepspeed>=0.18.3
 trl==0.25.1
 hf_xet==1.2.0
-kernels>=0.9.0
+kernels==0.11.5
 trackio>=0.13.0
 typing_extensions>=4.14.0
 
