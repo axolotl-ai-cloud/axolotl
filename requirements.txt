@@ -28,8 +28,8 @@ hf_transfer
 sentencepiece
 gradio>=6.2.0,<7.0
 
-modal==1.0.2
-pydantic>=2.12.5
+modal==1.3.0.post1
+pydantic>=2.10.6
 addict
 fire
 PyYAML>=6.0
