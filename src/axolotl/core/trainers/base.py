@@ -356,6 +356,7 @@ class AxolotlTrainer(
             inputs_key = "labels" if "labels" in inputs else "input_ids"
             trainable_tokens = (inputs[inputs_key] != -100).sum()
             total_tokens = inputs[inputs_key].numel()
+            total_tokens = torch.as_tensor(total_tokens)
 
             if is_distributed():
                 torch.distributed.all_reduce(
@@ -375,9 +376,7 @@ class AxolotlTrainer(
             self.state.tokens["trainable"] = (
                 self.state.tokens["trainable"] + trainable_tokens.detach().cpu()
             )
-            self.state.tokens["total"] = (
-                self.state.tokens["total"] + torch.as_tensor(total_tokens).cpu()
-            )
+            self.state.tokens["total"] = self.state.tokens["total"] + total_tokens.cpu()
             # Store per-step trainable tokens for throughput calculation
             self.state.tokens["trainable_tokens"] = trainable_tokens.detach().cpu()
 
