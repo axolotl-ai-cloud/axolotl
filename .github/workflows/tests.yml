@@ -70,7 +70,7 @@ jobs:
         id: hf-cache-restore-s3
         run: |
           mkdir -p ~/.cache/huggingface/hub
-          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd
+          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd --strip-components=1
           ls -ltr ~/.cache/huggingface/hub/
 
       - name: Setup Python
@@ -160,7 +160,8 @@ jobs:
         id: hf-cache-restore-s3
         run: |
           mkdir -p ~/.cache/huggingface/hub
-          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd
+          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd --strip-components=1
+          ls -ltr ~/.cache/huggingface/hub/
 
       - name: Setup Python
         uses: actions/setup-python@v5
