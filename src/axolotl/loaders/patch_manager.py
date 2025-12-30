@@ -112,6 +112,7 @@ class PatchManager:
         self._apply_patch_deepspeed_zero3()
         self._apply_voxtral_patches()
         self._apply_apertus_patches()
+        self._apply_scaling_softmax_patch()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
@@ -560,3 +561,16 @@ class PatchManager:
             )
 
             patch_apertus_xielu_activation()
+
+    def _apply_scaling_softmax_patch(self):
+        """Apply Scaling Softmax (SSMax) patch. Ref: https://arxiv.org/abs/2501.19399"""
+        if self.cfg.scaling_softmax:
+            from axolotl.monkeypatch.scaled_softmax_attn import (
+                patch_scaled_softmax_attention,
+            )
+
+            scaling_factor = self.cfg.scaling_softmax_factor or 1.0
+            model_type = getattr(self.model_config, "model_type", None)
+            patch_scaled_softmax_attention(
+                scaling_factor=scaling_factor, model_type=model_type
+            )

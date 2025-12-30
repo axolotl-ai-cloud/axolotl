@@ -53,6 +53,10 @@ resume_from_checkpoint:
 logging_steps: 1
 flash_attention: true
 
+# Scaling Softmax (SSMax) - required for proper Mistral3/Devstral fine-tuning
+# This addresses attention fading in long contexts
+scaling_softmax: true
+
 loss_watchdog_threshold: 5.0
 loss_watchdog_patience: 3
 
