@@ -118,7 +118,7 @@ jobs:
           hf download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
 
       - name: Show HF cache
-        run: hf cache scan
+        run: hf cache ls
 
       - name: Run tests
         run: |
@@ -132,7 +132,7 @@ jobs:
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Show HF cache
-        run: hf cache scan
+        run: hf cache ls
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -219,7 +219,7 @@ jobs:
           pytest -v --durations=10 tests/cli/
 
       - name: Show HF cache
-        run: hf cache scan
+        run: hf cache ls
 
   gate-skip-e2e:
     needs: [pre-commit]
