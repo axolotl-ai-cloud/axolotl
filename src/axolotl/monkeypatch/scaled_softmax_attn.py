@@ -69,7 +69,6 @@ def patch_scaled_softmax_attention(scaling_factor: float = 1.0, model_type: str 
                 continue
 
             _original_eager_fns[module_path] = mod.eager_attention_forward
-            original_fn = mod.eager_attention_forward
 
             def make_eager_ssmax(orig_fn):
                 def eager_with_ssmax(
