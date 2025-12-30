@@ -356,7 +356,7 @@ class AxolotlTrainer(
             inputs_key = "labels" if "labels" in inputs else "input_ids"
             trainable_tokens = (inputs[inputs_key] != -100).sum()
             total_tokens = inputs[inputs_key].numel()
-            total_tokens = torch.as_tensor(total_tokens)
+            total_tokens = torch.tensor(total_tokens, device=inputs[inputs_key].device)
 
             if is_distributed():
                 torch.distributed.all_reduce(
