@@ -21,15 +21,15 @@ trl==0.25.1
 hf_xet==1.2.0
 kernels==0.11.5
 trackio>=0.13.0
-typing_extensions>=4.14.0
+typing-extensions>=4.15.0
 
 optimum==1.16.2
 hf_transfer
 sentencepiece
 gradio>=6.2.0,<7.0
 
-modal==1.0.2
-pydantic>=2.10.6,<2.12
+modal==1.3.0.post1
+pydantic>=2.10.6
 addict
 fire
 PyYAML>=6.0
