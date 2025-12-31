@@ -19,6 +19,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+env:
+  MODAL_IMAGE_BUILDER_VERSION: "2025.06"
+
 jobs:
   test-axolotl-multigpu:
     if: ${{ ! contains(github.event.commits[0].message, '[skip e2e]') && github.repository_owner == 'axolotl-ai-cloud' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
@@ -59,7 +62,7 @@ jobs:
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
-          pip install modal==1.0.2 jinja2
+          pip install modal==1.3.0.post1 jinja2
       - name: Update env vars
         run: |
           echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
@@ -72,4 +75,4 @@ jobs:
           echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
-          modal run cicd.multigpu
+          modal run -m cicd.multigpu

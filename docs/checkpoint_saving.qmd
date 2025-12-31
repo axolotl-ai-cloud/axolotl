@@ -1,0 +1,86 @@
+---
+title: "Checkpoint Saving"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+execute:
+  enabled: false
+---
+
+## Overview
+
+Axolotl supports on-demand checkpoint saving during training. You can trigger checkpoints via file-based triggers (for programmatic control) or Control+C (for interactive use).
+
+## File-Based Checkpoint Trigger
+
+### Configuration
+
+Enable in your config:
+
+```yaml
+dynamic_checkpoint:
+  enabled: true
+  check_interval: 100  # Optional: check every N steps (default: 100)
+  trigger_file_path: "axolotl_checkpoint.save"  # Optional: custom filename
+```
+
+**Options:**
+- `enabled`: `true` to enable (required)
+- `check_interval`: Steps between file checks. Default: 100. Lower = faster response, higher I/O overhead.
+- `trigger_file_path`: Custom trigger filename. Default: `axolotl_checkpoint.save`
+
+### How It Works
+
+1. Rank 0 checks for trigger file every `check_interval` steps in `output_dir`
+2. When detected, file is deleted and checkpoint is saved
+3. In distributed training, rank 0 broadcasts to synchronize all ranks
+
+### Usage
+
+**Command line:**
+```bash
+touch /path/to/output_dir/axolotl_checkpoint.save
+```
+
+**Programmatic:**
+```python
+from pathlib import Path
+Path("/path/to/output_dir/axolotl_checkpoint.save").touch()
+```
+
+Checkpoint saves within the next `check_interval` steps. The trigger file is auto-deleted after detection, so you can create it multiple times.
+
+**Custom filename:**
+```yaml
+dynamic_checkpoint:
+  enabled: true
+  trigger_file_path: "my_trigger.save"
+```
+```bash
+touch /path/to/output_dir/my_trigger.save
+```
+
+## Control+C (SIGINT) Checkpoint
+
+Pressing `Ctrl+C` during training saves the model state and exits gracefully. **Note:** This saves only the model weights, not optimizer state. For resumable checkpoints, use the file-based trigger.
+
+## Best Practices
+
+- **Check interval**: Lower values (10-50) for fast training, default 100 for slower training
+- **Distributed training**: Create trigger file once; rank 0 handles synchronization
+- **Resume**: Dynamic checkpoints can be resumed like regular checkpoints via `resume_from_checkpoint`
+
+## Example
+
+```yaml
+output_dir: ./outputs/lora-out
+save_steps: 500  # Scheduled checkpoints
+
+dynamic_checkpoint:
+  enabled: true
+  check_interval: 50
+```
+
+This enables scheduled checkpoints every 500 steps plus on-demand saves via file trigger (checked every 50 steps).
