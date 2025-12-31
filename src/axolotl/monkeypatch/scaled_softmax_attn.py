@@ -13,7 +13,7 @@ LOG = get_logger(__name__)
 _original_flash_fn = None
 
 
-def patch_scaled_softmax_attention(scaling_factor: float = 1.0, model_type: str = None):
+def patch_scaled_softmax_attention(scaling_factor: float = 0.5, model_type: str = None):
     """
     Patch Flash Attention to apply Scaled Softmax (SSMax).
 
