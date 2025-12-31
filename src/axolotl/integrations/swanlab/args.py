@@ -7,7 +7,7 @@ class SwanLabConfig(BaseModel):
     """SwanLab configuration subset"""
 
     use_swanlab: bool | None = Field(
-        default=None,
+        default=True,
         json_schema_extra={
             "description": "Enable SwanLab experiment tracking and visualization"
         },

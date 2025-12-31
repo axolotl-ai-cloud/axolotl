@@ -432,7 +432,7 @@ Completion logging has minimal overhead:
 
 **Diagnostic steps**:
 1. Check trainer type detection in logs:
-   ```
+   ```text
    INFO: SwanLab RLHF completion logging enabled for DPOTrainer (type: dpo)
    ```
 2. Verify your trainer is an RLHF trainer (DPO/KTO/ORPO/GRPO)
@@ -565,7 +565,7 @@ class MyTrainer(AxolotlTrainer):
 
 In your SwanLab dashboard, profiling metrics appear under the "profiling" namespace:
 
-```
+```text
 profiling/Time taken: AxolotlTrainer.training_step
 profiling/Time taken: AxolotlTrainer.prediction_step
 profiling/Time taken: MyTrainer.forward_pass
@@ -673,7 +673,7 @@ swanlab_project: my-project
 ```
 
 Check logs for:
-```
+```text
 INFO: SwanLab initialized for project: my-project
 ```
 
@@ -1082,7 +1082,7 @@ wandb_project: my-project
 **Cause**: All ranks are initializing SwanLab instead of just rank 0.
 
 **Expected Behavior**: The plugin automatically ensures only rank 0 initializes SwanLab. You should see:
-```
+```text
 Info: Distributed training detected (world_size=4)
 Info: Only rank 0 will initialize SwanLab
 Info: Other ranks will skip SwanLab to avoid conflicts
@@ -1196,7 +1196,7 @@ pip show swanlab
 **Diagnostic checklist**:
 
 1. **Check training logs** for Lark registration confirmation:
-   ```
+   ```text
    # Expected log message (rank 0 only):
    INFO: Registered Lark notification callback with HMAC authentication
    ```
@@ -1282,9 +1282,3 @@ This integration is built on top of:
 - [SwanLab](https://github.com/SwanHubX/SwanLab) - Experiment tracking tool
 - [Transformers](https://github.com/huggingface/transformers) - SwanLabCallback
 - [Axolotl](https://github.com/axolotl-ai-cloud/axolotl) - Training framework
-
-
-
-
-
-

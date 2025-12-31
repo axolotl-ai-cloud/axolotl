@@ -160,6 +160,7 @@ class SwanLabRLHFCompletionCallback(TrainerCallback):
         if step - self._last_logged_step >= self.log_interval:
             if len(self.logger) > 0:
                 self.logger.log_to_swanlab(table_name=self.table_name)
+                self.logger.clear()
                 self._last_logged_step = step
 
     def on_train_end(

@@ -174,13 +174,14 @@ class SaveAxolotlConfigtoSwanLabCallback(TrainerCallback):
                     copyfile(self.axolotl_config_path, temp_file.name)
 
                     # Log config file to SwanLab
-                    swanlab.log(
-                        {
-                            "axolotl_config": swanlab.Text(
-                                open(temp_file.name).read(), caption="Axolotl Config"
-                            )
-                        }
-                    )
+                    with open(temp_file.name, "r", encoding="utf-8") as config_file:
+                        swanlab.log(
+                            {
+                                "axolotl_config": swanlab.Text(
+                                    config_file.read(), caption="Axolotl Config"
+                                )
+                            }
+                        )
 
                     LOG.info(
                         "The Axolotl config has been saved to the SwanLab run under logs."
@@ -219,14 +220,17 @@ class SaveAxolotlConfigtoSwanLabCallback(TrainerCallback):
 
                         if not skip_upload:
                             temp_file.flush()
-                            swanlab.log(
-                                {
-                                    "deepspeed_config": swanlab.Text(
-                                        open(temp_file.name).read(),
-                                        caption="DeepSpeed Config",
-                                    )
-                                }
-                            )
+                            with open(
+                                temp_file.name, "r", encoding="utf-8"
+                            ) as ds_config_file:
+                                swanlab.log(
+                                    {
+                                        "deepspeed_config": swanlab.Text(
+                                            ds_config_file.read(),
+                                            caption="DeepSpeed Config",
+                                        )
+                                    }
+                                )
                             LOG.info(
                                 "The DeepSpeed config has been saved to the SwanLab run under logs."
                             )

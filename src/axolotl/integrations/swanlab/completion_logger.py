@@ -209,7 +209,7 @@ class CompletionLogger:
             )
             return False
         except Exception as err:  # pylint: disable=broad-except
-            LOG.error(f"Failed to log completions to SwanLab: {err}")
+            LOG.exception("Failed to log completions to SwanLab: %s", err)
             return False
 
     def clear(self) -> None:

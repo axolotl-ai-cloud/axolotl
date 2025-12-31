@@ -219,7 +219,7 @@ class SwanLabPlugin(BasePlugin):
                 )
 
         except Exception as err:  # pylint: disable=broad-except
-            LOG.error(f"Failed to initialize SwanLab: {err}")
+            LOG.exception("Failed to initialize SwanLab: %s", err)
             self.swanlab_initialized = False
 
     def add_callbacks_pre_trainer(self, cfg: DictDefault, model):
@@ -254,7 +254,7 @@ class SwanLabPlugin(BasePlugin):
                 LOG.info("Added SaveAxolotlConfigtoSwanLabCallback")
 
         except ImportError as err:
-            LOG.error(f"Failed to import SwanLab callbacks: {err}")
+            LOG.exception("Failed to import SwanLab callbacks: %s", err)
 
         return callbacks
 
@@ -422,11 +422,14 @@ class SwanLabPlugin(BasePlugin):
         except Exception as err:  # pylint: disable=broad-except
             LOG.warning(f"Failed to prepare config for logging: {err}")
             # Return minimal config
+            try:
+                lr = getattr(cfg, "learning_rate", None)
+                lr_value = float(lr) if lr is not None else None
+            except (TypeError, ValueError):
+                lr_value = None
             return {
                 "base_model": str(getattr(cfg, "base_model", "unknown")),
-                "learning_rate": float(getattr(cfg, "learning_rate", 0.0))
-                if getattr(cfg, "learning_rate", None)
-                else None,
+                "learning_rate": lr_value,
             }
 
     def _register_lark_callback(self, cfg: DictDefault):
@@ -478,10 +481,11 @@ class SwanLabPlugin(BasePlugin):
                 "Continuing without Lark notifications..."
             )
         except Exception as err:  # pylint: disable=broad-except
-            LOG.error(
-                f"Failed to register Lark callback: {err}\n\n"
+            LOG.exception(
+                "Failed to register Lark callback: %s\n\n"
                 "Check your Lark webhook URL and secret configuration.\n"
-                "Continuing without Lark notifications..."
+                "Continuing without Lark notifications...",
+                err,
             )
 
     def _register_completion_callback(self, cfg: DictDefault, trainer):
@@ -543,7 +547,8 @@ class SwanLabPlugin(BasePlugin):
                 "Continuing without completion logging..."
             )
         except Exception as err:  # pylint: disable=broad-except
-            LOG.error(
-                f"Failed to register SwanLab completion callback: {err}\n\n"
-                "Continuing without completion logging..."
+            LOG.exception(
+                "Failed to register SwanLab completion callback: %s\n\n"
+                "Continuing without completion logging...",
+                err,
             )
