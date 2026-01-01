@@ -564,7 +564,7 @@ class PatchManager:
 
     def _apply_scaling_softmax_patch(self, model: PreTrainedModel):
         """Apply Scaling Softmax (SSMax) patch.  Ref: https://arxiv.org/abs/2501.19399"""
-        if self.cfg.scaling_softmax_factor:
+        if self.cfg.scaling_softmax:
             from axolotl.monkeypatch.scaled_softmax_attn import (
                 patch_scaled_softmax_attention,
             )

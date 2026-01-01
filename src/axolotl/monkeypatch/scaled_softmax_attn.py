@@ -31,12 +31,10 @@ def patch_scaled_softmax_attention(
         raise ValueError("Model must be provided to register learnable parameters")
 
     for name, module in model.named_modules():
-        is_attention = (
-            "self_attn" in name.lower()
-            or "attention" in module.__class__.__name__.lower()
-        )
+        is_self_attn = hasattr(module, "q_proj") or hasattr(module, "qkv_proj")
+        is_attention_named = "self_attn" in name.lower()
 
-        if is_attention:
+        if is_attention_named and is_self_attn:
             scale_param = nn.Parameter(torch.tensor(scaling_factor_init))
             module.register_parameter("ssmax_scale", scale_param)
             _scale_parameters[id(module)] = scale_param
