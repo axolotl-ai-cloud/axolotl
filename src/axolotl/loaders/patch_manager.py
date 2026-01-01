@@ -113,7 +113,6 @@ class PatchManager:
         self._apply_voxtral_patches()
         self._apply_apertus_patches()
 
-
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
         self._apply_tiled_mlp(self.cfg.model_config_type)
