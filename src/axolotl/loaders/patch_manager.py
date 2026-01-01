@@ -138,7 +138,7 @@ class PatchManager:
         self._apply_llama_flash_attn_patches(model)
         self._apply_unsloth_patches(model)
         self._apply_lora_kernel_patch(model)
-        self._apply_scaling_softmax_patch()
+        self._apply_scaling_softmax_patch(model)
 
     def _apply_flash_attention_patches(self):
         """Apply patches related to Flash Attention."""
@@ -562,15 +562,14 @@ class PatchManager:
 
             patch_apertus_xielu_activation()
 
-    def _apply_scaling_softmax_patch(self):
-        """Apply Scaling Softmax (SSMax) patch. Ref: https://arxiv.org/abs/2501.19399"""
-        if self.cfg.scaling_softmax:
+    def _apply_scaling_softmax_patch(self, model: PreTrainedModel):
+        """Apply Scaling Softmax (SSMax) patch.  Ref: https://arxiv.org/abs/2501.19399"""
+        if self.cfg.scaling_softmax_factor:
             from axolotl.monkeypatch.scaled_softmax_attn import (
                 patch_scaled_softmax_attention,
             )
 
             scaling_factor = self.cfg.scaling_softmax_factor or 0.168
-            model_type = getattr(self.model_config, "model_type", None)
             patch_scaled_softmax_attention(
-                scaling_factor_init=scaling_factor, model=model_type
+                scaling_factor_init=scaling_factor, model=model
             )

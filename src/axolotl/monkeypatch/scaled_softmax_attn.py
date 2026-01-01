@@ -8,6 +8,7 @@ import math
 
 import torch
 import torch.nn as nn
+from transformers import PreTrainedModel
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
 from axolotl.utils.logging import get_logger
@@ -19,7 +20,7 @@ _scale_parameters = {}
 
 
 def patch_scaled_softmax_attention(
-    scaling_factor_init: float = 0.168, model: nn.Module = None
+    scaling_factor_init: float = 0.168, model: PreTrainedModel = None
 ):
     """
     Patch Flash Attention to apply Scaled Softmax (SSMax).
