@@ -32,11 +32,8 @@ main-base-py{python_version}-cu{cuda_version}-{pytorch_version}
 
 Tags examples:
 
-- `main-base-py3.11-cu128-2.7.1`
-- `main-base-py3.11-cu126-2.7.1`
-- `main-base-py3.11-cu126-2.7.0`
-- `main-base-py3.11-cu126-2.6.0`
-- `main-base-py3.11-cu124-2.6.0`
+- `main-base-py3.11-cu128-2.8.0`
+- `main-base-py3.11-cu128-2.9.1`
 
 ## Main
 
@@ -74,15 +71,12 @@ There may be some extra tags appended to the image, like `-vllm` which installs 
 
 Tags examples:
 
-- `main-py3.11-cu128-2.7.1`
-- `main-py3.11-cu126-2.7.1`
-- `main-py3.11-cu126-2.7.0`
-- `main-py3.11-cu126-2.6.0`
-- `main-py3.11-cu124-2.6.0`
+- `main-py3.11-cu128-2.8.0`
+- `main-py3.11-cu128-2.9.1`
 - `main-latest`
 - `main-20250303-py3.11-cu124-2.6.0`
 - `main-20250303-py3.11-cu126-2.6.0`
-- `0.10.1`
+- `0.12.0`
 
 ## Cloud
 
