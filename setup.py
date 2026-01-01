@@ -156,7 +156,7 @@ extras_require = {
         "came_pytorch==0.1.3",
     ],
     "ray": [
-        "ray[train]",
+        "ray[train]>=2.52.1",
     ],
     "vllm": [
         "vllm==0.10.0",

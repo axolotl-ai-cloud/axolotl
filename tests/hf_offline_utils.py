@@ -6,8 +6,6 @@ import os
 from contextlib import contextmanager
 from functools import wraps
 
-from huggingface_hub.utils import reset_sessions
-
 
 def reload_modules(hf_hub_offline):
     # Force reload of the modules that check this variable
@@ -21,7 +19,6 @@ def reload_modules(hf_hub_offline):
     huggingface_hub.constants.HF_HUB_OFFLINE = hf_hub_offline
     importlib.reload(datasets.config)
     datasets.config.HF_HUB_OFFLINE = hf_hub_offline
-    reset_sessions()
 
 
 def enable_hf_offline(test_func):
