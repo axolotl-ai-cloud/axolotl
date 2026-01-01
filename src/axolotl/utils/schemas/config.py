@@ -628,7 +628,7 @@ class AxolotlInputConfig(
     scaling_softmax_factor: float | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Scaling factor for SSMax attention. Default is 0.5"
+            "description": "Scaling factor for SSMax attention. Default is 0.168"
         },
     )
 

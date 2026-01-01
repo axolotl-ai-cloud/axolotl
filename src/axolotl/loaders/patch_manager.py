@@ -112,7 +112,7 @@ class PatchManager:
         self._apply_patch_deepspeed_zero3()
         self._apply_voxtral_patches()
         self._apply_apertus_patches()
-        self._apply_scaling_softmax_patch()
+
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
@@ -139,6 +139,7 @@ class PatchManager:
         self._apply_llama_flash_attn_patches(model)
         self._apply_unsloth_patches(model)
         self._apply_lora_kernel_patch(model)
+        self._apply_scaling_softmax_patch()
 
     def _apply_flash_attention_patches(self):
         """Apply patches related to Flash Attention."""
@@ -572,5 +573,5 @@ class PatchManager:
             scaling_factor = self.cfg.scaling_softmax_factor or 0.168
             model_type = getattr(self.model_config, "model_type", None)
             patch_scaled_softmax_attention(
-                scaling_factor=scaling_factor, model_type=model_type
+                scaling_factor_init=scaling_factor, model=model_type
             )

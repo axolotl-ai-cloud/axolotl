@@ -6,29 +6,41 @@ Ref: https://arxiv.org/abs/2501.19399
 
 import math
 
+import torch
+import torch.nn as nn
+from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
 _original_flash_fn = None
+_scale_parameters = {}
 
 
-def patch_scaled_softmax_attention(scaling_factor: float = 0.1, model_type: str = None):
+def patch_scaled_softmax_attention(
+    scaling_factor_init: float = 0.168, model: nn.Module = None
+):
     """
     Patch Flash Attention to apply Scaled Softmax (SSMax).
-
-    Args:
-        scaling_factor: The 's' parameter multiplier for log(n) scaling.
-            Default 0.1 (paper recommends ~0.168, which is 1/avg(log(n)) for n=1..1024).
-        model_type: Optional model type string (currently unused, for future extension).
     """
-    global _original_flash_fn
-    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+    global _original_flash_fn, _scale_parameters
 
-    def ssmax_scale(seq_len):
-        return scaling_factor * math.log(max(seq_len, 2))
+    if model is None:
+        raise ValueError("Model must be provided to register learnable parameters")
 
-    # Patch flash_attention_2
+    for name, module in model.named_modules():
+        is_attention = (
+            "self_attn" in name.lower()
+            or "attention" in module.__class__.__name__.lower()
+        )
+
+        if is_attention:
+            scale_param = nn.Parameter(torch.tensor(scaling_factor_init))
+            module.register_parameter("ssmax_scale", scale_param)
+            _scale_parameters[id(module)] = scale_param
+            LOG.info(f"Registered learnable SSMax scale for {name}")
+
     if "flash_attention_2" in ALL_ATTENTION_FUNCTIONS:
         _original_flash_fn = ALL_ATTENTION_FUNCTIONS["flash_attention_2"]
 
@@ -37,7 +49,14 @@ def patch_scaled_softmax_attention(scaling_factor: float = 0.1, model_type: str 
         ):
             if scaling is None:
                 scaling = 1.0 / math.sqrt(query.size(-1))
-            modified_scaling = scaling * ssmax_scale(query.size(2))
+
+            scale_param = getattr(module, "ssmax_scale", None)
+            if scale_param is not None:
+                seq_len = query.size(2)
+                ssmax_factor = scale_param * math.log(max(seq_len, 2))
+                modified_scaling = scaling * ssmax_factor
+            else:
+                modified_scaling = scaling
 
             return _original_flash_fn(
                 module,
@@ -50,7 +69,7 @@ def patch_scaled_softmax_attention(scaling_factor: float = 0.1, model_type: str 
             )
 
         ALL_ATTENTION_FUNCTIONS["flash_attention_2"] = flash_with_ssmax
-        LOG.info(f"Patched flash_attention_2 with SSMax (factor={scaling_factor})")
+        LOG.info("Patched flash_attention_2 with learnable SSMax")
     else:
         LOG.warning(
             "SSMax requires flash_attention_2 which is not available. "
