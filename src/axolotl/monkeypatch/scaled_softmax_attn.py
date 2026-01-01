@@ -13,12 +13,13 @@ LOG = get_logger(__name__)
 _original_flash_fn = None
 
 
-def patch_scaled_softmax_attention(scaling_factor: float = 0.5, model_type: str = None):
+def patch_scaled_softmax_attention(scaling_factor: float = 0.1, model_type: str = None):
     """
     Patch Flash Attention to apply Scaled Softmax (SSMax).
 
     Args:
-        scaling_factor: Multiplier for the log(n) scaling. Default 1.0.
+        scaling_factor: The 's' parameter multiplier for log(n) scaling.
+            Default 0.1 (paper recommends ~0.168, which is 1/avg(log(n)) for n=1..1024).
         model_type: Optional model type string (currently unused, for future extension).
     """
     global _original_flash_fn
@@ -34,7 +35,10 @@ def patch_scaled_softmax_attention(scaling_factor: float = 0.5, model_type: str 
         def flash_with_ssmax(
             module, query, key, value, attention_mask, scaling=None, **kw
         ):
-            modified_scaling = (scaling or 1.0) * ssmax_scale(query.size(2))
+            if scaling is None:
+                scaling = 1.0 / math.sqrt(query.size(-1))
+            modified_scaling = scaling * ssmax_scale(query.size(2))
+
             return _original_flash_fn(
                 module,
                 query,

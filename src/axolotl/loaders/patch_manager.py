@@ -569,7 +569,7 @@ class PatchManager:
                 patch_scaled_softmax_attention,
             )
 
-            scaling_factor = self.cfg.scaling_softmax_factor or 1.0
+            scaling_factor = self.cfg.scaling_softmax_factor or 0.168
             model_type = getattr(self.model_config, "model_type", None)
             patch_scaled_softmax_attention(
                 scaling_factor=scaling_factor, model_type=model_type

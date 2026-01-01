@@ -622,7 +622,7 @@ class AxolotlInputConfig(
     scaling_softmax: bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Whether to use scaling softmax optimization"
+            "description": "Whether to use Scaled Softmax (SSMax) attention. Ref: https://arxiv.org/abs/2501.19399"
         },
     )
     scaling_softmax_factor: float | None = Field(
