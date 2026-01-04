@@ -1,0 +1,168 @@
+# SwanLab DPO Training Example with Completion Logging
+#
+# This example demonstrates DPO (Direct Preference Optimization) training
+# with SwanLab integration for experiment tracking and completion table logging.
+#
+# Features enabled:
+# - SwanLab experiment tracking
+# - RLHF completion table logging (prompts, chosen/rejected responses, rewards)
+# - Lark (Feishu) team notifications (optional)
+#
+# To run:
+#   export SWANLAB_API_KEY=your-api-key
+#   accelerate launch -m axolotl.cli.train examples/swanlab/dpo-swanlab-completions.yml
+
+# Model Configuration
+base_model: meta-llama/Meta-Llama-3-8B-Instruct
+model_type: LlamaForCausalLM
+tokenizer_type: AutoTokenizer
+
+special_tokens:
+  pad_token: <|finetune_right_pad_id|>
+  eos_token: <|eot_id|>
+
+# Quantization
+load_in_8bit: true
+load_in_4bit: false
+
+# LoRA Configuration
+adapter: lora
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_linear: true
+
+# DPO Configuration
+chat_template: llama3
+rl: dpo
+
+datasets:
+  - path: fozziethebeat/alpaca_messages_2k_dpo_test
+    type: chat_template.default
+    field_messages: conversation
+    field_chosen: chosen
+    field_rejected: rejected
+    message_property_mappings:
+      role: role
+      content: content
+    roles:
+      system:
+        - system
+      user:
+        - user
+      assistant:
+        - assistant
+
+# Dataset and Output
+dataset_prepared_path:
+val_set_size: 0.05
+output_dir: ./outputs/dpo-swanlab-out
+
+# Training Configuration
+sequence_len: 4096
+sample_packing: false
+micro_batch_size: 2
+gradient_accumulation_steps: 4
+num_epochs: 4
+
+# Optimization
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+warmup_ratio: 0.1
+weight_decay: 0.0
+
+# Precision
+bf16: auto
+tf32: false
+
+# Performance
+gradient_checkpointing: true
+flash_attention: true
+
+# Checkpointing and Logging
+logging_steps: 1
+evals_per_epoch: 4
+saves_per_epoch: 1
+
+# ============================================================================
+# SwanLab Integration
+# ============================================================================
+
+plugins:
+  - axolotl.integrations.swanlab.SwanLabPlugin
+
+# Basic SwanLab Configuration
+use_swanlab: true
+swanlab_project: dpo-training
+swanlab_experiment_name: llama-3-dpo-completions-demo
+swanlab_description: "DPO training with completion table logging"
+swanlab_mode: cloud  # Options: cloud, local, offline, disabled
+
+# SwanLab Authentication
+# Recommended: Set via environment variable
+#   export SWANLAB_API_KEY=your-api-key
+# Or set in config (less secure):
+# swanlab_api_key: your-api-key
+
+# Optional: Team workspace
+# swanlab_workspace: my-research-team
+
+# ============================================================================
+# RLHF Completion Table Logging
+# ============================================================================
+#
+# Automatically logs model completions to SwanLab for qualitative analysis:
+# - Prompts from your DPO dataset
+# - Chosen responses (preferred)
+# - Rejected responses (non-preferred)
+# - Reward differences
+#
+# View the table in SwanLab dashboard under "rlhf_completions"
+
+swanlab_log_completions: true
+swanlab_completion_log_interval: 100  # Log every 100 training steps
+swanlab_completion_max_buffer: 128    # Keep last 128 completions in memory
+
+# Memory Usage Notes:
+# - Buffer size 128: ~64 KB (default, recommended)
+# - Buffer size 512: ~256 KB (for more historical completions)
+# - Buffer size 1024: ~512 KB (maximum for very long training runs)
+
+# Performance Notes:
+# - Completion logging overhead: < 0.5% per training step
+# - Only logs every N steps to minimize impact
+# - Memory-bounded buffer prevents memory leaks
+
+# ============================================================================
+# Optional: Lark (Feishu) Team Notifications
+# ============================================================================
+#
+# Get real-time training notifications in your team chat
+# Uncomment to enable:
+
+# swanlab_lark_webhook_url: https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxxxx
+# swanlab_lark_secret: your-webhook-secret  # Recommended for production
+
+# Notifications sent for:
+# - Training start
+# - Training completion
+# - Training errors
+# - Metric milestones (if configured)
+
+# ============================================================================
+# Optional: Private SwanLab Deployment
+# ============================================================================
+#
+# For enterprise users with private SwanLab deployment:
+
+# swanlab_web_host: https://swanlab.yourcompany.com
+# swanlab_api_host: https://api.swanlab.yourcompany.com
+
+# ============================================================================
+# Disable WandB if you're migrating from it
+# ============================================================================
+
+# wandb_project:
+# wandb_entity:
+# use_wandb: false

@@ -1,0 +1,329 @@
+# SwanLab Full-Featured DPO Training Example
+#
+# This example demonstrates ALL SwanLab integration features:
+# - Experiment tracking with cloud sync
+# - RLHF completion table logging
+# - Performance profiling
+# - Lark (Feishu) team notifications
+# - Team workspace collaboration
+#
+# Use this as a reference for production RLHF training setups.
+#
+# To run:
+#   export SWANLAB_API_KEY=your-api-key
+#   export SWANLAB_LARK_WEBHOOK_URL=https://open.feishu.cn/...
+#   export SWANLAB_LARK_SECRET=your-webhook-secret
+#   accelerate launch -m axolotl.cli.train examples/swanlab/dpo-swanlab-full-featured.yml
+
+# ============================================================================
+# Model Configuration
+# ============================================================================
+
+base_model: meta-llama/Meta-Llama-3-8B-Instruct
+model_type: LlamaForCausalLM
+tokenizer_type: AutoTokenizer
+
+special_tokens:
+  pad_token: <|finetune_right_pad_id|>
+  eos_token: <|eot_id|>
+
+# Quantization for efficient training
+load_in_8bit: true
+load_in_4bit: false
+
+# ============================================================================
+# LoRA Configuration
+# ============================================================================
+
+adapter: lora
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_linear: true  # Target all linear layers
+
+# ============================================================================
+# DPO (Direct Preference Optimization) Configuration
+# ============================================================================
+
+chat_template: llama3
+rl: dpo  # Enable DPO trainer
+
+datasets:
+  - path: fozziethebeat/alpaca_messages_2k_dpo_test
+    type: chat_template.default
+    field_messages: conversation
+    field_chosen: chosen
+    field_rejected: rejected
+    message_property_mappings:
+      role: role
+      content: content
+    roles:
+      system:
+        - system
+      user:
+        - user
+      assistant:
+        - assistant
+
+# ============================================================================
+# Dataset and Output Configuration
+# ============================================================================
+
+dataset_prepared_path:
+val_set_size: 0.05
+output_dir: ./outputs/dpo-swanlab-full-featured-out
+
+# ============================================================================
+# Training Configuration
+# ============================================================================
+
+sequence_len: 4096
+sample_packing: false
+
+micro_batch_size: 2
+gradient_accumulation_steps: 4
+num_epochs: 4
+
+# ============================================================================
+# Optimization
+# ============================================================================
+
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+warmup_ratio: 0.1
+weight_decay: 0.0
+
+# ============================================================================
+# Precision and Performance
+# ============================================================================
+
+bf16: auto
+tf32: false
+
+gradient_checkpointing: true
+flash_attention: true
+
+# ============================================================================
+# Checkpointing and Logging
+# ============================================================================
+
+logging_steps: 1
+evals_per_epoch: 4
+saves_per_epoch: 1
+
+# ============================================================================
+# SwanLab Integration - Full Configuration
+# ============================================================================
+
+plugins:
+  - axolotl.integrations.swanlab.SwanLabPlugin
+
+# ------------------------------------------------------------------------------
+# Basic SwanLab Configuration
+# ------------------------------------------------------------------------------
+
+use_swanlab: true
+swanlab_project: dpo-production
+swanlab_experiment_name: llama-3-dpo-full-featured-v1
+swanlab_description: |
+  Production DPO training with all SwanLab features enabled:
+  - Completion table logging for qualitative analysis
+  - Performance profiling for optimization
+  - Lark notifications for team collaboration
+
+swanlab_mode: cloud  # Options: cloud, local, offline, disabled
+
+# ------------------------------------------------------------------------------
+# Team Collaboration
+# ------------------------------------------------------------------------------
+
+# Workspace for team collaboration (shared experiments)
+swanlab_workspace: ml-research-team
+
+# Authentication (recommended: use environment variable)
+#   export SWANLAB_API_KEY=your-api-key
+# Or set in config (less secure):
+# swanlab_api_key: your-api-key
+
+# ------------------------------------------------------------------------------
+# RLHF Completion Table Logging
+# ------------------------------------------------------------------------------
+# Automatically logs model completions for qualitative analysis:
+# - Prompts from your DPO dataset
+# - Chosen responses (preferred)
+# - Rejected responses (non-preferred)
+# - Reward differences
+#
+# View in SwanLab dashboard under "rlhf_completions" table
+
+swanlab_log_completions: true
+swanlab_completion_log_interval: 100  # Log every 100 steps
+swanlab_completion_max_buffer: 256    # Larger buffer for long training runs
+
+# Buffer size recommendations:
+# - 128: Default, ~64 KB memory (recommended for most cases)
+# - 256: ~128 KB memory (this config, good for longer training)
+# - 512: ~256 KB memory (maximum for very long runs)
+
+# ------------------------------------------------------------------------------
+# Lark (Feishu) Team Notifications
+# ------------------------------------------------------------------------------
+# Get real-time training notifications in your team chat
+#
+# Notifications sent for:
+# - Training start
+# - Training completion
+# - Training errors
+# - Metric milestones (if configured)
+
+# Recommended: Set via environment variables
+#   export SWANLAB_LARK_WEBHOOK_URL=https://open.feishu.cn/...
+#   export SWANLAB_LARK_SECRET=your-webhook-secret
+
+# Or set in config (less secure):
+# swanlab_lark_webhook_url: https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxxxx
+# swanlab_lark_secret: your-webhook-secret  # REQUIRED for production
+
+# Security note: ALWAYS use swanlab_lark_secret in production to prevent
+# unauthorized parties from sending fake notifications to your team chat.
+
+# ------------------------------------------------------------------------------
+# Performance Profiling
+# ------------------------------------------------------------------------------
+# Profiling is automatically enabled when SwanLab is enabled.
+# Metrics logged to SwanLab under "profiling/" namespace:
+#   profiling/Time taken: AxolotlTrainer.training_step
+#   profiling/Time taken: AxolotlTrainer.compute_loss
+#   profiling/Time taken: AxolotlTrainer.prediction_step
+#
+# Use these metrics to:
+# - Identify bottlenecks in training loop
+# - Compare performance across different configurations
+# - Monitor performance regressions over time
+# - Debug unexpected slowdowns
+
+# For custom profiling in your own trainer, see:
+#   examples/swanlab/custom_trainer_profiling.py
+
+# ------------------------------------------------------------------------------
+# Optional: Private SwanLab Deployment
+# ------------------------------------------------------------------------------
+# For enterprise users with private SwanLab deployment:
+
+# swanlab_web_host: https://swanlab.yourcompany.com
+# swanlab_api_host: https://api.swanlab.yourcompany.com
+
+# ------------------------------------------------------------------------------
+# Optional: Model Checkpointing to SwanLab
+# ------------------------------------------------------------------------------
+# Log model checkpoints to SwanLab (coming soon)
+
+swanlab_log_model: false
+
+# ============================================================================
+# Disable Other Logging Tools (Recommended)
+# ============================================================================
+# Using multiple logging tools simultaneously can impact performance:
+# - Expected overhead: ~1-2% per logger
+# - Potential config/callback conflicts
+#
+# For production training, use ONLY SwanLab:
+
+# wandb_project:
+# use_wandb: false
+#
+# use_mlflow: false
+#
+# use_comet: false
+
+# ============================================================================
+# Expected Training Behavior
+# ============================================================================
+
+# With this configuration, you should see:
+#
+# 1. SwanLab Initialization (rank 0 only):
+#    INFO: SwanLab initialized for project: dpo-production
+#    INFO: SwanLab experiment: llama-3-dpo-full-featured-v1
+#    INFO: SwanLab mode: cloud
+#    INFO: SwanLab workspace: ml-research-team
+#
+# 2. Completion Logging (rank 0 only):
+#    INFO: Registered SwanLab RLHF completion logging callback for DPOTrainer
+#          (log_interval=100, max_buffer=256)
+#
+# 3. Lark Notifications (rank 0 only):
+#    INFO: Registered Lark notification callback with HMAC authentication
+#
+# 4. Distributed Training Detection (if multi-GPU):
+#    INFO: Distributed training detected (world_size=N)
+#    INFO: Only rank 0 will initialize SwanLab
+#    INFO: Other ranks will skip SwanLab to avoid conflicts
+#
+# 5. Training Start Notification (Lark):
+#    Your team chat receives: "Training started: llama-3-dpo-full-featured-v1"
+#
+# 6. Periodic Completion Logging:
+#    Every 100 steps, completion table is updated in SwanLab dashboard
+#
+# 7. Training Complete Notification (Lark):
+#    Your team chat receives: "Training completed: llama-3-dpo-full-featured-v1"
+#    With link to SwanLab dashboard and final metrics
+#
+# 8. SwanLab Dashboard Shows:
+#    - Training metrics (loss, learning rate, etc.)
+#    - Completion table (rlhf_completions)
+#    - Profiling metrics (profiling/Time taken: ...)
+#    - Hyperparameters and configuration
+#    - System resource usage
+
+# ============================================================================
+# Production Checklist
+# ============================================================================
+
+# Before deploying to production, verify:
+# ✅ SwanLab API key is set via environment variable (not in config)
+# ✅ Lark webhook secret is set (required for HMAC authentication)
+# ✅ Workspace is set to your team's workspace
+# ✅ Experiment name is descriptive and unique
+# ✅ Only SwanLab is enabled (other loggers disabled)
+# ✅ Completion logging buffer size is appropriate for your training duration
+# ✅ Private deployment hosts are set (if using enterprise SwanLab)
+# ✅ Test run completes successfully and shows up in SwanLab dashboard
+# ✅ Lark notifications are received in team chat
+# ✅ Profiling metrics are logged correctly
+
+# ============================================================================
+# Troubleshooting
+# ============================================================================
+
+# If SwanLab initialization fails:
+# 1. Check SWANLAB_API_KEY environment variable is set
+# 2. Verify swanlab_project is set in config
+# 3. Check swanlab_mode is valid (cloud/local/offline/disabled)
+# 4. Verify internet connectivity (for cloud mode)
+
+# If Lark notifications not received:
+# 1. Check SWANLAB_LARK_WEBHOOK_URL is set correctly
+# 2. Verify SWANLAB_LARK_SECRET matches your Lark bot settings
+# 3. Test webhook manually: curl -X POST "$SWANLAB_LARK_WEBHOOK_URL" ...
+# 4. Check training logs for "Registered Lark notification callback"
+# 5. Verify bot is added to the target Lark group chat
+
+# If completions not appearing in SwanLab:
+# 1. Verify you're using an RLHF trainer (DPO/KTO/ORPO/GRPO)
+# 2. Check swanlab_log_completions is true
+# 3. Wait for log_interval steps (default: 100)
+# 4. Check training logs for "Registered SwanLab RLHF completion logging"
+
+# If profiling metrics not appearing:
+# 1. Verify use_swanlab is true
+# 2. Check SwanLab is initialized (check logs)
+# 3. Look under "profiling/" namespace in dashboard
+# 4. Profiling may be disabled if DEFAULT_PROFILING_CONFIG.enabled = False
+
+# For more help:
+# - SwanLab docs: https://docs.swanlab.cn
+# - Axolotl SwanLab integration: src/axolotl/integrations/swanlab/README.md
+# - GitHub issues: https://github.com/axolotl-ai-cloud/axolotl/issues
