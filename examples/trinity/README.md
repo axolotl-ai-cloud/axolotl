@@ -29,6 +29,10 @@ Let us know how it goes. Happy finetuning! 🚀
 
 Please check the [Optimizations doc](https://docs.axolotl.ai/docs/optimizations.html).
 
+## Limitations
+
+**Cut Cross Entropy (CCE)**: Currently not supported. We plan to include CCE support for Trinity in the near future.
+
 ## Related Resources
 
 - [Trinity Blog](https://www.arcee.ai/blog/the-trinity-manifesto)

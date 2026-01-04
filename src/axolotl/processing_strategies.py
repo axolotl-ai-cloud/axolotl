@@ -8,6 +8,7 @@ from PIL.Image import Resampling
 from torch import Tensor, zeros_like
 from transformers import ProcessorMixin
 from transformers.image_utils import load_image
+from transformers.models.internvl import InternVLProcessor
 from transformers.models.smolvlm import SmolVLMProcessor
 from transformers.models.voxtral import VoxtralProcessor
 
@@ -454,6 +455,37 @@ class Mistral3ProcessingStrategy(ProcessingStrategy):
         return labels
 
 
+class InternVLProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for InternVL"""
+
+    def __init__(
+        self,
+        processor: ProcessorMixin,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
+        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+
+        if not hasattr(processor, "image_ids"):
+            raise ValueError("'image_ids' missing from InternVL Processor.")
+
+        self.image_token_ids = processor.image_ids
+
+    def process_labels(self, input_ids):
+        labels = input_ids.clone()
+
+        labels[labels == self.processor.tokenizer.pad_token_id] = -100
+
+        for ids in self.image_token_ids:
+            labels[labels == ids] = -100
+
+        # Note: Check if need to mask 'video_token' as it gets converted to
+        # image patches during media processing
+
+        return labels
+
+
 class Glm4vProcessingStrategy(ProcessingStrategy):
     """Processing Strategy class for GLM4V and GLM4V-MoE vision models."""
 
@@ -561,6 +593,11 @@ def get_processing_strategy(
             )
     except ImportError:
         pass
+
+    if isinstance(processor, InternVLProcessor):
+        return InternVLProcessingStrategy(
+            **processing_kwargs,
+        )
 
     # llama3_2_vision, llama4, llava
     # mistral_v7_tekken, pixtral, lfm2vl

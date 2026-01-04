@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import os
 from collections import defaultdict
@@ -49,6 +50,8 @@ from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger(__name__)
+
+TOKENS_STATE_FILE = "tokens_state."
 
 REDUCTION_FNS = {
     "mean": torch.mean,
@@ -349,24 +352,34 @@ class AxolotlTrainer(
         #     return (loss, outputs) if return_outputs else loss
 
         # track number of tokens for tokens per second calculation
-        if self.args.include_tkps:
+        if self.args.include_tkps and model.training:
             inputs_key = "labels" if "labels" in inputs else "input_ids"
-            num_tokens = (inputs[inputs_key] != -100).sum()
+            trainable_tokens = (inputs[inputs_key] != -100).sum()
+            total_tokens = inputs[inputs_key].numel()
+
             if is_distributed():
                 torch.distributed.all_reduce(
-                    num_tokens, op=torch.distributed.ReduceOp.SUM
+                    trainable_tokens, op=torch.distributed.ReduceOp.SUM
                 )
-            if hasattr(self.state, "num_tokens"):
-                self.state.num_tokens = (
-                    self.state.num_tokens + (inputs[inputs_key] != -100).sum().cpu()
+                torch.distributed.all_reduce(
+                    total_tokens, op=torch.distributed.ReduceOp.SUM
                 )
-            else:
-                self.state.num_tokens = (inputs[inputs_key] != -100).sum().cpu()
 
-            if hasattr(self.state, "total_tokens"):
-                self.state.total_tokens += num_tokens
-            else:
-                self.state.total_tokens = num_tokens
+            if not hasattr(self.state, "tokens"):
+                self.state.tokens = {
+                    "trainable": torch.zeros(1),
+                    "total": torch.zeros(1),
+                }
+
+            # trainable tokens for throughput and total token slots for summaries
+            self.state.tokens["trainable"] = (
+                self.state.tokens["trainable"] + trainable_tokens.detach().cpu()
+            )
+            self.state.tokens["total"] = (
+                self.state.tokens["total"] + torch.as_tensor(total_tokens).cpu()
+            )
+            # Store per-step trainable tokens for throughput calculation
+            self.state.tokens["trainable_tokens"] = trainable_tokens.detach().cpu()
 
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
@@ -638,10 +651,14 @@ class AxolotlTrainer(
             except (ValueError, TypeError, FileNotFoundError):
                 pass
 
-        if self.args.include_tkps and train_eval == "train":
+        if (
+            self.args.include_tkps
+            and train_eval == "train"
+            and hasattr(self.state, "tokens")
+        ):
             # each rank will log its own tokens per second
             # for logging_steps > 1 we obtain a moving average of this metric
-            logs["tokens_per_second_per_gpu"] = round(
+            logs["tokens/train_per_sec_per_gpu"] = round(
                 self.state.last_tokens_per_second.item() / self.args.logging_steps, 2
             )
             if (
@@ -683,6 +700,19 @@ class AxolotlTrainer(
         run_dir = self._get_output_dir(trial=trial)
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
+
+        # Save total_tokens state if tracking is enabled
+        if self.args.include_tkps and hasattr(self.state, "tokens"):
+            tokens_state = {
+                "total": int(torch.as_tensor(self.state.tokens.get("total", 0)).item()),
+                "trainable": int(
+                    torch.as_tensor(self.state.tokens.get("trainable", 0)).item()
+                ),
+            }
+            tokens_state_path = os.path.join(output_dir, TOKENS_STATE_FILE)
+            with open(tokens_state_path, "w", encoding="utf-8") as f:
+                json.dump(tokens_state, f)
+
         return super()._save_checkpoint(model, trial, **kwargs)
 
     # TODO(wing): remove once https://github.com/huggingface/transformers/pull/39866/files is merged

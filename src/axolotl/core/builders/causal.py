@@ -72,7 +72,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.include_tkps:
             callbacks.append(
                 TokensPerSecondCallback(
-                    self.cfg.tensor_parallel_size, self.cfg.context_parallel_size
+                    self.cfg.tensor_parallel_size,
+                    self.cfg.context_parallel_size,
+                    resume_from_checkpoint=self.cfg.resume_from_checkpoint,
                 )
             )
         return callbacks

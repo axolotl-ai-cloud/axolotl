@@ -1,6 +1,8 @@
 project:
   type: website
-  pre-render: docs/scripts/generate_config_docs.py
+  pre-render:
+   - docs/scripts/generate_config_docs.py
+   - docs/scripts/generate_examples_docs.py
 
 quartodoc:
   dir: docs/api
@@ -240,6 +242,46 @@ website:
             - docs/getting-started.qmd
             - docs/installation.qmd
             - docs/inference.qmd
+            - section: "Model Guides"
+              contents:
+                - docs/models/kimi-linear.qmd
+                - docs/models/plano.qmd
+                - docs/models/mimo.qmd
+                - docs/models/internvl3_5.qmd
+                - docs/models/olmo3.qmd
+                - docs/models/trinity.qmd
+                - docs/models/arcee.qmd
+                - docs/models/mistral.qmd
+                - section: "Ministral3"
+                  contents:
+                    - docs/models/ministral3.qmd
+                    - docs/models/ministral3/think.qmd
+                    - docs/models/ministral3/vision.qmd
+                - section: "Magistral"
+                  contents:
+                    - docs/models/magistral.qmd
+                    - docs/models/magistral/think.qmd
+                    - docs/models/magistral/vision.qmd
+                - docs/models/ministral.qmd
+                - docs/models/mistral-small.qmd
+                - docs/models/voxtral.qmd
+                - docs/models/devstral.qmd
+                - docs/models/llama-4.qmd
+                - docs/models/llama-2.qmd
+                - docs/models/qwen3-next.qmd
+                - docs/models/qwen3.qmd
+                - docs/models/gemma3n.qmd
+                - docs/models/apertus.qmd
+                - docs/models/gpt-oss.qmd
+                - docs/models/seed-oss.qmd
+                - docs/models/phi.qmd
+                - docs/models/smolvlm2.qmd
+                - docs/models/granite4.qmd
+                - docs/models/LiquidAI.qmd
+                - docs/models/hunyuan.qmd
+                - docs/models/jamba.qmd
+                - docs/models/orpheus.qmd
+
             - docs/cli.qmd
             - docs/telemetry.qmd
             - docs/config-reference.qmd

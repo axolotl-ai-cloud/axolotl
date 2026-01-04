@@ -5,6 +5,7 @@ This guide covers fine-tuning [Ministral3 2512](https://huggingface.co/collectio
 ## Prerequisites
 
 Before starting, ensure you have:
+
 - Installed Axolotl (see [main README](../README.md))
 
 ## Getting Started

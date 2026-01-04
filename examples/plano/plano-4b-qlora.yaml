@@ -1,4 +1,4 @@
-base_model: allenai/Olmo-3-7B-Instruct-SFT
+base_model: katanemo/Plano-Orchestrator-4B
 
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
@@ -9,6 +9,7 @@ plugins:
 load_in_8bit: false
 load_in_4bit: true
 
+chat_template: qwen3
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_test
     type: chat_template
@@ -42,10 +43,10 @@ wandb_watch:
 wandb_name:
 wandb_log_model:
 
-gradient_accumulation_steps: 2
+gradient_accumulation_steps: 4
 micro_batch_size: 2
 num_epochs: 1
-optimizer: adamw_8bit
+optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
