@@ -110,10 +110,10 @@ jobs:
 
       - name: Pre-Download dataset fixture
         run: |
-          huggingface-cli download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
+          hf download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
 
       - name: Show HF cache
-        run: hf cache scan
+        run: hf cache ls
 
       - name: Run tests
         run: |
@@ -127,7 +127,7 @@ jobs:
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Show HF cache
-        run: hf cache scan
+        run: hf cache ls
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -200,7 +200,7 @@ jobs:
           axolotl --help
 
       - name: Show HF cache
-        run: hf cache scan
+        run: hf cache ls
 
       - name: Run tests
         run: |
@@ -209,10 +209,10 @@ jobs:
           pytest -v --durations=10 tests/cli/
 
       - name: Show HF cache
-        run: hf cache scan
+        run: hf cache ls
 
   gate-skip-e2e:
-    needs: [pre-commit, pytest, pytest-sdist]
+    needs: [pre-commit]
     runs-on: ubuntu-latest
     outputs:
       skip: ${{ steps.compute.outputs.skip }}
@@ -248,7 +248,7 @@ jobs:
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
-    needs: [pre-commit, pytest, pytest-sdist, gate-skip-e2e]
+    needs: [pre-commit, pytest]
 
     strategy:
       fail-fast: false

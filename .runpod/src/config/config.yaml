@@ -224,9 +224,6 @@
 # eval_table_size: # Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0
 # eval_table_max_new_tokens: # Total number of tokens generated for predictions sent to wandb. Default is 128
 
-# # Save model as safetensors (require safetensors package)
-# save_safetensors:
-
 # # Whether to mask out or include the human's prompt from the training labels
 # train_on_inputs: false
 # # Group similarly sized data to minimize padding.
@@ -512,7 +509,6 @@ profiler_steps: ${PROFILER_STEPS}
 loss_watchdog_threshold: ${LOSS_WATCHDOG_THRESHOLD}
 loss_watchdog_patience: ${LOSS_WATCHDOG_PATIENCE}
 
-save_safetensors: ${SAVE_SAFETENSORS}
 train_on_inputs: ${TRAIN_ON_INPUTS}
 group_by_length: ${GROUP_BY_LENGTH}
 gradient_checkpointing: ${GRADIENT_CHECKPOINTING}

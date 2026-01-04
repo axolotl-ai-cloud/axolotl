@@ -57,7 +57,6 @@ class TestLLMCompressorIntegration:
                 "learning_rate": 1e-5,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
-                "save_safetensors": True,
                 "bf16": "auto",
                 "max_steps": 5,
                 "llmcompressor": {
