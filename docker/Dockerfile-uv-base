@@ -38,11 +38,11 @@ RUN uv pip install packaging setuptools wheel psutil \
 RUN case "$PYTORCH_VERSION" in \
         2.9.[0-9]*) \
             if [ "$CUDA" = "128" ]; then \
-                wget https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.5.4/flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
+                wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.5.4/flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
                 uv pip3 install --no-cache-dir flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
                 rm flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
             elif [ "$CUDA" = "130" ]; then \
-                wget https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.5.4/flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_x86_64.whl; \
+                wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.5.4/flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_x86_64.whl; \
                 uv pip3 install --no-cache-dir flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_x86_64.whl; \
                 rm flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_x86_64.whl; \
             fi \
