@@ -25,11 +25,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
+from transformers.utils.import_utils import _is_package_available
 
 from axolotl.integrations.swanlab.args import SwanLabConfig
 from axolotl.integrations.swanlab.plugins import SwanLabPlugin
 
+SWANLAB_INSTALLED = _is_package_available("swanlab")
 
+
+@pytest.mark.skipif(not SWANLAB_INSTALLED, reason="swanlab package not installed")
 class TestSwanLabConfigValidators:
     """Tests for Pydantic field validators in SwanLabConfig."""
 
@@ -124,6 +128,7 @@ class TestSwanLabConfigValidators:
         assert config.swanlab_project is None
 
 
+@pytest.mark.skipif(not SWANLAB_INSTALLED, reason="swanlab package not installed")
 class TestSwanLabPluginRegister:
     """Tests for SwanLabPlugin.register() conflict detection."""
 
@@ -213,6 +218,7 @@ class TestSwanLabPluginRegister:
             assert any("API key" in msg for msg in warning_messages)
 
 
+@pytest.mark.skipif(not SWANLAB_INSTALLED, reason="swanlab package not installed")
 class TestMultiLoggerDetection:
     """Tests for multi-logger conflict detection."""
 
@@ -299,6 +305,7 @@ class TestMultiLoggerDetection:
         assert any("Comet" in msg for msg in warning_messages)
 
 
+@pytest.mark.skipif(not SWANLAB_INSTALLED, reason="swanlab package not installed")
 class TestSwanLabPluginPreModelLoad:
     """Tests for SwanLabPlugin.pre_model_load() runtime checks."""
 
@@ -370,6 +377,7 @@ class TestSwanLabPluginPreModelLoad:
             assert any("Only rank 0" in msg for msg in info_messages)
 
 
+@pytest.mark.skipif(not SWANLAB_INSTALLED, reason="swanlab package not installed")
 class TestSwanLabInitKwargs:
     """Tests for SwanLab initialization with direct parameter passing."""
 
@@ -513,6 +521,7 @@ class TestSwanLabInitKwargs:
         # We're just testing that our plugin doesn't call _setup_swanlab_env()
 
 
+@pytest.mark.skipif(not SWANLAB_INSTALLED, reason="swanlab package not installed")
 class TestLarkNotificationIntegration:
     """Tests for Lark (Feishu) notification integration."""
 
@@ -679,6 +688,7 @@ class TestLarkNotificationIntegration:
                     assert any("swanlab_lark_secret" in msg for msg in warning_messages)
 
 
+@pytest.mark.skipif(not SWANLAB_INSTALLED, reason="swanlab package not installed")
 class TestSwanLabPluginIntegration:
     """Integration tests for SwanLab plugin lifecycle."""
 
@@ -781,6 +791,7 @@ class TestSwanLabPluginIntegration:
                 mock_register.assert_called_once_with([mock_lark_instance])
 
 
+@pytest.mark.skipif(not SWANLAB_INSTALLED, reason="swanlab package not installed")
 class TestCompletionLogger:
     """Tests for CompletionLogger utility class."""
 
@@ -977,6 +988,7 @@ class TestCompletionLogger:
         assert "buffered=1/128" in repr_str
 
 
+@pytest.mark.skipif(not SWANLAB_INSTALLED, reason="swanlab package not installed")
 class TestSwanLabRLHFCompletionCallback:
     """Tests for SwanLabRLHFCompletionCallback."""
 
@@ -1058,6 +1070,7 @@ class TestSwanLabRLHFCompletionCallback:
             mock_log.assert_called_once()
 
 
+@pytest.mark.skipif(not SWANLAB_INSTALLED, reason="swanlab package not installed")
 class TestSwanLabPluginCompletionIntegration:
     """Integration tests for completion logging in SwanLabPlugin."""
 
@@ -1153,6 +1166,7 @@ class TestSwanLabPluginCompletionIntegration:
         mock_trainer.add_callback.assert_not_called()
 
 
+@pytest.mark.skipif(not SWANLAB_INSTALLED, reason="swanlab package not installed")
 class TestSwanLabProfiling:
     """Tests for SwanLab profiling utilities."""
 
