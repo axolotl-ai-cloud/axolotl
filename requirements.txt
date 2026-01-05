@@ -63,7 +63,7 @@ langdetect==1.0.9
 immutabledict==4.2.0
 antlr4-python3-runtime==4.13.2
 
-torchao==0.13.0
+torchao==0.15.0
 openenv-core==0.1.0
 schedulefree==1.4.1
 
