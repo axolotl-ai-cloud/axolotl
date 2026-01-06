@@ -660,11 +660,10 @@ class AxolotlTrainer(
             logs["tokens/train_per_sec_per_gpu"] = round(
                 self.state.last_tokens_per_second.item() / self.args.logging_steps, 2
             )
-            if (
-                hasattr(self.state, "total_tokens")
-                and self.state.total_tokens is not None
-            ):
-                logs["total_tokens"] = int(self.state.total_tokens.item())
+            if "total" in self.state.tokens:
+                logs["tokens/total"] = int(self.state.tokens["total"].item())
+            if "trainable" in self.state.tokens:
+                logs["tokens/trainable"] = int(self.state.tokens["trainable"].item())
 
         del self._stored_metrics[train_eval]
 

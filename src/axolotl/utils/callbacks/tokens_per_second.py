@@ -101,9 +101,3 @@ class TokensPerSecondCallback(TrainerCallback):
         # Clear per-step tokens after logging
         if tokens and "trainable_tokens" in tokens:
             tokens["trainable_tokens"] = torch.zeros_like(tokens["trainable_tokens"])
-
-        if tokens and "total" in tokens:
-            logs["tokens/total"] = tokens["total"].item()
-
-        if tokens and "trainable" in tokens:
-            logs["tokens/trainable"] = tokens["trainable"].item()
