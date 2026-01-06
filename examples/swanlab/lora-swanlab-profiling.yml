@@ -1,0 +1,178 @@
+# SwanLab LoRA Training Example with Performance Profiling
+#
+# This example demonstrates standard LoRA fine-tuning with SwanLab integration
+# for performance profiling and optimization.
+#
+# Features enabled:
+# - SwanLab experiment tracking
+# - Performance profiling (training step, forward/backward pass timing)
+# - Real-time metrics visualization
+#
+# To run:
+#   export SWANLAB_API_KEY=your-api-key
+#   accelerate launch -m axolotl.cli.train examples/swanlab/lora-swanlab-profiling.yml
+
+# Model Configuration
+base_model: NousResearch/Llama-3.2-1B
+
+# Dataset Configuration
+datasets:
+  - path: teknium/GPT4-LLM-Cleaned
+    type: alpaca
+
+val_set_size: 0.1
+output_dir: ./outputs/lora-swanlab-profiling-out
+
+# LoRA Configuration
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_modules:
+  - gate_proj
+  - down_proj
+  - up_proj
+  - q_proj
+  - v_proj
+  - k_proj
+  - o_proj
+
+# Training Configuration
+sequence_len: 2048
+sample_packing: true
+eval_sample_packing: true
+
+micro_batch_size: 2
+gradient_accumulation_steps: 2
+num_epochs: 1
+
+# Optimization
+optimizer: adamw_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+warmup_ratio: 0.1
+weight_decay: 0.0
+
+# Precision
+bf16: auto
+tf32: false
+
+# Performance
+gradient_checkpointing: true
+flash_attention: true
+
+# Checkpointing and Logging
+logging_steps: 1
+evals_per_epoch: 4
+saves_per_epoch: 1
+
+# Loss Monitoring
+loss_watchdog_threshold: 5.0
+loss_watchdog_patience: 3
+
+special_tokens:
+  pad_token: "<|end_of_text|>"
+
+# ============================================================================
+# SwanLab Integration
+# ============================================================================
+
+plugins:
+  - axolotl.integrations.swanlab.SwanLabPlugin
+
+# Basic SwanLab Configuration
+use_swanlab: true
+swanlab_project: lora-profiling
+swanlab_experiment_name: llama-3.2-1b-profiling-demo
+swanlab_description: "LoRA fine-tuning with performance profiling"
+swanlab_mode: cloud  # Options: cloud, local, offline, disabled
+
+# SwanLab Authentication
+# Recommended: Set via environment variable
+#   export SWANLAB_API_KEY=your-api-key
+# Or set in config (less secure):
+# swanlab_api_key: your-api-key
+
+# Optional: Team workspace
+# swanlab_workspace: my-ml-team
+
+# ============================================================================
+# Performance Profiling
+# ============================================================================
+#
+# SwanLab automatically profiles trainer methods when enabled.
+# Profiling metrics appear in SwanLab dashboard under "profiling/" namespace.
+#
+# Built-in profiling:
+# - Minimal overhead (< 0.1% per step)
+# - High-precision timing (microsecond accuracy)
+# - Exception-safe (logs duration even if method fails)
+#
+# View profiling metrics in SwanLab dashboard:
+#   profiling/Time taken: AxolotlTrainer.training_step
+#   profiling/Time taken: AxolotlTrainer.compute_loss
+#   profiling/Time taken: AxolotlTrainer.prediction_step
+#
+# For custom profiling in your own trainer, see:
+#   examples/swanlab/custom_trainer_profiling.py
+
+# Completion logging is disabled for non-RLHF trainers
+swanlab_log_completions: false  # Only works with DPO/KTO/ORPO/GRPO
+
+# ============================================================================
+# Optional: Compare with Multiple Runs
+# ============================================================================
+#
+# To compare profiling metrics across different configurations:
+#
+# 1. Run baseline without flash attention:
+#    swanlab_experiment_name: llama-3.2-1b-no-flash-attn
+#    flash_attention: false
+#
+# 2. Run with gradient checkpointing:
+#    swanlab_experiment_name: llama-3.2-1b-grad-checkpoint
+#    gradient_checkpointing: true
+#
+# 3. Run with both:
+#    swanlab_experiment_name: llama-3.2-1b-optimized
+#    flash_attention: true
+#    gradient_checkpointing: true
+#
+# Then compare profiling metrics in SwanLab dashboard to see performance impact
+
+# ============================================================================
+# Optional: Lark (Feishu) Team Notifications
+# ============================================================================
+#
+# Get notified when profiling experiments complete:
+
+# swanlab_lark_webhook_url: https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxxxx
+# swanlab_lark_secret: your-webhook-secret
+
+# ============================================================================
+# Profiling Best Practices
+# ============================================================================
+#
+# 1. Run multiple epochs to see profiling trends over time
+# 2. Ignore first ~10 steps (warmup period, slower)
+# 3. Look for outliers (steps that take significantly longer)
+# 4. Compare profiling metrics before/after optimization changes
+# 5. Monitor per-rank profiling in distributed training
+#
+# Common bottlenecks to profile:
+# - training_step: Overall step time (should be consistent)
+# - compute_loss: Loss computation (scales with sequence length)
+# - prediction_step: Evaluation time (can be slow for large val sets)
+#
+# If you see inconsistent timing:
+# - Check for data loading bottlenecks
+# - Monitor GPU utilization (may be CPU-bound)
+# - Check for gradient accumulation effects
+# - Verify CUDA kernel synchronization
+
+# ============================================================================
+# Disable WandB if you're migrating from it
+# ============================================================================
+
+# wandb_project:
+# use_wandb: false
