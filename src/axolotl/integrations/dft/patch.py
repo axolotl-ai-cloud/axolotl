@@ -9,7 +9,7 @@ import torch
 
 from axolotl.utils.distributed import is_distributed
 
-from .dft_utils import compute_dft_loss
+from .dft_utils import compute_dft_loss, compute_dft_loss_with_intermediate
 
 
 def patch_compute_loss_for_dft(trainer, cfg) -> None:
@@ -86,13 +86,43 @@ def patch_compute_loss_for_dft(trainer, cfg) -> None:
                 num_items_in_batch=num_items_in_batch,
             )
 
-        loss = compute_dft_loss(
-            logits,
-            labels,
-            shift_labels=True,
-            ignore_index=-100,
-            num_items_in_batch=num_items_in_batch,
-        )
+        # Get chunk_size for memory-efficient cross-entropy computation
+        chunk_size = getattr(trainer.args, "dft_chunk_size", None)
+
+        # Check if Channel Loss integration is enabled
+        enable_channel_loss = getattr(trainer.args, "enable_dft_channel_loss", False)
+
+        if enable_channel_loss:
+            # Use intermediate-preserving variant for Channel Loss compatibility
+            # Pass trainer for CP detection
+            scalar_loss, per_token_loss, valid_mask = compute_dft_loss_with_intermediate(
+                logits,
+                labels,
+                shift_labels=True,
+                ignore_index=-100,
+                num_items_in_batch=num_items_in_batch,
+                chunk_size=chunk_size,
+                trainer=trainer,
+            )
+
+            # Attach intermediate values to outputs for Channel Loss plugin
+            outputs.per_token_loss = per_token_loss
+            outputs.valid_mask = valid_mask
+            outputs.loss = scalar_loss
+
+            loss = scalar_loss
+        else:
+            # Standard path: return scalar loss only (backward compatible)
+            # Pass trainer for CP detection
+            loss = compute_dft_loss(
+                logits,
+                labels,
+                shift_labels=True,
+                ignore_index=-100,
+                num_items_in_batch=num_items_in_batch,
+                chunk_size=chunk_size,
+                trainer=trainer,
+            )
 
         return (loss, outputs) if return_outputs else loss
 
