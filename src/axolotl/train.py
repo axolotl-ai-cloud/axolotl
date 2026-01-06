@@ -135,16 +135,13 @@ def setup_reference_model(
     return model_ref
 
 
-def setup_signal_handler(
-    cfg: DictDefault, model: PreTrainedModel, safe_serialization: bool
-):
+def setup_signal_handler(cfg: DictDefault, model: PreTrainedModel):
     """
     Set up signal handler for graceful termination.
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
         model: The model to save on termination
-        safe_serialization: Whether to use safe serialization when saving
     """
     # ray workers don't have access to this signal
     if cfg.local_rank == 0 and not cfg.use_ray:
@@ -152,9 +149,7 @@ def setup_signal_handler(
         def terminate_handler(_, __, model_weakref):
             if model_weakref() is not None:
                 _model = model_weakref()
-                _model.save_pretrained(
-                    cfg.output_dir, safe_serialization=safe_serialization
-                )
+                _model.save_pretrained(cfg.output_dir)
 
             cleanup_distributed()
             sys.exit(0)
@@ -219,7 +214,6 @@ def save_trained_model(
     cfg: DictDefault,
     trainer: Any,
     model: PreTrainedModel,
-    safe_serialization: bool,
 ):
     """
     Save the trained model according to configuration and training setup.
@@ -228,7 +222,6 @@ def save_trained_model(
         cfg: Dictionary mapping `axolotl` config keys to values.
         trainer: The trainer object.
         model: The trained model to save.
-        safe_serialization: Whether to use safe serialization.
     """
     LOG.info(f"Training completed! Saving trained model to {cfg.output_dir}.")
 
@@ -283,7 +276,6 @@ def save_trained_model(
                 merge_fsdp_weights(
                     checkpoint_dir=str(fsdp_dir),
                     output_path=merged_path,
-                    safe_serialization=True,
                 )
                 trainer.accelerator.wait_for_everyone()
                 if trainer.accelerator.is_main_process:
@@ -330,11 +322,9 @@ def save_trained_model(
                 pass
     elif cfg.local_rank == 0:
         if cfg.rl and cfg.adapter and not cfg.rl_adapter_ref_model:
-            trainer.model.save_pretrained(
-                cfg.output_dir, safe_serialization=safe_serialization
-            )
+            trainer.model.save_pretrained(cfg.output_dir)
 
-        model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
+        model.save_pretrained(cfg.output_dir)
 
     if hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
         # TODO: add integration support so this can be implemented completely within the plugin
@@ -344,7 +334,6 @@ def save_trained_model(
             model=model,
             output_dir=cfg.output_dir,
             trainer=trainer,
-            safe_serialization=safe_serialization,
             save_compressed=cfg.llmcompressor.save_compressed,
         )
 
@@ -449,7 +438,6 @@ def handle_untrained_tokens_fix(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizer,
     train_dataset: Dataset,
-    safe_serialization: bool,
 ):
     """
     Apply fixes for untrained tokens if configured.
@@ -459,7 +447,6 @@ def handle_untrained_tokens_fix(
         model: The model to apply fixes to.
         tokenizer: The tokenizer for token identification.
         train_dataset: The training dataset to use.
-        safe_serialization: Whether to use safe serialization when saving.
     """
     if not cfg.fix_untrained_tokens:
         return
@@ -483,9 +470,7 @@ def handle_untrained_tokens_fix(
     fix_untrained_tokens(model, tokenizer, train_dataset, **fix_kwargs)
 
     if cfg.local_rank == 0:
-        model.save_pretrained(
-            str(Path(cfg.output_dir)), safe_serialization=safe_serialization
-        )
+        model.save_pretrained(str(Path(cfg.output_dir)))
 
 
 def setup_model_and_trainer(
@@ -582,15 +567,12 @@ def train(
     ) = setup_model_and_trainer(cfg, dataset_meta)
 
     # Handle untrained tokens if configured
-    safe_serialization = cfg.save_safetensors is True
     train_dataset = dataset_meta.train_dataset
-    handle_untrained_tokens_fix(
-        cfg, model, tokenizer, train_dataset, safe_serialization
-    )
+    handle_untrained_tokens_fix(cfg, model, tokenizer, train_dataset)
 
     # Additional setup
     save_initial_configs(cfg, tokenizer, model, peft_config, processor)
-    setup_signal_handler(cfg, model, safe_serialization)
+    setup_signal_handler(cfg, model)
     setup_model_card(cfg)
 
     # Execute the training
@@ -602,7 +584,7 @@ def train(
         torch.cuda.empty_cache()
 
     # Save the trained model and cleanup
-    save_trained_model(cfg, trainer, model, safe_serialization)
+    save_trained_model(cfg, trainer, model)
     tokenizer.save_pretrained(
         str(Path(cfg.output_dir)), save_jinja_files=cfg.tokenizer_save_jinja_files
     )
