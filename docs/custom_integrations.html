@@ -802,6 +802,94 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#usage-6" id="toc-usage-6" class="nav-link" data-scroll-target="#usage-6">Usage</a></li>
   <li><a href="#citation-4" id="toc-citation-4" class="nav-link" data-scroll-target="#citation-4">Citation</a></li>
   </ul></li>
+  <li><a href="#swanlab-integration-for-axolotl" id="toc-swanlab-integration-for-axolotl" class="nav-link" data-scroll-target="#swanlab-integration-for-axolotl">SwanLab Integration for Axolotl</a>
+  <ul class="collapse">
+  <li><a href="#features" id="toc-features" class="nav-link" data-scroll-target="#features">Features</a></li>
+  <li><a href="#installation-2" id="toc-installation-2" class="nav-link" data-scroll-target="#installation-2">Installation</a></li>
+  <li><a href="#quick-start" id="toc-quick-start" class="nav-link" data-scroll-target="#quick-start">Quick Start</a></li>
+  <li><a href="#register-for-swanlab-optional-for-cloud-mode" id="toc-register-for-swanlab-optional-for-cloud-mode" class="nav-link" data-scroll-target="#register-for-swanlab-optional-for-cloud-mode">1. Register for SwanLab (Optional for cloud mode)</a></li>
+  <li><a href="#configure-axolotl-config-file" id="toc-configure-axolotl-config-file" class="nav-link" data-scroll-target="#configure-axolotl-config-file">2. Configure Axolotl Config File</a></li>
+  <li><a href="#run-training" id="toc-run-training" class="nav-link" data-scroll-target="#run-training">3. Run Training</a></li>
+  <li><a href="#configuration-options" id="toc-configuration-options" class="nav-link" data-scroll-target="#configuration-options">Configuration Options</a></li>
+  <li><a href="#basic-configuration-1" id="toc-basic-configuration-1" class="nav-link" data-scroll-target="#basic-configuration-1">Basic Configuration</a></li>
+  <li><a href="#advanced-configuration" id="toc-advanced-configuration" class="nav-link" data-scroll-target="#advanced-configuration">Advanced Configuration</a></li>
+  <li><a href="#configuration-examples" id="toc-configuration-examples" class="nav-link" data-scroll-target="#configuration-examples">Configuration Examples</a></li>
+  <li><a href="#example-1-basic-cloud-sync" id="toc-example-1-basic-cloud-sync" class="nav-link" data-scroll-target="#example-1-basic-cloud-sync">Example 1: Basic Cloud Sync</a></li>
+  <li><a href="#example-2-offlinelocal-mode" id="toc-example-2-offlinelocal-mode" class="nav-link" data-scroll-target="#example-2-offlinelocal-mode">Example 2: Offline/Local Mode</a></li>
+  <li><a href="#example-3-team-workspace" id="toc-example-3-team-workspace" class="nav-link" data-scroll-target="#example-3-team-workspace">Example 3: Team Workspace</a></li>
+  <li><a href="#example-4-private-deployment" id="toc-example-4-private-deployment" class="nav-link" data-scroll-target="#example-4-private-deployment">Example 4: Private Deployment</a></li>
+  <li><a href="#team-notifications-with-lark-feishu" id="toc-team-notifications-with-lark-feishu" class="nav-link" data-scroll-target="#team-notifications-with-lark-feishu">Team Notifications with Lark (Feishu)</a></li>
+  <li><a href="#prerequisites" id="toc-prerequisites" class="nav-link" data-scroll-target="#prerequisites">Prerequisites</a></li>
+  <li><a href="#example-5-basic-lark-notifications" id="toc-example-5-basic-lark-notifications" class="nav-link" data-scroll-target="#example-5-basic-lark-notifications">Example 5: Basic Lark Notifications</a></li>
+  <li><a href="#example-6-lark-notifications-with-hmac-security-recommended" id="toc-example-6-lark-notifications-with-hmac-security-recommended" class="nav-link" data-scroll-target="#example-6-lark-notifications-with-hmac-security-recommended">Example 6: Lark Notifications with HMAC Security (Recommended)</a></li>
+  <li><a href="#example-7-team-workspace-lark-notifications" id="toc-example-7-team-workspace-lark-notifications" class="nav-link" data-scroll-target="#example-7-team-workspace-lark-notifications">Example 7: Team Workspace + Lark Notifications</a></li>
+  <li><a href="#what-notifications-are-sent" id="toc-what-notifications-are-sent" class="nav-link" data-scroll-target="#what-notifications-are-sent">What Notifications Are Sent?</a></li>
+  <li><a href="#lark-configuration-validation" id="toc-lark-configuration-validation" class="nav-link" data-scroll-target="#lark-configuration-validation">Lark Configuration Validation</a></li>
+  <li><a href="#security-best-practices" id="toc-security-best-practices" class="nav-link" data-scroll-target="#security-best-practices">Security Best Practices</a></li>
+  <li><a href="#distributed-training" id="toc-distributed-training" class="nav-link" data-scroll-target="#distributed-training">Distributed Training</a></li>
+  <li><a href="#rlhf-completion-table-logging" id="toc-rlhf-completion-table-logging" class="nav-link" data-scroll-target="#rlhf-completion-table-logging">RLHF Completion Table Logging</a></li>
+  <li><a href="#features-1" id="toc-features-1" class="nav-link" data-scroll-target="#features-1">Features</a></li>
+  <li><a href="#configuration" id="toc-configuration" class="nav-link" data-scroll-target="#configuration">Configuration</a></li>
+  <li><a href="#example-dpo-training-with-completion-logging" id="toc-example-dpo-training-with-completion-logging" class="nav-link" data-scroll-target="#example-dpo-training-with-completion-logging">Example: DPO Training with Completion Logging</a></li>
+  <li><a href="#example-disable-completion-logging" id="toc-example-disable-completion-logging" class="nav-link" data-scroll-target="#example-disable-completion-logging">Example: Disable Completion Logging</a></li>
+  <li><a href="#supported-rlhf-trainers" id="toc-supported-rlhf-trainers" class="nav-link" data-scroll-target="#supported-rlhf-trainers">Supported RLHF Trainers</a></li>
+  <li><a href="#how-it-works-1" id="toc-how-it-works-1" class="nav-link" data-scroll-target="#how-it-works-1">How It Works</a></li>
+  <li><a href="#viewing-completion-tables" id="toc-viewing-completion-tables" class="nav-link" data-scroll-target="#viewing-completion-tables">Viewing Completion Tables</a></li>
+  <li><a href="#memory-management" id="toc-memory-management" class="nav-link" data-scroll-target="#memory-management">Memory Management</a></li>
+  <li><a href="#performance-impact" id="toc-performance-impact" class="nav-link" data-scroll-target="#performance-impact">Performance Impact</a></li>
+  <li><a href="#troubleshooting" id="toc-troubleshooting" class="nav-link" data-scroll-target="#troubleshooting">Troubleshooting</a></li>
+  <li><a href="#performance-profiling" id="toc-performance-profiling" class="nav-link" data-scroll-target="#performance-profiling">Performance Profiling</a></li>
+  <li><a href="#features-2" id="toc-features-2" class="nav-link" data-scroll-target="#features-2">Features</a></li>
+  <li><a href="#basic-usage-decorator" id="toc-basic-usage-decorator" class="nav-link" data-scroll-target="#basic-usage-decorator">Basic Usage: Decorator</a></li>
+  <li><a href="#advanced-usage-context-manager" id="toc-advanced-usage-context-manager" class="nav-link" data-scroll-target="#advanced-usage-context-manager">Advanced Usage: Context Manager</a></li>
+  <li><a href="#advanced-usage-profilingconfig" id="toc-advanced-usage-profilingconfig" class="nav-link" data-scroll-target="#advanced-usage-profilingconfig">Advanced Usage: ProfilingConfig</a></li>
+  <li><a href="#viewing-profiling-metrics" id="toc-viewing-profiling-metrics" class="nav-link" data-scroll-target="#viewing-profiling-metrics">Viewing Profiling Metrics</a></li>
+  <li><a href="#configuration-in-axolotl-config" id="toc-configuration-in-axolotl-config" class="nav-link" data-scroll-target="#configuration-in-axolotl-config">Configuration in Axolotl Config</a></li>
+  <li><a href="#performance-impact-1" id="toc-performance-impact-1" class="nav-link" data-scroll-target="#performance-impact-1">Performance Impact</a></li>
+  <li><a href="#best-practices" id="toc-best-practices" class="nav-link" data-scroll-target="#best-practices">Best Practices</a></li>
+  <li><a href="#example-complete-profiling-setup" id="toc-example-complete-profiling-setup" class="nav-link" data-scroll-target="#example-complete-profiling-setup">Example: Complete Profiling Setup</a></li>
+  <li><a href="#troubleshooting-1" id="toc-troubleshooting-1" class="nav-link" data-scroll-target="#troubleshooting-1">Troubleshooting</a></li>
+  <li><a href="#complete-config-example" id="toc-complete-config-example" class="nav-link" data-scroll-target="#complete-config-example">Complete Config Example</a></li>
+  <li><a href="#modes-explained" id="toc-modes-explained" class="nav-link" data-scroll-target="#modes-explained">Modes Explained</a></li>
+  <li><a href="#cloud-mode-default" id="toc-cloud-mode-default" class="nav-link" data-scroll-target="#cloud-mode-default"><code>cloud</code> Mode (Default)</a></li>
+  <li><a href="#local-mode" id="toc-local-mode" class="nav-link" data-scroll-target="#local-mode"><code>local</code> Mode</a></li>
+  <li><a href="#offline-mode" id="toc-offline-mode" class="nav-link" data-scroll-target="#offline-mode"><code>offline</code> Mode</a></li>
+  <li><a href="#disabled-mode" id="toc-disabled-mode" class="nav-link" data-scroll-target="#disabled-mode"><code>disabled</code> Mode</a></li>
+  <li><a href="#configuration-validation-conflict-detection" id="toc-configuration-validation-conflict-detection" class="nav-link" data-scroll-target="#configuration-validation-conflict-detection">Configuration Validation &amp; Conflict Detection</a></li>
+  <li><a href="#required-fields-validation" id="toc-required-fields-validation" class="nav-link" data-scroll-target="#required-fields-validation">Required Fields Validation</a></li>
+  <li><a href="#cloud-mode-api-key-warning" id="toc-cloud-mode-api-key-warning" class="nav-link" data-scroll-target="#cloud-mode-api-key-warning">Cloud Mode API Key Warning</a></li>
+  <li><a href="#multi-logger-performance-warnings" id="toc-multi-logger-performance-warnings" class="nav-link" data-scroll-target="#multi-logger-performance-warnings">Multi-Logger Performance Warnings</a></li>
+  <li><a href="#auto-enable-logic" id="toc-auto-enable-logic" class="nav-link" data-scroll-target="#auto-enable-logic">Auto-Enable Logic</a></li>
+  <li><a href="#distributed-training-detection" id="toc-distributed-training-detection" class="nav-link" data-scroll-target="#distributed-training-detection">Distributed Training Detection</a></li>
+  <li><a href="#authentication" id="toc-authentication" class="nav-link" data-scroll-target="#authentication">Authentication</a></li>
+  <li><a href="#method-1-environment-variable-recommended" id="toc-method-1-environment-variable-recommended" class="nav-link" data-scroll-target="#method-1-environment-variable-recommended">Method 1: Environment Variable (Recommended)</a></li>
+  <li><a href="#method-2-login-command" id="toc-method-2-login-command" class="nav-link" data-scroll-target="#method-2-login-command">Method 2: Login Command</a></li>
+  <li><a href="#method-3-config-file" id="toc-method-3-config-file" class="nav-link" data-scroll-target="#method-3-config-file">Method 3: Config File</a></li>
+  <li><a href="#what-gets-logged" id="toc-what-gets-logged" class="nav-link" data-scroll-target="#what-gets-logged">What Gets Logged?</a></li>
+  <li><a href="#automatically-logged-metrics" id="toc-automatically-logged-metrics" class="nav-link" data-scroll-target="#automatically-logged-metrics">Automatically Logged Metrics</a></li>
+  <li><a href="#automatically-logged-config" id="toc-automatically-logged-config" class="nav-link" data-scroll-target="#automatically-logged-config">Automatically Logged Config</a></li>
+  <li><a href="#viewing-your-experiments" id="toc-viewing-your-experiments" class="nav-link" data-scroll-target="#viewing-your-experiments">Viewing Your Experiments</a></li>
+  <li><a href="#cloud-mode" id="toc-cloud-mode" class="nav-link" data-scroll-target="#cloud-mode">Cloud Mode</a></li>
+  <li><a href="#local-mode-1" id="toc-local-mode-1" class="nav-link" data-scroll-target="#local-mode-1">Local Mode</a></li>
+  <li><a href="#integration-with-existing-tools" id="toc-integration-with-existing-tools" class="nav-link" data-scroll-target="#integration-with-existing-tools">Integration with Existing Tools</a></li>
+  <li><a href="#troubleshooting-2" id="toc-troubleshooting-2" class="nav-link" data-scroll-target="#troubleshooting-2">Troubleshooting</a></li>
+  <li><a href="#configuration-errors" id="toc-configuration-errors" class="nav-link" data-scroll-target="#configuration-errors">Configuration Errors</a></li>
+  <li><a href="#import-errors" id="toc-import-errors" class="nav-link" data-scroll-target="#import-errors">Import Errors</a></li>
+  <li><a href="#performance-issues" id="toc-performance-issues" class="nav-link" data-scroll-target="#performance-issues">Performance Issues</a></li>
+  <li><a href="#distributed-training-issues" id="toc-distributed-training-issues" class="nav-link" data-scroll-target="#distributed-training-issues">Distributed Training Issues</a></li>
+  <li><a href="#swanlab-not-logging-metrics" id="toc-swanlab-not-logging-metrics" class="nav-link" data-scroll-target="#swanlab-not-logging-metrics">SwanLab not logging metrics</a></li>
+  <li><a href="#api-key-errors" id="toc-api-key-errors" class="nav-link" data-scroll-target="#api-key-errors">API Key errors</a></li>
+  <li><a href="#cloud-sync-issues" id="toc-cloud-sync-issues" class="nav-link" data-scroll-target="#cloud-sync-issues">Cloud sync issues</a></li>
+  <li><a href="#plugin-not-loaded" id="toc-plugin-not-loaded" class="nav-link" data-scroll-target="#plugin-not-loaded">Plugin not loaded</a></li>
+  <li><a href="#lark-notification-issues" id="toc-lark-notification-issues" class="nav-link" data-scroll-target="#lark-notification-issues">Lark Notification Issues</a></li>
+  <li><a href="#comparison-swanlab-vs-wandb" id="toc-comparison-swanlab-vs-wandb" class="nav-link" data-scroll-target="#comparison-swanlab-vs-wandb">Comparison: SwanLab vs WandB</a></li>
+  <li><a href="#advanced-usage" id="toc-advanced-usage" class="nav-link" data-scroll-target="#advanced-usage">Advanced Usage</a></li>
+  <li><a href="#custom-logging" id="toc-custom-logging" class="nav-link" data-scroll-target="#custom-logging">Custom Logging</a></li>
+  <li><a href="#experiment-comparison" id="toc-experiment-comparison" class="nav-link" data-scroll-target="#experiment-comparison">Experiment Comparison</a></li>
+  <li><a href="#support" id="toc-support" class="nav-link" data-scroll-target="#support">Support</a></li>
+  <li><a href="#license" id="toc-license" class="nav-link" data-scroll-target="#license">License</a></li>
+  <li><a href="#acknowledgements" id="toc-acknowledgements" class="nav-link" data-scroll-target="#acknowledgements">Acknowledgements</a></li>
+  </ul></li>
   <li><a href="#adding-a-new-integration" id="toc-adding-a-new-integration" class="nav-link" data-scroll-target="#adding-a-new-integration">Adding a new integration</a></li>
   </ul>
 </nav>
@@ -1335,6 +1423,1233 @@ By identifying the top n% of layers with the highest SNR, you can optimize train
 <p>Please see reference <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/spectrum">here</a></p>
 </section>
 </section>
+<section id="swanlab-integration-for-axolotl" class="level2">
+<h2 class="anchored" data-anchor-id="swanlab-integration-for-axolotl">SwanLab Integration for Axolotl</h2>
+<p>SwanLab is an open-source, lightweight AI experiment tracking and visualization tool that provides a platform for tracking, recording, comparing, and collaborating on experiments.</p>
+<p>This integration enables seamless experiment tracking and visualization of Axolotl training runs using SwanLab.</p>
+<section id="features" class="level3">
+<h3 class="anchored" data-anchor-id="features">Features</h3>
+<ul>
+<li>📊 <strong>Automatic Metrics Logging</strong>: Training loss, learning rate, and other metrics are automatically logged</li>
+<li>🎯 <strong>Hyperparameter Tracking</strong>: Model configuration and training parameters are tracked</li>
+<li>📈 <strong>Real-time Visualization</strong>: Monitor training progress in real-time through SwanLab dashboard</li>
+<li>☁️ <strong>Cloud &amp; Local Support</strong>: Works in both cloud-synced and offline modes</li>
+<li>🔄 <strong>Experiment Comparison</strong>: Compare multiple training runs easily</li>
+<li>🤝 <strong>Team Collaboration</strong>: Share experiments with team members</li>
+<li>🎭 <strong>RLHF Completion Logging</strong>: Automatically log model outputs during DPO/KTO/ORPO/GRPO training for qualitative analysis</li>
+<li>⚡ <strong>Performance Profiling</strong>: Built-in profiling decorators to measure and optimize training performance</li>
+<li>🔔 <strong>Lark Notifications</strong>: Send real-time training updates to team chat (Feishu/Lark integration)</li>
+</ul>
+</section>
+<section id="installation-2" class="level3">
+<h3 class="anchored" data-anchor-id="installation-2">Installation</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb24"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install swanlab</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="quick-start" class="level3">
+<h3 class="anchored" data-anchor-id="quick-start">Quick Start</h3>
+</section>
+<section id="register-for-swanlab-optional-for-cloud-mode" class="level3">
+<h3 class="anchored" data-anchor-id="register-for-swanlab-optional-for-cloud-mode">1. Register for SwanLab (Optional for cloud mode)</h3>
+<p>If you want to use cloud sync features, register at <a href="https://swanlab.cn">https://swanlab.cn</a> to get your API key.</p>
+</section>
+<section id="configure-axolotl-config-file" class="level3">
+<h3 class="anchored" data-anchor-id="configure-axolotl-config-file">2. Configure Axolotl Config File</h3>
+<p>Add SwanLab configuration to your Axolotl YAML config:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb25"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.swanlab.SwanLabPlugin</span></span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-llm-project</span></span>
+<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_experiment_name</span><span class="kw">:</span><span class="at"> qwen-finetune-v1</span></span>
+<span id="cb25-7"><a href="#cb25-7" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_mode</span><span class="kw">:</span><span class="at"> cloud</span><span class="co">  # Options: cloud, local, offline, disabled</span></span>
+<span id="cb25-8"><a href="#cb25-8" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_workspace</span><span class="kw">:</span><span class="at"> my-team</span><span class="co">  # Optional: organization name</span></span>
+<span id="cb25-9"><a href="#cb25-9" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_api_key</span><span class="kw">:</span><span class="at"> YOUR_API_KEY</span><span class="co">  # Optional: can also use env var SWANLAB_API_KEY</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="run-training" class="level3">
+<h3 class="anchored" data-anchor-id="run-training">3. Run Training</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb26"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">SWANLAB_API_KEY</span><span class="op">=</span>your-api-key-here</span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a><span class="ex">swanlab</span> login</span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a><span class="ex">accelerate</span> launch <span class="at">-m</span> axolotl.cli.train your-config.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="configuration-options" class="level3">
+<h3 class="anchored" data-anchor-id="configuration-options">Configuration Options</h3>
+</section>
+<section id="basic-configuration-1" class="level3">
+<h3 class="anchored" data-anchor-id="basic-configuration-1">Basic Configuration</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 28%">
+<col style="width: 15%">
+<col style="width: 23%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>use_swanlab</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Enable SwanLab tracking</td>
+</tr>
+<tr class="even">
+<td><code>swanlab_project</code></td>
+<td>str</td>
+<td><code>None</code></td>
+<td>Project name (required)</td>
+</tr>
+<tr class="odd">
+<td><code>swanlab_experiment_name</code></td>
+<td>str</td>
+<td><code>None</code></td>
+<td>Experiment name</td>
+</tr>
+<tr class="even">
+<td><code>swanlab_description</code></td>
+<td>str</td>
+<td><code>None</code></td>
+<td>Experiment description</td>
+</tr>
+<tr class="odd">
+<td><code>swanlab_mode</code></td>
+<td>str</td>
+<td><code>cloud</code></td>
+<td>Sync mode: <code>cloud</code>, <code>local</code>, <code>offline</code>, <code>disabled</code></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="advanced-configuration" class="level3">
+<h3 class="anchored" data-anchor-id="advanced-configuration">Advanced Configuration</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 28%">
+<col style="width: 15%">
+<col style="width: 23%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>swanlab_workspace</code></td>
+<td>str</td>
+<td><code>None</code></td>
+<td>Workspace/organization name</td>
+</tr>
+<tr class="even">
+<td><code>swanlab_api_key</code></td>
+<td>str</td>
+<td><code>None</code></td>
+<td>API key (prefer env var)</td>
+</tr>
+<tr class="odd">
+<td><code>swanlab_web_host</code></td>
+<td>str</td>
+<td><code>None</code></td>
+<td>Private deployment web host</td>
+</tr>
+<tr class="even">
+<td><code>swanlab_api_host</code></td>
+<td>str</td>
+<td><code>None</code></td>
+<td>Private deployment API host</td>
+</tr>
+<tr class="odd">
+<td><code>swanlab_log_model</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Log model checkpoints (coming soon)</td>
+</tr>
+<tr class="even">
+<td><code>swanlab_lark_webhook_url</code></td>
+<td>str</td>
+<td><code>None</code></td>
+<td>Lark (Feishu) webhook URL for team notifications</td>
+</tr>
+<tr class="odd">
+<td><code>swanlab_lark_secret</code></td>
+<td>str</td>
+<td><code>None</code></td>
+<td>Lark webhook HMAC secret for authentication</td>
+</tr>
+<tr class="even">
+<td><code>swanlab_log_completions</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Enable RLHF completion table logging (DPO/KTO/ORPO/GRPO)</td>
+</tr>
+<tr class="odd">
+<td><code>swanlab_completion_log_interval</code></td>
+<td>int</td>
+<td><code>100</code></td>
+<td>Steps between completion logging</td>
+</tr>
+<tr class="even">
+<td><code>swanlab_completion_max_buffer</code></td>
+<td>int</td>
+<td><code>128</code></td>
+<td>Max completions to buffer (memory bound)</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="configuration-examples" class="level3">
+<h3 class="anchored" data-anchor-id="configuration-examples">Configuration Examples</h3>
+</section>
+<section id="example-1-basic-cloud-sync" class="level3">
+<h3 class="anchored" data-anchor-id="example-1-basic-cloud-sync">Example 1: Basic Cloud Sync</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb27"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.swanlab.SwanLabPlugin</span></span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> llama-finetune</span></span>
+<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_experiment_name</span><span class="kw">:</span><span class="at"> llama-3-8b-instruct-v1</span></span>
+<span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_mode</span><span class="kw">:</span><span class="at"> cloud</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="example-2-offlinelocal-mode" class="level3">
+<h3 class="anchored" data-anchor-id="example-2-offlinelocal-mode">Example 2: Offline/Local Mode</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb28"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.swanlab.SwanLabPlugin</span></span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> local-experiments</span></span>
+<span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_experiment_name</span><span class="kw">:</span><span class="at"> test-run-1</span></span>
+<span id="cb28-7"><a href="#cb28-7" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_mode</span><span class="kw">:</span><span class="at"> local</span><span class="co">  # or 'offline'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="example-3-team-workspace" class="level3">
+<h3 class="anchored" data-anchor-id="example-3-team-workspace">Example 3: Team Workspace</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb29"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.swanlab.SwanLabPlugin</span></span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> research-project</span></span>
+<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_experiment_name</span><span class="kw">:</span><span class="at"> experiment-42</span></span>
+<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_workspace</span><span class="kw">:</span><span class="at"> my-research-team</span></span>
+<span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_mode</span><span class="kw">:</span><span class="at"> cloud</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="example-4-private-deployment" class="level3">
+<h3 class="anchored" data-anchor-id="example-4-private-deployment">Example 4: Private Deployment</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb30"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.swanlab.SwanLabPlugin</span></span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> internal-project</span></span>
+<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_experiment_name</span><span class="kw">:</span><span class="at"> secure-training</span></span>
+<span id="cb30-7"><a href="#cb30-7" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_mode</span><span class="kw">:</span><span class="at"> cloud</span></span>
+<span id="cb30-8"><a href="#cb30-8" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_web_host</span><span class="kw">:</span><span class="at"> https://swanlab.yourcompany.com</span></span>
+<span id="cb30-9"><a href="#cb30-9" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_api_host</span><span class="kw">:</span><span class="at"> https://api.swanlab.yourcompany.com</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="team-notifications-with-lark-feishu" class="level3">
+<h3 class="anchored" data-anchor-id="team-notifications-with-lark-feishu">Team Notifications with Lark (Feishu)</h3>
+<p>SwanLab supports sending real-time training notifications to your team chat via Lark (Feishu), ByteDance’s enterprise collaboration platform. This is especially useful for:
+- <strong>Production training monitoring</strong>: Get alerts when training starts, completes, or encounters errors
+- <strong>Team collaboration</strong>: Keep your ML team informed about long-running experiments
+- <strong>Multi-timezone teams</strong>: Team members can check training progress without being online</p>
+</section>
+<section id="prerequisites" class="level3">
+<h3 class="anchored" data-anchor-id="prerequisites">Prerequisites</h3>
+<ol type="1">
+<li><strong>Lark Bot Setup</strong>: Create a custom bot in your Lark group chat</li>
+<li><strong>Webhook URL</strong>: Get the webhook URL from your Lark bot settings</li>
+<li><strong>HMAC Secret</strong> (recommended): Enable signature verification in your Lark bot for security</li>
+</ol>
+<p>For detailed Lark bot setup instructions, see <a href="https://open.feishu.cn/document/ukTMukTMukTM/ucTM5YjL3ETO24yNxkjN">Lark Custom Bot Documentation</a>.</p>
+</section>
+<section id="example-5-basic-lark-notifications" class="level3">
+<h3 class="anchored" data-anchor-id="example-5-basic-lark-notifications">Example 5: Basic Lark Notifications</h3>
+<p>Send training notifications to a Lark group chat:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb31"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.swanlab.SwanLabPlugin</span></span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> production-training</span></span>
+<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_experiment_name</span><span class="kw">:</span><span class="at"> llama-3-finetune-v2</span></span>
+<span id="cb31-7"><a href="#cb31-7" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_mode</span><span class="kw">:</span><span class="at"> cloud</span></span>
+<span id="cb31-8"><a href="#cb31-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb31-9"><a href="#cb31-9" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_lark_webhook_url</span><span class="kw">:</span><span class="at"> https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxxxx</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>Note</strong>: This configuration will work, but you’ll see a security warning recommending HMAC secret configuration.</p>
+</section>
+<section id="example-6-lark-notifications-with-hmac-security-recommended" class="level3">
+<h3 class="anchored" data-anchor-id="example-6-lark-notifications-with-hmac-security-recommended">Example 6: Lark Notifications with HMAC Security (Recommended)</h3>
+<p>For production use, enable HMAC signature verification:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb32"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.swanlab.SwanLabPlugin</span></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> production-training</span></span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_experiment_name</span><span class="kw">:</span><span class="at"> llama-3-finetune-v2</span></span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_mode</span><span class="kw">:</span><span class="at"> cloud</span></span>
+<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-9"><a href="#cb32-9" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_lark_webhook_url</span><span class="kw">:</span><span class="at"> https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxxxx</span></span>
+<span id="cb32-10"><a href="#cb32-10" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_lark_secret</span><span class="kw">:</span><span class="at"> your-webhook-secret-key</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>Why HMAC secret matters</strong>:
+- Prevents unauthorized parties from sending fake notifications to your Lark group
+- Ensures notifications genuinely come from your training jobs
+- Required for production deployments with sensitive training data</p>
+</section>
+<section id="example-7-team-workspace-lark-notifications" class="level3">
+<h3 class="anchored" data-anchor-id="example-7-team-workspace-lark-notifications">Example 7: Team Workspace + Lark Notifications</h3>
+<p>Combine team workspace collaboration with Lark notifications:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb33"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.swanlab.SwanLabPlugin</span></span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-4"><a href="#cb33-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb33-5"><a href="#cb33-5" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> research-project</span></span>
+<span id="cb33-6"><a href="#cb33-6" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_experiment_name</span><span class="kw">:</span><span class="at"> multimodal-experiment-42</span></span>
+<span id="cb33-7"><a href="#cb33-7" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_workspace</span><span class="kw">:</span><span class="at"> ml-research-team</span></span>
+<span id="cb33-8"><a href="#cb33-8" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_mode</span><span class="kw">:</span><span class="at"> cloud</span></span>
+<span id="cb33-9"><a href="#cb33-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-10"><a href="#cb33-10" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_lark_webhook_url</span><span class="kw">:</span><span class="at"> https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxxxx</span></span>
+<span id="cb33-11"><a href="#cb33-11" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_lark_secret</span><span class="kw">:</span><span class="at"> your-webhook-secret-key</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="what-notifications-are-sent" class="level3">
+<h3 class="anchored" data-anchor-id="what-notifications-are-sent">What Notifications Are Sent?</h3>
+<p>SwanLab’s Lark integration sends notifications for key training events:
+- <strong>Training Start</strong>: When your experiment begins
+- <strong>Training Complete</strong>: When training finishes successfully
+- <strong>Training Errors</strong>: If training crashes or encounters critical errors
+- <strong>Metric Milestones</strong>: Configurable alerts for metric thresholds (if configured in SwanLab)</p>
+<p>Each notification includes:
+- Experiment name and project
+- Training status
+- Key metrics (loss, learning rate)
+- Direct link to SwanLab dashboard</p>
+</section>
+<section id="lark-configuration-validation" class="level3">
+<h3 class="anchored" data-anchor-id="lark-configuration-validation">Lark Configuration Validation</h3>
+<p>The plugin validates your Lark configuration at startup:</p>
+<section id="valid-configurations" class="level4">
+<h4 class="anchored" data-anchor-id="valid-configurations">✅ Valid Configurations</h4>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb34"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb34-5"><a href="#cb34-5" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span>
+<span id="cb34-6"><a href="#cb34-6" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_lark_webhook_url</span><span class="kw">:</span><span class="at"> https://open.feishu.cn/open-apis/bot/v2/hook/xxx</span></span>
+<span id="cb34-7"><a href="#cb34-7" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_lark_secret</span><span class="kw">:</span><span class="at"> your-secret</span></span>
+<span id="cb34-8"><a href="#cb34-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-9"><a href="#cb34-9" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb34-10"><a href="#cb34-10" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span>
+<span id="cb34-11"><a href="#cb34-11" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_lark_webhook_url</span><span class="kw">:</span><span class="at"> https://open.feishu.cn/open-apis/bot/v2/hook/xxx</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+</section>
+<section id="security-best-practices" class="level3">
+<h3 class="anchored" data-anchor-id="security-best-practices">Security Best Practices</h3>
+<ol type="1">
+<li><p><strong>Always use HMAC secret in production</strong>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb35"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_lark_webhook_url</span><span class="kw">:</span><span class="at"> https://open.feishu.cn/...</span></span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_lark_secret</span><span class="kw">:</span><span class="at"> your-secret-key</span><span class="co">  # ✅ Add this!</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p><strong>Store secrets in environment variables</strong> (even better):</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb36"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="co"># In your training script/environment</span></span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a><span class="at">export SWANLAB_LARK_WEBHOOK_URL="https://open.feishu.cn/..."</span></span>
+<span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a><span class="at">export SWANLAB_LARK_SECRET="your-secret-key"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Then in config:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb37"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="co"># SwanLab plugin will auto-detect environment variables</span></span>
+<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb37-3"><a href="#cb37-3" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span>
+<span id="cb37-4"><a href="#cb37-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Lark URL and secret read from env vars</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p><strong>Rotate webhook secrets periodically</strong>: Update your Lark bot’s secret every 90 days</p></li>
+<li><p><strong>Use separate webhooks for dev/prod</strong>: Don’t mix development and production notifications</p></li>
+</ol>
+</section>
+<section id="distributed-training" class="level3">
+<h3 class="anchored" data-anchor-id="distributed-training">Distributed Training</h3>
+<p>Lark notifications are automatically deduplicated in distributed training:
+- Only <strong>rank 0</strong> sends notifications
+- Other GPU ranks skip Lark registration
+- Prevents duplicate messages in multi-GPU training</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb38"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="ex">torchrun</span> <span class="at">--nproc_per_node</span><span class="op">=</span>4 <span class="at">-m</span> axolotl.cli.train config.yml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="rlhf-completion-table-logging" class="level3">
+<h3 class="anchored" data-anchor-id="rlhf-completion-table-logging">RLHF Completion Table Logging</h3>
+<p>For RLHF (Reinforcement Learning from Human Feedback) training methods like DPO, KTO, ORPO, and GRPO, SwanLab can log model completions (prompts, chosen/rejected responses, rewards) to a visual table for qualitative analysis. This helps you:</p>
+<ul>
+<li><strong>Inspect model behavior</strong>: See actual model outputs during training</li>
+<li><strong>Debug preference learning</strong>: Compare chosen vs rejected responses</li>
+<li><strong>Track reward patterns</strong>: Monitor how rewards evolve over training</li>
+<li><strong>Share examples with team</strong>: Visual tables in SwanLab dashboard</li>
+</ul>
+</section>
+<section id="features-1" class="level3">
+<h3 class="anchored" data-anchor-id="features-1">Features</h3>
+<ul>
+<li>✅ <strong>Automatic detection</strong>: Works with DPO, KTO, ORPO, GRPO trainers</li>
+<li>✅ <strong>Memory-safe buffering</strong>: Bounded buffer prevents memory leaks in long training runs</li>
+<li>✅ <strong>Periodic logging</strong>: Configurable logging interval to reduce overhead</li>
+<li>✅ <strong>Rich visualization</strong>: SwanLab tables show prompts, responses, and metrics side-by-side</li>
+</ul>
+</section>
+<section id="configuration" class="level3">
+<h3 class="anchored" data-anchor-id="configuration">Configuration</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 28%">
+<col style="width: 15%">
+<col style="width: 23%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>swanlab_log_completions</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Enable completion logging for RLHF trainers</td>
+</tr>
+<tr class="even">
+<td><code>swanlab_completion_log_interval</code></td>
+<td>int</td>
+<td><code>100</code></td>
+<td>Log completions to SwanLab every N training steps</td>
+</tr>
+<tr class="odd">
+<td><code>swanlab_completion_max_buffer</code></td>
+<td>int</td>
+<td><code>128</code></td>
+<td>Maximum completions to buffer (memory bound)</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="example-dpo-training-with-completion-logging" class="level3">
+<h3 class="anchored" data-anchor-id="example-dpo-training-with-completion-logging">Example: DPO Training with Completion Logging</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb39"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.swanlab.SwanLabPlugin</span></span>
+<span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb39-4"><a href="#cb39-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb39-5"><a href="#cb39-5" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> dpo-training</span></span>
+<span id="cb39-6"><a href="#cb39-6" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_experiment_name</span><span class="kw">:</span><span class="at"> llama-3-dpo-v1</span></span>
+<span id="cb39-7"><a href="#cb39-7" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_mode</span><span class="kw">:</span><span class="at"> cloud</span></span>
+<span id="cb39-8"><a href="#cb39-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb39-9"><a href="#cb39-9" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_log_completions</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb39-10"><a href="#cb39-10" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_completion_log_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">100</span><span class="co">  # Log every 100 steps</span></span>
+<span id="cb39-11"><a href="#cb39-11" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_completion_max_buffer</span><span class="kw">:</span><span class="at"> </span><span class="dv">128</span><span class="co">    # Keep last 128 completions</span></span>
+<span id="cb39-12"><a href="#cb39-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb39-13"><a href="#cb39-13" aria-hidden="true" tabindex="-1"></a><span class="fu">rl</span><span class="kw">:</span><span class="at"> dpo</span></span>
+<span id="cb39-14"><a href="#cb39-14" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb39-15"><a href="#cb39-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /path/to/preference_dataset</span></span>
+<span id="cb39-16"><a href="#cb39-16" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chatml.intel</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="example-disable-completion-logging" class="level3">
+<h3 class="anchored" data-anchor-id="example-disable-completion-logging">Example: Disable Completion Logging</h3>
+<p>If you’re doing a quick test run or don’t need completion tables:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb40"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.swanlab.SwanLabPlugin</span></span>
+<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb40-5"><a href="#cb40-5" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> dpo-training</span></span>
+<span id="cb40-6"><a href="#cb40-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-7"><a href="#cb40-7" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_log_completions</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="supported-rlhf-trainers" class="level3">
+<h3 class="anchored" data-anchor-id="supported-rlhf-trainers">Supported RLHF Trainers</h3>
+<p>The completion logging callback automatically activates for these trainer types:</p>
+<ul>
+<li><strong>DPO (Direct Preference Optimization)</strong>: Logs prompts, chosen, rejected, reward_diff</li>
+<li><strong>KTO (Kahneman-Tversky Optimization)</strong>: Logs prompts, completions, labels, rewards</li>
+<li><strong>ORPO (Odds Ratio Preference Optimization)</strong>: Logs prompts, chosen, rejected, log_odds_ratio</li>
+<li><strong>GRPO (Group Relative Policy Optimization)</strong>: Logs prompts, completions, rewards, advantages</li>
+<li><strong>CPO (Constrained Policy Optimization)</strong>: Logs prompts, chosen, rejected</li>
+</ul>
+<p>For non-RLHF trainers (standard supervised fine-tuning), the completion callback is automatically skipped.</p>
+</section>
+<section id="how-it-works-1" class="level3">
+<h3 class="anchored" data-anchor-id="how-it-works-1">How It Works</h3>
+<ol type="1">
+<li><strong>Auto-detection</strong>: Plugin detects trainer type at initialization</li>
+<li><strong>Buffering</strong>: Completions are buffered in memory (up to <code>swanlab_completion_max_buffer</code>)</li>
+<li><strong>Periodic logging</strong>: Every <code>swanlab_completion_log_interval</code> steps, buffer is logged to SwanLab</li>
+<li><strong>Memory safety</strong>: Old completions are automatically dropped when buffer is full (uses <code>collections.deque</code>)</li>
+<li><strong>Final flush</strong>: Remaining completions are logged when training completes</li>
+</ol>
+</section>
+<section id="viewing-completion-tables" class="level3">
+<h3 class="anchored" data-anchor-id="viewing-completion-tables">Viewing Completion Tables</h3>
+<p>After training starts, you can view completion tables in your SwanLab dashboard:</p>
+<ol type="1">
+<li>Navigate to your experiment in SwanLab</li>
+<li>Look for the “rlhf_completions” table in the metrics panel</li>
+<li>The table shows:
+<ul>
+<li><strong>step</strong>: Training step when completion was generated</li>
+<li><strong>prompt</strong>: Input prompt</li>
+<li><strong>chosen</strong>: Preferred response (DPO/ORPO)</li>
+<li><strong>rejected</strong>: Non-preferred response (DPO/ORPO)</li>
+<li><strong>completion</strong>: Model output (KTO/GRPO)</li>
+<li><strong>reward_diff/reward</strong>: Reward metrics</li>
+<li>Trainer-specific metrics (e.g., log_odds_ratio for ORPO)</li>
+</ul></li>
+</ol>
+</section>
+<section id="memory-management" class="level3">
+<h3 class="anchored" data-anchor-id="memory-management">Memory Management</h3>
+<p>The completion buffer is <strong>memory-bounded</strong> to prevent memory leaks:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb41"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> collections <span class="im">import</span> deque</span>
+<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a><span class="bu">buffer</span> <span class="op">=</span> deque(maxlen<span class="op">=</span><span class="dv">128</span>)  <span class="co"># Old completions automatically dropped</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>Memory usage estimate</strong>:
+- Average completion: ~500 characters (prompt + responses)
+- Buffer size 128: ~64 KB (negligible)
+- Buffer size 1024: ~512 KB (still small)</p>
+<p><strong>Recommendation</strong>: Default buffer size (128) works well for most cases. Increase to 512-1024 only if you need to review more historical completions.</p>
+</section>
+<section id="performance-impact" class="level3">
+<h3 class="anchored" data-anchor-id="performance-impact">Performance Impact</h3>
+<p>Completion logging has minimal overhead:</p>
+<ul>
+<li><strong>Buffering</strong>: O(1) append operation, negligible CPU/memory</li>
+<li><strong>Logging</strong>: Only happens every N steps (default: 100)</li>
+<li><strong>Network</strong>: SwanLab batches table uploads efficiently</li>
+</ul>
+<p><strong>Expected overhead</strong>: &lt; 0.5% per training step</p>
+</section>
+<section id="troubleshooting" class="level3">
+<h3 class="anchored" data-anchor-id="troubleshooting">Troubleshooting</h3>
+<section id="completions-not-appearing-in-swanlab" class="level4">
+<h4 class="anchored" data-anchor-id="completions-not-appearing-in-swanlab">Completions not appearing in SwanLab</h4>
+<p><strong>Cause</strong>: Trainer may not be logging completion data in the expected format.</p>
+<p><strong>Diagnostic steps</strong>:
+1. Check trainer type detection in logs:
+<code>text    INFO: SwanLab RLHF completion logging enabled for DPOTrainer (type: dpo)</code>
+2. Verify your trainer is an RLHF trainer (DPO/KTO/ORPO/GRPO)
+3. Check if trainer logs completion data (this depends on TRL version)</p>
+<p><strong>Note</strong>: The current implementation expects trainers to log completion data in the <code>logs</code> dict during <code>on_log()</code> callback. Some TRL trainers may not expose this data by default. You may need to patch the trainer to expose completions.</p>
+</section>
+<section id="buffer-fills-up-too-quickly" class="level4">
+<h4 class="anchored" data-anchor-id="buffer-fills-up-too-quickly">Buffer fills up too quickly</h4>
+<p><strong>Cause</strong>: High logging frequency with small buffer size.</p>
+<p><strong>Solution</strong>: Increase buffer size or logging interval:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb42"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_completion_log_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">200</span><span class="co">  # Log less frequently</span></span>
+<span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_completion_max_buffer</span><span class="kw">:</span><span class="at"> </span><span class="dv">512</span><span class="co">    # Larger buffer</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="memory-usage-growing-over-time" class="level4">
+<h4 class="anchored" data-anchor-id="memory-usage-growing-over-time">Memory usage growing over time</h4>
+<p><strong>Cause</strong>: Buffer should be bounded, so this indicates a bug.</p>
+<p><strong>Solution</strong>:
+1. Verify <code>swanlab_completion_max_buffer</code> is set
+2. Check SwanLab version is up to date
+3. Report issue with memory profiling data</p>
+</section>
+</section>
+<section id="performance-profiling" class="level3">
+<h3 class="anchored" data-anchor-id="performance-profiling">Performance Profiling</h3>
+<p>SwanLab integration includes profiling utilities to measure and log execution time of trainer methods. This helps you:</p>
+<ul>
+<li><strong>Identify bottlenecks</strong>: Find slow operations in your training loop</li>
+<li><strong>Optimize performance</strong>: Track improvements after optimization changes</li>
+<li><strong>Monitor distributed training</strong>: See per-rank timing differences</li>
+<li><strong>Debug hangs</strong>: Detect methods that take unexpectedly long</li>
+</ul>
+</section>
+<section id="features-2" class="level3">
+<h3 class="anchored" data-anchor-id="features-2">Features</h3>
+<ul>
+<li>✅ <strong>Zero-config profiling</strong>: Automatic timing of key trainer methods</li>
+<li>✅ <strong>Decorator-based</strong>: Easy to add profiling to custom methods with <code>@swanlab_profile</code></li>
+<li>✅ <strong>Context manager</strong>: Fine-grained profiling with <code>swanlab_profiling_context()</code></li>
+<li>✅ <strong>Advanced filtering</strong>: <code>ProfilingConfig</code> for throttling and minimum duration thresholds</li>
+<li>✅ <strong>Exception-safe</strong>: Logs duration even if function raises an exception</li>
+</ul>
+</section>
+<section id="basic-usage-decorator" class="level3">
+<h3 class="anchored" data-anchor-id="basic-usage-decorator">Basic Usage: Decorator</h3>
+<p>Add profiling to any trainer method with the <code>@swanlab_profile</code> decorator:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb43"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.integrations.swanlab.profiling <span class="im">import</span> swanlab_profile</span>
+<span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> MyCustomTrainer(AxolotlTrainer):</span>
+<span id="cb43-4"><a href="#cb43-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">@swanlab_profile</span></span>
+<span id="cb43-5"><a href="#cb43-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> training_step(<span class="va">self</span>, model, inputs):</span>
+<span id="cb43-6"><a href="#cb43-6" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Your training step logic</span></span>
+<span id="cb43-7"><a href="#cb43-7" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="bu">super</span>().training_step(model, inputs)</span>
+<span id="cb43-8"><a href="#cb43-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-9"><a href="#cb43-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">@swanlab_profile</span></span>
+<span id="cb43-10"><a href="#cb43-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> prediction_step(<span class="va">self</span>, model, inputs, prediction_loss_only):</span>
+<span id="cb43-11"><a href="#cb43-11" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Your prediction logic</span></span>
+<span id="cb43-12"><a href="#cb43-12" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="bu">super</span>().prediction_step(model, inputs, prediction_loss_only)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The decorator automatically:
+1. Measures execution time with high-precision timer
+2. Logs to SwanLab as <code>profiling/Time taken: ClassName.method_name</code>
+3. Only logs if SwanLab is enabled (<code>use_swanlab: true</code>)
+4. Gracefully handles exceptions (logs duration, then re-raises)</p>
+</section>
+<section id="advanced-usage-context-manager" class="level3">
+<h3 class="anchored" data-anchor-id="advanced-usage-context-manager">Advanced Usage: Context Manager</h3>
+<p>For fine-grained profiling within a method:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb44"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.integrations.swanlab.profiling <span class="im">import</span> swanlab_profiling_context</span>
+<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> MyTrainer(AxolotlTrainer):</span>
+<span id="cb44-4"><a href="#cb44-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> complex_training_step(<span class="va">self</span>, model, inputs):</span>
+<span id="cb44-5"><a href="#cb44-5" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Profile just the forward pass</span></span>
+<span id="cb44-6"><a href="#cb44-6" aria-hidden="true" tabindex="-1"></a>        <span class="cf">with</span> swanlab_profiling_context(<span class="va">self</span>, <span class="st">"forward_pass"</span>):</span>
+<span id="cb44-7"><a href="#cb44-7" aria-hidden="true" tabindex="-1"></a>            outputs <span class="op">=</span> model(<span class="op">**</span>inputs)</span>
+<span id="cb44-8"><a href="#cb44-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-9"><a href="#cb44-9" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Profile just the backward pass</span></span>
+<span id="cb44-10"><a href="#cb44-10" aria-hidden="true" tabindex="-1"></a>        <span class="cf">with</span> swanlab_profiling_context(<span class="va">self</span>, <span class="st">"backward_pass"</span>):</span>
+<span id="cb44-11"><a href="#cb44-11" aria-hidden="true" tabindex="-1"></a>            loss <span class="op">=</span> outputs.loss</span>
+<span id="cb44-12"><a href="#cb44-12" aria-hidden="true" tabindex="-1"></a>            loss.backward()</span>
+<span id="cb44-13"><a href="#cb44-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-14"><a href="#cb44-14" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> outputs</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="advanced-usage-profilingconfig" class="level3">
+<h3 class="anchored" data-anchor-id="advanced-usage-profilingconfig">Advanced Usage: ProfilingConfig</h3>
+<p>Filter and throttle profiling logs with <code>ProfilingConfig</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb45"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.integrations.swanlab.profiling <span class="im">import</span> (</span>
+<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a>    swanlab_profiling_context_advanced,</span>
+<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a>    ProfilingConfig,</span>
+<span id="cb45-4"><a href="#cb45-4" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb45-5"><a href="#cb45-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb45-6"><a href="#cb45-6" aria-hidden="true" tabindex="-1"></a>profiling_config <span class="op">=</span> ProfilingConfig(</span>
+<span id="cb45-7"><a href="#cb45-7" aria-hidden="true" tabindex="-1"></a>    enabled<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb45-8"><a href="#cb45-8" aria-hidden="true" tabindex="-1"></a>    min_duration_ms<span class="op">=</span><span class="fl">1.0</span>,    <span class="co"># Only log if duration &gt; 1ms</span></span>
+<span id="cb45-9"><a href="#cb45-9" aria-hidden="true" tabindex="-1"></a>    log_interval<span class="op">=</span><span class="dv">10</span>,        <span class="co"># Log every 10th call</span></span>
+<span id="cb45-10"><a href="#cb45-10" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb45-11"><a href="#cb45-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb45-12"><a href="#cb45-12" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> MyTrainer(AxolotlTrainer):</span>
+<span id="cb45-13"><a href="#cb45-13" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> frequently_called_method(<span class="va">self</span>, data):</span>
+<span id="cb45-14"><a href="#cb45-14" aria-hidden="true" tabindex="-1"></a>        <span class="cf">with</span> swanlab_profiling_context_advanced(</span>
+<span id="cb45-15"><a href="#cb45-15" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>,</span>
+<span id="cb45-16"><a href="#cb45-16" aria-hidden="true" tabindex="-1"></a>            <span class="st">"frequent_op"</span>,</span>
+<span id="cb45-17"><a href="#cb45-17" aria-hidden="true" tabindex="-1"></a>            config<span class="op">=</span>profiling_config</span>
+<span id="cb45-18"><a href="#cb45-18" aria-hidden="true" tabindex="-1"></a>        ):</span>
+<span id="cb45-19"><a href="#cb45-19" aria-hidden="true" tabindex="-1"></a>            <span class="co"># This only logs every 10th call, and only if it takes &gt; 1ms</span></span>
+<span id="cb45-20"><a href="#cb45-20" aria-hidden="true" tabindex="-1"></a>            result <span class="op">=</span> expensive_computation(data)</span>
+<span id="cb45-21"><a href="#cb45-21" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> result</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>ProfilingConfig Parameters</strong>:
+- <code>enabled</code>: Enable/disable profiling globally (default: <code>True</code>)
+- <code>min_duration_ms</code>: Minimum duration to log in milliseconds (default: <code>0.1</code>)
+- <code>log_interval</code>: Log every Nth function call (default: <code>1</code> = log all)</p>
+<p><strong>Use cases</strong>:
+- <strong>High-frequency methods</strong>: Use <code>log_interval=100</code> to reduce logging overhead
+- <strong>Filter noise</strong>: Use <code>min_duration_ms=1.0</code> to skip very fast operations
+- <strong>Debugging</strong>: Use <code>log_interval=1, min_duration_ms=0.0</code> to log everything</p>
+</section>
+<section id="viewing-profiling-metrics" class="level3">
+<h3 class="anchored" data-anchor-id="viewing-profiling-metrics">Viewing Profiling Metrics</h3>
+<p>In your SwanLab dashboard, profiling metrics appear under the “profiling” namespace:</p>
+<pre class="text"><code>profiling/Time taken: AxolotlTrainer.training_step
+profiling/Time taken: AxolotlTrainer.prediction_step
+profiling/Time taken: MyTrainer.forward_pass
+profiling/Time taken: MyTrainer.backward_pass</code></pre>
+<p>You can:
+- <strong>Track over time</strong>: See if methods get faster/slower during training
+- <strong>Compare runs</strong>: Compare profiling metrics across experiments
+- <strong>Identify regressions</strong>: Detect if a code change slowed down training</p>
+</section>
+<section id="configuration-in-axolotl-config" class="level3">
+<h3 class="anchored" data-anchor-id="configuration-in-axolotl-config">Configuration in Axolotl Config</h3>
+<p>Profiling is automatically enabled when SwanLab is enabled. No additional config needed:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb47"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.swanlab.SwanLabPlugin</span></span>
+<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-4"><a href="#cb47-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb47-5"><a href="#cb47-5" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>To disable profiling while keeping SwanLab enabled:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb48"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.integrations.swanlab.profiling <span class="im">import</span> DEFAULT_PROFILING_CONFIG</span>
+<span id="cb48-2"><a href="#cb48-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb48-3"><a href="#cb48-3" aria-hidden="true" tabindex="-1"></a>DEFAULT_PROFILING_CONFIG.enabled <span class="op">=</span> <span class="va">False</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="performance-impact-1" class="level3">
+<h3 class="anchored" data-anchor-id="performance-impact-1">Performance Impact</h3>
+<ul>
+<li><strong>Decorator overhead</strong>: ~2-5 microseconds per call (negligible)</li>
+<li><strong>Context manager overhead</strong>: ~1-3 microseconds (negligible)</li>
+<li><strong>Logging overhead</strong>: Only when SwanLab is enabled and method duration exceeds threshold</li>
+<li><strong>Network overhead</strong>: SwanLab batches metrics efficiently</li>
+</ul>
+<p><strong>Expected overhead</strong>: &lt; 0.1% per training step (effectively zero)</p>
+</section>
+<section id="best-practices" class="level3">
+<h3 class="anchored" data-anchor-id="best-practices">Best Practices</h3>
+<ol type="1">
+<li><strong>Profile bottlenecks first</strong>: Start by profiling suspected slow operations</li>
+<li><strong>Use min_duration_ms</strong>: Filter out fast operations (&lt; 1ms) to reduce noise</li>
+<li><strong>Throttle high-frequency calls</strong>: Use <code>log_interval</code> for methods called &gt; 100 times/step</li>
+<li><strong>Profile across runs</strong>: Compare profiling metrics before/after optimization</li>
+<li><strong>Monitor distributed training</strong>: Check for rank-specific slowdowns</li>
+</ol>
+</section>
+<section id="example-complete-profiling-setup" class="level3">
+<h3 class="anchored" data-anchor-id="example-complete-profiling-setup">Example: Complete Profiling Setup</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb49"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.integrations.swanlab.profiling <span class="im">import</span> (</span>
+<span id="cb49-2"><a href="#cb49-2" aria-hidden="true" tabindex="-1"></a>    swanlab_profile,</span>
+<span id="cb49-3"><a href="#cb49-3" aria-hidden="true" tabindex="-1"></a>    swanlab_profiling_context,</span>
+<span id="cb49-4"><a href="#cb49-4" aria-hidden="true" tabindex="-1"></a>    ProfilingConfig,</span>
+<span id="cb49-5"><a href="#cb49-5" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb49-6"><a href="#cb49-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb49-7"><a href="#cb49-7" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> OptimizedTrainer(AxolotlTrainer):</span>
+<span id="cb49-8"><a href="#cb49-8" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, <span class="op">*</span>args, <span class="op">**</span>kwargs):</span>
+<span id="cb49-9"><a href="#cb49-9" aria-hidden="true" tabindex="-1"></a>        <span class="bu">super</span>().<span class="fu">__init__</span>(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span>
+<span id="cb49-10"><a href="#cb49-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb49-11"><a href="#cb49-11" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Custom profiling config for high-frequency operations</span></span>
+<span id="cb49-12"><a href="#cb49-12" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.fast_op_config <span class="op">=</span> ProfilingConfig(</span>
+<span id="cb49-13"><a href="#cb49-13" aria-hidden="true" tabindex="-1"></a>            enabled<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb49-14"><a href="#cb49-14" aria-hidden="true" tabindex="-1"></a>            min_duration_ms<span class="op">=</span><span class="fl">0.5</span>,</span>
+<span id="cb49-15"><a href="#cb49-15" aria-hidden="true" tabindex="-1"></a>            log_interval<span class="op">=</span><span class="dv">50</span>,</span>
+<span id="cb49-16"><a href="#cb49-16" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb49-17"><a href="#cb49-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb49-18"><a href="#cb49-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">@swanlab_profile</span></span>
+<span id="cb49-19"><a href="#cb49-19" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> training_step(<span class="va">self</span>, model, inputs):</span>
+<span id="cb49-20"><a href="#cb49-20" aria-hidden="true" tabindex="-1"></a>        <span class="co">"""Main training step - always profile."""</span></span>
+<span id="cb49-21"><a href="#cb49-21" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="bu">super</span>().training_step(model, inputs)</span>
+<span id="cb49-22"><a href="#cb49-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb49-23"><a href="#cb49-23" aria-hidden="true" tabindex="-1"></a>    <span class="at">@swanlab_profile</span></span>
+<span id="cb49-24"><a href="#cb49-24" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> compute_loss(<span class="va">self</span>, model, inputs, return_outputs<span class="op">=</span><span class="va">False</span>):</span>
+<span id="cb49-25"><a href="#cb49-25" aria-hidden="true" tabindex="-1"></a>        <span class="co">"""Loss computation - always profile."""</span></span>
+<span id="cb49-26"><a href="#cb49-26" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="bu">super</span>().compute_loss(model, inputs, return_outputs)</span>
+<span id="cb49-27"><a href="#cb49-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb49-28"><a href="#cb49-28" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _prepare_inputs(<span class="va">self</span>, inputs):</span>
+<span id="cb49-29"><a href="#cb49-29" aria-hidden="true" tabindex="-1"></a>        <span class="co">"""High-frequency operation - throttled profiling."""</span></span>
+<span id="cb49-30"><a href="#cb49-30" aria-hidden="true" tabindex="-1"></a>        <span class="cf">with</span> swanlab_profiling_context_advanced(</span>
+<span id="cb49-31"><a href="#cb49-31" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>,</span>
+<span id="cb49-32"><a href="#cb49-32" aria-hidden="true" tabindex="-1"></a>            <span class="st">"prepare_inputs"</span>,</span>
+<span id="cb49-33"><a href="#cb49-33" aria-hidden="true" tabindex="-1"></a>            config<span class="op">=</span><span class="va">self</span>.fast_op_config,</span>
+<span id="cb49-34"><a href="#cb49-34" aria-hidden="true" tabindex="-1"></a>        ):</span>
+<span id="cb49-35"><a href="#cb49-35" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> <span class="bu">super</span>()._prepare_inputs(inputs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="troubleshooting-1" class="level3">
+<h3 class="anchored" data-anchor-id="troubleshooting-1">Troubleshooting</h3>
+<section id="profiling-metrics-not-appearing-in-swanlab" class="level4">
+<h4 class="anchored" data-anchor-id="profiling-metrics-not-appearing-in-swanlab">Profiling metrics not appearing in SwanLab</h4>
+<p><strong>Cause</strong>: SwanLab is not enabled or not initialized.</p>
+<p><strong>Solution</strong>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb50"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb50-1"><a href="#cb50-1" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb50-2"><a href="#cb50-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Check logs for:</p>
+<pre class="text"><code>INFO: SwanLab initialized for project: my-project</code></pre>
+</section>
+<section id="too-many-profiling-metrics-cluttering-dashboard" class="level4">
+<h4 class="anchored" data-anchor-id="too-many-profiling-metrics-cluttering-dashboard">Too many profiling metrics cluttering dashboard</h4>
+<p><strong>Cause</strong>: Profiling every function call for high-frequency operations.</p>
+<p><strong>Solution</strong>: Use <code>ProfilingConfig</code> with throttling:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb52"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb52-1"><a href="#cb52-1" aria-hidden="true" tabindex="-1"></a>config <span class="op">=</span> ProfilingConfig(</span>
+<span id="cb52-2"><a href="#cb52-2" aria-hidden="true" tabindex="-1"></a>    min_duration_ms<span class="op">=</span><span class="fl">1.0</span>,    <span class="co"># Skip fast ops</span></span>
+<span id="cb52-3"><a href="#cb52-3" aria-hidden="true" tabindex="-1"></a>    log_interval<span class="op">=</span><span class="dv">100</span>,       <span class="co"># Log every 100th call</span></span>
+<span id="cb52-4"><a href="#cb52-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="profiling-overhead-impacting-training-speed" class="level4">
+<h4 class="anchored" data-anchor-id="profiling-overhead-impacting-training-speed">Profiling overhead impacting training speed</h4>
+<p><strong>Cause</strong>: Profiling itself should have negligible overhead (&lt; 0.1%). If you see &gt; 1% slowdown, this indicates a bug.</p>
+<p><strong>Solution</strong>:
+1. Disable profiling temporarily to confirm:
+<code>python    DEFAULT_PROFILING_CONFIG.enabled = False</code>
+2. Report issue with profiling data and trainer details</p>
+</section>
+<section id="profiling-shows-inconsistent-timing" class="level4">
+<h4 class="anchored" data-anchor-id="profiling-shows-inconsistent-timing">Profiling shows inconsistent timing</h4>
+<p><strong>Cause</strong>: Normal variation due to GPU warmup, data loading, or system load.</p>
+<p><strong>Solution</strong>:
+- Ignore first few steps (warmup period)
+- Look at average/median timing over many steps
+- Use <code>log_interval</code> to reduce noise from individual outliers</p>
+</section>
+</section>
+<section id="complete-config-example" class="level3">
+<h3 class="anchored" data-anchor-id="complete-config-example">Complete Config Example</h3>
+<p>Here’s a complete example integrating SwanLab with your RVQ-Alpha training:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb53"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> /path/to/your/model</span></span>
+<span id="cb53-2"><a href="#cb53-2" aria-hidden="true" tabindex="-1"></a><span class="fu">model_type</span><span class="kw">:</span><span class="at"> Qwen2ForCausalLM</span></span>
+<span id="cb53-3"><a href="#cb53-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-4"><a href="#cb53-4" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb53-5"><a href="#cb53-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.swanlab.SwanLabPlugin</span></span>
+<span id="cb53-6"><a href="#cb53-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin</span></span>
+<span id="cb53-7"><a href="#cb53-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-8"><a href="#cb53-8" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb53-9"><a href="#cb53-9" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> RVQ-Alpha-Training</span></span>
+<span id="cb53-10"><a href="#cb53-10" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_experiment_name</span><span class="kw">:</span><span class="at"> Qwen2.5-7B-MetaQA-Perturb-P020</span></span>
+<span id="cb53-11"><a href="#cb53-11" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_description</span><span class="kw">:</span><span class="at"> </span><span class="st">"Training on MetaQA and Perturbation datasets with NEW-RVQ encoding"</span></span>
+<span id="cb53-12"><a href="#cb53-12" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_mode</span><span class="kw">:</span><span class="at"> cloud</span></span>
+<span id="cb53-13"><a href="#cb53-13" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_workspace</span><span class="kw">:</span><span class="at"> single-cell-genomics</span></span>
+<span id="cb53-14"><a href="#cb53-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-15"><a href="#cb53-15" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">32768</span></span>
+<span id="cb53-16"><a href="#cb53-16" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb53-17"><a href="#cb53-17" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_accumulation_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb53-18"><a href="#cb53-18" aria-hidden="true" tabindex="-1"></a><span class="fu">num_epochs</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb53-19"><a href="#cb53-19" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">2e-5</span></span>
+<span id="cb53-20"><a href="#cb53-20" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> adamw_torch_fused</span></span>
+<span id="cb53-21"><a href="#cb53-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-22"><a href="#cb53-22" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb53-23"><a href="#cb53-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /path/to/dataset</span></span>
+<span id="cb53-24"><a href="#cb53-24" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
+<span id="cb53-25"><a href="#cb53-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-26"><a href="#cb53-26" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="at"> ./outputs</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="modes-explained" class="level3">
+<h3 class="anchored" data-anchor-id="modes-explained">Modes Explained</h3>
+</section>
+<section id="cloud-mode-default" class="level3">
+<h3 class="anchored" data-anchor-id="cloud-mode-default"><code>cloud</code> Mode (Default)</h3>
+<ul>
+<li>Syncs experiments to SwanLab cloud in real-time</li>
+<li>Requires API key and internet connection</li>
+<li>Best for: Team collaboration, remote monitoring</li>
+</ul>
+</section>
+<section id="local-mode" class="level3">
+<h3 class="anchored" data-anchor-id="local-mode"><code>local</code> Mode</h3>
+<ul>
+<li>Saves experiments locally only</li>
+<li>No cloud sync</li>
+<li>Best for: Local development, air-gapped environments</li>
+</ul>
+</section>
+<section id="offline-mode" class="level3">
+<h3 class="anchored" data-anchor-id="offline-mode"><code>offline</code> Mode</h3>
+<ul>
+<li>Saves metadata locally</li>
+<li>Can sync to cloud later using <code>swanlab sync</code></li>
+<li>Best for: Unstable internet, sync later</li>
+</ul>
+</section>
+<section id="disabled-mode" class="level3">
+<h3 class="anchored" data-anchor-id="disabled-mode"><code>disabled</code> Mode</h3>
+<ul>
+<li>Turns off SwanLab completely</li>
+<li>No logging or tracking</li>
+<li>Best for: Debugging, testing</li>
+</ul>
+</section>
+<section id="configuration-validation-conflict-detection" class="level3">
+<h3 class="anchored" data-anchor-id="configuration-validation-conflict-detection">Configuration Validation &amp; Conflict Detection</h3>
+<p>SwanLab integration includes comprehensive validation and conflict detection to help you catch configuration errors early and avoid performance issues.</p>
+</section>
+<section id="required-fields-validation" class="level3">
+<h3 class="anchored" data-anchor-id="required-fields-validation">Required Fields Validation</h3>
+<p>The plugin validates your configuration at startup and provides clear error messages with solutions:</p>
+<section id="missing-project-name" class="level4">
+<h4 class="anchored" data-anchor-id="missing-project-name">Missing Project Name</h4>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb54"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb54-1"><a href="#cb54-1" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>Solution</strong>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb55"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb55-1"><a href="#cb55-1" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb55-2"><a href="#cb55-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="invalid-mode" class="level4">
+<h4 class="anchored" data-anchor-id="invalid-mode">Invalid Mode</h4>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb56"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb56-1"><a href="#cb56-1" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb56-2"><a href="#cb56-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span>
+<span id="cb56-3"><a href="#cb56-3" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_mode</span><span class="kw">:</span><span class="at"> invalid-mode</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>Solution</strong>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb57"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb57-1"><a href="#cb57-1" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb57-2"><a href="#cb57-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span>
+<span id="cb57-3"><a href="#cb57-3" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_mode</span><span class="kw">:</span><span class="at"> cloud</span><span class="co">  # or: local, offline, disabled</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="empty-project-name" class="level4">
+<h4 class="anchored" data-anchor-id="empty-project-name">Empty Project Name</h4>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb58"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb58-2"><a href="#cb58-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> </span><span class="st">""</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>Solution</strong>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb59"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb59-1"><a href="#cb59-1" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb59-2"><a href="#cb59-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+</section>
+<section id="cloud-mode-api-key-warning" class="level3">
+<h3 class="anchored" data-anchor-id="cloud-mode-api-key-warning">Cloud Mode API Key Warning</h3>
+<p>When using <code>cloud</code> mode without an API key, you’ll receive a warning with multiple solutions:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb60"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb60-2"><a href="#cb60-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span>
+<span id="cb60-3"><a href="#cb60-3" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_mode</span><span class="kw">:</span><span class="at"> cloud</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>Solutions</strong>:
+1. Set environment variable: <code>export SWANLAB_API_KEY=your-api-key</code>
+2. Add to config (less secure): <code>swanlab_api_key: your-api-key</code>
+3. Run <code>swanlab login</code> before training
+4. Use <code>swanlab_mode: local</code> for offline tracking</p>
+</section>
+<section id="multi-logger-performance-warnings" class="level3">
+<h3 class="anchored" data-anchor-id="multi-logger-performance-warnings">Multi-Logger Performance Warnings</h3>
+<p>Using multiple logging tools simultaneously (SwanLab + WandB + MLflow + Comet) can impact training performance:</p>
+<section id="two-loggers---warning" class="level4">
+<h4 class="anchored" data-anchor-id="two-loggers---warning">Two Loggers - Warning</h4>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb61"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb61-1"><a href="#cb61-1" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb61-2"><a href="#cb61-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span>
+<span id="cb61-3"><a href="#cb61-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb61-4"><a href="#cb61-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_wandb</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb61-5"><a href="#cb61-5" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_project</span><span class="kw">:</span><span class="at"> my-project</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>Impact</strong>:
+- Performance overhead: ~1-2% per logger (cumulative)
+- Increased memory usage
+- Longer training time per step
+- Potential config/callback conflicts</p>
+<p><strong>Recommendations</strong>:
+- Choose ONE primary logging tool for production training
+- Use multiple loggers only for:
+- Migration period (transitioning between tools)
+- Short comparison runs
+- Debugging specific tool issues
+- Monitor system resources (CPU, memory) during training</p>
+</section>
+<section id="three-loggers---error-level-warning" class="level4">
+<h4 class="anchored" data-anchor-id="three-loggers---error-level-warning">Three+ Loggers - Error-Level Warning</h4>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb62"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb62-1"><a href="#cb62-1" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb62-2"><a href="#cb62-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span>
+<span id="cb62-3"><a href="#cb62-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb62-4"><a href="#cb62-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_wandb</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb62-5"><a href="#cb62-5" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_project</span><span class="kw">:</span><span class="at"> my-project</span></span>
+<span id="cb62-6"><a href="#cb62-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb62-7"><a href="#cb62-7" aria-hidden="true" tabindex="-1"></a><span class="fu">use_mlflow</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb62-8"><a href="#cb62-8" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_tracking_uri</span><span class="kw">:</span><span class="at"> http://localhost:5000</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>Why This Matters</strong>:
+- With 3 loggers: ~4-5% overhead per step → significant slowdown over long training
+- Example: 10,000 steps at 2s/step → ~400-500 seconds extra (6-8 minutes)
+- Memory overhead scales with number of loggers
+- Rare edge cases with callback ordering conflicts</p>
+</section>
+</section>
+<section id="auto-enable-logic" class="level3">
+<h3 class="anchored" data-anchor-id="auto-enable-logic">Auto-Enable Logic</h3>
+<p>For convenience, SwanLab will auto-enable if you specify a project without setting <code>use_swanlab</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb63"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb63-1"><a href="#cb63-1" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span>
+<span id="cb63-2"><a href="#cb63-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb63-3"><a href="#cb63-3" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb63-4"><a href="#cb63-4" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="distributed-training-detection" class="level3">
+<h3 class="anchored" data-anchor-id="distributed-training-detection">Distributed Training Detection</h3>
+<p>In distributed training scenarios (multi-GPU), the plugin automatically detects and reports:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb64"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb64-1"><a href="#cb64-1" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb64-2"><a href="#cb64-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span>
+<span id="cb64-3"><a href="#cb64-3" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_mode</span><span class="kw">:</span><span class="at"> cloud</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>Why Only Rank 0</strong>:
+- Avoids duplicate experiment runs
+- Reduces network/cloud API overhead on worker ranks
+- Prevents race conditions in metric logging</p>
+</section>
+<section id="authentication" class="level3">
+<h3 class="anchored" data-anchor-id="authentication">Authentication</h3>
+</section>
+<section id="method-1-environment-variable-recommended" class="level3">
+<h3 class="anchored" data-anchor-id="method-1-environment-variable-recommended">Method 1: Environment Variable (Recommended)</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb65"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb65-1"><a href="#cb65-1" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">SWANLAB_API_KEY</span><span class="op">=</span>your-api-key-here</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="method-2-login-command" class="level3">
+<h3 class="anchored" data-anchor-id="method-2-login-command">Method 2: Login Command</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb66"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb66-1"><a href="#cb66-1" aria-hidden="true" tabindex="-1"></a><span class="ex">swanlab</span> login</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="method-3-config-file" class="level3">
+<h3 class="anchored" data-anchor-id="method-3-config-file">Method 3: Config File</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb67"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb67-1"><a href="#cb67-1" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_api_key</span><span class="kw">:</span><span class="at"> your-api-key-here</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="what-gets-logged" class="level3">
+<h3 class="anchored" data-anchor-id="what-gets-logged">What Gets Logged?</h3>
+</section>
+<section id="automatically-logged-metrics" class="level3">
+<h3 class="anchored" data-anchor-id="automatically-logged-metrics">Automatically Logged Metrics</h3>
+<ul>
+<li>Training loss</li>
+<li>Learning rate</li>
+<li>Gradient norm</li>
+<li>Training steps</li>
+<li>Epoch progress</li>
+</ul>
+</section>
+<section id="automatically-logged-config" class="level3">
+<h3 class="anchored" data-anchor-id="automatically-logged-config">Automatically Logged Config</h3>
+<ul>
+<li>Model configuration (base_model, model_type)</li>
+<li>Training hyperparameters (learning_rate, batch_size, etc.)</li>
+<li>Optimizer settings</li>
+<li>Parallelization settings (FSDP, DeepSpeed, Context Parallel)</li>
+<li>Axolotl configuration file</li>
+<li>DeepSpeed configuration (if used)</li>
+</ul>
+</section>
+<section id="viewing-your-experiments" class="level3">
+<h3 class="anchored" data-anchor-id="viewing-your-experiments">Viewing Your Experiments</h3>
+</section>
+<section id="cloud-mode" class="level3">
+<h3 class="anchored" data-anchor-id="cloud-mode">Cloud Mode</h3>
+<p>Visit <a href="https://swanlab.cn">https://swanlab.cn</a> and navigate to your project to view:
+- Real-time training metrics
+- Hyperparameter comparison
+- System resource usage
+- Configuration files</p>
+</section>
+<section id="local-mode-1" class="level3">
+<h3 class="anchored" data-anchor-id="local-mode-1">Local Mode</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb68"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb68-1"><a href="#cb68-1" aria-hidden="true" tabindex="-1"></a><span class="ex">swanlab</span> watch ./swanlog</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="integration-with-existing-tools" class="level3">
+<h3 class="anchored" data-anchor-id="integration-with-existing-tools">Integration with Existing Tools</h3>
+<p>SwanLab can work alongside other tracking tools:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb69"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb69-1"><a href="#cb69-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb69-2"><a href="#cb69-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.swanlab.SwanLabPlugin</span></span>
+<span id="cb69-3"><a href="#cb69-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb69-4"><a href="#cb69-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb69-5"><a href="#cb69-5" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span>
+<span id="cb69-6"><a href="#cb69-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb69-7"><a href="#cb69-7" aria-hidden="true" tabindex="-1"></a><span class="fu">use_wandb</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb69-8"><a href="#cb69-8" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_project</span><span class="kw">:</span><span class="at"> my-project</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="troubleshooting-2" class="level3">
+<h3 class="anchored" data-anchor-id="troubleshooting-2">Troubleshooting</h3>
+</section>
+<section id="configuration-errors" class="level3">
+<h3 class="anchored" data-anchor-id="configuration-errors">Configuration Errors</h3>
+<section id="error-swanlab-enabled-but-swanlab_project-is-not-set" class="level4">
+<h4 class="anchored" data-anchor-id="error-swanlab-enabled-but-swanlab_project-is-not-set">Error: “SwanLab enabled but ‘swanlab_project’ is not set”</h4>
+<p><strong>Cause</strong>: You enabled SwanLab (<code>use_swanlab: true</code>) but forgot to specify a project name.</p>
+<p><strong>Solution</strong>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb70"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb70-1"><a href="#cb70-1" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb70-2"><a href="#cb70-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span><span class="co">  # Add this line</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="error-invalid-swanlab_mode-xxx" class="level4">
+<h4 class="anchored" data-anchor-id="error-invalid-swanlab_mode-xxx">Error: “Invalid swanlab_mode: ‘xxx’”</h4>
+<p><strong>Cause</strong>: You provided an invalid mode value.</p>
+<p><strong>Solution</strong>: Use one of the valid modes:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb71"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb71-1"><a href="#cb71-1" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_mode</span><span class="kw">:</span><span class="at"> cloud</span><span class="co">     # or: local, offline, disabled</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="error-swanlab_project-cannot-be-an-empty-string" class="level4">
+<h4 class="anchored" data-anchor-id="error-swanlab_project-cannot-be-an-empty-string">Error: “swanlab_project cannot be an empty string”</h4>
+<p><strong>Cause</strong>: You set <code>swanlab_project: ""</code> (empty string).</p>
+<p><strong>Solution</strong>: Either provide a valid name or remove the field:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb72"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb72-1"><a href="#cb72-1" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+</section>
+<section id="import-errors" class="level3">
+<h3 class="anchored" data-anchor-id="import-errors">Import Errors</h3>
+<section id="error-swanlab-is-not-installed" class="level4">
+<h4 class="anchored" data-anchor-id="error-swanlab-is-not-installed">Error: “SwanLab is not installed”</h4>
+<p><strong>Cause</strong>: SwanLab package is not installed in your environment.</p>
+<p><strong>Solution</strong>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb73"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb73-1"><a href="#cb73-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install swanlab</span>
+<span id="cb73-2"><a href="#cb73-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install swanlab<span class="op">&gt;</span>=0.3.0</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+</section>
+<section id="performance-issues" class="level3">
+<h3 class="anchored" data-anchor-id="performance-issues">Performance Issues</h3>
+<section id="warning-multiple-logging-tools-enabled" class="level4">
+<h4 class="anchored" data-anchor-id="warning-multiple-logging-tools-enabled">Warning: “Multiple logging tools enabled”</h4>
+<p><strong>Cause</strong>: You have multiple experiment tracking tools enabled (e.g., SwanLab + WandB + MLflow).</p>
+<p><strong>Impact</strong>: ~1-2% performance overhead per logger, cumulative.</p>
+<p><strong>Solution</strong>: For production training, disable all but one logger:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb74"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb74-1"><a href="#cb74-1" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb74-2"><a href="#cb74-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span></span>
+<span id="cb74-3"><a href="#cb74-3" aria-hidden="true" tabindex="-1"></a><span class="fu">use_wandb</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co">      # Disable others</span></span>
+<span id="cb74-4"><a href="#cb74-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_mlflow</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb74-5"><a href="#cb74-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb74-6"><a href="#cb74-6" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb74-7"><a href="#cb74-7" aria-hidden="true" tabindex="-1"></a><span class="fu">use_wandb</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb74-8"><a href="#cb74-8" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_project</span><span class="kw">:</span><span class="at"> my-project</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>Exception</strong>: Multiple loggers are acceptable for:
+- Short comparison runs (&lt; 100 steps)
+- Migration testing between logging tools
+- Debugging logger-specific issues</p>
+</section>
+</section>
+<section id="distributed-training-issues" class="level3">
+<h3 class="anchored" data-anchor-id="distributed-training-issues">Distributed Training Issues</h3>
+<section id="swanlab-creates-duplicate-runs-in-multi-gpu-training" class="level4">
+<h4 class="anchored" data-anchor-id="swanlab-creates-duplicate-runs-in-multi-gpu-training">SwanLab creates duplicate runs in multi-GPU training</h4>
+<p><strong>Cause</strong>: All ranks are initializing SwanLab instead of just rank 0.</p>
+<p><strong>Expected Behavior</strong>: The plugin automatically ensures only rank 0 initializes SwanLab. You should see:</p>
+<pre class="text"><code>Info: Distributed training detected (world_size=4)
+Info: Only rank 0 will initialize SwanLab
+Info: Other ranks will skip SwanLab to avoid conflicts</code></pre>
+<p><strong>If you see duplicates</strong>:
+1. Check your plugin is loaded correctly
+2. Verify you’re using the latest SwanLab integration code
+3. Check logs for initialization messages on all ranks</p>
+</section>
+</section>
+<section id="swanlab-not-logging-metrics" class="level3">
+<h3 class="anchored" data-anchor-id="swanlab-not-logging-metrics">SwanLab not logging metrics</h3>
+<p><strong>Solution</strong>: Ensure SwanLab is initialized before training starts. The plugin automatically handles this in <code>pre_model_load</code>.</p>
+</section>
+<section id="api-key-errors" class="level3">
+<h3 class="anchored" data-anchor-id="api-key-errors">API Key errors</h3>
+<p><strong>Solution</strong>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb76"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb76-1"><a href="#cb76-1" aria-hidden="true" tabindex="-1"></a><span class="bu">echo</span> <span class="va">$SWANLAB_API_KEY</span></span>
+<span id="cb76-2"><a href="#cb76-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb76-3"><a href="#cb76-3" aria-hidden="true" tabindex="-1"></a><span class="ex">swanlab</span> login</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="cloud-sync-issues" class="level3">
+<h3 class="anchored" data-anchor-id="cloud-sync-issues">Cloud sync issues</h3>
+<p><strong>Solution</strong>: Use <code>offline</code> mode and sync later:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb77"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb77-1"><a href="#cb77-1" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_mode</span><span class="kw">:</span><span class="at"> offline</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Then sync when ready:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb78"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb78-1"><a href="#cb78-1" aria-hidden="true" tabindex="-1"></a><span class="ex">swanlab</span> sync ./swanlog</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="plugin-not-loaded" class="level3">
+<h3 class="anchored" data-anchor-id="plugin-not-loaded">Plugin not loaded</h3>
+<p><strong>Solution</strong>: Verify plugin path in config:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb79"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb79-1"><a href="#cb79-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb79-2"><a href="#cb79-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.swanlab.SwanLabPlugin</span><span class="co">  # Correct path</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="lark-notification-issues" class="level3">
+<h3 class="anchored" data-anchor-id="lark-notification-issues">Lark Notification Issues</h3>
+<section id="error-failed-to-import-swanlab-lark-plugin" class="level4">
+<h4 class="anchored" data-anchor-id="error-failed-to-import-swanlab-lark-plugin">Error: “Failed to import SwanLab Lark plugin”</h4>
+<p><strong>Cause</strong>: Your SwanLab version doesn’t include the Lark plugin (requires SwanLab &gt;= 0.3.0).</p>
+<p><strong>Solution</strong>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb80"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb80-1"><a href="#cb80-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">--upgrade</span> swanlab</span>
+<span id="cb80-2"><a href="#cb80-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-3"><a href="#cb80-3" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="st">'swanlab&gt;=0.3.0'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="warning-lark-webhook-has-no-secret-configured" class="level4">
+<h4 class="anchored" data-anchor-id="warning-lark-webhook-has-no-secret-configured">Warning: “Lark webhook has no secret configured”</h4>
+<p><strong>Cause</strong>: You provided <code>swanlab_lark_webhook_url</code> but no <code>swanlab_lark_secret</code>.</p>
+<p><strong>Impact</strong>: Lark notifications will work, but without HMAC authentication (security risk).</p>
+<p><strong>Solution</strong>: Add HMAC secret for production use:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb81"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb81-1"><a href="#cb81-1" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_lark_webhook_url</span><span class="kw">:</span><span class="at"> https://open.feishu.cn/open-apis/bot/v2/hook/xxx</span></span>
+<span id="cb81-2"><a href="#cb81-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_lark_secret</span><span class="kw">:</span><span class="at"> your-webhook-secret</span><span class="co">  # Add this line</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>When it’s OK to skip secret</strong>:
+- Local development and testing
+- Internal networks with restricted access
+- Non-sensitive training experiments</p>
+<p><strong>When secret is required</strong>:
+- Production training jobs
+- Training with proprietary data
+- Multi-team shared Lark groups</p>
+</section>
+<section id="error-failed-to-register-lark-callback" class="level4">
+<h4 class="anchored" data-anchor-id="error-failed-to-register-lark-callback">Error: “Failed to register Lark callback”</h4>
+<p><strong>Cause</strong>: Invalid webhook URL or network connectivity issues.</p>
+<p><strong>Diagnostic steps</strong>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb82"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb82-1"><a href="#cb82-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-X</span> POST <span class="st">"YOUR_WEBHOOK_URL"</span> <span class="dt">\</span></span>
+<span id="cb82-2"><a href="#cb82-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">-H</span> <span class="st">'Content-Type: application/json'</span> <span class="dt">\</span></span>
+<span id="cb82-3"><a href="#cb82-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">-d</span> <span class="st">'{"msg_type":"text","content":{"text":"Test from Axolotl"}}'</span></span>
+<span id="cb82-4"><a href="#cb82-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-5"><a href="#cb82-5" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> show swanlab</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>Solution</strong>:
+1. Verify webhook URL is correct (copy from Lark bot settings)
+2. Check network connectivity to Lark API
+3. Ensure webhook is not expired (Lark webhooks can expire)
+4. Regenerate webhook URL in Lark bot settings if needed</p>
+</section>
+<section id="lark-notifications-not-received" class="level4">
+<h4 class="anchored" data-anchor-id="lark-notifications-not-received">Lark notifications not received</h4>
+<p><strong>Cause</strong>: Multiple possible causes.</p>
+<p><strong>Diagnostic checklist</strong>:</p>
+<ol type="1">
+<li><p><strong>Check training logs</strong> for Lark registration confirmation:</p>
+<pre class="text"><code># Expected log message (rank 0 only):
+INFO: Registered Lark notification callback with HMAC authentication</code></pre></li>
+<li><p><strong>Verify webhook in Lark</strong>: Test webhook manually (see above)</p></li>
+<li><p><strong>Check distributed training</strong>: Only rank 0 sends notifications</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb84"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb84-1"><a href="#cb84-1" aria-hidden="true" tabindex="-1"></a><span class="co"># If running multi-GPU, check rank 0 logs specifically</span></span>
+<span id="cb84-2"><a href="#cb84-2" aria-hidden="true" tabindex="-1"></a><span class="fu">grep</span> <span class="st">"Registered Lark"</span> logs/rank_0.log</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p><strong>Verify SwanLab is initialized</strong>: Lark callback needs SwanLab to be running</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb85"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb85-1"><a href="#cb85-1" aria-hidden="true" tabindex="-1"></a><span class="fu">use_swanlab</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">  # Must be enabled</span></span>
+<span id="cb85-2"><a href="#cb85-2" aria-hidden="true" tabindex="-1"></a><span class="fu">swanlab_project</span><span class="kw">:</span><span class="at"> my-project</span><span class="co">  # Must be set</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p><strong>Check Lark bot permissions</strong>: Ensure bot is added to the target group chat</p></li>
+</ol>
+</section>
+<section id="duplicate-lark-notifications-in-multi-gpu-training" class="level4">
+<h4 class="anchored" data-anchor-id="duplicate-lark-notifications-in-multi-gpu-training">Duplicate Lark notifications in multi-GPU training</h4>
+<p><strong>Expected Behavior</strong>: Should NOT happen - only rank 0 sends notifications.</p>
+<p><strong>If you see duplicates</strong>:
+1. Check that all GPUs are using the same config file
+2. Verify plugin is loaded correctly on all ranks
+3. Check logs for unexpected Lark initialization on non-zero ranks
+4. Ensure <code>RANK</code> or <code>LOCAL_RANK</code> environment variables are set correctly</p>
+<p><strong>Solution</strong>: This is a bug if it occurs. Report with:
+- Full training command
+- Logs from all ranks
+- Config file</p>
+</section>
+</section>
+<section id="comparison-swanlab-vs-wandb" class="level3">
+<h3 class="anchored" data-anchor-id="comparison-swanlab-vs-wandb">Comparison: SwanLab vs WandB</h3>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Feature</th>
+<th>SwanLab</th>
+<th>WandB</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Open Source</td>
+<td>✅ Yes</td>
+<td>❌ No</td>
+</tr>
+<tr class="even">
+<td>Self-Hosting</td>
+<td>✅ Easy</td>
+<td>⚠️ Complex</td>
+</tr>
+<tr class="odd">
+<td>Free Tier</td>
+<td>✅ Generous</td>
+<td>⚠️ Limited</td>
+</tr>
+<tr class="even">
+<td>Chinese Support</td>
+<td>✅ Native</td>
+<td>⚠️ Limited</td>
+</tr>
+<tr class="odd">
+<td>Offline Mode</td>
+<td>✅ Full support</td>
+<td>✅ Supported</td>
+</tr>
+<tr class="even">
+<td>Integration</td>
+<td>🆕 New</td>
+<td>✅ Mature</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="advanced-usage" class="level3">
+<h3 class="anchored" data-anchor-id="advanced-usage">Advanced Usage</h3>
+</section>
+<section id="custom-logging" class="level3">
+<h3 class="anchored" data-anchor-id="custom-logging">Custom Logging</h3>
+<p>You can add custom metrics in your callbacks:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb86"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb86-1"><a href="#cb86-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> swanlab</span>
+<span id="cb86-2"><a href="#cb86-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb86-3"><a href="#cb86-3" aria-hidden="true" tabindex="-1"></a>swanlab.log({</span>
+<span id="cb86-4"><a href="#cb86-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">"custom_metric"</span>: value,</span>
+<span id="cb86-5"><a href="#cb86-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">"epoch"</span>: epoch_num</span>
+<span id="cb86-6"><a href="#cb86-6" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="experiment-comparison" class="level3">
+<h3 class="anchored" data-anchor-id="experiment-comparison">Experiment Comparison</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb87"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb87-1"><a href="#cb87-1" aria-hidden="true" tabindex="-1"></a><span class="ex">swanlab</span> compare run1 run2 run3</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="support" class="level3">
+<h3 class="anchored" data-anchor-id="support">Support</h3>
+<ul>
+<li><strong>Documentation</strong>: <a href="https://docs.swanlab.cn">https://docs.swanlab.cn</a></li>
+<li><strong>GitHub</strong>: <a href="https://github.com/SwanHubX/SwanLab">https://github.com/SwanHubX/SwanLab</a></li>
+<li><strong>Issues</strong>: Report bugs at <a href="https://github.com/SwanHubX/SwanLab/issues">GitHub Issues</a></li>
+</ul>
+</section>
+<section id="license" class="level3">
+<h3 class="anchored" data-anchor-id="license">License</h3>
+<p>This integration follows the Axolotl Community License Agreement.</p>
+</section>
+<section id="acknowledgements" class="level3">
+<h3 class="anchored" data-anchor-id="acknowledgements">Acknowledgements</h3>
+<p>This integration is built on top of:
+- <a href="https://github.com/SwanHubX/SwanLab">SwanLab</a> - Experiment tracking tool
+- <a href="https://github.com/huggingface/transformers">Transformers</a> - SwanLabCallback
+- <a href="https://github.com/axolotl-ai-cloud/axolotl">Axolotl</a> - Training framework</p>
+<p>Please see reference <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/swanlab">here</a></p>
+</section>
+</section>
 <section id="adding-a-new-integration" class="level2">
 <h2 class="anchored" data-anchor-id="adding-a-new-integration">Adding a new integration</h2>
 <p>Plugins can be used to customize the behavior of the training pipeline through <a href="https://en.wikipedia.org/wiki/Hooking">hooks</a>. See <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/integrations/base.py"><code>axolotl.integrations.BasePlugin</code></a> for the possible hooks.</p>
@@ -1375,10 +2690,10 @@ Warning
 </div>
 <div class="callout-body-container callout-body">
 <p>If you could not load your integration, please ensure you are pip installing in editable mode.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb24"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">-e</span> .</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb88"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb88-1"><a href="#cb88-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">-e</span> .</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>and correctly spelled the integration name in the config file.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb25"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
-<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.your_integration_name.YourIntegrationPlugin</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb89"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb89-1"><a href="#cb89-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb89-2"><a href="#cb89-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.your_integration_name.YourIntegrationPlugin</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </div>
 <div class="callout callout-style-default callout-note callout-titled">
