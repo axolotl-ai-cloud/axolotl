@@ -13,7 +13,11 @@ LOG = get_logger(__name__)
 
 try:
     from torch.nn.attention.flex_attention import BlockMask
-    from transformers.integrations.flex_attention import compile_friendly_flex_attention, repeat_kv
+    from transformers.integrations.flex_attention import (
+        compile_friendly_flex_attention,
+        repeat_kv,
+    )
+
     FLEX_ATTENTION_AVAILABLE = True
 except ImportError:
     FLEX_ATTENTION_AVAILABLE = False
@@ -35,10 +39,13 @@ def patch_scaled_softmax_attention(
     _ssmax_config["ssmax_b"] = bias
 
     from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
     if "flex_attention" in ALL_ATTENTION_FUNCTIONS:
         _ssmax_config["original_flex_fn"] = ALL_ATTENTION_FUNCTIONS["flex_attention"]
         ALL_ATTENTION_FUNCTIONS["flex_attention"] = ssmax_flex_attention_forward
-        LOG.info(f"Patched flex_attention with SSMax (s={scaling_factor_init}, b={bias})")
+        LOG.info(
+            f"Patched flex_attention with SSMax (s={scaling_factor_init}, b={bias})"
+        )
     else:
         LOG.warning("flex_attention not found. Ensure flex_attention: true is set.")
 
@@ -63,7 +70,7 @@ def ssmax_flex_attention_forward(
     block_mask = attention_mask if isinstance(attention_mask, BlockMask) else None
     score_mask = None if block_mask else attention_mask
     if score_mask is not None:
-        score_mask = score_mask[:, :, :, :key.shape[-2]]
+        score_mask = score_mask[:, :, :, : key.shape[-2]]
 
     def score_mod(score, batch_idx, head_idx, q_idx, kv_idx):
         n = (q_idx + 1).float()
@@ -83,7 +90,9 @@ def ssmax_flex_attention_forward(
 
     return_lse = query.device.type != "cpu"
     flex_output = compile_friendly_flex_attention(
-        query, key, value,
+        query,
+        key,
+        value,
         score_mod=score_mod,
         block_mask=block_mask,
         enable_gqa=enable_gqa,
@@ -106,6 +115,7 @@ def unpatch_scaled_softmax_attention():
     """Restore the original FlexAttention function."""
     global _ssmax_config
     from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
     if "original_flex_fn" in _ssmax_config:
         ALL_ATTENTION_FUNCTIONS["flex_attention"] = _ssmax_config["original_flex_fn"]
         _ssmax_config.clear()
