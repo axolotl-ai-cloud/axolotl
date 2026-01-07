@@ -203,13 +203,9 @@ class AttentionValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_scaling_softmax_requires_flash(cls, data):
-        if data.get("scaling_softmax"):
-            if not data.get("flash_attention"):
-                raise ValueError(
-                    "scaling_softmax requires flash_attention: true "
-                    "SSMax can only be applied with Flash Attention"
-                )
+    def check_scaling_softmax_requires_flex(cls, data):
+        if data.get("scaling_softmax") and not data.get("flex_attention"):
+            raise ValueError("scaling_softmax requires flex_attention: true")
         return data
 
 
