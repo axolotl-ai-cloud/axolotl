@@ -68,7 +68,7 @@ RUN case "$PYTORCH_VERSION" in \
                     WHL_FILE="flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_aarch64.whl"; \
                     WHL_VERSION="v0.6.4"; \
                 else \
-                    echo "Unsupported architecture: $TARGETPLATFORM"; exit 1; \
+                    echo "Unsupported architecture: $TARGETARCH"; exit 1; \
                 fi \
                 wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/${WHL_VERSION}/${WHL_FILE}; \
                 pip3 install --no-cache-dir ${WHL_FILE}; \
@@ -81,7 +81,7 @@ RUN case "$PYTORCH_VERSION" in \
                     WHL_FILE="flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_aarch64.whl"; \
                     WHL_VERSION="v0.6.4"; \
                 else \
-                    echo "Unsupported architecture: $TARGETPLATFORM"; exit 1; \
+                    echo "Unsupported architecture: $TARGETARCH"; exit 1; \
                 fi \
                 wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/${WHL_VERSION}/${WHL_FILE}; \
                 pip3 install --no-cache-dir ${WHL_FILE}; \
