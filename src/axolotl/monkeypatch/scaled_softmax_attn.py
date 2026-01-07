@@ -1,6 +1,6 @@
 """
 Scaled Softmax (SSMax) attention patch using FlexAttention.
-SSMax: softmax(scores * s * log(n)) where n is the position index
+SSMax:  softmax(scores * s * log(n) + b) where n is the position index
 Ref: https://arxiv.org/abs/2501.19399
 """
 
@@ -33,7 +33,7 @@ def patch_scaled_softmax_attention(
     global _ssmax_config
 
     if not FLEX_ATTENTION_AVAILABLE:
-        raise RuntimeError("SSMax requires FlexAttentionn.")
+        raise RuntimeError("SSMax requires FlexAttention.")
 
     _ssmax_config["ssmax_s"] = scaling_factor_init
     _ssmax_config["ssmax_b"] = bias
@@ -47,7 +47,7 @@ def patch_scaled_softmax_attention(
             f"Patched flex_attention with SSMax (s={scaling_factor_init}, b={bias})"
         )
     else:
-        LOG.warning("flex_attention not found. Ensure flex_attention: true is set.")
+        LOG.warning("flex_attention not found.  Ensure flex_attention:  true is set.")
 
 
 def ssmax_flex_attention_forward(
@@ -60,7 +60,7 @@ def ssmax_flex_attention_forward(
     softcap: float | None = None,
     **kwargs,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
-    """FlexAttention forward with SSMax: score * s * log(n + 1) + b."""
+    """FlexAttention forward with SSMax:  score * s * log(n + 1) + b."""
     if kwargs.get("dropout", 0.0) > 0:
         raise ValueError("flex_attention does not support dropout")
 
@@ -73,13 +73,20 @@ def ssmax_flex_attention_forward(
         score_mask = score_mask[:, :, :, : key.shape[-2]]
 
     def score_mod(score, batch_idx, head_idx, q_idx, kv_idx):
+        # Position-dependent scaling:  use (q_idx + 1) as the position
+        # This is the correct interpretation from the paper
         n = (q_idx + 1).float()
         ssmax_scale = ssmax_s * torch.log(n) + ssmax_b
+
+        # Apply scaling to the score
         score = score * ssmax_scale
+
         if softcap is not None:
             score = softcap * torch.tanh(score / softcap)
+
         if score_mask is not None:
             score = score + score_mask[batch_idx][0][q_idx][kv_idx]
+
         return score
 
     enable_gqa = True

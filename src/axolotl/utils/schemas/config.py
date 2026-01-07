@@ -631,6 +631,12 @@ class AxolotlInputConfig(
             "description": "Scaling factor for SSMax attention. Default is 0.43"
         },
     )
+    scaling_softmax_bias: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Bias for SSMax attention. Default is 0.0. Note: The paper recommends bias=0 for better length generalization."
+        },
+    )
 
     unsloth_cross_entropy_loss: bool | None = None
     unsloth_lora_mlp: bool | None = None

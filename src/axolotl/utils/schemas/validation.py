@@ -205,7 +205,11 @@ class AttentionValidationMixin:
     @classmethod
     def check_scaling_softmax_requires_flex(cls, data):
         if data.get("scaling_softmax") and not data.get("flex_attention"):
-            raise ValueError("scaling_softmax requires flex_attention: true")
+            raise ValueError(
+                "scaling_softmax requires flex_attention: true\n"
+                "Add 'flex_attention: true' to your config file.\n"
+                "Note: FlexAttention requires PyTorch >= 2.5.0 and Transformers >= 4.48.0"
+            )
         return data
 
 
