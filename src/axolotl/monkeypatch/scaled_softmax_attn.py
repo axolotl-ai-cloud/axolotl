@@ -1,87 +1,112 @@
 """
-Scaled Softmax (SSMax) attention patch.
-SSMax: softmax(scores * log(n))
+Scaled Softmax (SSMax) attention patch using FlexAttention.
+SSMax: softmax(scores * s * log(n)) where n is the position index
 Ref: https://arxiv.org/abs/2501.19399
 """
 
-import math
-
 import torch
-import torch.nn as nn
 from transformers import PreTrainedModel
-from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-_original_flash_fn = None
-_scale_parameters = {}
+try:
+    from torch.nn.attention.flex_attention import BlockMask
+    from transformers.integrations.flex_attention import compile_friendly_flex_attention, repeat_kv
+    FLEX_ATTENTION_AVAILABLE = True
+except ImportError:
+    FLEX_ATTENTION_AVAILABLE = False
+    BlockMask = None
+
+_ssmax_config = {}
 
 
 def patch_scaled_softmax_attention(
-    scaling_factor_init: float = 0.168, model: PreTrainedModel = None
+    scaling_factor_init: float = 0.43, bias: float = 0.0, model: PreTrainedModel = None
 ):
-    """
-    Patch Flash Attention to apply Scaled Softmax (SSMax).
-    """
-    global _original_flash_fn, _scale_parameters
+    """Patch attention to apply SSMax via FlexAttention score_mod."""
+    global _ssmax_config
 
-    if model is None:
-        raise ValueError("Model must be provided to register learnable parameters")
+    if not FLEX_ATTENTION_AVAILABLE:
+        raise RuntimeError("SSMax requires FlexAttentionn.")
 
-    for name, module in model.named_modules():
-        is_self_attn = hasattr(module, "q_proj") or hasattr(module, "qkv_proj")
-        is_attention_named = "self_attn" in name.lower()
+    _ssmax_config["ssmax_s"] = scaling_factor_init
+    _ssmax_config["ssmax_b"] = bias
 
-        if is_attention_named and is_self_attn:
-            scale_param = nn.Parameter(torch.tensor(scaling_factor_init))
-            module.register_parameter("ssmax_scale", scale_param)
-            _scale_parameters[id(module)] = scale_param
-            LOG.info(f"Registered learnable SSMax scale for {name}")
-
-    if "flash_attention_2" in ALL_ATTENTION_FUNCTIONS:
-        _original_flash_fn = ALL_ATTENTION_FUNCTIONS["flash_attention_2"]
-
-        def flash_with_ssmax(
-            module, query, key, value, attention_mask, scaling=None, **kw
-        ):
-            if scaling is None:
-                scaling = 1.0 / math.sqrt(query.size(-1))
-
-            scale_param = getattr(module, "ssmax_scale", None)
-            if scale_param is not None:
-                seq_len = query.size(2)
-                ssmax_factor = scale_param * math.log(max(seq_len, 2))
-                modified_scaling = scaling * ssmax_factor
-            else:
-                modified_scaling = scaling
-
-            return _original_flash_fn(
-                module,
-                query,
-                key,
-                value,
-                attention_mask,
-                scaling=modified_scaling,
-                **kw,
-            )
-
-        ALL_ATTENTION_FUNCTIONS["flash_attention_2"] = flash_with_ssmax
-        LOG.info("Patched flash_attention_2 with learnable SSMax")
+    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+    if "flex_attention" in ALL_ATTENTION_FUNCTIONS:
+        _ssmax_config["original_flex_fn"] = ALL_ATTENTION_FUNCTIONS["flex_attention"]
+        ALL_ATTENTION_FUNCTIONS["flex_attention"] = ssmax_flex_attention_forward
+        LOG.info(f"Patched flex_attention with SSMax (s={scaling_factor_init}, b={bias})")
     else:
-        LOG.warning(
-            "SSMax requires flash_attention_2 which is not available. "
-            "Please enable flash_attention: true in your config."
-        )
+        LOG.warning("flex_attention not found. Ensure flex_attention: true is set.")
+
+
+def ssmax_flex_attention_forward(
+    module: torch.nn.Module,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attention_mask,
+    scaling: float | None = None,
+    softcap: float | None = None,
+    **kwargs,
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """FlexAttention forward with SSMax: score * s * log(n + 1) + b."""
+    if kwargs.get("dropout", 0.0) > 0:
+        raise ValueError("flex_attention does not support dropout")
+
+    ssmax_s = _ssmax_config.get("ssmax_s", 0.43)
+    ssmax_b = _ssmax_config.get("ssmax_b", 0.0)
+
+    block_mask = attention_mask if isinstance(attention_mask, BlockMask) else None
+    score_mask = None if block_mask else attention_mask
+    if score_mask is not None:
+        score_mask = score_mask[:, :, :, :key.shape[-2]]
+
+    def score_mod(score, batch_idx, head_idx, q_idx, kv_idx):
+        n = (q_idx + 1).float()
+        ssmax_scale = ssmax_s * torch.log(n) + ssmax_b
+        score = score * ssmax_scale
+        if softcap is not None:
+            score = softcap * torch.tanh(score / softcap)
+        if score_mask is not None:
+            score = score + score_mask[batch_idx][0][q_idx][kv_idx]
+        return score
+
+    enable_gqa = True
+    if (query.shape[1] & (query.shape[1] - 1)) != 0:
+        key = repeat_kv(key, query.shape[1] // key.shape[1])
+        value = repeat_kv(value, query.shape[1] // value.shape[1])
+        enable_gqa = False
+
+    return_lse = query.device.type != "cpu"
+    flex_output = compile_friendly_flex_attention(
+        query, key, value,
+        score_mod=score_mod,
+        block_mask=block_mask,
+        enable_gqa=enable_gqa,
+        scale=scaling,
+        kernel_options=kwargs.get("kernel_options"),
+        return_lse=return_lse,
+        training=module.training,
+    )
+
+    if return_lse:
+        attention_output, lse = flex_output
+        lse = lse.to(value.dtype)
+    else:
+        attention_output, lse = flex_output, None
+
+    return attention_output.transpose(1, 2).contiguous(), lse
 
 
 def unpatch_scaled_softmax_attention():
-    """Restore the original Flash Attention function."""
-    global _original_flash_fn
+    """Restore the original FlexAttention function."""
+    global _ssmax_config
     from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
-
-    if _original_flash_fn:
-        ALL_ATTENTION_FUNCTIONS["flash_attention_2"] = _original_flash_fn
-        _original_flash_fn = None
-        LOG.info("Unpatched flash_attention_2, restored original")
+    if "original_flex_fn" in _ssmax_config:
+        ALL_ATTENTION_FUNCTIONS["flex_attention"] = _ssmax_config["original_flex_fn"]
+        _ssmax_config.clear()
+        LOG.info("Unpatched flex_attention, restored original")
