@@ -73,12 +73,10 @@ def ssmax_flex_attention_forward(
         score_mask = score_mask[:, :, :, : key.shape[-2]]
 
     def score_mod(score, batch_idx, head_idx, q_idx, kv_idx):
-        # Position-dependent scaling:  use (q_idx + 1) as the position
-        # This is the correct interpretation from the paper
+        # Position-dependent scaling:  use (q_idx + 1)
         n = (q_idx + 1).float()
         ssmax_scale = ssmax_s * torch.log(n) + ssmax_b
 
-        # Apply scaling to the score
         score = score * ssmax_scale
 
         if softcap is not None:
