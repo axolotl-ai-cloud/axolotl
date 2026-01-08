@@ -60,23 +60,37 @@ def ssmax_flex_attention_forward(
     softcap: float | None = None,
     **kwargs,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
-    """FlexAttention forward with SSMax:  score * s * log(n + 1) + b."""
+    """FlexAttention forward with SSMax:  score * (s * log(n) + b)."""
+
     if kwargs.get("dropout", 0.0) > 0:
         raise ValueError("flex_attention does not support dropout")
 
     ssmax_s = _ssmax_config.get("ssmax_s", 0.43)
     ssmax_b = _ssmax_config.get("ssmax_b", 0.0)
 
+    position_ids = kwargs.get("position_ids", None)
+    position_ids_flat = position_ids.view(-1) if position_ids is not None else None
+
     block_mask = attention_mask if isinstance(attention_mask, BlockMask) else None
     score_mask = None if block_mask else attention_mask
+
     if score_mask is not None:
         score_mask = score_mask[:, :, :, : key.shape[-2]]
 
     def score_mod(score, batch_idx, head_idx, q_idx, kv_idx):
-        # Position-dependent scaling:  use (q_idx + 1)
-        n = (q_idx + 1).float()
-        ssmax_scale = ssmax_s * torch.log(n) + ssmax_b
+        """
+        Apply SSMax scaling:  score * (s * log(n) + b)
+        where n is the relative position within each packed sequence.
+        """
+        if position_ids_flat is not None:
+            relative_pos = position_ids_flat[q_idx]
+            n = (relative_pos + 1).float()
+        else:
+            n = (q_idx + 1).float()
 
+        n = torch.clamp(n, min=2.0)
+
+        ssmax_scale = ssmax_s * torch.log(n) + ssmax_b
         score = score * ssmax_scale
 
         if softcap is not None:
