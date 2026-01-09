@@ -435,64 +435,33 @@ enable_dft_loss: false  # or remove
 
 ## Testing
 
-DFT has comprehensive test coverage:
+DFT has comprehensive test coverage with 83 tests in a single consolidated file:
+[`tests/integrations/test_dft.py`](../../../../tests/integrations/test_dft.py)
 
 **Run all DFT tests**:
 ```bash
-pytest tests/integrations/test_dft_*.py -v
+pytest tests/integrations/test_dft.py -v
 ```
 
-**Test suites**:
-- `test_dft_packing.py` - Sequence packing compatibility (7 tests)
-- `test_dft_ddp.py` - Data parallelism (5 tests)
-- `test_dft_cp_compatibility.py` - Context parallelism (5 tests)
-- `test_dft_tensor_parallel.py` - Tensor parallelism (4 tests)
-- `test_dft_incompatibilities.py` - Incompatibility detection (6 tests)
-- `test_dft_compatibility.py` - Feature compatibility (9 tests)
-- `test_dft_multi_feature.py` - Multi-feature combinations (9 tests)
+**Tests are organized by feature area**:
+- Core functionality (8 tests)
+- Compatibility (7 tests)
+- Sequence packing (7 tests)
+- DDP (5 tests)
+- Context Parallelism (8 tests)
+- Tensor/Pipeline Parallelism (10 tests)
+- Channel Loss integration (7 tests)
+- Multi-feature combinations (9 tests)
+- Incompatibility detection (6 tests)
+- Chunked cross-entropy (additional coverage)
 
-**Total**: 45+ tests covering all compatibility claims
+**Total**: 83 tests covering all DFT functionality (81 passed, 2 skipped)
 
 ---
 
 ## References
 
-- **Full Compatibility Matrix**: [DFT_COMPATIBILITY.md](./DFT_COMPATIBILITY.md)
-- **Channel Loss Integration**: [CHANNEL_LOSS_INTEGRATION.md](./CHANNEL_LOSS_INTEGRATION.md)
 - **Compatibility Spec**: `specs/001-dft-compatibility-matrix/README.md`
+- **Implementation Spec**: `specs/002-dynamic-fine-tuning-implementation/README.md`
 - **Implementation**: `src/axolotl/integrations/dft/`
-
----
-
-## FAQ
-
-**Q: Does DFT have hyperparameters to tune?**
-
-A: No! DFT's weighting is fully automatic via `exp(-loss)`. The only optional parameter is `dft_chunk_size` for memory optimization with large vocabs.
-
-**Q: Can I use DFT with my existing config?**
-
-A: Probably yes! DFT is compatible with most features. Just add `enable_dft_loss: true` and check [DFT_COMPATIBILITY.md](./DFT_COMPATIBILITY.md) for incompatibilities.
-
-**Q: How much does DFT slow down training?**
-
-A: ~5-10% overhead compared to vanilla CE. The sample efficiency improvement often compensates for this.
-
-**Q: Should I use DFT or Liger FLCE for large vocab models?**
-
-A: See the [Decision Tree](./DFT_COMPATIBILITY.md#decision-tree-when-to-use-dft):
-- **Training quality priority**: DFT + chunked CE
-- **Speed/memory priority**: Liger FLCE
-- **Both**: Start with DFT, switch to Liger if speed is bottleneck
-
-**Q: Does DFT work with multi-GPU training?**
-
-A: Yes! DFT is verified with DDP, FSDP, Tensor Parallelism, and Context Parallelism.
-
-**Q: Can I use DFT for RLHF/GRPO?**
-
-A: Not tested. DFT is designed for SFT (supervised fine-tuning) with CE loss. ORPO has automatic fallback.
-
----
-
-**Last Updated**: 2026-01-06 (Phase 6: Documentation)
+- **Tests**: `tests/integrations/test_dft.py` (83 tests total)
