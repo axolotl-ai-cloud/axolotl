@@ -10,7 +10,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-import pytest
 import torch
 
 from axolotl.integrations.dft.patch import patch_compute_loss_for_dft
@@ -142,7 +141,7 @@ class TestDFTChannelLossIntegration:
 
         # Set some labels to -100 (ignore_index)
         labels[0, 3:6] = -100  # Ignore tokens 3-5 in first batch
-        labels[1, 7:] = -100   # Ignore tokens 7-9 in second batch
+        labels[1, 7:] = -100  # Ignore tokens 7-9 in second batch
 
         class DummyModel(torch.nn.Module):
             def forward(self, **kwargs):
@@ -348,6 +347,8 @@ class TestDFTChannelLossIntegration:
         )
 
         # Should return only loss (not tuple)
-        assert isinstance(result, torch.Tensor), "Should return tensor when return_outputs=False"
+        assert isinstance(result, torch.Tensor), (
+            "Should return tensor when return_outputs=False"
+        )
         assert result.ndim == 0, "Should return scalar loss"
         assert result.requires_grad, "Loss should have gradients"

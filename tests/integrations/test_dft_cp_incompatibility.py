@@ -31,10 +31,8 @@ Phase 3 of spec (DFT-aware CP optimization) addresses this by:
 NOTE: This test is marked as EXPECTED TO DEMONSTRATE INCOMPATIBILITY.
 """
 
-import torch
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch as mock_patch
 import pytest
+import torch
 
 
 class TestDFTContextParallelIncompatibility:
@@ -82,14 +80,18 @@ class TestDFTContextParallelIncompatibility:
 
         # Compute CE loss on each shard (what DFT patch does in CP mode)
         # Rank 0
-        shift_logits_r0 = logits_shard_rank0[:, :-1, :].contiguous().view(-1, vocab_size)
+        shift_logits_r0 = (
+            logits_shard_rank0[:, :-1, :].contiguous().view(-1, vocab_size)
+        )
         shift_labels_r0 = labels_shard_rank0[:, 1:].contiguous().view(-1)
         loss_rank0 = torch.nn.functional.cross_entropy(
             shift_logits_r0, shift_labels_r0, reduction="mean"
         )
 
         # Rank 1
-        shift_logits_r1 = logits_shard_rank1[:, :-1, :].contiguous().view(-1, vocab_size)
+        shift_logits_r1 = (
+            logits_shard_rank1[:, :-1, :].contiguous().view(-1, vocab_size)
+        )
         shift_labels_r1 = labels_shard_rank1[:, 1:].contiguous().view(-1)
         loss_rank1 = torch.nn.functional.cross_entropy(
             shift_logits_r1, shift_labels_r1, reduction="mean"

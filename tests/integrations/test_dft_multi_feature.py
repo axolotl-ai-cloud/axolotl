@@ -19,16 +19,17 @@ ARCHITECTURE NOTES:
 REFERENCE: specs/001-dft-compatibility-matrix/README.md
 """
 
-import pytest
-import torch
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
+import torch
+
 from src.axolotl.integrations.dft.dft_utils import (
+    apply_dft_weighting,
     compute_dft_loss,
     compute_dft_loss_with_intermediate,
     compute_per_token_cross_entropy,
-    apply_dft_weighting,
     reduce_token_loss,
 )
 from src.axolotl.integrations.dft.patch import patch_compute_loss_for_dft
@@ -300,7 +301,9 @@ class TestDFTChannelLossCombinations:
         batch_size, seq_len, vocab_size = 2, 16, 100
 
         # BF16 logits (common in mixed precision training)
-        logits = torch.randn(batch_size, seq_len, vocab_size).bfloat16().requires_grad_(True)
+        logits = (
+            torch.randn(batch_size, seq_len, vocab_size).bfloat16().requires_grad_(True)
+        )
         labels = torch.randint(0, vocab_size, (batch_size, seq_len))
 
         # Compute with intermediate outputs
@@ -409,7 +412,9 @@ class TestDFTContextParallelCombinations:
         pad_len = (divisor - (full_seq_len % divisor)) % divisor
         chunk_len = (full_seq_len + pad_len) // cp_size
 
-        logits_local = torch.randn(batch_size, chunk_len, vocab_size, requires_grad=True)
+        logits_local = torch.randn(
+            batch_size, chunk_len, vocab_size, requires_grad=True
+        )
 
         # Full labels with packing
         labels_full = torch.full((batch_size, full_seq_len), -100, dtype=torch.long)
@@ -429,6 +434,7 @@ class TestDFTContextParallelCombinations:
 
         # Mock distributed methods
         import torch.distributed as dist
+
         original_is_initialized = dist.is_initialized
         original_get_world_size = dist.get_world_size
         original_get_rank = dist.get_rank
@@ -447,9 +453,7 @@ class TestDFTContextParallelCombinations:
                 trainer=mock_trainer,
             )
 
-            loss = reduce_token_loss(
-                apply_dft_weighting(per_token_loss), valid_mask
-            )
+            loss = reduce_token_loss(apply_dft_weighting(per_token_loss), valid_mask)
 
             assert torch.isfinite(loss), "Loss should be finite"
             assert loss.item() > 0, "Loss should be positive"

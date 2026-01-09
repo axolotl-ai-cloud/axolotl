@@ -16,13 +16,14 @@ Based on Channel Loss CP compatibility implementation in:
 /home/scbjtfy/axolotl/worktrees/channel-loss/src/axolotl/integrations/channel_loss/compute_loss_patch.py
 """
 
-import torch
 from types import SimpleNamespace
+
 import pytest
+import torch
 
 from src.axolotl.integrations.dft.dft_utils import (
-    compute_per_token_cross_entropy,
     apply_dft_weighting,
+    compute_per_token_cross_entropy,
     reduce_token_loss,
 )
 
@@ -53,7 +54,9 @@ class TestDFTContextParallelCompatibility:
         chunk_len = (full_seq_len + pad_len) // cp_size
 
         # Create CP-local logits for rank 0
-        logits_local = torch.randn(batch_size, chunk_len, vocab_size, requires_grad=True)
+        logits_local = torch.randn(
+            batch_size, chunk_len, vocab_size, requires_grad=True
+        )
 
         # Full labels (as they appear in inputs before CP pre-hook)
         labels_full = torch.randint(0, vocab_size, (batch_size, full_seq_len))
@@ -63,6 +66,7 @@ class TestDFTContextParallelCompatibility:
 
         # Manually override CP group methods for testing
         import torch.distributed as dist
+
         original_is_initialized = dist.is_initialized
         original_get_world_size = dist.get_world_size
         original_get_rank = dist.get_rank
@@ -103,7 +107,6 @@ class TestDFTContextParallelCompatibility:
 
             # Verify per_token_loss shape
             # Expected: chunk_len tokens (non-last rank doesn't drop last token in shift)
-            expected_token_count = chunk_len  # All tokens in this shard
             # After shift, we should have per-token losses
             assert per_token_loss.numel() > 0, "Should have per-token losses"
 
@@ -133,7 +136,9 @@ class TestDFTContextParallelCompatibility:
         chunk_len = (full_seq_len + pad_len) // cp_size
 
         # Create CP-local logits for last rank
-        logits_local = torch.randn(batch_size, chunk_len, vocab_size, requires_grad=True)
+        logits_local = torch.randn(
+            batch_size, chunk_len, vocab_size, requires_grad=True
+        )
 
         # Full labels
         labels_full = torch.randint(0, vocab_size, (batch_size, full_seq_len))
@@ -142,6 +147,7 @@ class TestDFTContextParallelCompatibility:
         mock_trainer = MockTrainer(cp_size=cp_size, cp_rank=cp_rank)
 
         import torch.distributed as dist
+
         original_is_initialized = dist.is_initialized
         original_get_world_size = dist.get_world_size
         original_get_rank = dist.get_rank
@@ -191,13 +197,16 @@ class TestDFTContextParallelCompatibility:
 
         # Same logits for both approaches
         torch.manual_seed(42)
-        logits_local = torch.randn(batch_size, chunk_len, vocab_size, requires_grad=True)
+        logits_local = torch.randn(
+            batch_size, chunk_len, vocab_size, requires_grad=True
+        )
         labels_full = torch.randint(0, vocab_size, (batch_size, full_seq_len))
 
         # Mock trainer
         mock_trainer = MockTrainer(cp_size=cp_size, cp_rank=cp_rank)
 
         import torch.distributed as dist
+
         original_is_initialized = dist.is_initialized
         original_get_world_size = dist.get_world_size
         original_get_rank = dist.get_rank
@@ -208,12 +217,14 @@ class TestDFTContextParallelCompatibility:
 
         try:
             # CP-aware approach (correct)
-            per_token_loss_correct, valid_mask_correct = compute_per_token_cross_entropy(
-                logits_local,
-                labels_full,
-                ignore_index=-100,
-                shift_labels=True,
-                trainer=mock_trainer,
+            per_token_loss_correct, valid_mask_correct = (
+                compute_per_token_cross_entropy(
+                    logits_local,
+                    labels_full,
+                    ignore_index=-100,
+                    shift_labels=True,
+                    trainer=mock_trainer,
+                )
             )
             loss_correct = reduce_token_loss(
                 apply_dft_weighting(per_token_loss_correct), valid_mask_correct
@@ -278,7 +289,9 @@ class TestDFTContextParallelCompatibility:
             f"Expected {expected_tokens} tokens, got {per_token_loss.numel()}"
         )
 
-        print(f"\n✓ Non-CP mode: loss={loss.item():.6f}, tokens={per_token_loss.numel()}")
+        print(
+            f"\n✓ Non-CP mode: loss={loss.item():.6f}, tokens={per_token_loss.numel()}"
+        )
 
     def test_cp_with_padding(self):
         """Test CP-aware loss with padded sequences (last rank sees padding)."""
@@ -290,7 +303,9 @@ class TestDFTContextParallelCompatibility:
         pad_len = (divisor - (full_seq_len % divisor)) % divisor
         chunk_len = (full_seq_len + pad_len) // cp_size
 
-        logits_local = torch.randn(batch_size, chunk_len, vocab_size, requires_grad=True)
+        logits_local = torch.randn(
+            batch_size, chunk_len, vocab_size, requires_grad=True
+        )
         labels_full = torch.randint(0, vocab_size, (batch_size, full_seq_len))
 
         # Add padding to labels (last 4 tokens) - rank 1 handles tokens [8:16]
@@ -299,6 +314,7 @@ class TestDFTContextParallelCompatibility:
         mock_trainer = MockTrainer(cp_size=cp_size, cp_rank=cp_rank)
 
         import torch.distributed as dist
+
         original_is_initialized = dist.is_initialized
         original_get_world_size = dist.get_world_size
         original_get_rank = dist.get_rank

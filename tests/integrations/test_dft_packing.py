@@ -118,9 +118,7 @@ class TestDFTPackingCompatibility:
         total_valid = valid_tokens1 + valid_tokens2 + valid_tokens3
 
         unpacked_avg_loss = (
-            loss1 * valid_tokens1 +
-            loss2 * valid_tokens2 +
-            loss3 * valid_tokens3
+            loss1 * valid_tokens1 + loss2 * valid_tokens2 + loss3 * valid_tokens3
         ) / total_valid
 
         # Create packed sequence with sequence boundaries
@@ -134,11 +132,9 @@ class TestDFTPackingCompatibility:
         labels2_with_boundary = labels2.clone()
         labels2_with_boundary[0, -1] = -100
 
-        packed_labels = torch.cat([
-            labels1_with_boundary,
-            labels2_with_boundary,
-            labels3
-        ], dim=1)
+        packed_labels = torch.cat(
+            [labels1_with_boundary, labels2_with_boundary, labels3], dim=1
+        )
 
         # Compute packed loss
         packed_loss = compute_dft_loss(packed_logits, packed_labels)
@@ -162,7 +158,7 @@ class TestDFTPackingCompatibility:
         rel_diff = abs(packed_loss - unpacked_avg_loss) / unpacked_avg_loss
         assert rel_diff < 0.20, (
             f"Packed loss ({packed_loss.item():.6f}) and unpacked loss "
-            f"({unpacked_avg_loss.item():.6f}) differ by {rel_diff.item()*100:.1f}%, "
+            f"({unpacked_avg_loss.item():.6f}) differ by {rel_diff.item() * 100:.1f}%, "
             f"expected < 20%"
         )
 
@@ -219,7 +215,10 @@ class TestDFTPackingCompatibility:
                 return SimpleNamespace(logits=logits)
 
         model = DummyModel()
-        inputs = {"input_ids": torch.zeros(batch_size, packed_seq_len), "labels": labels}
+        inputs = {
+            "input_ids": torch.zeros(batch_size, packed_seq_len),
+            "labels": labels,
+        }
 
         # Compute loss
         loss, outputs = trainer.compute_loss(
@@ -266,7 +265,10 @@ class TestDFTPackingCompatibility:
                 return SimpleNamespace(logits=logits)
 
         model = DummyModel()
-        inputs = {"input_ids": torch.zeros(batch_size, packed_seq_len), "labels": labels}
+        inputs = {
+            "input_ids": torch.zeros(batch_size, packed_seq_len),
+            "labels": labels,
+        }
 
         # Compute loss with chunked CE
         loss, outputs = trainer.compute_loss(
@@ -300,7 +302,7 @@ class TestDFTPackingCompatibility:
 
         # Simulate packing attention mask: [seq1: 1,1,1 | seq2: 2,2,2 | seq3: 3,3,3]
         # (In real packing, this prevents cross-sequence attention)
-        attention_mask = torch.tensor([[1, 1, 1, 2, 2, 2, 3, 3, 3]])
+        torch.tensor([[1, 1, 1, 2, 2, 2, 3, 3, 3]])
 
         # Compute loss without attention mask
         loss_without = compute_dft_loss(logits, labels)

@@ -36,7 +36,6 @@ RECOMMENDATION:
 - Low priority - FSDP+TP is preferred strategy for large models
 """
 
-import os
 from pathlib import Path
 
 import pytest
@@ -70,7 +69,8 @@ class TestDFTPipelineParallelCompatibility:
         ]
 
         found_indicators = [
-            indicator for indicator in pp_config_indicators
+            indicator
+            for indicator in pp_config_indicators
             if indicator in config_content
         ]
 
@@ -108,8 +108,7 @@ class TestDFTPipelineParallelCompatibility:
         ]
 
         found_indicators = [
-            indicator for indicator in pp_code_indicators
-            if indicator in loader_content
+            indicator for indicator in pp_code_indicators if indicator in loader_content
         ]
 
         if found_indicators:
@@ -144,7 +143,8 @@ class TestDFTPipelineParallelCompatibility:
         ]
 
         found_indicators = [
-            indicator for indicator in pp_group_indicators
+            indicator
+            for indicator in pp_group_indicators
             if indicator in distributed_content
         ]
 

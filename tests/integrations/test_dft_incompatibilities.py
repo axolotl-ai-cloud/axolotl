@@ -15,10 +15,11 @@ TESTED INCOMPATIBILITIES:
 REFERENCE: specs/001-dft-compatibility-matrix/README.md
 """
 
+from types import SimpleNamespace
+from unittest.mock import Mock
+
 import pytest
 import torch
-from types import SimpleNamespace
-from unittest.mock import Mock, patch
 
 from src.axolotl.integrations.dft.patch import patch_compute_loss_for_dft
 
@@ -67,10 +68,12 @@ class TestDFTLabelSmoothingIncompatibility:
             mock_trainer.compute_loss(mock_model, inputs)
 
         error_msg = str(exc_info.value)
-        assert "label smoothing" in error_msg.lower(), \
+        assert "label smoothing" in error_msg.lower(), (
             "Error should mention label smoothing"
-        assert "incompatible" in error_msg.lower(), \
+        )
+        assert "incompatible" in error_msg.lower(), (
             "Error should indicate incompatibility"
+        )
 
         print("\n✓ Label smoothing correctly raises ValueError with clear message")
 

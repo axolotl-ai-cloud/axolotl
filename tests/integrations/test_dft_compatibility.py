@@ -16,15 +16,16 @@ TESTED COMPATIBILITIES:
 REFERENCE: specs/001-dft-compatibility-matrix/README.md
 """
 
+from types import SimpleNamespace
+from unittest.mock import Mock
+
 import pytest
 import torch
-from types import SimpleNamespace
-from unittest.mock import Mock, patch
 
 from src.axolotl.integrations.dft.dft_utils import (
+    apply_dft_weighting,
     compute_dft_loss,
     compute_per_token_cross_entropy,
-    apply_dft_weighting,
     reduce_token_loss,
 )
 from src.axolotl.integrations.dft.patch import patch_compute_loss_for_dft
@@ -81,7 +82,9 @@ class TestDFTGradientAccumulationCompatibility:
         actual_ratio = loss_with.item() / loss_without.item()
 
         assert torch.isfinite(loss_with), "Loss with accumulation should be finite"
-        assert torch.isfinite(loss_without), "Loss without accumulation should be finite"
+        assert torch.isfinite(loss_without), (
+            "Loss without accumulation should be finite"
+        )
         assert abs(actual_ratio - expected_ratio) < 0.1, (
             f"Loss ratio should be ~{expected_ratio:.3f}, got {actual_ratio:.3f}"
         )
@@ -122,16 +125,12 @@ class TestDFTGradientAccumulationCompatibility:
         mock_model.return_value = mock_outputs
 
         # Call with num_items_in_batch (gradient accumulation active)
-        loss = mock_trainer.compute_loss(
-            mock_model, inputs, num_items_in_batch=8
-        )
+        loss = mock_trainer.compute_loss(mock_model, inputs, num_items_in_batch=8)
 
         assert torch.isfinite(loss), "Loss should be finite"
         assert loss.item() > 0, "Loss should be positive"
 
-        print(
-            f"\n✓ Trainer patch with gradient accumulation: loss={loss.item():.6f}"
-        )
+        print(f"\n✓ Trainer patch with gradient accumulation: loss={loss.item():.6f}")
 
 
 class TestDFTMixedPrecisionCompatibility:
@@ -146,7 +145,9 @@ class TestDFTMixedPrecisionCompatibility:
         batch_size, seq_len, vocab_size = 2, 16, 100
 
         # Create FP16 logits (common in mixed precision training)
-        logits = torch.randn(batch_size, seq_len, vocab_size).half().requires_grad_(True)
+        logits = (
+            torch.randn(batch_size, seq_len, vocab_size).half().requires_grad_(True)
+        )
         labels = torch.randint(0, vocab_size, (batch_size, seq_len))
 
         # DFT should handle FP16 correctly
@@ -177,7 +178,9 @@ class TestDFTMixedPrecisionCompatibility:
         batch_size, seq_len, vocab_size = 2, 16, 100
 
         # Create BF16 logits
-        logits = torch.randn(batch_size, seq_len, vocab_size).bfloat16().requires_grad_(True)
+        logits = (
+            torch.randn(batch_size, seq_len, vocab_size).bfloat16().requires_grad_(True)
+        )
         labels = torch.randint(0, vocab_size, (batch_size, seq_len))
 
         # DFT should handle BF16 correctly

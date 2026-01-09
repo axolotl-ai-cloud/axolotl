@@ -56,7 +56,9 @@ def _test_loss_consistency(rank, world_size):
     seq_len = 10
     vocab_size = 100
 
-    logits = torch.randn(batch_size, seq_len, vocab_size, device=device, requires_grad=True)
+    logits = torch.randn(
+        batch_size, seq_len, vocab_size, device=device, requires_grad=True
+    )
     labels = torch.randint(0, vocab_size, (batch_size, seq_len), device=device)
 
     # Compute DFT loss
@@ -78,7 +80,9 @@ def _test_different_batches(rank, world_size):
     seq_len = 10
     vocab_size = 100
 
-    logits = torch.randn(batch_size, seq_len, vocab_size, device=device, requires_grad=True)
+    logits = torch.randn(
+        batch_size, seq_len, vocab_size, device=device, requires_grad=True
+    )
     labels = torch.randint(0, vocab_size, (batch_size, seq_len), device=device)
 
     # Compute DFT loss
@@ -101,7 +105,9 @@ def _test_chunked_ce(rank, world_size):
     vocab_size = 1000  # Large vocab to benefit from chunking
     chunk_size = 256
 
-    logits = torch.randn(batch_size, seq_len, vocab_size, device=device, requires_grad=True)
+    logits = torch.randn(
+        batch_size, seq_len, vocab_size, device=device, requires_grad=True
+    )
     labels = torch.randint(0, vocab_size, (batch_size, seq_len), device=device)
 
     # Compute with chunking
@@ -143,7 +149,9 @@ def _test_gradient_sync(rank, world_size):
 
     # Check gradients exist
     has_grads = all(p.grad is not None for p in model.parameters())
-    grad_norm = sum(p.grad.norm().item() for p in model.parameters() if p.grad is not None)
+    grad_norm = sum(
+        p.grad.norm().item() for p in model.parameters() if p.grad is not None
+    )
 
     return {
         "loss": loss.item(),
@@ -162,7 +170,9 @@ def _test_with_padding(rank, world_size):
     seq_len = 10
     vocab_size = 100
 
-    logits = torch.randn(batch_size, seq_len, vocab_size, device=device, requires_grad=True)
+    logits = torch.randn(
+        batch_size, seq_len, vocab_size, device=device, requires_grad=True
+    )
     labels = torch.randint(0, vocab_size, (batch_size, seq_len), device=device)
 
     # Add padding to last 3 positions
@@ -194,8 +204,9 @@ def ddp_test_worker(rank, world_size, test_fn_name, result_queue):
 
         result = test_fn(rank, world_size)
         result_queue.put((rank, result, None))
-    except Exception as e:
+    except Exception:
         import traceback
+
         result_queue.put((rank, None, traceback.format_exc()))
     finally:
         cleanup_ddp()
@@ -218,7 +229,9 @@ class TestDFTDDPCompatibility(unittest.TestCase):
             self.skipTest("DDP test requires CUDA")
 
         if torch.cuda.device_count() < world_size:
-            self.skipTest(f"DDP test requires {world_size} GPUs, found {torch.cuda.device_count()}")
+            self.skipTest(
+                f"DDP test requires {world_size} GPUs, found {torch.cuda.device_count()}"
+            )
 
         # Use spawn to start processes
         ctx = mp.get_context("spawn")
@@ -228,7 +241,7 @@ class TestDFTDDPCompatibility(unittest.TestCase):
         for rank in range(world_size):
             p = ctx.Process(
                 target=ddp_test_worker,
-                args=(rank, world_size, test_fn_name, result_queue)
+                args=(rank, world_size, test_fn_name, result_queue),
             )
             p.start()
             processes.append(p)
@@ -296,8 +309,12 @@ class TestDFTDDPCompatibility(unittest.TestCase):
 
         # Verify both ranks computed gradients
         for result in results:
-            self.assertTrue(result["has_grads"], f"Rank {result['rank']} missing gradients")
-            self.assertGreater(result["grad_norm"], 0, f"Rank {result['rank']} has zero grad norm")
+            self.assertTrue(
+                result["has_grads"], f"Rank {result['rank']} missing gradients"
+            )
+            self.assertGreater(
+                result["grad_norm"], 0, f"Rank {result['rank']} has zero grad norm"
+            )
 
     def test_ddp_with_padding(self):
         """Test DFT with padded sequences in DDP mode."""
