@@ -16,7 +16,9 @@ def metric(tokenizer):
 
 @fixture()
 def model():
-    return AutoModelForCausalLM.from_pretrained(MODEL_NAME, trust_remote_code=True)
+    return AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME, trust_remote_code=True, dtype="float32"
+    )
 
 
 @fixture()

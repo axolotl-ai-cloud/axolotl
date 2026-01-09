@@ -7,7 +7,11 @@ from torch import Tensor
 from tqdm import tqdm
 from transformers.modeling_outputs import CausalLMOutput
 from transformers.modeling_utils import PreTrainedModel
-from transformers.tokenization_utils import PreTrainedTokenizer
+
+try:
+    from transformers.tokenization_python import PreTrainedTokenizer
+except ImportError:
+    from transformers.tokenization_utils import PreTrainedTokenizer
 
 from axolotl.utils.distributed import is_main_process
 

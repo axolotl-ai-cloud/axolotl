@@ -165,7 +165,7 @@ We recommend using WSL2 (Windows Subsystem for Linux) or Docker.
    ```
 4. (Optional) Login to Hugging Face:
    ```{.bash}
-   huggingface-cli login
+   hf auth login
    ```
 
 ## Troubleshooting {#sec-troubleshooting}
