@@ -179,3 +179,33 @@ class TRLConfig(BaseModel):
             "description": "Path to custom rollout function. Must be importable from current dir."
         },
     )
+
+    # GDPO-specific args
+    # Ref: https://github.com/NVlabs/GDPO
+    gdpo_decoupled_norm: bool = Field(
+        default=True,
+        json_schema_extra={
+            "description": "Enable decoupled per-reward normalization (GDPO's core feature). "
+            "When True, each reward function is normalized independently before combining."
+        },
+    )
+    gdpo_batch_norm: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Apply batch-wise normalization after combining advantages. "
+            "Useful for stabilizing training with large batches."
+        },
+    )
+    gdpo_epsilon: float = Field(
+        default=1e-4,
+        json_schema_extra={
+            "description": "Epsilon for numerical stability in GDPO normalization."
+        },
+    )
+    gdpo_per_reward_scale: bool = Field(
+        default=True,
+        json_schema_extra={
+            "description": "Scale each reward by its std before combining. "
+            "Only applied when scale_rewards is also True."
+        },
+    )
