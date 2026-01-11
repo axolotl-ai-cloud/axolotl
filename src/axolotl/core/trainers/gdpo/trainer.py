@@ -218,7 +218,7 @@ class AxolotlGDPOTrainer(AxolotlGRPOTrainer):
                 ordered_set_of_prompts = all_prompts_text[:: self.num_generations]
 
                 with profiling_context(self, "vLLM.generate"):
-                    completion_ids = self.vllm_client.generate(
+                    output = self.vllm_client.generate(
                         prompts=ordered_set_of_prompts,
                         n=self.num_generations,
                         repetition_penalty=self.repetition_penalty,
@@ -229,16 +229,22 @@ class AxolotlGDPOTrainer(AxolotlGRPOTrainer):
                         max_tokens=self.max_completion_length,
                         guided_decoding_regex=self.guided_decoding_regex,
                     )
+                # vLLM client returns a dict with prompt_ids, completion_ids, logprobs
+                completion_ids = output["completion_ids"]
+                logprobs_list = output.get("logprobs")
             else:
                 completion_ids = [None] * len(all_prompts_text)
+                logprobs_list = [None] * len(all_prompts_text)
 
             completion_ids = broadcast_object_list(completion_ids, from_process=0)
+            logprobs_list = broadcast_object_list(logprobs_list, from_process=0)
 
             process_slice = slice(
                 self.accelerator.process_index * len(prompts),
                 (self.accelerator.process_index + 1) * len(prompts),
             )
             completion_ids = completion_ids[process_slice]
+            logprobs_list = logprobs_list[process_slice]
 
             completion_ids = [
                 torch.tensor(ids, device=device) for ids in completion_ids
@@ -246,6 +252,18 @@ class AxolotlGDPOTrainer(AxolotlGRPOTrainer):
             completion_ids = pad(
                 completion_ids, padding_value=self.processing_class.pad_token_id
             )
+
+            # Convert logprobs to tensor for importance sampling
+            if logprobs_list is not None and logprobs_list[0] is not None:
+                sampling_per_token_logps = [
+                    torch.tensor(logps, device=device) for logps in logprobs_list
+                ]
+                sampling_per_token_logps = pad(
+                    sampling_per_token_logps, padding_value=0.0, padding_side="right"
+                )
+            else:
+                sampling_per_token_logps = None
+
             prompt_completion_ids = torch.cat([prompt_ids, completion_ids], dim=1)
         else:
             with unwrap_model_for_generation(
@@ -262,6 +280,7 @@ class AxolotlGDPOTrainer(AxolotlGRPOTrainer):
             prompt_length = prompt_ids.size(1)
             prompt_ids = prompt_completion_ids[:, :prompt_length]
             completion_ids = prompt_completion_ids[:, prompt_length:]
+            sampling_per_token_logps = None
 
         # Mask everything after the first EOS token
         is_eos = completion_ids == self.processing_class.eos_token_id
@@ -290,8 +309,11 @@ class AxolotlGDPOTrainer(AxolotlGRPOTrainer):
         )
 
         with torch.no_grad():
-            if self.num_iterations > 1:
-                old_per_token_logps = self._get_per_token_logps(
+            if self.num_iterations > 1 or (
+                self.args.use_vllm
+                and getattr(self.args, "vllm_importance_sampling_correction", True)
+            ):
+                old_per_token_logps, _ = self._get_per_token_logps_and_entropies(
                     self.model,
                     prompt_completion_ids,
                     attention_mask,
@@ -301,10 +323,27 @@ class AxolotlGDPOTrainer(AxolotlGRPOTrainer):
             else:
                 old_per_token_logps = None
 
+            # Compute importance sampling ratio for vLLM
+            if (
+                self.args.use_vllm
+                and getattr(self.args, "vllm_importance_sampling_correction", True)
+                and sampling_per_token_logps is not None
+                and old_per_token_logps is not None
+            ):
+                importance_sampling_ratio = torch.exp(
+                    old_per_token_logps - sampling_per_token_logps
+                )
+                importance_sampling_ratio = torch.clamp(
+                    importance_sampling_ratio,
+                    max=getattr(self.args, "vllm_importance_sampling_cap", 10.0),
+                )
+            else:
+                importance_sampling_ratio = None
+
             if self.beta == 0.0:
                 ref_per_token_logps = None
             elif self.ref_model is not None:
-                ref_per_token_logps = self._get_per_token_logps(
+                ref_per_token_logps, _ = self._get_per_token_logps_and_entropies(
                     self.ref_model,
                     prompt_completion_ids,
                     attention_mask,
@@ -313,7 +352,7 @@ class AxolotlGDPOTrainer(AxolotlGRPOTrainer):
                 )
             else:
                 with self.accelerator.unwrap_model(self.model).disable_adapter():
-                    ref_per_token_logps = self._get_per_token_logps(
+                    ref_per_token_logps, _ = self._get_per_token_logps_and_entropies(
                         self.model,
                         prompt_completion_ids,
                         attention_mask,
@@ -517,12 +556,12 @@ class AxolotlGDPOTrainer(AxolotlGRPOTrainer):
         self._metrics[mode]["reward"].append(mean_grouped_rewards.mean().item())
         self._metrics[mode]["reward_std"].append(std_grouped_rewards.mean().item())
 
-        self._textual_logs["prompt"].extend(gather_object(prompts_text))
-        self._textual_logs["completion"].extend(gather_object(completions_text))
+        self._logs["prompt"].extend(gather_object(prompts_text))
+        self._logs["completion"].extend(gather_object(completions_text))
         for i, name in enumerate(self.reward_func_names):
-            self._textual_logs["rewards"][name].extend(rewards_per_func[:, i].tolist())
+            self._logs["rewards"][name].extend(rewards_per_func[:, i].tolist())
 
-        return {
+        output = {
             "prompt_ids": prompt_ids,
             "prompt_mask": prompt_mask,
             "completion_ids": completion_ids,
@@ -532,6 +571,11 @@ class AxolotlGDPOTrainer(AxolotlGRPOTrainer):
             "ref_per_token_logps": ref_per_token_logps,
             "num_items_in_batch": completion_mask.sum(),
         }
+
+        if importance_sampling_ratio is not None:
+            output["importance_sampling_ratio"] = importance_sampling_ratio
+
+        return output
 
 
 class AxolotlGDPOSequenceParallelTrainer(
@@ -645,7 +689,7 @@ class AxolotlGDPOSequenceParallelTrainer(
                     ]
 
                 with profiling_context(self, "vLLM.generate"):
-                    completion_ids = self.vllm_client.generate(
+                    output = self.vllm_client.generate(
                         prompts=ordered_set_of_prompts,
                         n=self.num_generations,
                         repetition_penalty=self.repetition_penalty,
@@ -656,6 +700,8 @@ class AxolotlGDPOSequenceParallelTrainer(
                         max_tokens=self.max_completion_length,
                         guided_decoding_regex=self.guided_decoding_regex,
                     )
+                # vLLM client returns a dict with prompt_ids, completion_ids, logprobs
+                completion_ids = output["completion_ids"]
             else:
                 completion_ids = [None] * (
                     len(all_prompts_text) // self.args.context_parallel_size
@@ -729,7 +775,7 @@ class AxolotlGDPOSequenceParallelTrainer(
 
         with torch.no_grad():
             if self.num_iterations > 1:
-                old_per_token_logps = self._get_per_token_logps(
+                old_per_token_logps, _ = self._get_per_token_logps_and_entropies(
                     self.model,
                     prompt_completion_ids,
                     attention_mask,
@@ -742,7 +788,7 @@ class AxolotlGDPOSequenceParallelTrainer(
             if self.beta == 0.0:
                 ref_per_token_logps = None
             elif self.ref_model is not None:
-                ref_per_token_logps = self._get_per_token_logps(
+                ref_per_token_logps, _ = self._get_per_token_logps_and_entropies(
                     self.ref_model,
                     prompt_completion_ids,
                     attention_mask,
@@ -751,7 +797,7 @@ class AxolotlGDPOSequenceParallelTrainer(
                 )
             else:
                 with self.accelerator.unwrap_model(self.model).disable_adapter():
-                    ref_per_token_logps = self._get_per_token_logps(
+                    ref_per_token_logps, _ = self._get_per_token_logps_and_entropies(
                         self.model,
                         prompt_completion_ids,
                         attention_mask,
@@ -959,12 +1005,12 @@ class AxolotlGDPOSequenceParallelTrainer(
         self._metrics[mode]["reward"].append(mean_grouped_rewards.mean().item())
         self._metrics[mode]["reward_std"].append(std_grouped_rewards.mean().item())
 
-        self._textual_logs["prompt"].extend(gather_object(prompts_text))
-        self._textual_logs["completion"].extend(gather_object(completions_text))
+        self._logs["prompt"].extend(gather_object(prompts_text))
+        self._logs["completion"].extend(gather_object(completions_text))
         for i, name in enumerate(self.reward_func_names):
-            self._textual_logs["rewards"][name].extend(rewards_per_func[:, i].tolist())
+            self._logs["rewards"][name].extend(rewards_per_func[:, i].tolist())
 
-        return {
+        output = {
             "prompt_ids": prompt_ids,
             "prompt_mask": prompt_mask,
             "completion_ids": completion_ids,
@@ -974,3 +1020,6 @@ class AxolotlGDPOSequenceParallelTrainer(
             "ref_per_token_logps": ref_per_token_logps,
             "num_items_in_batch": completion_mask.sum(),
         }
+        # if importance_sampling_ratio is not None:
+        #    output["importance_sampling_ratio"] = importance_sampling_ratio
+        return output
