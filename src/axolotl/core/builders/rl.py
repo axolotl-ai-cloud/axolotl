@@ -11,6 +11,7 @@ from axolotl.core.trainers import (
 )
 from axolotl.core.trainers.dpo import DPOStrategy
 from axolotl.core.trainers.dpo.args import AxolotlDPOConfig
+from axolotl.core.trainers.gdpo import GDPOStrategy
 from axolotl.core.trainers.grpo import GRPOStrategy
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import ensure_dtype
@@ -59,6 +60,14 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             trainer_cls_args.extend(GRPOStrategy.set_trainer_args(self.cfg))
 
             trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))
+
+        elif self.cfg.rl is RLType.GDPO:
+            trainer_cls = GDPOStrategy.get_trainer_class(
+                sequence_parallel=self.cfg.context_parallel_size > 1
+            )
+            trainer_cls_args.extend(GDPOStrategy.set_trainer_args(self.cfg))
+
+            trainer_kwargs.update(GDPOStrategy.set_trainer_kwargs(self.cfg))
 
         elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             trainer_cls = DPOStrategy.get_trainer_class()
@@ -159,6 +168,11 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_cls = GRPOStrategy.get_training_args_class()
             training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()
+
+        elif self.cfg.rl is RLType.GDPO:
+            training_args_cls = GDPOStrategy.get_training_args_class()
+            training_args_kwargs.update(GDPOStrategy.set_training_args_kwargs(self.cfg))
+            blocklist_args_kwargs = GDPOStrategy.get_blocklist_args_kwargs()
 
         elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             training_args_cls = AxolotlDPOConfig

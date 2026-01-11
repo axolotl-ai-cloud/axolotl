@@ -173,7 +173,7 @@ def _drop_long_sequences(
 
         return (len_prompt + len_completion) <= sequence_len
 
-    if rl is RLType.GRPO:
+    if rl in {RLType.GRPO, RLType.GDPO}:
         return True
 
     raise ValueError("Unknown RL type")
