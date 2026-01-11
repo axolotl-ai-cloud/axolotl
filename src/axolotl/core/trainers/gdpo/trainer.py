@@ -209,7 +209,7 @@ class AxolotlGDPOTrainer(AxolotlGRPOTrainer):
 
         # Generate completions using either vLLM or regular generation
         if self.args.use_vllm:
-            if self.state.global_step != self._last_loaded_step:
+            if self.state.global_step != self._last_loaded_step:  # type: ignore[has-type]
                 self._move_model_to_vllm()
                 self._last_loaded_step = self.state.global_step
 
@@ -530,6 +530,7 @@ class AxolotlGDPOTrainer(AxolotlGRPOTrainer):
             "advantages": advantages,
             "old_per_token_logps": old_per_token_logps,
             "ref_per_token_logps": ref_per_token_logps,
+            "num_items_in_batch": completion_mask.sum(),
         }
 
 
@@ -617,7 +618,7 @@ class AxolotlGDPOSequenceParallelTrainer(
 
         # Generate completions using vLLM with sequence parallelism handling
         if self.args.use_vllm:
-            if self.state.global_step != self._last_loaded_step:
+            if self.state.global_step != self._last_loaded_step:  # type: ignore[has-type]
                 self._move_model_to_vllm()
                 self._last_loaded_step = self.state.global_step
 
@@ -971,4 +972,5 @@ class AxolotlGDPOSequenceParallelTrainer(
             "advantages": advantages,
             "old_per_token_logps": old_per_token_logps,
             "ref_per_token_logps": ref_per_token_logps,
+            "num_items_in_batch": completion_mask.sum(),
         }
