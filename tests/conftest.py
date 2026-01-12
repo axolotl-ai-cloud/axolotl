@@ -18,7 +18,7 @@ import torch
 from huggingface_hub import snapshot_download
 from huggingface_hub.errors import LocalEntryNotFoundError
 from tokenizers import AddedToken
-from transformers import AutoConfig, AutoTokenizer
+from transformers import AutoTokenizer
 
 from axolotl.utils.dict import DictDefault
 
@@ -66,9 +66,6 @@ def snapshot_download_w_retry(*args, **kwargs):
         except LocalEntryNotFoundError:
             pass
     with hf_offline_context(False):
-        repo_type = kwargs.get("repo_type", "model")
-        if repo_type == "model":
-            _ = AutoConfig.from_pretrained(*args)
         return snapshot_download(*args, **kwargs)
 
 
