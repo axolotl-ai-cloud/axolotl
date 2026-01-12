@@ -84,6 +84,12 @@ def download_smollm2_135m_model():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def download_smollm2_135m_instruct_model():
+    # download the model
+    snapshot_download_w_retry("HuggingFaceTB/SmolLM2-135M-Instruct", repo_type="model")
+
+
+@pytest.fixture(scope="session", autouse=True)
 def download_smollm2_135m_gptq_model():
     # download the model
     snapshot_download_w_retry("lilmeaty/SmolLM2-135M-Instruct-GPTQ", repo_type="model")
@@ -143,12 +149,20 @@ def download_argilla_distilabel_intel_orca_dpo_dataset():
     )
 
 
-# @pytest.fixture(scope="session", autouse=True)
-# def download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset():
-#     # download the dataset
-#     snapshot_download_w_retry(
-#         "argilla/ultrafeedback-binarized-preferences-cleaned", repo_type="dataset"
-#     )
+@pytest.fixture(scope="session", autouse=True)
+def download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset():
+    # download the dataset
+    snapshot_download_w_retry(
+        "argilla/ultrafeedback-binarized-preferences-cleaned", repo_type="dataset"
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_argilla_ultrafeedback_binarized_preferences_cleaned_kto_dataset():
+    # download the dataset
+    snapshot_download_w_retry(
+        "argilla/ultrafeedback-binarized-preferences-cleaned-kto", repo_type="dataset"
+    )
 
 
 # @pytest.fixture(scope="session", autouse=True)
@@ -566,6 +580,8 @@ def test_load_fixtures(
     download_mhenrichsen_alpaca_2k_dataset,
     download_mhenrichsen_alpaca_2k_w_revision_dataset,
     download_mlabonne_finetome_100k_dataset,
+    download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset,
+    download_argilla_ultrafeedback_binarized_preferences_cleaned_kto_dataset,
     download_argilla_distilabel_capybara_dpo_7k_binarized_dataset,
     download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset,
     download_argilla_dpo_pairs_dataset,
