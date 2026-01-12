@@ -295,7 +295,7 @@ def download_phi_35_mini_model_fixture():
 def download_phi_4_reasoning_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
-        tokenizer="microsoft/Phi-4-reasoning",
+        "microsoft/Phi-4-reasoning",
         repo_type="model",
         allow_patterns=["*token*", "config.json"],
     )
