@@ -292,6 +292,16 @@ def download_phi_35_mini_model_fixture():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def download_phi_4_reasoning_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        tokenizer="microsoft/Phi-4-reasoning",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
 def download_phi_3_medium_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
@@ -593,6 +603,7 @@ def test_load_fixtures(
     download_llama3_8b_instruct_model_fixture,
     download_phi_35_mini_model_fixture,
     download_phi_3_medium_model_fixture,
+    download_phi_4_reasoning_model_fixture,
     download_mistral_7b_model_fixture,
     download_gemma_2b_model_fixture,
     download_gemma2_9b_model_fixture,
