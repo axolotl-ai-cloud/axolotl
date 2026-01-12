@@ -66,6 +66,9 @@ def snapshot_download_w_retry(*args, **kwargs):
         except LocalEntryNotFoundError:
             pass
     with hf_offline_context(False):
+        repo_type = kwargs.get("repo_type", "model")
+        if repo_type == "model":
+            _ = AutoConfig.from_pretrained(*args)
         return snapshot_download(*args, **kwargs)
 
 
@@ -251,7 +254,9 @@ def download_llama_1b_model_fixture():
 def download_llama3_8b_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
-        "NousResearch/Meta-Llama-3-8B", repo_type="model", allow_patterns=["*token*"]
+        "NousResearch/Meta-Llama-3-8B",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
     )
 
 
@@ -261,7 +266,7 @@ def download_llama3_8b_instruct_model_fixture():
     snapshot_download_w_retry(
         "NousResearch/Meta-Llama-3-8B-Instruct",
         repo_type="model",
-        allow_patterns=["*token*"],
+        allow_patterns=["*token*", "config.json"],
     )
 
 
@@ -269,7 +274,9 @@ def download_llama3_8b_instruct_model_fixture():
 def download_phi_35_mini_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
-        "microsoft/Phi-3.5-mini-instruct", repo_type="model", allow_patterns=["*token*"]
+        "microsoft/Phi-3.5-mini-instruct",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
     )
 
 
@@ -279,7 +286,7 @@ def download_phi_3_medium_model_fixture():
     snapshot_download_w_retry(
         "microsoft/Phi-3-medium-128k-instruct",
         repo_type="model",
-        allow_patterns=["*token*"],
+        allow_patterns=["*token*", "config.json"],
     )
 
 

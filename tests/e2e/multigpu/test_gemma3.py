@@ -28,9 +28,6 @@ class TestMultiGPUGemma3:
     Test case for Gemma3 models using LoRA
     """
 
-    @pytest.mark.skip(
-        reason="broken in transformers v5 due to embeddings bug fixed in https://github.com/huggingface/transformers/pull/42558"
-    )
     def test_lora_ddp_packed(self, temp_dir):
         cfg = DictDefault(
             {
