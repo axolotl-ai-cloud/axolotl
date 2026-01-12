@@ -18,7 +18,7 @@ import torch
 from huggingface_hub import snapshot_download
 from huggingface_hub.errors import LocalEntryNotFoundError
 from tokenizers import AddedToken
-from transformers import AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer
 
 from axolotl.utils.dict import DictDefault
 
