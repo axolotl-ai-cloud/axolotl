@@ -5,7 +5,7 @@ ARG MAX_JOBS=4
 
 FROM nvidia/cuda:$CUDA_VERSION-cudnn$CUDNN_VERSION-devel-ubuntu$UBUNTU_VERSION AS base-builder
 
-ENV PATH="/root/miniconda3/bin:${PATH}"
+ENV PATH="/workspace/miniconda3/bin:${PATH}"
 
 ARG PYTHON_VERSION="3.11"
 ARG PYTORCH_VERSION="2.1.2"
@@ -24,14 +24,14 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && wget \
     https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
-    && mkdir /root/.conda \
-    && bash Miniconda3-latest-Linux-x86_64.sh -b \
+    && mkdir -p /workspace/.conda \
+    && bash Miniconda3-latest-Linux-x86_64.sh -b -p /workspace/miniconda3 \
     && rm -f Miniconda3-latest-Linux-x86_64.sh \
     && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main \
     && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r \
     && conda create -n "py${PYTHON_VERSION}" python="${PYTHON_VERSION}"
 
-ENV PATH="/root/miniconda3/envs/py${PYTHON_VERSION}/bin:${PATH}"
+ENV PATH="/workspace/miniconda3/envs/py${PYTHON_VERSION}/bin:${PATH}"
 
 WORKDIR /workspace
 
