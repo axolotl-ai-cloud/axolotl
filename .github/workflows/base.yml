@@ -34,6 +34,7 @@ jobs:
             pytorch: 2.8.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-base"
+            platforms: "linux/amd64"
           - cuda: "128"
             cuda_version: 12.8.1
             cudnn_version: ""
@@ -41,6 +42,7 @@ jobs:
             pytorch: 2.9.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-base"
+            platforms: "linux/amd64,linux/arm64"
           - cuda: "128"
             cuda_version: 12.8.1
             cudnn_version: ""
@@ -48,6 +50,7 @@ jobs:
             pytorch: 2.9.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-base"
+            platforms: "linux/amd64,linux/arm64"
           - cuda: "130"
             cuda_version: 13.0.0
             cudnn_version: ""
@@ -55,6 +58,7 @@ jobs:
             pytorch: 2.9.1
             torch_cuda_arch_list: "9.0+PTX"
             dockerfile: "Dockerfile-base"
+            platforms: "linux/amd64,linux/arm64"
 #          - cuda: "128"
 #            cuda_version: 12.8.1
 #            cudnn_version: ""
@@ -92,7 +96,7 @@ jobs:
         with:
           context: .
           file: ./docker/${{ matrix.dockerfile }}
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platforms }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.metadata.outputs.tags }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           labels: ${{ steps.metadata.outputs.labels }}
@@ -120,6 +124,7 @@ jobs:
             pytorch: 2.8.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64"
           - cuda: "128"
             cuda_version: 12.8.1
             cudnn_version: ""
@@ -127,6 +132,7 @@ jobs:
             pytorch: 2.9.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64,linux/arm64"
           - cuda: "128"
             cuda_version: 12.8.1
             cudnn_version: ""
@@ -134,6 +140,7 @@ jobs:
             pytorch: 2.9.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64,linux/arm64"
           - cuda: "130"
             cuda_version: 13.0.0
             cudnn_version: ""
@@ -141,6 +148,7 @@ jobs:
             pytorch: 2.9.1
             torch_cuda_arch_list: "9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64,linux/arm64"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -163,6 +171,7 @@ jobs:
         with:
           context: .
           file: ./docker/${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platforms }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.metadata.outputs.tags }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           labels: ${{ steps.metadata.outputs.labels }}
