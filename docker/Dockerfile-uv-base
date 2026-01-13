@@ -35,8 +35,8 @@ RUN uv pip install packaging setuptools wheel psutil \
     && uv pip install awscli pydantic
 
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        uv pip install --no-build-isolation "causal_conv1d @ git+https://github.com/Dao-AILab/causal-conv1d.git@main" \
-        && uv pip install "mamba_ssm @ git+https://github.com/state-spaces/mamba.git@main" \
+        uv pip install --no-build-isolation "causal_conv1d @ git+https://github.com/Dao-AILab/causal-conv1d.git@main"; \
+        uv pip install "mamba_ssm @ git+https://github.com/state-spaces/mamba.git@main"; \
     fi
 
 RUN case "$PYTORCH_VERSION" in \
