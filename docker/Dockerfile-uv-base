@@ -32,7 +32,7 @@ ENV PATH="/workspace/axolotl-venv/bin:${PATH}"
 
 RUN uv pip install packaging setuptools wheel psutil \
     && uv pip install torch==${PYTORCH_VERSION} torchvision \
-    && uv pip install awscli pydantic \
+    && uv pip install awscli pydantic
 
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
         uv pip install --no-build-isolation "causal_conv1d @ git+https://github.com/Dao-AILab/causal-conv1d.git@main" \
