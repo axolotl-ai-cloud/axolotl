@@ -175,17 +175,6 @@ class TestGDPOAdvantageCalculation:
 
         weights = torch.tensor([1.0, 1.0])
 
-        # Without batch norm
-        adv_no_batch = compute_gdpo_advantages(
-            rewards_per_func=rewards_per_func,
-            reward_weights=weights,
-            num_generations=num_generations,
-            scale_rewards=True,
-            gdpo_epsilon=1e-4,
-            gdpo_batch_norm=False,
-            gdpo_per_reward_scale=True,
-        )
-
         # With batch norm
         adv_with_batch = compute_gdpo_advantages(
             rewards_per_func=rewards_per_func,
