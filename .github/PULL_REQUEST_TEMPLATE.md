@@ -15,6 +15,11 @@
 <!--- Include details of your testing environment, tests ran to see how -->
 <!--- your change affects other areas of the code, etc. -->
 
+## AI Usage Disclaimer
+
+<!--- Was AI (e.g., ChatGPT, Claude, Copilot) used to generate or assist with this PR? -->
+<!--- Please indicate: No / Yes (specify which tool and to what extent) -->
+
 ## Screenshots (if appropriate)
 
 ## Types of changes
