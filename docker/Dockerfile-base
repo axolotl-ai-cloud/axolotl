@@ -45,6 +45,7 @@ WORKDIR /workspace
 
 RUN python3 -m pip install --upgrade pip && pip3 install -U packaging==23.2 setuptools==75.8.0 wheel psutil && \
     python3 -m pip install --no-cache-dir -U torch==${PYTORCH_VERSION}+cu${CUDA} torchvision --extra-index-url https://download.pytorch.org/whl/cu$CUDA && \
+    python3 -m pip install --no-cache-dir "xformers>=0.0.23.post1" && \
     python3 -m pip cache purge
 
 RUN if [ "$CUDA" != "130" ] ; then \
