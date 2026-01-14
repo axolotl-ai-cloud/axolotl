@@ -32,6 +32,8 @@ class TestMultiGPUGemma3:
         cfg = DictDefault(
             {
                 "base_model": "axolotl-mirrors/gemma-3-4b-pt",
+                "model_type": "Gemma3ForCausalLM",
+                "cls_model_config": "Gemma3TextConfig",
                 "sequence_len": 2048,
                 "ddp_find_unused_parameters": True,
                 "sample_packing": True,
