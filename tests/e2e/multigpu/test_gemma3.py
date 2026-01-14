@@ -28,13 +28,12 @@ class TestMultiGPUGemma3:
     Test case for Gemma3 models using LoRA
     """
 
-    @pytest.mark.skip(
-        reason="broken in transformers v5 due to embeddings bug fixed in https://github.com/huggingface/transformers/pull/42558"
-    )
     def test_lora_ddp_packed(self, temp_dir):
         cfg = DictDefault(
             {
                 "base_model": "axolotl-mirrors/gemma-3-4b-pt",
+                "model_type": "Gemma3ForCausalLM",
+                "cls_model_config": "Gemma3TextConfig",
                 "sequence_len": 2048,
                 "ddp_find_unused_parameters": True,
                 "sample_packing": True,
