@@ -39,10 +39,6 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
         uv pip install "mamba_ssm @ git+https://github.com/state-spaces/mamba.git@main"; \
     fi
 
-ENV CUDA_HOME="/usr/local/cuda"
-RUN uv pip install "numba>=0.61.2" "numpy>=2.2.6" && \
-    uv pip install --no-cache-dir "xformers>=0.0.23.post1"
-
 RUN case "$PYTORCH_VERSION" in \
         2.9.[0-9]*) \
             if [ "$TARGETARCH" = "amd64" ]; then \
