@@ -676,6 +676,10 @@ class AxolotlInputConfig(
             "description": "Number of chunks to use for chunked cross entropy loss"
         },
     )
+    use_dynamic_finetuning: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Enable Dynamic Fine-Tuning loss (DFT)"},
+    )
 
     tiled_mlp: bool | None = Field(
         default=None,
