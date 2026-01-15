@@ -64,7 +64,10 @@ def parse_requirements(extras_require_map):
 
             if (major, minor) >= (2, 9):
                 extras_require_map.pop("fbgemm-gpu")
-                extras_require_map["fbgemm-gpu"] = ["fbgemm-gpu-genai==1.4.1"]
+                extras_require_map["fbgemm-gpu"] = [
+                    "fbgemm-gpu==1.4.0",
+                    "fbgemm-gpu-genai==1.4.2",
+                ]
                 extras_require_map["vllm"] = ["vllm==0.11.1"]
             elif (major, minor) >= (2, 8):
                 extras_require_map.pop("fbgemm-gpu")
