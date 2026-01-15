@@ -43,10 +43,11 @@ ENV PATH="/root/miniconda3/envs/py${PYTHON_VERSION}/bin:${PATH}"
 
 WORKDIR /workspace
 
+ENV CUDA_HOME="/usr/local/cuda"
 RUN python3 -m pip install --upgrade pip && pip3 install -U packaging==23.2 setuptools==75.8.0 wheel psutil && \
     python3 -m pip install --no-cache-dir -U torch==${PYTORCH_VERSION}+cu${CUDA} torchvision --extra-index-url https://download.pytorch.org/whl/cu$CUDA && \
     python3 -m pip install --no-cache-dir "numba>=0.61.2" "numpy>=2.2.6" && \
-    CUDA_HOME=/usr/local/cuda python3 -m pip install --no-cache-dir "xformers>=0.0.23.post1" && \
+    python3 -m pip install --no-cache-dir "xformers>=0.0.23.post1" && \
     python3 -m pip cache purge
 
 RUN if [ "$CUDA" != "130" ] ; then \
