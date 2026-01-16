@@ -63,17 +63,19 @@ def parse_requirements(extras_require_map):
                 raise ValueError("Invalid version format")
 
             torch_parts = torch_version.split("+")
+            cu_suffix = ""
             if len(torch_parts) == 2:
                 torch_cuda_version = torch_parts[1]
                 _dependency_links.append(
                     f"https://download.pytorch.org/whl/{torch_cuda_version}"
                 )
+                cu_suffix = f"+{torch_cuda_version}"
 
             if (major, minor) >= (2, 9):
                 extras_require_map.pop("fbgemm-gpu")
                 extras_require_map["fbgemm-gpu"] = [
-                    "fbgemm-gpu==1.4.0",
-                    "fbgemm-gpu-genai==1.4.2",
+                    "fbgemm-gpu==1.4.0" + cu_suffix,
+                    "fbgemm-gpu-genai==1.4.2" + cu_suffix,
                 ]
                 extras_require_map["vllm"] = ["vllm==0.11.1"]
             elif (major, minor) >= (2, 8):
