@@ -65,7 +65,7 @@ def parse_requirements(extras_require_map):
 
             if (major, minor) >= (2, 9):
                 extras_require_map.pop("fbgemm-gpu")
-                extras_require_map["fbgemm-gpu"] = ["fbgemm-gpu-genai==1.4.1"]
+                extras_require_map["fbgemm-gpu"] = ["fbgemm-gpu-genai==1.4.2"]
                 extras_require_map["vllm"] = ["vllm==0.11.1"]
                 if not install_xformers:
                     _install_requires.pop(_install_requires.index(xformers_version))
