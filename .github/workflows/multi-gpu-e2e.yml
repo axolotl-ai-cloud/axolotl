@@ -47,7 +47,8 @@ jobs:
             cuda_version: 13.0.0
             python_version: "3.11"
             pytorch: 2.9.1
-            axolotl_extras: fbgemm-gpu
+            axolotl_extras:
+#            axolotl_extras: fbgemm-gpu
             num_gpus: 2
             nightly_build: "true"
     runs-on: [self-hosted, modal]
