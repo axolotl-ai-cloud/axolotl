@@ -12,7 +12,10 @@ from pathlib import Path
 
 import torch
 from packaging import version
-from tbparse import SummaryReader
+try:
+    from tbparse import SummaryReader
+except ImportError:  # pragma: no cover - optional dependency
+    SummaryReader = None
 
 from axolotl.utils.dict import DictDefault
 
@@ -177,6 +180,8 @@ def check_tensorboard(
     """
     helper function to parse and check tensorboard logs
     """
+    if SummaryReader is None:
+        raise unittest.SkipTest("tbparse is not installed; skipping tensorboard assertions")
     tb_log_path = most_recent_subdir(temp_run_dir)
     event_file = os.path.join(tb_log_path, sorted(os.listdir(tb_log_path))[0])
     reader = SummaryReader(event_file)
