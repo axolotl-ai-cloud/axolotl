@@ -731,6 +731,8 @@ Use GDPO when training with multiple reward functions. For single reward, GRPO a
 
 Paper: [https://arxiv.org/pdf/2501.05242](https://arxiv.org/pdf/2501.05242)
 
+GDPO uses TRL's native `multi_objective_aggregation` parameter under the hood. When you set `rl: gdpo`, axolotl automatically configures TRL to use `normalize_then_sum` aggregation.
+
 ```yaml
 base_model: Qwen/Qwen2.5-1.5B-Instruct
 
@@ -747,17 +749,10 @@ trl:
     max_completion_length: 256
     use_vllm: true
     num_generations: 4
-
-    # Multiple reward functions (GDPO's strength)
     reward_funcs:
         - rewards.format_reward
         - rewards.correctness_reward
     reward_weights: [1.0, 2.0]
-
-    # GDPO-specific options
-    gdpo_decoupled_norm: true   # Enable per-reward normalization (default: true)
-    gdpo_batch_norm: false      # Optional batch normalization (default: false)
-    gdpo_epsilon: 1e-4          # Numerical stability constant
 
 datasets:
     - path: openai/gsm8k
@@ -765,11 +760,20 @@ datasets:
       type: rewards.oai_gsm8k_transform
 ```
 
+You can also use GRPO with explicit aggregation control:
+
+```yaml
+rl: grpo
+trl:
+    multi_objective_aggregation: normalize_then_sum  # GDPO behavior
+    # or: sum_then_normalize  # Default GRPO behavior
+```
+
 #### GDPO vs GRPO
 
 | Aspect | GRPO | GDPO |
 |--------|------|------|
-| **Reward Normalization** | Combine first, then normalize | Normalize each, then combine |
+| **Aggregation** | `sum_then_normalize` | `normalize_then_sum` |
 | **Multi-reward** | May collapse advantages | Preserves reward signals |
 | **Single reward** | Standard behavior | Equivalent to GRPO |
 
@@ -794,11 +798,9 @@ GDPO uses the same reward function format as GRPO:
 ```python
 # rewards.py
 def format_reward(completions, **kwargs) -> list[float]:
-    """Binary reward for format compliance."""
     return [1.0 if len(c) > 10 else 0.0 for c in completions]
 
 def correctness_reward(completions, answers, **kwargs) -> list[float]:
-    """Continuous reward for answer correctness."""
     rewards = []
     for completion, answer in zip(completions, answers):
         # Your scoring logic here
@@ -806,22 +808,13 @@ def correctness_reward(completions, answers, **kwargs) -> list[float]:
     return rewards
 ```
 
-#### Configuration Options
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `gdpo_decoupled_norm` | bool | `true` | Enable per-reward normalization |
-| `gdpo_batch_norm` | bool | `false` | Apply batch normalization after combining |
-| `gdpo_epsilon` | float | `1e-4` | Numerical stability constant |
-| `gdpo_per_reward_scale` | bool | `true` | Scale each reward by its std |
-
 #### Sequence Parallelism
 
 GDPO supports sequence parallelism for long-context training:
 
 ```yaml
 rl: gdpo
-context_parallel_size: 2  # Enable sequence parallelism
+context_parallel_size: 2
 ```
 
 ### SimPO

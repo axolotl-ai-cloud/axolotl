@@ -1,8 +1,8 @@
 """
 GDPO test suite
 
-GDPO (Group Reward-Decoupled Normalization Policy Optimization) extends GRPO
-with decoupled per-reward normalization for multi-reward RL training.
+GDPO uses TRL's multi_objective_aggregation="normalize_then_sum" for
+per-reward normalization in multi-reward RL training.
 """
 
 import os
@@ -22,15 +22,9 @@ from tests.e2e.utils import require_vllm
 
 @pytest.mark.skip(reason="flaky vllm tests in modal")
 class TestGDPO:
-    """
-    Test case for GDPO training using multiple GPUs.
-
-    GDPO is specifically designed for multi-reward RL training where it
-    normalizes each reward function independently before combining them.
-    """
+    """Test case for GDPO training using TRL's native multi-objective aggregation."""
 
     def _utils_write_yaml_and_rewards(self, cfg, temp_dir, suffix=""):
-        """Write config and reward functions to temp directory."""
         Path(temp_dir).mkdir(parents=True, exist_ok=True)
         with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
             fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
@@ -39,23 +33,18 @@ class TestGDPO:
                 """import random
 
 def format_reward(prompts, completions, **kwargs) -> list[float]:
-    '''Binary reward for format compliance (completion length > 10 chars).'''
     return [1.0 if len(c) > 10 else 0.0 for c in completions]
 
 def correctness_reward(prompts, completions, **kwargs) -> list[float]:
-    '''Continuous reward simulating correctness scoring.'''
     return [random.uniform(-1, 3) for _ in completions]
 
 def safety_reward(prompts, completions, **kwargs) -> list[float]:
-    '''Binary reward for safety compliance.'''
     return [1.0 if 'error' not in c.lower() else 0.0 for c in completions]
 
 def single_reward(prompts, completions, **kwargs) -> list[float]:
-    '''Single random reward for comparison with GRPO.'''
     return [random.uniform(0, 1) for _ in completions]
 
 def oai_gsm8k_transform(cfg, *args, **kwargs):
-    '''Transform function for GSM8K dataset.'''
     def transform_fn(example, tokenizer=None):
         label = example["answer"].split("####")[-1].strip().replace(",", "")
         return {
@@ -81,16 +70,11 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     "max_completion_length": 256,
                     "use_vllm": True,
                     "num_generations": 4,
-                    # Multiple reward functions - GDPO's strength
                     "reward_funcs": [
                         f"rewards_gdpo_{rnd_suffix}.format_reward",
                         f"rewards_gdpo_{rnd_suffix}.correctness_reward",
                     ],
                     "reward_weights": [1.0, 2.0],
-                    # GDPO-specific options
-                    "gdpo_decoupled_norm": True,
-                    "gdpo_batch_norm": False,
-                    "gdpo_epsilon": 1e-4,
                     "scale_rewards": True,
                 },
                 "vllm": {
@@ -185,15 +169,12 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     "max_completion_length": 256,
                     "use_vllm": True,
                     "num_generations": 4,
-                    # Three reward functions
                     "reward_funcs": [
                         f"rewards_gdpo_{rnd_suffix}.format_reward",
                         f"rewards_gdpo_{rnd_suffix}.correctness_reward",
                         f"rewards_gdpo_{rnd_suffix}.safety_reward",
                     ],
                     "reward_weights": [1.0, 2.0, 1.5],
-                    "gdpo_decoupled_norm": True,
-                    "gdpo_batch_norm": True,  # Test with batch norm
                 },
                 "vllm": {
                     "max_model_len": 800,
@@ -273,7 +254,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
 
     @require_vllm
     def test_gdpo_single_reward_fallback(self, temp_dir):
-        """Test GDPO with single reward (should behave like GRPO)."""
+        """Test GDPO with single reward."""
         rnd_suffix = str(random.randint(1000, 9999))
         cfg = DictDefault(
             {
@@ -285,12 +266,10 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                     "max_completion_length": 256,
                     "use_vllm": True,
                     "num_generations": 4,
-                    # Single reward - GDPO falls back to GRPO behavior
                     "reward_funcs": [
                         f"rewards_gdpo_{rnd_suffix}.single_reward",
                     ],
                     "reward_weights": [1.0],
-                    "gdpo_decoupled_norm": True,
                 },
                 "vllm": {
                     "max_model_len": 800,
@@ -387,7 +366,6 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                         f"rewards_gdpo_{rnd_suffix}.correctness_reward",
                     ],
                     "reward_weights": [1.0, 2.0],
-                    "gdpo_decoupled_norm": True,
                 },
                 "vllm": {
                     "max_model_len": 800,
@@ -470,7 +448,7 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "chat_template": "llama3",
                 "rl": "gdpo",
-                "context_parallel_size": 2,  # Enable sequence parallelism
+                "context_parallel_size": 2,
                 "trl": {
                     "beta": 0.001,
                     "max_completion_length": 256,
@@ -481,7 +459,6 @@ def oai_gsm8k_transform(cfg, *args, **kwargs):
                         f"rewards_gdpo_{rnd_suffix}.correctness_reward",
                     ],
                     "reward_weights": [1.0, 2.0],
-                    "gdpo_decoupled_norm": True,
                 },
                 "vllm": {
                     "max_model_len": 800,
