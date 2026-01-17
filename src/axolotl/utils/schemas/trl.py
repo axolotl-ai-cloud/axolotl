@@ -179,3 +179,13 @@ class TRLConfig(BaseModel):
             "description": "Path to custom rollout function. Must be importable from current dir."
         },
     )
+    multi_objective_aggregation: (
+        Literal["sum_then_normalize", "normalize_then_sum"] | None
+    ) = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Multi-objective reward aggregation strategy. "
+            "'sum_then_normalize' (GRPO default): weights and sums rewards first, then normalizes. "
+            "'normalize_then_sum' (GDPO): normalizes each reward independently, then sums."
+        },
+    )

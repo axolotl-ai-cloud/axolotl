@@ -17,6 +17,7 @@ feedback. Various methods include, but not limited to:
 - [Kahneman-Tversky Optimization (KTO)](#kto)
 - [Odds Ratio Preference Optimization (ORPO)](#orpo)
 - [Group Relative Policy Optimization (GRPO)](#grpo)
+- [Group Reward-Decoupled Policy Optimization (GDPO)](#gdpo)
 
 
 ## RLHF using Axolotl
@@ -719,6 +720,102 @@ trl:
 ```
 
 For more information, see [GRPO docs](https://huggingface.co/docs/trl/v0.17.0/en/grpo_trainer#loss-types).
+
+### GDPO
+
+GDPO (Group Reward-Decoupled Policy Optimization) extends GRPO for multi-reward training. It addresses the **reward advantage collapse** problem by normalizing each reward function independently before combining them.
+
+::: {.callout-tip}
+Use GDPO when training with multiple reward functions. For single reward, GRPO and GDPO produce equivalent results.
+:::
+
+Paper: [https://arxiv.org/pdf/2501.05242](https://arxiv.org/pdf/2501.05242)
+
+GDPO uses TRL's native `multi_objective_aggregation` parameter under the hood. When you set `rl: gdpo`, axolotl automatically configures TRL to use `normalize_then_sum` aggregation.
+
+```yaml
+base_model: Qwen/Qwen2.5-1.5B-Instruct
+
+vllm:
+    host: 0.0.0.0
+    port: 8000
+    tensor_parallel_size: 2
+    gpu_memory_utilization: 0.85
+
+rl: gdpo
+
+trl:
+    beta: 0.001
+    max_completion_length: 256
+    use_vllm: true
+    num_generations: 4
+    reward_funcs:
+        - rewards.format_reward
+        - rewards.correctness_reward
+    reward_weights: [1.0, 2.0]
+
+datasets:
+    - path: openai/gsm8k
+      name: main
+      type: rewards.oai_gsm8k_transform
+```
+
+You can also use GRPO with explicit aggregation control:
+
+```yaml
+rl: grpo
+trl:
+    multi_objective_aggregation: normalize_then_sum  # GDPO behavior
+    # or: sum_then_normalize  # Default GRPO behavior
+```
+
+#### GDPO vs GRPO
+
+| Aspect | GRPO | GDPO |
+|--------|------|------|
+| **Aggregation** | `sum_then_normalize` | `normalize_then_sum` |
+| **Multi-reward** | May collapse advantages | Preserves reward signals |
+| **Single reward** | Standard behavior | Equivalent to GRPO |
+
+#### Why GDPO?
+
+When using multiple rewards with GRPO, different reward combinations can produce identical advantages:
+
+```
+# Example: format + correctness rewards
+[format=0, correct=3] → sum=3
+[format=1, correct=2] → sum=3  ← GRPO sees these as equal!
+[format=2, correct=1] → sum=3
+[format=3, correct=0] → sum=3
+```
+
+GDPO normalizes each reward independently, preserving their relative differences.
+
+#### Reward Functions
+
+GDPO uses the same reward function format as GRPO:
+
+```python
+# rewards.py
+def format_reward(completions, **kwargs) -> list[float]:
+    return [1.0 if len(c) > 10 else 0.0 for c in completions]
+
+def correctness_reward(completions, answers, **kwargs) -> list[float]:
+    rewards = []
+    for completion, answer in zip(completions, answers):
+        # Your scoring logic here
+        rewards.append(score)
+    return rewards
+```
+
+#### Sequence Parallelism
+
+GDPO supports sequence parallelism for long-context training:
+
+```yaml
+rl: gdpo
+context_parallel_size: 2
+```
 
 ### SimPO
 

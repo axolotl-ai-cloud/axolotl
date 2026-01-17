@@ -52,12 +52,11 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         trainer_cls = None
         trainer_cls_args = [self.model]
 
-        if self.cfg.rl is RLType.GRPO:
+        if self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
             trainer_cls = GRPOStrategy.get_trainer_class(
                 sequence_parallel=self.cfg.context_parallel_size > 1
             )
             trainer_cls_args.extend(GRPOStrategy.set_trainer_args(self.cfg))
-
             trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))
 
         elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
@@ -155,10 +154,14 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 self.cfg.kto_undesirable_weight or 1.0
             )
 
-        elif self.cfg.rl is RLType.GRPO:
+        elif self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
             training_args_cls = GRPOStrategy.get_training_args_class()
             training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()
+            if self.cfg.rl is RLType.GDPO:
+                training_args_kwargs.setdefault(
+                    "multi_objective_aggregation", "normalize_then_sum"
+                )
 
         elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             training_args_cls = AxolotlDPOConfig

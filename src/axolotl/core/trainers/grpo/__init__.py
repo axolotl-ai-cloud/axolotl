@@ -129,6 +129,11 @@ class GRPOStrategy:
         if trl.rollout_func:
             grpo_args_kwargs["rollout_func"] = cls.get_rollout_func(trl.rollout_func)
 
+        if trl.multi_objective_aggregation is not None:
+            grpo_args_kwargs["multi_objective_aggregation"] = (
+                trl.multi_objective_aggregation
+            )
+
         return grpo_args_kwargs
 
     @classmethod
