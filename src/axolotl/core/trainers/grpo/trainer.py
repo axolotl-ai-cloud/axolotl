@@ -64,7 +64,6 @@ class AxolotlGRPOTrainer(
     """Extend the base GRPOTrainer for axolotl helpers"""
 
     _tag_names = ["trl", "grpo", "axolotl"]
-    _last_loaded_step: int
 
 
 class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
