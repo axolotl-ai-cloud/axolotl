@@ -159,10 +159,9 @@ class PatchManager:
                 patch_chunked_ce_loss_fn()
 
     def _apply_dft_loss_patch(self):
-        if self.cfg.use_dynamic_finetuning:
-            from axolotl.monkeypatch.loss.dft import patch_dft_loss_fn
-
-            patch_dft_loss_fn()
+        # DFT loss is now applied via compute_loss_func in the trainer builder
+        # See: src/axolotl/core/builders/causal.py
+        pass
 
     def _apply_fsdp_patches(self):
         """Apply patches for FSDP configurations."""

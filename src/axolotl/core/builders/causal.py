@@ -373,6 +373,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
             data_collator_kwargs["pad_to_multiple_of"] = multiple
 
+        if self.cfg.use_dynamic_finetuning:
+            from axolotl.monkeypatch.loss.dft import dft_loss
+
+            trainer_kwargs["compute_loss_func"] = dft_loss
+
         trainer_cls = self._get_trainer_cls()
 
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
