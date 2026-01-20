@@ -48,9 +48,9 @@ jobs:
         id: tag
         run: echo ::set-output name=TAG_NAME::$(echo $GITHUB_REF | cut -d / -f 3)
 
-      - name: Update version in src/axolotl/__init__.py
+      - name: Update version in VERSION file
         run: |
-          sed -i -E's/__version__ = "([0-9.]+)"/__version__ = "${{ steps.tag.outputs.TAG_NAME }}"/g' src/axolotl/__init__.py
+          echo "${{ steps.tag.outputs.TAG_NAME }}" | sed -e's/v//g' > VERSION
 
       - name: Build a source dist
         run: |
