@@ -83,6 +83,12 @@ class TokensPerSecondCallback(TrainerCallback):
             num_tokens_per_device = tokens["trainable_tokens"].clone()
             # non data parallel groups have duplicated tokens, so we avoid double-counting
             num_tokens_per_device = num_tokens_per_device / self.non_data_parallel_size
+            # divide by data parallel world size since tokens were summed via all_reduce
+            if torch.distributed.is_initialized():
+                data_parallel_size = (
+                    torch.distributed.get_world_size() // self.non_data_parallel_size
+                )
+                num_tokens_per_device = num_tokens_per_device / data_parallel_size
             state.last_tokens_per_second = num_tokens_per_device / step_time
 
     def on_log(
