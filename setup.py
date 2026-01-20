@@ -1,6 +1,5 @@
 """setup.py for axolotl"""
 
-import ast
 import os
 import platform
 import re
@@ -130,15 +129,11 @@ def parse_requirements(extras_require_map):
 
 def get_package_version():
     with open(
-        Path(os.path.dirname(os.path.abspath(__file__)))
-        / "src"
-        / "axolotl"
-        / "__init__.py",
+        Path(os.path.dirname(os.path.abspath(__file__))) / "VERSION",
         "r",
         encoding="utf-8",
     ) as fin:
-        version_match = re.search(r"^__version__\s*=\s*(.*)$", fin.read(), re.MULTILINE)
-    version_ = ast.literal_eval(version_match.group(1))
+        version_ = fin.read().strip()
     return version_
 
 
