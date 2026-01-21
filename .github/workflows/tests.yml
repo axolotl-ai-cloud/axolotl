@@ -56,6 +56,11 @@ jobs:
       matrix:
         python_version: ["3.11", "3.12"]
         pytorch_version: ["2.8.0", "2.9.0", "2.9.1"]
+        exclude:
+          - python_version: "3.12"
+            pytorch_version: "2.8.0"
+          - python_version: "3.12"
+            pytorch_version: "2.9.0"
     timeout-minutes: 20
 
     steps:
@@ -144,8 +149,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python_version: ["3.11"]
+        python_version: ["3.11", "3.12"]
         pytorch_version: ["2.8.0", "2.9.0", "2.9.1"]
+        exclude:
+          - python_version: "3.12"
+            pytorch_version: "2.8.0"
+          - python_version: "3.12"
+            pytorch_version: "2.9.0"
     timeout-minutes: 20
 
     steps:
@@ -254,10 +264,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
-            pytorch: 2.8.0
+          - cuda: 129
+            cuda_version: 12.9.1
+            python_version: "3.12"
+            pytorch: 2.9.1
             num_gpus: 1
             axolotl_extras:
             dockerfile: "Dockerfile-uv.jinja"
@@ -359,9 +369,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
+          - cuda: 129
+            cuda_version: 12.9.1
+            python_version: "3.12"
             pytorch: 2.9.1
             num_gpus: 1
             axolotl_extras:
