@@ -746,6 +746,19 @@ class RLValidationMixin:
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_gdpo(cls, data):
+        if (
+            data.get("rl") == "gdpo"
+            and data.get("trl", {}).get("multi_objective_aggregation")
+            == "sum_then_normalize"
+        ):
+            raise ValueError(
+                "`multi_objective_aggregation` value set as `sum_then_normalize` => GRPO, but GDPO was selected"
+            )
+        return data
+
 
 class OptimizationValidationMixin:
     """Validation methods related to optimization and performance."""
