@@ -24,6 +24,9 @@ Repository = "https://github.com/axolotl-ai-cloud/axolotl.git"
 py-modules = ["setuptools_axolotl_dynamic_dependencies"]
 include-package-data = true
 
+[tool.setuptools.dynamic]
+version = { file = "VERSION" }
+
 [tool.setuptools.cmdclass]
 build_py = "setuptools_axolotl_dynamic_dependencies.BuildPyCommand"
 
