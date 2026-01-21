@@ -47,6 +47,7 @@ jobs:
             pytorch: 2.9.1
             axolotl_extras: "fbgemm-gpu,vllm"
             num_gpus: 2
+            dockerfile: "Dockerfile-uv.jinja"
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.11"
@@ -54,7 +55,6 @@ jobs:
             axolotl_extras:
 #            axolotl_extras: fbgemm-gpu
             num_gpus: 2
-            dockerfile: "Dockerfile-uv.jinja"
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
     steps:
