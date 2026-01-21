@@ -54,6 +54,7 @@ jobs:
             axolotl_extras:
 #            axolotl_extras: fbgemm-gpu
             num_gpus: 2
+            dockerfile: "Dockerfile-uv.jinja"
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
     steps:
@@ -76,6 +77,7 @@ jobs:
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
           echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile.jinja'}}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
           modal run -m cicd.multigpu
