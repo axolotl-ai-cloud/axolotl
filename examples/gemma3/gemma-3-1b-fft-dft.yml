@@ -21,9 +21,7 @@ val_set_size: 0.05
 output_dir: ./outputs/gemma-3-1b-fft-dft
 
 sequence_len: 2048
-sample_packing: true
 
-# Enable Dynamic Fine-Tuning loss
 use_dynamic_finetuning: true
 
 wandb_project:
