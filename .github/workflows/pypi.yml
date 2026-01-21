@@ -50,7 +50,7 @@ jobs:
 
       - name: Update version in VERSION file
         run: |
-          echo "${{ steps.tag.outputs.TAG_NAME }}" | sed -e's/v//g' > VERSION
+          echo "${{ steps.tag.outputs.TAG_NAME }}" | sed 's/^v//' > VERSION
 
       - name: Build a source dist
         run: |
