@@ -38,7 +38,7 @@ jobs:
             cuda_version: 12.9.1
             python_version: "3.12"
             pytorch: 2.9.1
-            axolotl_extras:
+            axolotl_extras: vllm
             platforms: "linux/amd64,linux/arm64"
           - cuda: 130
             cuda_version: 13.0.0
