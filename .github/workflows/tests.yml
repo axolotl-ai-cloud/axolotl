@@ -87,7 +87,7 @@ jobs:
       - name: upgrade pip
         run: |
           pip3 install --upgrade pip
-          pip3 install --upgrade packaging==23.2 setuptools==75.8.0 wheel
+          pip3 install --upgrade packaging==26.0 setuptools==75.8.0 wheel
 
       - name: Install PyTorch
         run: |
@@ -182,7 +182,7 @@ jobs:
       - name: upgrade pip
         run: |
           pip3 install --upgrade pip
-          pip3 install --upgrade packaging==23.2 setuptools==75.8.0 setuptools_scm build wheel psutil
+          pip3 install --upgrade packaging==26.0 setuptools==75.8.0 setuptools_scm build wheel psutil
 
       - name: Install PyTorch
         run: |
@@ -269,7 +269,7 @@ jobs:
             python_version: "3.12"
             pytorch: 2.9.1
             num_gpus: 1
-            axolotl_extras:
+            axolotl_extras: vllm
             dockerfile: "Dockerfile-uv.jinja"
     steps:
       - name: Checkout
