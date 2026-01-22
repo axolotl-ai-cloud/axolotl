@@ -26,7 +26,7 @@ from torch.distributed import DeviceMesh
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForImageTextToText,
-    AutoModelForVision2Seq,
+    AutoModelForImageTextToText,
     AwqConfig,
     BitsAndBytesConfig,
     GPTQConfig,
@@ -434,7 +434,7 @@ class ModelLoader:
         """
         if self.cfg.is_multimodal:
             self.auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
-                self.model_config.model_type, AutoModelForVision2Seq
+                self.model_config.model_type, AutoModelForImageTextToText
             )
             if isinstance(self.auto_model_loader, str):
                 self.auto_model_loader = AutoModelForImageTextToText
@@ -671,7 +671,7 @@ class ModelLoader:
         Uses the selected loader when provided; otherwise falls back to the auto loader.
         """
         loader = model_loader_class or self.auto_model_loader
-        if loader in [AutoModelForCausalLM, AutoModelForVision2Seq]:
+        if loader in [AutoModelForCausalLM, AutoModelForImageTextToText]:
             model = loader.from_config(
                 config=self.model_config,
                 trust_remote_code=self.cfg.trust_remote_code or False,
