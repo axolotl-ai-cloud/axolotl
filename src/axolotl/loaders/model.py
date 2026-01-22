@@ -26,7 +26,6 @@ from torch.distributed import DeviceMesh
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForImageTextToText,
-    AutoModelForImageTextToText,
     AwqConfig,
     BitsAndBytesConfig,
     GPTQConfig,
