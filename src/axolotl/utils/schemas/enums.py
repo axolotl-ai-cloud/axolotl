@@ -26,6 +26,7 @@ class RLType(str, Enum):
     """RL trainer type configuration subset"""
 
     DPO = "dpo"
+    GDPO = "gdpo"
     GRPO = "grpo"
     IPO = "ipo"
     ORPO = "orpo"

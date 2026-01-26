@@ -17,7 +17,8 @@ template_loader = jinja2.FileSystemLoader(searchpath=cicd_path)
 template_env = jinja2.Environment(
     loader=template_loader, autoescape=select_autoescape()
 )
-df_template = template_env.get_template("Dockerfile.jinja")
+dockerfile = os.environ.get("E2E_DOCKERFILE", "Dockerfile.jinja")
+df_template = template_env.get_template(dockerfile)
 
 df_args = {
     "AXOLOTL_EXTRAS": os.environ.get("AXOLOTL_EXTRAS", ""),
@@ -27,8 +28,11 @@ df_args = {
     "CUDA": os.environ.get("CUDA", "126"),
     "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/main"),
     "GITHUB_SHA": os.environ.get("GITHUB_SHA", ""),
+    "NIGHTLY_BUILD": os.environ.get("NIGHTLY_BUILD", ""),
     "CODECOV_TOKEN": os.environ.get("CODECOV_TOKEN", ""),
     "HF_HOME": "/workspace/data/huggingface-cache/hub",
+    "PYTHONUNBUFFERED": os.environ.get("PYTHONUNBUFFERED", "1"),
+    "DEEPSPEED_LOG_LEVEL": os.environ.get("DEEPSPEED_LOG_LEVEL", "WARNING"),
 }
 
 dockerfile_contents = df_template.render(**df_args)

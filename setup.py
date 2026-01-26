@@ -1,6 +1,5 @@
 """setup.py for axolotl"""
 
-import ast
 import os
 import platform
 import re
@@ -79,6 +78,11 @@ def parse_requirements(extras_require_map):
                 extras_require_map["vllm"] = ["vllm==0.11.1"]
                 if not install_xformers:
                     _install_requires.pop(_install_requires.index(xformers_version))
+                extras_require_map["vllm"] = ["vllm==0.13.0"]
+                if patch == 0:
+                    extras_require_map["vllm"] = ["vllm==0.13.0"]
+                else:
+                    extras_require_map["vllm"] = ["vllm==0.14.0"]
             elif (major, minor) >= (2, 8):
                 extras_require_map.pop("fbgemm-gpu")
                 extras_require_map["fbgemm-gpu"] = ["fbgemm-gpu-genai==1.3.0"]
@@ -130,15 +134,11 @@ def parse_requirements(extras_require_map):
 
 def get_package_version():
     with open(
-        Path(os.path.dirname(os.path.abspath(__file__)))
-        / "src"
-        / "axolotl"
-        / "__init__.py",
+        Path(os.path.dirname(os.path.abspath(__file__))) / "VERSION",
         "r",
         encoding="utf-8",
     ) as fin:
-        version_match = re.search(r"^__version__\s*=\s*(.*)$", fin.read(), re.MULTILINE)
-    version_ = ast.literal_eval(version_match.group(1))
+        version_ = fin.read().strip()
     return version_
 
 
