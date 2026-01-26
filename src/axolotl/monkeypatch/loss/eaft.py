@@ -1,6 +1,8 @@
 """
 eaft (entropy-aware focal training) loss implementation
 weights examples by entropy approximation from top-k logits
+
+Reference: https://github.com/ymxyll/LlamaFactory-EAFT/blob/e2ce19e8efcc226450ee8f2b81dfe4e69f1f945d/src/llamafactory/train/trainer_utils.py
 """
 
 import torch
