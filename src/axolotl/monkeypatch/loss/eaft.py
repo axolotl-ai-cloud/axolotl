@@ -7,22 +7,17 @@ import torch
 import torch.nn.functional as F
 
 
-def eaft_loss(
-    model, inputs, return_outputs=False, num_items_in_batch=None, alpha=1.0, k=20
-):
+def eaft_loss(outputs, labels, num_items_in_batch=None, alpha=1.0, k=20):
     """
     compute eaft loss with entropy weighting
 
     args:
-        model: the model being trained
-        inputs: input batch
-        return_outputs: whether to return model outputs
+        outputs: model outputs containing logits
+        labels: target labels for computing loss
         num_items_in_batch: for sample packing support
         alpha: exponent for entropy weighting (default 1.0)
         k: number of top logits for entropy approximation (default 20)
     """
-    labels = inputs.pop("labels")
-    outputs = model(**inputs)
     logits = outputs.logits
 
     shift_logits = logits[..., :-1, :].contiguous()
@@ -51,4 +46,4 @@ def eaft_loss(
     else:
         loss = weighted_loss.mean()
 
-    return (loss, outputs) if return_outputs else loss
+    return loss
