@@ -40,7 +40,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip3 install wheel packaging==23.2
+          pip3 install wheel packaging==26.0
           pip3 install --no-build-isolation -e .
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
 
@@ -48,9 +48,9 @@ jobs:
         id: tag
         run: echo ::set-output name=TAG_NAME::$(echo $GITHUB_REF | cut -d / -f 3)
 
-      - name: Update version in setup.py
+      - name: Update version in VERSION file
         run: |
-          sed -i -E 's/version="([0-9.]+)",/version="${{ steps.tag.outputs.TAG_NAME }}",/g' setup.py
+          echo "${{ steps.tag.outputs.TAG_NAME }}" | sed 's/^v//' > VERSION
 
       - name: Build a source dist
         run: |

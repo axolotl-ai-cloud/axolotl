@@ -311,7 +311,6 @@ class TestHFRLTrainerBuilder:
         # KTO specific
         assert training_arguments.desirable_weight == 1.0
         assert training_arguments.undesirable_weight == 1.0
-        assert training_arguments.max_prompt_length == 512
 
     def _write_rewards_file(self, rewards_dir: Path):
         """

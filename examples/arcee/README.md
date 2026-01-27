@@ -17,7 +17,7 @@ Thanks to the team at Arcee.ai for using Axolotl in supervised fine-tuning the A
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 
-pip3 install packaging==23.2 setuptools==75.8.0 wheel ninja
+pip3 install packaging==26.0 setuptools==75.8.0 wheel ninja
 pip3 install --no-build-isolation -e '.[flash-attn]'
 
 # Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy
