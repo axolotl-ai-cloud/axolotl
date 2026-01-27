@@ -912,21 +912,15 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 <section id="axolotl.train.handle_untrained_tokens_fix" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.train.handle_untrained_tokens_fix">handle_untrained_tokens_fix</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>train.handle_untrained_tokens_fix(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    train_dataset,</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    safe_serialization,</span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>train.handle_untrained_tokens_fix(cfg, model, tokenizer, train_dataset)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Apply fixes for untrained tokens if configured.</p>
 <section id="parameters-2" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-2">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 18%">
-<col style="width: 19%">
-<col style="width: 50%">
+<col style="width: 14%">
+<col style="width: 20%">
+<col style="width: 52%">
 <col style="width: 11%">
 </colgroup>
 <thead>
@@ -960,12 +954,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>train_dataset</td>
 <td>Dataset</td>
 <td>The training dataset to use.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>safe_serialization</td>
-<td>bool</td>
-<td>Whether to use safe serialization when saving.</td>
 <td><em>required</em></td>
 </tr>
 </tbody>
@@ -1024,16 +1012,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 <section id="axolotl.train.save_trained_model" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.train.save_trained_model">save_trained_model</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>train.save_trained_model(cfg, trainer, model, safe_serialization)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>train.save_trained_model(cfg, trainer, model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Save the trained model according to configuration and training setup.</p>
 <section id="parameters-4" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-4">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 19%">
-<col style="width: 16%">
-<col style="width: 51%">
-<col style="width: 11%">
+<col style="width: 9%">
+<col style="width: 18%">
+<col style="width: 58%">
+<col style="width: 13%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1060,12 +1048,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>model</td>
 <td>PreTrainedModel</td>
 <td>The trained model to save.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>safe_serialization</td>
-<td>bool</td>
-<td>Whether to use safe serialization.</td>
 <td><em>required</em></td>
 </tr>
 </tbody>
@@ -1288,16 +1270,16 @@ trainer setup.</p>
 </section>
 <section id="axolotl.train.setup_signal_handler" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.train.setup_signal_handler">setup_signal_handler</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>train.setup_signal_handler(cfg, model, safe_serialization)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>train.setup_signal_handler(cfg, model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Set up signal handler for graceful termination.</p>
 <section id="parameters-9" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-9">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 19%">
-<col style="width: 16%">
-<col style="width: 51%">
-<col style="width: 11%">
+<col style="width: 8%">
+<col style="width: 18%">
+<col style="width: 58%">
+<col style="width: 13%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1318,12 +1300,6 @@ trainer setup.</p>
 <td>model</td>
 <td>PreTrainedModel</td>
 <td>The model to save on termination</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>safe_serialization</td>
-<td>bool</td>
-<td>Whether to use safe serialization when saving</td>
 <td><em>required</em></td>
 </tr>
 </tbody>
