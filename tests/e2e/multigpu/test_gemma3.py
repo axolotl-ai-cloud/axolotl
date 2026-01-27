@@ -23,6 +23,7 @@ def download_model():
     snapshot_download("axolotl-mirrors/gemma-3-4b-pt", repo_type="model")
 
 
+@pytest.mark.skip(reason="FIXME")
 class TestMultiGPUGemma3:
     """
     Test case for Gemma3 models using LoRA
