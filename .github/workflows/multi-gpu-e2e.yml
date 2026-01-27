@@ -45,7 +45,7 @@ jobs:
             cuda_version: 12.9.1
             python_version: "3.12"
             pytorch: 2.9.1
-            axolotl_extras: "fbgemm-gpu,vllm"
+            axolotl_extras: "fbgemm-gpu"
             num_gpus: 2
             dockerfile: "Dockerfile-uv.jinja"
           - cuda: 130

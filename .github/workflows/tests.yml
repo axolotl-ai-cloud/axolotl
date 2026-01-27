@@ -269,7 +269,7 @@ jobs:
             python_version: "3.12"
             pytorch: 2.9.1
             num_gpus: 1
-            axolotl_extras: vllm
+            axolotl_extras:
             dockerfile: "Dockerfile-uv.jinja"
     steps:
       - name: Checkout
