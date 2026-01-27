@@ -1,6 +1,7 @@
 base_model: google/gemma-3-270m-it
 
 model_type: Gemma3ForCausalLM
+cls_model_config: Gemma3TextConfig
 
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
@@ -29,7 +30,7 @@ output_dir: ./outputs/out
 adapter: qlora
 lora_r: 32
 lora_alpha: 16
-lora_dropout: 0.05
+lora_dropout: 0
 lora_target_linear: true
 
 sequence_len: 2048
