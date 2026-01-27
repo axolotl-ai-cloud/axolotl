@@ -37,6 +37,10 @@ class HFMistralTokenizer(MistralCommonBackend):
     def name_or_path(self) -> str:
         return self._name_or_path
 
+    @name_or_path.setter
+    def name_or_path(self, name_or_path) -> None:
+        self._name_or_path = name_or_path
+
     @property
     def chat_template(self) -> str | None:
         """Chat template is not supported. Dummy method to satisfy HuggingFace API."""
