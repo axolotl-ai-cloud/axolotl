@@ -38,13 +38,17 @@ class HFMistralTokenizer(MistralCommonBackend):
         return self._name_or_path
 
     @name_or_path.setter
-    def name_or_path(self, name_or_path) -> None:
+    def name_or_path(self, name_or_path: str) -> None:
         self._name_or_path = name_or_path
 
     @property
     def chat_template(self) -> str | None:
         """Chat template is not supported. Dummy method to satisfy HuggingFace API."""
         return "[This is a dummy chat template]"
+
+    @chat_template.setter
+    def chat_template(self, chat_template: str | None) -> None:
+        pass
 
     def _set_mode(self, mode: ValidationMode):
         """Set the mode of the MistralRequestValidator.
