@@ -10,7 +10,7 @@ from axolotl.utils import get_pytorch_version
 from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import check_model_output_exists
+from tests.e2e.utils import check_model_output_exists
 
 
 @pytest.fixture()
@@ -39,7 +39,6 @@ def min_cfg(temp_dir):
         "optimizer": "adamw_torch_fused",
         "output_dir": temp_dir,
         "lr_scheduler": "cosine",
-        "save_safetensors": True,
         "max_steps": 10,
         "bf16": "auto",
         "save_first_step": False,
@@ -92,7 +91,6 @@ class TestCutCrossEntropyIntegration:
                 "optimizer": "adamw_torch_fused",
                 "output_dir": temp_dir,
                 "lr_scheduler": "cosine",
-                "save_safetensors": True,
                 "max_steps": 10,
                 "bf16": "auto",
                 "save_first_step": False,

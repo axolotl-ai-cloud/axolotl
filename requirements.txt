@@ -9,17 +9,17 @@ liger-kernel==0.6.4
 # END section
 
 packaging==26.0
-
-huggingface_hub>=0.36.0
+huggingface_hub>=1.1.7
 peft>=0.18.1
 tokenizers>=0.22.1
-transformers==4.57.6
+transformers==5.0.0
 accelerate==1.12.0
 datasets==4.5.0
 deepspeed>=0.18.3
 trl==0.27.0
 hf_xet==1.2.0
 kernels==0.11.5
+
 trackio>=0.13.0
 typing-extensions>=4.15.0
 

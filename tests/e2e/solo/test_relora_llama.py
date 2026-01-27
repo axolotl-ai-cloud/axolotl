@@ -63,7 +63,6 @@ class TestReLoraLlama(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
-                "save_safetensors": True,
                 "use_tensorboard": True,
                 "save_first_step": False,
             }

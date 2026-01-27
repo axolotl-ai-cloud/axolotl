@@ -26,7 +26,6 @@ from torch.distributed import DeviceMesh
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForImageTextToText,
-    AutoModelForVision2Seq,
     AwqConfig,
     BitsAndBytesConfig,
     GPTQConfig,
@@ -434,7 +433,7 @@ class ModelLoader:
         """
         if self.cfg.is_multimodal:
             self.auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
-                self.model_config.model_type, AutoModelForVision2Seq
+                self.model_config.model_type, AutoModelForImageTextToText
             )
             if isinstance(self.auto_model_loader, str):
                 self.auto_model_loader = AutoModelForImageTextToText
@@ -476,6 +475,7 @@ class ModelLoader:
             max_memory = None
 
         self.model_kwargs["torch_dtype"] = self.cfg.torch_dtype
+        self.model_kwargs["dtype"] = self.cfg.torch_dtype
 
         is_ds_zero3 = is_deepspeed_zero3_enabled()
 
@@ -670,7 +670,7 @@ class ModelLoader:
         Uses the selected loader when provided; otherwise falls back to the auto loader.
         """
         loader = model_loader_class or self.auto_model_loader
-        if loader in [AutoModelForCausalLM, AutoModelForVision2Seq]:
+        if loader in [AutoModelForCausalLM, AutoModelForImageTextToText]:
             model = loader.from_config(
                 config=self.model_config,
                 trust_remote_code=self.cfg.trust_remote_code or False,
@@ -788,6 +788,7 @@ class ModelLoader:
                 # Use auto model loader (handles gptq and default cases)
                 model_loader_class = self.auto_model_loader
 
+            self.model_kwargs["dtype"] = self.model_kwargs["torch_dtype"]
             if self.cfg.reinit_weights:
                 self.model = self._load_model_from_config(model_loader_class)
             else:

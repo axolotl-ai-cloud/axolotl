@@ -13,6 +13,7 @@ def reload_modules(hf_hub_offline):
 
     import datasets
     import huggingface_hub.constants
+    # from huggingface_hub.utils import reset_sessions
 
     # Reload the constants module first, as others depend on it
     importlib.reload(huggingface_hub.constants)

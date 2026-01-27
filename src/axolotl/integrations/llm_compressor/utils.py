@@ -12,7 +12,6 @@ def save_compressed_model(
     model: PreTrainedModel,
     output_dir: Union[str, bytes],
     trainer: Trainer,
-    safe_serialization: bool = False,
     save_compressed: bool = False,
 ) -> None:
     """
@@ -22,7 +21,6 @@ def save_compressed_model(
         model (PreTrainedModel): The model to be saved.
         output_dir (str or bytes): Path where the model files will be written.
         trainer (Trainer): Hugging Face Trainer for process synchronization.
-        safe_serialization (bool): Use safe serialization if True.
         save_compressed (bool): Write compressed tensors if True.
     """
     trainer.accelerator.wait_for_everyone()
@@ -34,7 +32,6 @@ def save_compressed_model(
     modify_save_pretrained(model)
     model.save_pretrained(
         output_dir,
-        safe_serialization=safe_serialization,
         save_compressed=save_compressed,
         skip_sparsity_compression_stats=not save_compressed,
     )
