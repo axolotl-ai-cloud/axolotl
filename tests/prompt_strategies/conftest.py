@@ -141,6 +141,7 @@ def fixture_phi35_tokenizer():
 
 
 @pytest.fixture(name="phi4_tokenizer", scope="session", autouse=True)
+@enable_hf_offline
 def fixture_phi4_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-4-reasoning")
     return tokenizer
@@ -178,6 +179,7 @@ def fixture_devstral_1_1_tokenizer():
 
 
 @pytest.fixture(name="qwen3_tokenizer")
+@enable_hf_offline
 def qwen3_tokenizer_fixture(
     download_qwen3_half_billion_model,
 ):  # pylint: disable=unused-argument,redefined-outer-name
