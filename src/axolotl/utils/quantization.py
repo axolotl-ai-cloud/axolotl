@@ -41,7 +41,7 @@ if version.parse(torch.__version__) >= version.parse("2.8.0"):
         pass
 
     try:
-        from torchao.prototype.mx_formats.config import MXFakeQuantizeConfig
+        from torchao.prototype.qat import MXFakeQuantizeConfig
 
         quantization_config_to_str[MXFakeQuantizeConfig] = "mxfp"
     except ImportError:
@@ -119,7 +119,7 @@ def get_quantization_config(
 
     if weight_dtype == TorchAOQuantDType.mxfp4:
 
-        from torchao.prototype.mx_formats.config import MXFakeQuantizeConfig
+        from torchao.prototype.qat import MXFakeQuantizeConfig
         # MXFP4 uses block_size=32 by default (vs NVFP4's 16)
         block_size = group_size if group_size is not None else 32
         if block_size != 32:
