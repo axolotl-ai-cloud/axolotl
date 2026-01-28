@@ -25,7 +25,12 @@ class ModelInputConfig(BaseModel):
             "description": "If the base_model repo on hf hub doesn't include configuration .json files, You can set that here, or leave this empty to default to base_model"
         },
     )
-    cls_model_config: str | None = None
+    cls_model_config: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "transformers config class (e.g., 'LlamaConfig', 'MistralConfig'). Defaults to AutoConfig."
+        },
+    )
     tokenizer_config: str | None = Field(
         default=None,
         json_schema_extra={

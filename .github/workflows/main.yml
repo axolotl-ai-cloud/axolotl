@@ -20,22 +20,32 @@ jobs:
             python_version: "3.11"
             pytorch: 2.8.0
             axolotl_extras:
-            is_latest: true
+            platforms: "linux/amd64"
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
             pytorch: 2.9.0
             axolotl_extras:
+            platforms: "linux/amd64,linux/arm64"
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
             pytorch: 2.9.1
             axolotl_extras:
+            platforms: "linux/amd64,linux/arm64"
+            is_latest: true
+          - cuda: 129
+            cuda_version: 12.9.1
+            python_version: "3.12"
+            pytorch: 2.9.1
+            axolotl_extras: vllm
+            platforms: "linux/amd64,linux/arm64"
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.11"
             pytorch: 2.9.1
             axolotl_extras:
+            platforms: "linux/amd64,linux/arm64"
     runs-on: axolotl-gpu-runner
     steps:
       - name: Checkout
@@ -61,6 +71,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          platforms: ${{ matrix.platforms }}
           build-args: |
             BASE_TAG=${{ github.ref_type == 'tag' && 'main' || github.ref_name }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
             CUDA=${{ matrix.cuda }}
@@ -87,22 +98,32 @@ jobs:
             python_version: "3.11"
             pytorch: 2.8.0
             axolotl_extras:
-            is_latest: true
+            platforms: "linux/amd64"
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
             pytorch: 2.9.0
             axolotl_extras:
+            platforms: "linux/amd64,linux/arm64"
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
             pytorch: 2.9.1
             axolotl_extras:
+            is_latest: true
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: 129
+            cuda_version: 12.9.1
+            python_version: "3.12"
+            pytorch: 2.9.1
+            axolotl_extras:
+            platforms: "linux/amd64,linux/arm64"
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.11"
             pytorch: 2.9.1
             axolotl_extras:
+            platforms: "linux/amd64,linux/arm64"
     runs-on: axolotl-gpu-runner
     steps:
       - name: Checkout
@@ -127,6 +148,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          platforms: ${{ matrix.platforms }}
           build-args: |
             BASE_TAG=${{ github.ref_type == 'tag' && 'main' || github.ref_name }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
             CUDA=${{ matrix.cuda }}
@@ -147,11 +169,11 @@ jobs:
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
-            pytorch: 2.8.0
+            pytorch: 2.9.1
             axolotl_extras:
-            is_latest:
-          - cuda: 128
-            cuda_version: 12.8.1
+            is_latest: true
+          - cuda: 130
+            cuda_version: 13.0.0
             python_version: "3.11"
             pytorch: 2.9.1
             axolotl_extras:
@@ -180,6 +202,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           build-args: |
             BASE_TAG=${{ github.ref_type == 'tag' && 'main' || github.ref_name }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
             CUDA=${{ matrix.cuda }}

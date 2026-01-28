@@ -201,6 +201,16 @@ class AttentionValidationMixin:
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_scaling_softmax_requires_flex(cls, data):
+        if data.get("scaling_softmax") and not data.get("flex_attention"):
+            raise ValueError(
+                "scaling_softmax requires flex_attention: true\n"
+                "Add 'flex_attention: true' to your config file.\n"
+            )
+        return data
+
 
 class TrainingValidationMixin:
     """Validation methods related to training configuration."""
@@ -733,6 +743,19 @@ class RLValidationMixin:
                 "The `use_reentrant: True` implementation of gradient checkpointing "
                 "is not supported for distributed RL training with QLoRA. Please set "
                 "`use_reentrant: False` in `gradient_checkpointing_kwargs`."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_gdpo(cls, data):
+        if (
+            data.get("rl") == "gdpo"
+            and data.get("trl", {}).get("multi_objective_aggregation")
+            == "sum_then_normalize"
+        ):
+            raise ValueError(
+                "`multi_objective_aggregation` value set as `sum_then_normalize` => GRPO, but GDPO was selected"
             )
         return data
 
