@@ -619,6 +619,13 @@ class AxolotlInputConfig(
         },
     )
 
+    experts_implementation: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Which experts implementation to use for MoE models,"
+        },
+    )
+
     scaling_softmax: bool | None = Field(
         default=None,
         json_schema_extra={
