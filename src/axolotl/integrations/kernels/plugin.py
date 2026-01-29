@@ -14,8 +14,9 @@ class KernelsPlugin(BasePlugin):
         return "axolotl.integrations.kernels.KernelsArgs"
 
     def pre_model_load(self, cfg):
-        self._register_kernels()
-        self._kernelize_model(cfg.model_config_type)
+        if cfg.use_scattermoe:
+            self._register_kernels()
+            self._kernelize_model(cfg.model_config_type)
 
     def _register_kernels(self):
         register_kernel_mapping(
