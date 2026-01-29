@@ -7,11 +7,11 @@ import numpy as np
 from mistral_common.protocol.instruct.validator import ValidationMode
 from mistral_common.tokens.tokenizers.utils import download_tokenizer_from_hf_hub
 from torch import Tensor
-from transformers.tokenization_mistral_common import MistralCommonTokenizer
+from transformers.tokenization_mistral_common import MistralCommonBackend
 from transformers.tokenization_utils_base import VERY_LARGE_INTEGER
 
 
-class HFMistralTokenizer(MistralCommonTokenizer):
+class HFMistralTokenizer(MistralCommonBackend):
     """
     Wraps mistral_common.tokens.tokenizers.mistral.MistralTokenizer
     and exposes HuggingFace API for special tokens.
@@ -37,10 +37,18 @@ class HFMistralTokenizer(MistralCommonTokenizer):
     def name_or_path(self) -> str:
         return self._name_or_path
 
+    @name_or_path.setter
+    def name_or_path(self, name_or_path: str) -> None:
+        self._name_or_path = name_or_path
+
     @property
     def chat_template(self) -> str | None:
         """Chat template is not supported. Dummy method to satisfy HuggingFace API."""
         return "[This is a dummy chat template]"
+
+    @chat_template.setter
+    def chat_template(self, chat_template: str | None) -> None:
+        pass
 
     def _set_mode(self, mode: ValidationMode):
         """Set the mode of the MistralRequestValidator.
@@ -133,7 +141,7 @@ class HFMistralTokenizer(MistralCommonTokenizer):
         r"""
         Patched fn to pass `name_or_path` and remove extra kwargs.
 
-        Instantiate a `MistralCommonTokenizer` from a predefined
+        Instantiate a `MistralCommonBackend` from a predefined
         tokenizer.
 
         Args:
@@ -142,7 +150,7 @@ class HFMistralTokenizer(MistralCommonTokenizer):
 
                 - A string, the *model id* of a predefined tokenizer hosted inside a model repo on huggingface.co.
                 - A path to a *directory* containing the tokenizer config, for instance saved
-                  using the [`MistralCommonTokenizer.tokenization_mistral_common.save_pretrained`] method, e.g.,
+                  using the [`MistralCommonBackend.tokenization_mistral_common.save_pretrained`] method, e.g.,
                   `./my_model_directory/`.
             mode (`ValidationMode`, *optional*, defaults to `ValidationMode.test`):
                 Validation mode for the `MistralTokenizer` tokenizer.
@@ -154,7 +162,7 @@ class HFMistralTokenizer(MistralCommonTokenizer):
                 exist.
             token (`str` or *bool*, *optional*):
                 The token to use as HTTP bearer authorization for remote files. If `True`, will use the token generated
-                when running `huggingface-cli login` (stored in `~/.huggingface`).
+                when running `hf auth login` (stored in `~/.huggingface`).
             local_files_only (`bool`, *optional*, defaults to `False`):
                 Whether or not to only rely on local files and not to attempt to download any files.
             revision (`str`, *optional*, defaults to `"main"`):
@@ -179,12 +187,12 @@ class HFMistralTokenizer(MistralCommonTokenizer):
                 Whether or not the model should cleanup the spaces that were added when splitting the input text during the
                 tokenization process.
             kwargs (additional keyword arguments, *optional*):
-                Not supported by `MistralCommonTokenizer.from_pretrained`.
+                Not supported by `MistralCommonBackend.from_pretrained`.
                 Will raise an error if used.
         """
         if init_inputs:
             raise ValueError(
-                "`init_inputs` are not supported by `MistralCommonTokenizer.from_pretrained`."
+                "`init_inputs` are not supported by `MistralCommonBackend.from_pretrained`."
             )
 
         # Delete trust_remote_code as it does nothing
@@ -196,7 +204,7 @@ class HFMistralTokenizer(MistralCommonTokenizer):
         # Handle kwargs and AutoTokenizer case
         if kwargs and not kwargs.keys() == {"_from_auto"}:
             raise ValueError(
-                f"Kwargs {list(kwargs.keys())} are not supported by `MistralCommonTokenizer.from_pretrained`."
+                f"Kwargs {list(kwargs.keys())} are not supported by `MistralCommonBackend.from_pretrained`."
             )
 
         if not os.path.isfile(pretrained_model_name_or_path):

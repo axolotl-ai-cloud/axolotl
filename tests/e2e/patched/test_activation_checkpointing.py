@@ -66,7 +66,6 @@ class TestActivationCheckpointing:
                 "flash_attention": True,
                 "sample_packing": True,
                 "bf16": True,
-                "save_safetensors": True,
                 "gradient_checkpointing": gradient_checkpointing,
                 "save_first_step": False,
                 "dataset_num_proc": 4,

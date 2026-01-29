@@ -102,12 +102,10 @@ def do_quantize(
     LOG.info(f"Saving quantized model to: {str(Path(output_dir) / 'quantized')}.")
     model.save_pretrained(
         str(Path(output_dir) / "quantized"),
-        safe_serialization=False,
         progressbar=True,
     )
     tokenizer.save_pretrained(
         str(Path(output_dir) / "quantized"),
-        safe_serialization=False,
         progressbar=True,
         save_jinja_files=cfg.tokenizer_save_jinja_files,
     )
@@ -121,7 +119,7 @@ def do_quantize(
             hub_model_id.rstrip("-")
             + f"-{quantization_config_to_str[type(quantization_config)]}"
         )
-        model.push_to_hub(hub_model_id, safe_serialization=False)
+        model.push_to_hub(hub_model_id)
         tokenizer.push_to_hub(hub_model_id)
         if processor:
             processor.push_to_hub(hub_model_id)

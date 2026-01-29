@@ -25,7 +25,12 @@ class ModelInputConfig(BaseModel):
             "description": "If the base_model repo on hf hub doesn't include configuration .json files, You can set that here, or leave this empty to default to base_model"
         },
     )
-    cls_model_config: str | None = None
+    cls_model_config: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "transformers config class (e.g., 'LlamaConfig', 'MistralConfig'). Defaults to AutoConfig."
+        },
+    )
     tokenizer_config: str | None = Field(
         default=None,
         json_schema_extra={
@@ -118,9 +123,21 @@ class ModelOutputConfig(BaseModel):
     save_safetensors: bool | None = Field(
         default=True,
         json_schema_extra={
-            "description": "Save model as safetensors (require safetensors package). Default True"
+            "description": "Whether to save the model using safetensors format. Defaults to True."
         },
     )
+
+    @field_validator("save_safetensors")
+    @classmethod
+    def validate_save_safetensors(cls, v):
+        if v is False:
+            raise ValueError(
+                "save_safetensors=False is not supported in Transformers V5. "
+                "Transformers V5 always uses safetensors format for model serialization. "
+                "This field is deprecated and will be removed in a future version."
+            )
+        # Allow None and True, will default to True if None
+        return True if v is None else v
 
 
 class SpecialTokensConfig(BaseModel):

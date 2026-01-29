@@ -48,7 +48,6 @@ class FP8IntegrationTestCase:
                 "sample_packing": True,
                 "fp8": True,
                 "torch_compile": True,
-                "save_safetensors": True,
                 "save_first_step": False,
             }
         )

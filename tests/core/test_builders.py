@@ -53,7 +53,6 @@ def fixture_base_cfg():
             # Checkpointing and saving
             "save_steps": 100,
             "output_dir": "./model-out",
-            "save_safetensors": True,
             "save_total_limit": 4,
             "save_only_model": False,
             # Hardware/performance settings
@@ -311,7 +310,6 @@ class TestHFRLTrainerBuilder:
         # KTO specific
         assert training_arguments.desirable_weight == 1.0
         assert training_arguments.undesirable_weight == 1.0
-        assert training_arguments.max_prompt_length == 512
 
     def _write_rewards_file(self, rewards_dir: Path):
         """

@@ -25,7 +25,7 @@ from torch.utils.data import (
 from transformers import PreTrainedModel, Trainer
 from transformers.trainer import TRAINING_ARGS_NAME
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length, seed_worker
-from transformers.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME, is_peft_available
+from transformers.utils import SAFE_WEIGHTS_NAME, is_peft_available
 from trl.trainer.utils import pad_to_length
 from typing_extensions import override
 
@@ -356,6 +356,7 @@ class AxolotlTrainer(
             inputs_key = "labels" if "labels" in inputs else "input_ids"
             trainable_tokens = (inputs[inputs_key] != -100).sum()
             total_tokens = inputs[inputs_key].numel()
+            total_tokens = torch.tensor(total_tokens, device=inputs[inputs_key].device)
 
             if is_distributed():
                 torch.distributed.all_reduce(
@@ -375,9 +376,7 @@ class AxolotlTrainer(
             self.state.tokens["trainable"] = (
                 self.state.tokens["trainable"] + trainable_tokens.detach().cpu()
             )
-            self.state.tokens["total"] = (
-                self.state.tokens["total"] + torch.as_tensor(total_tokens).cpu()
-            )
+            self.state.tokens["total"] = self.state.tokens["total"] + total_tokens.cpu()
             # Store per-step trainable tokens for throughput calculation
             self.state.tokens["trainable_tokens"] = trainable_tokens.detach().cpu()
 
@@ -661,11 +660,10 @@ class AxolotlTrainer(
             logs["tokens/train_per_sec_per_gpu"] = round(
                 self.state.last_tokens_per_second.item() / self.args.logging_steps, 2
             )
-            if (
-                hasattr(self.state, "total_tokens")
-                and self.state.total_tokens is not None
-            ):
-                logs["total_tokens"] = int(self.state.total_tokens.item())
+            if "total" in self.state.tokens:
+                logs["tokens/total"] = int(self.state.tokens["total"].item())
+            if "trainable" in self.state.tokens:
+                logs["tokens/trainable"] = int(self.state.tokens["trainable"].item())
 
         del self._stored_metrics[train_eval]
 
@@ -740,43 +738,38 @@ class AxolotlTrainer(
                 ).save_pretrained(
                     output_dir,
                     state_dict=state_dict,
-                    safe_serialization=self.args.save_safetensors,
                 )
             else:
                 LOG.info(
                     "Trainer.model is not a `PreTrainedModel`, only saving its state dict."
                 )
-                if self.args.save_safetensors:
-                    safetensors.torch.save_file(
-                        state_dict,
-                        os.path.join(output_dir, SAFE_WEIGHTS_NAME),
-                        metadata={"format": "pt"},
-                    )
-                else:
-                    torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
+                safetensors.torch.save_file(
+                    state_dict,
+                    os.path.join(output_dir, SAFE_WEIGHTS_NAME),
+                    metadata={"format": "pt"},
+                )
         else:
             self.model.save_pretrained(
                 output_dir,
                 state_dict=state_dict,
-                safe_serialization=self.args.save_safetensors,
                 is_main_process=self.accelerator.is_main_process,
             )
 
-            if self.processing_class is not None:
-                self.processing_class.save_pretrained(output_dir)
-            elif (
-                self.data_collator is not None
-                and hasattr(self.data_collator, "tokenizer")
-                and self.data_collator.tokenizer is not None
-            ):
-                LOG.info(
-                    "Saving Trainer.data_collator.tokenizer by default as Trainer.processing_class is `None`"
-                )
-                save_jinja_files = True
-                if self.axolotl_cfg:
-                    save_jinja_files = self.axolotl_cfg.tokenizer_save_jinja_files
-                self.data_collator.tokenizer.save_pretrained(
-                    output_dir, save_jinja_files=save_jinja_files
-                )
-            # Good practice: save your training arguments together with the trained model
-            torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
+        if self.processing_class is not None:
+            self.processing_class.save_pretrained(output_dir)
+        elif (
+            self.data_collator is not None
+            and hasattr(self.data_collator, "tokenizer")
+            and self.data_collator.tokenizer is not None
+        ):
+            LOG.info(
+                "Saving Trainer.data_collator.tokenizer by default as Trainer.processing_class is `None`"
+            )
+            save_jinja_files = True
+            if self.axolotl_cfg:
+                save_jinja_files = self.axolotl_cfg.tokenizer_save_jinja_files
+            self.data_collator.tokenizer.save_pretrained(
+                output_dir, save_jinja_files=save_jinja_files
+            )
+        # Good practice: save your training arguments together with the trained model
+        torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))

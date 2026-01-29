@@ -619,6 +619,25 @@ class AxolotlInputConfig(
         },
     )
 
+    scaling_softmax: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use Scaled Softmax (SSMax) attention. Ref: https://arxiv.org/abs/2501.19399"
+        },
+    )
+    scaling_softmax_factor: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Scaling factor for SSMax attention. Default is 0.43"
+        },
+    )
+    scaling_softmax_bias: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Bias for SSMax attention. Default is 0.0. Note: The paper recommends bias=0 for better length generalization."
+        },
+    )
+
     unsloth_cross_entropy_loss: bool | None = None
     unsloth_lora_mlp: bool | None = None
     unsloth_lora_qkv: bool | None = None
@@ -655,6 +674,24 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Number of chunks to use for chunked cross entropy loss"
+        },
+    )
+    use_eaft: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable Entropy-Aware Focal Training loss (EAFT)"
+        },
+    )
+    eaft_alpha: float | None = Field(
+        default=1.0,
+        json_schema_extra={
+            "description": "Exponent for entropy weighting in EAFT (default: 1.0)"
+        },
+    )
+    eaft_k: int | None = Field(
+        default=20,
+        json_schema_extra={
+            "description": "Number of top logits for entropy approximation (default: 20)"
         },
     )
 
