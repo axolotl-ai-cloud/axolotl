@@ -8,6 +8,7 @@ load_in_4bit: true
 skip_prepare_dataset: true
 remove_unused_columns: false
 sample_packing: false
+ddp_find_unused_parameters: true
 
 output_dir: ./outputs/glm-4-6v-flash-qlora
 datasets:
@@ -41,6 +42,8 @@ bf16: auto
 tf32: false
 
 gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
 logging_steps: 1
 sdp_attention: true
 
