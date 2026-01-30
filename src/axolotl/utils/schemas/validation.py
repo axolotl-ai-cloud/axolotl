@@ -688,6 +688,21 @@ class LoRAValidationMixin:
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_lora_kernels_trust_remote_code(cls, data):
+        if (
+            data.get("lora_mlp_kernel")
+            or data.get("lora_qkv_kernel")
+            or data.get("lora_o_kernel")
+        ) and data.get("trust_remote_code"):
+            raise ValueError(
+                "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
+                "compatible with trust_remote_code. Please disable trust_remote_code "
+                "or explicitly set lora_*_kernel to false."
+            )
+        return data
+
 
 class RLValidationMixin:
     """Validation methods related to RL training configuration."""
