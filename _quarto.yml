@@ -251,7 +251,6 @@ website:
                 - docs/models/olmo3.qmd
                 - docs/models/trinity.qmd
                 - docs/models/arcee.qmd
-                - docs/models/mistral.qmd
                 - section: "Ministral3"
                   contents:
                     - docs/models/ministral3.qmd
@@ -266,6 +265,7 @@ website:
                 - docs/models/mistral-small.qmd
                 - docs/models/voxtral.qmd
                 - docs/models/devstral.qmd
+                - docs/models/mistral.qmd
                 - docs/models/llama-4.qmd
                 - docs/models/llama-2.qmd
                 - docs/models/qwen3-next.qmd
