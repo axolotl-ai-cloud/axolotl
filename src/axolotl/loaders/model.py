@@ -338,7 +338,12 @@ class ModelLoader:
             # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so
             # we need to convert them back to fp16/bf16 for flash-attn compatibility.
             (
-                (needs_fa2_dtype or self.cfg.flash_attention or self.cfg.flex_attention)
+                (
+                    needs_fa2_dtype
+                    or self.cfg.flash_attention
+                    or self.cfg.flex_attention
+                    or self.cfg.sage_attention
+                )
                 and not self.is_qlora_and_fsdp_enabled
             )
             or (
@@ -612,6 +617,10 @@ class ModelLoader:
         elif self.cfg.sdp_attention:
             self.model_kwargs["attn_implementation"] = "sdpa"
             self.model_config._attn_implementation = "sdpa"
+        elif self.cfg.sage_attention:
+            # sets FA2 attention to re-use same internal handling like masking
+            self.model_kwargs["attn_implementation"] = "flash_attention_2"
+            self.model_config._attn_implementation = "flash_attention_2"
         elif self.cfg.eager_attention:
             self.model_kwargs["attn_implementation"] = "eager"
             self.model_config._attn_implementation = "eager"

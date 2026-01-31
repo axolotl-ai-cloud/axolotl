@@ -320,6 +320,7 @@ website:
             - docs/multipack.qmd
             - docs/mixed_precision.qmd
             - docs/optimizers.qmd
+            - docs/attention.qmd
 
         - section: "Advanced Features"
           contents:
