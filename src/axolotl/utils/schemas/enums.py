@@ -10,6 +10,7 @@ class TorchAOQuantDType(Enum):
     int8 = torch.int8
     float8_e4m3fn = torch.float8_e4m3fn
     nvfp4 = "nvfp4"
+    mxfp4 = "mxfp4"
 
     def from_string(str):
         if str == "int4":
@@ -20,6 +21,8 @@ class TorchAOQuantDType(Enum):
             return TorchAOQuantDType.float8_e4m3fn
         if str == "nvfp4":
             return TorchAOQuantDType.nvfp4
+        if str == "mxfp4":
+            return TorchAOQuantDType.mxfp4
 
 
 class RLType(str, Enum):
