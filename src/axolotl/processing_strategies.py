@@ -485,6 +485,58 @@ class InternVLProcessingStrategy(ProcessingStrategy):
         return labels
 
 
+class Glm4vProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for GLM4V and GLM4V-MoE vision models."""
+
+    def __init__(
+        self,
+        processor: ProcessorMixin,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
+        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+
+        self.tokenizer = getattr(processor, "tokenizer", processor)
+
+        self.image_token = "<|image|>"  # nosec
+        self.begin_image_token = "<|begin_of_image|>"  # nosec
+        self.end_image_token = "<|end_of_image|>"  # nosec
+        self.video_token = "<|video|>"  # nosec
+        self.begin_video_token = "<|begin_of_video|>"  # nosec
+        self.end_video_token = "<|end_of_video|>"  # nosec
+
+        self.image_token_id = self.tokenizer.convert_tokens_to_ids(self.image_token)
+        self.begin_image_token_id = self.tokenizer.convert_tokens_to_ids(
+            self.begin_image_token
+        )
+        self.end_image_token_id = self.tokenizer.convert_tokens_to_ids(
+            self.end_image_token
+        )
+        self.video_token_id = self.tokenizer.convert_tokens_to_ids(self.video_token)
+        self.begin_video_token_id = self.tokenizer.convert_tokens_to_ids(
+            self.begin_video_token
+        )
+        self.end_video_token_id = self.tokenizer.convert_tokens_to_ids(
+            self.end_video_token
+        )
+
+    def process_labels(self, input_ids):
+        labels = input_ids.clone()
+
+        labels[labels == self.tokenizer.pad_token_id] = -100
+
+        labels[labels == self.image_token_id] = -100
+        labels[labels == self.begin_image_token_id] = -100
+        labels[labels == self.end_image_token_id] = -100
+
+        labels[labels == self.video_token_id] = -100
+        labels[labels == self.begin_video_token_id] = -100
+        labels[labels == self.end_video_token_id] = -100
+
+        return labels
+
+
 def get_processing_strategy(
     processor: ProcessorMixin,
     chat_template,
@@ -501,10 +553,10 @@ def get_processing_strategy(
         "image_resize_algorithm": image_resize_algorithm,
     }
 
-    if chat_template_type in [None, "tokenizer_default"] and hasattr(
-        processor.tokenizer, "chat_template"
-    ):
-        processing_kwargs["chat_template"] = processor.tokenizer.chat_template
+    if chat_template_type in [None, "tokenizer_default"]:
+        tokenizer = getattr(processor, "tokenizer", processor)
+        if hasattr(tokenizer, "chat_template"):
+            processing_kwargs["chat_template"] = tokenizer.chat_template
 
     if chat_template_type == "qwen2_vl":
         return Qwen2VLProcessingStrategy(
@@ -533,6 +585,15 @@ def get_processing_strategy(
         return Mistral3ProcessingStrategy(
             **processing_kwargs,
         )
+    try:
+        from transformers.models.glm46v.processing_glm46v import Glm46VProcessor
+
+        if isinstance(processor, Glm46VProcessor):
+            return Glm4vProcessingStrategy(
+                **processing_kwargs,
+            )
+    except ImportError:
+        pass
 
     if isinstance(processor, InternVLProcessor):
         return InternVLProcessingStrategy(
