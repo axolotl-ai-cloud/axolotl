@@ -12,7 +12,7 @@ packaging==26.0
 huggingface_hub>=1.1.7
 peft>=0.18.1
 tokenizers>=0.22.1
-transformers==5.0.0
+transformers @ git+https://github.com/huggingface/transformers.git@0fa2c2f06f91129b89462e0136c0a25618e1a31b
 accelerate==1.12.0
 datasets==4.5.0
 deepspeed>=0.18.3
