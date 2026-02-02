@@ -31,7 +31,6 @@ Let us know how it goes. Happy finetuning! 🚀
 
 ## Tips
 
-- The configs use **`processor_type: AutoProcessor`** to automatically handle vision inputs.
 - Vision datasets should follow the **vision data format** described in the [multimodal docs (Vision section)](https://docs.axolotl.ai/docs/multimodal.html#vision-data-format), similar to the `ministral3/vision` examples.
 - The dataset format is based on the **OpenAI Messages** schema with image content – see the [conversation format docs](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template) for details.
 - You can run a **full finetuning** by removing the `adapter: qlora` and `load_in_4bit: true` from the config.
