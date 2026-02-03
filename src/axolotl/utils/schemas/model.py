@@ -120,6 +120,12 @@ class ModelOutputConfig(BaseModel):
         default=None,
         json_schema_extra={"description": "how to push checkpoints to hub"},
     )
+    hub_revision: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "branch/revision to push to on hub (default: main)"
+        },
+    )
     save_safetensors: bool | None = Field(
         default=True,
         json_schema_extra={
