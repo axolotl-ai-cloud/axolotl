@@ -61,7 +61,6 @@ class TestGemma2:
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
-                "save_safetensors": True,
                 "bf16": True,
             }
         )
@@ -111,7 +110,6 @@ class TestGemma2:
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
-                "save_safetensors": True,
                 "bf16": True,
             }
         )

@@ -4,7 +4,7 @@ FSDP Configuration Schema
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 
 class FSDPConfig(BaseModel):
@@ -12,6 +12,11 @@ class FSDPConfig(BaseModel):
     FSDP Configuration Schema
     """
 
+    fsdp_version: int | None = Field(
+        validation_alias=AliasChoices("fsdp_version", "version"),
+        default=None,
+        json_schema_extra={"description": "FSDP version"},
+    )
     activation_checkpointing: bool | None = Field(
         default=None,
         description="Enable activation checkpointing to reduce memory usage during forward passes",

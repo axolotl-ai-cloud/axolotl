@@ -224,7 +224,6 @@ class TestCustomOptimizers(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "schedule_free_adamw",
                 "lr_scheduler": "constant",
-                "save_safetensors": True,
                 "max_steps": 10,
                 "save_first_step": False,
             }

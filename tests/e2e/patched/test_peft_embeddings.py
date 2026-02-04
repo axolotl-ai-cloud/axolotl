@@ -46,7 +46,6 @@ class TestLlamaPeftEmbeddings:
                 "flash_attention": True,
                 "sample_packing": False,
                 "bf16": "auto",
-                "save_safetensors": True,
                 "embeddings_skip_upcast": True,
                 "save_first_step": False,
             }

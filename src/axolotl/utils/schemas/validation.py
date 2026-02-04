@@ -900,6 +900,43 @@ class OptimizationValidationMixin:
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_config_kwargs_prefix(cls, data):
+        if fsdp_config := data.get("fsdp_config"):
+            should_fix = False
+            for key, _ in fsdp_config.items():
+                if key.startswith("fsdp_"):
+                    should_fix = True
+                    LOG.warning_once(
+                        "Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
+                        "Please omit the `fsdp_` prefix from the any fields in `fsdp_config`."
+                    )
+            if should_fix:
+                update_fsdp_config = {}
+                for key, value in fsdp_config.items():
+                    if key.startswith("fsdp_") and key != "fsdp_version":
+                        update_fsdp_config[key.replace("fsdp_", "")] = value
+                    else:
+                        update_fsdp_config[key] = value
+                data["fsdp_config"] = update_fsdp_config
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_version_in_fsdp_config(cls, data):
+        fsdp_config = data.get("fsdp_config") or {}
+        fsdp_version = data.get("fsdp_version", None)
+        if not fsdp_version and fsdp_config and fsdp_config.get("version"):
+            fsdp_cfg_version = fsdp_config.pop("version")
+            data["fsdp_version"] = fsdp_cfg_version
+            data["fsdp_config"]["fsdp_version"] = fsdp_cfg_version
+        elif not fsdp_version and fsdp_config and fsdp_config.get("fsdp_version"):
+            data["fsdp_version"] = fsdp_config.get("fsdp_version")
+        if fsdp_version and fsdp_config and not fsdp_config.get("fsdp_version"):
+            data["fsdp_config"]["fsdp_version"] = fsdp_version
+        return data
+
     @model_validator(mode="after")
     def check_fsdp_offload_w_8bit_optimizer(self):
         if (
@@ -999,40 +1036,6 @@ class OptimizationValidationMixin:
                         json.dump(ds_config, ds_fout, indent=4)
                     data["deepspeed"] = str(Path(temp_dir) / "deepcompile_ds.json")
 
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_fsdp_version_in_fsdp_config(cls, data):
-        fsdp_config = data.get("fsdp_config") or {}
-        if fsdp_config and fsdp_config.get("fsdp_version"):
-            LOG.warning(
-                "Configuring `fsdp_version` in `fsdp_config` is deprecated. "
-                "Please configure `fsdp_version` as a top-level field."
-            )
-            data["fsdp_version"] = fsdp_config.pop("fsdp_version")
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_fsdp_config_kwargs_prefix(cls, data):
-        if fsdp_config := data.get("fsdp_config"):
-            should_fix = False
-            for key, _ in fsdp_config.items():
-                if key.startswith("fsdp_"):
-                    should_fix = True
-                    LOG.warning_once(
-                        "Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
-                        "Please omit the `fsdp_` prefix from the any fields in `fsdp_config`."
-                    )
-            if should_fix:
-                update_fsdp_config = {}
-                for key, value in fsdp_config.items():
-                    if key.startswith("fsdp_") and key != "fsdp_version":
-                        update_fsdp_config[key.replace("fsdp_", "")] = value
-                    else:
-                        update_fsdp_config[key] = value
-                data["fsdp_config"] = update_fsdp_config
         return data
 
 

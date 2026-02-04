@@ -619,6 +619,13 @@ class AxolotlInputConfig(
         },
     )
 
+    experts_implementation: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Which experts implementation to use for MoE models,"
+        },
+    )
+
     scaling_softmax: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -674,6 +681,24 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Number of chunks to use for chunked cross entropy loss"
+        },
+    )
+    use_eaft: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable Entropy-Aware Focal Training loss (EAFT)"
+        },
+    )
+    eaft_alpha: float | None = Field(
+        default=1.0,
+        json_schema_extra={
+            "description": "Exponent for entropy weighting in EAFT (default: 1.0)"
+        },
+    )
+    eaft_k: int | None = Field(
+        default=20,
+        json_schema_extra={
+            "description": "Number of top logits for entropy approximation (default: 20)"
         },
     )
 

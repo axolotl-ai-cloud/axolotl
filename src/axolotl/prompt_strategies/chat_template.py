@@ -150,6 +150,8 @@ class ChatTemplatePrompter(Prompter):
 
         return self.tokenizer.apply_chat_template(
             conversation,
+            tokenize=True,
+            return_dict=False,
             **chat_template_kwargs,
         )
 

@@ -12,7 +12,6 @@ datasets:
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.0
 output_dir: ./outputs/out/qlora-llama3_1-405b
-save_safetensors: true
 
 adapter: qlora
 
