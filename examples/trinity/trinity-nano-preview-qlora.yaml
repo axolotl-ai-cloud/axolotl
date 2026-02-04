@@ -5,9 +5,8 @@ revision_of_model: 2ee94b0
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
-# CCE - N/A as of now
-# plugins:
-#   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
 
 load_in_8bit: false
 load_in_4bit: true

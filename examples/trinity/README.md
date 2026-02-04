@@ -8,13 +8,15 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 
 1. Install Axolotl following the main from the [installation guide](https://docs.axolotl.ai/docs/installation.html#sec-edge-build).
 
-2. Run the finetuning example:
+2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage.
+
+3. Run the finetuning example:
 
     ```bash
     axolotl train examples/trinity/trinity-nano-preview-qlora.yaml
     ```
 
-This config uses about 24.9 GiB VRAM.
+This config uses about 24.9 GiB VRAM (w/o CCE).
 
 Let us know how it goes. Happy finetuning! 🚀
 
@@ -31,7 +33,7 @@ Please check the [Optimizations doc](https://docs.axolotl.ai/docs/optimizations.
 
 ## Limitations
 
-**Cut Cross Entropy (CCE)**: Currently not supported. We plan to include CCE support for Trinity in the near future.
+Please run on transformers v4. There are some issues on v5.
 
 ## Related Resources
 
