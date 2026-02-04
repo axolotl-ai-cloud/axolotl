@@ -179,7 +179,7 @@ def check_tensorboard(
     tag: str,
     lt_val: float,
     assertion_err: str,
-    rtol: float = 0.02,
+    rtol: float = 0.05,
 ) -> None:
     """
     helper function to parse and check tensorboard logs

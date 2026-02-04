@@ -39,7 +39,10 @@ class KDPlugin(BasePlugin):
 
     def get_trainer_cls(self, cfg):
         if cfg.kd_trainer:
-            from .trainer import AxolotlKDTrainer
+            from .trainer import AxolotlKDTrainer, AxolotlOnlineKDTrainer
+
+            if cfg.kd_online_server_base_url:
+                return AxolotlOnlineKDTrainer
 
             return AxolotlKDTrainer
         return None
