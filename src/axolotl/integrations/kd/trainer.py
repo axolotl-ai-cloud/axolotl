@@ -116,8 +116,8 @@ class AxolotlOnlineKDTrainer(AxolotlKDTrainer):
         super().__init__(*args, **kwargs)
 
         self.generation_config = GenerationConfig(
-            max_new_tokens=args.max_new_tokens,
-            temperature=args.temperature,
+            max_new_tokens=args.kd_online_max_new_tokens,
+            temperature=1.0,
             do_sample=True,
             top_k=0,
             use_cache=False if args.gradient_checkpointing else True,

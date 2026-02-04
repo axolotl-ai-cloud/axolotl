@@ -55,6 +55,7 @@ class KDArgs(BaseModel):
     )
     kd_online_server_model: str | None = None
     kd_online_timeout: int | None = 120
+    kd_online_max_new_tokens: int | None = 2048
     kd_temperature_min: float | None = (
         None  # kd temperature scheduling during online kd
     )
@@ -75,3 +76,4 @@ class KDTrainingArgsMixin:
     kd_normalize_topk: float | None = (
         None  # whether to normalize student logits during KD
     )
+    kd_online_max_new_tokens: int | None = None

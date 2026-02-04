@@ -320,7 +320,7 @@ class PatchManager:
             else:
                 has_remote_code = False
 
-            if has_remote_code and self.cfg.trust_remote_code is False:
+            if has_remote_code and self.cfg.trust_remote_code is not None:
                 # If explicitly set in YAML, prefer that
                 has_remote_code = self.cfg.trust_remote_code
 
