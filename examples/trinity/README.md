@@ -31,10 +31,6 @@ Let us know how it goes. Happy finetuning! 🚀
 
 Please check the [Optimizations doc](https://docs.axolotl.ai/docs/optimizations.html).
 
-## Limitations
-
-Please run on transformers v4. There are some issues on v5.
-
 ## Related Resources
 
 - [Trinity Blog](https://www.arcee.ai/blog/the-trinity-manifesto)
