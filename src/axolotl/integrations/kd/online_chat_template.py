@@ -13,6 +13,12 @@ class ChatTemplateStrategyWithOnlineKD(ChatTemplateStrategy):
         # batching doesn't work well for logprob data
         return False
 
+    def _get_messages(self, prompt):
+        input_prompt = prompt.get("problem")
+        return [
+            {"role": "user", "content": input_prompt},
+        ]
+
     def _tokenize_single_prompt(self, prompt):
         turns = self.get_conversation_thread(prompt)
         tools = self._get_tools(prompt)

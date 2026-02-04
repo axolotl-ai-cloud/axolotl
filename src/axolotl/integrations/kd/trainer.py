@@ -196,7 +196,7 @@ class AxolotlOnlineKDTrainer(AxolotlKDTrainer):
 
     def get_teacher_logprobs(self, input_ids, labels):
         request_body = {
-            "model": "arcee-ai/Trinity-Large-Preview",
+            "model": self.axolotl_cfg.kd_online_server_model,
             "prompt": input_ids,
             "logprobs": self.axolotl_cfg.kd_online_topk,
             "echo": True,

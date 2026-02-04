@@ -53,6 +53,7 @@ class KDArgs(BaseModel):
     kd_online_server: InferenceServerType | None = Field(
         default_factory=lambda: InferenceServerType.vllm
     )
+    kd_online_server_model: str | None = None
     kd_online_timeout: int | None = 120
     kd_temperature_min: float | None = (
         None  # kd temperature scheduling during online kd
