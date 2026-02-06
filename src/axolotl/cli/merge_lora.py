@@ -7,12 +7,14 @@ import fire
 
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
 
+@send_errors
 def do_merge_lora(*, cfg: DictDefault) -> None:
     """
     Calls `transformers`' `merge_and_unload` on the model given in the `axolotl` config
@@ -22,7 +24,6 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
     model, tokenizer, processor = load_model_and_tokenizer(cfg=cfg)
-    safe_serialization = cfg.save_safetensors is True
 
     LOG.info("Running merge of LoRA with base model...")
     model = model.merge_and_unload(progressbar=True)
@@ -40,7 +41,6 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
         LOG.info(f"Saving merged model to: {str(Path(cfg.output_dir) / 'merged')}...")
         model.save_pretrained(
             str(Path(cfg.output_dir) / "merged"),
-            safe_serialization=safe_serialization,
             progressbar=True,
         )
         tokenizer.save_pretrained(

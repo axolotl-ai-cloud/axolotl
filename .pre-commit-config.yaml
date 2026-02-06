@@ -11,13 +11,13 @@ repos:
     -   id: no-commit-to-branch
         args: ['--branch', 'main']
 -   repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.3
+    rev: v0.14.10
     hooks:
     -   id: ruff
         args: [--fix]
     -   id: ruff-format
 -   repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.18.2
+    rev: v1.19.1
     hooks:
     - id: mypy
       additional_dependencies:
@@ -26,7 +26,7 @@ repos:
             'pydantic>=2.5.3',
         ]
 -   repo: https://github.com/PyCQA/bandit
-    rev: 1.8.6
+    rev: 1.9.2
     hooks:
     -   id: bandit
         args: [

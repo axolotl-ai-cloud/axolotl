@@ -19,7 +19,10 @@ from axolotl.cli.utils.diffusion import (
     launch_diffusion_gradio_ui,
 )
 from axolotl.integrations.base import PluginManager
-from axolotl.utils.chat_templates import get_chat_template_from_config
+from axolotl.telemetry.errors import send_errors
+from axolotl.utils.chat_templates import (
+    get_chat_template_from_config,
+)
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
@@ -43,6 +46,7 @@ def get_multi_line_input() -> str:
     return instruction
 
 
+@send_errors
 def do_inference(
     *,
     cfg: DictDefault,
@@ -160,6 +164,7 @@ def do_inference(
         print(tokenizer.decode(generated["sequences"].cpu().tolist()[0]))
 
 
+@send_errors
 def do_inference_gradio(
     *,
     cfg: DictDefault,
@@ -283,8 +288,8 @@ def do_inference_gradio(
         title=cfg.get("gradio_title", "Axolotl Gradio Interface"),
     )
 
-    demo.queue().launch(
-        show_api=False,
+    demo.launch(
+        footer_links=["gradio", "settings"],
         share=cfg.get("gradio_share", True),
         server_name=cfg.get("gradio_server_name", "127.0.0.1"),
         server_port=cfg.get("gradio_server_port", None),

@@ -13,6 +13,7 @@ from transformers import (
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import get_linear_embedding_layers, load_model_config
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
@@ -119,8 +120,14 @@ def modify_tokenizer_files(
     return tokenizer_dir
 
 
+@send_errors
 def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     """Load and configure the tokenizer based on the provided config."""
+
+    # Apply patches that need to be in place before tokenizer loading
+    from axolotl.loaders.patch_manager import PatchManager
+
+    PatchManager.apply_pre_tokenizer_load_patches(cfg)
 
     def _load_mistral_common_tokenizer(cfg: DictDefault):
         """Load mistral-common tokenizer"""

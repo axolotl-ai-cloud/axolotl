@@ -5,6 +5,7 @@ This guide covers fine-tuning [Mistral Small 3.1](mistralai/Mistral-Small-3.1-24
 ## Prerequisites
 
 Before starting, ensure you have:
+
 - Installed Axolotl (see [Installation docs](https://docs.axolotl.ai/docs/installation.html))
 
 ## Getting Started

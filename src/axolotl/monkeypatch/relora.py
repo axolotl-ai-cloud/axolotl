@@ -155,7 +155,6 @@ class ReLoRACallback(TrainerCallback):
                     f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}",
                     "adapter",
                 ),
-                safe_serialization=True,
             )
             with torch.no_grad():
                 merge_and_save(
@@ -214,7 +213,7 @@ class ReLoRACallback(TrainerCallback):
 
                     self.last_full_model = checkpoint_folder
             else:
-                model.model.save_pretrained(checkpoint_folder, safe_serialization=True)
+                model.model.save_pretrained(checkpoint_folder)
 
         return control
 

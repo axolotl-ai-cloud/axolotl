@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64", "wheel", "setuptools_scm>=8", "packaging==23.2"]
+requires = ["setuptools>=64", "wheel", "setuptools_scm>=8", "packaging==26.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -23,6 +23,9 @@ Repository = "https://github.com/axolotl-ai-cloud/axolotl.git"
 [tool.setuptools]
 py-modules = ["setuptools_axolotl_dynamic_dependencies"]
 include-package-data = true
+
+[tool.setuptools.dynamic]
+version = { file = "VERSION" }
 
 [tool.setuptools.cmdclass]
 build_py = "setuptools_axolotl_dynamic_dependencies.BuildPyCommand"
@@ -57,3 +60,6 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
 docstring-code-format = false
+
+[tool.uv.extra-build-dependencies]
+axolotl = ["huggingface_hub"]

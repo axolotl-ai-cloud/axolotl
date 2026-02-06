@@ -2,6 +2,7 @@
 
 from typing import Annotated, Any, Literal
 
+from accelerate.utils import is_fp8_available
 from annotated_types import MinLen
 from packaging import version
 from pydantic import (
@@ -23,6 +24,7 @@ from axolotl.utils.schemas.datasets import (
     StepwiseSupervisedDataset,
 )
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
+from axolotl.utils.schemas.dynamic_checkpoint import DynamicCheckpointConfig
 from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
 from axolotl.utils.schemas.fsdp import FSDPConfig
 from axolotl.utils.schemas.integrations import (
@@ -32,6 +34,7 @@ from axolotl.utils.schemas.integrations import (
     MLFlowConfig,
     OpenTelemetryConfig,
     RayConfig,
+    TrackioConfig,
     WandbConfig,
 )
 from axolotl.utils.schemas.internal import EnvCapabilities, GPUCapabilities
@@ -61,6 +64,7 @@ class AxolotlInputConfig(
     WandbConfig,
     MLFlowConfig,
     CometConfig,
+    TrackioConfig,
     OpenTelemetryConfig,
     LISAConfig,
     GradioConfig,
@@ -141,6 +145,13 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "Reward modelling: `True` or `False`"},
     )
+    dynamic_checkpoint: DynamicCheckpointConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Configuration for dynamic checkpointing (trigger by file or signal). "
+            "Set 'enabled: true' to activate this feature."
+        },
+    )
     process_reward_model: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -165,6 +176,12 @@ class AxolotlInputConfig(
     dpo_use_logits_to_keep: bool | None = None
     dpo_label_smoothing: float | None = None
     dpo_norm_loss: bool | None = None
+
+    dpo_use_liger_kernel: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Whether to use Liger kernel for DPO loss."},
+    )
+
     dpo_padding_free: bool | None = None
     dpo_generate_during_eval: bool | None = None
 
@@ -437,10 +454,10 @@ class AxolotlInputConfig(
             "description": "The maximum length of an input to train with, this should typically be less than 2048 as most models have a token/context limit of 2048"
         },
     )
-    excess_length_strategy: Literal["drop", "truncate"] | None = Field(
+    excess_length_strategy: Literal["drop", "truncate", "raise"] | None = Field(
         default=None,
         json_schema_extra={
-            "description": "What to do when a tokenized row exceeds sequence_len. 'drop' removes the row; 'truncate' slices tensors to sequence_len. Defaults to 'drop' for backward compatibility."
+            "description": "What to do when a tokenized row exceeds sequence_len. 'drop' removes the row; 'truncate' slices tensors to sequence_len; 'raise' raises a ValueError. Defaults to 'drop' for backward compatibility."
         },
     )
     eval_sequence_len: int | None = Field(
@@ -602,6 +619,32 @@ class AxolotlInputConfig(
         },
     )
 
+    experts_implementation: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Which experts implementation to use for MoE models,"
+        },
+    )
+
+    scaling_softmax: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use Scaled Softmax (SSMax) attention. Ref: https://arxiv.org/abs/2501.19399"
+        },
+    )
+    scaling_softmax_factor: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Scaling factor for SSMax attention. Default is 0.43"
+        },
+    )
+    scaling_softmax_bias: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Bias for SSMax attention. Default is 0.0. Note: The paper recommends bias=0 for better length generalization."
+        },
+    )
+
     unsloth_cross_entropy_loss: bool | None = None
     unsloth_lora_mlp: bool | None = None
     unsloth_lora_qkv: bool | None = None
@@ -638,6 +681,24 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Number of chunks to use for chunked cross entropy loss"
+        },
+    )
+    use_eaft: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable Entropy-Aware Focal Training loss (EAFT)"
+        },
+    )
+    eaft_alpha: float | None = Field(
+        default=1.0,
+        json_schema_extra={
+            "description": "Exponent for entropy weighting in EAFT (default: 1.0)"
+        },
+    )
+    eaft_k: int | None = Field(
+        default=20,
+        json_schema_extra={
+            "description": "Number of top logits for entropy approximation (default: 20)"
         },
     )
 
@@ -1101,7 +1162,7 @@ class AxolotlInputConfig(
 
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
-    """wrapper to valdiate GPU capabilities with the configured options"""
+    """Wrapper to valdiate GPU capabilities with the configured options"""
 
     capabilities: GPUCapabilities
     env_capabilities: EnvCapabilities
@@ -1122,6 +1183,16 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 raise ValueError(
                     "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
                 )
+        return self
+
+    @model_validator(mode="after")
+    def check_fp8(self):
+        if self.fp8 and not self.capabilities.fp8:
+            raise ValueError("fp8 requested, but fp8 is not supported on this GPU")
+        elif self.fp8 and self.capabilities.fp8 and not is_fp8_available():
+            raise ValueError(
+                "fp8 requested, but missing one of ms-amp, transformers-engine or torchao."
+            )
         return self
 
     @model_validator(mode="before")

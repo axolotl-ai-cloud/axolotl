@@ -1,6 +1,4 @@
-"""
-shared pytest fixtures
-"""
+"""Shared pytest fixtures"""
 
 import functools
 import importlib
@@ -64,7 +62,7 @@ def snapshot_download_w_retry(*args, **kwargs):
     """
     with hf_offline_context(True):
         try:
-            return snapshot_download(*args, **kwargs)
+            return snapshot_download(*args, local_files_only=True, **kwargs)
         except LocalEntryNotFoundError:
             pass
     with hf_offline_context(False):
@@ -83,6 +81,12 @@ def download_ds_fixture_bundle():
 def download_smollm2_135m_model():
     # download the model
     snapshot_download_w_retry("HuggingFaceTB/SmolLM2-135M", repo_type="model")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_smollm2_135m_instruct_model():
+    # download the model
+    snapshot_download_w_retry("HuggingFaceTB/SmolLM2-135M-Instruct", repo_type="model")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -145,12 +149,20 @@ def download_argilla_distilabel_intel_orca_dpo_dataset():
     )
 
 
-# @pytest.fixture(scope="session", autouse=True)
-# def download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset():
-#     # download the dataset
-#     snapshot_download_w_retry(
-#         "argilla/ultrafeedback-binarized-preferences-cleaned", repo_type="dataset"
-#     )
+@pytest.fixture(scope="session", autouse=True)
+def download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset():
+    # download the dataset
+    snapshot_download_w_retry(
+        "argilla/ultrafeedback-binarized-preferences-cleaned", repo_type="dataset"
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_argilla_ultrafeedback_binarized_preferences_cleaned_kto_dataset():
+    # download the dataset
+    snapshot_download_w_retry(
+        "argilla/ultrafeedback-binarized-preferences-cleaned-kto", repo_type="dataset"
+    )
 
 
 # @pytest.fixture(scope="session", autouse=True)
@@ -253,7 +265,9 @@ def download_llama_1b_model_fixture():
 def download_llama3_8b_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
-        "NousResearch/Meta-Llama-3-8B", repo_type="model", allow_patterns=["*token*"]
+        "NousResearch/Meta-Llama-3-8B",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
     )
 
 
@@ -263,7 +277,7 @@ def download_llama3_8b_instruct_model_fixture():
     snapshot_download_w_retry(
         "NousResearch/Meta-Llama-3-8B-Instruct",
         repo_type="model",
-        allow_patterns=["*token*"],
+        allow_patterns=["*token*", "config.json"],
     )
 
 
@@ -271,7 +285,19 @@ def download_llama3_8b_instruct_model_fixture():
 def download_phi_35_mini_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
-        "microsoft/Phi-3.5-mini-instruct", repo_type="model", allow_patterns=["*token*"]
+        "microsoft/Phi-3.5-mini-instruct",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_phi_4_reasoning_model_fixture():
+    # download the tokenizer only
+    snapshot_download_w_retry(
+        "microsoft/Phi-4-reasoning",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json"],
     )
 
 
@@ -281,7 +307,7 @@ def download_phi_3_medium_model_fixture():
     snapshot_download_w_retry(
         "microsoft/Phi-3-medium-128k-instruct",
         repo_type="model",
-        allow_patterns=["*token*"],
+        allow_patterns=["*token*", "config.json"],
     )
 
 
@@ -564,6 +590,8 @@ def test_load_fixtures(
     download_mhenrichsen_alpaca_2k_dataset,
     download_mhenrichsen_alpaca_2k_w_revision_dataset,
     download_mlabonne_finetome_100k_dataset,
+    download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset,
+    download_argilla_ultrafeedback_binarized_preferences_cleaned_kto_dataset,
     download_argilla_distilabel_capybara_dpo_7k_binarized_dataset,
     download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset,
     download_argilla_dpo_pairs_dataset,
@@ -575,6 +603,7 @@ def test_load_fixtures(
     download_llama3_8b_instruct_model_fixture,
     download_phi_35_mini_model_fixture,
     download_phi_3_medium_model_fixture,
+    download_phi_4_reasoning_model_fixture,
     download_mistral_7b_model_fixture,
     download_gemma_2b_model_fixture,
     download_gemma2_9b_model_fixture,
@@ -582,3 +611,9 @@ def test_load_fixtures(
     download_llama2_model_fixture,
 ):
     pass
+
+
+@pytest.fixture(autouse=True)
+def disable_telemetry(monkeypatch):
+    monkeypatch.setenv("AXOLOTL_DO_NOT_TRACK", "1")
+    yield

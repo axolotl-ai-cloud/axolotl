@@ -5,7 +5,8 @@ This guide covers fine-tuning [Magistral Small 2509](https://huggingface.co/mist
 ## Prerequisites
 
 Before starting, ensure you have:
-- Installed Axolotl from source (see [main README](../README.md#getting-started))
+
+- Installed Axolotl from source (see [main README](../README.md))
 
 ## Getting started
 

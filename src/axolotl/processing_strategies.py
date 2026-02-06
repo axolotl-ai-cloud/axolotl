@@ -8,12 +8,12 @@ from PIL.Image import Resampling
 from torch import Tensor, zeros_like
 from transformers import ProcessorMixin
 from transformers.image_utils import load_image
+from transformers.models.internvl import InternVLProcessor
 from transformers.models.smolvlm import SmolVLMProcessor
 from transformers.models.voxtral import VoxtralProcessor
 
 from axolotl.utils.dict import remove_none_values
 from axolotl.utils.logging import get_logger
-from axolotl.utils.mistral.mistral3_processor import Mistral3Processor
 
 LOG = get_logger(__name__)
 
@@ -429,7 +429,7 @@ class Mistral3ProcessingStrategy(ProcessingStrategy):
 
     def __init__(
         self,
-        processor: Mistral3Processor,
+        processor,
         chat_template: Optional[str] = None,
         image_size: int | tuple[int, int] | None = None,
         image_resize_algorithm: Resampling | None = None,
@@ -454,6 +454,37 @@ class Mistral3ProcessingStrategy(ProcessingStrategy):
         return labels
 
 
+class InternVLProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for InternVL"""
+
+    def __init__(
+        self,
+        processor: ProcessorMixin,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
+        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+
+        if not hasattr(processor, "image_ids"):
+            raise ValueError("'image_ids' missing from InternVL Processor.")
+
+        self.image_token_ids = processor.image_ids
+
+    def process_labels(self, input_ids):
+        labels = input_ids.clone()
+
+        labels[labels == self.processor.tokenizer.pad_token_id] = -100
+
+        for ids in self.image_token_ids:
+            labels[labels == ids] = -100
+
+        # Note: Check if need to mask 'video_token' as it gets converted to
+        # image patches during media processing
+
+        return labels
+
+
 def get_processing_strategy(
     processor: ProcessorMixin,
     chat_template,
@@ -461,6 +492,8 @@ def get_processing_strategy(
     image_size: int | tuple[int, int] | None = None,
     image_resize_algorithm: Resampling | None = None,
 ):
+    from axolotl.utils.mistral.mistral3_processor import Mistral3Processor
+
     processing_kwargs = {
         "processor": processor,
         "chat_template": chat_template,
@@ -498,6 +531,11 @@ def get_processing_strategy(
 
     if isinstance(processor, Mistral3Processor):
         return Mistral3ProcessingStrategy(
+            **processing_kwargs,
+        )
+
+    if isinstance(processor, InternVLProcessor):
+        return InternVLProcessingStrategy(
             **processing_kwargs,
         )
 

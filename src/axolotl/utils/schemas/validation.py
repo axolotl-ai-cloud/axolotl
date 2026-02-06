@@ -201,6 +201,16 @@ class AttentionValidationMixin:
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_scaling_softmax_requires_flex(cls, data):
+        if data.get("scaling_softmax") and not data.get("flex_attention"):
+            raise ValueError(
+                "scaling_softmax requires flex_attention: true\n"
+                "Add 'flex_attention: true' to your config file.\n"
+            )
+        return data
+
 
 class TrainingValidationMixin:
     """Validation methods related to training configuration."""
@@ -736,6 +746,19 @@ class RLValidationMixin:
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_gdpo(cls, data):
+        if (
+            data.get("rl") == "gdpo"
+            and data.get("trl", {}).get("multi_objective_aggregation")
+            == "sum_then_normalize"
+        ):
+            raise ValueError(
+                "`multi_objective_aggregation` value set as `sum_then_normalize` => GRPO, but GDPO was selected"
+            )
+        return data
+
 
 class OptimizationValidationMixin:
     """Validation methods related to optimization and performance."""
@@ -751,12 +774,19 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_muon_deepspeed_fsdp(cls, data):
-        if data.get("optimizer") == "muon" and (
-            data.get("deepspeed") or data.get("fsdp") or data.get("fsdp_config")
-        ):
-            raise ValueError(
-                "Muon optimizer is currently incompatible with DeepSpeed and FSDP"
-            )
+        if data.get("optimizer") == "muon":
+            if data.get("deepspeed"):
+                raise ValueError(
+                    "Muon optimizer is currently incompatible with DeepSpeed"
+                )
+            if data.get("fsdp") or data.get("fsdp_config"):
+                fsdp_version = data.get("fsdp_version")
+                if fsdp_version is None:
+                    fsdp_version = data.get("fsdp_config", {}).get("fsdp_version", 1)
+                if str(fsdp_version) != "2":
+                    raise ValueError(
+                        "Muon optimizer is only compatible with FSDP2. Set fsdp_version: 2 to use Muon with FSDP."
+                    )
         return data
 
     @model_validator(mode="before")
@@ -791,6 +821,36 @@ class OptimizationValidationMixin:
         ):
             raise ValueError(
                 "flash_attn_cross_entropy and unsloth_cross_entropy_loss cannot be both enabled"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_cross_entropy_conflicts(cls, data):
+        """Check for mutual exclusivity between cross entropy patch options.
+
+        Only one of the following can be enabled at a time:
+        - cut_cross_entropy (CutCrossEntropyPlugin)
+        - chunked_cross_entropy
+        - liger_cross_entropy (LigerPlugin)
+        - liger_fused_linear_cross_entropy (LigerPlugin)
+        """
+        ce_options = {
+            "cut_cross_entropy": data.get("cut_cross_entropy"),
+            "chunked_cross_entropy": data.get("chunked_cross_entropy"),
+            "liger_cross_entropy": data.get("liger_cross_entropy"),
+            "liger_fused_linear_cross_entropy": data.get(
+                "liger_fused_linear_cross_entropy"
+            ),
+        }
+
+        enabled_options = [k for k, v in ce_options.items() if v]
+
+        if len(enabled_options) > 1:
+            raise ValueError(
+                f"Only one cross entropy optimization can be enabled at a time. "
+                f"Found {len(enabled_options)} enabled: {', '.join(enabled_options)}. "
+                "Please disable all but one."
             )
         return data
 
@@ -842,18 +902,6 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_fsdp_version_in_fsdp_config(cls, data):
-        fsdp_config = data.get("fsdp_config") or {}
-        if fsdp_config and fsdp_config.get("fsdp_version"):
-            LOG.warning(
-                "Configuring `fsdp_version` in `fsdp_config` is deprecated. "
-                "Please configure `fsdp_version` as a top-level field."
-            )
-            data["fsdp_version"] = fsdp_config.pop("fsdp_version")
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_fsdp_config_kwargs_prefix(cls, data):
         if fsdp_config := data.get("fsdp_config"):
             should_fix = False
@@ -872,6 +920,21 @@ class OptimizationValidationMixin:
                     else:
                         update_fsdp_config[key] = value
                 data["fsdp_config"] = update_fsdp_config
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fsdp_version_in_fsdp_config(cls, data):
+        fsdp_config = data.get("fsdp_config") or {}
+        fsdp_version = data.get("fsdp_version", None)
+        if not fsdp_version and fsdp_config and fsdp_config.get("version"):
+            fsdp_cfg_version = fsdp_config.pop("version")
+            data["fsdp_version"] = fsdp_cfg_version
+            data["fsdp_config"]["fsdp_version"] = fsdp_cfg_version
+        elif not fsdp_version and fsdp_config and fsdp_config.get("fsdp_version"):
+            data["fsdp_version"] = fsdp_config.get("fsdp_version")
+        if fsdp_version and fsdp_config and not fsdp_config.get("fsdp_version"):
+            data["fsdp_config"]["fsdp_version"] = fsdp_version
         return data
 
     @model_validator(mode="after")

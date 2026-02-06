@@ -2,6 +2,7 @@ ARG CUDA_VERSION="12.6.3"
 ARG CUDNN_VERSION=""
 ARG UBUNTU_VERSION="22.04"
 ARG MAX_JOBS=4
+ARG TARGETARCH
 
 FROM nvidia/cuda:$CUDA_VERSION-cudnn$CUDNN_VERSION-devel-ubuntu$UBUNTU_VERSION AS base-builder
 
@@ -31,12 +32,35 @@ ENV PATH="/workspace/axolotl-venv/bin:${PATH}"
 
 RUN uv pip install packaging setuptools wheel psutil \
     && uv pip install torch==${PYTORCH_VERSION} torchvision \
-    && uv pip install --no-build-isolation "causal_conv1d @ git+https://github.com/Dao-AILab/causal-conv1d.git@main" \
-    && uv pip install "mamba_ssm @ git+https://github.com/state-spaces/mamba.git@main" \
     && uv pip install awscli pydantic
 
-RUN if [ "$PYTORCH_VERSION" = "2.9.0" ] && [ "$CUDA" = "128" ] ; then \
-        wget https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.4.17/flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
-        uv pip install --no-cache-dir flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
-        rm flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        uv pip install --no-build-isolation "causal_conv1d @ git+https://github.com/Dao-AILab/causal-conv1d.git@main"; \
+        uv pip install "mamba_ssm @ git+https://github.com/state-spaces/mamba.git@main"; \
     fi
+
+RUN case "$PYTORCH_VERSION" in \
+        2.9.[0-9]*) \
+            if [ "$TARGETARCH" = "amd64" ]; then \
+                if [ "$CUDA" = "128" ]; then \
+                    wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.5.4/flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
+                    uv pip install --no-cache-dir flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
+                    rm flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
+                elif [ "$CUDA" = "130" ]; then \
+                    wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.5.4/flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_x86_64.whl; \
+                    uv pip install --no-cache-dir flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_x86_64.whl; \
+                    rm flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_x86_64.whl; \
+                fi \
+            elif [ "$TARGETARCH" = "arm64" ]; then \
+                if [ "$CUDA" = "128" ]; then \
+                    wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.6.4/flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_aarch64.whl; \
+                    uv pip install --no-cache-dir flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_aarch64.whl; \
+                    rm flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_aarch64.whl; \
+                elif [ "$CUDA" = "130" ]; then \
+                    wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.6.4/flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_aarch64.whl; \
+                    uv pip install --no-cache-dir flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_aarch64.whl; \
+                    rm flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_aarch64.whl; \
+                fi \
+            fi \
+            ;; \
+    esac

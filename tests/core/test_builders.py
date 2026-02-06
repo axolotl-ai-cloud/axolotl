@@ -53,7 +53,6 @@ def fixture_base_cfg():
             # Checkpointing and saving
             "save_steps": 100,
             "output_dir": "./model-out",
-            "save_safetensors": True,
             "save_total_limit": 4,
             "save_only_model": False,
             # Hardware/performance settings
@@ -311,7 +310,6 @@ class TestHFRLTrainerBuilder:
         # KTO specific
         assert training_arguments.desirable_weight == 1.0
         assert training_arguments.undesirable_weight == 1.0
-        assert training_arguments.max_prompt_length == 512
 
     def _write_rewards_file(self, rewards_dir: Path):
         """
@@ -474,10 +472,8 @@ def rand_reward_func(prompts, completions) -> list[float]:
 
             assert trainer.optimizer_cls_and_kwargs is not None
 
-            from axolotl.contribs.mit.muon import (
-                Muon,
-                MuonOptimizerFactory,
-            )
+            from axolotl.contribs.mit.muon import MuonOptimizerFactory
+            from axolotl.contribs.mit.muon.muon import Muon
 
             optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
             assert optimizer_cls is MuonOptimizerFactory
@@ -556,10 +552,8 @@ class TestHFCausalTrainerBuilder:
 
         assert trainer.optimizer_cls_and_kwargs is not None
 
-        from axolotl.contribs.mit.muon import (
-            Muon,
-            MuonOptimizerFactory,
-        )
+        from axolotl.contribs.mit.muon import MuonOptimizerFactory
+        from axolotl.contribs.mit.muon.muon import Muon
 
         optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
         assert optimizer_cls is MuonOptimizerFactory

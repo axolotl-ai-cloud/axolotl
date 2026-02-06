@@ -35,7 +35,7 @@ LOG = get_logger(__name__)
 
 _CCE_INSTALL_MESSAGE = (
     "Please install Axolotl's fork of cut_cross_entropy with transformers support using "
-    '`pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@8a1a0ec"`'
+    '`pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@f4b5712"`'
 )
 
 
@@ -96,7 +96,11 @@ class CutCrossEntropyPlugin(BasePlugin):
             )
 
             # The patch checks model_type internally
-            cce_patch(cfg.model_config_type)
+
+            cce_patch(
+                cfg.model_config_type,
+                remote_model_id=cfg.base_model if cfg.trust_remote_code else None,
+            )
 
     def patch_llama_like(
         self,
@@ -107,7 +111,9 @@ class CutCrossEntropyPlugin(BasePlugin):
         """
         from cut_cross_entropy.transformers.patch import PATCH_FNS
 
-        def patch_generic(maybe_model, patch_options, model_type: str):
+        def patch_generic(
+            maybe_model, patch_options, model_type: str, remote_model_id: str | None
+        ):
             import cut_cross_entropy.transformers.llama
             from cut_cross_entropy.transformers.llama import cce_forward
 

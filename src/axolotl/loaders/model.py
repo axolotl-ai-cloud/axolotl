@@ -26,7 +26,6 @@ from torch.distributed import DeviceMesh
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForImageTextToText,
-    AutoModelForVision2Seq,
     AwqConfig,
     BitsAndBytesConfig,
     GPTQConfig,
@@ -49,6 +48,7 @@ from axolotl.loaders.utils import (
     load_model_config,
 )
 from axolotl.models.mamba import fix_mamba_attn_for_loss
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
@@ -158,6 +158,7 @@ class ModelLoader:
         """Property that determines if FSDP with QLoRA is enabled."""
         return self.is_fsdp_enabled and self.cfg.adapter == "qlora"
 
+    @send_errors
     def load(self) -> tuple[PreTrainedModel | PeftModelForCausalLM, PeftConfig | None]:
         """Load and prepare the model with all configurations and patches.
 
@@ -224,12 +225,17 @@ class ModelLoader:
         ):
             self.model = self.model.merge_and_unload()
 
+        self._configure_experts_implementation()
         self._apply_activation_checkpointing()
         self._resize_token_embeddings()
         self._adjust_model_config()
         self._configure_embedding_dtypes()
         self._configure_qat()
         log_gpu_memory_usage(LOG, "Memory usage after model load", 0)
+
+    def _configure_experts_implementation(self):
+        if self.cfg.experts_implementation is not None:
+            self.model.set_experts_implementation(self.cfg.experts_implementation)
 
     def _apply_activation_checkpointing(self):
         if self.cfg.activation_offloading is True:
@@ -432,7 +438,7 @@ class ModelLoader:
         """
         if self.cfg.is_multimodal:
             self.auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
-                self.model_config.model_type, AutoModelForVision2Seq
+                self.model_config.model_type, AutoModelForImageTextToText
             )
             if isinstance(self.auto_model_loader, str):
                 self.auto_model_loader = AutoModelForImageTextToText
@@ -474,6 +480,7 @@ class ModelLoader:
             max_memory = None
 
         self.model_kwargs["torch_dtype"] = self.cfg.torch_dtype
+        self.model_kwargs["dtype"] = self.cfg.torch_dtype
 
         is_ds_zero3 = is_deepspeed_zero3_enabled()
 
@@ -668,7 +675,7 @@ class ModelLoader:
         Uses the selected loader when provided; otherwise falls back to the auto loader.
         """
         loader = model_loader_class or self.auto_model_loader
-        if loader in [AutoModelForCausalLM, AutoModelForVision2Seq]:
+        if loader in [AutoModelForCausalLM, AutoModelForImageTextToText]:
             model = loader.from_config(
                 config=self.model_config,
                 trust_remote_code=self.cfg.trust_remote_code or False,
@@ -786,6 +793,7 @@ class ModelLoader:
                 # Use auto model loader (handles gptq and default cases)
                 model_loader_class = self.auto_model_loader
 
+            self.model_kwargs["dtype"] = self.model_kwargs["torch_dtype"]
             if self.cfg.reinit_weights:
                 self.model = self._load_model_from_config(model_loader_class)
             else:

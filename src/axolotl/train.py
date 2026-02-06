@@ -31,6 +31,8 @@ from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders import ModelLoader, load_processor, load_tokenizer
+from axolotl.telemetry.errors import send_errors
+from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
@@ -44,6 +46,9 @@ if typing.TYPE_CHECKING:
     from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 
 LOG = get_logger(__name__)
+
+TELEMETRY_MANAGER = TelemetryManager.get_instance()
+PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 def setup_model_and_tokenizer(
@@ -62,7 +67,10 @@ def setup_model_and_tokenizer(
             `None`), and processor (if multimodal, else `None`).
     """
     # Load tokenizer
-    LOG.debug(f"Loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
+    LOG.debug(
+        f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
+        main_process_only=True,
+    )
     tokenizer = load_tokenizer(cfg)
 
     # Load processor for multimodal models if needed
@@ -77,6 +85,14 @@ def setup_model_and_tokenizer(
     model, peft_config = model_loader.load()
     if model.generation_config is not None:
         model.generation_config.do_sample = True
+
+    TELEMETRY_MANAGER.send_event(
+        event_type="model-load", properties=model.config.to_dict()
+    )
+    if peft_config:
+        TELEMETRY_MANAGER.send_event(
+            event_type="peft-config-load", properties=peft_config.to_dict()
+        )
 
     # Apply freezing if specified
     if cfg.unfrozen_parameters:
@@ -119,16 +135,13 @@ def setup_reference_model(
     return model_ref
 
 
-def setup_signal_handler(
-    cfg: DictDefault, model: PreTrainedModel, safe_serialization: bool
-):
+def setup_signal_handler(cfg: DictDefault, model: PreTrainedModel):
     """
     Set up signal handler for graceful termination.
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
         model: The model to save on termination
-        safe_serialization: Whether to use safe serialization when saving
     """
     # ray workers don't have access to this signal
     if cfg.local_rank == 0 and not cfg.use_ray:
@@ -136,9 +149,7 @@ def setup_signal_handler(
         def terminate_handler(_, __, model_weakref):
             if model_weakref() is not None:
                 _model = model_weakref()
-                _model.save_pretrained(
-                    cfg.output_dir, safe_serialization=safe_serialization
-                )
+                _model.save_pretrained(cfg.output_dir)
 
             cleanup_distributed()
             sys.exit(0)
@@ -196,15 +207,13 @@ def execute_training(
         LOG.info("Starting trainer...")
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
-        plugin_manager = PluginManager.get_instance()
-        plugin_manager.post_train(cfg, trainer.model)
+        PLUGIN_MANAGER.post_train(cfg, trainer.model)
 
 
 def save_trained_model(
     cfg: DictDefault,
     trainer: Any,
     model: PreTrainedModel,
-    safe_serialization: bool,
 ):
     """
     Save the trained model according to configuration and training setup.
@@ -213,7 +222,6 @@ def save_trained_model(
         cfg: Dictionary mapping `axolotl` config keys to values.
         trainer: The trainer object.
         model: The trained model to save.
-        safe_serialization: Whether to use safe serialization.
     """
     LOG.info(f"Training completed! Saving trained model to {cfg.output_dir}.")
 
@@ -268,7 +276,6 @@ def save_trained_model(
                 merge_fsdp_weights(
                     checkpoint_dir=str(fsdp_dir),
                     output_path=merged_path,
-                    safe_serialization=True,
                 )
                 trainer.accelerator.wait_for_everyone()
                 if trainer.accelerator.is_main_process:
@@ -315,11 +322,9 @@ def save_trained_model(
                 pass
     elif cfg.local_rank == 0:
         if cfg.rl and cfg.adapter and not cfg.rl_adapter_ref_model:
-            trainer.model.save_pretrained(
-                cfg.output_dir, safe_serialization=safe_serialization
-            )
+            trainer.model.save_pretrained(cfg.output_dir)
 
-        model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
+        model.save_pretrained(cfg.output_dir)
 
     if hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
         # TODO: add integration support so this can be implemented completely within the plugin
@@ -329,7 +334,6 @@ def save_trained_model(
             model=model,
             output_dir=cfg.output_dir,
             trainer=trainer,
-            safe_serialization=safe_serialization,
             save_compressed=cfg.llmcompressor.save_compressed,
         )
 
@@ -434,7 +438,6 @@ def handle_untrained_tokens_fix(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizer,
     train_dataset: Dataset,
-    safe_serialization: bool,
 ):
     """
     Apply fixes for untrained tokens if configured.
@@ -444,7 +447,6 @@ def handle_untrained_tokens_fix(
         model: The model to apply fixes to.
         tokenizer: The tokenizer for token identification.
         train_dataset: The training dataset to use.
-        safe_serialization: Whether to use safe serialization when saving.
     """
     if not cfg.fix_untrained_tokens:
         return
@@ -468,9 +470,7 @@ def handle_untrained_tokens_fix(
     fix_untrained_tokens(model, tokenizer, train_dataset, **fix_kwargs)
 
     if cfg.local_rank == 0:
-        model.save_pretrained(
-            str(Path(cfg.output_dir)), safe_serialization=safe_serialization
-        )
+        model.save_pretrained(str(Path(cfg.output_dir)))
 
 
 def setup_model_and_trainer(
@@ -521,9 +521,7 @@ def setup_model_and_trainer(
         model_ref=model_ref,
         peft_config=peft_config,
     )
-
-    plugin_manager = PluginManager.get_instance()
-    plugin_manager.post_trainer_create(cfg, trainer)
+    PLUGIN_MANAGER.post_trainer_create(cfg, trainer)
 
     if cfg.use_ray:
         try:
@@ -545,6 +543,7 @@ def setup_model_and_trainer(
     )
 
 
+@send_errors
 def train(
     cfg: DictDefault, dataset_meta: TrainDatasetMeta
 ) -> tuple[PeftModel | PreTrainedModel, PreTrainedTokenizer, Trainer]:
@@ -568,15 +567,12 @@ def train(
     ) = setup_model_and_trainer(cfg, dataset_meta)
 
     # Handle untrained tokens if configured
-    safe_serialization = cfg.save_safetensors is True
     train_dataset = dataset_meta.train_dataset
-    handle_untrained_tokens_fix(
-        cfg, model, tokenizer, train_dataset, safe_serialization
-    )
+    handle_untrained_tokens_fix(cfg, model, tokenizer, train_dataset)
 
     # Additional setup
     save_initial_configs(cfg, tokenizer, model, peft_config, processor)
-    setup_signal_handler(cfg, model, safe_serialization)
+    setup_signal_handler(cfg, model)
     setup_model_card(cfg)
 
     # Execute the training
@@ -588,12 +584,13 @@ def train(
         torch.cuda.empty_cache()
 
     # Save the trained model and cleanup
-    save_trained_model(cfg, trainer, model, safe_serialization)
+    save_trained_model(cfg, trainer, model)
     tokenizer.save_pretrained(
         str(Path(cfg.output_dir)), save_jinja_files=cfg.tokenizer_save_jinja_files
     )
     create_model_card(cfg, trainer)
     if not cfg.use_ray:
         cleanup_distributed()
+    PLUGIN_MANAGER.post_train(cfg, model)
 
     return model, tokenizer, trainer

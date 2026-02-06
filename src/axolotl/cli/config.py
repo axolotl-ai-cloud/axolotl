@@ -14,6 +14,8 @@ import yaml
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.integrations.base import PluginManager
+from axolotl.telemetry.errors import send_errors
+from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.comet_ import setup_comet_env_vars
 from axolotl.utils.config import (
     normalize_cfg_datasets,
@@ -24,12 +26,15 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.tee import prepare_debug_log
+from axolotl.utils.trackio_ import setup_trackio_env_vars
 from axolotl.utils.trainer import prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
 LOG = get_logger(__name__)
 
 API_KEY_FIELDS = {"comet_api_key"}
+
+TELEMETRY_MANAGER = TelemetryManager.get_instance()
 
 
 def check_remote_config(config: Union[str, Path]) -> Union[str, Path]:
@@ -164,6 +169,7 @@ def plugin_set_cfg(cfg: DictDefault):
         plugin_manager.cfg = cfg
 
 
+@send_errors
 def load_cfg(
     config: str | Path | DictDefault = Path("examples/"), **kwargs
 ) -> DictDefault:
@@ -197,6 +203,8 @@ def load_cfg(
             temp_file.close()
         cfg.axolotl_config_path = temp_file.name
 
+    TELEMETRY_MANAGER.send_event(event_type="config-loaded", properties=cfg)
+
     # If there are any options passed in the cli, if it is something that seems valid
     # from the yaml, then overwrite the value
     cfg_keys = cfg.keys()
@@ -220,6 +228,7 @@ def load_cfg(
         cfg,
         capabilities={
             "bf16": is_torch_bf16_gpu_available(),
+            "fp8": compute_supports_fp8(),
             "n_gpu": int(os.environ.get("WORLD_SIZE", 1)),
             "compute_capability": gpu_version,
         },
@@ -238,8 +247,10 @@ def load_cfg(
     setup_wandb_env_vars(cfg)
     setup_mlflow_env_vars(cfg)
     setup_comet_env_vars(cfg)
+    setup_trackio_env_vars(cfg)
     plugin_set_cfg(cfg)
 
+    TELEMETRY_MANAGER.send_event(event_type="config-processed", properties=cfg)
     cfg_to_log = {
         k: "[REDACTED]" if k in API_KEY_FIELDS else v
         for k, v in cfg.items()
@@ -251,3 +262,11 @@ def load_cfg(
     )
 
     return cfg
+
+
+def compute_supports_fp8() -> bool:
+    try:
+        compute_capability = torch.cuda.get_device_capability()
+        return compute_capability >= (9, 0)
+    except RuntimeError:
+        return False

@@ -13,17 +13,29 @@ class TestFSDPValidation:
     test class for pydantic fsdp validation
     """
 
-    def test_fsdp_version_in_fsdp_config(self, min_base_cfg):
+    def test_fsdp_version_from_fsdp_config(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(
             fsdp_config={
-                "fsdp_version": 2,
+                "version": 2,
             },
         )
         cfg = validate_config(
             cfg,
         )
         assert cfg.fsdp_version == 2
-        assert cfg.fsdp_config.fsdp_version is None
+
+    def test_fsdp_version_in_fsdp_config(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            fsdp_version=2,
+            fsdp_config={
+                "reshard_after_forward": True,
+            },
+        )
+        cfg = validate_config(
+            cfg,
+        )
+        assert cfg.fsdp_version == 2
+        assert cfg.fsdp_config.fsdp_version == 2
 
     def test_fsdp_offload_w_8bit_optim(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(
@@ -116,12 +128,24 @@ class TestFSDPValidation:
         )
         cfg = validate_config(cfg)
         assert cfg.fsdp_version == 2
-        assert cfg.fsdp_config.fsdp_version is None
-        for keys in cfg.fsdp_config.keys():
-            assert not keys.startswith("fsdp_")
+        assert cfg.fsdp_config.fsdp_version == 2
+        for key in cfg.fsdp_config.keys():
+            if key != "fsdp_version":
+                assert not key.startswith("fsdp_")
         assert cfg.fsdp_config.auto_wrap_policy == "TRANSFORMER_BASED_WRAP"
         assert cfg.fsdp_config.transformer_layer_cls_to_wrap == "LlamaDecoderLayer"
         assert cfg.fsdp_config.reshard_after_forward is True
+
+    def test_muon_fsdp1_rejected(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            optimizer="muon",
+            fsdp_version=1,
+            fsdp_config={"reshard_after_forward": True},
+        )
+        with pytest.raises(
+            ValueError, match="Muon optimizer is only compatible with FSDP2"
+        ):
+            validate_config(cfg)
 
     @pytest.mark.parametrize(
         "rl",

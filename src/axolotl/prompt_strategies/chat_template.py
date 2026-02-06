@@ -95,6 +95,7 @@ class ChatTemplatePrompter(Prompter):
         add_generation_prompt=False,
         images=None,
         tools=None,
+        real_last_index=None,
     ):
         """
         Build a prompt from a conversation.
@@ -113,6 +114,9 @@ class ChatTemplatePrompter(Prompter):
 
         if tools:
             chat_template_kwargs["tools"] = tools
+
+        if real_last_index:
+            chat_template_kwargs["real_last_index"] = real_last_index
 
         if self.processor:
             if not callable(self.processor):
@@ -146,6 +150,8 @@ class ChatTemplatePrompter(Prompter):
 
         return self.tokenizer.apply_chat_template(
             conversation,
+            tokenize=True,
+            return_dict=False,
             **chat_template_kwargs,
         )
 
@@ -631,11 +637,17 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         turns_with_empty = turns[:turn_idx] + [empty_turn]
         turns_with_content = turns[: turn_idx + 1]
 
+        real_last_index = len(turns) - 1
+
         # Generate the conversation up to the turn, with final turn replaced with dummy content
-        dummy_ids = self.prompter.build_prompt(turns_with_empty, tools=tools)  # type: ignore
+        dummy_ids = self.prompter.build_prompt(
+            turns_with_empty, tools=tools, real_last_index=real_last_index
+        )  # type: ignore
 
         # Generate the conversation up to the turn, with final turn included
-        full_ids = self.prompter.build_prompt(turns_with_content, tools=tools)  # type: ignore
+        full_ids = self.prompter.build_prompt(
+            turns_with_content, tools=tools, real_last_index=real_last_index
+        )  # type: ignore
 
         if not full_ids or not dummy_ids:
             LOG.warning(f"Empty template generated for turn {turn_idx}")
@@ -823,6 +835,23 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             return None
 
         if isinstance(tools, list):
+            # Process each tool to handle JSON string parameters
+            for tool in tools:
+                if isinstance(tool, dict) and "function" in tool:
+                    function = tool["function"]
+                    if "parameters" in function:
+                        params = function["parameters"]
+                        if isinstance(params, str):
+                            try:
+                                function["parameters"] = json.loads(params)
+                            except json.JSONDecodeError as e:
+                                LOG.error(
+                                    f"Error parsing tool parameters as JSON. "
+                                    f"Function: {function.get('name', 'unknown')}, "
+                                    f"Parameters string: {params!r}, "
+                                    f"Error: {e}"
+                                )
+                                raise
             return tools
 
         raise ValueError(

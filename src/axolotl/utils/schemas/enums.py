@@ -26,6 +26,7 @@ class RLType(str, Enum):
     """RL trainer type configuration subset"""
 
     DPO = "dpo"
+    GDPO = "gdpo"
     GRPO = "grpo"
     IPO = "ipo"
     ORPO = "orpo"
@@ -58,6 +59,7 @@ class ChatTemplate(str, Enum):
     falcon_h1 = "falcon_h1"
     tokenizer_default = "tokenizer_default"
     exaone = "exaone"
+    exaone4 = "exaone4"
     metharme = "metharme"
     pixtral = "pixtral"
     llava = "llava"

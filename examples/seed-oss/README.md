@@ -6,21 +6,17 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 
 ## Getting started
 
-1. Install Axolotl following the [installation guide](https://docs.axolotl.ai/docs/installation.html). You need to install from main as Seed-OSS is only on nightly or use our latest [Docker images](https://docs.axolotl.ai/docs/docker.html).
+1.  Install Axolotl following the [installation guide](https://docs.axolotl.ai/docs/installation.html).
 
-    Here is an example of how to install from main for pip:
+    Here is an example of how to install from pip:
+    ```bash
+    # Ensure you have a compatible version of Pytorch installed
+    pip3 install packaging setuptools wheel ninja
+    pip3 install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
 
-```bash
-# Ensure you have Pytorch installed (Pytorch 2.6.0 min)
-git clone https://github.com/axolotl-ai-cloud/axolotl.git
-cd axolotl
-
-pip3 install packaging==23.2 setuptools==75.8.0 wheel ninja
-pip3 install --no-build-isolation -e '.[flash-attn]'
-
-# Install Cut Cross Entropy
-python scripts/cutcrossentropy_install.py | sh
-```
+    # Install Cut Cross Entropy
+    python scripts/cutcrossentropy_install.py | sh
+    ```
 
 2. Run the finetuning example:
 
@@ -41,9 +37,7 @@ Let us know how it goes. Happy finetuning! 🚀
 
 ## Optimization Guides
 
-- [Multi-GPU Training](https://docs.axolotl.ai/docs/multi-gpu.html)
-- [Multi-Node Training](https://docs.axolotl.ai/docs/multi-node.html)
-- [LoRA Optimizations](https://docs.axolotl.ai/docs/lora_optims.html)
+Please check the [Optimizations doc](https://docs.axolotl.ai/docs/optimizations.html).
 
 ## Related Resources
 

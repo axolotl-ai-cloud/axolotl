@@ -13,7 +13,9 @@ from transformers import PreTrainedTokenizer
 
 from axolotl.loaders.tokenizer import load_tokenizer
 from axolotl.utils.data.rl import prepare_preference_datasets
-from axolotl.utils.data.sft import _load_tokenized_prepared_datasets
+from axolotl.utils.data.sft import (
+    _load_tokenized_prepared_datasets,
+)
 from axolotl.utils.dict import DictDefault
 
 from tests.constants import (

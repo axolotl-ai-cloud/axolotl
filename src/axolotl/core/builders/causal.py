@@ -72,7 +72,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.include_tkps:
             callbacks.append(
                 TokensPerSecondCallback(
-                    self.cfg.tensor_parallel_size, self.cfg.context_parallel_size
+                    self.cfg.tensor_parallel_size,
+                    self.cfg.context_parallel_size,
+                    resume_from_checkpoint=self.cfg.resume_from_checkpoint,
                 )
             )
         return callbacks
@@ -377,6 +379,18 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
             data_collator_kwargs["pad_to_multiple_of"] = multiple
 
+        if self.cfg.use_eaft:
+            from functools import partial
+
+            from axolotl.monkeypatch.loss.eaft import eaft_loss
+
+            configured_eaft_loss = partial(
+                eaft_loss,
+                alpha=self.cfg.eaft_alpha if self.cfg.eaft_alpha is not None else 1.0,
+                k=self.cfg.eaft_k if self.cfg.eaft_k is not None else 20,
+            )
+            trainer_kwargs["compute_loss_func"] = configured_eaft_loss
+
         trainer_cls = self._get_trainer_cls()
 
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
@@ -441,7 +455,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 or self.cfg.micro_batch_size > 1
             ):
                 return DataCollatorForSeq2Seq(self.tokenizer, **kwargs)
-            if not (self.cfg.sample_packing and self.cfg.pretrain_multipack_attn):
+            if not (self.cfg.sample_packing and self.cfg.pretrain_multipack_attn) or (
+                self.cfg.micro_batch_size == 1 and is_eval is False
+            ):
                 return None
 
         if self.cfg.model_config_type == "mamba":

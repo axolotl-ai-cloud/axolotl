@@ -29,10 +29,13 @@ from transformers.trainer_pt_utils import AcceleratorConfig
 
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.trainer.lr import patch_trainer_get_lr
+from axolotl.telemetry.callbacks import TelemetryCallback
+from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils import (
     is_comet_available,
     is_mlflow_available,
     is_opentelemetry_available,
+    is_trackio_available,
 )
 from axolotl.utils.callbacks import (
     GCCallback,
@@ -118,6 +121,13 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.gc_steps:
             callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
 
+        if self.cfg.dynamic_checkpoint and self.cfg.dynamic_checkpoint.enabled:
+            from axolotl.utils.callbacks.dynamic_checkpoint import (
+                DynamicCheckpointCallback,
+            )
+
+            callbacks.append(DynamicCheckpointCallback(self.cfg))
+
         if self.cfg.use_wandb:
             callbacks.append(
                 SaveAxolotlConfigtoWandBCallback(self.cfg.axolotl_config_path)
@@ -138,6 +148,14 @@ class TrainerBuilderBase(abc.ABC):
             callbacks.append(
                 SaveAxolotlConfigtoCometCallback(self.cfg.axolotl_config_path)
             )
+        if self.cfg.use_trackio and is_trackio_available():
+            from axolotl.utils.callbacks.trackio_ import (
+                SaveAxolotlConfigtoTrackioCallback,
+            )
+
+            callbacks.append(
+                SaveAxolotlConfigtoTrackioCallback(self.cfg.axolotl_config_path)
+            )
         if self.cfg.use_otel_metrics and is_opentelemetry_available():
             from axolotl.utils.callbacks.opentelemetry import (
                 OpenTelemetryMetricsCallback,
@@ -154,6 +172,10 @@ class TrainerBuilderBase(abc.ABC):
                     profiler_steps_start=self.cfg.profiler_steps_start,
                 )
             )
+
+        telemetry_manager = TelemetryManager.get_instance()
+        if telemetry_manager.enabled:
+            callbacks.append(TelemetryCallback())
 
         return callbacks
 
@@ -194,11 +216,11 @@ class TrainerBuilderBase(abc.ABC):
     def _configure_warmup_and_logging(
         self, total_num_steps: int, training_args_kwargs: dict
     ):
-        warmup_steps = 0
+        warmup_steps: int | float = 0
         warmup_ratio = 0.0
-        if self.cfg.warmup_steps:
+        if self.cfg.warmup_steps is not None:
             warmup_steps = self.cfg.warmup_steps
-        elif self.cfg.warmup_ratio:
+        elif self.cfg.warmup_ratio is not None:
             if total_num_steps:
                 warmup_steps = max(int(self.cfg.warmup_ratio * total_num_steps), 0)
             else:
@@ -207,6 +229,10 @@ class TrainerBuilderBase(abc.ABC):
             warmup_steps = min(int(0.03 * total_num_steps), 100)
         else:
             warmup_ratio = 0.03
+
+        # transformers v5
+        if warmup_ratio > 0.0 and warmup_steps == 0:
+            warmup_steps = warmup_ratio
 
         if warmup_steps == 1:
             warmup_steps = 2
@@ -220,7 +246,6 @@ class TrainerBuilderBase(abc.ABC):
                 else max(min(int(0.005 * total_num_steps), 10), 1)
             )
 
-        training_args_kwargs["warmup_ratio"] = warmup_ratio
         training_args_kwargs["warmup_steps"] = warmup_steps
 
     def _configure_precision_settings(self, training_args_kwargs: dict):
@@ -268,11 +293,22 @@ class TrainerBuilderBase(abc.ABC):
                 adam_kwargs["eps"] = training_args_kwargs.get("adam_epsilon")
 
             if self.cfg.optimizer == "muon":
-                from axolotl.contribs.mit.muon import (
-                    MuonOptimizerFactory,
-                )
+                _, device_mesh = build_parallelism_config(self.cfg)
 
-                optimizer_cls = MuonOptimizerFactory
+                if device_mesh is not None:
+                    from axolotl.contribs.mit.muon.dist_muon import (
+                        DistMuonOptimizerFactory,
+                    )
+
+                    optimizer_cls = DistMuonOptimizerFactory
+                    optimizer_kwargs["device_mesh"] = device_mesh
+                else:
+                    from axolotl.contribs.mit.muon import (
+                        MuonOptimizerFactory,
+                    )
+
+                    optimizer_cls = MuonOptimizerFactory
+
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "dion":
                 from axolotl.contribs.mit.dion import (
@@ -410,6 +446,8 @@ class TrainerBuilderBase(abc.ABC):
             report_to.append("tensorboard")
         if self.cfg.use_comet:
             report_to.append("comet_ml")
+        if self.cfg.use_trackio:
+            report_to.append("trackio")
 
         training_args_kwargs["report_to"] = report_to
 
@@ -417,6 +455,8 @@ class TrainerBuilderBase(abc.ABC):
             training_args_kwargs["run_name"] = self.cfg.wandb_name
         elif self.cfg.use_mlflow:
             training_args_kwargs["run_name"] = self.cfg.mlflow_run_name
+        elif self.cfg.use_trackio:
+            training_args_kwargs["run_name"] = self.cfg.trackio_run_name
         else:
             training_args_kwargs["run_name"] = None
 
@@ -493,9 +533,7 @@ class TrainerBuilderBase(abc.ABC):
             "loraplus_lr_ratio",
             "loraplus_lr_embedding",
             "output_dir",
-            "save_safetensors",
             "save_only_model",
-            "include_tokens_per_second",
             "weight_decay",
             "seed",
             "dion_momentum",
@@ -508,6 +546,7 @@ class TrainerBuilderBase(abc.ABC):
 
         arg_map = {
             "dion_learning_rate": "dion_lr",
+            "include_num_input_tokens_seen": "include_tokens_per_second",
         }
         for kwarg, cfg_arg in arg_map.items():
             if hasattr(self.cfg, cfg_arg) and getattr(self.cfg, cfg_arg) is not None:

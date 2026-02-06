@@ -21,31 +21,12 @@ jobs:
     timeout-minutes: 480
     # this job needs to be run on self-hosted GPU runners...
     runs-on: ubuntu-latest-m
+    env:
+      HAS_DOCKERHUB_CREDS: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - cuda: "126"
-            cuda_version: 12.6.3
-            cudnn_version: ""
-            python_version: "3.11"
-            pytorch: 2.7.0
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-base"
-          - cuda: "126"
-            cuda_version: 12.6.3
-            cudnn_version: ""
-            python_version: "3.11"
-            pytorch: 2.7.1
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-base"
-          - cuda: "128"
-            cuda_version: 12.8.1
-            cudnn_version: ""
-            python_version: "3.11"
-            pytorch: 2.7.1
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-base"
           - cuda: "128"
             cuda_version: 12.8.1
             cudnn_version: ""
@@ -53,6 +34,7 @@ jobs:
             pytorch: 2.8.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-base"
+            platforms: "linux/amd64"
           - cuda: "128"
             cuda_version: 12.8.1
             cudnn_version: ""
@@ -60,13 +42,39 @@ jobs:
             pytorch: 2.9.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-base"
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: "128"
+            cuda_version: 12.8.1
+            cudnn_version: ""
+            python_version: "3.11"
+            pytorch: 2.9.1
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-base"
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: "129"
+            cuda_version: 12.9.1
+            cudnn_version: ""
+            python_version: "3.12"
+            pytorch: 2.9.1
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-base"
+            platforms: "linux/amd64,linux/arm64"
           - cuda: "130"
             cuda_version: 13.0.0
             cudnn_version: ""
             python_version: "3.11"
-            pytorch: 2.9.0
+            pytorch: 2.9.1
             torch_cuda_arch_list: "9.0+PTX"
             dockerfile: "Dockerfile-base"
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: "130"
+            cuda_version: 13.0.0
+            cudnn_version: ""
+            python_version: "3.12"
+            pytorch: 2.9.1
+            torch_cuda_arch_list: "9.0+PTX"
+            dockerfile: "Dockerfile-base"
+            platforms: "linux/amd64,linux/arm64"
 #          - cuda: "128"
 #            cuda_version: 12.8.1
 #            cudnn_version: ""
@@ -90,10 +98,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            winglian/axolotl-base
             axolotlai/axolotl-base
       - name: Login to Docker Hub
         uses: docker/login-action@v2
+        if: ${{ github.event_name != 'pull_request' && env.HAS_DOCKERHUB_CREDS == 'true' }}
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -104,6 +112,7 @@ jobs:
         with:
           context: .
           file: ./docker/${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platforms }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.metadata.outputs.tags }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           labels: ${{ steps.metadata.outputs.labels }}
@@ -118,24 +127,12 @@ jobs:
     if: ${{ github.repository_owner == 'axolotl-ai-cloud' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     timeout-minutes: 480
     runs-on: ubuntu-latest-m
+    env:
+      HAS_DOCKERHUB_CREDS: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - cuda: "126"
-            cuda_version: 12.6.3
-            cudnn_version: ""
-            python_version: "3.11"
-            pytorch: 2.7.1
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-uv-base"
-          - cuda: "128"
-            cuda_version: 12.8.1
-            cudnn_version: ""
-            python_version: "3.11"
-            pytorch: 2.7.1
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-uv-base"
           - cuda: "128"
             cuda_version: 12.8.1
             cudnn_version: ""
@@ -143,6 +140,15 @@ jobs:
             pytorch: 2.8.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64"
+          - cuda: "128"
+            cuda_version: 12.8.1
+            cudnn_version: ""
+            python_version: "3.11"
+            pytorch: 2.9.1
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64,linux/arm64"
           - cuda: "128"
             cuda_version: 12.8.1
             cudnn_version: ""
@@ -150,13 +156,31 @@ jobs:
             pytorch: 2.9.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: "129"
+            cuda_version: 12.9.1
+            cudnn_version: ""
+            python_version: "3.12"
+            pytorch: 2.9.1
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
+            dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64,linux/arm64"
           - cuda: "130"
             cuda_version: 13.0.0
             cudnn_version: ""
             python_version: "3.11"
-            pytorch: 2.9.0
+            pytorch: 2.9.1
             torch_cuda_arch_list: "9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: "130"
+            cuda_version: 13.0.0
+            cudnn_version: ""
+            python_version: "3.12"
+            pytorch: 2.9.1
+            torch_cuda_arch_list: "9.0+PTX"
+            dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64,linux/arm64"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -168,6 +192,7 @@ jobs:
             axolotlai/axolotl-base-uv
       - name: Login to Docker Hub
         uses: docker/login-action@v2
+        if: ${{ github.event_name != 'pull_request' && env.HAS_DOCKERHUB_CREDS == 'true' }}
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -178,6 +203,7 @@ jobs:
         with:
           context: .
           file: ./docker/${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platforms }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.metadata.outputs.tags }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           labels: ${{ steps.metadata.outputs.labels }}

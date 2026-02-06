@@ -24,8 +24,7 @@ if launcher_args:
     launcher_args_str = "-- " + " ".join(launcher_args)
 
 # 1. Define a base image for your training job
-# must use torch 2.7.0 for vllm
-BASE_IMAGE = "axolotlai/axolotl:main-py3.11-cu126-2.7.1"
+BASE_IMAGE = "axolotlai/axolotl:main-py3.11-cu128-2.9.1"
 
 # 2. Define the Runtime Environment for the Training Job
 # This includes start commands and environment variables.a

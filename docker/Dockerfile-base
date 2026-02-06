@@ -2,14 +2,16 @@ ARG CUDA_VERSION="11.8.0"
 ARG CUDNN_VERSION="8"
 ARG UBUNTU_VERSION="22.04"
 ARG MAX_JOBS=4
+ARG TARGETARCH
 
 FROM nvidia/cuda:$CUDA_VERSION-cudnn$CUDNN_VERSION-devel-ubuntu$UBUNTU_VERSION AS base-builder
 
 ENV PATH="/root/miniconda3/bin:${PATH}"
 
-ARG PYTHON_VERSION="3.10"
+ARG TARGETARCH
+ARG PYTHON_VERSION="3.11"
 ARG PYTORCH_VERSION="2.1.2"
-ARG CUDA="118"
+ARG CUDA="128"
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
 
 ENV PYTHON_VERSION=$PYTHON_VERSION
@@ -22,11 +24,17 @@ RUN apt-get update \
         librdmacm-dev librdmacm1 rdmacm-utils slurm-wlm \
     && rm -rf /var/cache/apt/archives \
     && rm -rf /var/lib/apt/lists/* \
-    && wget \
-    https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
+    && if [ "$TARGETARCH" = "amd64" ]; then \
+        MINICONDA_ARCH="x86_64"; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        MINICONDA_ARCH="aarch64"; \
+    else \
+        echo "Unsupported architecture: $TARGETARCH"; exit 1; \
+    fi \
+    && wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-${MINICONDA_ARCH}.sh \
     && mkdir /root/.conda \
-    && bash Miniconda3-latest-Linux-x86_64.sh -b \
-    && rm -f Miniconda3-latest-Linux-x86_64.sh \
+    && bash Miniconda3-latest-Linux-${MINICONDA_ARCH}.sh -b \
+    && rm -f Miniconda3-latest-Linux-${MINICONDA_ARCH}.sh \
     && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main \
     && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r \
     && conda create -n "py${PYTHON_VERSION}" python="${PYTHON_VERSION}"
@@ -35,7 +43,7 @@ ENV PATH="/root/miniconda3/envs/py${PYTHON_VERSION}/bin:${PATH}"
 
 WORKDIR /workspace
 
-RUN python3 -m pip install --upgrade pip && pip3 install -U packaging==23.2 setuptools==75.8.0 wheel psutil && \
+RUN python3 -m pip install --upgrade pip && pip3 install -U packaging==26.0 setuptools==75.8.0 wheel psutil && \
     python3 -m pip install --no-cache-dir -U torch==${PYTORCH_VERSION}+cu${CUDA} torchvision --extra-index-url https://download.pytorch.org/whl/cu$CUDA && \
     python3 -m pip cache purge
 
@@ -51,8 +59,34 @@ RUN git lfs install --skip-repo && \
     pip3 install -U --no-cache-dir pydantic==1.10.10 && \
     pip3 cache purge
 
-RUN if [ "$PYTORCH_VERSION" = "2.9.0" ] && [ "$CUDA" = "128" ] ; then \
-        wget https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.4.17/flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
-        pip3 install --no-cache-dir flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
-        rm flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
-    fi
+RUN case "$PYTORCH_VERSION" in \
+        2.9.[0-9]*) \
+            if [ "$CUDA" = "128" ]; then \
+                if [ "$TARGETARCH" = "amd64" ]; then \
+                    WHL_FILE="flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl"; \
+                    WHL_VERSION="v0.5.4"; \
+                elif [ "$TARGETARCH" = "arm64" ]; then \
+                    WHL_FILE="flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_aarch64.whl"; \
+                    WHL_VERSION="v0.6.4"; \
+                else \
+                    echo "Unsupported architecture: $TARGETARCH"; exit 1; \
+                fi; \
+                wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/${WHL_VERSION}/${WHL_FILE}; \
+                pip3 install --no-cache-dir ${WHL_FILE}; \
+                rm ${WHL_FILE}; \
+            elif [ "$CUDA" = "130" ]; then \
+                if [ "$TARGETARCH" = "amd64" ]; then \
+                    WHL_FILE="flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_x86_64.whl"; \
+                    WHL_VERSION="v0.5.4"; \
+                elif [ "$TARGETARCH" = "arm64" ]; then \
+                    WHL_FILE="flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_aarch64.whl"; \
+                    WHL_VERSION="v0.6.4"; \
+                else \
+                    echo "Unsupported architecture: $TARGETARCH"; exit 1; \
+                fi; \
+                wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/${WHL_VERSION}/${WHL_FILE}; \
+                pip3 install --no-cache-dir ${WHL_FILE}; \
+                rm ${WHL_FILE}; \
+            fi \
+            ;; \
+    esac
