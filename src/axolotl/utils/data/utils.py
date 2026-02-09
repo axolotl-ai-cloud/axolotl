@@ -148,22 +148,33 @@ def deduplicate_and_log_datasets(
     return dataset, other_dataset
 
 
-def truncate_long_seq(sample, sequence_len=2048, min_sequence_len=2):
+def keep_min_len(sample, min_sequence_len=2):
     """
-    Truncate samples whose sequence length is too long (> sequence_len)
-    or drop those too short (< min_sequence_len).
+    Filter function that keeps only samples with sequence length >= min_sequence_len.
+    Returns a boolean or list of booleans indicating which samples to keep.
     """
     min_sequence_len = min_sequence_len or 2
 
     input_ids = sample["input_ids"]
+
+    # Batched (input_ids is a list of lists)
     results = []
+    for seq in input_ids:
+        results.append(len(seq) >= min_sequence_len)
+    return results
+
+
+def truncate_long_seq(sample, sequence_len=2048):
+    """
+    Truncate samples whose sequence length is too long (> sequence_len).
+    Modifies the sample in-place and returns the modified sample.
+    """
+    input_ids = sample["input_ids"]
 
     # Batched (input_ids is a list of lists)
     for i, seq in enumerate(input_ids):
         length = len(seq)
-        if length < min_sequence_len:
-            results.append(False)
-        elif length > sequence_len:
+        if length > sequence_len:
             sample["input_ids"][i] = seq[:sequence_len]
             if "attention_mask" in sample:
                 sample["attention_mask"][i] = sample["attention_mask"][i][:sequence_len]
@@ -171,10 +182,7 @@ def truncate_long_seq(sample, sequence_len=2048, min_sequence_len=2):
                 sample["labels"][i] = sample["labels"][i][:sequence_len]
             if "position_ids" in sample:
                 sample["position_ids"][i] = sample["position_ids"][i][:sequence_len]
-            results.append(True)
-        else:
-            results.append(True)
-    return results
+    return sample
 
 
 def handle_long_seq_in_dataset(
@@ -242,23 +250,40 @@ def handle_long_seq_in_dataset(
         drop_long_kwargs["desc"] = f"{action} (>{sequence_len})"
 
     if excess_length_strategy == "truncate":
-        process_fn = functools.partial(
-            truncate_long_seq,
-            sequence_len=sequence_len,
-            min_sequence_len=cfg.min_sample_len,
+        # 1) First filter out too-short samples
+        filter_short_kwargs = {}
+        if filter_map_kwargs:
+            filter_short_kwargs.update(filter_map_kwargs)
+            filter_short_kwargs["desc"] = f"Filtering Short Sequences (<{cfg.min_sample_len})"
+        dataset = dataset.filter(
+            functools.partial(
+                keep_min_len,
+                min_sequence_len=cfg.min_sample_len,
+            ),
+            batched=True,
+            **filter_short_kwargs,
         )
-        drop_long_kwargs["desc"] = (
-            f"Truncating/Filtering Sequences (target_len={sequence_len})"
+        # 2) Then truncate long samples to the target length
+        truncate_kwargs = {}
+        if filter_map_kwargs:
+            truncate_kwargs.update(filter_map_kwargs)
+            truncate_kwargs["desc"] = f"Truncating Sequences (target_len={sequence_len})"
+        dataset = dataset.map(
+            functools.partial(
+                truncate_long_seq,
+                sequence_len=sequence_len,
+            ),
+            batched=True,
+            **truncate_kwargs,
         )
     else:
         process_fn = drop_long
-
-    dataset = dataset.filter(
-        process_fn,
-        batched=True,
-        **filter_map_kwargs,
-        **drop_long_kwargs,
-    )
+        dataset = dataset.filter(
+            process_fn,
+            batched=True,
+            **filter_map_kwargs,
+            **drop_long_kwargs,
+        )
     if prior_len:
         dropped = prior_len - len(dataset)
         if dropped:
