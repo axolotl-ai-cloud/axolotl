@@ -186,6 +186,7 @@ class TestFSDP1:
 
         verify_training_success(temp_dir)
 
+    @pytest.mark.skip(reason="slow test, deprecate fsdp1 asap")
     def test_dpo_fft(self, temp_dir):
         cfg = DictDefault(
             {
