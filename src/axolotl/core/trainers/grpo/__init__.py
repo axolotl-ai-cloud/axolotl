@@ -164,7 +164,12 @@ class GRPOStrategy:
 
     @classmethod
     def get_blocklist_args_kwargs(cls) -> list[str]:
-        return ["dataset_num_proc", "max_length", "include_tokens_per_second"]
+        return [
+            "dataset_num_proc",
+            "max_length",
+            "include_tokens_per_second",
+            "max_prompt_length",
+        ]
 
     @classmethod
     def get_reward_func(cls, reward_func_fqn: str) -> RewardFunc:
