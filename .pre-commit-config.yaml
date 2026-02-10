@@ -11,7 +11,7 @@ repos:
     -   id: no-commit-to-branch
         args: ['--branch', 'main']
 -   repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.10
+    rev: v0.14.14
     hooks:
     -   id: ruff
         args: [--fix]
@@ -26,7 +26,7 @@ repos:
             'pydantic>=2.5.3',
         ]
 -   repo: https://github.com/PyCQA/bandit
-    rev: 1.9.2
+    rev: 1.9.3
     hooks:
     -   id: bandit
         args: [
