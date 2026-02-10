@@ -19,7 +19,7 @@ from peft import (
 )
 from transformers import PreTrainedModel
 
-from axolotl.common.architectures import MOE_EXPERT_PARAMS
+from axolotl.common.architectures import MOE_ARCH_BLOCK
 from axolotl.loaders.utils import get_linear_embedding_layers
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
@@ -118,19 +118,19 @@ def load_lora(
     # Exclude ParametrizationList modules created by MoE expert quantization.
     # replace_parameter_4bit wraps quantized params in ParametrizationList child
     # modules that PEFT doesn't support as LoRA targets.
-    exclude_modules = cfg.lora_exclude_modules or []
-    if cfg.model_config_type in MOE_EXPERT_PARAMS:
-        expert_param_names = MOE_EXPERT_PARAMS[cfg.model_config_type]
-        for name in expert_param_names:
-            if name not in exclude_modules:
-                exclude_modules.append(name)
+    # exclude "parametrizations" to skip all such wrapper modules.
+    exclude_modules = None
+    if cfg.model_config_type in MOE_ARCH_BLOCK and (
+        cfg.load_in_4bit or cfg.load_in_8bit
+    ):
+        exclude_modules = ["parametrizations"]
 
     lora_config = LoraConfig(
         r=cfg.lora_r,
         lora_alpha=cfg.lora_alpha,
         target_modules=lora_target_modules,
         target_parameters=lora_target_parameters,
-        exclude_modules=exclude_modules if exclude_modules else None,
+        exclude_modules=exclude_modules,
         layers_to_transform=cfg.peft_layers_to_transform,
         layers_pattern=cfg.peft_layers_pattern,
         lora_dropout=cfg.lora_dropout,

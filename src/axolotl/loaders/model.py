@@ -37,7 +37,7 @@ from transformers.integrations.deepspeed import (
     is_deepspeed_zero3_enabled,
 )
 
-from axolotl.common.architectures import MOE_ARCH_BLOCK, MOE_EXPERT_PARAMS
+from axolotl.common.architectures import MOE_ARCH_BLOCK
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.adapter import load_adapter, load_lora
 from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
@@ -180,9 +180,9 @@ class ModelLoader:
         # expert weights stay in full precision. We quantize them here before any other
         # operations that need GPU memory (like prepare_model_for_kbit_training).
         if (
-            self.cfg.adapter == "qlora"
-            and self.cfg.load_in_4bit
-            and self.cfg.model_config_type in MOE_EXPERT_PARAMS
+            self.cfg.adapter in ("qlora", "lora")
+            and (self.cfg.load_in_4bit or self.cfg.load_in_8bit)
+            and self.cfg.model_config_type in MOE_ARCH_BLOCK
         ):
             import inspect
 
@@ -194,7 +194,7 @@ class ModelLoader:
                     quantize_moe_expert_params,
                 )
 
-                quantize_moe_expert_params(self.model, self.cfg.model_config_type)
+                quantize_moe_expert_params(self.model)
 
         PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
 
