@@ -5,7 +5,6 @@ import importlib
 import logging
 import os
 import platform
-import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -19,21 +18,6 @@ LOG = logging.getLogger(__name__)
 
 POSTHOG_HOST = "https://app.posthog.com"
 POSTHOG_WRITE_KEY = "phc_1kUR0o04oJKKTTeSsIz2Mfm5mpiVsQEf2WOlzljMD7y"
-
-OPT_OUT_WARNING_SLEEP_SECONDS = 10
-OPT_OUT_WARNING = (
-    "\nTelemetry is now enabled by default to help improve Axolotl. "
-    "If you'd like to disable it, set AXOLOTL_DO_NOT_TRACK=1 in your environment.\n\n"
-    "Telemetry data helps us understand:\n"
-    "- Which features are most used\n"
-    "- What hardware configurations to prioritize\n"
-    "- Where users encounter errors\n\n"
-    "Personally identifiable information (PII) is not collected.\n\n"
-    "To remove this warning, explicitly set AXOLOTL_DO_NOT_TRACK=0 (enable telemetry) "
-    "or AXOLOTL_DO_NOT_TRACK=1 (disable telemetry).\n\n"
-    "For details, see: https://docs.axolotl.ai/docs/telemetry.html\n\n"
-    f"Sleeping for {OPT_OUT_WARNING_SLEEP_SECONDS}s..."
-)
 
 WHITELIST_PATH = str(Path(__file__).parent / "whitelist.yaml")
 
@@ -183,11 +167,6 @@ class TelemetryManager:
             "false",
             "true",
         ):
-            # Print opt-out info message for main process only
-            if is_main_process():
-                LOG.warning(OPT_OUT_WARNING)
-            time.sleep(OPT_OUT_WARNING_SLEEP_SECONDS)
-
             return True
 
         # Only rank 0 will send telemetry
