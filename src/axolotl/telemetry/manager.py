@@ -46,7 +46,7 @@ FIELDS_TO_REDACT = {
     "resume_from_checkpoint",
     "hub_model_id",
 }
-PREFIXES_TO_REDACT = {"wandb_", "comet_", "mlflow_", "gradio_", "trackio_"}
+PREFIXES_TO_REDACT = {"wandb_", "comet_", "mlflow_", "gradio_", "trackio_", "swanlab_"}
 PATH_INDICATORS = {"path", "dir", "data_files"}
 
 # pylint: disable=duplicate-code
