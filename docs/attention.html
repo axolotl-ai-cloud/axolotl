@@ -6,8 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
+<meta name="description" content="Supported attention modules in Axolotl">
 
-<title>cli.args – Axolotl</title>
+<title>Attention – Axolotl</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -58,24 +59,24 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </style>
 
 
-<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
-<script src="../../site_libs/clipboard/clipboard.min.js"></script>
-<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
-<script src="../../site_libs/quarto-search/fuse.min.js"></script>
-<script src="../../site_libs/quarto-search/quarto-search.js"></script>
-<meta name="quarto:offset" content="../../">
-<link href="../../favicon.jpg" rel="icon" type="image/jpeg">
-<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
-<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
-<script src="../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
-<script src="../../site_libs/quarto-html/popper.min.js"></script>
-<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
-<script src="../../site_libs/quarto-html/anchor.min.js"></script>
-<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-4d9afe2b8d18ee9fa5d0d57b5ed4214d.css" rel="stylesheet" id="quarto-text-highlighting-styles">
-<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
-<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-08d9eb451d58809f35fda8b852d737d8.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../favicon.jpg" rel="icon" type="image/jpeg">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-4d9afe2b8d18ee9fa5d0d57b5ed4214d.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-08d9eb451d58809f35fda8b852d737d8.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -114,7 +115,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </script>
 
 
-<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../styles.css">
 </head>
 
 <body class="nav-sidebar docked nav-fixed quarto-light">
@@ -124,9 +125,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <nav class="navbar navbar-expand " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
-    <a href="../../index.html" class="navbar-brand navbar-brand-logo">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
     </a>
   </div>
         <div class="quarto-navbar-tools tools-wide tools-end">
@@ -142,7 +143,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/batch_vs_grad.html">Core Concepts</a></li><li class="breadcrumb-item"><a href="../docs/attention.html">Attention</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -156,7 +157,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../index.html" class="sidebar-item-text sidebar-link">
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Home</span></a>
   </div>
 </li>
@@ -171,19 +172,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/getting-started.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/getting-started.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quickstart</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/installation.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/installation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Installation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/inference.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/inference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Inference and Merging</span></a>
   </div>
 </li>
@@ -198,43 +199,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Kimi Linear</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/plano.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/plano.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Plano Orchestrator</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mimo.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mimo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MiMo</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/internvl3_5.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/internvl3_5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">InternVL 3.5</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">OLMo 3</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/trinity.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/trinity.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Trinity</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/arcee.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/arcee.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Arcee AFM</span></a>
   </div>
 </li>
@@ -249,19 +250,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth3 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral3</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral3/think.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral3/think.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral 3 Thinking</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral3/vision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral3/vision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral 3 Vision</span></a>
   </div>
 </li>
@@ -278,19 +279,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth3 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/magistral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/magistral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Magistral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/magistral/think.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/magistral/think.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Magistral Thinking</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/magistral/vision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/magistral/vision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Magistral Vision</span></a>
   </div>
 </li>
@@ -298,121 +299,121 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral-small.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral-small.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Small 3.1/3.2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/voxtral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/voxtral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Voxtral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/devstral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/devstral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Devstral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral 7B</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/llama-4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/llama-4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Llama 4</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/llama-2.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/llama-2.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Llama 2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3 Next</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/apertus.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/apertus.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Apertus</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/gpt-oss.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/gpt-oss.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GPT-OSS</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/seed-oss.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/seed-oss.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Seed-OSS</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/phi.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/phi.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Phi</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/smolvlm2.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/smolvlm2.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">SmolVLM 2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/granite4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/granite4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Granite 4</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/LiquidAI.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/LiquidAI.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Liquid Foundation Models 2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/hunyuan.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/hunyuan.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Hunyuan</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/jamba.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/jamba.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Jamba</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/orpheus.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/orpheus.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Orpheus</span></a>
   </div>
 </li>
@@ -420,25 +421,25 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/cli.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/telemetry.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/telemetry.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Telemetry</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/config-reference.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/config-reference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/api" class="sidebar-item-text sidebar-link">
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
  <span class="menu-text">API Reference</span></a>
   </div>
 </li>
@@ -446,7 +447,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a href="../../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
+            <a href="../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Formats</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
@@ -455,37 +456,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Pre-training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Instruction Tuning</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Conversation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Stepwise Supervised Format</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-Free</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Pre-Tokenized Dataset</span></a>
   </div>
 </li>
@@ -502,37 +503,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/docker.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/docker.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Docker</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi-GPU</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-node.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi Node</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ray Train</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mac.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/mac.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mac M-series</span></a>
   </div>
 </li>
@@ -549,55 +550,55 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multimodal.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multimodal.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MultiModal / Vision Language Models (BETA)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">RLHF (Beta)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Reward Modelling</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Learning Rate Groups</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Loading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/qat.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/qat.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization Aware Training (QAT)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/quantize.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/quantize.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization with torchao</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/optimizations.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/optimizations.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Optimizations Guide</span></a>
   </div>
 </li>
@@ -614,43 +615,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Batch size vs Gradient accumulation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Preprocessing</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/streaming.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/streaming.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Streaming Datasets</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multipack.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multipack (Sample Packing)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mixed Precision Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/optimizers.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/optimizers.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Optimizers</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/attention.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/attention.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Attention</span></a>
   </div>
 </li>
@@ -667,43 +668,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FSDP + QLoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/unsloth.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/unsloth.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Unsloth</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/torchao.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/torchao.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">PyTorch ao</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Integrations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Sequence Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gradient Checkpointing and Activation Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">N-D Parallelism (Beta)</span></a>
   </div>
 </li>
@@ -720,19 +721,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/faq.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/faq.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FAQ</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/debugging.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Debugging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nccl.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NCCL</span></a>
   </div>
 </li>
@@ -748,137 +749,197 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.cli.args" id="toc-axolotl.cli.args" class="nav-link active" data-scroll-target="#axolotl.cli.args">cli.args</a>
+  <li><a href="#sdp-attention" id="toc-sdp-attention" class="nav-link active" data-scroll-target="#sdp-attention">SDP Attention</a></li>
+  <li><a href="#flash-attention-2" id="toc-flash-attention-2" class="nav-link" data-scroll-target="#flash-attention-2">Flash Attention 2</a>
   <ul class="collapse">
-  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.cli.args.EvaluateCliArgs" id="toc-axolotl.cli.args.EvaluateCliArgs" class="nav-link" data-scroll-target="#axolotl.cli.args.EvaluateCliArgs">EvaluateCliArgs</a></li>
-  <li><a href="#axolotl.cli.args.InferenceCliArgs" id="toc-axolotl.cli.args.InferenceCliArgs" class="nav-link" data-scroll-target="#axolotl.cli.args.InferenceCliArgs">InferenceCliArgs</a></li>
-  <li><a href="#axolotl.cli.args.PreprocessCliArgs" id="toc-axolotl.cli.args.PreprocessCliArgs" class="nav-link" data-scroll-target="#axolotl.cli.args.PreprocessCliArgs">PreprocessCliArgs</a></li>
-  <li><a href="#axolotl.cli.args.QuantizeCliArgs" id="toc-axolotl.cli.args.QuantizeCliArgs" class="nav-link" data-scroll-target="#axolotl.cli.args.QuantizeCliArgs">QuantizeCliArgs</a></li>
-  <li><a href="#axolotl.cli.args.TrainerCliArgs" id="toc-axolotl.cli.args.TrainerCliArgs" class="nav-link" data-scroll-target="#axolotl.cli.args.TrainerCliArgs">TrainerCliArgs</a></li>
-  <li><a href="#axolotl.cli.args.VllmServeCliArgs" id="toc-axolotl.cli.args.VllmServeCliArgs" class="nav-link" data-scroll-target="#axolotl.cli.args.VllmServeCliArgs">VllmServeCliArgs</a></li>
+  <li><a href="#nvidia" id="toc-nvidia" class="nav-link" data-scroll-target="#nvidia">Nvidia</a></li>
+  <li><a href="#amd" id="toc-amd" class="nav-link" data-scroll-target="#amd">AMD</a></li>
   </ul></li>
-  </ul></li>
+  <li><a href="#flex-attention" id="toc-flex-attention" class="nav-link" data-scroll-target="#flex-attention">Flex Attention</a></li>
+  <li><a href="#sageattention" id="toc-sageattention" class="nav-link" data-scroll-target="#sageattention">SageAttention</a></li>
+  <li><a href="#xformers" id="toc-xformers" class="nav-link" data-scroll-target="#xformers">xFormers</a></li>
+  <li><a href="#shifted-sparse-attention" id="toc-shifted-sparse-attention" class="nav-link" data-scroll-target="#shifted-sparse-attention">Shifted Sparse Attention</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/batch_vs_grad.html">Core Concepts</a></li><li class="breadcrumb-item"><a href="../docs/attention.html">Attention</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Attention</h1>
+</div>
+
+<div>
+  <div class="description">
+    Supported attention modules in Axolotl
+  </div>
+</div>
 
 
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
 
 
-<section id="axolotl.cli.args" class="level1">
-<h1>cli.args</h1>
-<p><code>cli.args</code></p>
-<p>Module for axolotl CLI command arguments.</p>
-<section id="classes" class="level2">
-<h2 class="anchored" data-anchor-id="classes">Classes</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.cli.args.EvaluateCliArgs">EvaluateCliArgs</a></td>
-<td>Dataclass with CLI arguments for <code>axolotl evaluate</code> command.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.cli.args.InferenceCliArgs">InferenceCliArgs</a></td>
-<td>Dataclass with CLI arguments for <code>axolotl inference</code> command.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.cli.args.PreprocessCliArgs">PreprocessCliArgs</a></td>
-<td>Dataclass with CLI arguments for <code>axolotl preprocess</code> command.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.cli.args.QuantizeCliArgs">QuantizeCliArgs</a></td>
-<td>Dataclass with CLI arguments for <code>axolotl quantize</code> command.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.cli.args.TrainerCliArgs">TrainerCliArgs</a></td>
-<td>Dataclass with CLI arguments for <code>axolotl train</code> command.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.cli.args.VllmServeCliArgs">VllmServeCliArgs</a></td>
-<td>Dataclass with CLI arguments for <code>axolotl vllm-serve</code> command.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.cli.args.EvaluateCliArgs" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.args.EvaluateCliArgs">EvaluateCliArgs</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.args.EvaluateCliArgs(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    debug<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    debug_text_only<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    debug_num_examples<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Dataclass with CLI arguments for <code>axolotl evaluate</code> command.</p>
-</section>
-<section id="axolotl.cli.args.InferenceCliArgs" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.args.InferenceCliArgs">InferenceCliArgs</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>cli.args.InferenceCliArgs(prompter<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Dataclass with CLI arguments for <code>axolotl inference</code> command.</p>
-</section>
-<section id="axolotl.cli.args.PreprocessCliArgs" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.args.PreprocessCliArgs">PreprocessCliArgs</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>cli.args.PreprocessCliArgs(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    debug<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    debug_text_only<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    debug_num_examples<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    prompter<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    download<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    iterable<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Dataclass with CLI arguments for <code>axolotl preprocess</code> command.</p>
-</section>
-<section id="axolotl.cli.args.QuantizeCliArgs" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.args.QuantizeCliArgs">QuantizeCliArgs</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>cli.args.QuantizeCliArgs(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    base_model<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    weight_dtype<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    activation_dtype<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    quantize_embedding<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    group_size<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    output_dir<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    hub_model_id<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Dataclass with CLI arguments for <code>axolotl quantize</code> command.</p>
-</section>
-<section id="axolotl.cli.args.TrainerCliArgs" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.args.TrainerCliArgs">TrainerCliArgs</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>cli.args.TrainerCliArgs(</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    debug<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    debug_text_only<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    debug_num_examples<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    prompter<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    shard<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Dataclass with CLI arguments for <code>axolotl train</code> command.</p>
-</section>
-<section id="axolotl.cli.args.VllmServeCliArgs" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.args.VllmServeCliArgs">VllmServeCliArgs</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>cli.args.VllmServeCliArgs(</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    tensor_parallel_size<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    data_parallel_size<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    host<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    port<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    gpu_memory_utilization<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    dtype<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    max_model_len<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    enable_prefix_caching<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>    serve_module<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>    enable_reasoning<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>    reasoning_parser<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Dataclass with CLI arguments for <code>axolotl vllm-serve</code> command.</p>
+</header>
 
 
+<section id="sdp-attention" class="level2">
+<h2 class="anchored" data-anchor-id="sdp-attention">SDP Attention</h2>
+<p>This is the default built-in attention in PyTorch.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sdp_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>For more details: <a href="https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html">PyTorch docs</a></p>
+</section>
+<section id="flash-attention-2" class="level2">
+<h2 class="anchored" data-anchor-id="flash-attention-2">Flash Attention 2</h2>
+<p>Uses efficient kernels to compute attention.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>For more details: <a href="https://github.com/Dao-AILab/flash-attention/">Flash Attention</a></p>
+<section id="nvidia" class="level3">
+<h3 class="anchored" data-anchor-id="nvidia">Nvidia</h3>
+<p>Requirements: Ampere, Ada, or Hopper GPUs</p>
+<p>Note: For Turing GPUs or lower, please use other attention methods.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install flash-attn <span class="at">--no-build-isolation</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>If you get <code>undefined symbol</code> while training, ensure you installed PyTorch prior to Axolotl. Alternatively, try reinstall or downgrade a version.</p>
+</div>
+</div>
+<section id="flash-attention-3" class="level4">
+<h4 class="anchored" data-anchor-id="flash-attention-3">Flash Attention 3</h4>
+<p>Requirements: Hopper only and CUDA 12.8 (recommended)</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/Dao-AILab/flash-attention.git</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> flash-attention/hopper</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> setup.py install</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 </section>
+<section id="amd" class="level3">
+<h3 class="anchored" data-anchor-id="amd">AMD</h3>
+<p>Requirements: ROCm 6.0 and above.</p>
+<p>See <a href="https://github.com/Dao-AILab/flash-attention/tree/main?tab=readme-ov-file#amd-rocm-support">Flash Attention AMD docs</a>.</p>
+</section>
+</section>
+<section id="flex-attention" class="level2">
+<h2 class="anchored" data-anchor-id="flex-attention">Flex Attention</h2>
+<p>A flexible PyTorch API for attention used in combination with <code>torch.compile</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">flex_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="co"># recommended</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">torch_compile</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>We recommend using latest stable version of PyTorch for best performance.</p>
+</div>
+</div>
+<p>For more details: <a href="https://pytorch.org/blog/flexattention/">PyTorch docs</a></p>
+</section>
+<section id="sageattention" class="level2">
+<h2 class="anchored" data-anchor-id="sageattention">SageAttention</h2>
+<p>Attention kernels with QK Int8 and PV FP16 accumulator.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sage_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Requirements: Ampere, Ada, or Hopper GPUs</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install sageattention==2.2.0 <span class="at">--no-build-isolation</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Warning
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Only LoRA/QLoRA recommended at the moment. We found loss drop to 0 for full finetuning. See <a href="https://github.com/thu-ml/SageAttention/issues/198">GitHub Issue</a>.</p>
+</div>
+</div>
+<p>For more details: <a href="https://github.com/thu-ml/SageAttention">Sage Attention</a></p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>We do not support SageAttention 3 at the moment. If you are interested on adding this or improving SageAttention implementation, please make an Issue.</p>
+</div>
+</div>
+</section>
+<section id="xformers" class="level2">
+<h2 class="anchored" data-anchor-id="xformers">xFormers</h2>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">xformers_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>We recommend using with Turing GPUs or below (such as on Colab).</p>
+</div>
+</div>
+<p>For more details: <a href="https://github.com/facebookresearch/xformers">xFormers</a></p>
+</section>
+<section id="shifted-sparse-attention" class="level2">
+<h2 class="anchored" data-anchor-id="shifted-sparse-attention">Shifted Sparse Attention</h2>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Warning
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>We plan to deprecate this! If you use this feature, we recommend switching to methods above.</p>
+</div>
+</div>
+<p>Requirements: LLaMA model architecture</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="fu">s2_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>No sample packing support!</p>
+</div>
+</div>
+
+
 </section>
 
 </main> <!-- /main -->
