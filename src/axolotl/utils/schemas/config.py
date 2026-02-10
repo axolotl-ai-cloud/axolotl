@@ -1271,6 +1271,10 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             ):
                 return data
 
+            # Skip if trust_remote_code is enabled, as lora kernels are not compatible
+            if data.get("trust_remote_code"):
+                return data
+
             # Skip if dropout is not 0, as auto enabling it would just disable it during runtime patch checks
             if data.get("lora_dropout") != 0:
                 return data
