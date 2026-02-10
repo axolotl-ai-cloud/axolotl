@@ -90,10 +90,11 @@ class HFMistralTokenizer(MistralCommonBackend):
 
         # pop unnecessary kwarg for mistral
         kwargs.pop("real_last_index", None)
+        kwargs.pop("add_special_tokens", None)
 
         try:
             if add_generation_prompt:
-                self._set_mode(ValidationMode.serving)
+                self._set_mode(ValidationMode.test)
                 kwargs["continue_final_message"] = True
 
             out = super().apply_chat_template(conversation, **kwargs)
