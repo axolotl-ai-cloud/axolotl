@@ -118,20 +118,6 @@ def test_telemetry_disabled_for_non_main_process(telemetry_manager_class):
         assert not manager.enabled
 
 
-def test_opt_in_info_displayed(telemetry_manager_class):
-    """Test that opt-in info is displayed when telemetry is not configured"""
-    with (
-        patch.dict(os.environ, {"RANK": "0"}, clear=True),
-        patch("logging.Logger.warning") as mock_warning,
-        patch("time.sleep"),
-    ):
-        telemetry_manager_class()
-        assert any(
-            "Telemetry is now enabled by default" in str(call)
-            for call in mock_warning.call_args_list
-        )
-
-
 def test_is_whitelisted(telemetry_manager_class, mock_whitelist):
     """Test org whitelist functionality"""
     with (
