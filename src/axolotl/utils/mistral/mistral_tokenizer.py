@@ -86,15 +86,15 @@ class HFMistralTokenizer(MistralCommonBackend):
         add_generation_prompt: bool = False,
         **kwargs,
     ) -> str | list[int]:
-        """Patched fn to handle setting serving mode, continue_final_message, remove chat_template and add_generation_prompt kwarg"""
+        """Patched fn to handle setting test mode, remove chat_template and add_generation_prompt kwarg"""
 
         # pop unnecessary kwarg for mistral
         kwargs.pop("real_last_index", None)
+        kwargs.pop("add_special_tokens", None)
 
         try:
             if add_generation_prompt:
-                self._set_mode(ValidationMode.serving)
-                kwargs["continue_final_message"] = True
+                self._set_mode(ValidationMode.test)
 
             out = super().apply_chat_template(conversation, **kwargs)
 
