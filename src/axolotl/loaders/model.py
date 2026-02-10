@@ -248,12 +248,17 @@ class ModelLoader:
         ):
             self.model = self.model.merge_and_unload()
 
+        self._configure_experts_implementation()
         self._apply_activation_checkpointing()
         self._resize_token_embeddings()
         self._adjust_model_config()
         self._configure_embedding_dtypes()
         self._configure_qat()
         log_gpu_memory_usage(LOG, "Memory usage after model load", 0)
+
+    def _configure_experts_implementation(self):
+        if self.cfg.experts_implementation is not None:
+            self.model.set_experts_implementation(self.cfg.experts_implementation)
 
     def _apply_activation_checkpointing(self):
         if self.cfg.activation_offloading is True:
