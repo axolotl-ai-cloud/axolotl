@@ -409,6 +409,9 @@ class TrainerBuilderBase(abc.ABC):
             if self.cfg.hub_strategy:
                 training_args_kwargs["hub_strategy"] = self.cfg.hub_strategy
 
+            if self.cfg.hub_revision:
+                training_args_kwargs["hub_revision"] = self.cfg.hub_revision
+
     def _configure_save_and_eval_strategy(self, training_args_kwargs: dict):
         # save_strategy and save_steps
         if self.cfg.save_steps:

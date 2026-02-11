@@ -169,7 +169,8 @@ def get_attention_cls_from_config(cfg: DictDefault) -> Type[nn.Module]:
         return attention_cls
     except (ImportError, AttributeError) as e:
         raise ValueError(
-            f"Could not import attention class for model_type: {model_type}. "
+            f"Axolotl could not import attention class for model_type: {model_type}. "
+            "Please raise an Issue and turn off lora kernels to continue training. "
             f"Error: {str(e)}"
         ) from e
 

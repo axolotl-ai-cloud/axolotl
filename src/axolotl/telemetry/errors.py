@@ -155,6 +155,10 @@ def send_errors(func: Callable) -> Callable:
                     },
                 )
 
+                LOG.error(
+                    f"Error captured in telemetry. Run ID: {telemetry_manager.run_id}"
+                )
+
             raise
 
     return wrapper
