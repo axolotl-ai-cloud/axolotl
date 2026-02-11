@@ -173,6 +173,20 @@ class ModelLoader:
         PLUGIN_MANAGER.pre_model_load(self.cfg)
         self.patch_manager.apply_post_plugin_pre_model_load_patches()
         skip_move_to_device = self._build_model()
+
+        # Quantize MoE expert weights that BnB skipped during model loading.
+        # In transformers v5, MoE expert weights are 3D nn.Parameter tensors
+        # that BnB quantization skips (it only handles nn.Linear).
+        # After quantization, PEFT target_parameters applies LoRA on top via
+        # stacked parametrizations (ParamWrapper).
+        self.model._moe_experts_quantized = False
+        if self.cfg.adapter in ("qlora", "lora") and (
+            self.cfg.load_in_4bit or self.cfg.load_in_8bit
+        ):
+            from axolotl.monkeypatch.moe_quant import quantize_moe_expert_params
+
+            self.model._moe_experts_quantized = quantize_moe_expert_params(self.model)
+
         PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
 
         # Post-build model configuration
@@ -849,6 +863,13 @@ class ModelLoader:
             or is_deepspeed_zero3_enabled()
         ):
             # Make sure everything is in the same dtype
+            skip_prepare_model_for_kbit_training = True
+
+        if getattr(self.model, "_moe_experts_quantized", False):
+            # MoE expert weights quantized via replace_parameter_4bit use PyTorch
+            # parametrize, which causes model.parameters() to return dequantized
+            # (full-size) tensors. prepare_model_for_kbit_training would OOM trying
+            # to upcast these to float32.
             skip_prepare_model_for_kbit_training = True
 
         if (

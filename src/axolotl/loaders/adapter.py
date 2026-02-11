@@ -102,18 +102,21 @@ def load_lora(
 ) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]:
     lora_target_modules = cfg.lora_target_modules or []
 
-    # In transformers v5, MoE expert weights are 3D
-    # nn.Parameter tensors that target_modules can't match.  PEFT's
-    # target_parameters (via ParamWrapper) applies LoRA to these directly.
+    # Auto-detect MoE expert parameters for PEFT target_parameters.
+    # In transformers v5, MoE expert weights are stored as fused 3D
+    # nn.Parameter tensors instead of nn.Linear modules.  PEFT's
+    # target_modules can't match these, but target_parameters + ParamWrapper
+    # can apply LoRA directly -- including when the params have been
+    # quantized via replace_parameter_4bit (stacked parametrizations).
     lora_target_parameters = cfg.lora_target_parameters
     if lora_target_parameters is None:
-        detected_params = find_moe_expert_param_names(model)
-        if detected_params:
+        detected_expert_params = find_moe_expert_param_names(model)
+        if detected_expert_params:
             LOG.info(
                 "Auto-detected MoE expert parameters for LoRA target_parameters: %s",
-                detected_params,
+                detected_expert_params,
             )
-            lora_target_parameters = detected_params
+            lora_target_parameters = detected_expert_params
         else:
             lora_target_parameters = []
     elif isinstance(lora_target_parameters, str):
