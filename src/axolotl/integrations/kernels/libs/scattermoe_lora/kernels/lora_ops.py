@@ -269,24 +269,33 @@ def _compute_expert_block_lora(
     # Accumulator for X @ A^T: [BLOCK_M, BLOCK_R]
     xa_acc = tl.zeros((BLOCK_M, BLOCK_R), dtype=tl.float32)
 
+    # Determine the input element type for consistent casting.
+    # Masked tl.load with other=0.0 can upcast bf16->fp32 in some Triton versions,
+    # causing dtype mismatches in tl.dot.  We cast all tiles to the same type.
+    INPUT_DTYPE = X_ptr.dtype.element_ty
+
     for i in range(iters):
         if no_k_mask:
-            x = tl.load(X_blk_ptrs, mask=E_mask[:, None], other=0.0)
-            w = tl.load(W_blk_ptrs, mask=N_mask[None, :], other=0.0)
-            a = tl.load(
-                A_blk_ptrs, mask=R_mask[:, None], other=0.0
-            )  # [BLOCK_R, BLOCK_K], masked on R dim
+            x = tl.load(X_blk_ptrs, mask=E_mask[:, None], other=0.0).to(INPUT_DTYPE)
+            w = tl.load(W_blk_ptrs, mask=N_mask[None, :], other=0.0).to(INPUT_DTYPE)
+            a = tl.load(A_blk_ptrs, mask=R_mask[:, None], other=0.0).to(INPUT_DTYPE)
         else:
             K_mask = (i * BLOCK_K + K_block) < K
-            x = tl.load(X_blk_ptrs, mask=E_mask[:, None] & K_mask[None, :], other=0.0)
-            w = tl.load(W_blk_ptrs, mask=K_mask[:, None] & N_mask[None, :], other=0.0)
-            a = tl.load(A_blk_ptrs, mask=R_mask[:, None] & K_mask[None, :], other=0.0)
+            x = tl.load(
+                X_blk_ptrs, mask=E_mask[:, None] & K_mask[None, :], other=0.0
+            ).to(INPUT_DTYPE)
+            w = tl.load(
+                W_blk_ptrs, mask=K_mask[:, None] & N_mask[None, :], other=0.0
+            ).to(INPUT_DTYPE)
+            a = tl.load(
+                A_blk_ptrs, mask=R_mask[:, None] & K_mask[None, :], other=0.0
+            ).to(INPUT_DTYPE)
 
         # Base: acc += X @ W  ([M, K] @ [K, N] -> [M, N])
-        acc = tl.dot(x, w, acc, allow_tf32=allow_tf32)
+        acc += tl.dot(x, w, allow_tf32=allow_tf32).to(tl.float32)
 
         # LoRA: xa_acc += X @ A^T  ([M, K] @ [K, R] -> [M, R])
-        xa_acc = tl.dot(x, tl.trans(a), xa_acc, allow_tf32=allow_tf32)
+        xa_acc += tl.dot(x, tl.trans(a), allow_tf32=allow_tf32).to(tl.float32)
 
         X_blk_ptrs += BLOCK_K * stride_xk
         W_blk_ptrs += BLOCK_K * stride_wk
@@ -325,7 +334,7 @@ def _scatter2scatter_lora_configs():
       BLOCK_N:    {32, 64, 128, 256}
       BLOCK_K:    {32, 64, 128}
       num_warps:  {4, 8}
-      num_stages: {2, 3, 4, 5}
+      num_stages: {3, 4, 5}
 
     BLOCK_M is fixed at 128 (module-level constant, not autotuned in the
     scatter2scatter pattern).
@@ -335,7 +344,7 @@ def _scatter2scatter_lora_configs():
         [32, 64, 128, 256],  # BLOCK_N
         [32, 64, 128],  # BLOCK_K
         [4, 8],  # num_warps
-        [2, 3, 4, 5],  # num_stages
+        [3, 4, 5],  # num_stages
     ):
         configs.append(
             triton.Config(
@@ -714,28 +723,31 @@ def _compute_expert_block_lora_dX(
     # Accumulator for DY @ B: [BLOCK_M, BLOCK_R]
     dy_b_acc = tl.zeros((BLOCK_M, BLOCK_R), dtype=tl.float32)
 
+    # Determine the input element type for consistent casting.
+    INPUT_DTYPE = DY_ptr.dtype.element_ty
+
     for i in range(iters):
         if no_n_mask:
-            dy = tl.load(DY_blk_ptrs, mask=E_mask[:, None], other=0.0)
-            wt = tl.load(WT_blk_ptrs, mask=K_mask[None, :], other=0.0)
-            b = tl.load(B_blk_ptrs, mask=R_mask[None, :], other=0.0)
+            dy = tl.load(DY_blk_ptrs, mask=E_mask[:, None], other=0.0).to(INPUT_DTYPE)
+            wt = tl.load(WT_blk_ptrs, mask=K_mask[None, :], other=0.0).to(INPUT_DTYPE)
+            b = tl.load(B_blk_ptrs, mask=R_mask[None, :], other=0.0).to(INPUT_DTYPE)
         else:
             N_mask_iter = (i * BLOCK_N + N_block) < N
             dy = tl.load(
                 DY_blk_ptrs, mask=E_mask[:, None] & N_mask_iter[None, :], other=0.0
-            )
+            ).to(INPUT_DTYPE)
             wt = tl.load(
                 WT_blk_ptrs, mask=N_mask_iter[:, None] & K_mask[None, :], other=0.0
-            )
+            ).to(INPUT_DTYPE)
             b = tl.load(
                 B_blk_ptrs, mask=N_mask_iter[:, None] & R_mask[None, :], other=0.0
-            )
+            ).to(INPUT_DTYPE)
 
         # Base: acc += DY @ W^T  ([M, N] @ [N, K] -> [M, K])
-        acc = tl.dot(dy, wt, acc, allow_tf32=allow_tf32)
+        acc += tl.dot(dy, wt, allow_tf32=allow_tf32).to(tl.float32)
 
         # LoRA: dy_b_acc += DY @ B  ([M, N] @ [N, R] -> [M, R])
-        dy_b_acc = tl.dot(dy, b, dy_b_acc, allow_tf32=allow_tf32)
+        dy_b_acc += tl.dot(dy, b, allow_tf32=allow_tf32).to(tl.float32)
 
         DY_blk_ptrs += BLOCK_N * stride_dyn
         WT_blk_ptrs += BLOCK_N * stride_wn
@@ -774,14 +786,14 @@ def _scatter2scatter_lora_dX_configs():
       BLOCK_K:    {32, 64, 128, 256}   (output tile)
       BLOCK_N:    {32, 64, 128, 256}   (reduction tile)
       num_warps:  {4, 8}
-      num_stages: {2, 3, 4, 5}
+      num_stages: {3, 4, 5}
     """
     configs = []
     for block_k, block_n, warps, stages in product(
         [32, 64, 128, 256],  # BLOCK_K (output dimension)
         [32, 64, 128, 256],  # BLOCK_N (reduction dimension)
         [4, 8],  # num_warps
-        [2, 3, 4, 5],  # num_stages
+        [3, 4, 5],  # num_stages
     ):
         configs.append(
             triton.Config(
@@ -1083,7 +1095,7 @@ def _group_bwd_lora_configs():
       BLOCK_K:    {32, 64, 128, 256}
       BLOCK_N:    {32, 64, 128, 256}
       num_warps:  {4, 8}
-      num_stages: {2, 3, 4, 5}
+      num_stages: {3, 4, 5}
 
     The backward kernel also uses BLOCK_R (from LoRA rank), but that is
     determined by the rank and not autotunable.
@@ -1094,7 +1106,7 @@ def _group_bwd_lora_configs():
         [32, 64, 128, 256],  # BLOCK_K
         [32, 64, 128, 256],  # BLOCK_N
         [4, 8],  # num_warps
-        [2, 3, 4, 5],  # num_stages
+        [3, 4, 5],  # num_stages
     ):
         configs.append(
             triton.Config(
@@ -1227,13 +1239,18 @@ def _group_bwd_lora(
 
         lora_offset = E_idx * ACTUAL_R
 
+        # Determine input element type for consistent casting.
+        INPUT_DTYPE = X_ptr.dtype.element_ty
+
         # Load B[e]: [BLOCK_N, BLOCK_R] (masked on R and N, other=0 for padding)
         B_blk_ptrs = (
             LB_ptr
             + N_block[:, None] * stride_lb_n
             + (lora_offset + R_block)[None, :] * stride_lb_r
         )
-        b_e = tl.load(B_blk_ptrs, mask=N_mask[:, None] & R_mask[None, :], other=0.0)
+        b_e = tl.load(B_blk_ptrs, mask=N_mask[:, None] & R_mask[None, :], other=0.0).to(
+            INPUT_DTYPE
+        )
 
         # Load A[e]: [BLOCK_R, BLOCK_K] (masked on R and K, other=0 for padding)
         A_blk_ptrs = (
@@ -1241,7 +1258,9 @@ def _group_bwd_lora(
             + (lora_offset + R_block)[:, None] * stride_la_r
             + K_block[None, :] * stride_la_k
         )
-        a_e = tl.load(A_blk_ptrs, mask=R_mask[:, None] & K_mask[None, :], other=0.0)
+        a_e = tl.load(A_blk_ptrs, mask=R_mask[:, None] & K_mask[None, :], other=0.0).to(
+            INPUT_DTYPE
+        )
 
         # Accumulators
         dA_acc = tl.zeros((BLOCK_R, BLOCK_K), dtype=ACC_TYPE)
@@ -1256,13 +1275,17 @@ def _group_bwd_lora(
             X_blk_ptrs = (
                 X_ptr + M_idx[:, None] * stride_xm + K_block[None, :] * stride_xk
             )
-            x = tl.load(X_blk_ptrs, mask=M_mask[:, None] & K_mask[None, :], other=0.0)
+            x = tl.load(
+                X_blk_ptrs, mask=M_mask[:, None] & K_mask[None, :], other=0.0
+            ).to(INPUT_DTYPE)
 
             # Load dY: [BLOCK_M, BLOCK_N]
             DY_blk_ptrs = (
                 DY_ptr + M_idx[:, None] * stride_dym + N_block[None, :] * stride_dyn
             )
-            dy = tl.load(DY_blk_ptrs, mask=M_mask[:, None] & N_mask[None, :], other=0.0)
+            dy = tl.load(
+                DY_blk_ptrs, mask=M_mask[:, None] & N_mask[None, :], other=0.0
+            ).to(INPUT_DTYPE)
 
             # X @ A[e]^T: [M, K] @ [K, R] -> [M, R]
             xa = tl.dot(x, tl.trans(a_e), allow_tf32=allow_tf32)
@@ -1272,8 +1295,8 @@ def _group_bwd_lora(
 
             # Cast intermediates to input dtype for subsequent tl.dot calls
             # (tl.dot requires both operands to have the same dtype)
-            dy_b_cast = dy_b.to(x.dtype)
-            xa_cast = xa.to(dy.dtype)
+            dy_b_cast = dy_b.to(INPUT_DTYPE)
+            xa_cast = xa.to(INPUT_DTYPE)
 
             # dA += (dY @ B)^T @ X: [R, M] @ [M, K] -> [R, K]
             dA_acc += tl.dot(tl.trans(dy_b_cast), x, allow_tf32=allow_tf32)
@@ -1499,20 +1522,27 @@ def _group_bwd_lora_fused(
 
         lora_offset = E_idx * ACTUAL_R
 
+        # Determine input element type for consistent casting.
+        INPUT_DTYPE = X_ptr.dtype.element_ty
+
         # Load B[e] and A[e] — same as non-fused kernel
         B_blk_ptrs = (
             LB_ptr
             + N_block[:, None] * stride_lb_n
             + (lora_offset + R_block)[None, :] * stride_lb_r
         )
-        b_e = tl.load(B_blk_ptrs, mask=N_mask[:, None] & R_mask[None, :], other=0.0)
+        b_e = tl.load(B_blk_ptrs, mask=N_mask[:, None] & R_mask[None, :], other=0.0).to(
+            INPUT_DTYPE
+        )
 
         A_blk_ptrs = (
             LA_ptr
             + (lora_offset + R_block)[:, None] * stride_la_r
             + K_block[None, :] * stride_la_k
         )
-        a_e = tl.load(A_blk_ptrs, mask=R_mask[:, None] & K_mask[None, :], other=0.0)
+        a_e = tl.load(A_blk_ptrs, mask=R_mask[:, None] & K_mask[None, :], other=0.0).to(
+            INPUT_DTYPE
+        )
 
         # Accumulators
         dA_acc = tl.zeros((BLOCK_R, BLOCK_K), dtype=ACC_TYPE)
@@ -1536,7 +1566,9 @@ def _group_bwd_lora_fused(
             X_blk_ptrs = (
                 X_ptr + X_token_idx[:, None] * stride_xm + K_block[None, :] * stride_xk
             )
-            x = tl.load(X_blk_ptrs, mask=M_mask[:, None] & K_mask[None, :], other=0.0)
+            x = tl.load(
+                X_blk_ptrs, mask=M_mask[:, None] & K_mask[None, :], other=0.0
+            ).to(INPUT_DTYPE)
 
             # Load DY via scatter index: DY is [M*k, N]
             DY_blk_ptrs = (
@@ -1544,7 +1576,9 @@ def _group_bwd_lora_fused(
                 + scatter_idx[:, None] * stride_dym
                 + N_block[None, :] * stride_dyn
             )
-            dy = tl.load(DY_blk_ptrs, mask=M_mask[:, None] & N_mask[None, :], other=0.0)
+            dy = tl.load(
+                DY_blk_ptrs, mask=M_mask[:, None] & N_mask[None, :], other=0.0
+            ).to(INPUT_DTYPE)
 
             # X @ A[e]^T: [M, K] @ [K, R] -> [M, R]
             xa = tl.dot(x, tl.trans(a_e), allow_tf32=allow_tf32)
@@ -1552,8 +1586,8 @@ def _group_bwd_lora_fused(
             # dY @ B[e]: [M, N] @ [N, R] -> [M, R]
             dy_b = tl.dot(dy, b_e, allow_tf32=allow_tf32)
 
-            dy_b_cast = dy_b.to(x.dtype)
-            xa_cast = xa.to(dy.dtype)
+            dy_b_cast = dy_b.to(INPUT_DTYPE)
+            xa_cast = xa.to(INPUT_DTYPE)
 
             # dA += (dY @ B)^T @ X: [R, M] @ [M, K] -> [R, K]
             dA_acc += tl.dot(tl.trans(dy_b_cast), x, allow_tf32=allow_tf32)

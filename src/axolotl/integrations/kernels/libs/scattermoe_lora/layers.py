@@ -59,38 +59,48 @@ def peft_lora_B_to_scattermoe(peft_B, num_experts, rank):
     )
 
 
-def peft_down_proj_lora_to_scattermoe(peft_A, peft_B, num_experts, rank):
-    """Convert peft LoRA weights for **down_proj** to scattermoe layout.
+def peft_lora_to_scattermoe(peft_A, peft_B, num_experts, rank):
+    """Convert peft LoRA weights to scattermoe layout (with A<->B swap).
 
-    down_proj param: ``[E, hidden, inter]``
-    scattermoe W = param.T = ``[E, inter, hidden]`` -> K=inter, N=hidden
+    peft operates on the parameter in its native storage layout ``[E, dim1, dim2]``
+    where ``in_features=dim1, out_features=dim2``.  ScatterMoE transposes the
+    parameter (``W = param.transpose(2, 1)``) giving ``[E, dim2, dim1]`` with
+    ``K=dim2, N=dim1``.  Because of this transposition, peft's A and B roles
+    are swapped relative to scattermoe's convention.
 
-    peft assigns: in_features=hidden (dim 1), out_features=inter (dim 2).
-    peft lora_A: ``[r*E, hidden]``, lora_B: ``[inter, r*E]``
+    peft gives:
+        lora_A ``[r*E, dim1]``, lora_B ``[dim2, r*E]``
 
-    scattermoe needs: lora_A ``[r*E, K=inter]``, lora_B ``[N=hidden, r*E]``
+    scattermoe needs:
+        lora_A ``[r*E, K=dim2]``, lora_B ``[N=dim1, r*E]``
 
-    The roles of A and B are swapped because peft operates in the parameter's
-    native layout while scattermoe uses the transposed view.
+    This function swaps A<->B and converts B from rank-major to expert-major.
+
+    Works for **both** gate_up_proj and down_proj since the transposition
+    issue is the same for any parameter.
     """
     peft_B_expert_major = peft_lora_B_to_scattermoe(peft_B, num_experts, rank)
 
-    K_inter = peft_B.shape[0]  # inter
-    N_hidden = peft_A.shape[1]  # hidden
+    K = peft_B.shape[0]  # dim2 -> becomes scattermoe K
+    N = peft_A.shape[1]  # dim1 -> becomes scattermoe N
     smoe_A = torch.zeros(
-        rank * num_experts, K_inter, device=peft_A.device, dtype=peft_A.dtype
+        rank * num_experts, K, device=peft_A.device, dtype=peft_A.dtype
     )
     smoe_B = torch.zeros(
-        N_hidden, rank * num_experts, device=peft_A.device, dtype=peft_A.dtype
+        N, rank * num_experts, device=peft_A.device, dtype=peft_A.dtype
     )
     for e in range(num_experts):
         s = e * rank
-        # peft's A_e: [r, hidden], B_e: [inter, r]
-        A_e = peft_A[s : s + rank, :]  # [r, hidden]
-        B_e = peft_B_expert_major[:, s : s + rank]  # [inter, r]
-        smoe_A[s : s + rank, :] = B_e.T  # [r, inter]
-        smoe_B[:, s : s + rank] = A_e.T  # [hidden, r]
+        A_e = peft_A[s : s + rank, :]  # [r, dim1]
+        B_e = peft_B_expert_major[:, s : s + rank]  # [dim2, r]
+        smoe_A[s : s + rank, :] = B_e.T  # [r, dim2=K]
+        smoe_B[:, s : s + rank] = A_e.T  # [dim1=N, r]
     return smoe_A, smoe_B
+
+
+def peft_down_proj_lora_to_scattermoe(peft_A, peft_B, num_experts, rank):
+    """Deprecated alias for :func:`peft_lora_to_scattermoe`."""
+    return peft_lora_to_scattermoe(peft_A, peft_B, num_experts, rank)
 
 
 # =============================================================================
@@ -106,15 +116,17 @@ def _unwrap_gate_lora(gate_module):
         ParamWrapper(weight)
           -> base_layer: OlmoeTopKRouter (the real module)
 
-    This function detects the wrapping and returns the base router plus
-    the LoRA-adjusted weight tensor.
+    This function detects the wrapping and returns the base router, its
+    weight tensor, and an optional LoRA delta tensor.
 
     Returns:
-        (base_gate, gate_weight)
+        (base_gate, gate_weight, gate_lora_delta_or_None)
 
         ``base_gate`` is the original router module (with ``.top_k``,
         ``.num_experts``, ``.norm_topk_prob``).
-        ``gate_weight`` is the router weight with any LoRA delta applied.
+        ``gate_weight`` is the base router weight (may be a DTensor under FSDP).
+        ``gate_lora_delta_or_None`` is the LoRA delta tensor if LoRA is active,
+        else ``None``.  Kept separate to avoid mixing DTensor + Tensor in an add.
     """
     if hasattr(gate_module, "base_layer") and hasattr(gate_module, "lora_A"):
         base_gate = gate_module.base_layer
@@ -124,13 +136,12 @@ def _unwrap_gate_lora(gate_module):
             # lora_A: [r, hidden_size], lora_B: [num_experts, r]
             # delta = scaling * B @ A = [num_experts, hidden_size]
             delta = scaling * (lora_B @ lora_A)
-            gate_weight = base_gate.weight + delta
+            return base_gate, base_gate.weight, delta
         else:
-            gate_weight = base_gate.weight
-        return base_gate, gate_weight
+            return base_gate, base_gate.weight, None
     else:
         # No wrapping — gate is the original module
-        return gate_module, gate_module.weight
+        return gate_module, gate_module.weight, None
 
 
 def _unwrap_experts_lora(experts_module):
@@ -174,15 +185,14 @@ def _unwrap_experts_lora(experts_module):
         if gup is not None:
             num_experts = gup.shape[0]
 
-    # Extract gate_up_proj LoRA
+    # Extract gate_up_proj LoRA (needs A<->B swap due to transposition)
     gup_lora = None
     gup_wrapper = wrappers.get("gate_up_proj")
     if gup_wrapper is not None:
         lora_A, lora_B, scaling = get_lora_params_from_wrapper(gup_wrapper)
         if lora_A is not None:
             rank = lora_A.shape[0] // num_experts
-            smoe_A = lora_A  # already expert-major [r*E, K]
-            smoe_B = peft_lora_B_to_scattermoe(lora_B, num_experts, rank)
+            smoe_A, smoe_B = peft_lora_to_scattermoe(lora_A, lora_B, num_experts, rank)
             gup_lora = (smoe_A, smoe_B, scaling)
 
     # Extract down_proj LoRA (needs A<->B swap due to transposition)
@@ -192,9 +202,7 @@ def _unwrap_experts_lora(experts_module):
         lora_A, lora_B, scaling = get_lora_params_from_wrapper(down_wrapper)
         if lora_A is not None:
             rank = lora_A.shape[0] // num_experts
-            smoe_A, smoe_B = peft_down_proj_lora_to_scattermoe(
-                lora_A, lora_B, num_experts, rank
-            )
+            smoe_A, smoe_B = peft_lora_to_scattermoe(lora_A, lora_B, num_experts, rank)
             down_lora = (smoe_A, smoe_B, scaling)
 
     return base_experts, gup_lora, down_lora
@@ -313,8 +321,12 @@ class HFScatterMoEGatedMLP(nn.Module):
         # ====================================================================
         # Router Computation (with optional gate LoRA)
         # ====================================================================
-        base_gate, gate_weight = _unwrap_gate_lora(self.gate)
+        base_gate, gate_weight, gate_lora_delta = _unwrap_gate_lora(self.gate)
         router_logits = F.linear(hidden_states_flat, gate_weight)
+        if gate_lora_delta is not None:
+            router_logits = router_logits + F.linear(
+                hidden_states_flat, gate_lora_delta
+            )
         routing_weights = F.softmax(router_logits, dim=1, dtype=torch.float)
 
         top_k = base_gate.top_k
