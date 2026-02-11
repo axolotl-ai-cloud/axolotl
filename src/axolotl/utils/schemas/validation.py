@@ -994,13 +994,17 @@ class OptimizationValidationMixin:
             or self.embedding_lr is not None
             or self.lr_groups is not None
         ) and self.optimizer.value in ["adamw_torch_8bit", "adamw_torch_4bit"]:
-            # TODO(wing): remove this once ao>0.12.0
-            # requires https://github.com/pytorch/ao/pull/2606 in an ao release
-            raise ValueError(
-                "lr groups (`loraplus_lr_ratio`, `embedding_lr_scale`, `embedding_lr`, `lr_groups`) are not "
-                "supported with ao low-bit optimizers until ao>0.12.0. "
-                "Please refer to https://github.com/pytorch/ao/pull/2606."
-            )
+            import torchao
+            from packaging import version
+
+            # requires https://github.com/pytorch/ao/pull/2606 in ao>=0.12.0
+            torchao_version = version.parse(torchao.__version__)
+            if torchao_version < version.parse("0.12.0"):
+                raise ValueError(
+                    "lr groups (`loraplus_lr_ratio`, `embedding_lr_scale`, `embedding_lr`, `lr_groups`) are not "
+                    "supported with ao low-bit optimizers until ao>=0.12.0. "
+                    "Please refer to https://github.com/pytorch/ao/pull/2606."
+                )
         return self
 
     @model_validator(mode="before")
