@@ -108,6 +108,10 @@ def load_lora(
     # target_modules can't match these, but target_parameters + ParamWrapper
     # can apply LoRA directly -- including when the params have been
     # quantized via replace_parameter_4bit (stacked parametrizations).
+    #
+    # When experts are quantized, replace_parameter_4bit creates
+    # ParametrizationList submodules that target_modules would incorrectly
+    # match.  Exclude them so only target_parameters handles expert params.
     lora_target_parameters = cfg.lora_target_parameters
     if lora_target_parameters is None:
         detected_expert_params = find_moe_expert_param_names(model)
@@ -121,6 +125,10 @@ def load_lora(
             lora_target_parameters = []
     elif isinstance(lora_target_parameters, str):
         lora_target_parameters = [lora_target_parameters]
+
+    exclude_modules = None
+    if getattr(model, "_moe_experts_quantized", False) and lora_target_parameters:
+        exclude_modules = ["parametrizations"]
 
     if cfg.lora_target_linear:
         linear_names = find_all_linear_names(model)
@@ -165,6 +173,7 @@ def load_lora(
         lora_alpha=cfg.lora_alpha,
         target_modules=lora_target_modules,
         target_parameters=lora_target_parameters,
+        exclude_modules=exclude_modules,
         layers_to_transform=cfg.peft_layers_to_transform,
         layers_pattern=cfg.peft_layers_pattern,
         lora_dropout=cfg.lora_dropout,
