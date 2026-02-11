@@ -13,6 +13,21 @@ import yaml
 from axolotl.utils.dict import DictDefault
 
 
+def get_model_path(cfg: DictDefault) -> str | None:
+    """
+    Determine which model path to use for evaluation.
+
+    Priority order (highest to lowest):
+    1. lm_eval_model - Explicit model path override
+    2. hub_model_id - Model pushed to HuggingFace Hub
+    3. None - Falls back to output_dir in build_lm_eval_command
+
+    Returns:
+        Model path string or None to use output_dir fallback
+    """
+    return cfg.lm_eval_model or cfg.hub_model_id or None
+
+
 def build_lm_eval_command(
     tasks: list[str],
     bfloat16=True,
@@ -108,7 +123,7 @@ def lm_eval(config: str, cloud: Optional[str] = None):
             wandb_project=cfg.wandb_project,
             wandb_entity=cfg.wandb_entity,
             wandb_name=cfg.wandb_name,
-            model=cfg.lm_eval_model or cfg.hub_model_id,
+            model=get_model_path(cfg),
             revision=cfg.revision,
             apply_chat_template=cfg.apply_chat_template,
             fewshot_as_multiturn=cfg.fewshot_as_multiturn,
