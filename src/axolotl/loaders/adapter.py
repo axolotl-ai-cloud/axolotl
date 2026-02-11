@@ -114,7 +114,12 @@ def load_lora(
     # match.  Exclude them so only target_parameters handles expert params.
     lora_target_parameters = cfg.lora_target_parameters
     if lora_target_parameters is None:
-        detected_expert_params = find_moe_expert_param_names(model)
+        # Use pre-quantization names stored by model loader if available,
+        # since after replace_parameter_4bit the 3D params no longer appear
+        # as ndim>=3 in named_parameters().
+        detected_expert_params = getattr(
+            model, "_moe_expert_param_names", None
+        ) or find_moe_expert_param_names(model)
         if detected_expert_params:
             LOG.info(
                 "Auto-detected MoE expert parameters for LoRA target_parameters: %s",
@@ -127,7 +132,7 @@ def load_lora(
         lora_target_parameters = [lora_target_parameters]
 
     exclude_modules = None
-    if getattr(model, "_moe_experts_quantized", False) and lora_target_parameters:
+    if getattr(model, "_moe_experts_quantized", False):
         exclude_modules = ["parametrizations"]
 
     if cfg.lora_target_linear:

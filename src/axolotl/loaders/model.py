@@ -180,11 +180,14 @@ class ModelLoader:
         # After quantization, PEFT target_parameters applies LoRA on top via
         # stacked parametrizations (ParamWrapper).
         self.model._moe_experts_quantized = False
+        self.model._moe_expert_param_names = []
         if self.cfg.adapter in ("qlora", "lora") and (
             self.cfg.load_in_4bit or self.cfg.load_in_8bit
         ):
+            from axolotl.loaders.adapter import find_moe_expert_param_names
             from axolotl.monkeypatch.moe_quant import quantize_moe_expert_params
 
+            self.model._moe_expert_param_names = find_moe_expert_param_names(self.model)
             self.model._moe_experts_quantized = quantize_moe_expert_params(self.model)
 
         PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
