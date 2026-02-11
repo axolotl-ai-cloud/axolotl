@@ -173,29 +173,6 @@ class ModelLoader:
         PLUGIN_MANAGER.pre_model_load(self.cfg)
         self.patch_manager.apply_post_plugin_pre_model_load_patches()
         skip_move_to_device = self._build_model()
-
-        # Quantize MoE expert weights immediately after model build.
-        # In transformers v5, MoE expert weights are 3D nn.Parameter tensors that
-        # BnB quantization skips (it only handles nn.Linear). This causes OOM because
-        # expert weights stay in full precision. We quantize them here before any other
-        # operations that need GPU memory (like prepare_model_for_kbit_training).
-        if (
-            self.cfg.adapter in ("qlora", "lora")
-            and (self.cfg.load_in_4bit or self.cfg.load_in_8bit)
-            and self.cfg.model_config_type in MOE_ARCH_BLOCK
-        ):
-            import inspect
-
-            bnb_config_params = inspect.signature(
-                BitsAndBytesConfig.__init__
-            ).parameters
-            if "target_parameters" not in bnb_config_params:
-                from axolotl.monkeypatch.moe_quant import (
-                    quantize_moe_expert_params,
-                )
-
-                quantize_moe_expert_params(self.model)
-
         PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
 
         # Post-build model configuration

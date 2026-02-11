@@ -19,7 +19,6 @@ from peft import (
 )
 from transformers import PreTrainedModel
 
-from axolotl.common.architectures import MOE_ARCH_BLOCK
 from axolotl.loaders.utils import get_linear_embedding_layers
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
@@ -68,6 +67,33 @@ def find_all_linear_names(model):
     return list(lora_module_names)
 
 
+def find_moe_expert_param_names(model):
+    """Detect 3D+ nn.Parameter tensors for PEFT target_parameters.
+
+    In transformers v5, MoE models store expert weights as fused 3D nn.Parameter
+    tensors (num_experts, dim1, dim2) instead of individual nn.Linear modules.
+    PEFT's target_modules can't target these, but target_parameters can via the
+    ParamWrapper class which applies LoRA directly to nn.Parameter tensors.
+
+    Returns a deduplicated list of parameter path suffixes (e.g.,
+    ["mlp.experts.gate_up_proj", "mlp.experts.down_proj"]) suitable for
+    PEFT's LoraConfig target_parameters.
+    """
+    seen_suffixes = set()
+    for name, param in model.named_parameters():
+        if param.ndim >= 3:
+            parts = name.split(".")
+            # Find the layer index (first numeric segment) and extract the
+            # repeating suffix after it.
+            # e.g. "model.layers.0.mlp.experts.gate_up_proj" -> "mlp.experts.gate_up_proj"
+            for i, part in enumerate(parts):
+                if part.isdigit():
+                    suffix = ".".join(parts[i + 1 :])
+                    seen_suffixes.add(suffix)
+                    break
+    return sorted(seen_suffixes)
+
+
 def load_lora(
     model: PreTrainedModel,
     cfg: DictDefault,
@@ -75,7 +101,23 @@ def load_lora(
     config_only: bool = False,
 ) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]:
     lora_target_modules = cfg.lora_target_modules or []
-    lora_target_parameters = cfg.lora_target_parameters or []
+
+    # In transformers v5, MoE expert weights are 3D
+    # nn.Parameter tensors that target_modules can't match.  PEFT's
+    # target_parameters (via ParamWrapper) applies LoRA to these directly.
+    lora_target_parameters = cfg.lora_target_parameters
+    if lora_target_parameters is None:
+        detected_params = find_moe_expert_param_names(model)
+        if detected_params:
+            LOG.info(
+                "Auto-detected MoE expert parameters for LoRA target_parameters: %s",
+                detected_params,
+            )
+            lora_target_parameters = detected_params
+        else:
+            lora_target_parameters = []
+    elif isinstance(lora_target_parameters, str):
+        lora_target_parameters = [lora_target_parameters]
 
     if cfg.lora_target_linear:
         linear_names = find_all_linear_names(model)
@@ -115,22 +157,11 @@ def load_lora(
     else:
         task_type = TaskType.CAUSAL_LM
 
-    # Exclude ParametrizationList modules created by MoE expert quantization.
-    # replace_parameter_4bit wraps quantized params in ParametrizationList child
-    # modules that PEFT doesn't support as LoRA targets.
-    # exclude "parametrizations" to skip all such wrapper modules.
-    exclude_modules = None
-    if cfg.model_config_type in MOE_ARCH_BLOCK and (
-        cfg.load_in_4bit or cfg.load_in_8bit
-    ):
-        exclude_modules = ["parametrizations"]
-
     lora_config = LoraConfig(
         r=cfg.lora_r,
         lora_alpha=cfg.lora_alpha,
         target_modules=lora_target_modules,
         target_parameters=lora_target_parameters,
-        exclude_modules=exclude_modules,
         layers_to_transform=cfg.peft_layers_to_transform,
         layers_pattern=cfg.peft_layers_pattern,
         lora_dropout=cfg.lora_dropout,
