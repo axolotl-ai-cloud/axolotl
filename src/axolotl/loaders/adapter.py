@@ -131,9 +131,14 @@ def load_lora(
     elif isinstance(lora_target_parameters, str):
         lora_target_parameters = [lora_target_parameters]
 
+    # When experts are quantized via replace_parameter_4bit, it creates
+    # ParametrizationList submodules that target_modules would incorrectly
+    # match.  Exclude them so only target_parameters handles expert params.
+    # Uses regex (string, not list) because "parametrizations" appears in the
+    # middle of the module path, not as a suffix.
     exclude_modules = None
     if getattr(model, "_moe_experts_quantized", False):
-        exclude_modules = ["parametrizations"]
+        exclude_modules = r".*\.parametrizations\..*"
 
     if cfg.lora_target_linear:
         linear_names = find_all_linear_names(model)
