@@ -338,18 +338,6 @@ class AxolotlInputConfig(
     )
     ddp_find_unused_parameters: bool | None = None
 
-    eval_table_size: int | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Approximate number of predictions sent to wandb depending on batch size. Enabled above 0. Default is 0"
-        },
-    )
-    eval_max_new_tokens: int | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Total number of tokens generated for predictions sent to wandb. Default is 128"
-        },
-    )
     do_causal_lm_eval: bool | None = Field(
         default=None,
         json_schema_extra={
