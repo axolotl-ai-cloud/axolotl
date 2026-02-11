@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from kernels import (
-    LayerRepository,
+    # LayerRepository,
+    LocalLayerRepository,
     Mode,
     register_kernel_mapping,
     replace_kernel_forward_from_hub,
@@ -19,16 +22,19 @@ class KernelsPlugin(BasePlugin):
             self._kernelize_model(cfg.model_config_type)
 
     def _register_kernels(self):
+        plugin_root = Path(__file__).parent
         register_kernel_mapping(
             {
                 "HFScatterMoEParallelExperts": {
                     "cuda": {
-                        Mode.TRAINING: LayerRepository(
-                            repo_id="axolotl-ai-co/scattermoe",
+                        Mode.TRAINING: LocalLayerRepository(
+                            repo_path=plugin_root / "libs" / "scattermoe_lora",
+                            package_name="scattermoe_lora",
                             layer_name="HFScatterMoEGatedMLP",
                         ),
-                        Mode.INFERENCE: LayerRepository(
-                            repo_id="axolotl-ai-co/scattermoe",
+                        Mode.INFERENCE: LocalLayerRepository(
+                            repo_path=plugin_root / "libs" / "scattermoe_lora",
+                            package_name="scattermoe_lora",
                             layer_name="HFScatterMoEGatedMLP",
                         ),
                     },
