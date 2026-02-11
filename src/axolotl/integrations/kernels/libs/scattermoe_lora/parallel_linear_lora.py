@@ -358,13 +358,15 @@ def _compute_lora_input_grad(
         (M_total, K), device=grouped_grad_out.device, dtype=grouped_grad_out.dtype
     )
 
+    compute_dtype = grouped_grad_out.dtype
+
     prev_offset = 0
     for e in range(E):
         curr_offset = expert_offsets[e].item()
         if curr_offset > prev_offset:
             dy_e = grouped_grad_out[prev_offset:curr_offset]  # [M_e, N]
-            a_e = lora_A[e * R : (e + 1) * R, :]  # [r, K]
-            b_e = lora_B[:, e * R : (e + 1) * R]  # [N, r]
+            a_e = lora_A[e * R : (e + 1) * R, :].to(compute_dtype)  # [r, K]
+            b_e = lora_B[:, e * R : (e + 1) * R].to(compute_dtype)  # [N, r]
 
             # dX_e = scaling * (dY_e @ B_e) @ A_e
             dy_b = dy_e @ b_e  # [M_e, r]
