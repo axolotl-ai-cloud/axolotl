@@ -395,6 +395,8 @@ class HFScatterMoEGatedMLP(nn.Module):
                 scaling=gup_scaling,
                 grouped_in=False,
                 grouped_out=True,
+                use_fused_dX=True,
+                use_fused_gather=True,
             )
         else:
             gup = parallel_linear(
@@ -428,9 +430,11 @@ class HFScatterMoEGatedMLP(nn.Module):
                 lora_A=down_A,
                 lora_B=down_B,
                 scaling=down_scaling,
+                gates=routing_weights,
                 grouped_in=True,
                 grouped_out=False,
-                gates=routing_weights,
+                use_fused_dX=True,
+                use_fused_gather=True,
             )
         else:
             expert_output = parallel_linear(
