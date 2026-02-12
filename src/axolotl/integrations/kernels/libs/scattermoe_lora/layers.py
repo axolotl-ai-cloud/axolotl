@@ -75,26 +75,34 @@ def peft_lora_to_scattermoe(peft_A, peft_B, num_experts, rank):
         lora_A ``[r*E, K=dim2]``, lora_B ``[N=dim1, r*E]``
 
     This function swaps A<->B and converts B from rank-major to expert-major.
+    Uses vectorized tensor operations (no Python loop over experts).
 
     Works for **both** gate_up_proj and down_proj since the transposition
     issue is the same for any parameter.
     """
-    peft_B_expert_major = peft_lora_B_to_scattermoe(peft_B, num_experts, rank)
+    peft_B_em = peft_lora_B_to_scattermoe(peft_B, num_experts, rank)
 
-    K = peft_B.shape[0]  # dim2 -> becomes scattermoe K
-    N = peft_A.shape[1]  # dim1 -> becomes scattermoe N
-    smoe_A = torch.zeros(
-        rank * num_experts, K, device=peft_A.device, dtype=peft_A.dtype
+    dim1 = peft_A.shape[1]  # peft in_features -> scattermoe N
+    dim2 = peft_B_em.shape[0]  # peft out_features -> scattermoe K
+
+    # smoe_A: per expert, transpose B_e [dim2, r] -> [r, dim2]
+    # [dim2, E*r] -> [dim2, E, r] -> [E, r, dim2] -> [E*r, dim2]
+    smoe_A = (
+        peft_B_em.reshape(dim2, num_experts, rank)
+        .permute(1, 2, 0)
+        .contiguous()
+        .reshape(rank * num_experts, dim2)
     )
-    smoe_B = torch.zeros(
-        N, rank * num_experts, device=peft_A.device, dtype=peft_A.dtype
+
+    # smoe_B: per expert, transpose A_e [r, dim1] -> [dim1, r]
+    # [E*r, dim1] -> [E, r, dim1] -> [dim1, E, r] -> [dim1, E*r]
+    smoe_B = (
+        peft_A.reshape(num_experts, rank, dim1)
+        .permute(2, 0, 1)
+        .contiguous()
+        .reshape(dim1, num_experts * rank)
     )
-    for e in range(num_experts):
-        s = e * rank
-        A_e = peft_A[s : s + rank, :]  # [r, dim1]
-        B_e = peft_B_expert_major[:, s : s + rank]  # [dim2, r]
-        smoe_A[s : s + rank, :] = B_e.T  # [r, dim2=K]
-        smoe_B[:, s : s + rank] = A_e.T  # [dim1=N, r]
+
     return smoe_A, smoe_B
 
 
@@ -142,6 +150,26 @@ def _unwrap_gate_lora(gate_module):
     else:
         # No wrapping — gate is the original module
         return gate_module, gate_module.weight, None
+
+
+def _get_cached_smoe_lora(wrapper, lora_A, lora_B, num_experts, rank, scaling):
+    """Get scattermoe-layout LoRA weights, using a per-wrapper cache.
+
+    The conversion ``peft_lora_to_scattermoe`` allocates new tensors (up to
+    ~100 MB for Qwen3-30B-A3B).  Under gradient checkpointing, each layer's
+    forward is replayed during backward, doubling the allocation cost.
+    Caching avoids this: we store the converted weights on the wrapper module
+    and invalidate when the optimizer updates the parameters (detected via
+    ``_version`` counters that PyTorch increments on every in-place op).
+    """
+    version = lora_A._version + lora_B._version
+    cache = getattr(wrapper, "_smoe_lora_cache", None)
+    if cache is not None and cache[0] == version:
+        smoe_A, smoe_B = cache[1], cache[2]
+    else:
+        smoe_A, smoe_B = peft_lora_to_scattermoe(lora_A, lora_B, num_experts, rank)
+        wrapper._smoe_lora_cache = (version, smoe_A, smoe_B)
+    return (smoe_A, smoe_B, scaling)
 
 
 def _unwrap_experts_lora(experts_module):
@@ -192,8 +220,9 @@ def _unwrap_experts_lora(experts_module):
         lora_A, lora_B, scaling = get_lora_params_from_wrapper(gup_wrapper)
         if lora_A is not None:
             rank = lora_A.shape[0] // num_experts
-            smoe_A, smoe_B = peft_lora_to_scattermoe(lora_A, lora_B, num_experts, rank)
-            gup_lora = (smoe_A, smoe_B, scaling)
+            gup_lora = _get_cached_smoe_lora(
+                gup_wrapper, lora_A, lora_B, num_experts, rank, scaling
+            )
 
     # Extract down_proj LoRA (needs A<->B swap due to transposition)
     down_lora = None
@@ -202,8 +231,9 @@ def _unwrap_experts_lora(experts_module):
         lora_A, lora_B, scaling = get_lora_params_from_wrapper(down_wrapper)
         if lora_A is not None:
             rank = lora_A.shape[0] // num_experts
-            smoe_A, smoe_B = peft_lora_to_scattermoe(lora_A, lora_B, num_experts, rank)
-            down_lora = (smoe_A, smoe_B, scaling)
+            down_lora = _get_cached_smoe_lora(
+                down_wrapper, lora_A, lora_B, num_experts, rank, scaling
+            )
 
     return base_experts, gup_lora, down_lora
 

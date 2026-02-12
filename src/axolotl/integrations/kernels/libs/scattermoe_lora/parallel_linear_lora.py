@@ -92,16 +92,21 @@ class ScatterMoELoRA(torch.autograd.Function):
 
             ctx.save_for_backward(
                 x,
-                expert_weights,
                 lora_A,
                 lora_B,
-                expert_biases,
                 sorted_expert_idxs,
                 sorted_scattered_idxs,
                 expert_offsets,
                 gates,
                 output_expanded,
             )
+            # Store frozen weights as plain Python attributes instead of
+            # save_for_backward.  This avoids:
+            # 1. Version-check conflicts with FSDP unshard/reshard
+            # 2. Pinning all-gathered parameters via saved_tensors hooks
+            # 3. Interfering with activation offloading pack/unpack hooks
+            # Safe because expert_weights are frozen (requires_grad=False).
+            ctx.expert_weights = expert_weights
             ctx.grouped_in = grouped_in
             ctx.grouped_out = grouped_out
             ctx.k = k
@@ -116,16 +121,15 @@ class ScatterMoELoRA(torch.autograd.Function):
         with torch.device(grad_out.device):
             (
                 x,
-                expert_weights,
                 lora_A,
                 lora_B,
-                expert_biases,
                 sorted_expert_idxs,
                 sorted_scattered_idxs,
                 expert_offsets,
                 gates,
                 output_expanded,
             ) = ctx.saved_tensors
+            expert_weights = ctx.expert_weights
 
             k = ctx.k
             scaling = ctx.scaling
@@ -292,13 +296,12 @@ class ScatterMoELoRA(torch.autograd.Function):
                         scaling,
                     )
                     if grouped_in:
-                        d_expanded_input = d_expanded_input + d_input_lora_grouped
+                        d_expanded_input.add_(d_input_lora_grouped)
                     else:
-                        d_input_lora_ungrouped = torch.zeros_like(d_expanded_input)
-                        d_input_lora_ungrouped[sorted_scattered_idxs] = (
-                            d_input_lora_grouped
-                        )
-                        d_expanded_input = d_expanded_input + d_input_lora_ungrouped
+                        # Scatter-add LoRA gradient directly into d_expanded_input.
+                        # Avoids allocating a zeros_like + add result (~2× 256 MB
+                        # for Qwen3-30B-A3B) that caused OOM at peak memory.
+                        d_expanded_input[sorted_scattered_idxs] += d_input_lora_grouped
 
             # Reduce over top-k if k > 1
             if k == 1:
