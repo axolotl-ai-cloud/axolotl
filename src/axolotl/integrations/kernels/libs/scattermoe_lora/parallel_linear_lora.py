@@ -107,6 +107,7 @@ class ScatterMoELoRA(torch.autograd.Function):
             # 3. Interfering with activation offloading pack/unpack hooks
             # Safe because expert_weights are frozen (requires_grad=False).
             ctx.expert_weights = expert_weights
+            ctx.expert_biases = expert_biases
             ctx.grouped_in = grouped_in
             ctx.grouped_out = grouped_out
             ctx.k = k
@@ -153,14 +154,16 @@ class ScatterMoELoRA(torch.autograd.Function):
                 gate_fan = 1
                 grouped_grad_out = None
 
-            # Fused gather is only possible when data isn't already grouped
-            # and there are no gate coefficients (which require a multiplicative gather).
+            # ------------------------------------------------------------------
+            # LoRA gradients (dA, dB) and setup for dX
+            # ------------------------------------------------------------------
+            # Fused gather uses sorted_scattered_idxs for indirect X access
+            # in the Triton kernel, avoiding the group(x) allocation.
             #
-            # Heuristic: fused gather eliminates group() calls but uses random
-            # access (via sorted_scattered_idxs) in the inner GEMM loop. At
-            # large problem sizes the GEMM dominates runtime and sequential
-            # access from group() is faster than the random scatter loads.
-            # Disable fused gather when the total workload exceeds a threshold.
+            # can_fuse_gather: X is ungrouped and not too large for scatter loads
+            #   - When gates is None and grouped_out=False: both DY and X ungrouped
+            #   - When grouped_out=True (gate_up_proj): DY already grouped, X ungrouped
+            #     -> use dy_grouped=True in the fused kernel
             M_total = sorted_scattered_idxs.size(0)
             K_dim = x.size(-1)
             N_dim = expert_weights.size(-1)
@@ -169,18 +172,15 @@ class ScatterMoELoRA(torch.autograd.Function):
 
             can_fuse_gather = (
                 ctx.use_fused_gather
-                and not grouped_in
-                and not grouped_out
-                and gates is None
+                and not grouped_in  # X must be ungrouped for scatter access
+                and gates is None  # gate coeff requires multiplicative gather
                 and fuse_gather_workload < _FUSE_GATHER_THRESHOLD
             )
 
             if can_fuse_gather:
                 # ------------------------------------------------------------------
-                # Fused path: skip BOTH group() calls entirely
+                # Fused path: skip group(x) entirely
                 # ------------------------------------------------------------------
-                # group_bwd_lora_fused reads ungrouped DY and X directly
-                # scatter2scatter_lora_dX (if used) reads ungrouped DY via scatter pattern
                 d_expanded_input = None
 
                 d_lora_A, d_lora_B = group_bwd_lora_fused(
@@ -193,12 +193,14 @@ class ScatterMoELoRA(torch.autograd.Function):
                     E=E,
                     k=k,
                     scaling=scaling,
+                    dy_grouped=grouped_out,
                 )
 
-                # When using fused gather, we need grouped_grad_out only if
-                # the dX path is NOT fused (original path needs it grouped).
-                # If fused dX is also enabled, it can read ungrouped DY directly.
-                if not ctx.use_fused_dX:
+                # Prepare grouped_grad_out for the dX path (needed by both
+                # the fused dX kernel when grouped_out=True, and the non-fused path)
+                if grouped_out:
+                    grouped_grad_out = grad_out
+                elif not ctx.use_fused_dX:
                     grouped_grad_out = base_ops.group(
                         grad_out,
                         sorted_scattered_idxs,
@@ -242,7 +244,7 @@ class ScatterMoELoRA(torch.autograd.Function):
             # Input gradient: dX = dY @ W^T + scaling * (dY @ B) @ A
             # ------------------------------------------------------------------
             if ctx.use_fused_dX:
-                if can_fuse_gather:
+                if can_fuse_gather and not grouped_out:
                     # Fully fused: read ungrouped DY via scatter pattern
                     d_expanded_input = scatter2scatter_lora_dX(
                         DY=grad_out,
@@ -299,8 +301,7 @@ class ScatterMoELoRA(torch.autograd.Function):
                         d_expanded_input.add_(d_input_lora_grouped)
                     else:
                         # Scatter-add LoRA gradient directly into d_expanded_input.
-                        # Avoids allocating a zeros_like + add result (~2× 256 MB
-                        # for Qwen3-30B-A3B) that caused OOM at peak memory.
+                        # Avoids allocating a zeros_like + add result
                         d_expanded_input[sorted_scattered_idxs] += d_input_lora_grouped
 
             # Reduce over top-k if k > 1

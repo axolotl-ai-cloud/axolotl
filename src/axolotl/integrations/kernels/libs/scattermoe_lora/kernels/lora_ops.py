@@ -1425,7 +1425,7 @@ def group_bwd_lora(
 )
 @triton.jit
 def _group_bwd_lora_fused(
-    # Inputs (ungrouped)
+    # Inputs (ungrouped or grouped)
     DY_ptr,
     stride_dym,
     stride_dyn,
@@ -1468,11 +1468,22 @@ def _group_bwd_lora_fused(
     allow_tf32: tl.constexpr,
     NO_K_MASK: tl.constexpr,
     NO_N_MASK: tl.constexpr,
+    # Whether DY is already in grouped (expert-sorted) order
+    dy_grouped: tl.constexpr = False,
 ):
     """
     Fused gather + LoRA gradient computation. Same as _group_bwd_lora but
-    reads X and DY from ungrouped buffers using sorted_scattered_idxs for
-    indirect indexing, eliminating the need for separate group() calls.
+    reads X from ungrouped buffers using sorted_scattered_idxs for indirect
+    indexing, eliminating the need for a separate group(X) call.
+
+    When dy_grouped=False (default): both X and DY are read via indirect
+    indexing through sorted_scattered_idxs.  This eliminates both group()
+    calls entirely.
+
+    When dy_grouped=True: DY is already in grouped order (e.g. gate_up_proj
+    backward where grouped_out=True) and is read directly.  Only X uses
+    indirect indexing.  This avoids the group(X) allocation while
+    still supporting the grouped DY case.
 
     Grid: (E * cdiv(K, BLOCK_K), cdiv(N, BLOCK_N))
 
@@ -1483,12 +1494,6 @@ def _group_bwd_lora_fused(
     Supports token rounding: expert_offsets_ptr gives the iteration range
     (padded to BLOCK_M multiples), real_expert_offsets_ptr gives the real
     token count for M_mask (to exclude padding tokens).
-
-    Key difference from _group_bwd_lora:
-      Instead of X_ptr[M_idx, :] and DY_ptr[M_idx, :] on pre-grouped data,
-      we load scatter_idx = sorted_scattered_idxs[M_idx], then:
-        X_token_idx = scatter_idx // FAN_OUT  (X is [M, K], not expanded)
-        DY uses scatter_idx directly            (DY is [M*k, N] or expanded via gate)
     """
     pid0 = tl.program_id(axis=0)
     pid1 = tl.program_id(axis=1)
@@ -1556,7 +1561,7 @@ def _group_bwd_lora_fused(
             M_local = i * BLOCK_M + M_block
             M_mask = M_local < real_num_tokens
 
-            # Fused gather: load scatter indices, then indirect-load X and DY
+            # Fused gather: load scatter indices for indirect X access
             scatter_idx = tl.load(
                 sorted_scattered_idxs_ptr + M_idx, mask=M_mask, other=0
             ).to(tl.int32)
@@ -1570,12 +1575,17 @@ def _group_bwd_lora_fused(
                 X_blk_ptrs, mask=M_mask[:, None] & K_mask[None, :], other=0.0
             ).to(INPUT_DTYPE)
 
-            # Load DY via scatter index: DY is [M*k, N]
-            DY_blk_ptrs = (
-                DY_ptr
-                + scatter_idx[:, None] * stride_dym
-                + N_block[None, :] * stride_dyn
-            )
+            # Load DY: indirect via scatter_idx when ungrouped, direct via M_idx when grouped
+            if dy_grouped:
+                DY_blk_ptrs = (
+                    DY_ptr + M_idx[:, None] * stride_dym + N_block[None, :] * stride_dyn
+                )
+            else:
+                DY_blk_ptrs = (
+                    DY_ptr
+                    + scatter_idx[:, None] * stride_dym
+                    + N_block[None, :] * stride_dyn
+                )
             dy = tl.load(
                 DY_blk_ptrs, mask=M_mask[:, None] & N_mask[None, :], other=0.0
             ).to(INPUT_DTYPE)
@@ -1631,6 +1641,7 @@ def group_bwd_lora_fused(
     k: int,
     scaling: float,
     real_expert_offsets: Optional[torch.Tensor] = None,
+    dy_grouped: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Fused gather + LoRA gradient computation. Same result as
@@ -1638,8 +1649,13 @@ def group_bwd_lora_fused(
     the intermediate grouped buffers.
 
     Args:
-        DY: Gradient w.r.t. output [M*k, N] (ungrouped, original token order)
-        X: Input [M, K] (ungrouped, original token order)
+        DY: Gradient w.r.t. output [M*k, N].
+            If dy_grouped=False: ungrouped (original token order), read via
+            indirect indexing through sorted_scattered_idxs.
+            If dy_grouped=True: already in grouped (expert-sorted) order,
+            read directly.
+        X: Input [M, K] (ungrouped, original token order).  Always read via
+            indirect indexing through sorted_scattered_idxs.
         lora_A: LoRA A weights [r*E, K]
         lora_B: LoRA B weights [N, r*E]
         expert_offsets: Cumulative token counts per expert [E]
@@ -1651,6 +1667,9 @@ def group_bwd_lora_fused(
         scaling: LoRA scaling factor
         real_expert_offsets: Original cumulative counts for M_mask when using
             token rounding. If None, expert_offsets is used for both.
+        dy_grouped: Whether DY is already in grouped order (default False).
+            When True, avoids indirect indexing for DY, used for gate_up_proj
+            backward where grouped_out=True.
 
     Returns:
         dA: Gradient for A [r*E, K]
@@ -1706,6 +1725,7 @@ def group_bwd_lora_fused(
         scaling=scaling,
         ACC_TYPE=tl.float32,
         allow_tf32=ALLOW_TF32,
+        dy_grouped=dy_grouped,
     )
 
     return dA, dB
