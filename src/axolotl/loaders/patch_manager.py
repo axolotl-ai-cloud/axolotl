@@ -10,6 +10,7 @@ from functools import cached_property
 import addict
 import transformers
 from transformers import PretrainedConfig, PreTrainedModel
+from transformers.modeling_flash_attention_utils import is_flash_attn_available
 
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.multipack import (
@@ -500,6 +501,7 @@ class PatchManager:
             and not self.cfg.trust_remote_code
             and not self.cfg.gptq
             and self.cfg.flash_attention
+            and is_flash_attn_available()
             and not self.inference
         ):
             # TODO(MengqingCao): split these patches separately
