@@ -144,10 +144,12 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.rl is RLType.ORPO:
             training_args_cls = AxolotlORPOConfig
 
+            blocklist_args_kwargs.append("max_prompt_length")
+
         elif self.cfg.rl is RLType.KTO:
             training_args_cls = AxolotlKTOConfig
             # KTOConfig in TRL >= 0.27.0 no longer accepts max_prompt_length
-            blocklist_args_kwargs = ["max_prompt_length"]
+            blocklist_args_kwargs.append("max_prompt_length")
 
             training_args_kwargs["desirable_weight"] = (
                 self.cfg.kto_desirable_weight or 1.0
