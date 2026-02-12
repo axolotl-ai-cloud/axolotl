@@ -1,0 +1,67 @@
+base_model: /home/smishra/axolotl-kog/models/laneformer_tp2b_step620k_unclamp_every4
+model_type: LlamaForCausalLM
+tokenizer_type: AutoTokenizer
+trust_remote_code: true
+
+special_tokens:
+  pad_token: "</s>" 
+  
+overrides_of_model_config:
+  rope_scaling:
+    type: yarn
+    factor: 2.0
+    original_max_position_embeddings: 4096
+  max_position_embeddings: 8192
+  pad_token_id: 2
+  
+sequence_len: 8192
+context_parallel_size: 1
+
+datasets:
+- path: emozilla/pg19
+  type: completion
+  field: text
+  split: train
+
+dataset_prepared_path: ./prepared_data/exp3_pg19_8k_unclamped
+val_set_size: 0.05
+
+load_in_8bit: false
+load_in_4bit: false
+adapter: null
+gradient_checkpointing: true
+
+num_epochs: 1
+max_steps: 10000
+micro_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 2.0e-05
+lr_scheduler: cosine
+warmup_steps: 1000
+cosine_min_lr_ratio: 0.1
+
+optimizer: adamw_torch_fused
+weight_decay: 0.01
+max_grad_norm: 0.3
+
+flash_attention: true
+sample_packing: false
+pad_to_sequence_len: true
+eval_sample_packing: false
+train_on_inputs: true
+
+bf16: auto
+tf32: true
+ddp: false
+
+output_dir: ./outputs/exp3_pg19_8k_unclamped
+save_steps: 500
+save_strategy: steps
+logging_steps: 10
+
+include_tokens_per_second: true
+deepspeed: /home/smishra/axolotl-kog/deepspeed_configs/zero3_bf16_cpuoffload_all.json
+use_wandb: false
+eos_token_id: 2
+bos_token_id: 1
+pad_token_id: 2
