@@ -15,7 +15,7 @@ from datasets import Dataset, IterableDataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers.utils import get_dataset_lengths
-from axolotl.utils.trainer import drop_long_seq
+from axolotl.utils.trainer import check_max_seq_length
 
 LOG = get_logger(__name__)
 
@@ -150,8 +150,8 @@ def deduplicate_and_log_datasets(
 
 def keep_min_len(sample, min_sequence_len=2):
     """
-    Filter function that keeps only samples with sequence length >= min_sequence_len.
-    Returns a boolean or list of booleans indicating which samples to keep.
+    Batched filter function that keeps only samples with sequence length >= min_sequence_len.
+    Returns a list of booleans indicating which samples to keep.
     """
     min_sequence_len = min_sequence_len or 2
 
@@ -185,6 +185,120 @@ def truncate_long_seq(sample, sequence_len=2048):
     return sample
 
 
+def _should_skip_processing(dataset: Dataset) -> bool:
+    """Check if dataset should skip long sequence handling."""
+    if (
+        hasattr(dataset, "column_names")
+        and dataset.column_names
+        and "input_ids" not in dataset.column_names
+    ):
+        LOG.warning(
+            "Dataset does not contain 'input_ids' column. Skip drop long seq. This is "
+            "expected for reward modeling."
+        )
+        return True
+    elif not hasattr(dataset, "column_names") or dataset.column_names is None:
+        LOG.info(
+            "Dataset is streaming (IterableDataset), skipping long sequence handling"
+        )
+        return True
+    return False
+
+
+def _log_dataset_stats(dataset: Dataset) -> None:
+    """Log min/max sequence lengths for debugging."""
+    with contextlib.suppress(AttributeError):
+        ds_lengths = get_dataset_lengths(dataset, from_arrow=True)
+        LOG.info(f"min_input_len: {np.min(ds_lengths)}")
+        LOG.info(f"max_input_len: {np.max(ds_lengths)}")
+
+
+def _build_filter_kwargs(dataset: Dataset, cfg: DictDefault) -> dict:
+    """Build kwargs for dataset filter/map operations."""
+    kwargs = {}
+    if not isinstance(dataset, IterableDataset):
+        kwargs["num_proc"] = cfg.dataset_num_proc
+        kwargs["load_from_cache_file"] = not cfg.is_preprocess
+    return kwargs
+
+
+def _filter_short_sequences(
+    dataset: Dataset, min_len: int, filter_kwargs: dict
+) -> tuple[Dataset, int]:
+    """Filter out sequences shorter than min_len. Returns (dataset, num_dropped)."""
+    prior_len = len(dataset) if hasattr(dataset, "__len__") else None
+
+    desc_kwargs = {}
+    if filter_kwargs:
+        desc_kwargs["desc"] = f"Filtering Short Sequences (<{min_len})"
+
+    dataset = dataset.filter(
+        functools.partial(keep_min_len, min_sequence_len=min_len),
+        batched=True,
+        **filter_kwargs,
+        **desc_kwargs,
+    )
+
+    dropped = 0
+    if prior_len:
+        dropped = prior_len - len(dataset)
+        if dropped > 0:
+            LOG.info(f"Dropped {dropped} short sequences (<{min_len} tokens)")
+
+    return dataset, dropped
+
+
+def _truncate_long_sequences(
+    dataset: Dataset, max_len: int, map_kwargs: dict
+) -> Dataset:
+    """Truncate sequences longer than max_len."""
+    desc_kwargs = {}
+    if map_kwargs:
+        desc_kwargs["desc"] = f"Truncating Sequences (target_len={max_len})"
+
+    dataset = dataset.map(
+        functools.partial(truncate_long_seq, sequence_len=max_len),
+        batched=True,
+        **map_kwargs,
+        **desc_kwargs,
+    )
+    LOG.info(f"Truncated long sequences to max length {max_len}")
+    return dataset
+
+
+def _drop_long_sequences(
+    dataset: Dataset, max_len: int, raise_on_long: bool, filter_kwargs: dict
+) -> tuple[Dataset, int]:
+    """Drop sequences longer than max_len. Returns (dataset, num_dropped)."""
+    prior_len = len(dataset) if hasattr(dataset, "__len__") else None
+
+    desc_kwargs = {}
+    if filter_kwargs:
+        action = (
+            "Checking Sequence Lengths" if raise_on_long else "Dropping Long Sequences"
+        )
+        desc_kwargs["desc"] = f"{action} (>{max_len})"
+
+    dataset = dataset.filter(
+        functools.partial(
+            check_max_seq_length,
+            sequence_len=max_len,
+            raise_on_long=raise_on_long,
+        ),
+        batched=True,
+        **filter_kwargs,
+        **desc_kwargs,
+    )
+
+    dropped = 0
+    if not raise_on_long and prior_len:
+        dropped = prior_len - len(dataset)
+        if dropped > 0:
+            LOG.info(f"Dropped {dropped} long sequences (>{max_len} tokens)")
+
+    return dataset, dropped
+
+
 def handle_long_seq_in_dataset(
     dataset: Dataset, sequence_len: int, cfg: DictDefault
 ) -> Dataset:
@@ -201,97 +315,27 @@ def handle_long_seq_in_dataset(
             'truncate'          truncates them down to sequence_len
             'raise'             raises a ValueError if any sequence was found that was longer than sequence_len
     """
-    if (
-        hasattr(dataset, "column_names")
-        and dataset.column_names
-        and "input_ids" not in dataset.column_names
-    ):
-        LOG.warning(
-            "Dataset does not contain 'input_ids' column. Skip drop long seq. This is "
-            "expected for reward modeling."
-        )
-        return dataset
-    elif not hasattr(dataset, "column_names") or dataset.column_names is None:
-        LOG.info(
-            "Dataset is streaming (IterableDataset), skipping long sequence handling"
-        )
+    # Early returns for special cases
+    if _should_skip_processing(dataset):
         return dataset
 
     excess_length_strategy = (cfg.excess_length_strategy or "drop").lower()
 
-    drop_long = functools.partial(
-        drop_long_seq,
-        sequence_len=sequence_len,
-        min_sequence_len=cfg.min_sample_len,
-        raise_on_drop=excess_length_strategy == "raise",
-    )
+    _log_dataset_stats(dataset)
 
-    with contextlib.suppress(AttributeError):
-        ds_lengths = get_dataset_lengths(dataset, from_arrow=True)
-        min_input_len = np.min(ds_lengths)
-        LOG.info(f"min_input_len: {min_input_len}")
-        max_input_len = np.max(ds_lengths)
-        LOG.info(f"max_input_len: {max_input_len}")
+    # Setup kwargs
+    filter_kwargs = _build_filter_kwargs(dataset, cfg)
 
-    prior_len = len(dataset) if hasattr(dataset, "__len__") else None
+    # Filter short sequences
+    dataset, _ = _filter_short_sequences(dataset, cfg.min_sample_len, filter_kwargs)
 
-    filter_map_kwargs = {}
-    if not isinstance(dataset, IterableDataset):
-        filter_map_kwargs["num_proc"] = cfg.dataset_num_proc
-        filter_map_kwargs["load_from_cache_file"] = not cfg.is_preprocess
-
-    drop_long_kwargs = {}
-    if filter_map_kwargs:
-        action = (
-            "Checking Sequence Lengths"
-            if excess_length_strategy == "raise"
-            else "Dropping Long Sequences"
-        )
-        drop_long_kwargs["desc"] = f"{action} (>{sequence_len})"
-
+    # Handle long sequences based on strategy
     if excess_length_strategy == "truncate":
-        # 1) First filter out too-short samples
-        filter_short_kwargs = {}
-        if filter_map_kwargs:
-            filter_short_kwargs.update(filter_map_kwargs)
-            filter_short_kwargs["desc"] = f"Filtering Short Sequences (<{cfg.min_sample_len})"
-        dataset = dataset.filter(
-            functools.partial(
-                keep_min_len,
-                min_sequence_len=cfg.min_sample_len,
-            ),
-            batched=True,
-            **filter_short_kwargs,
-        )
-        # 2) Then truncate long samples to the target length
-        truncate_kwargs = {}
-        if filter_map_kwargs:
-            truncate_kwargs.update(filter_map_kwargs)
-            truncate_kwargs["desc"] = f"Truncating Sequences (target_len={sequence_len})"
-        dataset = dataset.map(
-            functools.partial(
-                truncate_long_seq,
-                sequence_len=sequence_len,
-            ),
-            batched=True,
-            **truncate_kwargs,
-        )
+        dataset = _truncate_long_sequences(dataset, sequence_len, filter_kwargs)
     else:
-        process_fn = drop_long
-        dataset = dataset.filter(
-            process_fn,
-            batched=True,
-            **filter_map_kwargs,
-            **drop_long_kwargs,
+        raise_on_long = excess_length_strategy == "raise"
+        dataset, _ = _drop_long_sequences(
+            dataset, sequence_len, raise_on_long, filter_kwargs
         )
-    if prior_len:
-        dropped = prior_len - len(dataset)
-        if dropped:
-            action = (
-                "truncated/filtered"
-                if excess_length_strategy == "truncate"
-                else "dropped"
-            )
-            LOG.warning(f"{action.title()} {dropped} samples from dataset")
 
     return dataset
