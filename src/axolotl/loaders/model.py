@@ -174,11 +174,8 @@ class ModelLoader:
         self.patch_manager.apply_post_plugin_pre_model_load_patches()
         skip_move_to_device = self._build_model()
 
-        # Quantize MoE expert weights that BnB skipped during model loading.
-        # In transformers v5, MoE expert weights are 3D nn.Parameter tensors
-        # that BnB quantization skips (it only handles nn.Linear).
-        # After quantization, PEFT target_parameters applies LoRA on top via
-        # stacked parametrizations (ParamWrapper).
+        # Quantize 3D MoE expert nn.Parameter tensors that BnB skips.
+        # Detect names before quantization (replace_parameter_4bit changes them).
         self.model._moe_experts_quantized = False
         self.model._moe_expert_param_names = []
         if self.cfg.adapter in ("qlora", "lora") and (
@@ -869,10 +866,7 @@ class ModelLoader:
             skip_prepare_model_for_kbit_training = True
 
         if getattr(self.model, "_moe_experts_quantized", False):
-            # MoE expert weights quantized via replace_parameter_4bit use PyTorch
-            # parametrize, which causes model.parameters() to return dequantized
-            # (full-size) tensors. prepare_model_for_kbit_training would OOM trying
-            # to upcast these to float32.
+            # Parametrized expert tensors dequantize on access — would OOM.
             skip_prepare_model_for_kbit_training = True
 
         if (

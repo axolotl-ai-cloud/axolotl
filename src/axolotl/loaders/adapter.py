@@ -102,21 +102,9 @@ def load_lora(
 ) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]:
     lora_target_modules = cfg.lora_target_modules or []
 
-    # Auto-detect MoE expert parameters for PEFT target_parameters.
-    # In transformers v5, MoE expert weights are stored as fused 3D
-    # nn.Parameter tensors instead of nn.Linear modules.  PEFT's
-    # target_modules can't match these, but target_parameters + ParamWrapper
-    # can apply LoRA directly -- including when the params have been
-    # quantized via replace_parameter_4bit (stacked parametrizations).
-    #
-    # When experts are quantized, replace_parameter_4bit creates
-    # ParametrizationList submodules that target_modules would incorrectly
-    # match.  Exclude them so only target_parameters handles expert params.
+    # Auto-detect MoE expert params for PEFT target_parameters (v5 3D nn.Parameter).
     lora_target_parameters = cfg.lora_target_parameters
     if lora_target_parameters is None:
-        # Use pre-quantization names stored by model loader if available,
-        # since after replace_parameter_4bit the 3D params no longer appear
-        # as ndim>=3 in named_parameters().
         detected_expert_params = getattr(
             model, "_moe_expert_param_names", None
         ) or find_moe_expert_param_names(model)
@@ -131,11 +119,8 @@ def load_lora(
     elif isinstance(lora_target_parameters, str):
         lora_target_parameters = [lora_target_parameters]
 
-    # When experts are quantized via replace_parameter_4bit, it creates
-    # ParametrizationList submodules that target_modules would incorrectly
-    # match.  Exclude them so only target_parameters handles expert params.
-    # Uses regex (string, not list) because "parametrizations" appears in the
-    # middle of the module path, not as a suffix.
+    # Exclude ParametrizationList submodules created by replace_parameter_4bit
+    # from target_modules matching (regex needed — "parametrizations" is mid-path).
     exclude_modules = None
     if getattr(model, "_moe_experts_quantized", False):
         exclude_modules = r".*\.parametrizations\..*"
