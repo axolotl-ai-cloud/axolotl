@@ -44,12 +44,9 @@ class Gemma3TextFromMultimodalPlugin(BasePlugin):
         This runs before Pydantic validation, so ``cfg`` is a raw dict.
         """
         if not cfg.get("gemma3_text_from_multimodal", True):
-            LOG.info("Gemma3TextFromMultimodalPlugin: disabled via config")
-            return
-
-        LOG.info(
-            "Gemma3TextFromMultimodalPlugin: configuring multimodal → text-only loading"
-        )
+            raise ValueError(
+                "Gemma3TextFromMultimodalPlugin: disabled via config, but plugin selected"
+            )
 
         # Flag for load_model_config() to extract the text sub-config
         cfg["extract_text_config"] = True
@@ -74,15 +71,9 @@ class Gemma3TextFromMultimodalPlugin(BasePlugin):
                 cfg.model_config_type,
             )
 
-        if cfg.is_multimodal:
-            LOG.warning(
-                "Gemma3TextFromMultimodalPlugin: cfg.is_multimodal is True. "
-                "The model will be loaded via the multimodal trainer path, "
-                "which may not support sample packing or LoRA kernels."
+        if cfg.is_multimodal or cfg.processor_type:
+            raise ValueError(
+                "Multimodal mode is enabled (processor_type set), but "
+                "Gemma3TextFromMultimodalPlugin enabled. "
+                "Please disable one of the two."
             )
-
-        LOG.info(
-            "Gemma3TextFromMultimodalPlugin: model_config_type=%s, is_multimodal=%s",
-            cfg.model_config_type,
-            cfg.is_multimodal,
-        )
