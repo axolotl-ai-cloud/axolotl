@@ -9,6 +9,7 @@ from torchao.quantization import quantize_
 from torchao.quantization.qat import (
     QATConfig,
 )
+from torchao.quantization.qat.fake_quantize_config import FakeQuantizeConfigBase
 from torchao.quantization.quant_api import (
     Float8DynamicActivationFloat8WeightConfig,
     Float8DynamicActivationInt4WeightConfig,
@@ -199,7 +200,13 @@ def prepare_model_for_qat(
         activation_dtype=activation_dtype,
         group_size=group_size,
     )
-    qat_config = QATConfig(base_config)
+    if isinstance(base_config, FakeQuantizeConfigBase):
+        qat_config = QATConfig(
+            activation_config=base_config,
+            weight_config=base_config,
+        )
+    else:
+        qat_config = QATConfig(base_config)
     quantize_(model, qat_config)
     if quantize_embedding:
         # activation fake quantization is not supported for embedding layers
@@ -208,7 +215,12 @@ def prepare_model_for_qat(
             activation_dtype=None,
             group_size=group_size,
         )
-        embedding_qat_config = QATConfig(embedding_base_config)
+        if isinstance(embedding_base_config, FakeQuantizeConfigBase):
+            embedding_qat_config = QATConfig(
+                weight_config=embedding_base_config,
+            )
+        else:
+            embedding_qat_config = QATConfig(embedding_base_config)
         quantize_(
             model,
             embedding_qat_config,
