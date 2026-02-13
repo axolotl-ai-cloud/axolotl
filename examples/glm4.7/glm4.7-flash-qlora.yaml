@@ -2,9 +2,7 @@ base_model: zai-org/GLM-4.7-Flash
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
-cut_cross_entropy: true
 
-load_in_8bit: false
 load_in_4bit: true
 
 datasets:
@@ -18,10 +16,7 @@ datasets:
 val_set_size: 0.0
 output_dir: ./outputs/out
 
-
-
 adapter: qlora
-save_safetensors: true
 
 sequence_len: 32768
 sample_packing: true
@@ -48,13 +43,11 @@ gradient_accumulation_steps: 4
 micro_batch_size: 1
 num_epochs: 1
 optimizer: adamw_torch_fused
-lr_scheduler: rex
-learning_rate: 0.00001
+lr_scheduler: cosine
+learning_rate: 0.0001
 max_grad_norm: 1.0
 
 bf16: auto
-
-wandb_project: glm-test
 
 resume_from_checkpoint:
 logging_steps: 1
@@ -69,4 +62,4 @@ gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
 
-deepspeed: ./deepspeed_configs/zero2.json
+deepspeed:
