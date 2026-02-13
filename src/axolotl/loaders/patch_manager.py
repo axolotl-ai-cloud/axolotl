@@ -100,7 +100,6 @@ class PatchManager:
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
         self._apply_model_specific_patches()
-        self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
         self._apply_gradient_checkpointing_patches()
         self._patch_attention()
@@ -234,17 +233,6 @@ class PatchManager:
             )
 
             patch_kimi_model()
-
-    def _apply_fp8_patches(self):
-        """Apply patches for FP8 support."""
-        if self.cfg.fp8:
-            from axolotl.monkeypatch.trainer_accelerator_args import (
-                patch_create_accelerate_code_for_fp8,
-            )
-
-            patch_create_accelerate_code_for_fp8(
-                self.cfg.fp8_enable_fsdp_float8_all_gather
-            )
 
     def _apply_flash_attention_peft_patches(self):
         """Apply patches for Flash Attention with PEFT."""

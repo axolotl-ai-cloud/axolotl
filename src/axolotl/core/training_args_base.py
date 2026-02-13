@@ -263,3 +263,13 @@ class AxolotlTrainingMixins:
     dion_rank_multiple_of: int | None = field(
         default=None,
     )
+
+    fp8: bool | None = field(
+        default=None,
+        metadata={"help": "Whether to use FP8 precision for training"},
+    )
+
+    enable_fsdp_float8_all_gather: bool | None = field(
+        default=None,
+        metadata={"help": "Whether to use FSDP with FP8 precision for all_gather"},
+    )

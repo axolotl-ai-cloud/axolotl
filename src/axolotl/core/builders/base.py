@@ -258,6 +258,11 @@ class TrainerBuilderBase(abc.ABC):
             bf16 = bf16 if bf16 is not None else False
             training_args_kwargs["bf16"] = bf16
 
+        if self.cfg.fp8:
+            training_args_kwargs["fp8"] = True
+            if self.cfg.fp8_enable_fsdp_float8_all_gather:
+                training_args_kwargs["enable_fsdp_float8_all_gather:"] = True
+
     def _configure_scheduler(self, training_args_kwargs: dict):
         if self.cfg.lr_scheduler in ["one_cycle", "rex"]:
             training_args_kwargs["lr_scheduler_type"] = "cosine"

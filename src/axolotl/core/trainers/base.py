@@ -584,11 +584,9 @@ class AxolotlTrainer(
 
         super().create_accelerator_and_postprocess()
 
-    def additional_accelerator_args(
-        self, fp8: bool = False, enable_fsdp_float8_all_gather: bool = False, **kwargs
-    ) -> dict[str, Any]:
-        ret_kwargs = {}
-        if fp8:
+    def build_fp8_accelerator_args(self) -> dict[str, Any]:
+        args = {}
+        if self.args.fp8:
             from accelerate.utils import AORecipeKwargs
             from torchao.float8 import Float8LinearConfig
 
@@ -596,15 +594,22 @@ class AxolotlTrainer(
             # scaling strategy. See more details here:
             # https://github.com/pytorch/ao/tree/main/torchao/float8.
             config = Float8LinearConfig(
-                enable_fsdp_float8_all_gather=enable_fsdp_float8_all_gather,
-                force_recompute_fp8_weight_in_bwd=enable_fsdp_float8_all_gather is True,
+                enable_fsdp_float8_all_gather=self.args.enable_fsdp_float8_all_gather,
+                force_recompute_fp8_weight_in_bwd=self.args.enable_fsdp_float8_all_gather
+                is True,
             )
 
-            ret_kwargs["mixed_precision"] = "fp8"
-            ret_kwargs["kwargs_handlers"] = [AORecipeKwargs(config=config)]  # type: ignore
+            args["mixed_precision"] = "fp8"
+            args["kwargs_handlers"] = [AORecipeKwargs(config=config)]  # type: ignore
             os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
 
-        return ret_kwargs
+        return args
+
+    def build_accelerator_args(self, **kwargs) -> dict[str, Any]:
+        args = super().build_accelerator_args(**kwargs)
+        fp8_args = self.build_fp8_accelerator_args()
+        args.update(fp8_args)
+        return args
 
     def log(self, logs: dict[str, float], start_time: float | None = None) -> None:
         """
