@@ -77,3 +77,31 @@ class Gemma3TextFromMultimodalPlugin(BasePlugin):
                 "Gemma3TextFromMultimodalPlugin enabled. "
                 "Please disable one of the two."
             )
+
+    def post_train(self, cfg, model):
+        """Log merge command after training completes."""
+        if cfg.adapter:
+            LOG.info(
+                "Adapter training detected. To reconstruct the multimodal checkpoint:\n"
+                "  1. Merge adapter weights into the text-only base model:\n"
+                "       axolotl merge_lora <your_config.yml>\n"
+                "  2. Then merge the resulting full model back into the multimodal checkpoint:\n"
+                "       python scripts/merge_gemma3_multimodal_weights.py \\\n"
+                "         --original-model %s \\\n"
+                "         --trained-model %s/merged \\\n"
+                "         --output-dir %s/multi-modal/merged",
+                cfg.base_model,
+                cfg.output_dir,
+                cfg.output_dir,
+            )
+        else:
+            LOG.info(
+                "To merge trained weights back into the multimodal checkpoint, run:\n"
+                "  python scripts/merge_gemma3_multimodal_weights.py \\\n"
+                "    --original-model %s \\\n"
+                "    --trained-model %s \\\n"
+                "    --output-dir %s/multi-modal/merged",
+                cfg.base_model,
+                cfg.output_dir,
+                cfg.output_dir,
+            )
