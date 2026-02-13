@@ -26,9 +26,10 @@ dataset_prepared_path: ./outputs/dataset_prepared
 sequence_len: 8192
 flash_attention: true
 
-activation_dtype: mxfp4
-weight_dtype: mxfp4
-group_size: 32
+qat:
+  activation_dtype: mxfp4
+  weight_dtype: mxfp4
+  group_size: 32
 
 wandb_project:
 wandb_entity:
