@@ -24,7 +24,7 @@ use_kernels: true
 use_scattermoe: true
 ```
 
-**Important:** Do not set `experts_implementation` in your config as they are incompatible.
+**Important:** Setting `experts_implementation` is incompatible with `use_scattermoe`.
 
 ## How It Works
 
