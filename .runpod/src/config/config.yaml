@@ -39,7 +39,6 @@
 #     type: # linear | dynamic
 #     factor: # float
 
-
 # # Whether you are training a 4-bit GPTQ quantized model
 # gptq: true
 # gptq_groupsize: 128 # group size
@@ -107,7 +106,7 @@
 # push_dataset_to_hub: # repo path
 # # The maximum number of processes to use while preprocessing your input dataset. This defaults to `os.cpu_count()`
 # # if not set.
-# dataset_processes: # defaults to os.cpu_count() if not set
+# dataset_num_proc: # defaults to os.cpu_count() if not set
 # # push checkpoints to hub
 # hub_model_id: # repo path to push finetuned model
 # # how to push checkpoints to hub
@@ -349,8 +348,6 @@
 # # Allow overwrite yml config using from cli
 # strict:
 
-
-
 base_model: ${BASE_MODEL}
 base_model_ignore_patterns: ${BASE_MODEL_IGNORE_PATTERNS}
 base_model_config: ${BASE_MODEL_CONFIG}
@@ -409,7 +406,7 @@ chat_template_jinja: ${CHAT_TEMPLATE_JINJA}
 default_system_message: ${DEFAULT_SYSTEM_MESSAGE}
 dataset_prepared_path: ${DATASET_PREPARED_PATH}
 push_dataset_to_hub: ${PUSH_DATASET_TO_HUB}
-dataset_processes: ${DATASET_PROCESSES}
+dataset_num_proc: ${DATASET_NUM_PROC}
 dataset_keep_in_memory: ${DATASET_KEEP_IN_MEMORY}
 hub_model_id: ${HUB_MODEL_ID}
 hub_strategy: ${HUB_STRATEGY}

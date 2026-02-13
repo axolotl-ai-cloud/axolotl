@@ -719,6 +719,13 @@ class AxolotlTrainer(
         output_dir = output_dir if output_dir is not None else self.args.output_dir
         os.makedirs(output_dir, exist_ok=True)
         LOG.info(f"Saving model checkpoint to {output_dir}")
+        if state_dict is None:
+            state_dict = self.accelerator.get_state_dict(self.model)
+        if state_dict is not None:
+            state_dict = {
+                k: v.clone() if isinstance(v, torch.Tensor) else v
+                for k, v in state_dict.items()
+            }
         supported_classes = (
             (PreTrainedModel,)
             if not is_peft_available()

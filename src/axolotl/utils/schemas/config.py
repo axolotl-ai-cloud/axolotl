@@ -609,6 +609,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "Whether to use bettertransformers"},
     )
+    sage_attention: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use SageAttention https://github.com/thu-ml/SageAttention"
+        },
+    )
 
     eager_attention: bool | None = None
 
@@ -1120,6 +1126,27 @@ class AxolotlInputConfig(
                     )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_sageattn_wo_sample_packing(cls, data):
+        if (not data.get("sample_packing", False)) and data.get("sage_attention"):
+            if not data.get("pad_to_sequence_len", False):
+                LOG.warning(
+                    "We recommend turning on `pad_to_sequence_len` for SageAttention without packing."
+                    "This is because there has been signs that the loss explodes after a few steps."
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_sageattn_fft(cls, data):
+        if (not data.get("adapter", False)) and data.get("sage_attention"):
+            LOG.warning(
+                "We found loss to drop to 0 with SageAttention full finetuning."
+                "Please observe the loss, otherwise switch to LoRA/QLoRA or another attention method."
+            )
+        return data
+
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """Wrapper to valdiate GPU capabilities with the configured options"""
@@ -1178,6 +1205,21 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="before")
     @classmethod
+    def check_compute_capability_w_sageattn(cls, data):
+        if (
+            data.get("sage_attention")
+            and data.get("capabilities")
+            and data.get("capabilities").get("compute_capability")
+            not in ["sm_80", "sm_86", "sm_89", "sm_90", "sm_120"]
+        ):
+            raise ValueError(
+                "SageAttention supports compute capability between sm_80 and sm_120. "
+                "Please use a different attention implementation."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_multigpu_unsloth(cls, data):
         if (
             data.get("unsloth_lora_mlp")
@@ -1227,6 +1269,10 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 or data.get("adapter") == "lora"
                 and data.get("load_in_8bit")
             ):
+                return data
+
+            # Skip if trust_remote_code is enabled, as lora kernels are not compatible
+            if data.get("trust_remote_code"):
                 return data
 
             # Skip if dropout is not 0, as auto enabling it would just disable it during runtime patch checks

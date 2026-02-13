@@ -166,9 +166,10 @@ class AttentionValidationMixin:
         fields = (
             "xformers_attention",
             "sdp_attention",
-            "s2_attention",
+            # "s2_attention",  # requires both FA and this to be enabled
             "flash_attention",
             "flex_attention",
+            "sage_attention",
         )
         non_empty_count = sum(1 for field in fields if data.get(field))
 
@@ -185,9 +186,10 @@ class AttentionValidationMixin:
             and not data.get("sdp_attention")
             and not data.get("flex_attention")
             and not data.get("xformers_attention")
+            and not data.get("sage_attention")
         ):
             LOG.warning(
-                "sample_packing without flash, sdp, xformers or flex attention does not handle cross sample decontamination."
+                "sample_packing without flash, sdp, xformers, sage, or flex attention does not handle cross sample decontamination."
             )
         return data
 
@@ -685,6 +687,21 @@ class LoRAValidationMixin:
             raise ValueError(
                 "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
                 "compatible with RL at the moment."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_lora_kernels_trust_remote_code(cls, data):
+        if (
+            data.get("lora_mlp_kernel")
+            or data.get("lora_qkv_kernel")
+            or data.get("lora_o_kernel")
+        ) and data.get("trust_remote_code"):
+            raise ValueError(
+                "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
+                "compatible with trust_remote_code. Please disable trust_remote_code "
+                "or explicitly set lora_*_kernel to false."
             )
         return data
 

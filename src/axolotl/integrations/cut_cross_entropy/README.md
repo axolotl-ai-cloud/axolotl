@@ -19,7 +19,7 @@ python scripts/cutcrossentropy_install.py | sh
 
 - If you are installing from pip
 ```bash
-pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@f4b5712"
+pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@0d4ce4b"
 ```
 
 ## Usage
@@ -54,8 +54,8 @@ plugins:
 - gpt_oss
 - granite
 - granitemoe
-- granitemoeshared
 - granitemoehybrid
+- granitemoeshared
 - hunyuan_v1_dense
 - hunyuan_v1_moe
 - internvl
@@ -80,16 +80,17 @@ plugins:
 - phi3
 - phi4_multimodal
 - qwen2
-- qwen2_vl
 - qwen2_moe
+- qwen2_vl
 - qwen2_5_vl
 - qwen3
 - qwen3_moe
+- qwen3_next
 - qwen3_vl
 - qwen3_vl_moe
-- qwen3_next
-- smollm3
 - seed_oss
+- smollm3
+- step3p5
 - voxtral
 
 ## Citation
