@@ -67,7 +67,7 @@ def find_all_linear_names(model):
     return list(lora_module_names)
 
 
-def find_moe_expert_param_names(model):
+def find_moe_expert_param_names(model: PreTrainedModel) -> list[str]:
     """Detect 3D+ nn.Parameter tensors for PEFT target_parameters.
 
     In transformers v5, MoE models store expert weights as fused 3D nn.Parameter
