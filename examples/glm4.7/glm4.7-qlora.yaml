@@ -41,8 +41,8 @@ lora_target_modules:
   - o_proj
 
 lora_mlp_kernel: true
-lora_qkv_kernel: false
-lora_o_kernel: false
+lora_qkv_kernel: true
+lora_o_kernel: true
 
 gradient_accumulation_steps: 4
 micro_batch_size: 1
