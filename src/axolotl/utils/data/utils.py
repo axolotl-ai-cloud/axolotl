@@ -15,7 +15,7 @@ from datasets import Dataset, IterableDataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers.utils import get_dataset_lengths
-from axolotl.utils.trainer import check_max_seq_length
+from axolotl.utils.trainer import filter_sequences_by_length
 
 LOG = get_logger(__name__)
 
@@ -266,24 +266,33 @@ def _truncate_long_sequences(
     return dataset
 
 
-def _drop_long_sequences(
-    dataset: Dataset, max_len: int, raise_on_long: bool, filter_kwargs: dict
+def _drop_outside_range(
+    dataset: Dataset,
+    max_len: int,
+    min_len: int,
+    raise_on_long: bool,
+    filter_kwargs: dict,
 ) -> tuple[Dataset, int]:
-    """Drop sequences longer than max_len. Returns (dataset, num_dropped)."""
+    """Drop sequences outside valid length range [min_len, max_len].
+
+    Returns (dataset, num_dropped)."""
     prior_len = len(dataset) if hasattr(dataset, "__len__") else None
 
     desc_kwargs = {}
     if filter_kwargs:
         action = (
-            "Checking Sequence Lengths" if raise_on_long else "Dropping Long Sequences"
+            "Checking Sequence Lengths"
+            if raise_on_long
+            else "Dropping Invalid Sequences"
         )
-        desc_kwargs["desc"] = f"{action} (>{max_len})"
+        desc_kwargs["desc"] = f"{action} (<{min_len} or >{max_len})"
 
     dataset = dataset.filter(
         functools.partial(
-            check_max_seq_length,
+            filter_sequences_by_length,
             sequence_len=max_len,
-            raise_on_long=raise_on_long,
+            min_sequence_len=min_len,
+            raise_on_drop=raise_on_long,
         ),
         batched=True,
         **filter_kwargs,
@@ -294,7 +303,10 @@ def _drop_long_sequences(
     if not raise_on_long and prior_len:
         dropped = prior_len - len(dataset)
         if dropped > 0:
-            LOG.info(f"Dropped {dropped} long sequences (>{max_len} tokens)")
+            LOG.info(
+                f"Dropped {dropped} sequences outside valid range "
+                f"([{min_len}, {max_len}])"
+            )
 
     return dataset, dropped
 
@@ -326,16 +338,14 @@ def handle_long_seq_in_dataset(
     # Setup kwargs
     filter_kwargs = _build_filter_kwargs(dataset, cfg)
 
-    # Filter short sequences
-    dataset, _ = _filter_short_sequences(dataset, cfg.min_sample_len, filter_kwargs)
-
-    # Handle long sequences based on strategy
+    # Handle sequences based on strategy
     if excess_length_strategy == "truncate":
+        dataset, _ = _filter_short_sequences(dataset, cfg.min_sample_len, filter_kwargs)
         dataset = _truncate_long_sequences(dataset, sequence_len, filter_kwargs)
     else:
         raise_on_long = excess_length_strategy == "raise"
-        dataset, _ = _drop_long_sequences(
-            dataset, sequence_len, raise_on_long, filter_kwargs
+        dataset, _ = _drop_outside_range(
+            dataset, sequence_len, cfg.min_sample_len, raise_on_long, filter_kwargs
         )
 
     return dataset
