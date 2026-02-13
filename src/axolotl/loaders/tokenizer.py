@@ -28,7 +28,10 @@ PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 def modify_tokenizer_files(
-    tokenizer_path: str, token_mappings: dict[int, str], output_dir: str, revision: str = "main"
+    tokenizer_path: str,
+    token_mappings: dict[int, str],
+    output_dir: str,
+    revision: str = "main",
 ) -> str:
     """
     Modify tokenizer files to replace added_tokens strings, save to output directory,
@@ -54,7 +57,9 @@ def modify_tokenizer_files(
 
     if is_local_main_process():
         # Load the tokenizer
-        temp_tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, use_fast=True, revision=revision)
+        temp_tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer_path, use_fast=True, revision=revision
+        )
 
         # Save the tokenizer to the output directory
         temp_tokenizer.save_pretrained(tokenizer_dir)
@@ -167,8 +172,11 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     # Apply token string overrides if specified
     if cfg.added_tokens_overrides:
         # Modify tokenizer files and get path to modified tokenizer
+        modify_kwargs = {"output_dir": cfg.output_dir}
+        if cfg.revision_of_model:
+            modify_kwargs["revision"] = cfg.revision_of_model
         tokenizer_path = modify_tokenizer_files(
-            tokenizer_path, cfg.added_tokens_overrides, output_dir=cfg.output_dir, revision=cfg.revision_of_model
+            tokenizer_path, cfg.added_tokens_overrides, **modify_kwargs
         )
 
     tokenizer = tokenizer_cls.from_pretrained(
