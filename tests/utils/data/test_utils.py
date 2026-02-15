@@ -378,13 +378,8 @@ class TestHandleLongSeqInDataset(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["input_ids"], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 
-    @unittest.mock.patch("axolotl.utils.data.utils._log_dataset_stats")
-    def test_empty_dataset(self, _mock_log):
-        """Test that an empty dataset is handled gracefully.
-
-        Note: _log_dataset_stats is patched out because it crashes on empty
-        datasets due to np.vectorize not supporting size-0 inputs.
-        """
+    def test_empty_dataset(self):
+        """Test that an empty dataset is handled gracefully"""
         dataset = Dataset.from_dict({"input_ids": []})
 
         cfg = DictDefault(

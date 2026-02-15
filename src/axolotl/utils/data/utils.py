@@ -207,7 +207,7 @@ def _should_skip_processing(dataset: Dataset) -> bool:
 
 def _log_dataset_stats(dataset: Dataset) -> None:
     """Log min/max sequence lengths for debugging."""
-    with contextlib.suppress(AttributeError):
+    with contextlib.suppress(AttributeError, ValueError):
         ds_lengths = get_dataset_lengths(dataset, from_arrow=True)
         LOG.info(f"min_input_len: {np.min(ds_lengths)}")
         LOG.info(f"max_input_len: {np.max(ds_lengths)}")
