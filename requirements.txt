@@ -12,7 +12,7 @@ packaging==26.0
 huggingface_hub>=1.1.7
 peft>=0.18.1
 tokenizers>=0.22.1
-transformers==5.1.0
+transformers>=5.0.0,<6
 accelerate==1.12.0
 datasets==4.5.0
 deepspeed>=0.18.3
@@ -72,4 +72,4 @@ axolotl-contribs-mit==0.0.6
 # telemetry
 posthog==6.7.11
 
-mistral-common==1.8.8
+mistral-common>=1.9.1
