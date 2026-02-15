@@ -6,7 +6,18 @@ LOG = get_logger(__name__)
 
 
 class KernelsArgs(BaseModel):
-    use_scattermoe: bool | None = True
+    use_scattermoe: bool | None = None
+    use_sonicmoe: bool | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_mutually_exclusive(cls, data):
+        if data.get("use_scattermoe") and data.get("use_sonicmoe"):
+            raise ValueError(
+                "Cannot use both ScatterMoE and SonicMoE simultaneously. "
+                "Please set only one of `use_scattermoe` or `use_sonicmoe` to true."
+            )
+        return data
 
     @model_validator(mode="before")
     @classmethod

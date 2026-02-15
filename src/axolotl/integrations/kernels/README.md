@@ -21,10 +21,15 @@ plugins:
   - axolotl.integrations.kernels.KernelsPlugin
 
 use_kernels: true
+
+# Choose one kernel only
 use_scattermoe: true
+# pip install git+https://github.com/Dao-AILab/sonic-moe@3e3f36eeefc324b10042db22921bfe9ab53ed2d1
+use_sonicmoe: true
+
 ```
 
-**Important:** Setting `experts_implementation` is incompatible with `use_scattermoe`.
+**Important:** Setting `experts_implementation` is incompatible with custom kernel options.
 
 ## How It Works
 
