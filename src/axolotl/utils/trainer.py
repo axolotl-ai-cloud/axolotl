@@ -247,7 +247,7 @@ def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2, raise_on_drop=F
 
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
-    drop_attn_mask = cfg.model_config_type in ["mamba", "gemma3"]
+    drop_attn_mask = cfg.model_config_type in ["mamba", "gemma3", "gemma3_text"]
     if drop_attn_mask:
         LOG.info("dropping attention_mask column")
         train_dataset = train_dataset.remove_columns("attention_mask")
