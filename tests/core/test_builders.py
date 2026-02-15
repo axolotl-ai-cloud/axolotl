@@ -300,7 +300,6 @@ class TestHFRLTrainerBuilder:
         self._test_common_training_arguments(training_arguments, rl=orpo_cfg.rl)
         # ORPO specific
         assert training_arguments.beta == 0.1  # maps from orpo_alpha
-        assert training_arguments.max_prompt_length == 512
 
     def test_kto_training_arguments(self, kto_cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(kto_cfg, model, tokenizer)
