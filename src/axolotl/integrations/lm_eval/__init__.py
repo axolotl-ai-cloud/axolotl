@@ -5,7 +5,7 @@ Module for the Plugin for LM Eval Harness
 import subprocess  # nosec
 
 from axolotl.integrations.base import BasePlugin
-from axolotl.integrations.lm_eval.cli import build_lm_eval_command
+from axolotl.integrations.lm_eval.cli import build_lm_eval_command, get_model_path
 
 from .args import LMEvalArgs as LMEvalArgs
 
@@ -29,7 +29,7 @@ class LMEvalPlugin(BasePlugin):
                 wandb_project=cfg.wandb_project,
                 wandb_entity=cfg.wandb_entity,
                 wandb_name=cfg.wandb_name,
-                model=cfg.lm_eval_model or cfg.hub_model_id,
+                model=get_model_path(cfg),
             ):
                 subprocess.run(  # nosec
                     lm_eval_args,

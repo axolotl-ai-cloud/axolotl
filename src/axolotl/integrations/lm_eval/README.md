@@ -6,6 +6,12 @@ See https://github.com/EleutherAI/lm-evaluation-harness
 
 ## Usage
 
+There are two ways to use the LM Eval integration:
+
+### 1. Post-Training Evaluation
+
+When training with the plugin enabled, evaluation runs automatically after training completes:
+
 ```yaml
 plugins:
   - axolotl.integrations.lm_eval.LMEvalPlugin
@@ -16,8 +22,49 @@ lm_eval_tasks:
   - arc_easy
 
 lm_eval_batch_size: # Batch size for evaluation
-output_dir: # Directory to save evaluation results
+
+# Directory to save evaluation results.
+# The final model is loaded from this directory
+# unless specified otherwise (see below)
+output_dir:
 ```
+
+Run training as usual:
+```bash
+axolotl train config.yml
+```
+
+### 2. Standalone CLI Evaluation
+
+Evaluate any model directly without training:
+
+```yaml
+lm_eval_model: meta-llama/Llama-2-7b-hf
+
+plugins:
+  - axolotl.integrations.lm_eval.LMEvalPlugin
+
+lm_eval_tasks:
+  - gsm8k
+  - hellaswag
+  - arc_easy
+
+lm_eval_batch_size: 8
+output_dir: ./outputs
+```
+
+Run evaluation:
+```bash
+axolotl lm-eval config.yml
+```
+
+## Model Selection Priority
+
+The model to evaluate is selected in the following priority order:
+
+1. **`lm_eval_model`** - Explicit model path or HuggingFace repo (highest priority)
+2. **`hub_model_id`** - Trained model pushed to HuggingFace Hub
+3. **`output_dir`** - Local checkpoint directory containing trained model weights
 
 ## Citation
 
