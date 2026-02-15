@@ -605,7 +605,7 @@ class AxolotlTrainer(
 
         return args
 
-    def build_accelerator_args(self, **kwargs) -> dict[str, Any]:
+    def _build_accelerator_args(self, **kwargs) -> dict[str, Any]:
         args = super().build_accelerator_args(**kwargs)
         fp8_args = self.build_fp8_accelerator_args()
         args.update(fp8_args)
