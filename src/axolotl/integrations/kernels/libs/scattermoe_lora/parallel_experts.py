@@ -99,7 +99,6 @@ class ParallelLinear(torch.autograd.Function):
             k = ctx.k
             grouped_in = ctx.grouped_in
             grouped_out = ctx.grouped_out
-            # print("backward")
 
             if gates is not None:
                 # calculate gates gradient
@@ -158,7 +157,6 @@ class ParallelLinear(torch.autograd.Function):
                 d_input = d_expanded_input.view(
                     x.size(0), k, d_expanded_input.size(-1)
                 ).sum(-2)
-        # print("backward end.")
         return (
             # x, expert_weights,
             d_input,

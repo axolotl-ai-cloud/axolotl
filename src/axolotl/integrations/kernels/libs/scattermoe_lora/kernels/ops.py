@@ -223,9 +223,9 @@ def scatter2scatter_compileable(
 
     if b is None:
         b = None
-        stride_be = stride_bk = 0
+        stride_be = stride_bn = 0
     else:
-        stride_be, stride_bk = b.stride()
+        stride_be, stride_bn = b.stride()
 
     _scatter2scatter[grid](
         # X_ptr, stride_xm, stride_xk,
@@ -241,10 +241,10 @@ def scatter2scatter_compileable(
         output,
         output.stride(0),
         output.stride(1),
-        # B_ptr, stride_be, stride_bk
+        # B_ptr, stride_be, stride_bn
         b,
         stride_be,
-        stride_bk,
+        stride_bn,
         grouped_idx_ptr=sorted_scattered_idxs,
         expert_idxs_ptr=sorted_expert_idxs,
         # block_start_idx_ptr=padded_block_idxs,
@@ -280,7 +280,7 @@ def group_bwd_W(DY, X, expert_offsets, E, has_bias=False):
     return DW, Db
 
 
-@torch.library.custom_op("scattermoe::groupXtY", mutates_args={"DW"})
+@torch.library.custom_op("scattermoe::groupXtY", mutates_args={"DW", "Db"})
 def groupXtY_compileable(
     E: int,
     DW: torch.Tensor,
@@ -560,7 +560,7 @@ def group_compileable(
     K: int,
     N: int,
     Y: torch.Tensor,
-    coeff: torch.Tensor,
+    coeff: Optional[torch.Tensor],
     has_coeff: bool,
     fan_out: int,
     sorted_expert_idxs: torch.Tensor,

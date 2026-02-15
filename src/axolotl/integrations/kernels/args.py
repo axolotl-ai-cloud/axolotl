@@ -42,6 +42,7 @@ class KernelsArgs(BaseModel):
                 LOG.warning(
                     "Disabling lora_mlp_kernel when using scattermoe due to compatibility issues."
                 )
+                data["lora_mlp_kernel"] = False
             data["mlp_kernel"] = False
 
         return data

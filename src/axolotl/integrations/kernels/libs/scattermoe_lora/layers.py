@@ -237,8 +237,6 @@ class ScatterMoEGatedMLP(nn.Module):
         Returns:
             Tensor:
                 Output tensor.
-            Tensor:
-                Router logits.
         """
         bsz, length, emb_size = layer_input.size()
         layer_input = layer_input.reshape(-1, emb_size)

@@ -91,7 +91,7 @@ class ParallelExperts(nn.Module):
             expert_offsets,
             lora_A=self._lora_A,
             lora_B=self._lora_B,
-            scaling=self._lora_scaling or 1.0,
+            scaling=self._lora_scaling if self._lora_scaling is not None else 1.0,
             expert_biases=self.bias,
             gates=gates,
             grouped_in=grouped_in,
