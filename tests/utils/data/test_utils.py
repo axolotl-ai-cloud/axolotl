@@ -3,6 +3,7 @@ Unit tests for data utility functions
 """
 
 import unittest
+from unittest.mock import MagicMock
 
 from datasets import Dataset
 
@@ -33,7 +34,7 @@ class TestHandleLongSeqInDataset(unittest.TestCase):
             {
                 "excess_length_strategy": "drop",
                 "min_sample_len": 2,
-                "dataset_num_proc": 1,
+                "dataset_num_proc": None,
                 "is_preprocess": False,
             }
         )
@@ -60,7 +61,7 @@ class TestHandleLongSeqInDataset(unittest.TestCase):
         cfg = DictDefault(
             {
                 "min_sample_len": 2,
-                "dataset_num_proc": 1,
+                "dataset_num_proc": None,
                 "is_preprocess": False,
             }
         )
@@ -98,7 +99,7 @@ class TestHandleLongSeqInDataset(unittest.TestCase):
             {
                 "excess_length_strategy": "truncate",
                 "min_sample_len": 2,
-                "dataset_num_proc": 1,
+                "dataset_num_proc": None,
                 "is_preprocess": False,
             }
         )
@@ -136,7 +137,7 @@ class TestHandleLongSeqInDataset(unittest.TestCase):
             {
                 "excess_length_strategy": "truncate",
                 "min_sample_len": 2,
-                "dataset_num_proc": 1,
+                "dataset_num_proc": None,
                 "is_preprocess": False,
             }
         )
@@ -170,7 +171,7 @@ class TestHandleLongSeqInDataset(unittest.TestCase):
             {
                 "excess_length_strategy": "raise",
                 "min_sample_len": 2,
-                "dataset_num_proc": 1,
+                "dataset_num_proc": None,
                 "is_preprocess": False,
             }
         )
@@ -195,7 +196,7 @@ class TestHandleLongSeqInDataset(unittest.TestCase):
             {
                 "excess_length_strategy": "drop",
                 "min_sample_len": 3,
-                "dataset_num_proc": 1,
+                "dataset_num_proc": None,
                 "is_preprocess": False,
             }
         )
@@ -262,7 +263,7 @@ class TestHandleLongSeqInDataset(unittest.TestCase):
             {
                 "excess_length_strategy": "truncate",
                 "min_sample_len": 2,
-                "dataset_num_proc": 1,
+                "dataset_num_proc": None,
                 "is_preprocess": False,
             }
         )
@@ -290,7 +291,7 @@ class TestHandleLongSeqInDataset(unittest.TestCase):
             {
                 "excess_length_strategy": "TRUNCATE",  # uppercase
                 "min_sample_len": 2,
-                "dataset_num_proc": 1,
+                "dataset_num_proc": None,
                 "is_preprocess": False,
             }
         )
@@ -299,6 +300,250 @@ class TestHandleLongSeqInDataset(unittest.TestCase):
 
         # Should still truncate
         self.assertEqual(len(result[0]["input_ids"]), 10)
+
+    def test_raise_strategy_silently_drops_short_sequences(self):
+        """Test that 'raise' strategy drops short sequences without raising"""
+        dataset = Dataset.from_dict(
+            {
+                "input_ids": [
+                    [1],  # length 1 - too short, should be dropped silently
+                    [1, 2, 3, 4, 5],  # length 5 - keep
+                ]
+            }
+        )
+
+        cfg = DictDefault(
+            {
+                "excess_length_strategy": "raise",
+                "min_sample_len": 3,
+                "dataset_num_proc": None,
+                "is_preprocess": False,
+            }
+        )
+
+        # Should NOT raise, just silently drop the short sequence
+        result = handle_long_seq_in_dataset(dataset, sequence_len=10, cfg=cfg)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(len(result[0]["input_ids"]), 5)
+
+    def test_drop_boundary_sequence_equal_to_sequence_len(self):
+        """Test that drop strategy keeps sequences with length exactly equal to sequence_len"""
+        dataset = Dataset.from_dict(
+            {
+                "input_ids": [
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],  # length 10 == sequence_len
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],  # length 11 > sequence_len
+                ]
+            }
+        )
+
+        cfg = DictDefault(
+            {
+                "excess_length_strategy": "drop",
+                "min_sample_len": 2,
+                "dataset_num_proc": None,
+                "is_preprocess": False,
+            }
+        )
+
+        result = handle_long_seq_in_dataset(dataset, sequence_len=10, cfg=cfg)
+
+        # Exactly equal should be kept, one over should be dropped
+        self.assertEqual(len(result), 1)
+        self.assertEqual(len(result[0]["input_ids"]), 10)
+
+    def test_truncate_boundary_sequence_equal_to_sequence_len(self):
+        """Test that truncate strategy leaves sequences with length exactly equal to sequence_len unchanged"""
+        dataset = Dataset.from_dict(
+            {
+                "input_ids": [
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],  # length 10 == sequence_len
+                ]
+            }
+        )
+
+        cfg = DictDefault(
+            {
+                "excess_length_strategy": "truncate",
+                "min_sample_len": 2,
+                "dataset_num_proc": None,
+                "is_preprocess": False,
+            }
+        )
+
+        result = handle_long_seq_in_dataset(dataset, sequence_len=10, cfg=cfg)
+
+        # Should be unchanged - not truncated
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["input_ids"], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+
+    @unittest.mock.patch("axolotl.utils.data.utils._log_dataset_stats")
+    def test_empty_dataset(self, _mock_log):
+        """Test that an empty dataset is handled gracefully.
+
+        Note: _log_dataset_stats is patched out because it crashes on empty
+        datasets due to np.vectorize not supporting size-0 inputs.
+        """
+        dataset = Dataset.from_dict({"input_ids": []})
+
+        cfg = DictDefault(
+            {
+                "excess_length_strategy": "drop",
+                "min_sample_len": 2,
+                "dataset_num_proc": None,
+                "is_preprocess": False,
+            }
+        )
+
+        result = handle_long_seq_in_dataset(dataset, sequence_len=10, cfg=cfg)
+
+        self.assertEqual(len(result), 0)
+
+    def test_all_sequences_dropped_returns_empty_dataset(self):
+        """Test that dropping all sequences results in an empty dataset"""
+        dataset = Dataset.from_dict(
+            {
+                "input_ids": [
+                    [1],  # too short
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],  # too long
+                ]
+            }
+        )
+
+        cfg = DictDefault(
+            {
+                "excess_length_strategy": "drop",
+                "min_sample_len": 5,
+                "dataset_num_proc": None,
+                "is_preprocess": False,
+            }
+        )
+
+        result = handle_long_seq_in_dataset(dataset, sequence_len=10, cfg=cfg)
+
+        self.assertEqual(len(result), 0)
+
+    def test_iterable_dataset_skips_processing(self):
+        """Test that streaming datasets (column_names is None) are returned unchanged.
+
+        The skip check in _should_skip_processing triggers when column_names is
+        None, which happens with true streaming datasets loaded via
+        load_dataset(..., streaming=True).
+        """
+        mock_dataset = MagicMock()
+        mock_dataset.column_names = None
+
+        cfg = DictDefault(
+            {
+                "excess_length_strategy": "drop",
+                "min_sample_len": 2,
+                "dataset_num_proc": None,
+                "is_preprocess": False,
+            }
+        )
+
+        result = handle_long_seq_in_dataset(mock_dataset, sequence_len=10, cfg=cfg)
+
+        # Should be returned unchanged (same object)
+        self.assertIs(result, mock_dataset)
+
+    def test_truncate_with_partial_auxiliary_fields(self):
+        """Test truncation when only some auxiliary fields are present"""
+        dataset = Dataset.from_dict(
+            {
+                "input_ids": [
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                ],
+                "labels": [
+                    [-100, -100, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                ],
+                # No attention_mask or position_ids
+            }
+        )
+
+        cfg = DictDefault(
+            {
+                "excess_length_strategy": "truncate",
+                "min_sample_len": 2,
+                "dataset_num_proc": None,
+                "is_preprocess": False,
+            }
+        )
+
+        result = handle_long_seq_in_dataset(dataset, sequence_len=10, cfg=cfg)
+
+        self.assertEqual(len(result[0]["input_ids"]), 10)
+        self.assertEqual(len(result[0]["labels"]), 10)
+        self.assertEqual(result[0]["input_ids"], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+        self.assertEqual(result[0]["labels"], [-100, -100, 3, 4, 5, 6, 7, 8, 9, 10])
+        # Confirm no extra columns were introduced
+        self.assertListEqual(sorted(result.column_names), ["input_ids", "labels"])
+
+    def test_min_sample_len_defaults_to_two_when_not_set(self):
+        """Test that min_sample_len defaults to 2 when not specified in config"""
+        dataset = Dataset.from_dict(
+            {
+                "input_ids": [
+                    [1],  # length 1 - should be dropped (< default 2)
+                    [1, 2],  # length 2 - should be kept (>= default 2)
+                    [1, 2, 3],  # length 3 - should be kept
+                ]
+            }
+        )
+
+        cfg = DictDefault(
+            {
+                "excess_length_strategy": "drop",
+                # min_sample_len not set
+                "dataset_num_proc": None,
+                "is_preprocess": False,
+            }
+        )
+
+        result = handle_long_seq_in_dataset(dataset, sequence_len=10, cfg=cfg)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(len(result[0]["input_ids"]), 2)
+        self.assertEqual(len(result[1]["input_ids"]), 3)
+
+    def test_invalid_strategy_falls_through_to_drop(self):
+        """Test that an unrecognized strategy value falls through to drop behavior"""
+        dataset = Dataset.from_dict(
+            {
+                "input_ids": [
+                    [1, 2, 3],  # keep
+                    [
+                        1,
+                        2,
+                        3,
+                        4,
+                        5,
+                        6,
+                        7,
+                        8,
+                        9,
+                        10,
+                        11,
+                    ],  # length 11 - should be dropped
+                ]
+            }
+        )
+
+        cfg = DictDefault(
+            {
+                "excess_length_strategy": "not_a_real_strategy",
+                "min_sample_len": 2,
+                "dataset_num_proc": None,
+                "is_preprocess": False,
+            }
+        )
+
+        result = handle_long_seq_in_dataset(dataset, sequence_len=10, cfg=cfg)
+
+        # Should behave like 'drop'
+        self.assertEqual(len(result), 1)
+        self.assertEqual(len(result[0]["input_ids"]), 3)
 
 
 if __name__ == "__main__":
