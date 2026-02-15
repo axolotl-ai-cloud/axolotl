@@ -53,15 +53,18 @@ def _single2scatter(
         + K_block[:, None] * stride_wk
         + N_block[None, :] * stride_wn
     )
+    N_mask = N_block < N
     acc = tl.zeros((1, BLOCK_N), dtype=ACC_TYPE)
     for _K_block_id in range(0, tl.cdiv(K, BLOCK_K)):
-        x = tl.load(X_blk_ptrs)
-        w = tl.load(W_blk_ptrs)
+        K_mask = K_block < K
+        x = tl.load(X_blk_ptrs, mask=K_mask[:, None], other=0.0)
+        w = tl.load(W_blk_ptrs, mask=K_mask[:, None] & N_mask[None, :], other=0.0)
         acc += tl.sum(x * w, axis=0)[None, :]
         X_blk_ptrs += BLOCK_K * stride_xk
         W_blk_ptrs += BLOCK_K * stride_wk
+        K_block += BLOCK_K
     Y_blk_ptrs = Y_ptr + out_idx * stride_ym + N_block[None, :] * stride_yn
-    tl.store(Y_blk_ptrs, acc)
+    tl.store(Y_blk_ptrs, acc, mask=N_mask[None, :])
 
 
 def single2scatter(X, W, expert_idxs):
@@ -71,7 +74,7 @@ def single2scatter(X, W, expert_idxs):
     Y = torch.empty((k, ydim), device=X.device, dtype=X.dtype)
     BLOCK_N = 128
     BLOCK_K = 128
-    grid = ydim // BLOCK_N, k
+    grid = triton.cdiv(ydim, BLOCK_N), k
     _single2scatter[grid](
         X,
         X.stride(0),

@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from kernels import (
-    # LayerRepository,
     LocalLayerRepository,
     Mode,
     register_kernel_mapping,
