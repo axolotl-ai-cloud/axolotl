@@ -1,12 +1,9 @@
-from kernels import (
-    LayerRepository,
-    Mode,
-    register_kernel_mapping,
-    replace_kernel_forward_from_hub,
-)
+import importlib
 
 from axolotl.integrations.base import BasePlugin
-from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 class KernelsPlugin(BasePlugin):
@@ -17,8 +14,26 @@ class KernelsPlugin(BasePlugin):
         if cfg.use_scattermoe:
             self._register_kernels()
             self._kernelize_model(cfg.model_config_type)
+        elif cfg.use_sonicmoe:
+            if not importlib.util.find_spec("sonicmoe"):
+                raise RuntimeError(
+                    "SonicMoE is not installed. Install it with "
+                    "`pip install git+https://github.com/Dao-AILab/sonic-moe@3e3f36eeefc324b10042db22921bfe9ab53ed2d1`"
+                )
+            from axolotl.integrations.kernels.sonicmoe import patch_sonicmoe
+
+            LOG.info(
+                f"Applying SonicMoE patches for model type: {cfg.model_config_type}"
+            )
+            patch_sonicmoe(cfg.model_config_type)
 
     def _register_kernels(self):
+        from kernels import (
+            LayerRepository,
+            Mode,
+            register_kernel_mapping,
+        )
+
         register_kernel_mapping(
             {
                 "HFScatterMoEParallelExperts": {
@@ -37,25 +52,9 @@ class KernelsPlugin(BasePlugin):
         )
 
     def _kernelize_model(self, model_type: str):
-        if model_type == "olmoe":
-            from transformers.models.olmoe.modeling_olmoe import OlmoeSparseMoeBlock
+        from kernels import replace_kernel_forward_from_hub
 
-            replace_kernel_forward_from_hub(
-                OlmoeSparseMoeBlock, "HFScatterMoEParallelExperts"
-            )
-        else:
-            try:
-                model_moe_cls = get_model_moe_block(model_type)
-                replace_kernel_forward_from_hub(
-                    model_moe_cls, "HFScatterMoEParallelExperts"
-                )
-            except Exception as err:
-                raise ValueError(f"Unsupported model type: {model_type}") from err
+        from axolotl.integrations.kernels.constants import resolve_moe_block_cls
 
-
-def get_model_moe_block(model_type: str):
-    module_path = f"transformers.models.{model_type}.modeling_{model_type}"
-    model_cls_prefix, _ = get_causal_lm_model_cls_prefix(model_type)
-    module = __import__(module_path, fromlist=[f"{model_cls_prefix}SparseMoeBlock"])
-    model_cls = getattr(module, f"{model_cls_prefix}SparseMoeBlock")
-    return model_cls
+        model_moe_cls = resolve_moe_block_cls(model_type)
+        replace_kernel_forward_from_hub(model_moe_cls, "HFScatterMoEParallelExperts")
