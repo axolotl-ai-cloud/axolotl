@@ -23,6 +23,12 @@ def parse_requirements(extras_require_map):
             elif not is_extras and line and line[0] != "#":
                 # Handle standard packages
                 _install_requires.append(line)
+
+    transformers_v5_plus = any(
+        req.split("#")[0].strip().startswith("transformers")
+        and ">=5" in req.split("#")[0]
+        for req in _install_requires
+    )
     try:
         xformers_version = [req for req in _install_requires if "xformers" in req][0]
         install_xformers = platform.machine() != "aarch64"
@@ -135,6 +141,9 @@ def parse_requirements(extras_require_map):
                         _install_requires.append("xformers==0.0.28.post1")
             else:
                 raise ValueError("axolotl requires torch>=2.4")
+
+            if transformers_v5_plus:
+                extras_require_map.pop("vllm", None)
 
     except PackageNotFoundError:
         pass
