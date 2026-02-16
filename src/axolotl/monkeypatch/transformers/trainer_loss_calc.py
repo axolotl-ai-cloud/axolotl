@@ -28,12 +28,14 @@ PATCHED_EVAL_CODE = {
     "array": 'metrics[f"{metric_key_prefix}_loss"] = np.nanmean(all_losses).item()',
 }
 
-ORIGINAL_MAYBE_CODE = (
-    "tr_loss_scalar = nested_gather(tr_loss, self.args.parallel_mode).mean().item()"
-)
-PATCHED_MAYBE_CODE = (
-    "tr_loss_scalar = nested_gather(tr_loss, self.args.parallel_mode).nanmean().item()"
-)
+ORIGINAL_MAYBE_CODES = [
+    "tr_loss_scalar = self._nested_gather(tr_loss).mean().item()",
+    "tr_loss_scalar = nested_gather(tr_loss, self.args.parallel_mode).mean().item()",
+]
+PATCHED_MAYBE_CODES = [
+    "tr_loss_scalar = self._nested_gather(tr_loss).nanmean().item()",
+    "tr_loss_scalar = nested_gather(tr_loss, self.args.parallel_mode).nanmean().item()",
+]
 
 
 def check_evaluation_loop_is_patchable() -> bool:
@@ -94,7 +96,7 @@ def patch_evaluation_loop():
 
 def check_maybe_log_save_evaluate_is_patchable() -> bool:
     maybe_log_source = inspect.getsource(Trainer._maybe_log_save_evaluate)
-    return ORIGINAL_MAYBE_CODE in maybe_log_source
+    return any(code in maybe_log_source for code in ORIGINAL_MAYBE_CODES)
 
 
 def patch_maybe_log_save_evaluate():
@@ -112,8 +114,11 @@ def patch_maybe_log_save_evaluate():
     Trainer._original_maybe_log_save_evaluate = maybe_log_source
     maybe_log_source, _ = detab_code(maybe_log_source)
 
-    # Apply the patch
-    maybe_log_source = maybe_log_source.replace(ORIGINAL_MAYBE_CODE, PATCHED_MAYBE_CODE)
+    # Apply the patch for either older/newer upstream Trainer source shapes.
+    for original, patched in zip(
+        ORIGINAL_MAYBE_CODES, PATCHED_MAYBE_CODES, strict=True
+    ):
+        maybe_log_source = maybe_log_source.replace(original, patched)
 
     # Rename the function to avoid conflicts
     maybe_log_source = maybe_log_source.replace(
