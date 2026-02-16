@@ -210,6 +210,8 @@ axolotl lm-eval config.yml
 Configuration options:
 
 ```yaml
+lm_eval_model: # model to evaluate (local or hf path)
+
 # List of tasks to evaluate
 lm_eval_tasks:
   - arc_challenge
@@ -218,7 +220,7 @@ lm_eval_batch_size: # Batch size for evaluation
 output_dir: # Directory to save evaluation results
 ```
 
-See [LM Eval Harness](https://github.com/EleutherAI/lm-evaluation-harness) for more details.
+See [LM Eval Harness integration docs](https://docs.axolotl.ai/docs/custom_integrations.html#language-model-evaluation-harness-lm-eval) for full configuration details.
 
 ### delinearize-llama4
 
