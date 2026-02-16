@@ -26,14 +26,16 @@ lora_r: 32
 lora_alpha: 32
 lora_dropout: 0.0
 lora_target_linear: true
+# MoE expert weights (gate_up_proj, down_proj) are fused 3D tensors in this
+# model and are NOT nn.Linear — target them via lora_target_parameters below.
 lora_target_modules:
-  - gate_proj
-  - down_proj
-  - up_proj
   - q_proj
   - v_proj
   - k_proj
   - o_proj
+lora_target_parameters:
+  - mlp.experts.gate_up_proj
+  - mlp.experts.down_proj
 
 lora_mlp_kernel: true
 lora_qkv_kernel: true
