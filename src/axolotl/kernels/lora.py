@@ -18,7 +18,7 @@ from torch import nn
 from torch.distributed.tensor import DTensor
 
 from .geglu import geglu_backward, geglu_forward
-from .quantize import dequantize
+from .quantize import dequantize, dequantize_weight
 from .swiglu import swiglu_backward, swiglu_forward
 from .utils import torch_amp_custom_bwd, torch_amp_custom_fwd
 
@@ -234,6 +234,7 @@ def matmul_lora(
     out: torch.Tensor | None = None,
     X_drop: torch.Tensor | None = None,
     lora_bias: torch.Tensor | None = None,
+    transpose: bool = True,
 ) -> torch.Tensor:
     """
     Efficient fused matmul + LoRA computation.
@@ -248,12 +249,18 @@ def matmul_lora(
         out: Optional output tensor for inplace operations
         X_drop: Optional dropout-applied input for LoRA path (if None, uses X)
         lora_bias: Optional LoRA B layer bias [out_features]
+        transpose: If True (default), transpose ``W`` into ``[in, out]`` before
+            matmul (forward path). Set False on backward paths where ``W`` is
+            already in the contracted layout.
 
     Returns:
         Result of X @ W + s * X_drop @ A @ B + b + s * lora_bias
     """
     dtype = X.dtype
-    W = dequantize(W.t(), W_quant)
+    # Tensor subclasses (torchao NF4/AffineQuantized) advertise no W_quant but
+    # still need dequantize+free; track materialization via type check.
+    is_quantized = W_quant is not None or type(W) is not torch.Tensor
+    W = dequantize_weight(W, W_quant, transpose=transpose)
 
     reshape = False
     if X.dim() == 3:
@@ -264,7 +271,7 @@ def matmul_lora(
         reshape = True
 
     out = torch.matmul(X, W, out=out)
-    if W_quant is not None:
+    if is_quantized:
         del W
 
     if A is not None:
@@ -568,15 +575,16 @@ class LoRA_MLP(torch.autograd.Function):
         if down_lora_bias is not None:
             d_down_lora_bias = down_scale * grad_output.sum(dim=0)
 
-        # Down projection backward
+        # Down projection backward (W already in [out, in] — skip the transpose).
         grad_down = matmul_lora(
             grad_output,
-            down_weight.t(),
+            down_weight,
             None,
             down_quant,
             down_B_t,
             down_A_t,
             down_scale,
+            transpose=False,
         )
 
         # Activation backward
@@ -638,14 +646,14 @@ class LoRA_MLP(torch.autograd.Function):
 
         if ctx.needs_input_grad[0]:
             # Base path gradients through gate and up
-            up_weight_deq = dequantize(up_weight.t(), up_quant)
+            up_weight_deq = dequantize_weight(up_weight, up_quant, transpose=True)
             if ctx.inplace:
                 dX = torch.matmul(grad_up, up_weight_deq.t(), out=X)
             else:
                 dX = torch.matmul(grad_up, up_weight_deq.t())
             del up_weight_deq
 
-            gate_weight_deq = dequantize(gate_weight, gate_quant)
+            gate_weight_deq = dequantize_weight(gate_weight, gate_quant)
             dX += grad_gate @ gate_weight_deq
             del gate_weight_deq
 
@@ -1130,15 +1138,15 @@ class LoRA_QKV(torch.autograd.Function):
         # Base path input gradient (can use inplace on X since X_lora refs are done)
         out_buffer = X if ctx.inplace else None
 
-        q_weight_t = dequantize(q_weight, q_quant)
+        q_weight_t = dequantize_weight(q_weight, q_quant)
         grad_X = torch.mm(q_grad, q_weight_t, out=out_buffer)
         del q_weight_t
 
-        k_weight_t = dequantize(k_weight, k_quant)
+        k_weight_t = dequantize_weight(k_weight, k_quant)
         grad_X.addmm_(k_grad, k_weight_t)
         del k_weight_t
 
-        v_weight_t = dequantize(v_weight, v_quant)
+        v_weight_t = dequantize_weight(v_weight, v_quant)
         grad_X.addmm_(v_grad, v_weight_t)
         del v_weight_t
 
@@ -1519,11 +1527,11 @@ class LoRA_QK(torch.autograd.Function):
         # Base path input gradient
         out_buffer = X if ctx.inplace else None
 
-        q_weight_t = dequantize(q_weight, q_quant)
+        q_weight_t = dequantize_weight(q_weight, q_quant)
         grad_X = torch.mm(q_grad, q_weight_t, out=out_buffer)
         del q_weight_t
 
-        k_weight_t = dequantize(k_weight, k_quant)
+        k_weight_t = dequantize_weight(k_weight, k_quant)
         grad_X.addmm_(k_grad, k_weight_t)
         del k_weight_t
 
@@ -1750,7 +1758,7 @@ class LoRA_O(torch.autograd.Function):
             d_B.addmm_(A @ X_lora_t, dY, alpha=s, beta=0)
 
         # Base path input gradient
-        W_deq = dequantize(W.t(), W_quant)
+        W_deq = dequantize_weight(W, W_quant, transpose=True)
         dX = dY @ W_deq.t()
         del W_deq
 
