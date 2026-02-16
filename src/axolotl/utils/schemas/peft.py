@@ -1,6 +1,6 @@
 """Pydantic models for PEFT-related configuration"""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -38,10 +38,10 @@ class LoraConfig(BaseModel):
         default=False, json_schema_extra={"description": "Use bitsandbytes 4 bit"}
     )
 
-    adapter: str | None = Field(
+    adapter: Literal["lora", "qlora", "llama-adapter"] | None = Field(
         default=None,
         json_schema_extra={
-            "description": "If you want to use 'lora' or 'qlora' or leave blank to train all parameters in original model"
+            "description": "If you want to use 'lora', 'qlora', or 'llama-adapter', or leave blank to train all parameters in original model"
         },
     )
     lora_model_dir: str | None = Field(
