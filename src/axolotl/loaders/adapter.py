@@ -81,7 +81,9 @@ def find_moe_expert_param_names(model: PreTrainedModel) -> list[str]:
     """
     seen_suffixes = set()
     for name, param in model.named_parameters():
-        if param.ndim >= 3:
+        if param.ndim >= 3 and any(
+            kw in name for kw in ("experts", "gate_up_proj", "down_proj")
+        ):
             parts = name.split(".")
             # Find the layer index (first numeric segment) and extract the
             # repeating suffix after it.

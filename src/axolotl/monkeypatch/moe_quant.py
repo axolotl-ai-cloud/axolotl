@@ -30,7 +30,9 @@ def find_unquantized_expert_params(model):
         if isinstance(module, (bnb.nn.Linear4bit, bnb.nn.Linear8bitLt)):
             continue
         for param_name, param in module.named_parameters(recurse=False):
-            if param.ndim >= 3:
+            if param.ndim >= 3 and any(
+                kw in param_name for kw in ("experts", "gate_up_proj", "down_proj")
+            ):
                 params_to_quantize.append((module, param_name))
     return params_to_quantize
 
