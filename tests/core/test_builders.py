@@ -525,6 +525,15 @@ class TestHFCausalTrainerBuilder:
         assert training_arguments.sample_packing is False
         assert training_arguments.eval_sample_packing is False
 
+    def test_training_arguments_with_group_by_length(self, sft_cfg, model, tokenizer):
+        cfg = sft_cfg.copy()
+        cfg["group_by_length"] = True
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(100)
+        training_arguments = trainer.args
+
+        assert training_arguments.group_by_length is True
+
     @pytest.mark.parametrize(
         "cfg_string",
         [
