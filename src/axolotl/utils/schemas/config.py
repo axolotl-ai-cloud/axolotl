@@ -446,7 +446,16 @@ class AxolotlInputConfig(
         },
     )
 
-    unfrozen_parameters: list[str] | None = None
+    unfrozen_parameters: list[str] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "List of regex patterns for parameter names to keep unfrozen. "
+            "All other parameters will be frozen via requires_grad=False. "
+            "Note: range-based patterns (e.g. embed_tokens.weight$[:32000]) use gradient "
+            "zeroing rather than a true freeze, so weight decay will still apply to the "
+            "frozen portion and optimizer states are allocated for the full parameter."
+        },
+    )
 
     sequence_len: int = Field(
         default=512,
