@@ -348,10 +348,12 @@ class PatchManager:
 
     def _apply_fsdp2_bnb_patches(self):
         """Apply FSDP2 BNB patches."""
+        is_torchao = self.cfg.peft and self.cfg.peft.backend == "torchao"
         if (
             self.cfg.fsdp_config
             and str(self.cfg.fsdp_version) == "2"
             and self.cfg.adapter == "qlora"
+            and not is_torchao
         ):
             from axolotl.monkeypatch.fsdp2_qlora import (
                 apply_init_sharded_param_patch,

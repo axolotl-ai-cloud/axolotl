@@ -16,6 +16,8 @@ def validate_ao_dtype(v: Any) -> TorchAOQuantDType | None:
         return TorchAOQuantDType.int4
     if v == "int8":
         return TorchAOQuantDType.int8
+    if v == "nf4":
+        return TorchAOQuantDType.nf4
     if v in ["float8_e4m3fn", "fp8", "float8"]:
         return TorchAOQuantDType.float8_e4m3fn
     if v == "nvfp4":
