@@ -25,7 +25,10 @@ class KernelsPlugin(BasePlugin):
             LOG.info(
                 f"Applying SonicMoE patches for model type: {cfg.model_config_type}"
             )
-            patch_sonicmoe(cfg.model_config_type)
+            patch_sonicmoe(
+                cfg.model_config_type,
+                torch_compile=bool(getattr(cfg, "torch_compile", False)),
+            )
 
     def _register_kernels(self):
         from kernels import (

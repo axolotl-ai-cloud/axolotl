@@ -31,19 +31,39 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
-def patch_sonicmoe(model_type: str):
+def patch_sonicmoe(model_type: str, torch_compile: bool = False):
     """Main entry point: patch SparseMoeBlock for SonicMoE support.
 
     Args:
         model_type: The HuggingFace model type (e.g. "qwen3_moe").
+        torch_compile: If True, wrap routing functions with torch.compile
+            for kernel fusion (fuses softmax+topk+renorm into fewer launches).
     """
     from .routing import get_model_moe_config
     from .weight_converter import register_sonicmoe_weight_converter
 
     routing_fn, activation, router_attr = get_model_moe_config(model_type)
+
+    if torch_compile and routing_fn is not None:
+        routing_fn = _try_compile_routing(routing_fn)
+
     moe_cls = resolve_moe_block_cls(model_type)
     _patch_forward(moe_cls, routing_fn, activation, router_attr)
     register_sonicmoe_weight_converter(model_type)
+
+
+def _try_compile_routing(routing_fn):
+    """Attempt to torch.compile the routing function, fall back to eager on failure."""
+    try:
+        compiled_fn = torch.compile(routing_fn, mode="reduce-overhead", dynamic=False)
+        LOG.info(f"torch.compile enabled for routing function: {routing_fn.__name__}")
+        return compiled_fn
+    except Exception as exc:  # pylint: disable=broad-except
+        LOG.warning(
+            f"torch.compile failed for routing function {routing_fn.__name__}, "
+            f"falling back to eager: {exc}"
+        )
+        return routing_fn
 
 
 def _patch_forward(moe_cls, routing_fn, activation, router_attr):
