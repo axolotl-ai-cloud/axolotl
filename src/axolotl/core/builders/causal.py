@@ -246,7 +246,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ddp_find_unused_parameters
         )
 
-        training_arguments_kwargs["group_by_length"] = self.cfg.group_by_length
+        if self.cfg.group_by_length:
+            training_arguments_kwargs["group_by_length"] = True
         training_arguments_kwargs["curriculum_sampling"] = self.cfg.curriculum_sampling
 
         training_arguments_kwargs["sample_packing"] = bool(self.cfg.sample_packing)

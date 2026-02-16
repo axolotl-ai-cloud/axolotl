@@ -23,6 +23,12 @@ def parse_requirements(extras_require_map):
             elif not is_extras and line and line[0] != "#":
                 # Handle standard packages
                 _install_requires.append(line)
+
+    transformers_v5_plus = any(
+        req.split("#")[0].strip().startswith("transformers")
+        and ">=5" in req.split("#")[0]
+        for req in _install_requires
+    )
     try:
         xformers_version = [req for req in _install_requires if "xformers" in req][0]
         install_xformers = platform.machine() != "aarch64"
@@ -49,7 +55,7 @@ def parse_requirements(extras_require_map):
             try:
                 torch_version = version("torch")
             except PackageNotFoundError:
-                torch_version = "2.8.0"  # default to torch 2.8.0
+                torch_version = "2.10.0"  # default to torch 2.10.0
             _install_requires.append(f"torch=={torch_version}")
 
             version_match = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", torch_version)
@@ -69,20 +75,27 @@ def parse_requirements(extras_require_map):
                     f"https://download.pytorch.org/whl/{torch_cuda_version}"
                 )
 
-            if (major, minor) >= (2, 9):
+            if (major, minor) >= (2, 10):
                 extras_require_map.pop("fbgemm-gpu")
                 extras_require_map["fbgemm-gpu"] = [
                     "fbgemm-gpu==1.4.0",
                     "fbgemm-gpu-genai==1.4.2",
                 ]
-                extras_require_map["vllm"] = ["vllm==0.11.1"]
+                # No vLLM release on PyPI currently supports transformers>=5.
+                # Install vLLM from source (for example, local editable install)
+                # when using this torch/transformers baseline.
+                extras_require_map.pop("vllm")
                 if not install_xformers:
                     _install_requires.pop(_install_requires.index(xformers_version))
-                extras_require_map["vllm"] = ["vllm==0.13.0"]
-                if patch == 0:
-                    extras_require_map["vllm"] = ["vllm==0.13.0"]
-                else:
-                    extras_require_map["vllm"] = ["vllm==0.14.0"]
+            elif (major, minor) >= (2, 9):
+                extras_require_map.pop("fbgemm-gpu")
+                extras_require_map["fbgemm-gpu"] = [
+                    "fbgemm-gpu==1.4.0",
+                    "fbgemm-gpu-genai==1.4.2",
+                ]
+                extras_require_map["vllm"] = (
+                    ["vllm==0.13.0"] if patch == 0 else ["vllm==0.14.0"]
+                )
             elif (major, minor) >= (2, 8):
                 extras_require_map.pop("fbgemm-gpu")
                 extras_require_map["fbgemm-gpu"] = ["fbgemm-gpu-genai==1.3.0"]
@@ -126,6 +139,9 @@ def parse_requirements(extras_require_map):
                         _install_requires.append("xformers==0.0.28.post1")
             else:
                 raise ValueError("axolotl requires torch>=2.4")
+
+            if transformers_v5_plus:
+                extras_require_map.pop("vllm", None)
 
     except PackageNotFoundError:
         pass
