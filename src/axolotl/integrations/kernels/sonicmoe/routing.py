@@ -2,7 +2,7 @@
 Routing functions for SonicMoE integration.
 
 Different MoE architectures use different routing strategies:
-- qwen3_moe / qwen2_moe: softmax -> topk (with optional renormalization)
+- qwen3_moe / qwen2_moe / qwen3_5_moe / qwen3_vl_moe / qwen3_omni_moe: softmax -> topk (with optional renormalization)
 - gpt_oss: topk -> softmax (uses fused moe_TC_softmax_topk_layer, routing_fn=None)
 - glm_moe_dsa: sigmoid -> topk (with group-based expert selection)
 
@@ -36,7 +36,10 @@ def get_model_moe_config(model_type: str):
     if model_type in (
         "qwen2_moe",
         "qwen3_moe",
+        "qwen3_5_moe",
         "qwen3_next",
+        "qwen3_vl_moe",
+        "qwen3_omni_moe",
         "olmoe",
         "mixtral",
         "minimax",

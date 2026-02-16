@@ -57,7 +57,9 @@ class KernelsPlugin(BasePlugin):
     def _kernelize_model(self, model_type: str):
         from kernels import replace_kernel_forward_from_hub
 
-        from axolotl.integrations.kernels.constants import resolve_moe_block_cls
+        from axolotl.integrations.kernels.constants import resolve_moe_block_classes
 
-        model_moe_cls = resolve_moe_block_cls(model_type)
-        replace_kernel_forward_from_hub(model_moe_cls, "HFScatterMoEParallelExperts")
+        for model_moe_cls in resolve_moe_block_classes(model_type):
+            replace_kernel_forward_from_hub(
+                model_moe_cls, "HFScatterMoEParallelExperts"
+            )

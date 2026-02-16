@@ -25,7 +25,7 @@ applies sigmoid gating to the shared expert contribution.
 import torch
 import torch.nn.functional as F
 
-from axolotl.integrations.kernels.constants import resolve_moe_block_cls
+from axolotl.integrations.kernels.constants import resolve_moe_block_classes
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -47,8 +47,8 @@ def patch_sonicmoe(model_type: str, torch_compile: bool = False):
     if torch_compile and routing_fn is not None:
         routing_fn = _try_compile_routing(routing_fn)
 
-    moe_cls = resolve_moe_block_cls(model_type)
-    _patch_forward(moe_cls, routing_fn, activation, router_attr)
+    for moe_cls in resolve_moe_block_classes(model_type):
+        _patch_forward(moe_cls, routing_fn, activation, router_attr)
     register_sonicmoe_weight_converter(model_type)
 
 
