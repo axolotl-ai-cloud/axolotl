@@ -235,7 +235,10 @@ def load_cfg(
         if cfg[parent] is None:
             cfg[parent] = {}
         if not isinstance(cfg[parent], dict):
-            cfg[parent] = dict(cfg[parent]) if hasattr(cfg[parent], '__iter__') else {}
+            LOG.warning(
+                "Overwriting non-dict value for '%s' with nested CLI overrides", parent
+            )
+            cfg[parent] = {}
         for child_key, child_value in children.items():
             cfg[parent][child_key] = child_value
 

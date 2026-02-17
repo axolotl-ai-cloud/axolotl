@@ -111,6 +111,9 @@ def _add_nested_model_options(
     """
     Add Click options for all fields of a nested Pydantic model using dot-notation.
 
+    Note: Only single-level nesting is supported (e.g., ``--trl.beta``).
+    Deeper nesting (e.g., ``--trl.scheduler.warmup``) is not handled.
+
     Args:
         function: Click command function to add options to.
         parent_name: Parent field name (e.g., "trl").
@@ -134,8 +137,9 @@ def _add_nested_model_options(
             )(function)
         else:
             option_name = f"--{cli_name}"
+            click_type = {str: str, int: int, float: float}.get(sub_type)
             function = click.option(
-                option_name, param_name, default=None, help=description
+                option_name, param_name, default=None, type=click_type, help=description
             )(function)
 
     return function

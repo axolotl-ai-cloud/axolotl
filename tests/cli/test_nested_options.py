@@ -112,31 +112,9 @@ class TestAddOptionsFromConfigNested:
 class TestLoadCfgNestedKwargs:
     """Test that load_cfg correctly applies nested (double-underscore) kwargs."""
 
-    def test_nested_kwargs_applied_to_cfg(self, tmp_path):
-        """Double-underscore kwargs should set nested config values."""
-        from axolotl.utils.dict import DictDefault
-
-        # Create a minimal config file
-        config_file = tmp_path / "config.yml"
-        config_file.write_text(
-            "base_model: test\n"
-            "learning_rate: 0.01\n"
-            "trl:\n"
-            "  beta: 0.1\n"
-            "micro_batch_size: 1\n"
-            "gradient_accumulation_steps: 1\n"
-            "sequence_len: 512\n"
-            "datasets:\n"
-            "  - path: test\n"
-            "    type: alpaca\n"
-        )
-
-        # We test the nested kwargs logic directly since load_cfg has many
-        # side effects (torch, validation, etc.)
-        cfg = DictDefault({"trl": {"beta": 0.1}, "learning_rate": 0.01})
-
-        # Simulate the nested kwargs handling from load_cfg
-        kwargs = {"trl__beta": 0.5, "trl__host": "192.168.1.1", "learning_rate": 0.02}
+    @staticmethod
+    def _apply_nested_kwargs(cfg, kwargs):
+        """Helper to simulate the nested kwargs handling from load_cfg."""
         nested_kwargs: dict = {}
         flat_kwargs: dict = {}
         for key, value in kwargs.items():
@@ -159,6 +137,17 @@ class TestLoadCfgNestedKwargs:
             for child_key, child_value in children.items():
                 cfg[parent][child_key] = child_value
 
+        return cfg
+
+    def test_nested_kwargs_applied_to_cfg(self, tmp_path):
+        """Double-underscore kwargs should set nested config values."""
+        from axolotl.utils.dict import DictDefault
+
+        cfg = DictDefault({"trl": {"beta": 0.1}, "learning_rate": 0.01})
+        kwargs = {"trl__beta": 0.5, "trl__host": "192.168.1.1", "learning_rate": 0.02}
+
+        cfg = self._apply_nested_kwargs(cfg, kwargs)
+
         assert cfg["learning_rate"] == 0.02
         assert cfg["trl"]["beta"] == 0.5
         assert cfg["trl"]["host"] == "192.168.1.1"
@@ -168,12 +157,15 @@ class TestLoadCfgNestedKwargs:
         from axolotl.utils.dict import DictDefault
 
         cfg = DictDefault({"trl": None, "learning_rate": 0.01})
+        cfg = self._apply_nested_kwargs(cfg, {"trl__beta": 0.5})
 
-        kwargs = {"trl__beta": 0.5}
-        for key, value in kwargs.items():
-            parent, child = key.split("__", 1)
-            if cfg[parent] is None:
-                cfg[parent] = {}
-            cfg[parent][child] = value
+        assert cfg["trl"]["beta"] == 0.5
+
+    def test_nested_kwargs_overwrites_string_parent(self):
+        """If the parent key is a string, it should be replaced with a dict."""
+        from axolotl.utils.dict import DictDefault
+
+        cfg = DictDefault({"trl": "some_string", "learning_rate": 0.01})
+        cfg = self._apply_nested_kwargs(cfg, {"trl__beta": 0.5})
 
         assert cfg["trl"]["beta"] == 0.5
