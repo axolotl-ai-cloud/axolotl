@@ -39,7 +39,7 @@ lora_target_parameters:
 
 lora_mlp_kernel: true
 lora_qkv_kernel: false
-lora_o_kernel: false
+lora_o_kernel: true
 
 gradient_accumulation_steps: 4
 micro_batch_size: 1
