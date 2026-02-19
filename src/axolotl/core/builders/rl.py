@@ -11,7 +11,6 @@ from axolotl.core.trainers import (
 )
 from axolotl.core.trainers.dpo import DPOStrategy
 from axolotl.core.trainers.dpo.args import AxolotlDPOConfig
-from axolotl.core.trainers.grpo import GRPOStrategy
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import ensure_dtype
 from axolotl.utils.callbacks.qat import QATCallback
@@ -53,6 +52,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         trainer_cls_args = [self.model]
 
         if self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
+            from axolotl.core.trainers.grpo import GRPOStrategy
+
             trainer_cls = GRPOStrategy.get_trainer_class(
                 sequence_parallel=self.cfg.context_parallel_size > 1
             )
@@ -133,21 +134,17 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if self.cfg.cpo_alpha is not None:
                 training_args_kwargs["cpo_alpha"] = self.cfg.cpo_alpha
 
-            # Handle when max_prompt_length == max_length from defaults
-            # CPOTrainer requires strictly less than
-            if (
-                training_args_kwargs["max_prompt_length"]
-                == training_args_kwargs["max_length"]
-            ):
-                training_args_kwargs["max_prompt_length"] -= 1
+            blocklist_args_kwargs.append("max_prompt_length")
 
         elif self.cfg.rl is RLType.ORPO:
             training_args_cls = AxolotlORPOConfig
 
+            blocklist_args_kwargs.append("max_prompt_length")
+
         elif self.cfg.rl is RLType.KTO:
             training_args_cls = AxolotlKTOConfig
             # KTOConfig in TRL >= 0.27.0 no longer accepts max_prompt_length
-            blocklist_args_kwargs = ["max_prompt_length"]
+            blocklist_args_kwargs.append("max_prompt_length")
 
             training_args_kwargs["desirable_weight"] = (
                 self.cfg.kto_desirable_weight or 1.0
@@ -157,6 +154,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             )
 
         elif self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
+            from axolotl.core.trainers.grpo import GRPOStrategy
+
             training_args_cls = GRPOStrategy.get_training_args_class()
             training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()

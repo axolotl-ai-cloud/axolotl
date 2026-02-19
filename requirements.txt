@@ -2,21 +2,21 @@
 
 # START section of dependencies that don't install on Darwin/MacOS
 bitsandbytes==0.49.1
-triton>=3.0.0
+triton>=3.4.0
 mamba-ssm==1.2.0.post1
 xformers>=0.0.23.post1
-liger-kernel==0.6.4
+liger-kernel==0.7.0
 # END section
 
 packaging==26.0
 huggingface_hub>=1.1.7
 peft>=0.18.1
 tokenizers>=0.22.1
-transformers==5.0.0
+transformers==5.2.0
 accelerate==1.12.0
 datasets==4.5.0
 deepspeed>=0.18.3
-trl==0.27.1
+trl==0.28.0
 hf_xet==1.2.0
 kernels==0.11.5
 
@@ -63,7 +63,7 @@ langdetect==1.0.9
 immutabledict==4.2.0
 antlr4-python3-runtime==4.13.2
 
-torchao==0.13.0
+torchao==0.16.0
 openenv-core==0.1.0
 schedulefree==1.4.1
 
