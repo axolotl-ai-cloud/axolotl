@@ -4,6 +4,7 @@ import functools
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional
 
+import numpy as np
 import torch
 from datasets import Dataset
 from torch.utils.data import RandomSampler
@@ -253,13 +254,17 @@ def wrap_streaming_dataset(
 def _chunk_long_sequences(
     train_dataset: Dataset,
     max_seq_length: int,
-) -> Dataset:
+) -> Dict[str, list]:
     """
     Chunk sequences longer than max_seq_length into multiple smaller sequences.
 
     Instead of dropping long sequences (which loses data), this function splits
-    them into max_seq_length-sized chunks. This is especially useful for pretraining
-    datasets with very long samples (e.g., millions of tokens per example).
+    them into max_seq_length-sized chunks. Uses numpy for fast array splitting
+    to avoid the overhead of pure-Python list slicing on very long sequences
+    (100K+ tokens).
+
+    This is especially useful for pretraining datasets with very long samples
+    (e.g., millions of tokens per example).
 
     Note: This should only be used for pretraining. For SFT, long sequences should
     be dropped to maintain complete instruction-response pairs.
@@ -273,13 +278,13 @@ def _chunk_long_sequences(
         max_seq_length: Maximum sequence length for each chunk
 
     Returns:
-        Dataset with all sequences <= max_seq_length
+        Dict of lists with all sequences <= max_seq_length
     """
     columns = train_dataset.column_names
     has_labels = "labels" in columns
     has_attention_mask = "attention_mask" in columns
 
-    # Use batch column access for performance (avoids per-element __getitem__)
+    # Batch column access avoids per-element __getitem__ overhead
     all_input_ids: list = train_dataset["input_ids"]
     all_attention_mask: list = (
         train_dataset["attention_mask"] if has_attention_mask else []
@@ -287,38 +292,54 @@ def _chunk_long_sequences(
     all_labels: list = train_dataset["labels"] if has_labels else []
 
     total_samples = len(all_input_ids)
+    seq_lengths = [len(ids) for ids in all_input_ids]
+    n_long = sum(1 for s in seq_lengths if s > max_seq_length)
 
-    new_data = defaultdict(list)
+    if n_long == 0:
+        result: dict = {"input_ids": list(all_input_ids)}
+        if has_attention_mask:
+            result["attention_mask"] = list(all_attention_mask)
+        if has_labels:
+            result["labels"] = list(all_labels)
+        return result
+
+    new_input_ids: list = []
+    new_attention_mask_list: list = []
+    new_labels_list: list = []
     total_chunks = 0
     long_samples = 0
 
     for i in range(total_samples):
-        input_ids = all_input_ids[i]
-        seq_len = len(input_ids)
+        seq_len = seq_lengths[i]
 
         if seq_len <= max_seq_length:
-            new_data["input_ids"].append(input_ids)
+            new_input_ids.append(all_input_ids[i])
             if has_attention_mask:
-                new_data["attention_mask"].append(all_attention_mask[i])
+                new_attention_mask_list.append(all_attention_mask[i])
             if has_labels:
-                new_data["labels"].append(all_labels[i])
+                new_labels_list.append(all_labels[i])
             total_chunks += 1
         else:
             long_samples += 1
-            num_chunks = (seq_len + max_seq_length - 1) // max_seq_length
-            for chunk_idx in range(num_chunks):
-                start = chunk_idx * max_seq_length
-                end = min(start + max_seq_length, seq_len)
+            # Use numpy for fast splitting: converts to contiguous array once,
+            # then np.split creates views (no copy), and tolist() converts back
+            split_points = list(range(max_seq_length, seq_len, max_seq_length))
 
-                new_data["input_ids"].append(input_ids[start:end])
-                if has_attention_mask:
-                    new_data["attention_mask"].append(all_attention_mask[i][start:end])
-                if has_labels:
-                    new_data["labels"].append(all_labels[i][start:end])
-                total_chunks += 1
+            ids_arr = np.array(all_input_ids[i], dtype=np.int64)
+            id_chunks = np.split(ids_arr, split_points)
+            new_input_ids.extend(c.tolist() for c in id_chunks)
 
-    if long_samples == 0:
-        return train_dataset
+            if has_attention_mask:
+                mask_arr = np.array(all_attention_mask[i], dtype=np.int64)
+                mask_chunks = np.split(mask_arr, split_points)
+                new_attention_mask_list.extend(c.tolist() for c in mask_chunks)
+
+            if has_labels:
+                labels_arr = np.array(all_labels[i], dtype=np.int64)
+                label_chunks = np.split(labels_arr, split_points)
+                new_labels_list.extend(c.tolist() for c in label_chunks)
+
+            total_chunks += len(id_chunks)
 
     LOG.info(
         "Chunked %d/%d sequences exceeding max_seq_length=%d: %d samples -> %d chunks",
@@ -329,7 +350,13 @@ def _chunk_long_sequences(
         total_chunks,
     )
 
-    return Dataset.from_dict(dict(new_data))
+    new_data: dict = {"input_ids": new_input_ids}
+    if has_attention_mask:
+        new_data["attention_mask"] = new_attention_mask_list
+    if has_labels:
+        new_data["labels"] = new_labels_list
+
+    return new_data
 
 
 def encode_packed_streaming(
@@ -361,25 +388,54 @@ def encode_packed_streaming(
         multipack_attn: Whether to use multipack attention
         is_pretraining: If True, chunk long sequences; if False, let them be dropped
     """
-    # Tokenize all the examples
     train_dataset = ds_wrapper(dataset=Dataset.from_dict(examples))[0]
 
-    # Only chunk long sequences for pretraining (preserves data)
-    # For SFT, we want to drop long sequences to keep complete examples
     if is_pretraining:
-        train_dataset = _chunk_long_sequences(train_dataset, max_seq_length)
+        chunked = _chunk_long_sequences(train_dataset, max_seq_length)
 
-    # Process for packing - sequences are now all <= max_seq_length
-    train_dataset = process_pretraining_datasets_for_packing(
-        train_dataset,
-        max_seq_length,
-        skip_position_ids=not multipack_attn,
-        drop_attention_mask=multipack_attn,
-    )
+        # Build plain list-of-dicts directly instead of going through HF Dataset
+        # filter/map (process_pretraining_datasets_for_packing). This avoids
+        # Arrow serialization overhead which is significant with 10K+ chunks.
+        # Replicates the same logic: drop short/long seqs, add position_ids,
+        # drop attention_mask when using multipack attention.
+        samples: list = []
+        lengths: list = []
+        skip_position_ids = not multipack_attn
+        all_ids = chunked["input_ids"]
+        all_labels = chunked.get("labels")
+        all_mask = chunked.get("attention_mask")
+
+        for idx in range(len(all_ids)):
+            ids = all_ids[idx]
+            seq_len = len(ids)
+            if seq_len < 2 or seq_len > max_seq_length:
+                continue
+            sample: dict = {"input_ids": ids}
+            if all_labels:
+                sample["labels"] = all_labels[idx]
+            if not skip_position_ids:
+                sample["position_ids"] = list(range(seq_len))
+            if all_mask and not multipack_attn:
+                sample["attention_mask"] = all_mask[idx]
+            sample["length"] = seq_len
+            samples.append(sample)
+            lengths.append(seq_len)
+
+        lengths_arr = np.array(lengths, dtype=np.int64)
+    else:
+        # SFT path: use HF Dataset processing as before
+        train_dataset = process_pretraining_datasets_for_packing(
+            train_dataset,
+            max_seq_length,
+            skip_position_ids=not multipack_attn,
+            drop_attention_mask=multipack_attn,
+        )
+        lengths_arr = get_dataset_lengths(train_dataset)
+        samples = [train_dataset[i] for i in range(len(train_dataset))]
 
     sampler = MultipackBatchSampler(
-        sampler=RandomSampler(train_dataset),
-        lengths=get_dataset_lengths(train_dataset),
+        sampler=RandomSampler(range(len(samples))),
+        lengths=lengths_arr,
         batch_size=1,
         batch_max_len=batch_size * max_seq_length,
         drop_last=True,
@@ -391,7 +447,12 @@ def encode_packed_streaming(
 
     for batch in sampler:
         for data in batch:
-            features = train_dataset[data]
+            if isinstance(data, list):
+                features = {
+                    key: [samples[i][key] for i in data] for key in samples[data[0]]
+                }
+            else:
+                features = samples[data]
             if "num_truncated_tokens" in features:
                 del features["num_truncated_tokens"]
             if "overflow_to_sample_mapping" in features:
