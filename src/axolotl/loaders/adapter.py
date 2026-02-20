@@ -67,6 +67,35 @@ def find_all_linear_names(model):
     return list(lora_module_names)
 
 
+def find_moe_expert_param_names(model: PreTrainedModel) -> list[str]:
+    """Detect 3D+ nn.Parameter tensors for PEFT target_parameters.
+
+    In transformers v5, MoE models store expert weights as fused 3D nn.Parameter
+    tensors (num_experts, dim1, dim2) instead of individual nn.Linear modules.
+    PEFT's target_modules can't target these, but target_parameters can via the
+    ParamWrapper class which applies LoRA directly to nn.Parameter tensors.
+
+    Returns a deduplicated list of parameter path suffixes (e.g.,
+    ["mlp.experts.gate_up_proj", "mlp.experts.down_proj"]) suitable for
+    PEFT's LoraConfig target_parameters.
+    """
+    seen_suffixes = set()
+    for name, param in model.named_parameters():
+        if param.ndim >= 3 and any(
+            kw in name for kw in ("experts", "gate_up_proj", "down_proj")
+        ):
+            parts = name.split(".")
+            # Find the layer index (first numeric segment) and extract the
+            # repeating suffix after it.
+            # e.g. "model.layers.0.mlp.experts.gate_up_proj" -> "mlp.experts.gate_up_proj"
+            for i, part in enumerate(parts):
+                if part.isdigit():
+                    suffix = ".".join(parts[i + 1 :])
+                    seen_suffixes.add(suffix)
+                    break
+    return sorted(seen_suffixes)
+
+
 def load_lora(
     model: PreTrainedModel,
     cfg: DictDefault,
@@ -74,7 +103,29 @@ def load_lora(
     config_only: bool = False,
 ) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]:
     lora_target_modules = cfg.lora_target_modules or []
-    lora_target_parameters = cfg.lora_target_parameters or []
+
+    # Auto-detect MoE expert params for PEFT target_parameters (v5 3D nn.Parameter).
+    lora_target_parameters = cfg.lora_target_parameters
+    if lora_target_parameters is None:
+        detected_expert_params = getattr(
+            model, "_moe_expert_param_names", None
+        ) or find_moe_expert_param_names(model)
+        if detected_expert_params:
+            LOG.info(
+                "Auto-detected MoE expert parameters for LoRA target_parameters: %s",
+                detected_expert_params,
+            )
+            lora_target_parameters = detected_expert_params
+        else:
+            lora_target_parameters = []
+    elif isinstance(lora_target_parameters, str):
+        lora_target_parameters = [lora_target_parameters]
+
+    # Exclude ParametrizationList submodules created by replace_parameter_4bit
+    # from target_modules matching (regex needed — "parametrizations" is mid-path).
+    exclude_modules = None
+    if getattr(model, "_moe_experts_quantized", False):
+        exclude_modules = r".*\.parametrizations\..*"
 
     if cfg.lora_target_linear:
         linear_names = find_all_linear_names(model)
@@ -119,6 +170,7 @@ def load_lora(
         lora_alpha=cfg.lora_alpha,
         target_modules=lora_target_modules,
         target_parameters=lora_target_parameters,
+        exclude_modules=exclude_modules,
         layers_to_transform=cfg.peft_layers_to_transform,
         layers_pattern=cfg.peft_layers_pattern,
         lora_dropout=cfg.lora_dropout,

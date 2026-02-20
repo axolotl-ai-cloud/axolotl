@@ -201,19 +201,18 @@ def patch_self_attn_lora(cfg: DictDefault):
     attention_cls._original_forward = self_attn_forward
     self_attn_forward, _ = detab_code(self_attn_forward)
 
-    assert any(qkv_options[0] in self_attn_forward for qkv_options in QKV_PATCHES), (
-        "Original QKV code not found"
-    )
-    assert ORIGINAL_O_CODE in self_attn_forward, "Original O code not found"
+    if cfg.lora_qkv_kernel:
+        assert any(
+            qkv_options[0] in self_attn_forward for qkv_options in QKV_PATCHES
+        ), "Original QKV code not found"
+        for qkv_orig, qkv_patched in QKV_PATCHES:
+            if qkv_orig in self_attn_forward:
+                self_attn_forward = self_attn_forward.replace(qkv_orig, qkv_patched)
+                break
 
-    for qkv_orig, qkv_patched in QKV_PATCHES:
-        if qkv_orig in self_attn_forward:
-            self_attn_forward = self_attn_forward.replace(
-                qkv_orig,
-                qkv_patched,
-            )
-            break
-    self_attn_forward = self_attn_forward.replace(ORIGINAL_O_CODE, PATCHED_O_CODE)
+    if cfg.lora_o_kernel:
+        assert ORIGINAL_O_CODE in self_attn_forward, "Original O code not found"
+        self_attn_forward = self_attn_forward.replace(ORIGINAL_O_CODE, PATCHED_O_CODE)
     self_attn_forward = self_attn_forward.replace(
         "def forward(",
         "def axolotl_attn_forward(",
@@ -247,6 +246,12 @@ def find_self_attn_in_layer(
         if all(
             hasattr(layer.self_attn, proj)
             for proj in ["q_proj", "k_proj", "v_proj", "o_proj"]
+        ):
+            yield layer.self_attn
+        # MLA attention (DeepSeek-V2/V3, GLM-4.7): no q/k/v_proj, but o_proj is standard
+        elif all(
+            hasattr(layer.self_attn, proj)
+            for proj in ["kv_a_proj_with_mqa", "kv_b_proj", "o_proj"]
         ):
             yield layer.self_attn
 
@@ -388,25 +393,35 @@ def apply_lora_kernel_patches(
             self_attn.apply_o = types.MethodType(original_apply_o, self_attn)
 
             if cfg.lora_qkv_kernel:
-                # Query, key, value patching
-                layer_modules = [
-                    getattr(self_attn, linear_proj)
-                    for linear_proj in ["q_proj", "k_proj", "v_proj"]
-                ]
-                can_patch_qkv = all(
-                    hasattr(module, "lora_A")
-                    and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
-                    for module in layer_modules
-                )
-
-                if can_patch_qkv:
-                    # Add optimized implementation
-                    self_attn.apply_qkv = types.MethodType(apply_lora_qkv, self_attn)
-                else:
+                # Query, key, value patching — only for standard QKV models, not MLA
+                if not all(
+                    hasattr(self_attn, p) for p in ["q_proj", "k_proj", "v_proj"]
+                ):
                     LOG.warning_once(
-                        "Cannot patch some attention QKV projections - requires LoRA "
-                        "adapters and no lora_magnitude_vector (DoRA)"
+                        "Skipping QKV kernel patch — model uses MLA attention "
+                        "(no q_proj/k_proj/v_proj). Disable lora_qkv_kernel to silence."
                     )
+                else:
+                    layer_modules = [
+                        getattr(self_attn, linear_proj)
+                        for linear_proj in ["q_proj", "k_proj", "v_proj"]
+                    ]
+                    can_patch_qkv = all(
+                        hasattr(module, "lora_A")
+                        and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
+                        for module in layer_modules
+                    )
+
+                    if can_patch_qkv:
+                        # Add optimized implementation
+                        self_attn.apply_qkv = types.MethodType(
+                            apply_lora_qkv, self_attn
+                        )
+                    else:
+                        LOG.warning_once(
+                            "Cannot patch some attention QKV projections - requires LoRA "
+                            "adapters and no lora_magnitude_vector (DoRA)"
+                        )
             if cfg.lora_o_kernel:
                 # Output patching
                 layer_modules = [

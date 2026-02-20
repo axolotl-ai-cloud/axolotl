@@ -1,0 +1,67 @@
+base_model: zai-org/GLM-4.7-Flash
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+load_in_4bit: true
+
+datasets:
+  - path: cgato/SlimOrcaDedupCleaned
+    type: chat_template
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+
+val_set_size: 0.0
+output_dir: ./outputs/out
+
+adapter: qlora
+
+sequence_len: 32768
+sample_packing: true
+pad_to_sequence_len: true
+
+lora_r: 32
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target_linear: true
+# MoE expert weights (gate_up_proj, down_proj) are fused 3D tensors in this
+# model and are NOT nn.Linear — target them via lora_target_parameters below.
+lora_target_modules:
+  - q_proj
+  - v_proj
+  - k_proj
+  - o_proj
+lora_target_parameters:
+  - mlp.experts.gate_up_proj
+  - mlp.experts.down_proj
+
+lora_mlp_kernel: true
+lora_qkv_kernel: false
+lora_o_kernel: true
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 0.0001
+max_grad_norm: 1.0
+
+bf16: auto
+
+resume_from_checkpoint:
+logging_steps: 1
+flash_attention: true
+
+warmup_ratio: 0.1
+evals_per_epoch: 0
+saves_per_epoch: 4
+save_total_limit: 4
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+
+deepspeed:
