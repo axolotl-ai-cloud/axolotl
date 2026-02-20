@@ -202,9 +202,9 @@ def patch_self_attn_lora(cfg: DictDefault):
     self_attn_forward, _ = detab_code(self_attn_forward)
 
     if cfg.lora_qkv_kernel:
-        assert any(qkv_options[0] in self_attn_forward for qkv_options in QKV_PATCHES), (
-            "Original QKV code not found"
-        )
+        assert any(
+            qkv_options[0] in self_attn_forward for qkv_options in QKV_PATCHES
+        ), "Original QKV code not found"
         for qkv_orig, qkv_patched in QKV_PATCHES:
             if qkv_orig in self_attn_forward:
                 self_attn_forward = self_attn_forward.replace(qkv_orig, qkv_patched)
@@ -394,7 +394,9 @@ def apply_lora_kernel_patches(
 
             if cfg.lora_qkv_kernel:
                 # Query, key, value patching — only for standard QKV models, not MLA
-                if not all(hasattr(self_attn, p) for p in ["q_proj", "k_proj", "v_proj"]):
+                if not all(
+                    hasattr(self_attn, p) for p in ["q_proj", "k_proj", "v_proj"]
+                ):
                     LOG.warning_once(
                         "Skipping QKV kernel patch — model uses MLA attention "
                         "(no q_proj/k_proj/v_proj). Disable lora_qkv_kernel to silence."
@@ -412,7 +414,9 @@ def apply_lora_kernel_patches(
 
                     if can_patch_qkv:
                         # Add optimized implementation
-                        self_attn.apply_qkv = types.MethodType(apply_lora_qkv, self_attn)
+                        self_attn.apply_qkv = types.MethodType(
+                            apply_lora_qkv, self_attn
+                        )
                     else:
                         LOG.warning_once(
                             "Cannot patch some attention QKV projections - requires LoRA "
