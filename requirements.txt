@@ -20,7 +20,7 @@ trl==0.28.0
 hf_xet==1.2.0
 kernels==0.11.5
 
-trackio>=0.13.0
+trackio>=0.16.1
 typing-extensions>=4.15.0
 
 optimum==1.16.2
