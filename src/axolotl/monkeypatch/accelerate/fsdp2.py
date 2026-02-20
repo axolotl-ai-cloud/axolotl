@@ -202,12 +202,19 @@ def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
             fully_shard(module.lora_A[active_adapter], **fsdp2_kwargs)
         if module.lora_B:
             fully_shard(module.lora_B[active_adapter], **fsdp2_kwargs)
-        if module.lora_embedding_A:
-            fully_shard(module.lora_embedding_A[active_adapter], **fsdp2_kwargs)
-        if module.lora_embedding_B:
-            fully_shard(module.lora_embedding_B[active_adapter], **fsdp2_kwargs)
         if module.lora_magnitude_vector:
             fully_shard(module.lora_magnitude_vector[active_adapter], **fsdp2_kwargs)
+    
+    # lora_embedding_A/B are ParameterDicts containing nn.Parameter (Tensors),
+    # not nn.Module. fully_shard() only accepts nn.Module, so we cannot shard
+    # individual embedding Parameters. Instead, shard the entire LoraLayer module. fully_shard() can be used hierarchically because it does not
+    # override groups already assigned by fully_shard(), so modules
+    # where fully_shard() was already called are not affected [see https://docs.pytorch.org/docs/stable/distributed.fsdp.fully_shard.html]
+    if module.lora_embedding_A or module.lora_embedding_B:
+        from torch.distributed.fsdp import FSDPModule
+        if not isinstance(module, FSDPModule):
+            fully_shard(module, **fsdp2_kwargs)
+
     return log_bias_dtype_mismatch
 
 
