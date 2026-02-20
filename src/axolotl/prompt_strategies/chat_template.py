@@ -48,9 +48,9 @@ class ChatTemplatePrompter(Prompter):
     ):
         # check if message_property_mappings is None or empty dict
         if message_property_mappings is None or (not message_property_mappings):
+            default_message_property_mappings_keys = ["role", "content", "tool"]
             message_property_mappings = {
-                "role": "role",
-                "content": "content",
+                prop: prop for prop in default_message_property_mappings_keys
             }
             if template_thinking_key and field_thinking:
                 message_property_mappings[template_thinking_key] = field_thinking
