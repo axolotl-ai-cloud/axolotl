@@ -33,3 +33,16 @@ class KernelsArgs(BaseModel):
             data["experts_implementation"] = "eager"
 
         return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def disable_mlp_kernel_scattermoe(cls, data):
+        if data.get("use_scattermoe") is True:
+            if data.get("lora_mlp_kernel") is True:
+                LOG.warning(
+                    "Disabling lora_mlp_kernel when using scattermoe due to compatibility issues."
+                )
+                data["lora_mlp_kernel"] = False
+            data["mlp_kernel"] = False
+
+        return data
