@@ -78,3 +78,30 @@ def patch_peft_prep_code():
     axolotl.loaders.model.prepare_model_for_kbit_training = (
         fixed_prepare_model_for_kbit_training
     )
+
+
+def patch_peft_torchao_dispatch():
+    """Skip PEFT's TorchaoLoraLinear for non-INT8 torchao weights.
+
+    PEFT's dispatch_torchao() matches AffineQuantizedTensor but then errors in
+    _check_dtype_supported() because it only allows INT8. Our LoRA kernels handle
+    dequantization explicitly, so we bypass PEFT's torchao dispatch entirely and
+    let it fall back to standard Linear LoRA layers.
+    """
+    try:
+        from peft.tuners.lora import torchao as peft_torchao
+    except ImportError:
+        LOG.warning("Could not import peft.tuners.lora.torchao for patching")
+        return
+
+    if getattr(peft_torchao, "_axolotl_patched", False):
+        return
+
+    def patched_dispatch(target, adapter_name, lora_config, **kwargs):
+        # Return None so PEFT falls back to standard Linear LoRA layers.
+        # Our LoRA kernels handle torchao dequantization explicitly.
+        return None
+
+    peft_torchao.dispatch_torchao = patched_dispatch
+    peft_torchao._axolotl_patched = True
+    LOG.info("Patched PEFT dispatch_torchao to skip TorchaoLoraLinear")
