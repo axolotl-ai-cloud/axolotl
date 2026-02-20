@@ -37,7 +37,7 @@ jobs:
         id: hf-cache-restore-s3
         run: |
           mkdir -p /home/runner/.cache/huggingface/hub
-          curl -L https://d1dttdx32dkk5p.cloudfront.net/hf-cache.tar.zst | tar -xf - -C /home/runner/.cache/huggingface/hub/  --use-compress-program unzstd
+          curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst | tar -xf - -C /home/runner/.cache/huggingface/hub/  --use-compress-program unzstd
 
       - name: Setup Python
         uses: actions/setup-python@v5
