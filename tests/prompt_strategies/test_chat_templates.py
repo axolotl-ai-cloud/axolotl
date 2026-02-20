@@ -159,7 +159,7 @@ class TestAssistantChatTemplateLlama3:
             -100,  # user
             -100, -100, -100,  # user eot
             -100,  # assistant
-            1781, 26966, 32007,  # assistant eot
+            16773, 26966, 32007,  # assistant eot
         ]
         # fmt: on
         LOG.debug(f"Expected input_ids: {expected_input_ids}")
