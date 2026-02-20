@@ -30,18 +30,8 @@ class Mistral3Processor(ProcessorMixin):
     Wraps HFMistralTokenizer and adds image processing capabilities.
     """
 
-    # TODO(nano): This should be removed in transformers V5
-    attributes = ["tokenizer"]
-    tokenizer_class = "HFMistralTokenizer"
-
     def __init__(self, tokenizer: HFMistralTokenizer):
-        # Don't call super().__init__ to avoid the class validation issue
-        self.tokenizer = tokenizer
-
-    @property
-    def chat_template(self) -> None:
-        """Chat template is not supported. Dummy method to satisfy HuggingFace API."""
-        return None
+        super().__init__(tokenizer)
 
     @property
     def audio_tokenizer(self) -> None:
