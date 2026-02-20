@@ -115,6 +115,9 @@ class TestAssistantChatTemplateLlama3:
 
     def test_phi35(self, phi35_tokenizer, assistant_dataset):
         LOG.info("Testing phi-3.5 with assistant dataset")
+        assert "LlamaTokenizer" in phi35_tokenizer.__class__.__name__, (
+            "phi35 tokenizer should be a LlamaTokenizer"
+        )
         strategy = ChatTemplateStrategy(
             ChatTemplatePrompter(
                 phi35_tokenizer,
@@ -140,13 +143,13 @@ class TestAssistantChatTemplateLlama3:
         # fmt: off
         expected_input_ids = [
             32010,  # user
-            22172, 32007,  # user eot
+            12199, 32007,  # user eot
             32001,  # assistant
-            22172, 32007,  # assistant eot
+            12199, 32007,  # assistant eot
             32010,  # user
-            1781, 26966, 32007,  # user eot
+            16773, 26966, 32007,  # user eot
             32001,  # assistant
-            1781, 26966, 32007,  # assistant eot
+            16773, 26966, 32007,  # assistant eot
         ]
         expected_labels = [
             -100,  # user
