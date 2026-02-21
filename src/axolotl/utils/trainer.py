@@ -205,10 +205,13 @@ def add_length(sample):
     return sample
 
 
-def drop_long_seq(sample, sequence_len=2048, min_sequence_len=2, raise_on_drop=False):
+def filter_sequences_by_length(
+    sample, sequence_len=2048, min_sequence_len=2, raise_on_drop=False
+):
     """
-    Drop samples whose sequence length is either too long (> sequence_len)
-    or too short (< min_sequence_len).
+    Filter sequences outside valid length range [min_sequence_len, sequence_len].
+
+    Drops samples that are either too short (< min_sequence_len) or too long (> sequence_len).
 
     Works for both single-example (list[int]) or batched (list[list[int]]).
 
@@ -383,10 +386,10 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
 def process_pretraining_datasets_for_packing(
     train_dataset, sequence_len, skip_position_ids=True, drop_attention_mask=False
 ):
-    drop_long = partial(drop_long_seq, sequence_len=sequence_len)
+    drop_outside_range = partial(filter_sequences_by_length, sequence_len=sequence_len)
 
     train_dataset = train_dataset.filter(
-        drop_long,
+        drop_outside_range,
         desc="Dropping Long Sequences",
         load_from_cache_file=False,
     )
