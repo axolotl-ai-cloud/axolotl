@@ -5,6 +5,7 @@ Utilities for quantization including QAT and PTQ using torchao.
 import torch
 from packaging import version
 from torchao.core.config import AOBaseConfig
+from torchao.prototype.qat import MXFakeQuantizeConfig
 from torchao.quantization import quantize_
 from torchao.quantization.qat import (
     QATConfig,
@@ -38,6 +39,13 @@ if version.parse(torch.__version__) >= version.parse("2.8.0"):
 
         quantization_config_to_str[Int4WeightOnlyConfig] = "int4"
     except:
+        pass
+
+    try:
+        from torchao.prototype.qat import MXFakeQuantizeConfig
+
+        quantization_config_to_str[MXFakeQuantizeConfig] = "mxfp4"
+    except ImportError:
         pass
 
 
@@ -109,6 +117,19 @@ def get_quantization_config(
         if group_size is not None and group_size != 16:
             raise ValueError("NVFP4 quantization must use a group_size of 16")
         return NVFP4InferenceConfig()
+
+    if weight_dtype == TorchAOQuantDType.mxfp4:
+        from torchao.prototype.qat import MXFakeQuantizeConfig
+
+        # MXFP4 uses block_size=32 by default (vs NVFP4's 16)
+        block_size = group_size if group_size is not None else 32
+        if block_size != 32:
+            raise ValueError(
+                "MXFP4 quantization must use a block_size (group_size) of 32"
+            )
+
+        return MXFakeQuantizeConfig(dtype=torch.float4_e2m1fn_x2, block_size=block_size)
+
     raise ValueError(
         f"Invalid activation/weight dtype combination: {activation_dtype}/{weight_dtype}"
     )
@@ -179,7 +200,13 @@ def prepare_model_for_qat(
         activation_dtype=activation_dtype,
         group_size=group_size,
     )
-    qat_config = QATConfig(base_config)
+    if isinstance(base_config, MXFakeQuantizeConfig):
+        qat_config = QATConfig(
+            activation_config=base_config,
+            weight_config=base_config,
+        )
+    else:
+        qat_config = QATConfig(base_config)
     quantize_(model, qat_config)
     if quantize_embedding:
         # activation fake quantization is not supported for embedding layers
@@ -188,7 +215,12 @@ def prepare_model_for_qat(
             activation_dtype=None,
             group_size=group_size,
         )
-        embedding_qat_config = QATConfig(embedding_base_config)
+        if isinstance(embedding_base_config, MXFakeQuantizeConfig):
+            embedding_qat_config = QATConfig(
+                weight_config=embedding_base_config,
+            )
+        else:
+            embedding_qat_config = QATConfig(embedding_base_config)
         quantize_(
             model,
             embedding_qat_config,
