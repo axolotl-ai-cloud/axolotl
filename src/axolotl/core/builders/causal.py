@@ -446,7 +446,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
     ):
         if training_args.pretraining:
             if (
-                self.cfg.pretraining_sample_concatenation is False
+                not self.cfg.pretraining_sample_concatenation
                 or self.cfg.micro_batch_size > 1
             ):
                 return DataCollatorForSeq2Seq(self.tokenizer, **kwargs)
