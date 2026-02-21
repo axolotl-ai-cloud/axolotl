@@ -19,6 +19,7 @@ from peft import (
 )
 from transformers import PreTrainedModel
 
+from axolotl.loaders.adapters.builders.factory import AdapterBuilderFactory
 from axolotl.loaders.utils import get_linear_embedding_layers
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
@@ -184,19 +185,43 @@ def load_adapter(
     cfg: DictDefault,
     adapter: str | None,
     inference: bool = False,
-) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel, PeftConfig | None]:
-    if adapter is None:
-        return model, None
-    if hasattr(model, "enable_input_require_grads"):
-        model.enable_input_require_grads()
-    if adapter in ["lora", "qlora"]:
-        peft_model, lora_config = load_lora(model, cfg, inference=inference)
-        return peft_model, lora_config
-    if adapter == "llama-adapter":
-        peft_model, lora_config = load_llama_adapter(model, cfg)
-        return peft_model, lora_config
+    config_only: bool = False,
+) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]:
+    try:
+        if adapter is None:
+            return model, None
+        builder = AdapterBuilderFactory.create_builder(adapter, cfg)
 
-    raise NotImplementedError(f"{adapter} PEFT adapter not available")
+        config = builder.build_config(model)
+
+        if config_only:
+            return None, config
+
+        if hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
+
+        model = builder.build_model(model, config, inference=inference)
+        return model, config
+
+    except ValueError as e:
+        LOG.debug(
+            f"Builder pattern failed, falling back to legacy adapter loading: {e}"
+        )
+
+        if adapter is None:
+            return model, None
+        if hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
+        if adapter in ["lora", "qlora"]:
+            peft_model, lora_config = load_lora(
+                model, cfg, inference=inference, config_only=config_only
+            )
+            return peft_model, lora_config
+        if adapter == "llama-adapter":
+            peft_model, lora_config = load_llama_adapter(model, cfg)
+            return peft_model, lora_config
+
+        raise NotImplementedError(f"{adapter} PEFT adapter not available") from None
 
 
 def load_llama_adapter(
