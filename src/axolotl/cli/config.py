@@ -5,7 +5,7 @@ import os
 import tempfile
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Union
+from typing import Any, Union
 from urllib.parse import urlparse
 
 import requests
@@ -208,13 +208,39 @@ def load_cfg(
     # If there are any options passed in the cli, if it is something that seems valid
     # from the yaml, then overwrite the value
     cfg_keys = cfg.keys()
+
+    # Separate nested (dot-notation) kwargs from flat kwargs
+    nested_kwargs: dict[str, dict[str, Any]] = {}
+    flat_kwargs: dict[str, Any] = {}
     for key, value in kwargs.items():
+        if "__" in key:
+            parent, child = key.split("__", 1)
+            nested_kwargs.setdefault(parent, {})[child] = value
+        else:
+            flat_kwargs[key] = value
+
+    # Apply flat kwargs
+    for key, value in flat_kwargs.items():
         # If not strict, allow writing to cfg even if it's not in the yml already
         if key in cfg_keys or not cfg.strict:
             if isinstance(cfg[key], bool):
                 cfg[key] = bool(value)
             else:
                 cfg[key] = value
+
+    # Apply nested kwargs (e.g., trl__beta -> cfg.trl.beta)
+    for parent, children in nested_kwargs.items():
+        if parent not in cfg_keys and cfg.strict:
+            continue
+        if cfg[parent] is None:
+            cfg[parent] = {}
+        if not isinstance(cfg[parent], dict):
+            LOG.warning(
+                "Overwriting non-dict value for '%s' with nested CLI overrides", parent
+            )
+            cfg[parent] = {}
+        for child_key, child_value in children.items():
+            cfg[parent][child_key] = child_value
 
     try:
         device_props = torch.cuda.get_device_properties("cuda")
