@@ -46,6 +46,7 @@ plugins:
 - gemma3n_text
 - glm
 - glm4
+- glm_moe
 - glm4_moe
 - glm4_moe_lite
 - glm46v
