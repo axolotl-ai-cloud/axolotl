@@ -51,5 +51,3 @@ pytest -v --durations=10 \
   --cov=axolotl \
   --cov-append \
   --cov-report=xml:e2e-coverage.xml
-
-codecov upload-process -t $CODECOV_TOKEN -f e2e-coverage.xml -F e2e,pytorch-${PYTORCH_VERSION} || true
