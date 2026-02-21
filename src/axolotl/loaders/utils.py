@@ -204,6 +204,13 @@ def load_model_config(cfg: DictDefault) -> PretrainedConfig | addict.Dict:
 
     check_model_config(cfg, model_config)
 
+    # Extract text config from composite config when explicitly requested
+    # (set by plugins like Gemma3TextFromMultimodalPlugin)
+    if getattr(cfg, "extract_text_config", False) and hasattr(
+        model_config, "get_text_config"
+    ):
+        model_config = model_config.get_text_config()
+
     return model_config
 
 
