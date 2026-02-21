@@ -246,6 +246,10 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
     dataset = merge_datasets(split_datasets, cfg)
 
     if not cfg.skip_prepare_dataset:
+        # Deduplicate before saving so the saved dataset is already de-duplicated
+        if cfg.dataset_exact_deduplication:
+            dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
+
         # Save preprocessed dataset
         dataset_hash = generate_dataset_hash_from_config(
             cfg, datasets_configs, tokenizer.name_or_path
