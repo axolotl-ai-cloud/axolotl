@@ -423,7 +423,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
     def _tokenize_single_prompt(self, prompt: dict) -> Dict[str, List[int]]:
         # Old simple legacy behavior that works reliably.
         if (
-            not self.roles_to_train
+            (not self.roles_to_train or self.roles_to_train == ["assistant"])
             and not self.train_on_eos
             and not self.train_on_eot
             and not self.prompter.message_field_training  # type: ignore
