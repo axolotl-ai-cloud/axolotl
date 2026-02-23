@@ -1957,9 +1957,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-1181"><a href="#cb1-1181" aria-hidden="true" tabindex="-1"></a><span class="co"># Use bitsandbytes 4 bit</span></span>
 <span id="cb1-1182"><a href="#cb1-1182" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_4bit</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
 <span id="cb1-1183"><a href="#cb1-1183" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1184"><a href="#cb1-1184" aria-hidden="true" tabindex="-1"></a><span class="co"># If you want to use 'lora' or 'qlora' or leave blank to train all parameters in</span></span>
-<span id="cb1-1185"><a href="#cb1-1185" aria-hidden="true" tabindex="-1"></a><span class="co"># original model</span></span>
-<span id="cb1-1186"><a href="#cb1-1186" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1184"><a href="#cb1-1184" aria-hidden="true" tabindex="-1"></a><span class="co"># If you want to use 'lora', 'qlora', or 'llama-adapter', or leave blank to train all</span></span>
+<span id="cb1-1185"><a href="#cb1-1185" aria-hidden="true" tabindex="-1"></a><span class="co"># parameters in original model</span></span>
+<span id="cb1-1186"><a href="#cb1-1186" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> Literal['lora', 'qlora', 'llama-adapter'] | None</span></span>
 <span id="cb1-1187"><a href="#cb1-1187" aria-hidden="true" tabindex="-1"></a><span class="co"># If you already have a lora model trained that you want to load, put that here. This</span></span>
 <span id="cb1-1188"><a href="#cb1-1188" aria-hidden="true" tabindex="-1"></a><span class="co"># means after training, if you want to test the model, you should set this to the value</span></span>
 <span id="cb1-1189"><a href="#cb1-1189" aria-hidden="true" tabindex="-1"></a><span class="co"># of `output_dir`. Note that if you merge an adapter to the base model, a new</span></span>
