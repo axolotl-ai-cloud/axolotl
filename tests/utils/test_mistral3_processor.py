@@ -143,7 +143,7 @@ class TestReturnTensorsValidation:
             {"role": "assistant", "content": "Hi"},
         ]
 
-        with pytest.raises(ValueError, match="only supports.*return_tensors='pt'"):
+        with pytest.raises(ValueError, match=r"only supports.*return_tensors='pt'"):
             processor.apply_chat_template(
                 conversation, tokenize=True, return_dict=True, return_tensors="np"
             )
