@@ -1,7 +1,6 @@
 """Tests for nested config option handling via CLI dot-notation."""
 
 import click
-import pytest
 from click.testing import CliRunner
 from pydantic import BaseModel, Field
 
@@ -114,7 +113,10 @@ class TestLoadCfgNestedKwargs:
 
     @staticmethod
     def _apply_nested_kwargs(cfg, kwargs):
-        """Helper to simulate the nested kwargs handling from load_cfg."""
+        """Helper that mirrors the nested kwargs handling from load_cfg,
+        including type coercion for string CLI values."""
+        from axolotl.cli.config import _coerce_value
+
         nested_kwargs: dict = {}
         flat_kwargs: dict = {}
         for key, value in kwargs.items():
@@ -127,7 +129,7 @@ class TestLoadCfgNestedKwargs:
         cfg_keys = cfg.keys()
         for key, value in flat_kwargs.items():
             if key in cfg_keys:
-                cfg[key] = value
+                cfg[key] = _coerce_value(value, cfg.get(key))
 
         for parent, children in nested_kwargs.items():
             if cfg[parent] is None:
@@ -135,7 +137,8 @@ class TestLoadCfgNestedKwargs:
             if not isinstance(cfg[parent], dict):
                 cfg[parent] = {}
             for child_key, child_value in children.items():
-                cfg[parent][child_key] = child_value
+                existing = cfg[parent].get(child_key)
+                cfg[parent][child_key] = _coerce_value(child_value, existing)
 
         return cfg
 
@@ -144,12 +147,19 @@ class TestLoadCfgNestedKwargs:
         from axolotl.utils.dict import DictDefault
 
         cfg = DictDefault({"trl": {"beta": 0.1}, "learning_rate": 0.01})
-        kwargs = {"trl__beta": 0.5, "trl__host": "192.168.1.1", "learning_rate": 0.02}
+        # CLI passes strings, so simulate that
+        kwargs = {
+            "trl__beta": "0.5",
+            "trl__host": "192.168.1.1",
+            "learning_rate": "0.02",
+        }
 
         cfg = self._apply_nested_kwargs(cfg, kwargs)
 
         assert cfg["learning_rate"] == 0.02
+        assert isinstance(cfg["learning_rate"], float)
         assert cfg["trl"]["beta"] == 0.5
+        assert isinstance(cfg["trl"]["beta"], float)
         assert cfg["trl"]["host"] == "192.168.1.1"
 
     def test_nested_kwargs_creates_parent_if_none(self):
@@ -157,15 +167,61 @@ class TestLoadCfgNestedKwargs:
         from axolotl.utils.dict import DictDefault
 
         cfg = DictDefault({"trl": None, "learning_rate": 0.01})
-        cfg = self._apply_nested_kwargs(cfg, {"trl__beta": 0.5})
+        cfg = self._apply_nested_kwargs(cfg, {"trl__beta": "0.5"})
 
+        # No existing value, YAML-style inference: "0.5" -> 0.5
         assert cfg["trl"]["beta"] == 0.5
+        assert isinstance(cfg["trl"]["beta"], float)
 
     def test_nested_kwargs_overwrites_string_parent(self):
         """If the parent key is a string, it should be replaced with a dict."""
         from axolotl.utils.dict import DictDefault
 
         cfg = DictDefault({"trl": "some_string", "learning_rate": 0.01})
-        cfg = self._apply_nested_kwargs(cfg, {"trl__beta": 0.5})
+        cfg = self._apply_nested_kwargs(cfg, {"trl__beta": "0.5"})
 
         assert cfg["trl"]["beta"] == 0.5
+
+
+class TestCoerceValue:
+    """Test YAML-style type coercion for CLI string values."""
+
+    def test_coerce_with_existing_float(self):
+        from axolotl.cli.config import _coerce_value
+
+        assert _coerce_value("0.5", 0.1) == 0.5
+        assert isinstance(_coerce_value("0.5", 0.1), float)
+
+    def test_coerce_with_existing_int(self):
+        from axolotl.cli.config import _coerce_value
+
+        assert _coerce_value("42", 10) == 42
+        assert isinstance(_coerce_value("42", 10), int)
+
+    def test_coerce_with_existing_bool(self):
+        from axolotl.cli.config import _coerce_value
+
+        assert _coerce_value("true", False) is True
+        assert _coerce_value("false", True) is False
+        assert _coerce_value("1", False) is True
+        assert _coerce_value("0", True) is False
+
+    def test_coerce_yaml_inference_no_existing(self):
+        """Without an existing value, use YAML-style inference."""
+        from axolotl.cli.config import _coerce_value
+
+        assert _coerce_value("true", None) is True
+        assert _coerce_value("false", None) is False
+        assert _coerce_value("42", None) == 42
+        assert isinstance(_coerce_value("42", None), int)
+        assert _coerce_value("3.14", None) == 3.14
+        assert isinstance(_coerce_value("3.14", None), float)
+        assert _coerce_value("null", None) is None
+        assert _coerce_value("hello", None) == "hello"
+
+    def test_coerce_non_string_passthrough(self):
+        """Non-string values should pass through unchanged."""
+        from axolotl.cli.config import _coerce_value
+
+        assert _coerce_value(0.5, 0.1) == 0.5
+        assert _coerce_value(True, False) is True
