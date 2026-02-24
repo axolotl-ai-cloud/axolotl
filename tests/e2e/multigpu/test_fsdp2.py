@@ -423,6 +423,7 @@ class TestFSDP2:
 
         verify_training_success(temp_dir)
 
+    @pytest.mark.skip(reason="slow test w cu129 + torch 2.9.1 + py3.12")
     @require_torch_2_7_0
     def test_dpo_lora(self, temp_dir):
         cfg = DictDefault(

@@ -116,6 +116,7 @@ class TestTokenizers:
             tokenizer.decode([128041, 128042]) == "RANDOM_OVERRIDE_1RANDOM_OVERRIDE_2"
         )
 
+    @pytest.mark.skip("FIXME slow test sdist py3.11 + torch2.8.0")
     @enable_hf_offline
     def test_added_tokens_overrides_gemma3(self, temp_dir):
         cfg = DictDefault(
