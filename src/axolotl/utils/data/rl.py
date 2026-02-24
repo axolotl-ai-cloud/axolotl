@@ -245,6 +245,13 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
     # Merge datasets
     dataset = merge_datasets(split_datasets, cfg)
 
+    if cfg.skip_prepare_dataset and cfg.dataset_exact_deduplication:
+        LOG.warning(
+            "skip_prepare_dataset is enabled together with "
+            "dataset_exact_deduplication. Deduplication will be skipped "
+            "because dataset preparation is being skipped."
+        )
+
     if not cfg.skip_prepare_dataset:
         # Deduplicate before saving so the saved dataset is already de-duplicated
         if cfg.dataset_exact_deduplication:
