@@ -800,7 +800,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    tokenizer_path,</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    token_mappings,</span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    output_dir,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    revision<span class="op">=</span><span class="st">'main'</span>,</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Modify tokenizer files to replace added_tokens strings, save to output directory,
 and return the path to the modified tokenizer.</p>
 <p>This only works with reserved tokens that were added to the tokenizer, not tokens
@@ -809,10 +810,10 @@ already part of the vocab.</p>
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 16%">
-<col style="width: 18%">
-<col style="width: 51%">
-<col style="width: 12%">
+<col style="width: 15%">
+<col style="width: 17%">
+<col style="width: 54%">
+<col style="width: 11%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -840,6 +841,12 @@ already part of the vocab.</p>
 <td>str</td>
 <td>Directory to save the modified tokenizer</td>
 <td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>revision</td>
+<td>str</td>
+<td>Model revision/branch/tag/commit to load from (HF Hub)</td>
+<td><code>'main'</code></td>
 </tr>
 </tbody>
 </table>

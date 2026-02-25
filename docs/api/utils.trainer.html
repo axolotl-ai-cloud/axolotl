@@ -754,7 +754,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.utils.trainer.add_pose_position_ids" id="toc-axolotl.utils.trainer.add_pose_position_ids" class="nav-link" data-scroll-target="#axolotl.utils.trainer.add_pose_position_ids">add_pose_position_ids</a></li>
   <li><a href="#axolotl.utils.trainer.add_position_ids" id="toc-axolotl.utils.trainer.add_position_ids" class="nav-link" data-scroll-target="#axolotl.utils.trainer.add_position_ids">add_position_ids</a></li>
-  <li><a href="#axolotl.utils.trainer.drop_long_seq" id="toc-axolotl.utils.trainer.drop_long_seq" class="nav-link" data-scroll-target="#axolotl.utils.trainer.drop_long_seq">drop_long_seq</a></li>
+  <li><a href="#axolotl.utils.trainer.filter_sequences_by_length" id="toc-axolotl.utils.trainer.filter_sequences_by_length" class="nav-link" data-scroll-target="#axolotl.utils.trainer.filter_sequences_by_length">filter_sequences_by_length</a></li>
   <li><a href="#axolotl.utils.trainer.setup_trainer" id="toc-axolotl.utils.trainer.setup_trainer" class="nav-link" data-scroll-target="#axolotl.utils.trainer.setup_trainer">setup_trainer</a></li>
   </ul></li>
   </ul></li>
@@ -790,8 +790,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Handle both single-example and batched data.</td>
 </tr>
 <tr class="odd">
-<td><a href="#axolotl.utils.trainer.drop_long_seq">drop_long_seq</a></td>
-<td>Drop samples whose sequence length is either too long (&gt; sequence_len)</td>
+<td><a href="#axolotl.utils.trainer.filter_sequences_by_length">filter_sequences_by_length</a></td>
+<td>Filter sequences outside valid length range [min_sequence_len, sequence_len].</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.utils.trainer.setup_trainer">setup_trainer</a></td>
@@ -822,16 +822,16 @@ remaining in each sample.</p>
 - single example: sample[‘input_ids’] is a list[int]
 - batched data: sample[‘input_ids’] is a list[list[int]]</p>
 </section>
-<section id="axolotl.utils.trainer.drop_long_seq" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.trainer.drop_long_seq">drop_long_seq</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.drop_long_seq(</span>
+<section id="axolotl.utils.trainer.filter_sequences_by_length" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.trainer.filter_sequences_by_length">filter_sequences_by_length</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.filter_sequences_by_length(</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    sample,</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    sequence_len<span class="op">=</span><span class="dv">2048</span>,</span>
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    min_sequence_len<span class="op">=</span><span class="dv">2</span>,</span>
 <span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    raise_on_drop<span class="op">=</span><span class="va">False</span>,</span>
 <span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Drop samples whose sequence length is either too long (&gt; sequence_len)
-or too short (&lt; min_sequence_len).</p>
+<p>Filter sequences outside valid length range [min_sequence_len, sequence_len].</p>
+<p>Drops samples that are either too short (&lt; min_sequence_len) or too long (&gt; sequence_len).</p>
 <p>Works for both single-example (list[int]) or batched (list[list[int]]).</p>
 <p>If raise_on_drop is set, the code raises a ValueError if a sample is
 encountered that is too long and would have been dropped.</p>
