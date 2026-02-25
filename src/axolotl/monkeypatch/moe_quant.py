@@ -117,8 +117,10 @@ def quantize_moe_expert_params(model, quant_type=None, compress_statistics=None)
             quant_type=quant_type,
         )
         count += 1
+        # Free the bf16 → 4-bit conversion buffers after each parameter
+        # to avoid accumulating peak reserved VRAM.
+        torch.cuda.empty_cache()
 
-    torch.cuda.empty_cache()
     LOG.info(
         "Quantized %d MoE expert parameters to 4-bit (quant_type=%s, compress_statistics=%s)",
         count,
