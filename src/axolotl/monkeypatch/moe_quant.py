@@ -63,15 +63,10 @@ def patch_moe_quantization_on_load(cfg):
     # size (BnB doesn't know we'll quantize them), causing a ~50+ GiB reservation
     # that defeats loading-time quantization. Disabling it trades slightly slower
     # weight loading for dramatically lower peak VRAM.
-    _original_warmup = transformers.modeling_utils.caching_allocator_warmup
-
     def _noop_warmup(*args, **kwargs):
-        LOG.info(
-            "Skipped caching_allocator_warmup (MoE loading-time quantization active)"
-        )
+        pass
 
     transformers.modeling_utils.caching_allocator_warmup = _noop_warmup
-    LOG.info("Patched caching_allocator_warmup to no-op for MoE quantization")
 
     # Read quantization settings from config
     quant_type = getattr(cfg, "bnb_4bit_quant_type", None) or "nf4"
@@ -101,24 +96,9 @@ def patch_moe_quantization_on_load(cfg):
                 )
                 torch.cuda.empty_cache()
                 _moe_load_state["count"] += 1
-                if _moe_load_state["count"] % 10 == 1:
-                    LOG.info(
-                        "Quantized expert param #%d: %s "
-                        "(alloc=%.2f GiB, reserved=%.2f GiB)",
-                        _moe_load_state["count"],
-                        target_name,
-                        torch.cuda.memory_allocated() / 1024**3,
-                        torch.cuda.memory_reserved() / 1024**3,
-                    )
 
     transformers.core_model_loading.set_param_for_module = _patched_set_param_for_module
     _moe_load_state["patched"] = True
-    LOG.info(
-        "Activated MoE loading-time quantization patch "
-        "(quant_type=%s, compress_statistics=%s)",
-        quant_type,
-        compress_statistics,
-    )
 
 
 def get_moe_quantized_count():
