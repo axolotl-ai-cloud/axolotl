@@ -765,7 +765,11 @@ class AxolotlTrainer(
                     metadata={"format": "pt"},
                 )
         else:
-            self.model.save_pretrained(output_dir, state_dict=state_dict)
+            self.model.save_pretrained(
+                output_dir,
+                state_dict=state_dict,
+                is_main_process=self.accelerator.is_main_process,
+            )
 
         if self.processing_class is not None:
             self.processing_class.save_pretrained(output_dir)
