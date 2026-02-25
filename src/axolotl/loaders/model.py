@@ -172,18 +172,30 @@ class ModelLoader:
         # Build the model
         PLUGIN_MANAGER.pre_model_load(self.cfg)
         self.patch_manager.apply_post_plugin_pre_model_load_patches()
+
+        # Activate loading-time quantization for 3D MoE expert params before
+        # from_pretrained() runs.  This patches set_param_for_module so each
+        # expert weight is quantized to 4-bit as it's loaded, keeping peak
+        # VRAM to one expert param in bf16 at a time.
+        moe_quant_active = False
+        if self.cfg.adapter in ("qlora", "lora") and self.cfg.load_in_4bit:
+            from axolotl.monkeypatch.moe_quant import patch_moe_quantization_on_load
+
+            patch_moe_quantization_on_load(self.cfg)
+            moe_quant_active = True
+
         skip_move_to_device = self._build_model()
 
-        # Quantize 3D MoE expert nn.Parameter tensors that BnB skips during loading.
+        # Check if any MoE expert params were quantized during loading.
         self.model._moe_experts_quantized = False
-        if self.cfg.adapter in ("qlora", "lora") and self.cfg.load_in_4bit:
+        if moe_quant_active:
             from axolotl.monkeypatch.moe_quant import (
+                get_moe_quantized_count,
                 patch_peft_target_parameters_matching,
-                quantize_moe_expert_params,
             )
 
-            self.model._moe_experts_quantized = quantize_moe_expert_params(self.model)
-            if self.model._moe_experts_quantized:
+            if get_moe_quantized_count() > 0:
+                self.model._moe_experts_quantized = True
                 patch_peft_target_parameters_matching()
 
         PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
