@@ -197,6 +197,7 @@ class ModelLoader:
             if get_moe_quantized_count() > 0:
                 self.model._moe_experts_quantized = True
                 patch_peft_target_parameters_matching()
+                torch.cuda.empty_cache()
 
         PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
 
