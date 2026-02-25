@@ -39,28 +39,18 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
         uv pip install "mamba_ssm @ git+https://github.com/state-spaces/mamba.git@main"; \
     fi
 
-RUN case "$PYTORCH_VERSION" in \
-        2.9.[0-9]*) \
-            if [ "$TARGETARCH" = "amd64" ]; then \
-                if [ "$CUDA" = "128" ]; then \
-                    wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.5.4/flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
-                    uv pip install --no-cache-dir flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
-                    rm flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
-                elif [ "$CUDA" = "130" ]; then \
-                    wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.5.4/flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_x86_64.whl; \
-                    uv pip install --no-cache-dir flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_x86_64.whl; \
-                    rm flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_x86_64.whl; \
-                fi \
-            elif [ "$TARGETARCH" = "arm64" ]; then \
-                if [ "$CUDA" = "128" ]; then \
-                    wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.6.4/flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_aarch64.whl; \
-                    uv pip install --no-cache-dir flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_aarch64.whl; \
-                    rm flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_aarch64.whl; \
-                elif [ "$CUDA" = "130" ]; then \
-                    wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.6.4/flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_aarch64.whl; \
-                    uv pip install --no-cache-dir flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_aarch64.whl; \
-                    rm flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_aarch64.whl; \
-                fi \
-            fi \
-            ;; \
-    esac
+# Map Python version (e.g., 3.12 -> cp312)
+RUN PYTHON_CP="cp$(echo $PYTHON_VERSION | tr -d '.')" && \
+    # Map PyTorch version (e.g., 2.9.1 -> torch2.9, 2.10.0 -> torch2.10)
+    TORCH_TAG="torch$(echo $PYTORCH_VERSION | grep -oP '^\d+\.\d+')" && \
+    # Map architecture
+    case "$TARGETARCH" in \
+        amd64) ARCH_TAG="x86_64" ;; \
+        arm64) ARCH_TAG="aarch64" ;; \
+        *) echo "Unsupported architecture: $TARGETARCH"; exit 1 ;; \
+    esac && \
+    WHL_VERSION="v0.7.16" && \
+    WHL_FILE="flash_attn-2.8.3+cu${CUDA}${TORCH_TAG}-${PYTHON_CP}-${PYTHON_CP}-linux_${ARCH_TAG}.whl" && \
+    wget -nv "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/${WHL_VERSION}/${WHL_FILE}" && \
+    uv pip install --no-cache-dir "${WHL_FILE}" && \
+    rm "${WHL_FILE}"

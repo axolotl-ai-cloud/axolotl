@@ -59,34 +59,18 @@ RUN git lfs install --skip-repo && \
     pip3 install -U --no-cache-dir pydantic==1.10.10 && \
     pip3 cache purge
 
-RUN case "$PYTORCH_VERSION" in \
-        2.9.[0-9]*) \
-            if [ "$CUDA" = "128" ]; then \
-                if [ "$TARGETARCH" = "amd64" ]; then \
-                    WHL_FILE="flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl"; \
-                    WHL_VERSION="v0.5.4"; \
-                elif [ "$TARGETARCH" = "arm64" ]; then \
-                    WHL_FILE="flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_aarch64.whl"; \
-                    WHL_VERSION="v0.6.4"; \
-                else \
-                    echo "Unsupported architecture: $TARGETARCH"; exit 1; \
-                fi; \
-                wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/${WHL_VERSION}/${WHL_FILE}; \
-                pip3 install --no-cache-dir ${WHL_FILE}; \
-                rm ${WHL_FILE}; \
-            elif [ "$CUDA" = "130" ]; then \
-                if [ "$TARGETARCH" = "amd64" ]; then \
-                    WHL_FILE="flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_x86_64.whl"; \
-                    WHL_VERSION="v0.5.4"; \
-                elif [ "$TARGETARCH" = "arm64" ]; then \
-                    WHL_FILE="flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_aarch64.whl"; \
-                    WHL_VERSION="v0.6.4"; \
-                else \
-                    echo "Unsupported architecture: $TARGETARCH"; exit 1; \
-                fi; \
-                wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/${WHL_VERSION}/${WHL_FILE}; \
-                pip3 install --no-cache-dir ${WHL_FILE}; \
-                rm ${WHL_FILE}; \
-            fi \
-            ;; \
-    esac
+# Map Python version (e.g., 3.12 -> cp312)
+RUN PYTHON_CP="cp$(echo $PYTHON_VERSION | tr -d '.')" && \
+    # Map PyTorch version (e.g., 2.9.1 -> torch2.9, 2.10.0 -> torch2.10)
+    TORCH_TAG="torch$(echo $PYTORCH_VERSION | grep -oP '^\d+\.\d+')" && \
+    # Map architecture
+    case "$TARGETARCH" in \
+        amd64) ARCH_TAG="x86_64" ;; \
+        arm64) ARCH_TAG="aarch64" ;; \
+        *) echo "Unsupported architecture: $TARGETARCH"; exit 1 ;; \
+    esac && \
+    WHL_VERSION="v0.7.16" && \
+    WHL_FILE="flash_attn-2.8.3+cu${CUDA}${TORCH_TAG}-${PYTHON_CP}-${PYTHON_CP}-linux_${ARCH_TAG}.whl" && \
+    wget -nv "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/${WHL_VERSION}/${WHL_FILE}" && \
+    pip3 install --no-cache-dir "${WHL_FILE}" && \
+    rm "${WHL_FILE}"
