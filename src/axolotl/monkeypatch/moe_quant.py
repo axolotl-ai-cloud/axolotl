@@ -53,8 +53,17 @@ def patch_moe_quantization_on_load(cfg):
         LOG.debug("MoE loading-time quantization patch already active")
         return
 
+    import os
+
     import transformers.core_model_loading
     from bitsandbytes.nn.parametrize import replace_parameter_4bit
+
+    # Disable transformers' async weight loading thread pool. Without this,
+    # the ThreadPoolExecutor pre-fetches tensors to CUDA faster than the main
+    # loop can quantize them, causing all expert weights to accumulate in bf16
+    # on GPU — defeating the purpose of loading-time quantization.
+    os.environ["HF_DEACTIVATE_ASYNC_LOAD"] = "1"
+    LOG.info("Disabled async weight loading (HF_DEACTIVATE_ASYNC_LOAD=1)")
 
     # Read quantization settings from config
     quant_type = getattr(cfg, "bnb_4bit_quant_type", None) or "nf4"
