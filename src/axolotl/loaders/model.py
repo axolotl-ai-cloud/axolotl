@@ -177,9 +177,14 @@ class ModelLoader:
         # Quantize 3D MoE expert nn.Parameter tensors that BnB skips during loading.
         self.model._moe_experts_quantized = False
         if self.cfg.adapter in ("qlora", "lora") and self.cfg.load_in_4bit:
-            from axolotl.monkeypatch.moe_quant import quantize_moe_expert_params
+            from axolotl.monkeypatch.moe_quant import (
+                patch_peft_target_parameters_matching,
+                quantize_moe_expert_params,
+            )
 
             self.model._moe_experts_quantized = quantize_moe_expert_params(self.model)
+            if self.model._moe_experts_quantized:
+                patch_peft_target_parameters_matching()
 
         PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
 
