@@ -46,6 +46,10 @@ class SchedulerMixin(Trainer):
         )
 
         if optimizer is None:
+            if self.optimizer is None:
+                raise ValueError(
+                    "Optimizer must be set before calling create_scheduler or passed as an argument."
+                )
             optimizer = self.optimizer
 
         # fmt: off
