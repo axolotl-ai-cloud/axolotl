@@ -1481,3 +1481,18 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 "dataset_exact_deduplication is not available for streaming datasets. "
             )
         return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_deduplication_with_skip_prepare(cls, data):
+        if data.get("dataset_exact_deduplication") and data.get(
+            "skip_prepare_dataset"
+        ):
+            raise ValueError(
+                "dataset_exact_deduplication=True has no effect when "
+                "skip_prepare_dataset=True. Deduplication runs as part of the "
+                "prepare pipeline, which is skipped. Either set "
+                "skip_prepare_dataset: false or disable "
+                "dataset_exact_deduplication."
+            )
+        return data

@@ -3,9 +3,8 @@
 This addresses GitHub issue #2719: Save De-duplicated Set During Pre-processing.
 """
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
 from datasets import Dataset
 
 from axolotl.utils.dict import DictDefault
@@ -36,22 +35,26 @@ class TestSFTSaveDeduplicatedBeforeSave:
         dataset = Dataset.from_dict({"text": ["a", "b", "a"], "label": [1, 2, 1]})
         deduped_dataset = Dataset.from_dict({"text": ["a", "b"], "label": [1, 2]})
 
-        mock_datasets_gen.return_value = [DictDefault({"path": "test", "type": "alpaca"})]
+        mock_datasets_gen.return_value = [
+            DictDefault({"path": "test", "type": "alpaca"})
+        ]
         mock_load_single.return_value = (dataset, None)
         mock_merge.return_value = dataset
         mock_dedup.return_value = (deduped_dataset, None)
         mock_gen_hash.return_value = "testhash"
 
-        cfg = DictDefault({
-            "skip_prepare_dataset": False,
-            "dataset_exact_deduplication": True,
-            "sequence_len": 1024,
-            "eval_sequence_len": None,
-            "sample_packing": False,
-            "is_preprocess": False,
-            "seed": 42,
-            "datasets": [{"path": "test", "type": "alpaca"}],
-        })
+        cfg = DictDefault(
+            {
+                "skip_prepare_dataset": False,
+                "dataset_exact_deduplication": True,
+                "sequence_len": 1024,
+                "eval_sequence_len": None,
+                "sample_packing": False,
+                "is_preprocess": False,
+                "seed": 42,
+                "datasets": [{"path": "test", "type": "alpaca"}],
+            }
+        )
 
         tokenizer = MagicMock()
         tokenizer.name_or_path = "test-tokenizer"
@@ -97,26 +100,32 @@ class TestSFTSaveDeduplicatedBeforeSave:
 
         dataset = Dataset.from_dict({"text": ["a", "b", "a"], "label": [1, 2, 1]})
 
-        mock_datasets_gen.return_value = [DictDefault({"path": "test", "type": "alpaca"})]
+        mock_datasets_gen.return_value = [
+            DictDefault({"path": "test", "type": "alpaca"})
+        ]
         mock_load_single.return_value = (dataset, None)
         mock_merge.return_value = dataset
         mock_gen_hash.return_value = "testhash"
 
-        cfg = DictDefault({
-            "skip_prepare_dataset": False,
-            "dataset_exact_deduplication": False,
-            "sequence_len": 1024,
-            "eval_sequence_len": None,
-            "sample_packing": False,
-            "is_preprocess": False,
-            "seed": 42,
-            "datasets": [{"path": "test", "type": "alpaca"}],
-        })
+        cfg = DictDefault(
+            {
+                "skip_prepare_dataset": False,
+                "dataset_exact_deduplication": False,
+                "sequence_len": 1024,
+                "eval_sequence_len": None,
+                "sample_packing": False,
+                "is_preprocess": False,
+                "seed": 42,
+                "datasets": [{"path": "test", "type": "alpaca"}],
+            }
+        )
 
         tokenizer = MagicMock()
         tokenizer.name_or_path = "test-tokenizer"
 
-        with patch("axolotl.utils.data.sft.deduplicate_and_log_datasets") as mock_dedup:
+        with patch(
+            "axolotl.utils.data.sft.deduplicate_and_log_datasets"
+        ) as mock_dedup:
             _load_raw_datasets(
                 cfg=cfg,
                 datasets_configs=cfg.datasets,
@@ -135,7 +144,7 @@ class TestRLSaveDeduplicatedBeforeSave:
     @patch("axolotl.utils.data.rl.merge_datasets")
     @patch("axolotl.utils.data.rl.load_dataset_with_config")
     @patch("axolotl.utils.data.rl.datasets_with_name_generator")
-    @patch("axolotl.loaders.load_tokenizer")
+    @patch("axolotl.utils.data.rl.load_tokenizer")
     def test_dedup_called_before_save_rl(
         self,
         mock_load_tokenizer,
@@ -149,18 +158,24 @@ class TestRLSaveDeduplicatedBeforeSave:
         """Deduplication should be called before save_preprocessed_dataset in RL."""
         from axolotl.utils.data.rl import _load_split
 
-        dataset = Dataset.from_dict({
-            "prompt": ["hi", "bye", "hi"],
-            "chosen": ["a", "b", "a"],
-            "rejected": ["c", "d", "c"],
-        })
-        deduped_dataset = Dataset.from_dict({
-            "prompt": ["hi", "bye"],
-            "chosen": ["a", "b"],
-            "rejected": ["c", "d"],
-        })
+        dataset = Dataset.from_dict(
+            {
+                "prompt": ["hi", "bye", "hi"],
+                "chosen": ["a", "b", "a"],
+                "rejected": ["c", "d", "c"],
+            }
+        )
+        deduped_dataset = Dataset.from_dict(
+            {
+                "prompt": ["hi", "bye"],
+                "chosen": ["a", "b"],
+                "rejected": ["c", "d"],
+            }
+        )
 
-        mock_datasets_gen.return_value = [DictDefault({"path": "test", "type": None})]
+        mock_datasets_gen.return_value = [
+            DictDefault({"path": "test", "type": None})
+        ]
         mock_load_dataset.return_value = dataset
         mock_merge.return_value = dataset
         mock_dedup.return_value = (deduped_dataset, None)
@@ -170,16 +185,18 @@ class TestRLSaveDeduplicatedBeforeSave:
         tokenizer.name_or_path = "test-tokenizer"
         mock_load_tokenizer.return_value = tokenizer
 
-        cfg = DictDefault({
-            "skip_prepare_dataset": False,
-            "dataset_exact_deduplication": True,
-            "sequence_len": 1024,
-            "rl": "dpo",
-            "datasets": [{"path": "test", "type": None}],
-            "hf_use_auth_token": False,
-            "dataset_num_proc": 1,
-            "is_preprocess": False,
-        })
+        cfg = DictDefault(
+            {
+                "skip_prepare_dataset": False,
+                "dataset_exact_deduplication": True,
+                "sequence_len": 1024,
+                "rl": "dpo",
+                "datasets": [{"path": "test", "type": None}],
+                "hf_use_auth_token": False,
+                "dataset_num_proc": 1,
+                "is_preprocess": False,
+            }
+        )
 
         call_order = []
         mock_dedup.side_effect = lambda **kwargs: (

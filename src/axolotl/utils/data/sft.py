@@ -343,13 +343,6 @@ def _load_raw_datasets(
     # Merge datasets
     dataset = merge_datasets(datasets, cfg)
 
-    if cfg.skip_prepare_dataset and cfg.dataset_exact_deduplication:
-        LOG.warning(
-            "skip_prepare_dataset is enabled together with "
-            "dataset_exact_deduplication. Deduplication will be skipped "
-            "because dataset preparation is being skipped."
-        )
-
     if not cfg.skip_prepare_dataset and not streaming:
         if split == "test" and cfg.eval_sequence_len:
             dataset = handle_long_seq_in_dataset(dataset, cfg.eval_sequence_len, cfg)
