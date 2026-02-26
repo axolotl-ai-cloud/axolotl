@@ -150,13 +150,17 @@ def get_state_dict(self, model, unwrap=True):
             )
     elif self.is_fsdp2:
         # https://github.com/pytorch/torchtune/blob/main/torchtune/training/_distributed.py#L465
+        from torch.distributed.tensor import DTensor
+
         state_dict = {}
         sharded_state_dict = model.state_dict()
         for param_name, param in sharded_state_dict.items():
             if param.is_cpu:
                 param = param.to(torch.device("cuda"))
 
-            param = param.full_tensor()
+            if isinstance(param, DTensor):
+                param = param.full_tensor()
+
             if torch.distributed.get_rank() == 0:
                 state_dict[param_name] = param.cpu()
             torch.distributed.barrier()
