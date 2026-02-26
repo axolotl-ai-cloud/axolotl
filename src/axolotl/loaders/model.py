@@ -175,10 +175,12 @@ class ModelLoader:
 
         # Activate loading-time quantization for 3D MoE expert params before
         # from_pretrained() runs.  This patches set_param_for_module so each
-        # expert weight is quantized to 4-bit as it's loaded, keeping peak
-        # VRAM to one expert param in bf16 at a time.
+        # expert weight is quantized (4-bit or 8-bit) as it's loaded, keeping
+        # peak VRAM to one expert param in bf16 at a time.
         moe_quant_active = False
-        if self.cfg.adapter in ("qlora", "lora") and self.cfg.load_in_4bit:
+        if self.cfg.adapter in ("qlora", "lora") and (
+            self.cfg.load_in_4bit or self.cfg.load_in_8bit
+        ):
             from axolotl.monkeypatch.moe_quant import patch_moe_quantization_on_load
 
             patch_moe_quantization_on_load(self.cfg)
