@@ -177,16 +177,18 @@ def apply_linear8bitlt_save_patch():
     original_save = bnb.nn.Linear8bitLt._save_to_state_dict
 
     def _patched_save_to_state_dict(self, destination, prefix, keep_vars):
-        weight = self.weight
+        # Bypass nn.Module.__setattr__ which rejects non-Parameter assignments.
+        # Directly manipulate _parameters dict to swap DTensor ↔ Int8Params.
+        weight = self._parameters["weight"]
         unwrapped = False
         if isinstance(weight, DTensor) and hasattr(weight, "_local_tensor"):
-            self.weight = weight._local_tensor
+            self._parameters["weight"] = weight._local_tensor
             unwrapped = True
         try:
             original_save(self, destination, prefix, keep_vars)
         finally:
             if unwrapped:
-                self.weight = weight
+                self._parameters["weight"] = weight
 
     bnb.nn.Linear8bitLt._save_to_state_dict = _patched_save_to_state_dict
     LOG.info("Patched Linear8bitLt._save_to_state_dict for DTensor compatibility")
