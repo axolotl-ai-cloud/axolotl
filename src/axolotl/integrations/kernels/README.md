@@ -39,6 +39,8 @@ This works for any MoE model in transformers that uses a `SparseMoeBlock` class 
 
 ScatterMoE uses a softmax -> topk routing, so results may be different for some model arch as baseline (GPT-OSS, GLM_MOE_DSA).
 
+ScatterMoE does not work for GLM4.7 Flash (glm4_moe_lite) atm.
+
 ## Note on MegaBlocks
 
 We tested [MegaBlocks](https://huggingface.co/kernels-community/megablocks) but were unable to ensure numerical accuracy, so we did not integrate it. It was also incompatible with many newer model architectures in transformers.
