@@ -45,6 +45,9 @@ class SchedulerMixin(Trainer):
             and self.args.cosine_min_lr_ratio is not None
         )
 
+        if optimizer is None:
+            optimizer = self.optimizer
+
         # fmt: off
         if self.lr_scheduler is None:  # type: ignore
             # fmt: on
