@@ -25,7 +25,7 @@ class SchedulerMixin(Trainer):
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
 
     def create_scheduler(
-        self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
+        self, num_training_steps: int, optimizer: None | torch.optim.Optimizer = None
     ) -> LRScheduler:
         """
         Set up the scheduler. The optimizer of the trainer must have been set up either before this method is called or
