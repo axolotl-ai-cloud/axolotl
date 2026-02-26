@@ -51,7 +51,14 @@ class Bnb8bitParametrization(torch.nn.Module):
 
     @torch.no_grad()
     def forward(self, quantized_param: torch.Tensor) -> torch.Tensor:
-        return bnb.functional.int8_vectorwise_dequant(quantized_param, self.row_stats)
+        # BnB's int8_vectorwise_dequant uses stats.view(-1, 1) which only works
+        # for 2D tensors. For 3D+ expert weights (num_experts, out, in), flatten
+        # leading dims to 2D, dequant, then reshape back.
+        orig_shape = quantized_param.shape
+        if quantized_param.ndim > 2:
+            quantized_param = quantized_param.reshape(-1, orig_shape[-1])
+        result = bnb.functional.int8_vectorwise_dequant(quantized_param, self.row_stats)
+        return result.reshape(orig_shape)
 
 
 def _enable_parametrization_cache(module, inputs):
