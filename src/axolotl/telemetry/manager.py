@@ -156,6 +156,10 @@ class TelemetryManager:
         Returns:
             Boolean denoting whether telemetry is enabled or not.
         """
+        # Only rank 0 will send telemetry
+        if not is_main_process():
+            return False
+
         # Parse relevant env vars
         axolotl_do_not_track = os.getenv("AXOLOTL_DO_NOT_TRACK")
         do_not_track = os.getenv("DO_NOT_TRACK")
@@ -168,10 +172,6 @@ class TelemetryManager:
             "true",
         ):
             return True
-
-        # Only rank 0 will send telemetry
-        if not is_main_process():
-            return False
 
         if do_not_track is None:
             do_not_track = "0"
