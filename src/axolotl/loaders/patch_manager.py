@@ -358,11 +358,14 @@ class PatchManager:
                 apply_init_dtype_attrs_patch,
                 apply_init_sharded_param_patch,
                 apply_init_unsharded_param_patch,
+                apply_linear8bitlt_save_patch,
             )
 
             apply_init_sharded_param_patch()
             apply_init_unsharded_param_patch()
             apply_init_dtype_attrs_patch()
+            if self.cfg.load_in_8bit:
+                apply_linear8bitlt_save_patch()
 
     def _apply_tiled_mlp(self, model_type: str):
         if self.cfg.tiled_mlp:

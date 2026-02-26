@@ -163,6 +163,35 @@ def apply_init_unsharded_param_patch():
         LOG.warning("Could not find target code for patching")
 
 
+def apply_linear8bitlt_save_patch():
+    """Patch Linear8bitLt._save_to_state_dict to handle DTensor-wrapped Int8Params.
+
+    After FSDP2 sharding, Linear8bitLt.weight is a DTensor wrapping Int8Params.
+    BnB's _save_to_state_dict accesses self.weight.SCB directly, but DTensor
+    doesn't proxy custom attribute access to its _local_tensor. This patch
+    temporarily unwraps the DTensor during saving so BnB can find the SCB attribute.
+    """
+    import bitsandbytes as bnb
+    from torch.distributed.tensor import DTensor
+
+    original_save = bnb.nn.Linear8bitLt._save_to_state_dict
+
+    def _patched_save_to_state_dict(self, destination, prefix, keep_vars):
+        weight = self.weight
+        unwrapped = False
+        if isinstance(weight, DTensor) and hasattr(weight, "_local_tensor"):
+            self.weight = weight._local_tensor
+            unwrapped = True
+        try:
+            original_save(self, destination, prefix, keep_vars)
+        finally:
+            if unwrapped:
+                self.weight = weight
+
+    bnb.nn.Linear8bitLt._save_to_state_dict = _patched_save_to_state_dict
+    LOG.info("Patched Linear8bitLt._save_to_state_dict for DTensor compatibility")
+
+
 def apply_init_dtype_attrs_patch():
     """Prevent FSDP2 mixed precision from casting non-float quantized params.
 
