@@ -1,9 +1,10 @@
 """
-Monkeypatch to add Params4bit support to FSDP2. This enables QLoRA + FSDP2, as well as
-our LoRA / QLoRA Triton kernels to work with FSDP2.
+Monkeypatch to add Params4bit and Int8Params support to FSDP2. This enables QLoRA + FSDP2
+and 8-bit LoRA + FSDP2, as well as our LoRA / QLoRA Triton kernels to work with FSDP2.
 
-This patch modifies the _init_sharded_param method in FSDPParam to handle bitsandbytes
-Params4bit parameters.
+This patch modifies the _init_sharded_param and init_unsharded_param methods in FSDPParam
+to handle bitsandbytes Params4bit and Int8Params parameters, preserving their quantization
+metadata through the FSDP2 shard/unshard cycle.
 """
 
 import importlib
@@ -39,6 +40,15 @@ def apply_init_sharded_param_patch():
             quant_storage=param.quant_storage,
             module=param.module,
             bnb_quantized=param.bnb_quantized,
+        )
+        self.sharded_param = self.to_sharded_dtensor(self.sharded_param)
+    elif isinstance(param, bnb.nn.modules.Int8Params):
+        self.sharded_param = bnb.nn.modules.Int8Params(
+            data=sharded_param,
+            requires_grad=param.requires_grad,
+            has_fp16_weights=param.has_fp16_weights,
+            CB=None,
+            SCB=param.SCB,
         )
         self.sharded_param = self.to_sharded_dtensor(self.sharded_param)
     else:
@@ -106,6 +116,14 @@ def apply_init_unsharded_param_patch():
                 quant_storage=local_tensor.quant_storage,
                 module=local_tensor.module,
                 bnb_quantized=local_tensor.bnb_quantized,
+            )
+        elif isinstance(local_tensor, bnb.nn.modules.Int8Params):
+            self._unsharded_param = bnb.nn.modules.Int8Params(
+                data=unsharded_param,
+                requires_grad=self.sharded_param.requires_grad,
+                has_fp16_weights=local_tensor.has_fp16_weights,
+                CB=unsharded_param,
+                SCB=local_tensor.SCB,
             )
         else:
             self._unsharded_param = nn.Parameter(
