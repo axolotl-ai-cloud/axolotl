@@ -143,3 +143,36 @@ def apply_init_unsharded_param_patch():
         LOG.info("Successfully applied FSDP init_unsharded_param patch")
     else:
         LOG.warning("Could not find target code for patching")
+
+
+def apply_init_dtype_attrs_patch():
+    """Prevent FSDP2 mixed precision from casting non-float quantized params.
+
+    When mixed precision is enabled (e.g., bf16), FSDP2's init_dtype_attrs sets
+    param_dtype=bf16 for ALL params. During all-gather, _to_dtype_if_needed casts
+    the sharded param to param_dtype. For non-float params (uint8 packed 4-bit,
+    int8 quantized) without FSDP2 extensions, this destroys the quantized data.
+
+    Params4bit handles this via fsdp_pre/post_all_gather extensions, but our
+    parametrize-based expert quantization uses plain nn.Parameter(uint8/int8)
+    without extensions.
+    """
+    from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
+
+    original_init_dtype_attrs = FSDPParam.init_dtype_attrs
+
+    def patched_init_dtype_attrs(self, mp_policy):
+        original_init_dtype_attrs(self, mp_policy)
+        # Non-float params without FSDP2 extensions (e.g., uint8/int8 from
+        # parametrize-based MoE expert quantization) must not be cast to
+        # param_dtype. The parametrization chain dequantizes after unshard.
+        # Params with extensions (e.g., Params4bit) handle their own dtype.
+        if self.param_dtype is not None and not self.sharded_param.is_floating_point():
+            local = self.sharded_param
+            if hasattr(local, "_local_tensor"):
+                local = local._local_tensor
+            if not hasattr(local, "fsdp_pre_all_gather"):
+                self.param_dtype = None
+
+    FSDPParam.init_dtype_attrs = patched_init_dtype_attrs
+    LOG.info("Patched FSDPParam.init_dtype_attrs for non-float quantized params")

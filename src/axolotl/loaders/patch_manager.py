@@ -355,12 +355,14 @@ class PatchManager:
             and self.cfg.adapter == "qlora"
         ):
             from axolotl.monkeypatch.fsdp2_qlora import (
+                apply_init_dtype_attrs_patch,
                 apply_init_sharded_param_patch,
                 apply_init_unsharded_param_patch,
             )
 
             apply_init_sharded_param_patch()
             apply_init_unsharded_param_patch()
+            apply_init_dtype_attrs_patch()
 
     def _apply_tiled_mlp(self, model_type: str):
         if self.cfg.tiled_mlp:
