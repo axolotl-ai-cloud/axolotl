@@ -19,7 +19,7 @@ python scripts/cutcrossentropy_install.py | sh
 
 - If you are installing from pip
 ```bash
-pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@58d6572"
+pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@a668583"
 ```
 
 ## Usage
@@ -88,9 +88,9 @@ plugins:
 - qwen2_vl
 - qwen3
 - qwen3_5
+- qwen3_5_text
 - qwen3_5_moe
-- qwen3_5_moe_vl
-- qwen3_5_vl
+- qwen3_5_moe_text
 - qwen3_moe
 - qwen3_next
 - qwen3_vl
