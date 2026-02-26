@@ -352,7 +352,7 @@ class PatchManager:
         if (
             self.cfg.fsdp_config
             and str(self.cfg.fsdp_version) == "2"
-            and self.cfg.adapter == "qlora"
+            and (self.cfg.load_in_4bit or self.cfg.load_in_8bit)
         ):
             from axolotl.monkeypatch.fsdp2_qlora import (
                 apply_init_dtype_attrs_patch,
