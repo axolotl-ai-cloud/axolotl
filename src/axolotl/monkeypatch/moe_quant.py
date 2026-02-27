@@ -7,8 +7,6 @@ on-the-fly (4-bit via bitsandbytes parametrize, 8-bit via custom int8 parametriz
 reducing peak VRAM from "all experts in bf16" to "one expert at a time."
 """
 
-import gc
-
 import bitsandbytes as bnb
 import torch
 import torch.nn.utils.parametrize as P
@@ -69,8 +67,10 @@ def replace_parameter_8bit(module, param_name):
     )
 
     # Cache dequantized values during forward to avoid redundant dequantization.
-    module.register_forward_pre_hook(_enable_parametrization_cache)
-    module.register_forward_hook(_disable_parametrization_cache)
+    if not getattr(module, "_axolotl_8bit_hooks_registered", False):
+        module.register_forward_pre_hook(_enable_parametrization_cache)
+        module.register_forward_hook(_disable_parametrization_cache)
+        module._axolotl_8bit_hooks_registered = True
 
 
 def patch_moe_quantization_on_load(cfg):
@@ -139,7 +139,6 @@ def patch_moe_quantization_on_load(cfg):
 
                 # Release the bf16 tensor so CUDA memory is freed immediately.
                 param_value.data = torch.empty(0, device="cpu")
-                gc.collect()
                 torch.cuda.empty_cache()
 
     transformers.core_model_loading.set_param_for_module = _patched_set_param_for_module
@@ -153,6 +152,8 @@ def get_moe_quantized_count():
 
 def patch_peft_target_parameters_matching():
     """Fix PEFT's _inject_parameters to use suffix matching for parametrized modules."""
+    if getattr(patch_peft_target_parameters_matching, "_axolotl_patched", False):
+        return
     from peft.tuners.tuners_utils import BaseTuner
 
     original_inject = BaseTuner._inject_parameters
@@ -183,4 +184,5 @@ def patch_peft_target_parameters_matching():
             peft_config.target_parameters = original_targets
 
     BaseTuner._inject_parameters = _patched_inject_parameters
+    patch_peft_target_parameters_matching._axolotl_patched = True
     LOG.info("Patched PEFT _inject_parameters for parametrized module suffix matching")
