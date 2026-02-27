@@ -229,11 +229,9 @@ def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
     from peft.tuners.lora.layer import ParamWrapper
     from torch.distributed.fsdp import fully_shard
 
-    # ParamWrapper's lora_A/B are only accessed via .weight in get_delta_weight(),
-    # not through forward().  Independent sharding leaves them as sharded DTensors
-    # outside the unshard context, causing incorrect reshape/einsum results.
-    # The parent decoder layer's FSDP wrapper manages them instead — properly
-    # unsharded (Replicate) during forward.
+    # Skip ParamWrapper — its lora_A/B must not be independently sharded.
+    # The parent decoder layer's FSDP wrapper handles unsharding them.
+    # TODO: review if we even need to shard them separately in first place.
     if isinstance(module, ParamWrapper):
         return False
 

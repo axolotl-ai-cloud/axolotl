@@ -173,33 +173,8 @@ class ModelLoader:
         PLUGIN_MANAGER.pre_model_load(self.cfg)
         self.patch_manager.apply_post_plugin_pre_model_load_patches()
 
-        # Activate loading-time quantization for 3D MoE expert params before
-        # from_pretrained() runs.  This patches set_param_for_module so each
-        # expert weight is quantized (4-bit or 8-bit) as it's loaded, keeping
-        # peak VRAM to one expert param in bf16 at a time.
-        moe_quant_active = False
-        if self.cfg.adapter in ("qlora", "lora") and (
-            self.cfg.load_in_4bit or self.cfg.load_in_8bit
-        ):
-            from axolotl.monkeypatch.moe_quant import patch_moe_quantization_on_load
-
-            patch_moe_quantization_on_load(self.cfg)
-            moe_quant_active = True
-
         skip_move_to_device = self._build_model()
-
-        # Check if any MoE expert params were quantized during loading.
-        self.model._moe_experts_quantized = False
-        if moe_quant_active:
-            from axolotl.monkeypatch.moe_quant import (
-                get_moe_quantized_count,
-                patch_peft_target_parameters_matching,
-            )
-
-            if get_moe_quantized_count() > 0:
-                self.model._moe_experts_quantized = True
-                patch_peft_target_parameters_matching()
-                torch.cuda.empty_cache()
+        self.patch_manager.apply_post_model_build_patches(self.model)
 
         PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
 

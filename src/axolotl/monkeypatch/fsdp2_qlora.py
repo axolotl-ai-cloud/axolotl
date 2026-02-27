@@ -177,8 +177,7 @@ def apply_linear8bitlt_save_patch():
     original_save = bnb.nn.Linear8bitLt._save_to_state_dict
 
     def _patched_save_to_state_dict(self, destination, prefix, keep_vars):
-        # Bypass nn.Module.__setattr__ which rejects non-Parameter assignments.
-        # Directly manipulate _parameters dict to swap DTensor ↔ Int8Params.
+        # Use _parameters dict directly to bypass nn.Module.__setattr__ type check.
         weight = self._parameters["weight"]
         unwrapped = False
         if isinstance(weight, DTensor) and hasattr(weight, "_local_tensor"):
@@ -212,10 +211,8 @@ def apply_init_dtype_attrs_patch():
 
     def patched_init_dtype_attrs(self, mp_policy):
         original_init_dtype_attrs(self, mp_policy)
-        # Non-float params without FSDP2 extensions (e.g., uint8/int8 from
-        # parametrize-based MoE expert quantization) must not be cast to
-        # param_dtype. The parametrization chain dequantizes after unshard.
-        # Params with extensions (e.g., Params4bit) handle their own dtype.
+        # Skip casting non-float quantized params (uint8/int8) without FSDP2
+        # extensions — the parametrization chain handles dequantization.
         if self.param_dtype is not None and not self.sharded_param.is_floating_point():
             local = self.sharded_param
             if hasattr(local, "_local_tensor"):
