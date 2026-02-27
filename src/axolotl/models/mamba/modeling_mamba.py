@@ -111,6 +111,7 @@ class MambaLMHeadModel(nn.Module, GenerationMixin):
         self,
         save_directory: Union[str, os.PathLike],
         state_dict: Optional[dict] = None,
+        **kwargs,
     ):
         if state_dict is None:
             state_dict = self.state_dict()
