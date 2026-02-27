@@ -96,7 +96,7 @@ def _make_general_forward(moe_cls, routing_fn, activation):
     """Create forward using routing_fn + moe_general_routing_inputs."""
 
     def sonicmoe_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        from sonicmoe.functional import moe_general_routing_inputs
+        from sonicmoe import moe_general_routing_inputs
 
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states_flat = hidden_states.view(-1, hidden_dim)
@@ -149,7 +149,7 @@ def _make_fused_forward(moe_cls, activation, router_attr):
     """Create forward using moe_TC_softmax_topk_layer (topk -> softmax)."""
 
     def sonicmoe_fused_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        from sonicmoe.functional import moe_TC_softmax_topk_layer
+        from sonicmoe import moe_TC_softmax_topk_layer
 
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states_flat = hidden_states.view(-1, hidden_dim)
