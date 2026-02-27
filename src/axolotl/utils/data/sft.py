@@ -446,14 +446,6 @@ def _handle_train_dataset_split(
     return dataset, None
 
 
-def _handle_test_dataset_split(
-    dataset: Dataset, cfg: DictDefault
-) -> tuple[None, Dataset | None]:
-    """Handle processing for test split."""
-    # Deduplication already applied during preprocessing
-    return None, dataset
-
-
 def _apply_dataset_sharding(dataset: Dataset, cfg: DictDefault) -> Dataset:
     """Apply dataset sharding if configured.
 
@@ -510,6 +502,7 @@ def _load_and_prepare_datasets(
     if split == "train":
         train_dataset, eval_dataset = _handle_train_dataset_split(dataset, cfg)
     else:
-        train_dataset, eval_dataset = _handle_test_dataset_split(dataset, cfg)
+        # Deduplication already applied during preprocessing
+        train_dataset, eval_dataset = None, dataset
 
     return train_dataset, eval_dataset, prompters
