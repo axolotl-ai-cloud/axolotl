@@ -17,6 +17,8 @@ class DeprecatedParameters(BaseModel):
     noisy_embedding_alpha: float | None = None
     dpo_beta: float | None = None
     evaluation_strategy: str | None = None
+    eval_table_size: int | None = None
+    eval_max_new_tokens: int | None = None
 
     @field_validator("max_packed_sequence_len")
     @classmethod
@@ -54,6 +56,27 @@ class DeprecatedParameters(BaseModel):
         if evaluation_strategy is not None:
             LOG.warning("evaluation_strategy is deprecated, use eval_strategy instead")
         return evaluation_strategy
+
+    @field_validator("eval_table_size")
+    @classmethod
+    def validate_eval_table_size(cls, eval_table_size):
+        if eval_table_size is not None:
+            LOG.warning(
+                "eval_table_size is deprecated and superseded by generate_samples config. "
+                "Please use generate_samples: true and num_generation_samples instead. "
+                "The LogPredictionCallback is replaced by the new sample generation feature."
+            )
+        return eval_table_size
+
+    @field_validator("eval_max_new_tokens")
+    @classmethod
+    def validate_eval_max_new_tokens(cls, eval_max_new_tokens):
+        if eval_max_new_tokens is not None:
+            LOG.warning(
+                "eval_max_new_tokens is deprecated and superseded by generate_samples config. "
+                "Please use generation_max_new_tokens instead."
+            )
+        return eval_max_new_tokens
 
 
 class RemappedParameters(BaseModel):

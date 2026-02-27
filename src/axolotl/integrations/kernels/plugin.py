@@ -1,4 +1,5 @@
 import importlib
+from pathlib import Path
 
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils.logging import get_logger
@@ -32,21 +33,24 @@ class KernelsPlugin(BasePlugin):
 
     def _register_kernels(self):
         from kernels import (
-            LayerRepository,
+            LocalLayerRepository,
             Mode,
             register_kernel_mapping,
         )
 
+        plugin_root = Path(__file__).parent
         register_kernel_mapping(
             {
                 "HFScatterMoEParallelExperts": {
                     "cuda": {
-                        Mode.TRAINING: LayerRepository(
-                            repo_id="axolotl-ai-co/scattermoe",
+                        Mode.TRAINING: LocalLayerRepository(
+                            repo_path=plugin_root / "libs" / "scattermoe_lora",
+                            package_name="scattermoe_lora",
                             layer_name="HFScatterMoEGatedMLP",
                         ),
-                        Mode.INFERENCE: LayerRepository(
-                            repo_id="axolotl-ai-co/scattermoe",
+                        Mode.INFERENCE: LocalLayerRepository(
+                            repo_path=plugin_root / "libs" / "scattermoe_lora",
+                            package_name="scattermoe_lora",
                             layer_name="HFScatterMoEGatedMLP",
                         ),
                     },

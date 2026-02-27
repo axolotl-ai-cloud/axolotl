@@ -5,7 +5,7 @@ import os
 import tempfile
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Union
+from typing import Any, Optional, Union
 from urllib.parse import urlparse
 
 import requests
@@ -31,6 +31,63 @@ from axolotl.utils.trainer import prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
 LOG = get_logger(__name__)
+
+
+def _coerce_value(value: Any, existing: Optional[Any] = None) -> Any:
+    """Coerce a string CLI value to its most likely Python type.
+
+    If an existing value is present in the config, its type is used to guide
+    casting.  Otherwise, YAML-style inference is applied: booleans, ints,
+    floats, and None literals are recognised automatically.
+
+    Args:
+        value: The raw value (typically a string from the CLI).
+        existing: An optional existing config value whose type guides coercion.
+
+    Returns:
+        The value cast to the inferred or expected type.
+    """
+    if not isinstance(value, str):
+        return value
+
+    # If the config already has a typed value, cast to match
+    if existing is not None:
+        if isinstance(existing, bool):
+            return value.lower() in ("true", "1", "yes")
+        if isinstance(existing, int):
+            try:
+                return int(value)
+            except (ValueError, TypeError):
+                return value
+        if isinstance(existing, float):
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                return value
+        # For other types (str, list, dict, etc.), return as-is
+        return value
+
+    # No existing value -- use YAML-style inference
+    lower = value.lower()
+    if lower in ("true", "yes"):
+        return True
+    if lower in ("false", "no"):
+        return False
+    if lower in ("null", "none", "~"):
+        return None
+
+    # Try int then float
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        pass
+
+    return value
+
 
 API_KEY_FIELDS = {"comet_api_key"}
 
@@ -208,13 +265,37 @@ def load_cfg(
     # If there are any options passed in the cli, if it is something that seems valid
     # from the yaml, then overwrite the value
     cfg_keys = cfg.keys()
+
+    # Separate nested (dot-notation) kwargs from flat kwargs
+    nested_kwargs: dict[str, dict[str, Any]] = {}
+    flat_kwargs: dict[str, Any] = {}
     for key, value in kwargs.items():
+        if "__" in key:
+            parent, child = key.split("__", 1)
+            nested_kwargs.setdefault(parent, {})[child] = value
+        else:
+            flat_kwargs[key] = value
+
+    # Apply flat kwargs
+    for key, value in flat_kwargs.items():
         # If not strict, allow writing to cfg even if it's not in the yml already
         if key in cfg_keys or not cfg.strict:
-            if isinstance(cfg[key], bool):
-                cfg[key] = bool(value)
-            else:
-                cfg[key] = value
+            cfg[key] = _coerce_value(value, cfg.get(key))
+
+    # Apply nested kwargs (e.g., trl__beta -> cfg.trl.beta)
+    for parent, children in nested_kwargs.items():
+        if parent not in cfg_keys and cfg.strict:
+            continue
+        if cfg[parent] is None:
+            cfg[parent] = {}
+        if not isinstance(cfg[parent], dict):
+            LOG.warning(
+                "Overwriting non-dict value for '%s' with nested CLI overrides", parent
+            )
+            cfg[parent] = {}
+        for child_key, child_value in children.items():
+            existing_child = cfg[parent].get(child_key)
+            cfg[parent][child_key] = _coerce_value(child_value, existing_child)
 
     try:
         device_props = torch.cuda.get_device_properties("cuda")

@@ -57,16 +57,18 @@ class AxolotlDPOTrainer(
     def tokenize_row(
         features,
         processing_class,
-        max_prompt_length,
-        max_completion_length,
-        add_special_tokens,
+        max_prompt_length: int | None = None,
+        max_completion_length: int | None = None,
+        add_special_tokens: bool = True,
+        is_chat: bool = False,
     ) -> Dict:
         res = DPOTrainer.tokenize_row(
             features,
             processing_class,
-            max_prompt_length,
-            max_completion_length,
-            add_special_tokens,
+            max_prompt_length=max_prompt_length,
+            max_completion_length=max_completion_length,
+            add_special_tokens=add_special_tokens,
+            is_chat=is_chat,
         )
         # fix when the tokenizer doesn't have a bos_token_id, e.g. Qwen
         if processing_class.bos_token is None and res["prompt_input_ids"][0] is None:

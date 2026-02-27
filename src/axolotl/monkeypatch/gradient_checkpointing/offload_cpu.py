@@ -59,7 +59,12 @@ class CPU_Offloaded_Gradient_Checkpointer(torch.autograd.Function):
         hidden_states = hidden_states.to("cuda", non_blocking=True).detach()
         hidden_states.requires_grad = True
         with torch.enable_grad():
-            (output,) = ctx.forward_function(hidden_states, *ctx.args)
+            output = ctx.forward_function(hidden_states, *ctx.args)
+            # Newer HF models (e.g. Qwen3MoE) using GradientCheckpointingLayer
+            # return a plain tensor, not a tuple.  Older models return tuples
+            # like (hidden_states, present_kv, ...).  Unwrap if needed.
+            if isinstance(output, (tuple, list)):
+                (output,) = output
         torch.autograd.backward(output, dY)
         return (
             None,

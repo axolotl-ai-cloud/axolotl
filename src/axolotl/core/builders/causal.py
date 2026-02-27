@@ -122,6 +122,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ColabCallback = colab_inference_post_train_callback(trainer)
             callbacks.append(ColabCallback(self.cfg))
 
+        if getattr(self.cfg, "generate_samples", False):
+            from axolotl.utils.callbacks.generation import SFTGenerationCallback
+
+            callbacks.append(SFTGenerationCallback(trainer))
+            LOG.info("SFT sample generation enabled")
+
         callbacks.extend(super().get_post_trainer_create_callbacks(trainer=trainer))
         return callbacks
 
@@ -246,7 +252,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ddp_find_unused_parameters
         )
 
-        training_arguments_kwargs["group_by_length"] = self.cfg.group_by_length
+        if self.cfg.group_by_length:
+            training_arguments_kwargs["train_sampling_strategy"] = "group_by_length"
         training_arguments_kwargs["curriculum_sampling"] = self.cfg.curriculum_sampling
 
         training_arguments_kwargs["sample_packing"] = bool(self.cfg.sample_packing)

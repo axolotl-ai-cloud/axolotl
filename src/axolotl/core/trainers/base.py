@@ -719,6 +719,8 @@ class AxolotlTrainer(
         output_dir = output_dir if output_dir is not None else self.args.output_dir
         os.makedirs(output_dir, exist_ok=True)
         LOG.info(f"Saving model checkpoint to {output_dir}")
+
+        # fix for Context Parallel save
         if state_dict is None:
             state_dict = self.accelerator.get_state_dict(self.model)
         if state_dict is not None:
@@ -726,6 +728,7 @@ class AxolotlTrainer(
                 k: v.clone() if isinstance(v, torch.Tensor) else v
                 for k, v in state_dict.items()
             }
+
         supported_classes = (
             (PreTrainedModel,)
             if not is_peft_available()
@@ -736,6 +739,7 @@ class AxolotlTrainer(
         if not isinstance(self.model, supported_classes):
             if state_dict is None:
                 state_dict = self.model.state_dict()
+
             if isinstance(
                 self.accelerator.unwrap_model(self.model, keep_torch_compile=False),
                 supported_classes,
@@ -745,6 +749,7 @@ class AxolotlTrainer(
                 ).save_pretrained(
                     output_dir,
                     state_dict=state_dict,
+                    is_main_process=self.accelerator.is_main_process,
                 )
             else:
                 LOG.info(
@@ -756,11 +761,7 @@ class AxolotlTrainer(
                     metadata={"format": "pt"},
                 )
         else:
-            self.model.save_pretrained(
-                output_dir,
-                state_dict=state_dict,
-                is_main_process=self.accelerator.is_main_process,
-            )
+            self.model.save_pretrained(output_dir, state_dict=state_dict)
 
         if self.processing_class is not None:
             self.processing_class.save_pretrained(output_dir)
@@ -772,11 +773,7 @@ class AxolotlTrainer(
             LOG.info(
                 "Saving Trainer.data_collator.tokenizer by default as Trainer.processing_class is `None`"
             )
-            save_jinja_files = True
-            if self.axolotl_cfg:
-                save_jinja_files = self.axolotl_cfg.tokenizer_save_jinja_files
-            self.data_collator.tokenizer.save_pretrained(
-                output_dir, save_jinja_files=save_jinja_files
-            )
+            self.data_collator.tokenizer.save_pretrained(output_dir)
+
         # Good practice: save your training arguments together with the trained model
         torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))

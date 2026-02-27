@@ -28,8 +28,12 @@ PATCHED_EVAL_CODE = {
     "array": 'metrics[f"{metric_key_prefix}_loss"] = np.nanmean(all_losses).item()',
 }
 
-ORIGINAL_MAYBE_CODE = "tr_loss_scalar = self._nested_gather(tr_loss).mean().item()"
-PATCHED_MAYBE_CODE = "tr_loss_scalar = self._nested_gather(tr_loss).nanmean().item()"
+ORIGINAL_MAYBE_CODE = (
+    "tr_loss_scalar = nested_gather(tr_loss, self.args.parallel_mode).mean().item()"
+)
+PATCHED_MAYBE_CODE = (
+    "tr_loss_scalar = nested_gather(tr_loss, self.args.parallel_mode).nanmean().item()"
+)
 
 
 def check_evaluation_loop_is_patchable() -> bool:

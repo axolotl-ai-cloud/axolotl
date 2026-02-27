@@ -2,7 +2,7 @@
 
 import dataclasses
 from functools import wraps
-from types import NoneType
+from types import NoneType, UnionType
 from typing import Any, Callable, Type, Union, get_args, get_origin
 
 import click
@@ -20,7 +20,8 @@ def _strip_optional_type(field_type: type | str | None):
         If the input type is `Union[T, None]` or `Optional[T]`, returns `T`. Otherwise
             returns the input type unchanged.
     """
-    if get_origin(field_type) is Union and type(None) in get_args(field_type):
+    is_union = get_origin(field_type) is Union or isinstance(field_type, UnionType)
+    if is_union and type(None) in get_args(field_type):
         field_type = next(
             t for t in get_args(field_type) if not isinstance(t, NoneType)
         )
@@ -87,9 +88,69 @@ def add_options_from_dataclass(config_class: Type[Any]) -> Callable:
     return decorator
 
 
+def _is_pydantic_model(field_type: type) -> bool:
+    """Check if a type is a Pydantic BaseModel subclass."""
+    try:
+        return isinstance(field_type, type) and issubclass(field_type, BaseModel)
+    except TypeError:
+        return False
+
+
+def _get_field_description(field) -> str | None:
+    """Get description from a Pydantic field, checking both .description and json_schema_extra."""
+    if field.description:
+        return field.description
+    if field.json_schema_extra and isinstance(field.json_schema_extra, dict):
+        return field.json_schema_extra.get("description")
+    return None
+
+
+def _add_nested_model_options(
+    function: Callable, parent_name: str, model_class: Type[BaseModel]
+) -> Callable:
+    """
+    Add Click options for all fields of a nested Pydantic model using dot-notation.
+
+    Note: Only single-level nesting is supported (e.g., ``--trl.beta``).
+    Deeper nesting (e.g., ``--trl.scheduler.warmup``) is not handled.
+
+    Args:
+        function: Click command function to add options to.
+        parent_name: Parent field name (e.g., "trl").
+        model_class: Nested Pydantic model class.
+
+    Returns:
+        Function with added Click options.
+    """
+    for sub_name, sub_field in reversed(model_class.model_fields.items()):
+        sub_type = _strip_optional_type(sub_field.annotation)
+        # Use dot notation: --parent.sub_field
+        cli_name = f"{parent_name}.{sub_name}".replace("_", "-")
+        # The kwarg name uses double-underscore as separator
+        param_name = f"{parent_name}__{sub_name}"
+        description = _get_field_description(sub_field)
+
+        if sub_type is bool:
+            option_name = f"--{cli_name}/--no-{cli_name}"
+            function = click.option(
+                option_name, param_name, default=None, help=description
+            )(function)
+        else:
+            option_name = f"--{cli_name}"
+            click_type = {str: str, int: int, float: float}.get(sub_type)
+            function = click.option(
+                option_name, param_name, default=None, type=click_type, help=description
+            )(function)
+
+    return function
+
+
 def add_options_from_config(config_class: Type[BaseModel]) -> Callable:
     """
     Create Click options from the fields of a Pydantic model.
+
+    For fields whose type is itself a Pydantic BaseModel, dot-notation CLI options are
+    generated for each sub-field (e.g., ``--trl.beta=0.1``).
 
     Args:
         config_class: PyDantic model with fields to parse from the CLI
@@ -102,6 +163,11 @@ def add_options_from_config(config_class: Type[BaseModel]) -> Callable:
         # Process model fields in reverse order for correct option ordering
         for name, field in reversed(config_class.model_fields.items()):
             field_type = _strip_optional_type(field.annotation)
+
+            # Handle nested Pydantic models with dot-notation options
+            if _is_pydantic_model(field_type):
+                function = _add_nested_model_options(function, name, field_type)
+                continue
 
             if field_type is bool:
                 field_name = name.replace("_", "-")
