@@ -25,16 +25,16 @@ use_kernels: true
 # Choose one (mutually exclusive):
 use_scattermoe: true
 # OR
-# use_sonicmoe: true
+use_sonicmoe: true
 ```
+
+**Important:** Setting `experts_implementation` is incompatible with custom kernel options.
 
 ### SonicMoE installation
 
 ```bash
-pip install git+https://github.com/Dao-AILab/sonic-moe@3e3f36eeefc324b10042db22921bfe9ab53ed2d1
+pip install git+https://github.com/Dao-AILab/sonic-moe@022992fef6a6aee53e0c3ba709e22f740cec547e
 ```
-
-**Important:** Setting `experts_implementation` is incompatible with custom kernel options.
 
 ## How It Works
 

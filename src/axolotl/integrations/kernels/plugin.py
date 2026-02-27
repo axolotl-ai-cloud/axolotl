@@ -19,7 +19,7 @@ class KernelsPlugin(BasePlugin):
             if not importlib.util.find_spec("sonicmoe"):
                 raise RuntimeError(
                     "SonicMoE is not installed. Install it with "
-                    "`pip install git+https://github.com/Dao-AILab/sonic-moe@3e3f36eeefc324b10042db22921bfe9ab53ed2d1`"
+                    "`pip install git+https://github.com/Dao-AILab/sonic-moe@022992fef6a6aee53e0c3ba709e22f740cec547e`"
                 )
             from axolotl.integrations.kernels.sonicmoe import patch_sonicmoe
 
