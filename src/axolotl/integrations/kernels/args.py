@@ -47,11 +47,11 @@ class KernelsArgs(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def disable_mlp_kernel_scattermoe(cls, data):
-        if data.get("use_scattermoe") is True:
+    def disable_mlp_kernel(cls, data):
+        if data.get("use_scattermoe") is True or data.get("use_sonicmoe") is True:
             if data.get("lora_mlp_kernel") is True:
                 LOG.warning(
-                    "Disabling lora_mlp_kernel when using scattermoe due to compatibility issues."
+                    "Disabling lora_mlp_kernel when using custom MoE kernels due to compatibility issues."
                 )
                 data["lora_mlp_kernel"] = False
             data["mlp_kernel"] = False

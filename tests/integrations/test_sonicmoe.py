@@ -37,6 +37,12 @@ class TestKernelsArgs:
         assert result.use_scattermoe is None
         assert result.use_sonicmoe is None
 
+    def test_disables_mlp_kernel_when_sonicmoe(self):
+        data = {"use_sonicmoe": True, "lora_mlp_kernel": True}
+        result = KernelsArgs.disable_mlp_kernel(data)
+        assert result["lora_mlp_kernel"] is False
+        assert result["mlp_kernel"] is False
+
 
 class TestConcatenatedToInterleaved:
     @pytest.fixture
