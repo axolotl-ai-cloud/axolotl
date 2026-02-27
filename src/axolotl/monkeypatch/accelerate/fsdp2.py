@@ -205,6 +205,7 @@ def patch_peft_param_wrapper_for_fsdp2():
 
     _original_forward = _LoraParameterProxy.forward
 
+    # NOTE: Replaces (not wraps) forward; assumes original is just `W + self.delta_weight`.
     def _patched_forward(self, W):
         from torch.distributed.tensor import DTensor
 
