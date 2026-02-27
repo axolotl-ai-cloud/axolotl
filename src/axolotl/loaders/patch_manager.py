@@ -395,12 +395,15 @@ class PatchManager:
 
             count = get_moe_quantized_count()
             if count > 0:
+                import gc
+
                 model._moe_experts_quantized = True
                 LOG.info(
                     "Quantized %d MoE expert parameter(s) to %s during model loading",
                     count,
                     "4-bit" if self.cfg.load_in_4bit else "8-bit",
                 )
+                gc.collect()
                 torch.cuda.empty_cache()
 
     def _apply_tiled_mlp(self, model_type: str):
