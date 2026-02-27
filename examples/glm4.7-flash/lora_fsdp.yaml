@@ -28,9 +28,13 @@ lora_target_modules:
   - v_proj
   - k_proj
   - o_proj
+
+# Uncomment to also target MoE expert weights:
 # lora_target_parameters:
 #   - mlp.experts.gate_up_proj
 #   - mlp.experts.down_proj
+
+# LoRA kernels incompatible with DSA attention
 lora_mlp_kernel: false
 lora_qkv_kernel: false
 lora_o_kernel: false
