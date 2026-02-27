@@ -60,7 +60,7 @@ lora_target_parameters:
   - `temperature: 1.0`
   - `top_p: 0.95`
   - `max_new_tokens: 131072`
-- You can run a full finetuning by removing the `adapter: qlora` and `load_in_4bit: true` from the FSDP2 config. This is heavy, so we have not tested this.
+- You can run a full finetuning by removing `adapter: qlora`, `load_in_4bit: true`, and `quantize_moe_experts: true` from the config. This is heavy, so we have not tested this.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 
 ## Optimization Guides

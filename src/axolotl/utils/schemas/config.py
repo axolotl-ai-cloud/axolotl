@@ -1310,6 +1310,14 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 raise ValueError(
                     "quantize_moe_experts requires load_in_4bit or load_in_8bit"
                 )
+            if (
+                data.get("capabilities")
+                and data["capabilities"].get("compute_capability")
+                and not data["capabilities"]["compute_capability"].startswith("sm_")
+            ):
+                raise ValueError(
+                    "quantize_moe_experts requires CUDA (not compatible with ROCm or other backends)"
+                )
         return data
 
     @model_validator(mode="before")

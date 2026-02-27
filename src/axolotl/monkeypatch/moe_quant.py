@@ -79,20 +79,16 @@ def patch_moe_quantization_on_load(cfg):
     Wraps ``set_param_for_module`` so that 3D+ CUDA tensors with "expert" in their
     name are quantized (4-bit or 8-bit) as they're loaded, keeping peak VRAM low.
     """
+    mode = "8bit" if getattr(cfg, "load_in_8bit", False) else "4bit"
+    _moe_load_state["mode"] = mode
+    _moe_load_state["count"] = 0
+
     if _moe_load_state["patched"]:
         LOG.debug("MoE loading-time quantization patch already active")
         return
 
     import transformers.core_model_loading
     import transformers.modeling_utils
-
-    if getattr(cfg, "load_in_8bit", False):
-        mode = "8bit"
-    else:
-        mode = "4bit"
-
-    _moe_load_state["mode"] = mode
-    _moe_load_state["count"] = 0
 
     if mode == "4bit":
         from bitsandbytes.nn.parametrize import replace_parameter_4bit

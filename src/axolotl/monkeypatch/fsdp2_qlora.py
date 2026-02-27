@@ -18,6 +18,8 @@ LOG = get_logger(__name__)
 
 def apply_init_sharded_param_patch():
     """Apply patch to FSDPParam._init_sharded_param to support Params4bit."""
+    if getattr(apply_init_sharded_param_patch, "_patched", False):
+        return
     from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
 
     # Get original source
@@ -85,6 +87,7 @@ def apply_init_sharded_param_patch():
 
         # Replace the method
         FSDPParam._init_sharded_param = patched_init_sharded_param
+        apply_init_sharded_param_patch._axolotl_patched = True
         LOG.info("Successfully applied FSDP _init_sharded_param patch")
     else:
         LOG.warning("Could not find target code for _init_sharded_param patching")
@@ -92,6 +95,8 @@ def apply_init_sharded_param_patch():
 
 def apply_init_unsharded_param_patch():
     """Apply patch to FSDPParam.init_unsharded_param to support Params4bit."""
+    if getattr(apply_init_unsharded_param_patch, "_patched", False):
+        return
     from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
 
     # Get original source
@@ -158,6 +163,7 @@ def apply_init_unsharded_param_patch():
 
         # Replace the method
         FSDPParam.init_unsharded_param = patched_init_unsharded_param
+        apply_init_unsharded_param_patch._axolotl_patched = True
         LOG.info("Successfully applied FSDP init_unsharded_param patch")
     else:
         LOG.warning("Could not find target code for patching")
@@ -171,6 +177,8 @@ def apply_linear8bitlt_save_patch():
     doesn't proxy custom attribute access to its _local_tensor. This patch
     temporarily unwraps the DTensor during saving so BnB can find the SCB attribute.
     """
+    if getattr(apply_linear8bitlt_save_patch, "_patched", False):
+        return
     import bitsandbytes as bnb
     from torch.distributed.tensor import DTensor
 
@@ -190,6 +198,7 @@ def apply_linear8bitlt_save_patch():
                 self._parameters["weight"] = weight
 
     bnb.nn.Linear8bitLt._save_to_state_dict = _patched_save_to_state_dict
+    apply_linear8bitlt_save_patch._axolotl_patched = True
     LOG.info("Patched Linear8bitLt._save_to_state_dict for DTensor compatibility")
 
 
@@ -205,6 +214,8 @@ def apply_init_dtype_attrs_patch():
     parametrize-based expert quantization uses plain nn.Parameter(uint8/int8)
     without extensions.
     """
+    if getattr(apply_init_dtype_attrs_patch, "_patched", False):
+        return
     from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
 
     original_init_dtype_attrs = FSDPParam.init_dtype_attrs
@@ -221,4 +232,5 @@ def apply_init_dtype_attrs_patch():
                 self.param_dtype = None
 
     FSDPParam.init_dtype_attrs = patched_init_dtype_attrs
+    apply_init_dtype_attrs_patch._axolotl_patched = True
     LOG.info("Patched FSDPParam.init_dtype_attrs for non-float quantized params")
