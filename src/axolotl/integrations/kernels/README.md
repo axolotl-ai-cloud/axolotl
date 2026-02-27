@@ -32,9 +32,19 @@ use_sonicmoe: true
 
 ### SonicMoE installation
 
+**Prerequisites:**
+- NVIDIA Hopper (H100, H200) or Blackwell (B200, GB200) GPU
+- CUDA 12.9+ (13.0+ for B300)
+- PyTorch 2.7+ (2.9.1 recommended)
+- For B300: Triton 3.6.0
+
 ```bash
 pip install git+https://github.com/Dao-AILab/sonic-moe@022992fef6a6aee53e0c3ba709e22f740cec547e
 ```
+
+See the [SonicMoE installation guide](https://github.com/Dao-AILab/sonic-moe?tab=readme-ov-file#-installation) for the latest prerequisite details.
+
+**Note:** Blackwell support is in upstream beta. On Blackwell GPUs, Axolotl automatically sets `USE_QUACK_GEMM=1` to enable the Blackwell kernels.
 
 ## How It Works
 
@@ -51,13 +61,13 @@ The `KernelsPlugin` runs before model loading and:
 
 Both paths use the shared `resolve_moe_block_classes` utility in `constants.py` for model-type-to-class resolution.
 
-## Supported Models
+#### Supported Models
 
 See `constants.py` for the full list of supported model types (Qwen2-MoE, Qwen3-MoE, OLMoE, Mixtral, DeepSeek-V3, GLM-MoE, MiniMax, etc.).
 
 ## Limitations
 
-ScatterMoE uses a softmax -> topk routing, so results may be different for some model architectures as baseline (GPT-OSS, GLM_MOE_DSA).
+ScatterMoE uses a softmax -> topk routing, so results may be different for some model architectures as baseline (GPT-OSS, etc). Incompatible with `GLM_MOE_DSA` (GLM 5) and `GLM4_MOE_LITE` (GLM 4.7 Flash) at the moment.
 
 SonicMoE supports both softmax->topk and sigmoid->topk routing, covering a wider range of architectures.
 
