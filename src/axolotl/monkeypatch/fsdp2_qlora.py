@@ -18,7 +18,7 @@ LOG = get_logger(__name__)
 
 def apply_init_sharded_param_patch():
     """Apply patch to FSDPParam._init_sharded_param to support Params4bit."""
-    if getattr(apply_init_sharded_param_patch, "_patched", False):
+    if getattr(apply_init_sharded_param_patch, "_axolotl_patched", False):
         return
     from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
 
@@ -95,7 +95,7 @@ def apply_init_sharded_param_patch():
 
 def apply_init_unsharded_param_patch():
     """Apply patch to FSDPParam.init_unsharded_param to support Params4bit."""
-    if getattr(apply_init_unsharded_param_patch, "_patched", False):
+    if getattr(apply_init_unsharded_param_patch, "_axolotl_patched", False):
         return
     from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
 
@@ -177,7 +177,7 @@ def apply_linear8bitlt_save_patch():
     doesn't proxy custom attribute access to its _local_tensor. This patch
     temporarily unwraps the DTensor during saving so BnB can find the SCB attribute.
     """
-    if getattr(apply_linear8bitlt_save_patch, "_patched", False):
+    if getattr(apply_linear8bitlt_save_patch, "_axolotl_patched", False):
         return
     import bitsandbytes as bnb
     from torch.distributed.tensor import DTensor
@@ -214,7 +214,7 @@ def apply_init_dtype_attrs_patch():
     parametrize-based expert quantization uses plain nn.Parameter(uint8/int8)
     without extensions.
     """
-    if getattr(apply_init_dtype_attrs_patch, "_patched", False):
+    if getattr(apply_init_dtype_attrs_patch, "_axolotl_patched", False):
         return
     from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
 
