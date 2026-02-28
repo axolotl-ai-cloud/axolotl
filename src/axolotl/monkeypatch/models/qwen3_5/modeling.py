@@ -49,6 +49,7 @@ def get_cu_seqlens(position_ids):
 
     return cu_seq_lens_q
 
+
 def _inject_fla_kernels(module) -> None:
     """Inject FLA kernels into a modeling module, bypassing is_flash_linear_attention_available."""
     try:
@@ -274,8 +275,10 @@ def _make_qwen3_next_gated_delta_forward(apply_mask_fn):
 
     return patched_forward
 
+
 # Qwen3.5 / Qwen3.5-MoE patched GatedDeltaNet forward
 # (uses in_proj_qkv / in_proj_z / in_proj_b / in_proj_a)
+
 
 def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
     """
@@ -452,8 +455,9 @@ def _apply_packing_patches(
     gated_cls = getattr(module, f"{cls_prefix}GatedDeltaNet")
     gated_cls.forward = forward_factory(module.apply_mask_to_padding_states)
 
-    LOG.info(f"Applied {cls_prefix} packing patch (fla_causal_conv1d={'available' if fla_causal_conv1d else 'unavailable'})")
-
+    LOG.info(
+        f"Applied {cls_prefix} packing patch (fla_causal_conv1d={'available' if fla_causal_conv1d else 'unavailable'})"
+    )
 
 
 def patch_qwen3_5_modeling_packing():
@@ -461,8 +465,12 @@ def patch_qwen3_5_modeling_packing():
 
 
 def patch_qwen3_5_moe_modeling_packing():
-    _apply_packing_patches("qwen3_5_moe", "Qwen3_5Moe", _make_qwen3_5_gated_delta_forward)
+    _apply_packing_patches(
+        "qwen3_5_moe", "Qwen3_5Moe", _make_qwen3_5_gated_delta_forward
+    )
 
 
 def patch_qwen3_next_modeling_packing():
-    _apply_packing_patches("qwen3_next", "Qwen3Next", _make_qwen3_next_gated_delta_forward)
+    _apply_packing_patches(
+        "qwen3_next", "Qwen3Next", _make_qwen3_next_gated_delta_forward
+    )
