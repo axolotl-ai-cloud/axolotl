@@ -119,7 +119,8 @@ def normalize_config(cfg):
     if cfg.world_size != 1:
         cfg.device_map = {"": int(os.environ.get("LOCAL_RANK", 0))}
         if cfg.fsdp or cfg.fsdp_config or cfg.ddp:
-            cfg.batch_size = cfg.batch_size * cfg.world_size
+            effective_world_size = cfg.world_size // (cfg.context_parallel_size or 1)
+            cfg.batch_size = cfg.batch_size * effective_world_size
 
     if not cfg.use_ray:
         # delay resolving dtype until on worker node when launching with ray
