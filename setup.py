@@ -26,6 +26,11 @@ def parse_requirements(extras_require_map):
     try:
         xformers_version = [req for req in _install_requires if "xformers" in req][0]
         install_xformers = platform.machine() != "aarch64"
+        if platform.machine() == "aarch64":
+            # skip torchao on ARM64
+            _install_requires = [
+                req for req in _install_requires if "torchao" not in req
+            ]
         if "Darwin" in platform.system():
             # skip packages not compatible with OSX
             skip_packages = [
