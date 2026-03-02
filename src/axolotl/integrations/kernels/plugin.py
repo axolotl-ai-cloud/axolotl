@@ -67,8 +67,8 @@ class KernelsPlugin(BasePlugin):
         elif cfg.use_sonicmoe:
             if not importlib.util.find_spec("sonicmoe"):
                 raise RuntimeError(
-                    "SonicMoE is not installed. Install it with "
-                    "`pip install git+https://github.com/Dao-AILab/sonic-moe@022992fef6a6aee53e0c3ba709e22f740cec547e`"
+                    "SonicMoE is not installed. See installation instructions at "
+                    "https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/integrations/kernels/README.md#sonicmoe-installation"
                 )
 
             _check_sonicmoe_gpu_compat()
