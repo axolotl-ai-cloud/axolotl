@@ -434,6 +434,43 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     return model
 
 
+def patch_tied_keys_for_meta_device():
+    """Patch _adjust_tied_keys_with_tied_pointers to skip meta tensors.
+
+    Meta tensors all share data_ptr()==0, causing every parameter to be incorrectly
+    grouped as "tied". Skipping them is safe since they have no real storage.
+    """
+    from collections import defaultdict
+
+    from transformers import PreTrainedModel
+
+    def _patched_adjust_tied_keys_with_tied_pointers(self, missing_keys):
+        param_pointers = defaultdict(list)
+        for param_name, param_value in self.state_dict().items():
+            if param_value.is_meta:
+                continue
+            param_pointers[param_value.data_ptr()].append(param_name)
+
+        tied_param_names = [
+            names
+            for names in param_pointers.values()
+            if len(names) > 1
+            and not any(name in self.all_tied_weights_keys.keys() for name in names)
+            and not all(name in missing_keys for name in names)
+        ]
+
+        tied_weights_keys_by_pointers = {
+            param_name: group[0]
+            for group in tied_param_names
+            for param_name in group[1:]
+        }
+        self.all_tied_weights_keys.update(tied_weights_keys_by_pointers)
+
+    PreTrainedModel._adjust_tied_keys_with_tied_pointers = (
+        _patched_adjust_tied_keys_with_tied_pointers
+    )
+
+
 def patch_accelerate_fsdp2():
     import accelerate
 

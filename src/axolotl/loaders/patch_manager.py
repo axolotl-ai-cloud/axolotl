@@ -175,9 +175,14 @@ class PatchManager:
 
             patch_parallelism_config()
         if self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2":
-            from axolotl.monkeypatch.accelerate.fsdp2 import patch_accelerate_fsdp2
+            from axolotl.monkeypatch.accelerate.fsdp2 import (
+                patch_accelerate_fsdp2,
+                patch_tied_keys_for_meta_device,
+            )
 
             patch_accelerate_fsdp2()
+            if self.cfg.fsdp_config.cpu_ram_efficient_loading:
+                patch_tied_keys_for_meta_device()
             if self.cfg.rl:
                 from axolotl.monkeypatch.trainer.trl import patch_trl_prepare_fsdp2
 
