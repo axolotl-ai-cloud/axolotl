@@ -15,6 +15,7 @@ import math
 
 import pytest
 import torch
+from einops import rearrange
 
 _sonicmoe_available = importlib.util.find_spec("sonicmoe") is not None
 _is_hopper = torch.cuda.is_available() and torch.cuda.get_device_capability() == (9, 0)
@@ -49,6 +50,31 @@ def _create_tiny_qwen3_config():
     return config
 
 
+def _interleave_gate_up_weights(model):
+    """Interleave gate_up_proj: [gate..., up...] -> [g0, u0, g1, u1, ...].
+
+    SonicMoE kernels expect interleaved layout. This is normally handled by the
+    checkpoint weight converter during from_pretrained, but must be done manually
+    when using from_config + load_state_dict.
+    """
+    with torch.no_grad():
+        for name, param in model.named_parameters():
+            if "gate_up_proj" in name:
+                param.copy_(
+                    rearrange(param, "... (two out) h -> ... (out two) h", two=2)
+                )
+
+
+def _unpatch_sonicmoe():
+    """Restore original forward on the MoE block class if it was patched."""
+    from axolotl.integrations.kernels.constants import resolve_moe_block_classes
+
+    for moe_cls in resolve_moe_block_classes("qwen3_moe"):
+        if hasattr(moe_cls, "_original_forward"):
+            moe_cls.forward = moe_cls._original_forward
+            del moe_cls._original_forward
+
+
 class TestSonicMoEForwardCorrectness:
     """Verify SonicMoE-patched model produces same output as original."""
 
@@ -60,17 +86,21 @@ class TestSonicMoEForwardCorrectness:
         config = _create_tiny_qwen3_config()
         input_ids = torch.randint(0, config.vocab_size, (1, 16), device="cuda")
 
+        # Ensure unpatched forward for the reference model
+        _unpatch_sonicmoe()
+
         # Original model
         model_orig = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
 
         with torch.no_grad():
             out_orig = model_orig(input_ids)
 
-        # Patched model (same weights)
+        # Patched model (same weights, interleaved for SonicMoE)
         model_patched = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
         model_patched.load_state_dict(model_orig.state_dict())
 
         patch_sonicmoe("qwen3_moe")
+        _interleave_gate_up_weights(model_patched)
 
         with torch.no_grad():
             out_patched = model_patched(input_ids)
@@ -93,6 +123,9 @@ class TestSonicMoEGradientCorrectness:
         config = _create_tiny_qwen3_config()
         input_ids = torch.randint(0, config.vocab_size, (1, 16), device="cuda")
 
+        # Ensure unpatched forward for the reference model
+        _unpatch_sonicmoe()
+
         # ---------- Original model ----------
         model_orig = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
         out_orig = model_orig(input_ids, labels=input_ids)
@@ -104,11 +137,12 @@ class TestSonicMoEGradientCorrectness:
         }
         loss_orig = out_orig.loss.item()
 
-        # ---------- SonicMoE-patched model (same weights) ----------
+        # ---------- SonicMoE-patched model (same weights, interleaved) ----------
         model_patched = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
         model_patched.load_state_dict(model_orig.state_dict())
 
         patch_sonicmoe("qwen3_moe")
+        _interleave_gate_up_weights(model_patched)
 
         out_patched = model_patched(input_ids, labels=input_ids)
         out_patched.loss.backward()
