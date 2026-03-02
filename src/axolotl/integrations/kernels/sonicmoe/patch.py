@@ -81,6 +81,10 @@ def _patch_forward(moe_cls, routing_fn, activation, router_attr):
         activation: SonicMoE ActivationType enum value.
         router_attr: Name of the router module attribute on the MoE block.
     """
+    if hasattr(moe_cls, "_original_forward"):
+        LOG.info(f"{moe_cls.__name__}.forward already patched with SonicMoE, skipping")
+        return
+
     original_forward = moe_cls.forward
 
     if routing_fn is not None:
