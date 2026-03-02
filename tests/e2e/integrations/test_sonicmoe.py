@@ -15,7 +15,6 @@ import math
 
 import pytest
 import torch
-from einops import rearrange
 
 _sonicmoe_available = importlib.util.find_spec("sonicmoe") is not None
 _is_hopper = torch.cuda.is_available() and torch.cuda.get_device_capability() == (9, 0)
@@ -51,23 +50,15 @@ def _create_tiny_qwen3_config():
 
 
 def _interleave_gate_up_weights(model):
-    """Interleave gate_up_proj: [gate..., up...] -> [g0, u0, g1, u1, ...].
+    """Interleave all gate_up_proj parameters in-place for SonicMoE."""
+    from axolotl.integrations.kernels.sonicmoe.weight_converter import (
+        interleave_gate_up,
+    )
 
-    SonicMoE kernels expect interleaved layout. This is normally handled by the
-    checkpoint weight converter during from_pretrained, but must be done manually
-    when using from_config + load_state_dict.
-    """
     with torch.no_grad():
         for name, param in model.named_parameters():
             if "gate_up_proj" in name:
-                param.copy_(
-                    rearrange(param, "... (two out) h -> ... (out two) h", two=2)
-                )
-
-
-def _deinterleave_grad(grad):
-    """De-interleave gradient: [g0, u0, g1, u1, ...] -> [gate..., up...]."""
-    return rearrange(grad, "... (out two) h -> ... (two out) h", two=2)
+                param.copy_(interleave_gate_up(param))
 
 
 def _unpatch_sonicmoe():
@@ -127,6 +118,9 @@ class TestSonicMoEGradientCorrectness:
         from transformers import AutoModelForCausalLM
 
         from axolotl.integrations.kernels.sonicmoe.patch import patch_sonicmoe
+        from axolotl.integrations.kernels.sonicmoe.weight_converter import (
+            deinterleave_gate_up,
+        )
 
         config = _create_tiny_qwen3_config()
         input_ids = torch.randint(0, config.vocab_size, (1, 16), device="cuda")
@@ -158,7 +152,7 @@ class TestSonicMoEGradientCorrectness:
             g = p.grad.float().clone()
             # gate_up_proj grads are in interleaved layout, de-interleave to match orig
             if "gate_up_proj" in n:
-                g = _deinterleave_grad(g)
+                g = deinterleave_gate_up(g)
             grads_patched[n] = g
         loss_patched = out_patched.loss.item()
 

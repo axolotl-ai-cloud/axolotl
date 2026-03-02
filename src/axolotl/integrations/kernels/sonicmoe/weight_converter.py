@@ -20,6 +20,16 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+def interleave_gate_up(tensor: torch.Tensor) -> torch.Tensor:
+    """[gate..., up...] -> [g0, u0, g1, u1, ...] along the 2*I dimension."""
+    return rearrange(tensor, "... (two out) h -> ... (out two) h", two=2)
+
+
+def deinterleave_gate_up(tensor: torch.Tensor) -> torch.Tensor:
+    """[g0, u0, g1, u1, ...] -> [gate..., up...] along the 2*I dimension."""
+    return rearrange(tensor, "... (out two) h -> ... (two out) h", two=2)
+
+
 class ConcatenatedToInterleaved(ConversionOps):
     """Convert concatenated gate/up projections to interleaved format.
 
@@ -39,15 +49,14 @@ class ConcatenatedToInterleaved(ConversionOps):
         source_patterns: list[str],
         target_patterns: list[str],
         **kwargs,
-    ) -> dict[str, list[torch.Tensor]]:
+    ) -> dict[str, torch.Tensor]:
         target_pattern = self._get_target_pattern(
             input_dict, source_patterns, target_patterns
         )
         tensors = next(iter(input_dict.values()))
         tensor = tensors[0] if isinstance(tensors, list) else tensors
 
-        # [gate..., up...] -> [g0, u0, g1, u1, ...] along the 2*I dimension
-        interleaved = rearrange(tensor, "... (two out) h -> ... (out two) h", two=2)
+        interleaved = interleave_gate_up(tensor)
 
         return {target_pattern: interleaved}
 
@@ -90,15 +99,14 @@ class InterleavedToConcatenated(ConversionOps):
         source_patterns: list[str],
         target_patterns: list[str],
         **kwargs,
-    ) -> dict[str, list[torch.Tensor]]:
+    ) -> dict[str, torch.Tensor]:
         target_pattern = self._get_target_pattern(
             input_dict, source_patterns, target_patterns
         )
         tensors = next(iter(input_dict.values()))
         tensor = tensors[0] if isinstance(tensors, list) else tensors
 
-        # [g0, u0, g1, u1, ...] -> [gate..., up...] along the 2*I dimension
-        concatenated = rearrange(tensor, "... (out two) h -> ... (two out) h", two=2)
+        concatenated = deinterleave_gate_up(tensor)
 
         return {target_pattern: concatenated}
 
