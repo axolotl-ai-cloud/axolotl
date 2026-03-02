@@ -39,7 +39,7 @@ use_sonicmoe: true
 - For B300: Triton 3.6.0
 
 ```bash
-pip install "sonicmoe @ git+https://github.com/Dao-AILab/sonic-moe.git@116e2df0a41874f77fa0ad269ce7df3f0cfcb956" nvidia-cutlass-dsl==4.4.0 quack-kernels==0.2.5
+pip install --ignore-requires-python --no-deps "sonic-moe @ git+https://github.com/Dao-AILab/sonic-moe.git@116e2df0a41874f77fa0ad269ce7df3f0cfcb956" && pip install nvidia-cutlass-dsl==4.4.0 quack-kernels==0.2.5
 ```
 
 See the [SonicMoE installation guide](https://github.com/Dao-AILab/sonic-moe?tab=readme-ov-file#-installation) for the latest prerequisite details.
