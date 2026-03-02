@@ -65,6 +65,11 @@ def _interleave_gate_up_weights(model):
                 )
 
 
+def _deinterleave_grad(grad):
+    """De-interleave gradient: [g0, u0, g1, u1, ...] -> [gate..., up...]."""
+    return rearrange(grad, "... (out two) h -> ... (two out) h", two=2)
+
+
 def _unpatch_sonicmoe():
     """Restore original forward on the MoE block class if it was patched."""
     from axolotl.integrations.kernels.constants import resolve_moe_block_classes
@@ -78,6 +83,9 @@ def _unpatch_sonicmoe():
 class TestSonicMoEForwardCorrectness:
     """Verify SonicMoE-patched model produces same output as original."""
 
+    def teardown_method(self):
+        _unpatch_sonicmoe()
+
     def test_forward_output_matches(self):
         from transformers import AutoModelForCausalLM
 
@@ -85,9 +93,6 @@ class TestSonicMoEForwardCorrectness:
 
         config = _create_tiny_qwen3_config()
         input_ids = torch.randint(0, config.vocab_size, (1, 16), device="cuda")
-
-        # Ensure unpatched forward for the reference model
-        _unpatch_sonicmoe()
 
         # Original model
         model_orig = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
@@ -114,6 +119,9 @@ class TestSonicMoEForwardCorrectness:
 class TestSonicMoEGradientCorrectness:
     """Compare gradients between original HuggingFace and SonicMoE-patched forward."""
 
+    def teardown_method(self):
+        _unpatch_sonicmoe()
+
     def test_gradients_match(self):
         """Verify all parameter gradients match between original and patched."""
         from transformers import AutoModelForCausalLM
@@ -122,9 +130,6 @@ class TestSonicMoEGradientCorrectness:
 
         config = _create_tiny_qwen3_config()
         input_ids = torch.randint(0, config.vocab_size, (1, 16), device="cuda")
-
-        # Ensure unpatched forward for the reference model
-        _unpatch_sonicmoe()
 
         # ---------- Original model ----------
         model_orig = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
@@ -146,11 +151,15 @@ class TestSonicMoEGradientCorrectness:
 
         out_patched = model_patched(input_ids, labels=input_ids)
         out_patched.loss.backward()
-        grads_patched = {
-            n: p.grad.float().clone()
-            for n, p in model_patched.named_parameters()
-            if p.grad is not None
-        }
+        grads_patched = {}
+        for n, p in model_patched.named_parameters():
+            if p.grad is None:
+                continue
+            g = p.grad.float().clone()
+            # gate_up_proj grads are in interleaved layout, de-interleave to match orig
+            if "gate_up_proj" in n:
+                g = _deinterleave_grad(g)
+            grads_patched[n] = g
         loss_patched = out_patched.loss.item()
 
         # ---------- Compare ----------
@@ -211,6 +220,9 @@ class TestSonicMoEGradientCorrectness:
 
 class TestSonicMoETrainingConvergence:
     """Verify loss decreases during training with SonicMoE."""
+
+    def teardown_method(self):
+        _unpatch_sonicmoe()
 
     def test_loss_decreases(self):
         """Run 30 training steps, verify loss decreases and no NaN/Inf."""
