@@ -35,7 +35,7 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
     python scripts/unsloth_install.py --uv | sh && \
     python scripts/cutcrossentropy_install.py --uv | sh && \
     uv pip install pytest && \
-    uv pip cache purge
+    uv cache clean
 
 # fix so that git fetch/pull from remote works with shallow clone
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
