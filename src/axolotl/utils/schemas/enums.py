@@ -8,6 +8,7 @@ import torch
 class TorchAOQuantDType(Enum):
     int4 = torch.int4
     int8 = torch.int8
+    nf4 = "nf4"
     float8_e4m3fn = torch.float8_e4m3fn
     nvfp4 = "nvfp4"
 
@@ -16,6 +17,8 @@ class TorchAOQuantDType(Enum):
             return TorchAOQuantDType.int4
         if str == "int8":
             return TorchAOQuantDType.int8
+        if str == "nf4":
+            return TorchAOQuantDType.nf4
         if str in ["float8_e4m3fn", "fp8", "float8"]:
             return TorchAOQuantDType.float8_e4m3fn
         if str == "nvfp4":

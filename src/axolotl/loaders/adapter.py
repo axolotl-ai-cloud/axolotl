@@ -23,6 +23,7 @@ from axolotl.loaders.utils import get_linear_embedding_layers
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.enums import TorchAOQuantDType
 
 LOG = get_logger(__name__)
 
@@ -134,17 +135,28 @@ def load_lora(
 
     rank = int(os.environ.get("LOCAL_RANK", 0))
 
+    is_torchao = cfg.peft and cfg.peft.backend == "torchao"
     if (
         cfg.fsdp_config
         and cfg.adapter
         and cfg.fsdp_config.cpu_ram_efficient_loading
         and rank != 0
+        and not is_torchao
     ):
         setup_quantized_meta_for_peft(model)
 
     model_kwargs: Any = {}
     if cfg.peft_autocast_adapter_dtype is not None:
         model_kwargs["autocast_adapter_dtype"] = cfg.peft_autocast_adapter_dtype
+
+    # Patch PEFT's torchao dispatch before any model creation/loading.
+    # Must happen before both get_peft_model and PeftModel.from_pretrained,
+    # as both trigger LoRA layer dispatch that would fail for INT4/NF4 weights.
+    # INT8 is natively supported by PEFT's TorchaoLoraLinear, so skip the patch.
+    if is_torchao and cfg.peft.weight_dtype != TorchAOQuantDType.int8:
+        from axolotl.monkeypatch.peft.utils import patch_peft_torchao_dispatch
+
+        patch_peft_torchao_dispatch()
 
     if cfg.lora_model_dir:
         LOG.debug("Loading pretrained PEFT - LoRA")
@@ -172,6 +184,7 @@ def load_lora(
         and cfg.adapter
         and cfg.fsdp_config.cpu_ram_efficient_loading
         and rank != 0
+        and not is_torchao
     ):
         setup_quantized_peft_meta_for_training(model)
 

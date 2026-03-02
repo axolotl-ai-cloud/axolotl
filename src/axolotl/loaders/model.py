@@ -158,6 +158,15 @@ class ModelLoader:
         """Property that determines if FSDP with QLoRA is enabled."""
         return self.is_fsdp_enabled and self.cfg.adapter == "qlora"
 
+    @property
+    def is_torchao_qlora(self):
+        """Property that determines if torchao backend is used for QLoRA."""
+        return (
+            self.cfg.adapter == "qlora"
+            and self.cfg.peft
+            and self.cfg.peft.backend == "torchao"
+        )
+
     @send_errors
     def load(self) -> tuple[PreTrainedModel | PeftModelForCausalLM, PeftConfig | None]:
         """Load and prepare the model with all configurations and patches.
@@ -491,8 +500,9 @@ class ModelLoader:
 
         # FSDP requires control over device placement, so don't set device_map when FSDP is enabled
         if self.is_fsdp_enabled:
-            # For QLoRA + FSDP, we still need to set device_map to "auto" for proper initialization
-            if self.is_qlora_and_fsdp_enabled:
+            # For QLoRA + FSDP with bnb, we still need to set device_map for proper initialization
+            # torchao tensors work natively with FSDP2, no device_map override needed
+            if self.is_qlora_and_fsdp_enabled and not self.is_torchao_qlora:
                 self.model_kwargs["device_map"] = {
                     "": int(os.environ.get("LOCAL_RANK", 0))
                 }
@@ -560,6 +570,44 @@ class ModelLoader:
             ):
                 self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
                     **self.model_config.quantization_config
+                )
+        elif (
+            self.cfg.adapter == "qlora"
+            and self.cfg.peft
+            and self.cfg.peft.backend == "torchao"
+            and not self.cfg.merge_lora
+        ):
+            from transformers import TorchAoConfig
+
+            from axolotl.utils.schemas.enums import TorchAOQuantDType
+
+            weight_dtype = self.cfg.peft.weight_dtype
+            if weight_dtype == TorchAOQuantDType.int4:
+                group_size = self.cfg.peft.group_size or 128
+                self.model_kwargs["quantization_config"] = TorchAoConfig(
+                    quant_type="int4_weight_only",
+                    group_size=group_size,
+                )
+            elif weight_dtype == TorchAOQuantDType.int8:
+                group_size = self.cfg.peft.group_size or 128
+                self.model_kwargs["quantization_config"] = TorchAoConfig(
+                    quant_type="int8_weight_only",
+                    group_size=group_size,
+                )
+            elif weight_dtype == TorchAOQuantDType.nf4:
+                from torchao.dtypes._nf4tensor_api import NF4WeightOnlyConfig
+
+                block_size = self.cfg.peft.group_size or 64
+                self.model_kwargs["quantization_config"] = TorchAoConfig(
+                    quant_type=NF4WeightOnlyConfig(
+                        block_size=block_size,
+                        scaler_block_size=256,
+                    ),
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported torchao weight_dtype for QLoRA: {weight_dtype}. "
+                    "Supported: int4, int8, nf4"
                 )
         elif self.cfg.adapter == "qlora" and self.cfg.load_in_4bit:
             bnb_config = {
@@ -858,6 +906,10 @@ class ModelLoader:
             or is_deepspeed_zero3_enabled()
         ):
             # Make sure everything is in the same dtype
+            skip_prepare_model_for_kbit_training = True
+
+        # torchao quantized models don't use Params4bit and don't need kbit preparation
+        if self.is_torchao_qlora:
             skip_prepare_model_for_kbit_training = True
 
         if (
