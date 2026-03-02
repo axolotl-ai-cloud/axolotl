@@ -49,8 +49,8 @@ lora_target_parameters:
 
 - **FSDP VRAM**: FSDP2 may use more VRAM per GPU than single GPU training. We suspect not all layers are properly sharded across ranks.
 - **FSDP initial spike**: FSDP LoRA (8-bit) may have a large initial VRAM spike at the first 1-2 steps that then drops. FSDP QLoRA (4-bit) does not exhibit this.
-- **cpu_ram_efficient_loading**: Must be set to `false` with FSDP2 — causes `AttributeError: e_score_correction_bias is not an nn.Parameter` due to modeling source.
-- **lora_target_linear**: incompatible for this model.
+- **cpu_ram_efficient_loading**: Must be set to `false` with FSDP2 — causes hang otherwise.
+- **lora_target_linear**: Incompatible for this model.
 - **LoRA kernels**: Incompatible with this model due to non-standard attention projections (DSA). Must be explicitly disabled (`lora_*_kernel: false`).
 
 
