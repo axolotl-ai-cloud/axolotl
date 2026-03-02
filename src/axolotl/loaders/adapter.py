@@ -34,7 +34,7 @@ def setup_quantized_meta_for_peft(model: torch.nn.Module):
         return self
 
     for param in model.parameters():
-        if isinstance(param, Params4bit):
+        if isinstance(param, Params4bit) and param.quant_state is not None:
             param.quant_state._orig_to = param.quant_state.to
             param.quant_state.to = types.MethodType(temp_to_method, param.quant_state)
 
