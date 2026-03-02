@@ -1485,9 +1485,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_deduplication_with_skip_prepare(cls, data):
-        if data.get("dataset_exact_deduplication") and data.get(
-            "skip_prepare_dataset"
-        ):
+        if data.get("dataset_exact_deduplication") and data.get("skip_prepare_dataset"):
             raise ValueError(
                 "dataset_exact_deduplication=True has no effect when "
                 "skip_prepare_dataset=True. Deduplication runs as part of the "

@@ -123,9 +123,7 @@ class TestSFTSaveDeduplicatedBeforeSave:
         tokenizer = MagicMock()
         tokenizer.name_or_path = "test-tokenizer"
 
-        with patch(
-            "axolotl.utils.data.sft.deduplicate_and_log_datasets"
-        ) as mock_dedup:
+        with patch("axolotl.utils.data.sft.deduplicate_and_log_datasets") as mock_dedup:
             _load_raw_datasets(
                 cfg=cfg,
                 datasets_configs=cfg.datasets,
@@ -138,6 +136,7 @@ class TestSFTSaveDeduplicatedBeforeSave:
 class TestRLSaveDeduplicatedBeforeSave:
     """Verify that in RL data loading, deduplication occurs before saving."""
 
+    @patch.object(Dataset, "filter", lambda self, *args, **kwargs: self)
     @patch("axolotl.utils.data.rl.save_preprocessed_dataset")
     @patch("axolotl.utils.data.rl.generate_dataset_hash_from_config")
     @patch("axolotl.utils.data.rl.deduplicate_and_log_datasets")
@@ -173,9 +172,7 @@ class TestRLSaveDeduplicatedBeforeSave:
             }
         )
 
-        mock_datasets_gen.return_value = [
-            DictDefault({"path": "test", "type": None})
-        ]
+        mock_datasets_gen.return_value = [DictDefault({"path": "test", "type": None})]
         mock_load_dataset.return_value = dataset
         mock_merge.return_value = dataset
         mock_dedup.return_value = (deduped_dataset, None)
