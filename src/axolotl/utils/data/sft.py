@@ -351,6 +351,10 @@ def _load_raw_datasets(
         if cfg.sample_packing:
             dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
+        # Deduplicate before saving so the saved dataset is already de-duplicated
+        if cfg.dataset_exact_deduplication:
+            dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
+
         # Save the prepared dataset
         dataset_hash = generate_dataset_hash_from_config(
             cfg, datasets_configs, tokenizer.name_or_path
@@ -438,25 +442,8 @@ def _handle_train_dataset_split(
         )
         return train_dataset, eval_dataset
 
-    # No validation split - apply deduplication if needed and return as train dataset
-    if cfg.dataset_exact_deduplication:
-        train_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
-    else:
-        train_dataset = dataset
-
-    return train_dataset, None
-
-
-def _handle_test_dataset_split(
-    dataset: Dataset, cfg: DictDefault
-) -> tuple[None, Dataset | None]:
-    """Handle processing for test split."""
-    if cfg.dataset_exact_deduplication:
-        eval_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
-    else:
-        eval_dataset = dataset
-
-    return None, eval_dataset
+    # No validation split - deduplication already applied during preprocessing
+    return dataset, None
 
 
 def _apply_dataset_sharding(dataset: Dataset, cfg: DictDefault) -> Dataset:
@@ -515,6 +502,7 @@ def _load_and_prepare_datasets(
     if split == "train":
         train_dataset, eval_dataset = _handle_train_dataset_split(dataset, cfg)
     else:
-        train_dataset, eval_dataset = _handle_test_dataset_split(dataset, cfg)
+        # Deduplication already applied during preprocessing
+        train_dataset, eval_dataset = None, dataset
 
     return train_dataset, eval_dataset, prompters
