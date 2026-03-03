@@ -1,5 +1,5 @@
 """
-Module containing true work queue processing for datasets.
+Module containing work queue processing for datasets.
 Completely bypasses datasets.map() for proper load balancing.
 """
 
@@ -20,12 +20,12 @@ LOG = get_logger(__name__)
 
 
 class WorkQueueTokenizedPromptDataset(Dataset):
-    """Dataset that uses a true work queue system, completely bypassing datasets.map().
+    """Dataset that uses a work queue system, completely bypassing datasets.map().
 
     This implementation:
     1. Creates a shared work queue with individual examples
     2. Worker processes pull examples as they finish their current work
-    3. No pre-allocation of work - true dynamic load balancing
+    3. No pre-allocation of work
     4. Processes results in order they complete
     """
 
@@ -41,7 +41,7 @@ class WorkQueueTokenizedPromptDataset(Dataset):
         self.process_count = process_count or mp.cpu_count()
         self.keep_in_memory = keep_in_memory
 
-        # Process the dataset with true work queue
+        # Process the dataset with work queue
         processed_data = self._process_with_work_queue(dataset)
 
         super().__init__(
@@ -50,7 +50,7 @@ class WorkQueueTokenizedPromptDataset(Dataset):
         )
 
     def _process_with_work_queue(self, dataset: Dataset) -> Dataset:
-        """Process dataset using a true work queue system."""
+        """Process dataset using a work queue system."""
         total_examples = len(dataset)
         LOG.info(f"Processing {total_examples} examples with work queue system")
         LOG.info(f"Using {self.process_count} worker processes")
@@ -78,12 +78,10 @@ class WorkQueueTokenizedPromptDataset(Dataset):
                         # Tokenize the example
                         try:
                             tokenized = self.prompt_tokenizer.tokenize_prompt(example)
-                            result_queue.put((idx, tokenized, None))  # None = no error
+                            result_queue.put((idx, tokenized, None))
                         except Exception as e:
                             LOG.error(f"Worker {worker_id}: Error tokenizing example {idx}: {e}")
-                            result_queue.put((idx, None, str(e)))  # Include error
-
-                        # No task_done() needed for multiprocessing.Queue
+                            result_queue.put((idx, None, str(e)))
 
                     except Exception:
                         # queue.Empty or any other exception - no more work
@@ -268,10 +266,10 @@ def wrap_multiple_datasets_for_work_queue_tokenized_prompt(
                     # Tokenize the example with its specific strategy
                     try:
                         tokenized = strategy.tokenize_prompt(example)
-                        result_queue.put((global_idx, dataset_idx, example_idx, tokenized, None))  # None = no error
+                        result_queue.put((global_idx, dataset_idx, example_idx, tokenized, None))
                     except Exception as e:
                         LOG.error(f"Worker {worker_id}: Error tokenizing example {global_idx} from dataset {dataset_idx}: {e}")
-                        result_queue.put((global_idx, dataset_idx, example_idx, None, str(e)))  # Include error
+                        result_queue.put((global_idx, dataset_idx, example_idx, None, str(e)))
 
                 except Exception:
                     # queue.Empty or any other exception - no more work
@@ -344,7 +342,7 @@ def wrap_multiple_datasets_for_work_queue_tokenized_prompt(
     # Report errors
     if errors:
         LOG.warning(f"Completed with {len(errors)} errors:")
-        for error in errors[:5]:  # Show first 5 errors
+        for error in errors[:5]:
             LOG.warning(f"  {error}")
         if len(errors) > 5:
             LOG.warning(f"  ... and {len(errors) - 5} more errors")

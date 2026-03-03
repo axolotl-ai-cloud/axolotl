@@ -225,7 +225,7 @@ def _handle_loaded_strategy(
     # Use work queue processing for high process counts
     process_count = dataset_kwargs.get("process_count", 1)
     LOG.info(f"Process count: {process_count}")
-    if process_count and process_count > 4:  # Lowered threshold to 4 for better performance
+    if process_count and process_count > 1:
         LOG.info(f"Using work queue processing for {process_count} processes")
         dataset_wrapper = wrap_dataset_for_work_queue_tokenized_prompt(
             dataset_strategy,

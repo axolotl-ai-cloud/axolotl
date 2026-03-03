@@ -61,11 +61,10 @@ PATCHED_O_CODE = """
     attn_output = self.apply_o(attn_output)
 """.lstrip("\n")
 
-SUPPORTED_ACTIVATIONS = ["silu", "gelu", "xielu"]
+SUPPORTED_ACTIVATIONS = ["silu", "gelu"]
 APPLY_FN_MAPPING = {
     "silu": apply_lora_mlp_swiglu,
     "gelu": apply_lora_mlp_geglu,
-    "xielu": apply_lora_mlp_swiglu,  # xielu is similar to silu/swish, use swiglu implementation
 }
 
 

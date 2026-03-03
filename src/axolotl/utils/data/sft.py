@@ -331,7 +331,7 @@ def _load_raw_datasets(
     # Check if we should use multi-dataset work queue processing
     use_multi_dataset_queue = (
         not streaming and
-        cfg.dataset_num_proc and cfg.dataset_num_proc > 4 and
+        cfg.dataset_num_proc and cfg.dataset_num_proc > 1 and
         len(datasets_configs) > 1
     )
 
@@ -391,7 +391,6 @@ def _load_raw_datasets(
             else:
                 raw_datasets.append(dataset)
                 strategies.append(dataset_strategy)
-                # We'll handle prompters later
 
         # Process all datasets with the multi-dataset work queue
         if raw_datasets:
@@ -405,7 +404,7 @@ def _load_raw_datasets(
             )
 
             datasets.extend(processed_datasets)
-            # Add placeholder prompters for now
+            # Add placeholder prompters
             for _ in processed_datasets:
                 from axolotl.prompters import UnsupportedPrompter
                 prompters.append(UnsupportedPrompter())
