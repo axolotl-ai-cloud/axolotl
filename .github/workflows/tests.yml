@@ -54,13 +54,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python_version: ["3.11", "3.12"]
-        pytorch_version: ["2.8.0", "2.9.0", "2.9.1"]
-        exclude:
-          - python_version: "3.12"
-            pytorch_version: "2.8.0"
-          - python_version: "3.12"
-            pytorch_version: "2.9.0"
+        python_version: ["3.12"]  # TODO include py3.14 once https://github.com/mistralai/mistral-common/pull/194 is merged
+        pytorch_version: ["2.8.0", "2.9.1", "2.10.0"]
+#        exclude:
+#          - python_version: "3.14"
+#            pytorch_version: "2.8.0"
+#          - python_version: "3.14"
+#            pytorch_version: "2.9.1"
     timeout-minutes: 20
 
     steps:
@@ -149,13 +149,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python_version: ["3.11", "3.12"]
-        pytorch_version: ["2.8.0", "2.9.0", "2.9.1"]
-        exclude:
-          - python_version: "3.12"
-            pytorch_version: "2.8.0"
-          - python_version: "3.12"
-            pytorch_version: "2.9.0"
+        python_version: ["3.12"]  # TODO include py3.14 once https://github.com/mistralai/mistral-common/pull/194 is merged
+        pytorch_version: ["2.8.0", "2.9.1", "2.10.0"]
+#        exclude:
+#          - python_version: "3.14"
+#            pytorch_version: "2.8.0"
+#          - python_version: "3.14"
+#            pytorch_version: "2.9.1"
     timeout-minutes: 20
 
     steps:
@@ -326,6 +326,12 @@ jobs:
             pytorch: 2.9.1
             num_gpus: 1
             axolotl_extras:
+          - cuda: 128
+            cuda_version: 12.8.1
+            python_version: "3.11"
+            pytorch: 2.10.0
+            num_gpus: 1
+            axolotl_extras:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.11"
@@ -371,7 +377,7 @@ jobs:
         include:
           - cuda: 129
             cuda_version: 12.9.1
-            python_version: "3.12"
+            python_version: "3.11"
             pytorch: 2.9.1
             num_gpus: 1
             axolotl_extras:
