@@ -195,9 +195,13 @@ def patch_qwen3_next_gateddelta_layer():
                 )
             else:
                 # PyTorch fallback (no cu_seqlens support)
+                if cu_seqlens is not None and cu_seqlens.shape[0] > batch_size + 1:
+                    raise RuntimeError(
+                        "Packed sequences require fla.modules.convolution.causal_conv1d "
+                        "(cu_seqlens support). Install flash-linear-attention or disable packing."
+                    )
                 LOG.warning_once(
-                    "FLA causal_conv1d not available. Falling back to PyTorch conv1d "
-                    "which does not support cu_seqlens for packed sequences."
+                    "FLA causal_conv1d not available. Falling back to PyTorch conv1d."
                 )
                 mixed_qkv = mixed_qkv.transpose(1, 2)
                 mixed_qkv = F.silu(self.conv1d(mixed_qkv)[:, :, :seq_len])
