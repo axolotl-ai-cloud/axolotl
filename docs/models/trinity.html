@@ -753,7 +753,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#tips" id="toc-tips" class="nav-link" data-scroll-target="#tips">TIPS</a></li>
   </ul></li>
   <li><a href="#optimization-guides" id="toc-optimization-guides" class="nav-link" data-scroll-target="#optimization-guides">Optimization Guides</a></li>
-  <li><a href="#limitations" id="toc-limitations" class="nav-link" data-scroll-target="#limitations">Limitations</a></li>
   <li><a href="#related-resources" id="toc-related-resources" class="nav-link" data-scroll-target="#related-resources">Related Resources</a></li>
   </ul>
 </nav>
@@ -786,10 +785,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h2 class="anchored" data-anchor-id="getting-started">Getting started</h2>
 <ol type="1">
 <li><p>Install Axolotl following the main from the <a href="https://docs.axolotl.ai/docs/installation.html#sec-edge-build">installation guide</a>.</p></li>
+<li><p>Install <a href="https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy">Cut Cross Entropy</a> to reduce training VRAM usage.</p></li>
 <li><p>Run the finetuning example:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/trinity/trinity-nano-preview-qlora.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
 </ol>
-<p>This config uses about 24.9 GiB VRAM.</p>
+<p>This config uses about 24.9 GiB VRAM (w/o CCE).</p>
 <p>Let us know how it goes. Happy finetuning! 🚀</p>
 <section id="tips" class="level3">
 <h3 class="anchored" data-anchor-id="tips">TIPS</h3>
@@ -804,10 +804,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="optimization-guides" class="level2">
 <h2 class="anchored" data-anchor-id="optimization-guides">Optimization Guides</h2>
 <p>Please check the <a href="https://docs.axolotl.ai/docs/optimizations.html">Optimizations doc</a>.</p>
-</section>
-<section id="limitations" class="level2">
-<h2 class="anchored" data-anchor-id="limitations">Limitations</h2>
-<p><strong>Cut Cross Entropy (CCE)</strong>: Currently not supported. We plan to include CCE support for Trinity in the near future.</p>
 </section>
 <section id="related-resources" class="level2">
 <h2 class="anchored" data-anchor-id="related-resources">Related Resources</h2>

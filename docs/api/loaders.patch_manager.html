@@ -817,40 +817,49 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.loaders.patch_manager.PatchManager.apply_post_model_build_patches">apply_post_model_build_patches</a></td>
+<td>Apply patches right after model build, before post-load setup.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.loaders.patch_manager.PatchManager.apply_post_model_load_patches">apply_post_model_load_patches</a></td>
 <td>Apply patches that require the model instance.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.loaders.patch_manager.PatchManager.apply_post_plugin_pre_model_load_patches">apply_post_plugin_pre_model_load_patches</a></td>
 <td>Apply post plugin-pre_model_load load patches based on config.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.loaders.patch_manager.PatchManager.apply_pre_config_load_patches">apply_pre_config_load_patches</a></td>
 <td>Apply patches that must be set up before config loading.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.loaders.patch_manager.PatchManager.apply_pre_model_load_patches">apply_pre_model_load_patches</a></td>
 <td>Apply pre-model load patches based on config.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.loaders.patch_manager.PatchManager.apply_pre_tokenizer_load_patches">apply_pre_tokenizer_load_patches</a></td>
 <td>Apply patches that must be set up before tokenizer loading.</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.loaders.patch_manager.PatchManager.apply_post_model_build_patches" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.loaders.patch_manager.PatchManager.apply_post_model_build_patches">apply_post_model_build_patches</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>loaders.patch_manager.PatchManager.apply_post_model_build_patches(model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Apply patches right after model build, before post-load setup.</p>
+</section>
 <section id="axolotl.loaders.patch_manager.PatchManager.apply_post_model_load_patches" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.loaders.patch_manager.PatchManager.apply_post_model_load_patches">apply_post_model_load_patches</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>loaders.patch_manager.PatchManager.apply_post_model_load_patches(model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>loaders.patch_manager.PatchManager.apply_post_model_load_patches(model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Apply patches that require the model instance.</p>
 </section>
 <section id="axolotl.loaders.patch_manager.PatchManager.apply_post_plugin_pre_model_load_patches" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.loaders.patch_manager.PatchManager.apply_post_plugin_pre_model_load_patches">apply_post_plugin_pre_model_load_patches</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>loaders.patch_manager.PatchManager.apply_post_plugin_pre_model_load_patches()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>loaders.patch_manager.PatchManager.apply_post_plugin_pre_model_load_patches()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Apply post plugin-pre_model_load load patches based on config.</p>
 </section>
 <section id="axolotl.loaders.patch_manager.PatchManager.apply_pre_config_load_patches" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.loaders.patch_manager.PatchManager.apply_pre_config_load_patches">apply_pre_config_load_patches</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>loaders.patch_manager.PatchManager.apply_pre_config_load_patches(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>loaders.patch_manager.PatchManager.apply_pre_config_load_patches(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Apply patches that must be set up before config loading.
 This is for patches that intercept remote code loading from HuggingFace,
 which needs to be in place before AutoConfig.from_pretrained() is called.</p>
@@ -884,12 +893,12 @@ which needs to be in place before AutoConfig.from_pretrained() is called.</p>
 </section>
 <section id="axolotl.loaders.patch_manager.PatchManager.apply_pre_model_load_patches" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.loaders.patch_manager.PatchManager.apply_pre_model_load_patches">apply_pre_model_load_patches</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>loaders.patch_manager.PatchManager.apply_pre_model_load_patches()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>loaders.patch_manager.PatchManager.apply_pre_model_load_patches()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Apply pre-model load patches based on config.</p>
 </section>
 <section id="axolotl.loaders.patch_manager.PatchManager.apply_pre_tokenizer_load_patches" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.loaders.patch_manager.PatchManager.apply_pre_tokenizer_load_patches">apply_pre_tokenizer_load_patches</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>loaders.patch_manager.PatchManager.apply_pre_tokenizer_load_patches(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>loaders.patch_manager.PatchManager.apply_pre_tokenizer_load_patches(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Apply patches that must be set up before tokenizer loading.
 This is for patches that intercept remote code loading from HuggingFace,
 which needs to be in place before AutoTokenizer.from_pretrained() is called.</p>

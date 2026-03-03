@@ -954,7 +954,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <ul>
 <li>If you are installing from pip</li>
 </ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> uninstall <span class="at">-y</span> cut-cross-entropy <span class="kw">&amp;&amp;</span> <span class="ex">pip3</span> install <span class="st">"cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@58d6572"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> uninstall <span class="at">-y</span> cut-cross-entropy <span class="kw">&amp;&amp;</span> <span class="ex">pip3</span> install <span class="st">"cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@a668583"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="usage" class="level3">
 <h3 class="anchored" data-anchor-id="usage">Usage</h3>
@@ -1021,9 +1021,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <li>qwen2_vl</li>
 <li>qwen3</li>
 <li>qwen3_5</li>
+<li>qwen3_5_text</li>
 <li>qwen3_5_moe</li>
-<li>qwen3_5_moe_vl</li>
-<li>qwen3_5_vl</li>
+<li>qwen3_5_moe_text</li>
 <li>qwen3_moe</li>
 <li>qwen3_next</li>
 <li>qwen3_vl</li>
@@ -1248,6 +1248,7 @@ The quick brown fox jumps over the loud dog</code></pre>
 <section id="limitations-1" class="level3">
 <h3 class="anchored" data-anchor-id="limitations-1">Limitations</h3>
 <p>ScatterMoE uses a softmax -&gt; topk routing, so results may be different for some model arch as baseline (GPT-OSS, GLM_MOE_DSA).</p>
+<p>ScatterMoE does not work for GLM4.7 Flash (glm4_moe_lite) atm.</p>
 </section>
 <section id="note-on-megablocks" class="level3">
 <h3 class="anchored" data-anchor-id="note-on-megablocks">Note on MegaBlocks</h3>
