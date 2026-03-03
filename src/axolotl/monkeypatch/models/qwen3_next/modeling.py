@@ -10,7 +10,7 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 try:
-    from fla.modules.conv import causal_conv1d as fla_causal_conv1d
+    from fla.modules.convolution import causal_conv1d as fla_causal_conv1d
 except ImportError:
     fla_causal_conv1d = None
 
