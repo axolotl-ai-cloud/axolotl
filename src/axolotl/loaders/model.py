@@ -172,7 +172,10 @@ class ModelLoader:
         # Build the model
         PLUGIN_MANAGER.pre_model_load(self.cfg)
         self.patch_manager.apply_post_plugin_pre_model_load_patches()
+
         skip_move_to_device = self._build_model()
+        self.patch_manager.apply_post_model_build_patches(self.model)
+
         PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
 
         # Post-build model configuration
@@ -858,6 +861,10 @@ class ModelLoader:
             or is_deepspeed_zero3_enabled()
         ):
             # Make sure everything is in the same dtype
+            skip_prepare_model_for_kbit_training = True
+
+        if getattr(self.model, "_moe_experts_quantized", False):
+            # Parametrized expert tensors dequantize on access — would OOM.
             skip_prepare_model_for_kbit_training = True
 
         if (

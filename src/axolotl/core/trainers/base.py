@@ -720,12 +720,16 @@ class AxolotlTrainer(
         os.makedirs(output_dir, exist_ok=True)
         LOG.info(f"Saving model checkpoint to {output_dir}")
 
-        # fix for Context Parallel save
-        if state_dict is None:
-            state_dict = self.accelerator.get_state_dict(self.model)
-        if state_dict is not None:
+        # fix for Context Parallel save: CP eval invalidates tensor storage
+        # pointers, so clone to CPU to get fresh valid storage for safetensors
+        if (
+            state_dict is not None
+            and self.axolotl_cfg
+            and self.axolotl_cfg.context_parallel_size
+            and self.axolotl_cfg.context_parallel_size > 1
+        ):
             state_dict = {
-                k: v.clone() if isinstance(v, torch.Tensor) else v
+                k: v.detach().cpu() if isinstance(v, torch.Tensor) else v
                 for k, v in state_dict.items()
             }
 
@@ -761,7 +765,11 @@ class AxolotlTrainer(
                     metadata={"format": "pt"},
                 )
         else:
-            self.model.save_pretrained(output_dir, state_dict=state_dict)
+            self.model.save_pretrained(
+                output_dir,
+                state_dict=state_dict,
+                is_main_process=self.accelerator.is_main_process,
+            )
 
         if self.processing_class is not None:
             self.processing_class.save_pretrained(output_dir)

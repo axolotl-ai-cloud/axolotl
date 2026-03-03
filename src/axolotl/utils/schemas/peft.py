@@ -209,6 +209,19 @@ class LoraConfig(BaseModel):
             data["lora_dropout"] = 0.0
         return data
 
+    @model_validator(mode="after")
+    def validate_lora_target_parameters_dropout(self):
+        if (
+            self.lora_target_parameters
+            and self.lora_dropout
+            and self.lora_dropout != 0.0
+        ):
+            raise ValueError(
+                "lora_dropout must be 0 when lora_target_parameters is set. "
+                "PEFT's ParamWrapper does not support lora_dropout != 0."
+            )
+        return self
+
 
 class ReLoRAConfig(BaseModel):
     """ReLoRA configuration subset"""

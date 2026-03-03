@@ -118,6 +118,7 @@ class PatchManager:
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
         self._apply_tiled_mlp(self.cfg.model_config_type)
+        self._apply_moe_expert_quantization_patch()
 
     def _apply_transformers_patches(self):
         from axolotl.monkeypatch.transformers.trainer_loss_calc import (
@@ -134,6 +135,10 @@ class PatchManager:
             )
 
             patch_prepare_context_parallel_inputs()
+
+    def apply_post_model_build_patches(self, model: PreTrainedModel):
+        """Apply patches right after model build, before post-load setup."""
+        self._finalize_moe_expert_quantization(model)
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
@@ -170,9 +175,14 @@ class PatchManager:
 
             patch_parallelism_config()
         if self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2":
-            from axolotl.monkeypatch.accelerate.fsdp2 import patch_accelerate_fsdp2
+            from axolotl.monkeypatch.accelerate.fsdp2 import (
+                patch_accelerate_fsdp2,
+                patch_tied_keys_for_meta_device,
+            )
 
             patch_accelerate_fsdp2()
+            if self.cfg.fsdp_config.cpu_ram_efficient_loading:
+                patch_tied_keys_for_meta_device()
             if self.cfg.rl:
                 from axolotl.monkeypatch.trainer.trl import patch_trl_prepare_fsdp2
 
@@ -352,15 +362,54 @@ class PatchManager:
         if (
             self.cfg.fsdp_config
             and str(self.cfg.fsdp_version) == "2"
-            and self.cfg.adapter == "qlora"
+            and (self.cfg.load_in_4bit or self.cfg.load_in_8bit)
         ):
             from axolotl.monkeypatch.fsdp2_qlora import (
+                apply_init_dtype_attrs_patch,
                 apply_init_sharded_param_patch,
                 apply_init_unsharded_param_patch,
+                apply_linear8bitlt_save_patch,
             )
 
             apply_init_sharded_param_patch()
             apply_init_unsharded_param_patch()
+            apply_init_dtype_attrs_patch()
+            if self.cfg.load_in_8bit:
+                apply_linear8bitlt_save_patch()
+
+    def _apply_moe_expert_quantization_patch(self):
+        """Patch transformers weight loading to quantize MoE expert params on-the-fly."""
+        if not self.cfg.quantize_moe_experts:
+            return
+
+        from axolotl.monkeypatch.moe_quant import (
+            patch_moe_quantization_on_load,
+            patch_peft_target_parameters_matching,
+        )
+
+        patch_moe_quantization_on_load(self.cfg)
+        patch_peft_target_parameters_matching()
+
+    def _finalize_moe_expert_quantization(self, model: PreTrainedModel):
+        """Log quantization results and set model flag for downstream use."""
+        import torch
+
+        model._moe_experts_quantized = False
+        if self.cfg.quantize_moe_experts:
+            from axolotl.monkeypatch.moe_quant import get_moe_quantized_count
+
+            count = get_moe_quantized_count()
+            if count > 0:
+                import gc
+
+                model._moe_experts_quantized = True
+                LOG.info(
+                    "Quantized %d MoE expert parameter(s) to %s during model loading",
+                    count,
+                    "4-bit" if self.cfg.load_in_4bit else "8-bit",
+                )
+                gc.collect()
+                torch.cuda.empty_cache()
 
     def _apply_tiled_mlp(self, model_type: str):
         if self.cfg.tiled_mlp:

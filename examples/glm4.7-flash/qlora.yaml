@@ -1,15 +1,10 @@
-base_model: arcee-ai/Trinity-Nano-Preview
-revision_of_model: 2ee94b0
+base_model: zai-org/GLM-4.7-Flash
 
-# Automatically upload checkpoint and final model to HF
-# hub_model_id: username/custom_model_name
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
 
-# CCE - N/A as of now
-# plugins:
-#   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
-
-load_in_8bit: false
 load_in_4bit: true
+quantize_moe_experts: true
 
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_test
@@ -17,7 +12,7 @@ datasets:
 
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.1
-output_dir: ./outputs/lora-out
+output_dir: ./outputs/glm4.7-flash-qlora-out
 
 adapter: qlora
 lora_model_dir:
@@ -27,16 +22,22 @@ sample_packing: true
 
 lora_r: 32
 lora_alpha: 16
-lora_dropout: 0.05
-lora_target_linear: true
+lora_dropout: 0
 lora_target_modules:
-  - gate_proj
-  - down_proj
-  - up_proj
   - q_proj
   - v_proj
   - k_proj
   - o_proj
+
+# Uncomment to also target MoE expert weights:
+# lora_target_parameters:
+#   - mlp.experts.gate_up_proj
+#   - mlp.experts.down_proj
+
+# LoRA kernels incompatible with DSA attention
+lora_mlp_kernel: false
+lora_qkv_kernel: false
+lora_o_kernel: false
 
 wandb_project:
 wandb_entity:
@@ -47,7 +48,7 @@ wandb_log_model:
 gradient_accumulation_steps: 4
 micro_batch_size: 2
 num_epochs: 1
-optimizer: adamw_bnb_8bit
+optimizer: adamw_torch_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
@@ -57,11 +58,8 @@ tf32: false
 gradient_checkpointing: true
 resume_from_checkpoint:
 logging_steps: 1
-# flash_attention: true  # Not supported
-sdp_attention: true
+flash_attention: true
 
 warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
-
-# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

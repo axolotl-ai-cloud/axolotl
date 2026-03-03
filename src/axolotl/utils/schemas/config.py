@@ -629,6 +629,17 @@ class AxolotlInputConfig(
         },
     )
 
+    quantize_moe_experts: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Quantize MoE expert weights on load to reduce VRAM. "
+            "Requires adapter (lora/qlora) with load_in_4bit or load_in_8bit. "
+            "Requires CUDA (not compatible with ROCm or other backends). "
+            "Note: total parameter count may be reported incorrectly when enabled "
+            "(trainable param count is correct)."
+        },
+    )
+
     scaling_softmax: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -1287,6 +1298,26 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                     raise ValueError(
                         "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with FSDP1."
                     )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_quantize_moe_experts(cls, data):
+        if data.get("quantize_moe_experts"):
+            if data.get("adapter") not in ("lora", "qlora"):
+                raise ValueError("quantize_moe_experts requires adapter: lora or qlora")
+            if not (data.get("load_in_4bit") or data.get("load_in_8bit")):
+                raise ValueError(
+                    "quantize_moe_experts requires load_in_4bit or load_in_8bit"
+                )
+            if (
+                data.get("capabilities")
+                and data["capabilities"].get("compute_capability")
+                and not data["capabilities"]["compute_capability"].startswith("sm_")
+            ):
+                raise ValueError(
+                    "quantize_moe_experts requires CUDA (not compatible with ROCm or other backends)"
+                )
         return data
 
     @model_validator(mode="before")

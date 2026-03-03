@@ -150,13 +150,17 @@ def get_state_dict(self, model, unwrap=True):
             )
     elif self.is_fsdp2:
         # https://github.com/pytorch/torchtune/blob/main/torchtune/training/_distributed.py#L465
+        from torch.distributed.tensor import DTensor
+
         state_dict = {}
         sharded_state_dict = model.state_dict()
         for param_name, param in sharded_state_dict.items():
             if param.is_cpu:
                 param = param.to(torch.device("cuda"))
 
-            param = param.full_tensor()
+            if isinstance(param, DTensor):
+                param = param.full_tensor()
+
             if torch.distributed.get_rank() == 0:
                 state_dict[param_name] = param.cpu()
             torch.distributed.barrier()
@@ -182,9 +186,55 @@ def get_state_dict(self, model, unwrap=True):
     return state_dict
 
 
+def patch_peft_param_wrapper_for_fsdp2():
+    """Patch PEFT's _LoraParameterProxy.forward for FSDP2 DTensor compatibility.
+
+    PEFT's ParamWrapper applies LoRA via torch.nn.utils.parametrize, which adds
+    delta_weight to the base weight W inside _LoraParameterProxy.forward().
+    Under FSDP2, W may be a DTensor (from FSDP unshard) while delta_weight is a
+    regular Tensor (or vice versa), causing a RuntimeError on mixed types.
+
+    This patch promotes the non-DTensor operand to match the DTensor's spec
+    using DTensor.from_local(), which is free for Replicate placement (just
+    metadata wrapping, no communication).
+    """
+    from peft.tuners.lora.layer import _LoraParameterProxy
+
+    if getattr(_LoraParameterProxy, "_axolotl_fsdp2_patched", False):
+        return
+
+    _original_forward = _LoraParameterProxy.forward
+
+    # NOTE: Replaces (not wraps) forward; assumes original is just `W + self.delta_weight`.
+    def _patched_forward(self, W):
+        from torch.distributed.tensor import DTensor
+
+        delta = self.delta_weight
+        w_is_dt = isinstance(W, DTensor)
+        d_is_dt = isinstance(delta, DTensor)
+
+        with torch.nn.utils.parametrize.cached():
+            if w_is_dt == d_is_dt:
+                return W + delta
+            if w_is_dt:
+                return W + DTensor.from_local(delta, W.device_mesh, W.placements)
+            return DTensor.from_local(W, delta.device_mesh, delta.placements) + delta
+
+    _LoraParameterProxy.forward = _patched_forward
+    _LoraParameterProxy._axolotl_fsdp2_patched = True
+    LOG.info("Patched PEFT _LoraParameterProxy.forward for FSDP2 DTensor compatibility")
+
+
 def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
     """Helper function to process LoRA modules for FSDP2."""
+    from peft.tuners.lora.layer import ParamWrapper
     from torch.distributed.fsdp import fully_shard
+
+    # Skip ParamWrapper — its lora_A/B must not be independently sharded.
+    # The parent decoder layer's FSDP wrapper handles unsharding them.
+    # TODO: review if we even need to shard them separately in first place.
+    if isinstance(module, ParamWrapper):
+        return False
 
     log_bias_dtype_mismatch = False
 
@@ -327,6 +377,14 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     is_peft_model = isinstance(model, PeftModel)
 
+    # Patch PEFT's _LoraParameterProxy for DTensor compatibility if any
+    # ParamWrapper modules exist (used for target_parameters / 3D expert params).
+    if is_peft_model:
+        from peft.tuners.lora.layer import ParamWrapper
+
+        if any(isinstance(m, ParamWrapper) for m in model.modules()):
+            patch_peft_param_wrapper_for_fsdp2()
+
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, model)
     log_bias_dtype_mismatch = False
     if auto_wrap_policy is not None:
@@ -374,6 +432,43 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         if hasattr(model, "tie_weights"):
             model.tie_weights()
     return model
+
+
+def patch_tied_keys_for_meta_device():
+    """Patch _adjust_tied_keys_with_tied_pointers to skip meta tensors.
+
+    Meta tensors all share data_ptr()==0, causing every parameter to be incorrectly
+    grouped as "tied". Skipping them is safe since they have no real storage.
+    """
+    from collections import defaultdict
+
+    from transformers import PreTrainedModel
+
+    def _patched_adjust_tied_keys_with_tied_pointers(self, missing_keys):
+        param_pointers = defaultdict(list)
+        for param_name, param_value in self.state_dict().items():
+            if param_value.is_meta:
+                continue
+            param_pointers[param_value.data_ptr()].append(param_name)
+
+        tied_param_names = [
+            names
+            for names in param_pointers.values()
+            if len(names) > 1
+            and not any(name in self.all_tied_weights_keys.keys() for name in names)
+            and not all(name in missing_keys for name in names)
+        ]
+
+        tied_weights_keys_by_pointers = {
+            param_name: group[0]
+            for group in tied_param_names
+            for param_name in group[1:]
+        }
+        self.all_tied_weights_keys.update(tied_weights_keys_by_pointers)
+
+    PreTrainedModel._adjust_tied_keys_with_tied_pointers = (
+        _patched_adjust_tied_keys_with_tied_pointers
+    )
 
 
 def patch_accelerate_fsdp2():
