@@ -161,7 +161,7 @@ class TestRoundTrip:
         fwd = ConcatenatedToInterleaved(dim=1)
         rev = InterleavedToConcatenated(dim=1)
 
-        for E, I, H in [(1, 4, 8), (8, 16, 32), (128, 768, 2048)]:  # noqa: E741
+        for E, I, H in [(1, 4, 8), (8, 16, 32), (16, 128, 256)]:  # noqa: E741
             concat = torch.randn(E, 2 * I, H)
             interleaved = fwd.convert(
                 {"k": concat}, source_patterns=["k"], target_patterns=["k"]

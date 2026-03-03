@@ -198,6 +198,7 @@ class TestSonicMoEGradientCorrectness:
 
         model = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
         patch_sonicmoe("qwen3_moe")
+        _interleave_gate_up_weights(model)
 
         out = model(input_ids, labels=input_ids)
         out.loss.backward()
@@ -229,6 +230,7 @@ class TestSonicMoETrainingConvergence:
 
         model = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
         patch_sonicmoe("qwen3_moe")
+        _interleave_gate_up_weights(model)
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
         losses = []
@@ -259,6 +261,7 @@ class TestSonicMoETrainingConvergence:
 
         model = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
         patch_sonicmoe("qwen3_moe")
+        _interleave_gate_up_weights(model)
 
         # Snapshot expert weights before training
         expert_weights_before = {}
