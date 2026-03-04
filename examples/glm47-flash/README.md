@@ -16,20 +16,20 @@ This guide shows how to fine-tune it with Axolotl.
 # QLoRA
 # - no target experts (1x48GB @ ~24GiB/GPU)
 # - target experts (1x48GB @ ~34GiB/GPU)
-axolotl train examples/glm4.7-flash/qlora.yaml
+axolotl train examples/glm47-flash/qlora.yaml
 
 # QLoRA FSDP2 no target experts (2x48GB @ ~29GiB/GPU)
-axolotl train examples/glm4.7-flash/qlora_fsdp.yaml
+axolotl train examples/glm47-flash/qlora_fsdp.yaml
 ```
 
 ```bash
 # LoRA
 # - no target experts (1x48GB @ ~35GiB/GPU)
 # - target experts (1x48GB @ OOM. Projected ~45-50GiB/GPU)
-axolotl train examples/glm4.7-flash/lora.yaml
+axolotl train examples/glm47-flash/lora.yaml
 
 # LoRA FSDP2 no target experts (2x48GB @ ~43GiB/GPU)
-axolotl train examples/glm4.7-flash/lora_fsdp.yaml
+axolotl train examples/glm47-flash/lora_fsdp.yaml
 ```
 
 ### Expert LoRA
