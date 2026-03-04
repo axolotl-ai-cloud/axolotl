@@ -23,7 +23,7 @@ datasets:
 output_dir: ./outputs/qat_out/
 dataset_prepared_path: ./outputs/dataset_prepared
 
-sequence_len: 8192
+sequence_len: 2048
 flash_attention: true
 
 qat:
@@ -38,10 +38,11 @@ wandb_name:
 wandb_log_model:
 
 gradient_checkpointing: true
-gradient_accumulation_steps: 1
-micro_batch_size: 64
+activation_offloading: true
+gradient_accumulation_steps: 4
+micro_batch_size: 1
 num_epochs: 1
-optimizer: adamw_torch_fused
+optimizer: adamw_torch_8bit
 
 cosine_constant_lr_ratio: 0
 cosine_min_lr_ratio: 1.0
