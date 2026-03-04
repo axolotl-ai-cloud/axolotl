@@ -131,3 +131,10 @@ Simulates quantization effects during training, helping the model adapt and pote
 Allows you to finetune LoRA adapters on top of a model that has already been quantized using the GPTQ method.
 
 - **Example:** [GPTQ LoRA Example](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/llama-2/gptq-lora.yml)
+
+### MoE Expert Quantization
+
+Quantizes MoE expert weights on load to reduce VRAM when training MoE models with adapters. Required for Transformers v5+ MoE models where experts use fused `nn.Parameter` tensors.
+
+- **Config:** `quantize_moe_experts: true`
+- **Learn more:** [MoE Expert Quantization](expert_quantization.qmd)
