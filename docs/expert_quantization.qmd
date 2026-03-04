@@ -48,6 +48,7 @@ lora_target_parameters:
 - `cpu_ram_efficient_loading` hangs / takes long time with FSDP2 + QLoRA.
 - Total model parameter count may display incorrectly (trainable param count is correct).
 - FSDP LoRA (8-bit) may have a large initial VRAM spike at the first 1-2 steps, which then drops. QLoRA does not exhibit this.
+- FSDP2 may use more VRAM per GPU than single GPU training due to not all layers being properly sharded across ranks.
 - Model loading takes longer due to on-demand quantization, even on consecutive runs.
 - DeepSpeed has not been tested.
 
