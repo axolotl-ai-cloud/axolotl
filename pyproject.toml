@@ -63,3 +63,5 @@ docstring-code-format = false
 
 [tool.uv.extra-build-dependencies]
 axolotl = ["huggingface_hub"]
+flash-attn = [{ requirement = "torch", match-runtime = true }]
+deepspeed = [{ requirement = "torch", match-runtime = true }]
