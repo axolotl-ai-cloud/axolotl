@@ -38,7 +38,6 @@ This model quantize expert weights on load. To learn about expert quantization, 
 
 ## Limitations
 
-- **FSDP VRAM**: FSDP2 may use more VRAM per GPU than single GPU training. We suspect not all layers are properly sharded across ranks.
 - **lora_target_linear**: Incompatible for this model.
 - **LoRA kernels**: Incompatible with this model due to non-standard attention projections (DSA). Must be explicitly disabled (`lora_*_kernel: false`).
 
