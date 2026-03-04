@@ -1,11 +1,8 @@
 """
 Gradient correctness tests for SonicMoE routing functions (CPU-only).
 
-Uses torch.autograd.gradcheck to verify that the actual routing functions
-produce numerically correct gradients (finite-difference comparison).
-
-Usage:
-    pytest tests/integrations/test_sonicmoe_gradients.py -v
+Uses torch.autograd.gradcheck with float32 inputs to match the production
+code path where routing happens in float32.
 """
 
 import torch
@@ -15,9 +12,12 @@ from axolotl.integrations.kernels.sonicmoe.routing import (
     softmax_topk_routing,
 )
 
+_GC_EPS = 1e-3
+_GC_ATOL = 1e-3
+_GC_RTOL = 1e-3
+
 
 def _make_softmax_moe_block(weight):
-    """Create a mock moe_block wired to a real weight parameter."""
     gate = torch.nn.Module()
     gate.weight = weight
     gate.top_k = 2
@@ -29,7 +29,6 @@ def _make_softmax_moe_block(weight):
 
 
 def _make_sigmoid_moe_block(weight, bias):
-    """Create a mock sigmoid-routing moe_block wired to real parameters."""
     gate = torch.nn.Module()
     gate.weight = weight
     gate.e_score_correction_bias = bias
@@ -45,115 +44,115 @@ def _make_sigmoid_moe_block(weight, bias):
 
 
 class TestSoftmaxTopkRoutingGradcheck:
-    """Numerical gradient verification for the real softmax_topk_routing."""
+    """Numerical gradient verification for softmax_topk_routing."""
 
     def test_gradcheck_wrt_gate_weight(self):
-        """gradcheck: d(scores)/d(gate.weight) is numerically correct."""
         T, H, E = 4, 8, 4
 
-        hidden = torch.randn(T, H, dtype=torch.float64)
+        hidden = torch.randn(T, H, dtype=torch.float32)
 
         def fn(weight):
-            weight_param = torch.nn.Parameter(weight)
-            moe_block = _make_softmax_moe_block(weight_param)
+            moe_block = _make_softmax_moe_block(weight)
             scores, _, _, _ = softmax_topk_routing(hidden, moe_block)
             return scores
 
-        weight = torch.randn(E, H, dtype=torch.float64, requires_grad=True)
-        torch.autograd.gradcheck(fn, (weight,), eps=1e-6, atol=1e-4)
+        weight = torch.randn(E, H, dtype=torch.float32, requires_grad=True)
+        torch.autograd.gradcheck(
+            fn, (weight,), eps=_GC_EPS, atol=_GC_ATOL, rtol=_GC_RTOL
+        )
 
     def test_gradcheck_wrt_hidden_states(self):
-        """gradcheck: d(scores)/d(hidden_states) is numerically correct."""
         T, H, E = 4, 8, 4
 
-        weight = torch.nn.Parameter(torch.randn(E, H, dtype=torch.float64))
+        weight = torch.randn(E, H, dtype=torch.float32)
         moe_block = _make_softmax_moe_block(weight)
 
         def fn(hidden):
             scores, _, _, _ = softmax_topk_routing(hidden, moe_block)
             return scores
 
-        hidden = torch.randn(T, H, dtype=torch.float64, requires_grad=True)
-        torch.autograd.gradcheck(fn, (hidden,), eps=1e-6, atol=1e-4)
+        hidden = torch.randn(T, H, dtype=torch.float32, requires_grad=True)
+        torch.autograd.gradcheck(
+            fn, (hidden,), eps=_GC_EPS, atol=_GC_ATOL, rtol=_GC_RTOL
+        )
 
     def test_gradcheck_wrt_router_logits(self):
-        """gradcheck: d(router_logits)/d(gate.weight) is numerically correct."""
         T, H, E = 4, 8, 4
 
-        hidden = torch.randn(T, H, dtype=torch.float64)
+        hidden = torch.randn(T, H, dtype=torch.float32)
 
         def fn(weight):
-            weight_param = torch.nn.Parameter(weight)
-            moe_block = _make_softmax_moe_block(weight_param)
+            moe_block = _make_softmax_moe_block(weight)
             _, _, _, router_logits = softmax_topk_routing(hidden, moe_block)
             return router_logits
 
-        weight = torch.randn(E, H, dtype=torch.float64, requires_grad=True)
-        torch.autograd.gradcheck(fn, (weight,), eps=1e-6, atol=1e-4)
+        weight = torch.randn(E, H, dtype=torch.float32, requires_grad=True)
+        torch.autograd.gradcheck(
+            fn, (weight,), eps=_GC_EPS, atol=_GC_ATOL, rtol=_GC_RTOL
+        )
 
     def test_no_norm_variant(self):
-        """gradcheck: routing without renormalization (norm_topk_prob=False)."""
         T, H, E = 4, 8, 4
 
-        hidden = torch.randn(T, H, dtype=torch.float64)
+        hidden = torch.randn(T, H, dtype=torch.float32)
 
         def fn(weight):
-            weight_param = torch.nn.Parameter(weight)
-            moe_block = _make_softmax_moe_block(weight_param)
+            moe_block = _make_softmax_moe_block(weight)
             moe_block.gate.norm_topk_prob = False
             scores, _, _, _ = softmax_topk_routing(hidden, moe_block)
             return scores
 
-        weight = torch.randn(E, H, dtype=torch.float64, requires_grad=True)
-        torch.autograd.gradcheck(fn, (weight,), eps=1e-6, atol=1e-4)
+        weight = torch.randn(E, H, dtype=torch.float32, requires_grad=True)
+        torch.autograd.gradcheck(
+            fn, (weight,), eps=_GC_EPS, atol=_GC_ATOL, rtol=_GC_RTOL
+        )
 
 
 class TestSigmoidTopkRoutingGradcheck:
-    """Numerical gradient verification for the real sigmoid_topk_routing."""
+    """Numerical gradient verification for sigmoid_topk_routing."""
 
     def test_gradcheck_wrt_gate_weight(self):
-        """gradcheck: d(scores)/d(gate.weight) is numerically correct."""
         T, H, E = 4, 8, 4
 
-        hidden = torch.randn(T, H, dtype=torch.float64)
-        bias = torch.nn.Parameter(torch.zeros(E, dtype=torch.float64))
+        hidden = torch.randn(T, H, dtype=torch.float32)
+        bias = torch.zeros(E, dtype=torch.float32)
 
         def fn(weight):
-            weight_param = torch.nn.Parameter(weight)
-            moe_block = _make_sigmoid_moe_block(weight_param, bias)
+            moe_block = _make_sigmoid_moe_block(weight, bias)
             scores, _, _, _ = sigmoid_topk_routing(hidden, moe_block)
             return scores
 
-        weight = torch.randn(E, H, dtype=torch.float64, requires_grad=True)
-        torch.autograd.gradcheck(fn, (weight,), eps=1e-6, atol=1e-4)
+        weight = torch.randn(E, H, dtype=torch.float32, requires_grad=True)
+        torch.autograd.gradcheck(
+            fn, (weight,), eps=_GC_EPS, atol=_GC_ATOL, rtol=_GC_RTOL
+        )
 
     def test_gradcheck_wrt_hidden_states(self):
-        """gradcheck: d(scores)/d(hidden_states) is numerically correct."""
         T, H, E = 4, 8, 4
 
-        weight = torch.nn.Parameter(torch.randn(E, H, dtype=torch.float64))
-        bias = torch.nn.Parameter(torch.zeros(E, dtype=torch.float64))
+        weight = torch.randn(E, H, dtype=torch.float32)
+        bias = torch.zeros(E, dtype=torch.float32)
         moe_block = _make_sigmoid_moe_block(weight, bias)
 
         def fn(hidden):
             scores, _, _, _ = sigmoid_topk_routing(hidden, moe_block)
             return scores
 
-        hidden = torch.randn(T, H, dtype=torch.float64, requires_grad=True)
-        torch.autograd.gradcheck(fn, (hidden,), eps=1e-6, atol=1e-4)
+        hidden = torch.randn(T, H, dtype=torch.float32, requires_grad=True)
+        torch.autograd.gradcheck(
+            fn, (hidden,), eps=_GC_EPS, atol=_GC_ATOL, rtol=_GC_RTOL
+        )
 
     def test_gradcheck_wrt_bias(self):
-        """gradcheck: d(scores)/d(e_score_correction_bias) is numerically correct."""
         T, H, E = 4, 8, 4
 
-        hidden = torch.randn(T, H, dtype=torch.float64)
-        weight = torch.nn.Parameter(torch.randn(E, H, dtype=torch.float64))
+        hidden = torch.randn(T, H, dtype=torch.float32)
+        weight = torch.randn(E, H, dtype=torch.float32)
 
         def fn(bias):
-            bias_param = torch.nn.Parameter(bias)
-            moe_block = _make_sigmoid_moe_block(weight, bias_param)
+            moe_block = _make_sigmoid_moe_block(weight, bias)
             scores, _, _, _ = sigmoid_topk_routing(hidden, moe_block)
             return scores
 
-        bias = torch.zeros(E, dtype=torch.float64, requires_grad=True)
-        torch.autograd.gradcheck(fn, (bias,), eps=1e-6, atol=1e-4)
+        bias = torch.zeros(E, dtype=torch.float32, requires_grad=True)
+        torch.autograd.gradcheck(fn, (bias,), eps=_GC_EPS, atol=_GC_ATOL, rtol=_GC_RTOL)
