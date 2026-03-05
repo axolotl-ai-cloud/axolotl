@@ -18,15 +18,27 @@ jobs:
         env:
           SKIP: no-commit-to-branch
 
+  prime-cdn-s3-cache:
+    name: Prefetch S3 once to prime the CDN cache
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    timeout-minutes: 10
+    steps:
+      - name: Restore Cache from S3
+        id: hf-cache-restore-s3
+        run: |
+          curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst > /dev/null
+
   pytest:
     name: PyTest
     runs-on: ubuntu-latest
+    needs: [prime-cdn-s3-cache]
     strategy:
       fail-fast: false
       max-parallel: 2
       matrix:
-        python_version: ["3.11"]
-        pytorch_version: ["2.8.0", "2.9.0", "2.9.1"]
+        python_version: ["3.12"]  # TODO include py3.14 once https://github.com/mistralai/mistral-common/pull/194 is merged
+        pytorch_version: ["2.8.0", "2.9.1", "2.10.0"]
     timeout-minutes: 20
 
     steps:
@@ -102,16 +114,23 @@ jobs:
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
-            pytorch: 2.8.0
+            pytorch: 2.9.1
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
+            pytorch: 2.10.0
+            num_gpus: 1
+            axolotl_extras:
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
             pytorch: 2.9.1
             num_gpus: 1
             axolotl_extras:
+            dockerfile: "Dockerfile-uv.jinja"
             nightly_build: "true"
     steps:
       - name: Checkout
@@ -132,6 +151,7 @@ jobs:
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile.jinja'}}" >> $GITHUB_ENV
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
           echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
       - name: Run tests job on Modal

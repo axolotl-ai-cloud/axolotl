@@ -46,11 +46,22 @@ jobs:
         env:
           SKIP: no-commit-to-branch
 
+  prime-cdn-s3-cache:
+    name: Prefetch S3 once to prime the CDN cache
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    timeout-minutes: 10
+    steps:
+      - name: Restore Cache from S3
+        id: hf-cache-restore-s3
+        run: |
+          curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst > /dev/null
+
   pytest:
     name: PyTest
     runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request.draft }}
-#    needs: [preload-cache]
+    needs: [prime-cdn-s3-cache]
     strategy:
       fail-fast: false
       matrix:
@@ -146,6 +157,7 @@ jobs:
     name: PyTest from Source Dist
     runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request.draft }}
+    needs: [prime-cdn-s3-cache]
     strategy:
       fail-fast: false
       matrix:
@@ -156,7 +168,7 @@ jobs:
 #            pytorch_version: "2.8.0"
 #          - python_version: "3.14"
 #            pytorch_version: "2.9.1"
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: cleanup node
